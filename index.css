@@ -1152,6 +1152,8 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     --mobile-bottombar: 4.25rem;
     --mobile-page-gap: 0.75rem;
     --mobile-touch: 2.75rem;
+    /* 底部导航实际占位（含安全区）：所有 fixed 浮层与留白统一引用它，不再各自写 bottom。 */
+    --mobile-bottom-inset: calc(4.25rem + env(safe-area-inset-bottom));
   }
 
   button,
@@ -1164,6 +1166,16 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
   select,
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]) {
     min-height: 44px;
+  }
+
+  /* 滑块在手机上给足 44px 触控高度：细轨道本身的命中区太小，容易拖不动。 */
+  input[type="range"] {
+    min-height: 44px;
+  }
+
+  /* 图标控件统一 44×44 命中区：全局 min-height 只管高度，宽度会缩到 40 甚至 28。 */
+  button[data-control-kind="icon"] {
+    min-width: 44px;
   }
 
   /* 显式小尺寸的圆形图标按钮（如卡片角上的收藏/选择圆钮）：44px 最小高度会把圆拉成蛋形，
@@ -1180,8 +1192,15 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     touch-action: manipulation;
   }
 
+  /* 生成条抬到底部导航之上，不再与导航重叠；留 8px 呼吸。 */
   .mobile-generation-actions {
-    --mobile-generation-bottom: calc(env(safe-area-inset-bottom) + 3.25rem);
+    --mobile-generation-bottom: calc(var(--mobile-bottom-inset) + 0.5rem);
+  }
+
+  /* 助手面板同样停在底栏上沿，输入框整行都可点。 */
+  .agent-panel {
+    bottom: var(--mobile-bottom-inset);
+    max-height: calc(100dvh - var(--mobile-bottom-inset) - env(safe-area-inset-top) - 0.5rem);
   }
 
   .mobile-page-header {

@@ -964,7 +964,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                               onClick={() => handleExportSinglePreset(preset)}
                               aria-label={t("导出「{0}」", [preset.name])}
                               title={t("导出此主题为 JSON 文件")}
-                              className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                              className="mobile-touch rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
                             >
                               <FolderOutput className="h-3.5 w-3.5" />
                             </button>
@@ -979,7 +979,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                   disabled={themeLibraryBusy}
                                   aria-label={t("重命名「{0}」", [preset.name])}
                                   title={t("重命名")}
-                                  className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                                  className="mobile-touch rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
                                 >
                                   <Edit2 className="h-3.5 w-3.5" />
                                 </button>
@@ -1009,7 +1009,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <div>
                   <div className="mb-2 flex items-center justify-between"><span className="text-meta font-bold text-gray-600 dark:text-gray-300">{t("强调色")}</span><span className="font-mono text-micro uppercase text-gray-400">{effectiveAccent}</span></div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {ACCENT_PRESETS.map(preset => <button key={preset.color} type="button" onClick={() => updateAppearance({ accentColor: preset.color })} aria-label={t("强调色：{0}", [t(preset.label)])} title={t(preset.label)} className={`mobile-size-locked relative h-8 w-8 rounded-full border-2 transition hover:scale-105 ${effectiveAccent === preset.color ? 'border-gray-900 ring-2 ring-gray-900/15 dark:border-white dark:ring-white/20' : 'border-white shadow-sm dark:border-gray-700'}`} style={{ backgroundColor: preset.color }}>{effectiveAccent === preset.color && <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white drop-shadow" />}</button>)}
+                    {ACCENT_PRESETS.map(preset => (
+                      <button key={preset.color} type="button" onClick={() => updateAppearance({ accentColor: preset.color })} aria-label={t("强调色：{0}", [t(preset.label)])} title={t(preset.label)} className="relative flex h-11 w-11 flex-none items-center justify-center rounded-full md:h-8 md:w-8">
+                        <span aria-hidden="true" className={`flex h-8 w-8 items-center justify-center rounded-full border-2 transition hover:scale-105 ${effectiveAccent === preset.color ? 'border-gray-900 ring-2 ring-gray-900/15 dark:border-white dark:ring-white/20' : 'border-white shadow-sm dark:border-gray-700'}`} style={{ backgroundColor: preset.color }}>
+                          {effectiveAccent === preset.color && <Check className="h-3.5 w-3.5 text-white drop-shadow" />}
+                        </span>
+                      </button>
+                    ))}
                     <label className="appearance-group relative flex h-8 min-w-24 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-gray-300 bg-white px-2 text-micro font-bold text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"><Palette className="h-3.5 w-3.5" />{t("自定义")}<input type="color" value={effectiveAccent} onChange={event => updateAppearance({ accentColor: event.target.value })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label={t("自定义强调色")} /></label>
                   </div>
                 </div>

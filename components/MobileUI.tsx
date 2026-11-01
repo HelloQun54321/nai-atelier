@@ -1,6 +1,7 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useContext, useEffect, useId, useRef, useState } from 'react';
-import { ArrowLeft, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ArrowLeft, X, MoreHorizontal } from 'lucide-react';
 import { useModalA11y } from './useModalA11y';
 import { ImageActivityContext } from './SmartImage';
 
@@ -17,6 +18,69 @@ export const MobileIconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonEle
     {children}
   </button>
 );
+
+export type ToolbarOverflowItem = {
+  label: string;
+  icon?: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  /** 危险操作在菜单里标红，不与常规项同色。 */
+  tone?: 'danger';
+  hint?: string;
+};
+
+/**
+ * 手机顶栏的「更多」入口：顶栏只留搜索、主操作和它，其余低频操作收进底部弹层。
+ * 每行 44px 且带文字，替代原先挤在顶栏里的纯图标按钮。
+ */
+export const MobileOverflowMenu: React.FC<{
+  items: ToolbarOverflowItem[];
+  label?: string;
+  className?: string;
+}> = ({ items, label = '更多操作', className = '' }) => {
+  useLanguage();
+  const [open, setOpen] = useState(false);
+  const entries = items.filter(Boolean);
+  if (!entries.length) return null;
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={t(label)}
+        title={t(label)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+        className={`appearance-group mobile-touch inline-flex h-11 w-11 flex-none items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 ${className}`}
+      >
+        <MoreHorizontal className="h-5 w-5" />
+      </button>
+      {/* 顶栏带玻璃滤镜会创建定位包含块，弹层必须挂到 body，否则会被困在 56px 高的顶栏里。 */}
+      {typeof document === 'undefined' ? null : createPortal(
+        <MobileBottomSheet open={open} title={label} onClose={() => setOpen(false)}>
+          <div className="space-y-1">
+            {entries.map(item => (
+              <button
+                key={item.label}
+                type="button"
+                disabled={item.disabled}
+                onClick={() => { setOpen(false); item.onClick(); }}
+                className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium transition-colors disabled:opacity-40 ${item.tone === 'danger' ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'}`}
+              >
+                {item.icon && <span className="flex h-5 w-5 flex-none items-center justify-center [&>svg]:h-[18px] [&>svg]:w-[18px]">{item.icon}</span>}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{t(item.label)}</span>
+                  {item.hint && <span className="mt-0.5 block truncate text-xs font-normal text-gray-500 dark:text-gray-400">{t(item.hint)}</span>}
+                </span>
+              </button>
+            ))}
+          </div>
+        </MobileBottomSheet>,
+        document.body,
+      )}
+    </>
+  );
+};
 
 export const useMobileHistoryLayer = (open: boolean, onClose: () => void | boolean, prefix: string) => {
   const active = useContext(ImageActivityContext);

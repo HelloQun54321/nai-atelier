@@ -4,6 +4,7 @@ import React, { useCallback, useContext, useEffect, useId, useMemo, useRef, useS
 import { flushSync } from 'react-dom';
 import { ArrowDownUp, Folder, GripVertical, ListChecks, Plus, Sparkles, Tags, Trash2, X } from 'lucide-react';
 import { db } from '../services/dbService';
+import { MobileOverflowMenu } from './MobileUI';
 import { DirectoryTreeNavigation } from './DirectoryTreeNavigation';
 import { DirectoryNodeDialog } from './DirectoryNodeDialog';
 import { getDirectoryDescendantIds, getDirectoryPath } from '../services/directoryTree.mjs';
@@ -495,9 +496,13 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
           flushSync(close); setTagManagerOpen(true);
         })}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); if (mobile) { setBoardId(''); setCollection('all'); } }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t("确认")}</button></div></div>}
       </ToolbarPopover>
-      <ToolbarSelect label="收藏排序" icon={<ArrowDownUp />} value={sort} containerClassName="hidden md:inline-flex" className="w-auto!" onChange={event => setSort(event.target.value as CollectionSort)}>{Object.entries(COLLECTION_SORT_LABELS).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</ToolbarSelect>
-      <ToolbarButton aria-label={t('批量选择图片')} title={t('批量选择图片')} disabled={Boolean(busy) || !filtered.some(item => editableIds.has(item.id))} onClick={() => { if (workGroup) closeGroup(); setSelectedIds(new Set()); setSelectionMode(true); }} className="mobile-touch !px-2.5 md:!px-3"><ListChecks /><span className="hidden sm:inline">{t('多选')}</span></ToolbarButton>
+      <ToolbarSelect label="收藏排序" icon={<ArrowDownUp />} value={sort} containerClassName="max-md:hidden" className="w-auto!" onChange={event => setSort(event.target.value as CollectionSort)}>{Object.entries(COLLECTION_SORT_LABELS).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</ToolbarSelect>
+      <ToolbarButton aria-label={t('批量选择图片')} title={t('批量选择图片')} disabled={Boolean(busy) || !filtered.some(item => editableIds.has(item.id))} onClick={() => { if (workGroup) closeGroup(); setSelectedIds(new Set()); setSelectionMode(true); }} className="mobile-touch !px-2.5 max-md:hidden md:!px-3"><ListChecks /><span className="hidden sm:inline">{t('多选')}</span></ToolbarButton>
       <ToolbarButton tone="primary" aria-label={t("加入收藏库")} disabled={currentUser.role === 'guest' || Boolean(busy)} onClick={() => openImport()} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("加入收藏库")}</span></ToolbarButton>
+      {/* 手机顶栏保留搜索、筛选与「加入收藏库」，多选收进「更多」。 */}
+      <MobileOverflowMenu className="md:hidden" items={[
+        { label: '批量选择图片', icon: <ListChecks />, disabled: Boolean(busy) || !filtered.some(item => editableIds.has(item.id)), onClick: () => { if (workGroup) closeGroup(); setSelectedIds(new Set()); setSelectionMode(true); } },
+      ]} />
       </>}
     </WorkspaceToolbar>
     {inspirationsData !== null && <ToolbarCountCaption>{t(activeFilterCount || debouncedSearch.trim() ? '匹配 {0} 组' : '共 {0} 组', [groups.length])} · {t('当前 {0} 张', [filtered.length])}</ToolbarCountCaption>}

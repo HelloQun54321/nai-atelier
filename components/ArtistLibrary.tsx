@@ -18,8 +18,9 @@ import { TagSelectionBar } from './TagSelectionBar';
 import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryPage } from '../services/tagDictionary';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, Dice5, LoaderCircle, Settings2 } from 'lucide-react';
+import { Check, Dice5, Layers, LoaderCircle, Settings2 } from 'lucide-react';
 import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { MobileOverflowMenu } from './MobileUI';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { useArtistSampleActions, ArtistSampleGenerationStatus } from './useArtistSampleActions';
@@ -69,6 +70,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
   useLanguage();
     useSyncExternalStore(subscribeArtistSampleGeneration, artistSampleGenerationRevision);
     const [samplePack, setSamplePack] = useState<ArtistSamplePack>(() => localStorage.getItem('nai_artist_sample_pack') === 'v5' ? 'v5' : 'v45');
+  // 手机：画师库设置收进「更多」，用受控开关打开同一个面板。
+  const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
     const [cardPacks, setCardPacks] = useState<Partial<Record<string, ArtistSamplePack>>>({});
     const [blockedArtists, setBlockedArtists] = useState<string[]>([]);
     const blockedChangesRef = useRef({ revision: 0, tags: [] as string[] });
@@ -716,7 +719,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
 <WorkspaceToolbar>
                 {groups.toolbar}
                 <div className="flex h-full min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                <div role="group" aria-label={t('画师样张模型')} className="appearance-group flex flex-none items-center rounded-xl border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-950">
+                <div role="group" aria-label={t('画师样张模型')} className="appearance-group flex flex-none items-center rounded-xl border border-gray-200 bg-gray-100 p-0.5 max-md:hidden dark:border-gray-700 dark:bg-gray-950">
                     <span className="hidden px-1.5 text-micro font-semibold text-gray-500 dark:text-gray-400 sm:inline">{t('样张')}</span>
                     {(['v45', 'v5'] as const).map(pack => <button type="button" key={pack} aria-pressed={samplePack === pack} onClick={() => { setCardPacks({}); if (pack === samplePack) return; setSamplePack(pack); localStorage.setItem('nai_artist_sample_pack', pack); recentGachaIndicesRef.current = []; leaveGacha(true); }} className={`appearance-group mobile-touch rounded-lg px-2 py-1.5 text-xs font-bold ${samplePack === pack ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>{pack === 'v45' ? 'V4.5' : 'V5 Full'}</button>)}
                 </div>
@@ -739,11 +742,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                         <button type="button" onClick={() => { setArtistSort('popular'); setChainUsageFilter('all'); setImageUsageFilter('all'); setStatusFilter('all'); updateOnlySamples(true); setSampleLimit(100); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
                     </div>
                 </ToolbarPopover>
-                <ToolbarButton aria-label={gachaArtists ? t("再选一批") : t("随机选画师")} title={gachaPool.length ? undefined : t(groupBrowse ? '没有匹配的画师样张' : '先下载样张图包或生成样张')} onClick={() => void drawGacha()} disabled={isGachaLoading || gachaPool.length <= 0} className="mobile-touch" tone="neutral">
+                <ToolbarButton aria-label={gachaArtists ? t("再选一批") : t("随机选画师")} title={gachaPool.length ? undefined : t(groupBrowse ? '没有匹配的画师样张' : '先下载样张图包或生成样张')} onClick={() => void drawGacha()} disabled={isGachaLoading || gachaPool.length <= 0} className="mobile-touch max-md:hidden" tone="neutral">
                         {isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaArtists ? t("再选一批") : t("随机选画师")}</span>
                 </ToolbarButton>
-                <div ref={librarySettingsRef} className="flex flex-none items-center border-l border-gray-200 pl-2 dark:border-gray-700">
-                    <ToolbarPopover label={t('画师库设置')} title={t('画师库设置')} icon={<Settings2 />} className="[&_button>span]:!inline" width={320}>
+                <div ref={librarySettingsRef} className="flex flex-none items-center border-l border-gray-200 pl-2 max-md:hidden dark:border-gray-700">
+                    <ToolbarPopover label={t('画师库设置')} title={t('画师库设置')} icon={<Settings2 />} open={mobileSettingsOpen} onOpenChange={setMobileSettingsOpen} className="[&_button>span]:!inline" width={320}>
                       {close => <div className="space-y-4"><div className="grid grid-cols-2 gap-3">
                             <label className="text-sm font-semibold dark:text-white">{t("随机方式")}<select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">{t("惊喜混合")}</option><option value="uniform">{t("完全随机")}</option><option value="popular">{t("热门画师")}</option></select></label>
                             <label className="text-sm font-semibold dark:text-white">{t("数量")}<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className={TOOLBAR_FIELD_CLASS}><option value={6}>{t("6 位")}</option><option value={12}>{t("12 位")}</option><option value={24}>{t("24 位")}</option></select></label>
@@ -755,6 +758,13 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                     </ToolbarPopover>
                 </div>
                 </div>
+                {/* 手机顶栏只留搜索、筛选与「更多」；样张模型、抽选与画师库设置收进菜单。 */}
+                <MobileOverflowMenu className="md:hidden" items={[
+                    { label: 'V4.5 样张', icon: <Layers />, hint: samplePack === 'v45' ? '当前' : '', onClick: () => { setCardPacks({}); setSamplePack('v45'); localStorage.setItem('nai_artist_sample_pack', 'v45'); recentGachaIndicesRef.current = []; leaveGacha(true); } },
+                    { label: 'V5 Full 样张', icon: <Layers />, hint: samplePack === 'v5' ? '当前' : '', onClick: () => { setCardPacks({}); setSamplePack('v5'); localStorage.setItem('nai_artist_sample_pack', 'v5'); recentGachaIndicesRef.current = []; leaveGacha(true); } },
+                    { label: gachaArtists ? '再选一批' : '随机选画师', icon: <Dice5 />, onClick: () => void drawGacha(), disabled: isGachaLoading || gachaPool.length <= 0 },
+                    { label: '画师库设置', icon: <Settings2 />, onClick: () => setMobileSettingsOpen(true) },
+                ]} />
             </WorkspaceToolbar>
             {statusReady && (!localCatalogBrowse || !sampleLoading && !sampleError) && (!groupBrowse || groups.ready && !groups.error) && !isCatalogLoading && !catalogError && !searchError && !(onlySamples && currentSampleError) && ((!onlySamples && !gachaArtists) || !sampleLoading) && <ToolbarCountCaption>{hasSearch
                 ? t(hasMoreVisible ? '已加载中匹配 {0} 位' : '匹配 {0} 位', [filteredArtists.length])

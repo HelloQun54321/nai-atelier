@@ -815,7 +815,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
   return (
     <div className="workspace-canvas flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceChrome>
-      <WorkspaceToolbar className="pixiv-toolbar">
+      <WorkspaceToolbar className="pixiv-toolbar" scrollable={false}>
         <div className="pixiv-toolbar-primary">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center">

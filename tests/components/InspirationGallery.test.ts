@@ -564,7 +564,8 @@ it.each(['masonry', 'portrait', 'square'])('%s 布局按作品组排序，保持
   const order = () => [...view.container.querySelectorAll('article h3')].map(element => element.textContent);
   expect(order()).toEqual(['作品2', '作品10', '作品1']);
   const sorter = screen.getByRole('combobox', { name: '收藏排序' });
-  expect(sorter.parentElement!.className).toContain('hidden md:inline-flex');
+  // 排序选择器只在宽屏出现：手机用 max-md:hidden 隐藏，避免 Tailwind 的 inline-flex 把它重新撑开。
+  expect(sorter.parentElement!.className).toContain('max-md:hidden');
   expect(sorter.className).toContain('w-auto!');
   fireEvent.change(sorter, { target: { value: 'oldest' } }); expect(order()).toEqual(['作品1', '作品10', '作品2']);
   fireEvent.change(sorter, { target: { value: 'name' } }); expect(order()).toEqual(['作品1', '作品2', '作品10']);

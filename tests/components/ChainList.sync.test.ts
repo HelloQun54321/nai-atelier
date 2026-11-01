@@ -627,7 +627,10 @@ describe('风格串列表的酒馆筛选交互', () => {
   it('移动端在筛选面板提供同一选择入口；取消恢复列表且不保存', async () => {
     render(React.createElement(ChainList, props()));
     await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
-    const entry = await screen.findByRole('button', { name: '智慧姬同步（待同步 0）' });
+    // 手机顶栏只留搜索、筛选与新建，同步入口收进「更多」。
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    const sheet = await screen.findByRole('dialog', { name: '更多操作' });
+    const entry = within(sheet).getByRole('button', { name: /智慧姬同步/ });
     await waitFor(() => expect(entry.hasAttribute('disabled')).toBe(false)); fireEvent.click(entry);
     await screen.findByRole('checkbox', { name: '智慧姬同步：风格 A' });
     fireEvent.click(screen.getByRole('button', { name: '返回资料库' })); expect(post).not.toHaveBeenCalled();
@@ -666,11 +669,15 @@ describe('风格串列表的酒馆筛选交互', () => {
     preferences.enabled = false;
     const p = props(); const view = render(React.createElement(ChainList, p));
     expect(screen.queryByRole('button', { name: '智慧姬同步' })).toBeNull(); expect(get).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: '智慧姬同步（待同步 0）' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    expect(within(await screen.findByRole('dialog', { name: '更多操作' })).queryByRole('button', { name: /智慧姬同步/ })).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
     preferences.enabled = true; view.rerender(React.createElement(ChainList, p));
-    expect(await screen.findByRole('button', { name: '智慧姬同步（待同步 0）' })).toBeTruthy();
-    const trigger = screen.getByRole('button', { name: '智慧姬同步' });
-    await waitFor(() => expect(trigger.hasAttribute('disabled')).toBe(false)); fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    const sheet = await screen.findByRole('dialog', { name: '更多操作' });
+    const mobileEntry = within(sheet).getByRole('button', { name: /智慧姬同步/ });
+    expect(mobileEntry).toBeTruthy();
+    fireEvent.click(mobileEntry);
     await screen.findByRole('checkbox', { name: '智慧姬同步：风格 A' });
     preferences.enabled = false; view.rerender(React.createElement(ChainList, p));
     await waitFor(() => expect(screen.queryByRole('checkbox', { name: '智慧姬同步：风格 A' })).toBeNull());

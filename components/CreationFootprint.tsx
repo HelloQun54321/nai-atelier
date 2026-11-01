@@ -4,6 +4,7 @@ import {
   Flame, Footprints, Heart, Image as ImageIcon, LoaderCircle, Palette, RefreshCw, Sparkles,
 } from 'lucide-react';
 import { EmptyState, InlineSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { MobileOverflowMenu } from './MobileUI';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { collectionRevision, collectionSnapshot, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
@@ -395,6 +396,23 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
     return { weeks, labels, startKey: dayKey(start), endKey: dayKey(end) };
   }, [range, activeYear, stats?.daily, language]);
 
+  // 手机年视图：按 12 个月汇总，点月份下钻；避免在 390 宽里横向滑动几十周。
+  const yearMonths = useMemo(() => {
+    const counts = new Map((stats?.daily || []).map(point => [point.date, point.images]));
+    return Array.from({ length: 12 }, (_unused, index) => {
+      const monthKey = `${activeYear}-${String(index + 1).padStart(2, '0')}`;
+      let total = 0;
+      counts.forEach((value, date) => { if (date.startsWith(monthKey)) total += value; });
+      return { monthKey, month: index + 1, total };
+    });
+  }, [activeYear, stats?.daily]);
+  const monthPeak = Math.max(1, ...yearMonths.map(item => item.total));
+  const monthHeat = (total: number) => total <= 0
+    ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'
+    : total <= monthPeak * 0.08 ? 'bg-indigo-300 text-white dark:bg-indigo-800'
+      : total <= monthPeak * 0.2 ? 'bg-indigo-400 text-white dark:bg-indigo-700'
+        : total <= monthPeak * 0.45 ? 'bg-indigo-500 text-white dark:bg-indigo-600'
+          : 'bg-indigo-600 text-white dark:bg-indigo-500';
   const trend = useMemo(() => {
     const counts = new Map((stats?.daily || []).map(point => [point.date, point.images]));
     if (range === '7') {
@@ -561,15 +579,21 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
         <div className="appearance-group flex max-w-[52vw] flex-none items-center gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-950 md:max-w-none">
           {GRANULARITIES.map(item => <button key={item.id} type="button" aria-pressed={granularity === item.id} onClick={() => setGranularity(item.id)} className={`appearance-group mobile-touch whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold transition ${granularity === item.id ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>{t(item.label)}</button>)}
         </div>
-        <ToolbarButton aria-label={t('刷新统计')} title={t('刷新统计')} onClick={() => setReload(value => value + 1)} disabled={loading} className="!px-2.5">
+        <ToolbarButton aria-label={t('刷新统计')} title={t('刷新统计')} onClick={() => setReload(value => value + 1)} disabled={loading} className="max-md:hidden !px-2.5">
           {loading ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}<span className="hidden lg:inline">{t('刷新')}</span>
         </ToolbarButton>
-        <ToolbarButton aria-label={t('导出 CSV')} title={t('导出 CSV')} onClick={exportCsv} disabled={!stats || eventsLoading || Boolean(eventsError)} className="!px-2.5">
+        <ToolbarButton aria-label={t('导出 CSV')} title={t('导出 CSV')} onClick={exportCsv} disabled={!stats || eventsLoading || Boolean(eventsError)} className="max-md:hidden !px-2.5">
           <Download /><span className="hidden xl:inline">CSV</span>
         </ToolbarButton>
-        <ToolbarButton onClick={() => onOpenHistory({ sort: 'newest' })} className="!px-2.5">
+        <ToolbarButton onClick={() => onOpenHistory({ sort: 'newest' })} className="max-md:hidden !px-2.5">
           <CalendarDays /><span className="hidden sm:inline">{t('打开历史')}</span>
         </ToolbarButton>
+        {/* 手机顶栏保留标题与周/月/年，其余工具收进「更多」，标题不再被挤成「创…」。 */}
+        <MobileOverflowMenu className="md:hidden" items={[
+          { label: '刷新统计', icon: <RefreshCw />, disabled: loading, onClick: () => setReload(value => value + 1) },
+          { label: '导出 CSV', icon: <Download />, disabled: !stats || eventsLoading || Boolean(eventsError), onClick: exportCsv },
+          { label: '打开历史', icon: <CalendarDays />, onClick: () => onOpenHistory({ sort: 'newest' }) },
+        ]} />
       </WorkspaceToolbar>
 
       </WorkspaceChrome>
@@ -610,23 +634,34 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
             >
               {compactDays.length > 0 ? <>
                 <div className="grid w-max grid-cols-7 gap-1.5" role="grid" aria-label={t('创作活动热力图')}>
-                  {compactDays.map(day => <button key={day.key} type="button" role="gridcell" disabled={day.future} onClick={() => openDay(day.key)} title={day.future ? '' : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} aria-label={day.future ? t('未来') : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className={`mobile-touch h-8 w-8 rounded-sm transition hover:ring-2 hover:ring-indigo-300 disabled:cursor-default disabled:opacity-0 dark:hover:ring-indigo-600 ${heatClass(day.count)} ${day.today ? 'ring-1 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900' : ''}`} />)}
+                  {compactDays.map(day => <button key={day.key} type="button" role="gridcell" disabled={day.future} onClick={() => openDay(day.key)} title={day.future ? '' : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} aria-label={day.future ? t('未来') : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className={`mobile-size-locked h-8 w-8 rounded-sm transition hover:ring-2 hover:ring-indigo-300 disabled:cursor-default disabled:opacity-0 dark:hover:ring-indigo-600 ${heatClass(day.count)} ${day.today ? 'ring-1 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900' : ''}`} />)}
                 </div>
                 <div className="mt-2 flex justify-between text-micro text-gray-400 dark:text-gray-500"><span>{formatDay(dayKeyToTime(compactDays[0].key))}</span><span>{granularity === 'week' ? formatDay(endOfWeek(weekStart)) : formatDay(monthBounds.end)}</span></div>
               </> : <>
-                <div className="overflow-x-auto pb-1">
+                {/* 手机：一年 12 个月一览，点月份下钻，不必横向滑动几十周。 */}
+                <div className="grid grid-cols-4 gap-2 md:hidden" data-month-overview="true">
+                  {yearMonths.map(item => (
+                    <button key={item.monthKey} type="button" onClick={() => { setSelectedMonth(item.monthKey); setGranularity('month'); }} aria-label={t('查看 {0}', [formatMonth(new Date(Number(activeYear), item.month - 1, 1))])} title={t('{0} · {1} 张', [formatMonth(new Date(Number(activeYear), item.month - 1, 1)), formatNumber(item.total)])} className={`appearance-group mobile-size-locked flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl text-xs font-semibold ${monthHeat(item.total)}`}>
+                      <span>{formatMonth(new Date(Number(activeYear), item.month - 1, 1))}</span>
+                      <span className="text-micro font-normal tabular-nums opacity-80">{formatNumber(item.total)}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="hidden md:block">
+                <div className="relative overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,#000_calc(100%-1.5rem),transparent)] md:[mask-image:none]">
                   <div className="w-full min-w-[760px]">
                     <div aria-hidden="true" className="mb-1 grid gap-1" style={{ gridTemplateColumns: `repeat(${heatmap.weeks.length}, minmax(0, 1fr))` }}>
                       {heatmap.labels.map(label => <span key={label.monthKey} style={{ gridColumnStart: label.weekIndex + 1, gridColumnEnd: `span ${Math.min(4, heatmap.weeks.length - label.weekIndex)}`, gridRowStart: 1 }} className="truncate text-micro text-gray-400 dark:text-gray-500">{label.label}</span>)}
                     </div>
                     <div className="flex w-full gap-1" role="grid" aria-label={t('创作活动热力图')}>
                       {heatmap.weeks.map((week, weekIndex) => <div key={weekIndex} role="row" className="flex min-w-0 flex-1 flex-col gap-1">
-                        {week.map((day, dayIndex) => <button key={dayIndex} type="button" role="gridcell" disabled={day.future} onClick={() => openDay(day.key)} title={day.future ? '' : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} aria-label={day.future ? t('未来') : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className={`aspect-square w-full rounded-sm transition hover:ring-2 hover:ring-indigo-300 disabled:cursor-default disabled:opacity-0 dark:hover:ring-indigo-600 ${heatClass(day.count)} ${day.today ? 'ring-1 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900' : ''}`} />)}
+                        {week.map((day, dayIndex) => <button key={dayIndex} type="button" role="gridcell" disabled={day.future} onClick={() => openDay(day.key)} title={day.future ? '' : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} aria-label={day.future ? t('未来') : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className={`mobile-size-locked aspect-square w-full rounded-sm transition hover:ring-2 hover:ring-indigo-300 disabled:cursor-default disabled:opacity-0 dark:hover:ring-indigo-600 ${heatClass(day.count)} ${day.today ? 'ring-1 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900' : ''}`} />)}
                       </div>)}
                     </div>
                   </div>
                 </div>
-                <div className="mt-2 flex justify-between text-micro text-gray-400 dark:text-gray-500"><span>{heatmap.startKey ? formatDay(dayKeyToTime(heatmap.startKey)) : ''}</span><span>{range === 'all' ? formatDay(dayKeyToTime(heatmap.endKey)) : t('今天')}</span></div>
+                <div className="mt-2 hidden justify-between text-micro text-gray-400 dark:text-gray-500 md:flex"><span>{heatmap.startKey ? formatDay(dayKeyToTime(heatmap.startKey)) : ''}</span><span>{range === 'all' ? formatDay(dayKeyToTime(heatmap.endKey)) : t('今天')}</span></div>
+                </div>
               </>}
             </SectionCard>
 

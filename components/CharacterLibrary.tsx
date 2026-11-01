@@ -23,14 +23,14 @@ import {
 } from '../services/tagDictionary';
 import { useConfirmDialog } from './ConfirmDialog';
 import { ImageActivityContext, SmartImage } from './SmartImage';
-import { MobileDetailView } from './MobileUI';
+import { MobileDetailView, MobileOverflowMenu } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions, ImageShareOverlay } from './ImageShareActions';
 import { ImageCardActions } from './ImageCardActions';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, ChevronDown, Dice5, LoaderCircle, Pencil, Plus, Tag, Trash2, UserRound } from 'lucide-react';
+import { Check, ChevronDown, Dice5, LoaderCircle, Pencil, Plus, Settings2, Tag, Trash2, UserRound } from 'lucide-react';
 import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar, EmptyState } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
@@ -271,6 +271,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     return resolveCharacterVariantMembershipKeys(keys, variantIndex);
   }, [groupCatalogReady, groupLoading, groupError, variantIndex, language]);
   const groups = useCatalogGroupBrowser('character', groupKeys, notify, 'character', catalogKeys, { virtualGroups: sourceGroups, favorites: { matches: matchesFavorite, count: favoriteCount }, resolveMembershipKeys });
+  // 手机：角色库设置收进「更多」，用受控开关从菜单打开同一个面板。
+  const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
   const showFavOnly = groups.activeGroup === DIRECTORY_FAVORITES_ID;
   const tab: CharacterTab = groups.activeGroup === '#source:catalog' ? 'catalog' : groups.activeGroup === '#source:custom' ? 'custom' : 'all';
   const customSource = tab === 'custom';
@@ -851,9 +853,9 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              <button type="button" onClick={() => { setSort('popular'); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
            </div>
          </ToolbarPopover>
-         <div className="flex flex-none items-center border-l border-gray-200 pl-2 dark:border-gray-700">
+         <div className="flex flex-none items-center border-l border-gray-200 pl-2 max-md:hidden dark:border-gray-700">
            <ToolbarButton aria-label={gachaCards ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={!drawReady || isGachaLoading || drawAvailable <= 0} className="mobile-touch !rounded-r-none !border-r-0" tone="neutral">{isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaCards ? t("再抽一批") : t("随机抽卡")}</span></ToolbarButton>
-           <ToolbarPopover label={t("角色库设置")} title={t("角色库设置")} icon={<ChevronDown />} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
+           <ToolbarPopover label={t("角色库设置")} title={t("角色库设置")} icon={<ChevronDown />} open={mobileSettingsOpen} onOpenChange={setMobileSettingsOpen} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
              <label className="mobile-touch mb-3 flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={linkVariantFavorites} onChange={event => { const enabled = event.target.checked; if (enabled) { backfillAttempted.current.clear(); backfillFailed.current.clear(); setVariantBackfillError(''); } setLinkVariantFavorites(enabled); localStorage.setItem('nai_character_link_variant_favorites', String(enabled)); }} />{t('同角色变体联动收藏')}</label>
              <p className="mb-3 text-xs text-gray-500">{t('每个变体收藏一张代表封面')}</p>
              {linkVariantFavorites && variantBackfillBusy && <p role="status" className="mb-3 text-xs text-gray-500">{t('正在补齐已有角色收藏…')}</p>}
@@ -865,6 +867,11 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
            </ToolbarPopover>
          </div>
          <ToolbarButton tone="primary" aria-label={t("新建自定义角色")} onClick={() => setShowCreate(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("新建角色")}</span></ToolbarButton>
+       {/* 手机顶栏只留搜索、筛选与新建；抽卡与角色库设置收进「更多」。 */}
+          <MobileOverflowMenu className="md:hidden" items={[
+            { label: gachaCards ? '再抽一批' : '随机抽卡', icon: <Dice5 />, onClick: () => void drawGacha(), disabled: !drawReady || isGachaLoading || drawAvailable <= 0 },
+            { label: '角色库设置', icon: <Settings2 />, onClick: () => setMobileSettingsOpen(true) },
+          ]} />
        </WorkspaceToolbar>
        {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountCaption>{t('角色 {0} · 显示 {1} 张卡片', [!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length, visibleCards.length])}</ToolbarCountCaption>}
 

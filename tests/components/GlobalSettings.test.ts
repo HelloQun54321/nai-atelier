@@ -1010,12 +1010,19 @@ describe('GlobalSettings', () => {
     expect(getMobileImageDisplayPreferences('artists').layout).toBe('masonry');
   });
 
-  it('个性化强调色按钮具有 mobile-size-locked 防止移动端被拉伸为椭圆/蛋形', async () => {
+  it('强调色圆点在手机上保留 32px 正圆，外面是 44px 触控区', async () => {
     render(React.createElement(SettingsHarness));
 
     const indigoBtn = screen.getByRole('button', { name: '强调色：靛蓝' });
-    expect(indigoBtn.className).toContain('mobile-size-locked');
+    // 触控区 44（h-11/w-11），视觉圆点仍是 h-8/w-8，不再靠 mobile-size-locked 压扁全局 44px 底线。
+    expect(indigoBtn.className).toContain('h-11');
+    expect(indigoBtn.className).toContain('w-11');
     expect(indigoBtn.className).toContain('rounded-full');
+    expect(indigoBtn.className).not.toContain('mobile-size-locked');
+    const dot = indigoBtn.querySelector('span');
+    expect(dot?.className).toContain('h-8');
+    expect(dot?.className).toContain('w-8');
+    expect(dot?.className).toContain('rounded-full');
   });
 
   it.each([false, true])('手机视图=%s 时四模式可设置默认展开，恢复操作彼此独立且没有排序入口', async mobile => {

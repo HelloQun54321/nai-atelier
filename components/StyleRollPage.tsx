@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
+import { MobileOverflowMenu } from './MobileUI';
 import { t, useLanguage } from '../services/i18n';
 import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateCapacity, rollCandidateToChain, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollRules, type RollExperiment } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
@@ -89,6 +90,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const [artistOverrides, setArtistOverrides] = useState<RollExperiment['artists']>([]);
   const [query, setQuery] = useState(''), [sort, setSort] = useState('new'), [roundId, setRoundId] = useState('');
   const [selecting, setSelecting] = useState(false), [selectedIds, setSelectedIds] = useState(new Set<string>());
+  // 手机：画风记录管理收进「更多」，用受控开关从菜单打开同一个面板。
+  const [mobileRecordMenuOpen, setMobileRecordMenuOpen] = useState(false);
   const [savingProgress, setSavingProgress] = useState<{ completed: number; total: number } | null>(null);
   const [saveFailures, setSaveFailures] = useState<{ experimentId: string; ids: string[]; unprocessed: number; needsReload: boolean; messages: string[] } | null>(null);
   const [recordName, setRecordName] = useState('');
@@ -667,7 +670,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           <ToolbarSelect label={t('切换画风记录')} containerClassName="max-w-32 sm:max-w-48 lg:max-w-72 min-w-0" className="!h-8 !border-transparent !bg-transparent !pl-2 !text-sm font-semibold" value={experimentId} disabled={frozen || preparing} onChange={event => setExperimentId(event.target.value)}>
             {!experiment && <option value="">{t('新画风记录')}</option>}{experiments.filter(item => !item.archived).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
           </ToolbarSelect>
-          <ToolbarPopover title={t('画风记录管理')} label={t('管理记录')} icon={<MoreHorizontal className="h-4 w-4" />} iconOnly disabled={frozen || working || selecting} width={320} className="[&_button]:!h-7 [&_button]:!w-7">
+          <ToolbarPopover title={t('画风记录管理')} label={t('管理记录')} icon={<MoreHorizontal className="h-4 w-4" />} iconOnly disabled={frozen || working || selecting} width={320} open={mobileRecordMenuOpen} onOpenChange={setMobileRecordMenuOpen} className="[&_button]:!h-11 [&_button]:!w-11 max-md:hidden md:[&_button]:!h-7 md:[&_button]:!w-7">
             {close => <div className="space-y-3">
               {experiment && <div className="appearance-group rounded-xl bg-gray-50 px-2.5 py-2 text-xs text-gray-500 dark:bg-gray-800/60">{t('{0} 轮 · {1} 张已出图 · {2} 个已存风格串', [experiment.rounds.length, images.size, experiment.candidates.filter(candidate => candidate.savedChainId).length])}</div>}
               {experiment && <form onSubmit={event => { event.preventDefault(); if (!recordName.trim() || recordName.trim() === experiment.name) return; void perform(async () => { await store({ ...experiment, name: recordName.trim() }); close(); }); }}>
@@ -685,7 +688,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         </div>
 
         {/* 中间：自适应搜索框铺满可用宽度 */}
-        <ToolbarSearch value={query} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师、中文名或编号')} placeholder={t('搜索画师、中文名或编号')} containerClassName="flex-1 !max-w-none md:!max-w-none min-w-[140px] mx-1 md:mx-2" disabled={!experiment} />
+        <ToolbarSearch value={query} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师、中文名或编号')} placeholder={t('搜索画师、中文名或编号')} containerClassName="flex-1 !max-w-none md:!max-w-none min-w-[140px] max-md:min-w-[96px] mx-1 md:mx-2" disabled={!experiment} />
 
         {/* 右侧集群：紧密贴紧屏幕最右端，彻底消除右侧空白 */}
         <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2">
@@ -703,13 +706,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           </ToolbarPopover>
 
           {/* 批量多选 */}
-          <ToolbarButton aria-label={t('批量选择候选')} title={t('多选')} disabled={frozen || !experiment} onClick={() => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); }}><ListChecks /><span className="hidden xl:inline">{t('多选')}</span></ToolbarButton>
+          <ToolbarButton className="max-md:hidden" aria-label={t('批量选择候选')} title={t('多选')} disabled={frozen || !experiment} onClick={() => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); }}><ListChecks /><span className="hidden xl:inline">{t('多选')}</span></ToolbarButton>
         </div>
       </div>}
 
       {/* 主 CTA 固定在滚动区外，窄屏也始终可见；摘要只表达本轮，不另加轮次栏。 */}
       {!selecting && <div className="ml-1 flex shrink-0 items-center gap-2">
-        <ToolbarButton aria-label={t('从风格串提取')} title={chainArtistSource ? t('已选 {0} 串 · {1} 位画师', [chainArtistSource.chainIds.length, chainArtistSource.artists.length]) : t('从风格串提取')} disabled={frozen || working || libraryLoading} className="!px-2" onClick={() => setChainTarget(experimentId)}><Layers /><span className="flex min-w-0 max-w-[9rem] flex-col items-start sm:max-w-[12rem]"><span className="text-xs leading-4"><span className="sm:hidden">{t('提取画师')}</span><span className="hidden sm:inline">{t('从风格串提取')}</span></span><span className="max-w-full truncate text-micro font-normal leading-3 tabular-nums opacity-70">{chainArtistSource ? t('已选 {0} 串 · {1} 位画师', [chainArtistSource.chainIds.length, chainArtistSource.artists.length]) : t('画师库')}</span></span></ToolbarButton>
+        <ToolbarButton aria-label={t('从风格串提取')} title={chainArtistSource ? t('已选 {0} 串 · {1} 位画师', [chainArtistSource.chainIds.length, chainArtistSource.artists.length]) : t('从风格串提取')} disabled={frozen || working || libraryLoading} className="max-md:hidden !px-2" onClick={() => setChainTarget(experimentId)}><Layers /><span className="flex min-w-0 max-w-[9rem] flex-col items-start sm:max-w-[12rem]"><span className="text-xs leading-4"><span className="sm:hidden">{t('提取画师')}</span><span className="hidden sm:inline">{t('从风格串提取')}</span></span><span className="max-w-full truncate text-micro font-normal leading-3 tabular-nums opacity-70">{chainArtistSource ? t('已选 {0} 串 · {1} 位画师', [chainArtistSource.chainIds.length, chainArtistSource.artists.length]) : t('画师库')}</span></span></ToolbarButton>
         <div className="hidden flex-col items-end leading-tight text-micro text-gray-500 xl:flex">
           <span className="font-semibold text-gray-600 dark:text-gray-300">{t('{0} 张 · {1} 位', [count, artistCountLabel(roundRules)])}</span>
           {experiment && <span className="text-gray-400">{roundCostLabel}</span>}
@@ -730,6 +733,12 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               </div>
             </div>}
           </ToolbarPopover>
+          {/* 手机顶栏只留画风记录、搜索、筛选与 Roll；管理、多选、提取画师收进「更多」。 */}
+          <MobileOverflowMenu className="md:hidden" items={[
+            { label: '画风记录管理', icon: <MoreHorizontal />, disabled: frozen || working, onClick: () => setMobileRecordMenuOpen(true) },
+            { label: '批量选择候选', icon: <ListChecks />, disabled: frozen || !experiment, onClick: () => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); } },
+            { label: chainArtistSource ? `已选 ${chainArtistSource.chainIds.length} 串` : '从风格串提取', icon: <Layers />, disabled: frozen || working || libraryLoading, onClick: () => setChainTarget(experimentId) },
+          ]} />
         </div>
       </div>}
     </WorkspaceToolbar>
