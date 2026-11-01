@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-01
+- **DeepSeek Harness (deepseek-v4.1-flash)**：修复实验室「参考」「参数」页分区条下方 168px 空白（LabCategoryMode 在这两页无内容却仍渲染 128px 下留白），五个分区统一 16px 间距。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：把实验室底部生成条的让位基准从元素盒改为文字基线（资源行 44px 高但文字靠底对齐，中间 20px 空白此前没算），视觉间隙 28px → 12px。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：手机实验室底部生成条下移贴住 Anlas／Opus 资源行（12px 间隙，此前按整条底栏抬高悬空）；分区条按用户选择做「降权 + 压缩」：透明底、选中改强调色文字加下划线、高度 44→40。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：按走查清单改手机 UI：新增 `MobileOverflowMenu`（可拖拽底部面板、44px 行高、挂 body 避免玻璃滤镜困住 fixed）与 `--mobile-bottom-inset`，把 12 个页面顶栏收敛为「搜索／标题 ＋ 主操作 ＋ ⋯」，390 宽全站顶栏溢出归零；实验室生成条与助手面板让出底栏；图标控件补 44px 最小宽、滑块补触控高度；资源库菜单 3×3 铺满；创作足迹改为 12 月概览并修复热力图格子被 44px 底线拉成竖条。悬浮组件（卡片圆钮、爱心、灯箱）按用户要求未动。

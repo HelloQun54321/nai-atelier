@@ -268,6 +268,9 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
     if (characters.length > characterCount.current) setActiveCharacterId(characters[characters.length - 1].id);
     characterCount.current = characters.length;
   }, [characters]);
+  // 「参考」「参数」两页由下面的独立模块渲染，这里没有内容；此前仍渲染带 128px 底部留白的空容器，
+  // 把卡片推到了分区条下方 168px，和另外三页的 16px 对不上。
+  if (tab === 'reference' || tab === 'params') return null;
   return <div className="lab-category-mode flex flex-col gap-4 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-0">
     {tab === 'style' && <article className={cardClass}>
       <header className="flex items-center justify-between gap-3">
