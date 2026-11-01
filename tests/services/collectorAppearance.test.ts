@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_APPEARANCE_PREFERENCES } from '../../services/appearancePreferences';
+import { BUILTIN_APPEARANCE_PRESET, DEFAULT_APPEARANCE_PREFERENCES } from '../../services/appearancePreferences';
 import { collectorIsLocal, syncCollectorAppearance, useCollectorAppearance } from '../../services/collectorAppearance';
 import { LANGUAGES, setLanguage } from '../../services/i18n';
 import { BUILTIN_APPEARANCE_PRESETS } from '../../services/builtinAppearancePresets';
@@ -9,6 +9,9 @@ import { BUILTIN_APPEARANCE_PRESETS } from '../../services/builtinAppearancePres
 const fetchMock = vi.fn();
 beforeEach(() => { fetchMock.mockReset().mockResolvedValue({ ok: true }); vi.stubGlobal('fetch', fetchMock); });
 afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
+// 出厂默认已改为液态玻璃；这些用例里的「默认／实色」基准用经典实色内置主题表达，
+// 并显式清掉继承自默认主题的配色、材质与背景，避免它们跟着一起同步。
+const solidDefaults: typeof DEFAULT_APPEARANCE_PREFERENCES = { ...DEFAULT_APPEARANCE_PREFERENCES, ...BUILTIN_APPEARANCE_PRESET, activePresetId: BUILTIN_APPEARANCE_PRESET.id, palette: undefined, details: undefined, background: undefined, workspaceBackgrounds: undefined };
 describe('悬浮窗外观同步', () => {
   it('复用主界面背景解析：自选明暗、显式移除、默认壁纸和旧背景均原样同步', async () => {
     const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=';
@@ -33,7 +36,7 @@ describe('悬浮窗外观同步', () => {
     expect(collectorIsLocal('192.168.1.8')).toBe(false);
   });
   it('初始化与切换明暗／主题色／系统解析结果均同步，无关偏好不发送', async () => {
-    const initial = { preferences: DEFAULT_APPEARANCE_PREFERENCES, isDark: false };
+    const initial = { preferences: solidDefaults, isDark: false };
     const view = renderHook(({ preferences, isDark }) => useCollectorAppearance(preferences, isDark), { initialProps: initial });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0][0]).toBe('/api/style-collector/appearance');
@@ -63,13 +66,13 @@ describe('悬浮窗外观同步', () => {
     expect(JSON.parse(fetchMock.mock.lastCall![1].body).accents).toEqual({ light: '#123456', dark: '#abcdef' });
   });
   it('两套内置主题同步材质、圆角及明暗强调色，切回默认清除苹果主题参数', async () => {
-    const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: DEFAULT_APPEARANCE_PREFERENCES } });
+    const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: solidDefaults } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const cupertino = BUILTIN_APPEARANCE_PRESETS[1];
-    view.rerender({ preferences: { ...DEFAULT_APPEARANCE_PREFERENCES, ...cupertino, activePresetId: cupertino.id } });
+    const cupertino = BUILTIN_APPEARANCE_PRESETS[0];
+    view.rerender({ preferences: { ...solidDefaults, ...cupertino, activePresetId: cupertino.id } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(JSON.parse(fetchMock.mock.lastCall![1].body)).toMatchObject({ surfaces: 'translucent', corners: 'soft', palette: cupertino.palette, accents: { light: '#007aff', dark: '#0a84ff' } });
-    view.rerender({ preferences: DEFAULT_APPEARANCE_PREFERENCES });
+    view.rerender({ preferences: solidDefaults });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(JSON.parse(fetchMock.mock.lastCall![1].body)).toMatchObject({ surfaces: 'solid', corners: 'standard', accents: { light: '#0ea5e9', dark: '#0ea5e9' } });
     expect(JSON.parse(fetchMock.mock.lastCall![1].body)).not.toHaveProperty('palette');
@@ -77,16 +80,16 @@ describe('悬浮窗外观同步', () => {
   });
   it('明暗配色同步到小窗，恢复默认时不残留上一主题', async () => {
     const palette = { light: { panel: '#fff4dd', text: '#362415' }, dark: { panel: '#352c25' } };
-    const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: { ...DEFAULT_APPEARANCE_PREFERENCES, palette } as typeof DEFAULT_APPEARANCE_PREFERENCES } });
+    const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: { ...solidDefaults, palette } as typeof DEFAULT_APPEARANCE_PREFERENCES } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).palette).toMatchObject(palette);
-    view.rerender({ preferences: DEFAULT_APPEARANCE_PREFERENCES });
+    view.rerender({ preferences: solidDefaults });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty('palette');
   });
   it('玻璃窗口同步完整明暗材质，实时修改透明度和高光，恢复实色时清除', async () => {
-    const cupertino = BUILTIN_APPEARANCE_PRESETS[1];
-    const initial: typeof DEFAULT_APPEARANCE_PREFERENCES = { ...DEFAULT_APPEARANCE_PREFERENCES, ...cupertino };
+    const cupertino = BUILTIN_APPEARANCE_PRESETS[0];
+    const initial: typeof DEFAULT_APPEARANCE_PREFERENCES = { ...solidDefaults, ...cupertino };
     const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: initial } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(JSON.parse(fetchMock.mock.lastCall![1].body).materials).toEqual({
@@ -97,7 +100,7 @@ describe('悬浮窗外观同步', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(JSON.parse(fetchMock.mock.lastCall![1].body).materials.light).toMatchObject({ opacity: 0, highlight: .5 });
     expect(JSON.parse(fetchMock.mock.lastCall![1].body).materials.light).toHaveProperty('refraction', 24);
-    view.rerender({ preferences: DEFAULT_APPEARANCE_PREFERENCES });
+    view.rerender({ preferences: solidDefaults });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(JSON.parse(fetchMock.mock.lastCall![1].body)).not.toHaveProperty('materials');
   });

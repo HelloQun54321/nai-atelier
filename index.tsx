@@ -7,6 +7,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { restoreRememberedNaiKey } from './services/naiKeyStorage';
 import { restoreAppearancePreferences } from './services/appearancePreferences';
 import { initThemeLight } from './services/themeDetails';
+import { initPointerTilt } from './services/pointerTilt';
 import { restoreUpdateDrafts } from './services/appUpdate';
 
 const rootElement = document.getElementById('root');
@@ -16,6 +17,7 @@ if (!rootElement) {
 
 restoreAppearancePreferences();
 initThemeLight();
+initPointerTilt();
 restoreUpdateDrafts();
 // 门禁和错误边界在 App 外层，系统变化时仍需更新；App 挂载后继续管理即时修改。
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', restoreAppearancePreferences);

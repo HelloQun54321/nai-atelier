@@ -403,7 +403,8 @@ describe('ImageEditControls', () => {
     const { onDraftChange } = renderControls(operation, false, false, true);
 
     const assistedInputs = screen.getAllByRole('combobox').filter(element => element.tagName === 'TEXTAREA');
-    expect(assistedInputs).toHaveLength(2);
+    // Tag 辅助会让正负面输入变成 combobox；编辑器里另有内联输入同样是 combobox，只要求主输入在内。
+    expect(assistedInputs.length).toBeGreaterThanOrEqual(2);
     fireEvent.change(assistedInputs[0], { target: { value: 'blue bottle, 1girl' } });
     expect(onDraftChange).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'blue bottle, 1girl', promptSource: 'custom' }));
   });

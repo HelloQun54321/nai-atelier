@@ -58,7 +58,7 @@ it('不提供已有风格串导入；可套用推荐词后自定义并完整保�
   expect(screen.getByRole('combobox', { name: '角色提示词（可选）' })).toHaveProperty('value', DEFAULT_ROLL_CHARACTER_PROMPT);
   fireEvent.change(prompt, { target: { value: 'custom style, {style}, 1girl' } });
   fireEvent.change(screen.getByRole('combobox', { name: '角色提示词（可选）' }), { target: { value: 'miku, twintails' } });
-  fireEvent.change(screen.getByRole('textbox', { name: '负面提示词' }), { target: { value: 'custom negative' } });
+  fireEvent.change(screen.getByRole('combobox', { name: '负面提示词' }), { target: { value: 'custom negative' } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
   const value = save.mock.calls[0][0];
   expect(value.template.prompt).toBe('custom style, {style}, 1girl');
@@ -184,7 +184,7 @@ it('打开并保存历史默认记录时保留原模板，不自动套用新版�
   fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
   expect(screen.getByRole('combobox', { name: '公共提示词' })).toHaveProperty('value', originalTemplate.prompt);
   expect(screen.getByRole('combobox', { name: '角色提示词（可选）' })).toHaveProperty('value', '');
-  expect(screen.getByRole('textbox', { name: '负面提示词' })).toHaveProperty('value', '');
+  expect(screen.getByRole('combobox', { name: '负面提示词' })).toHaveProperty('value', '');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
   expect(save.mock.calls[0][0].template).toEqual(originalTemplate);
   expect(initial.template).toEqual(originalTemplate);
@@ -330,7 +330,7 @@ it('预设保存在途统一锁定可编辑模板，失败后恢复且不覆盖�
   fireEvent.click(screen.getByRole('button', { name: '另存新预设' }));
   expect(screen.getByRole('combobox', { name: '公共提示词' })).toHaveProperty('disabled', true);
   expect(screen.getByRole('combobox', { name: '角色提示词（可选）' })).toHaveProperty('disabled', true);
-  expect(screen.getByRole('textbox', { name: '负面提示词' })).toHaveProperty('disabled', true);
+  expect(screen.getByRole('combobox', { name: '负面提示词' })).toHaveProperty('disabled', true);
   expect(screen.getByRole('button', { name: '保存配置' })).toHaveProperty('disabled', true);
   fireEvent.keyDown(window, { key: 'Escape' }); expect(close).not.toHaveBeenCalled(); expect(save).not.toHaveBeenCalled();
   await act(async () => reject(new Error('合成延迟失败')));

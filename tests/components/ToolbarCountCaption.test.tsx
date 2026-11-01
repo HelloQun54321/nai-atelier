@@ -21,7 +21,7 @@ it('数量仅叠放在原顶栏末端，附加行保留且随原把手收起', (
   fireEvent.click(screen.getByRole('button', { name: '收起顶栏' }));
   expect(caption.parentElement?.className).toBe('hidden');
   fireEvent.click(screen.getByRole('button', { name: '展开顶栏' }));
-  expect(caption.parentElement?.className).toBe('contents');
+  expect(caption.parentElement?.className).toBe('flex min-w-0 flex-col md:contents');
   expect(container.querySelector('header')).toBe(header);
 });
 

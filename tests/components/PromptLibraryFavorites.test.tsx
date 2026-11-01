@@ -30,7 +30,8 @@ const saved = (id: string, sourceId?: string, extra = {}) => ({ id, sourceType: 
 const notify = vi.fn();
 function Browser() {
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
-  return <><div ref={setSlot} /><PromptLibraryBrowser chains={chains} directories={directories} toolbarSlot={slot} onUse={vi.fn()} onOpen={vi.fn()} notify={notify} /></>;
+  // 浏览页内的封面与删除动作会走共用确认框，测试也必须在 Provider 内渲染。
+  return <ConfirmDialogProvider><div ref={setSlot} /><PromptLibraryBrowser chains={chains} directories={directories} toolbarSlot={slot} onUse={vi.fn()} onOpen={vi.fn()} notify={notify} /></ConfirmDialogProvider>;
 }
 const managerKey = 'nai-prompt-library-manager-directory';
 function Manager() {

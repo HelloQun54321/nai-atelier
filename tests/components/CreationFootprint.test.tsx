@@ -317,7 +317,7 @@ it('失败的资产分组显示未知，成功读取的空分组仍显示零', a
   await screen.findByText('创作资产');
   await waitFor(() => expect(mocks.getAssets).toHaveBeenCalledOnce());
   expect(screen.getByText('Roll 候选').parentElement!.textContent).toBe('Roll 候选—');
-  expect(screen.getByText('Vibe 分组').parentElement!.textContent).toBe('Vibe 分组0');
+  expect(screen.getByText('氛围参考分组').parentElement!.textContent).toBe('氛围参考分组0');
 });
 
 it('资产摘要先到先显示，不等待收藏加载或助手会话扫描', async () => {

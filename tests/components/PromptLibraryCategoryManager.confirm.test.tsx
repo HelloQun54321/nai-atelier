@@ -16,7 +16,8 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); localSto
 it.each([320, 1280])('宽度 %s：真实确认框在分类编辑层之上，Escape仅取消确认，重命名可点选完成', async width => {
   vi.stubGlobal('innerWidth', width);
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: width < 1280 })));
-  let tree = { revision: 0, nodes: [] as Array<{ id: string; name: string; parentId: string | null }> };
+  // 编辑窗口会先核对分类树里确实存在该节点，测试数据要带上「旧类」这一项。
+  let tree = { revision: 0, nodes: [{ id: '旧类', name: '旧类', parentId: null }] as Array<{ id: string; name: string; parentId: string | null }> };
   mocks.loadTree.mockImplementation(async () => tree); mocks.saveTree.mockImplementation(async next => { tree = { ...next, revision: next.revision + 1 }; return tree; });
   let names = ['旧类'];
   let chains = [{ id: 'combo', ...createCombinationData('组合', { scene: { kind: 'scene', text: 'night', filled: true } }, ['旧类']) }];

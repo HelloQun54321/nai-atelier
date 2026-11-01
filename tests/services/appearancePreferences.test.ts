@@ -45,12 +45,17 @@ describe('appearance preferences', () => {
   });
 
   it('旧偏好及旧主题默认开启卡片效果和选中聚焦，开关分别保存并恢复', () => {
-    expect(normalizeAppearancePreferences({ galleryFrostedCaption: 'false', galleryHoverFloat: null })).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
-    expect(validateAppearancePreset({ name: '旧主题' })).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
+    expect(normalizeAppearancePreferences({ galleryFrostedCaption: 'false', galleryHoverFloat: null })).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, galleryPointerTilt: true, gallerySelectionFocus: true });
+    expect(validateAppearancePreset({ name: '旧主题' })).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, galleryPointerTilt: true, gallerySelectionFocus: true });
     for (const galleryFrostedCaption of [false, true]) for (const galleryHoverFloat of [false, true]) {
       saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, galleryFrostedCaption, galleryHoverFloat });
       expect(loadAppearancePreferences()).toMatchObject({ galleryFrostedCaption, galleryHoverFloat });
       expect(parseAppearancePresetsFromJson(JSON.stringify({ name: '卡片主题', galleryFrostedCaption, galleryHoverFloat }))[0]).toMatchObject({ galleryFrostedCaption, galleryHoverFloat });
+    }
+    for (const galleryPointerTilt of [false, true]) {
+      saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, galleryPointerTilt });
+      expect(loadAppearancePreferences().galleryPointerTilt).toBe(galleryPointerTilt);
+      expect(parseAppearancePresetsFromJson(JSON.stringify({ name: '倾斜主题', galleryPointerTilt }))[0].galleryPointerTilt).toBe(galleryPointerTilt);
     }
     for (const gallerySelectionFocus of [false, true]) {
       saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, gallerySelectionFocus });
@@ -161,6 +166,7 @@ describe('appearance preferences', () => {
       fontScale: 'large',
       galleryFrostedCaption: true,
       galleryHoverFloat: true,
+      galleryPointerTilt: true,
       gallerySelectionFocus: true,
       tagAssistEnabled: false,
       promptInputAutoHeight: true,

@@ -90,7 +90,7 @@ it('加载状态：普通画师目录分页未完成不能显示不可用，真�
   await waitFor(() => expect(mocks.page).toHaveBeenCalled());
   expect(screen.queryByText('画师目录不可用，请在全局设置更新 Tag 词库。')).toBeNull();
   expect(screen.queryByText('没有匹配的画师')).toBeNull();
-  expect(screen.getByText('正在加载画师…')).toBeTruthy();
+  expect(screen.getByText('加载中…')).toBeTruthy();
   await act(async () => fail(new Error('合成分页失败')));
   expect(await screen.findByText('画师目录不可用，请在全局设置更新 Tag 词库。')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '重试' }));
@@ -291,7 +291,7 @@ it('偏好范围读取失败显示状态并可重试，不闪空列表', async (
   setup(); await screen.findByTestId('cover-alpha artist');
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha' } });
   setArtistScope('preferred');
-  expect(screen.getByText('正在读取画师状态…')).toBeTruthy();
+  expect(screen.getByText('加载中…')).toBeTruthy();
   await act(async () => reject(new Error('合成偏好读取失败')));
   expect(screen.getByText('画师状态读取失败')).toBeTruthy();
   expect(screen.queryByText('没有匹配的画师')).toBeNull();
@@ -321,7 +321,7 @@ it('分组资料加载或失败不冒充全库，禁止使用未知分组池随�
   localStorage.setItem('nai_catalog_groups_artist', JSON.stringify({ active: 'g1', expanded: false }));
   groupMocks.ready = false;
   const view = setup();
-  await screen.findByText('正在加载画师…');
+  await screen.findByText('加载中…');
   expect(sampleCards()).toHaveLength(0);
   expect((screen.getByRole('button', { name: '随机选画师' }) as HTMLButtonElement).disabled).toBe(true);
   groupMocks.error = '合成分组读取失败';

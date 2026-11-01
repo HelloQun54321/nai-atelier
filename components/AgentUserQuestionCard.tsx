@@ -26,7 +26,7 @@ export const AgentUserQuestionCard: React.FC<{ request: AgentQuestionRequest; on
     } catch (cause) { setError(cause instanceof Error ? cause.message : t('回答未送达，请重试')); }
     finally { submitting.current = false; setBusy(false); }
   };
-  return <section aria-label={t('助手提问')} className="appearance-group rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 dark:border-indigo-900 dark:bg-indigo-950/30">
+  return <section aria-label={t('助手提问')} className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 dark:border-indigo-900 dark:bg-indigo-950/30">
     <p className="mb-2 text-xs font-bold text-indigo-700 dark:text-indigo-300">{t('等待你回答')}{request.questions.length > 1 ? ` · ${index + 1} / ${request.questions.length}` : ''}</p>
     <fieldset disabled={busy} className="min-w-0 space-y-2">
       <legend className="mb-2 whitespace-pre-wrap text-sm font-medium text-gray-900 dark:text-gray-100">{question.prompt}</legend>

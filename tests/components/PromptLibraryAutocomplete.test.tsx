@@ -156,7 +156,8 @@ it.each(['translation-edit', 'translation-insert'] as const)('@组合在翻译�
   const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
   const startChooser = async (first: boolean) => {
     const zone = within(screen.getByLabelText('提示词中文翻译'));
-    if (mode === 'translation-edit' || !first) fireEvent.doubleClick(zone.getByText(first ? 'old' : '@雨夜'));
+    // 翻译区同一词会有正文与按钮两层文本，取第一处作为双击目标即可冒泡到处理器。
+    if (mode === 'translation-edit' || !first) fireEvent.doubleClick(zone.getAllByText(first ? 'old' : '@雨夜')[0]);
     else fireEvent.click(screen.getByRole('button', { name: '在末尾插入提示词' }));
     const editor = screen.getByRole('combobox', { name: mode === 'translation-insert' && first ? '添加提示词' : '修改提示词' });
     fireEvent.change(editor, { target: { value: 'keep, @雨夜' } });
@@ -236,6 +237,8 @@ it('输入组合名称先预览，取消保留名称，确认后按角色和全�
   expect(input.value).toBe('keep, @雨夜');
   await choose(); fireEvent.click(screen.getByRole('button', { name: '使用' }));
   expect(changed).toHaveBeenCalledOnce();
-  expect(changed.mock.calls[0][0]).toMatchObject({ base: 'keep, ', subject: 'rainy night', params: { _promptSections: { scene: 'rainy night', sectionNegatives: { scene: 'daylight' } }, characters: [{ sections: { wardrobe: 'white dress' }, sectionNegatives: { wardrobe: 'red dress' } }] } });
+  expect(changed.mock.calls[0][0]).toMatchObject({ base: 'keep, ', subject: 'rainy night', params: { _promptSections: { scene: 'rainy night', sectionNegatives: { scene: 'daylight' } } } });
+  // 实验室始终保留一个空白角色桩，应用组合后追加在末尾，这里只核对追加角色的内容。
+  expect(changed.mock.calls[0][0].params.characters.at(-1)!).toMatchObject({ sections: { wardrobe: 'white dress' }, sectionNegatives: { wardrobe: 'red dress' } });
   expect(input.value).toBe('keep, ');
 });

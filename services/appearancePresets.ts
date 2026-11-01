@@ -5,7 +5,7 @@ import { normalizeThemeBackground } from './themeBackground';
 
 export const APPEARANCE_FORMAT_VERSION = 3;
 
-const APPEARANCE_KEYS = ['accentColor', 'themeMode', 'density', 'corners', 'surfaces', 'motion', 'fontScale', 'galleryFrostedCaption', 'galleryHoverFloat', 'gallerySelectionFocus', 'palette', 'details', 'background'] as const;
+const APPEARANCE_KEYS = ['accentColor', 'themeMode', 'density', 'corners', 'surfaces', 'motion', 'fontScale', 'galleryFrostedCaption', 'galleryHoverFloat', 'galleryPointerTilt', 'gallerySelectionFocus', 'palette', 'details', 'background'] as const;
 export const appearanceValues = (value: AppearancePreset | AppearancePreferences): Pick<AppearancePreset, typeof APPEARANCE_KEYS[number]> => ({
   ...Object.fromEntries(APPEARANCE_KEYS.map(key => [key, value[key]])),
   palette: normalizeThemePalettes(value.palette),
@@ -53,6 +53,7 @@ export const validateAppearancePreset = (input: unknown): AppearancePreset | nul
     fontScale,
     galleryFrostedCaption: typeof obj.galleryFrostedCaption === 'boolean' ? obj.galleryFrostedCaption : true,
     galleryHoverFloat: typeof obj.galleryHoverFloat === 'boolean' ? obj.galleryHoverFloat : true,
+    galleryPointerTilt: typeof obj.galleryPointerTilt === 'boolean' ? obj.galleryPointerTilt : true,
     gallerySelectionFocus: typeof obj.gallerySelectionFocus === 'boolean' ? obj.gallerySelectionFocus : true,
     ...(normalizeThemePalettes(obj.palette) ? { palette: normalizeThemePalettes(obj.palette) } : {}),
     ...(normalizeThemeDetails(obj.details) ? { details: normalizeThemeDetails(obj.details) } : {}),

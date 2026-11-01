@@ -1309,7 +1309,7 @@ const LegacyPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   return <div className="prompt-library-hub flex h-full min-h-0 flex-1 flex-col md:flex-row">
     {/* 展开时桌面竖排、手机横排；收起保留分类与内容草稿。 */}
     <nav id={navigationId} hidden={!categoriesExpanded} role="tablist" aria-label={t('提示词分类')} className={categoriesExpanded ? "appearance-panel m-2 flex shrink-0 gap-1 overflow-x-auto rounded-2xl border border-gray-200 p-3 dark:border-gray-800 md:w-52 md:flex-col md:overflow-y-auto" : "hidden"}>
-      <p className="hidden text-xs font-semibold text-gray-500 md:mb-2 md:block md:px-2">{t('提示词分类')}</p>
+      <p className="hidden text-xs font-semibold text-gray-500 dark:text-gray-400 md:mb-2 md:block md:px-2">{t('提示词分类')}</p>
       {LIBRARY_CATEGORIES.map(category => {
         const count=props.chains.filter(chain => category==='all' ? !!fragmentKindOf(chain) : fragmentKindOf(chain)===category).length;
         const label=category==='all' ? '全部' : FRAGMENT_LABELS[category];

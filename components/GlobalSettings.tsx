@@ -1027,7 +1027,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   </div>
                   {([
                     ['galleryFrostedCaption', '全图磨砂卡片', '图片铺满卡片，名称叠在底部渐变磨砂上；关闭后恢复图下信息栏。'],
-                    ['galleryHoverFloat', '卡片悬停浮动', '鼠标经过时轻轻抬起并放大图片；遵循减少或关闭动效设置。'],
+                    ['galleryHoverFloat', '卡片悬停浮动', '鼠标经过时轻轻抬起并放大图片；与指针倾斜互斥，倾斜开启时不抬起。'],
+                    ['galleryPointerTilt', '卡片指针倾斜', '鼠标压在卡片哪一侧，那一侧就随惯性下沉、另一侧翘起；与卡片悬停浮动互斥。'],
                   ] as const).map(([key, label, description]) => <button key={key} type="button" role="switch" aria-checked={appearancePreferences[key]} aria-label={t(label)} onClick={() => updateAppearance({ [key]: !appearancePreferences[key] })} className="appearance-group flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                     <span><span className="block text-sm font-bold">{t(label)}</span><span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t(description)}</span></span>
                     <span aria-hidden="true" className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences[key] ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences[key] ? 'translate-x-5' : 'translate-x-0'}`} /></span>

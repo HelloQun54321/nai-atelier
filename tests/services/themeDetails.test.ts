@@ -40,7 +40,8 @@ describe('可分享的高级主题能力', () => {
       expect(document.documentElement.style.getPropertyValue('--nai-sidebar-opacity')).toBe('70%');
     }
     applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, true);
-    expect(document.documentElement.style.getPropertyValue('--nai-lab-editor-opacity')).toBe('');
+    // 出厂默认主题自带实验室暗度，清除后回到该默认值而不是空。
+  expect(parseFloat(document.documentElement.style.getPropertyValue('--nai-lab-editor-opacity'))).toBeCloseTo((resolveThemeDetails(DEFAULT_APPEARANCE_PREFERENCES.details, true)?.labEditorOpacity ?? 0) * 100, 5);
   });
   it('交付的 Cupertino 示例通过真实导入器，并保留明暗覆盖与可分享参数', () => {
     const [preset] = readAppearancePresetImport(readFileSync('public/themes/cupertino-liquid-glass.json', 'utf8'));
@@ -87,8 +88,16 @@ describe('可分享的高级主题能力', () => {
     expect(root.style.getPropertyValue('--nai-control-shadow')).toBe('0.4');
     expect(root.style.getPropertyValue('--nai-border-opacity')).toBe('');
     applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, false);
-    expect(root.dataset.controlStyle).toBeUndefined();
-    for (const key of ['--nai-panel-opacity', '--nai-sidebar-opacity', '--nai-toolbar-opacity', '--nai-control-shadow']) expect(root.style.getPropertyValue(key)).toBe('');
+    expect(root.dataset.controlStyle).toBe(DEFAULT_APPEARANCE_PREFERENCES.details?.controlStyle);
+    // 出厂默认主题自带分层不透明度与控制阴影，清除覆盖后应回到默认值。
+  const defaultLight = (resolveThemeDetails(DEFAULT_APPEARANCE_PREFERENCES.details, false) ?? {}) as ThemeDetails;
+  for (const key of ['--nai-panel-opacity', '--nai-sidebar-opacity', '--nai-toolbar-opacity', '--nai-control-shadow']) {
+    const current = root.style.getPropertyValue(key);
+    const field = key.replace('--nai-', '').replace(/-([a-z])/g, (_m, letter: string) => letter.toUpperCase()) as keyof ThemeDetails;
+    const expected = defaultLight[field];
+    if (typeof expected === 'number') expect(parseFloat(current)).toBeCloseTo(field === 'controlShadow' ? expected : expected * 100, 4);
+    else expect(current).toBe('');
+  }
     expect(root.style.getPropertyValue('--nai-accent')).toBe(DEFAULT_APPEARANCE_PREFERENCES.accentColor);
   });
   it('所有数字有边界，字体只引用已安装名称，不接受任意 CSS、URL 或脚本', () => {
@@ -128,11 +137,12 @@ describe('可分享的高级主题能力', () => {
     expect(root.dataset.themeRefraction).toBeUndefined();
     expect(root.dataset.motion).toBe('off');
     applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, true);
-    expect(root.style.fontSize).toBe('');
-    expect(root.style.getPropertyValue('--nai-control-height')).toBe('');
-    expect(root.style.getPropertyValue('--workspace-control-radius')).toBe('');
-    expect(root.dataset.themeDetails).toBeUndefined();
-    expect(root.style.getPropertyValue('--nai-glass-refraction')).toBe('');
+    expect(parseFloat(root.style.fontSize)).toBeCloseTo(DEFAULT_APPEARANCE_PREFERENCES.details?.fontSize ?? 16);
+    // 默认主题定义了控件高度，清除自定义覆盖后回到该默认尺寸。
+  expect(parseFloat(root.style.getPropertyValue('--nai-control-height'))).toBeCloseTo(resolveThemeDetails(DEFAULT_APPEARANCE_PREFERENCES.details, true)?.controlHeight ?? 0);
+    expect(parseFloat(root.style.getPropertyValue('--workspace-control-radius'))).toBeCloseTo(resolveThemeDetails(DEFAULT_APPEARANCE_PREFERENCES.details, true)?.controlRadius ?? 0);
+    expect(root.dataset.themeDetails).toBe(DEFAULT_APPEARANCE_PREFERENCES.details ? 'true' : undefined);
+    expect(root.style.getPropertyValue('--nai-glass-refraction')).toBe(String(DEFAULT_APPEARANCE_PREFERENCES.details?.refraction ?? ''));
   });
 
   it('玻璃光照只响应鼠标和完整动效，减少动效与触屏不追踪，清理会移除监听', () => {

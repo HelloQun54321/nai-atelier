@@ -191,12 +191,19 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
   transition: scale 450ms cubic-bezier(.22, 1, .36, 1), opacity 300ms ease, filter 160ms ease, transform 160ms ease;
 }
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  html[data-gallery-hover-float='true'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover {
+  html[data-gallery-hover-float='true'][data-gallery-pointer-tilt='false'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover {
     translate: 0 -3px;
   }
-  html[data-gallery-hover-float='true'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover .mobile-gallery-frame img {
+  html[data-gallery-hover-float='true'][data-gallery-pointer-tilt='false'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover .mobile-gallery-frame img {
     scale: 1.035;
   }
+}
+
+/* 指针倾斜：偏转由 services/pointerTilt.ts 逐帧写入 transform；浮动与倾斜互斥，故倾斜生效时不再抬起。 */
+:is(.gallery-image-card, .media-card)[data-pointer-tilt] {
+  will-change: transform;
+  /* 覆盖卡片自带的 transform 过渡，否则弹簧会被再插值一层而显得拖沓。 */
+  transition-property: filter, box-shadow, border-color;
 }
 
 @theme {

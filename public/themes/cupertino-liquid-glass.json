@@ -12,6 +12,7 @@
       "fontScale": "standard",
       "galleryFrostedCaption": true,
       "galleryHoverFloat": true,
+      "galleryPointerTilt": true,
       "gallerySelectionFocus": true,
       "palette": {
         "light": {

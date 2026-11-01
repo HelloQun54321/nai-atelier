@@ -14,7 +14,7 @@ import {
   readAppearancePresetImport,
 } from '../../services/appearancePreferences';
 import { mixThemeColor, resolveThemePalette, themeAccentColors, themeContrast, themePaletteVariables } from '../../services/themePalette';
-import { resolveThemeDetails } from '../../services/themeDetails';
+import { resolveThemeDetails, type ThemeDetails } from '../../services/themeDetails';
 import { FilterPill } from '../../components/DesignSystem';
 
 const files = ['App.tsx', ...readdirSync('components', { recursive: true })
@@ -58,6 +58,17 @@ const declarations = (selector: string, media?: string, source = generatedCss) =
   return result;
 };
 const hasDarkTextColor = (className: string) => /(?<![\w:-])dark:text-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}|white|black|current|transparent)\b/.test(className);
+// 主题 details 变体自带强调色时优先于 preferences.accentColor；设置页改强调色会清掉变体色，
+// 保存前做同样处理，才能验证「用户手动选的强调色生效」这条路径。
+const withoutDetailAccent = (details?: ThemeDetails): ThemeDetails | undefined => {
+  if (!details) return undefined;
+  const strip = (variant: ThemeDetails['light']) => {
+    if (!variant) return variant;
+    const { accentColor, ...rest } = variant;
+    return rest;
+  };
+  return { ...details, light: strip(details.light), dark: strip(details.dark) };
+};
 let systemDark: boolean;
 let systemReduced: boolean;
 beforeAll(async () => {
@@ -145,7 +156,6 @@ describe('全局外观覆盖审计', () => {
       PromptAgentPanel: 'showSessions', PromptAgentSettings: 'agent-settings-subview',
       AgentModelControl: 'agent-model-popover', AgentPermissionSelect: 'z-[1300]', AgentContextRing: 'agent-context-tooltip',
       TagAutocompleteTextarea: 'touch-pan-y', TagSelectionBar: 'pointer-events-auto',
-      InspirationGallery: 'hover-reveal-md absolute right-1',
       ImageEditCanvas: 'top-2 right-2', GenHistory: 'mobile-safe-bottom fixed', Layout: 'absolute bottom-',
     };
     for (const [file, token] of Object.entries(expected)) {
@@ -376,7 +386,7 @@ describe('全局外观覆盖审计', () => {
       expect(overlay!.text).not.toContain('appearance-group');
       for (const color of colors) expect(overlay!.text).toContain(color);
     }
-    const libraryCopy = classes.find(item => item.file === 'components/PromptLibrary.tsx' && item.text.includes('IMAGE_CARD_ACTION_CLASS'));
+    const libraryCopy = classes.find(item => item.file === 'components/PromptLibraryCard.tsx' && item.text.includes('IMAGE_CARD_ACTION_CLASS'));
     expect(libraryCopy?.text).not.toContain('appearance-group');
     expect(libraryCopy).toBeTruthy();
   });
@@ -830,17 +840,18 @@ describe('全局外观覆盖审计', () => {
     expect(declarations(docked)['padding-right']).toBeUndefined();
   });
 
-  it('磨砂开关实时通知瀑布流，两个卡片开关独立映射到全局样式', () => {
+  it('磨砂开关实时通知瀑布流，三个卡片开关独立映射到全局样式', () => {
     const { result } = renderHook(useGalleryFrostedCaption);
-    for (const galleryFrostedCaption of [false, true]) for (const galleryHoverFloat of [false, true]) {
-      act(() => applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, galleryFrostedCaption, galleryHoverFloat }, false));
+    for (const galleryFrostedCaption of [false, true]) for (const galleryHoverFloat of [false, true]) for (const galleryPointerTilt of [false, true]) {
+      act(() => applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, galleryFrostedCaption, galleryHoverFloat, galleryPointerTilt }, false));
       expect(result.current).toBe(galleryFrostedCaption);
       expect(document.documentElement.dataset.galleryFrostedCaption).toBe(String(galleryFrostedCaption));
       expect(document.documentElement.dataset.galleryHoverFloat).toBe(String(galleryHoverFloat));
+      expect(document.documentElement.dataset.galleryPointerTilt).toBe(String(galleryPointerTilt));
     }
   });
 
-  it('磨砂只叠放图文，悬停浮动仅在鼠标、完整动效与系统允许时启用', () => {
+  it('磨砂只叠放图文，悬停浮动仅在鼠标、完整动效、未启用倾斜与系统允许时启用', () => {
     const enabled = "html[data-gallery-frosted-caption='true']";
     expect(declarations(`${enabled} .gallery-card-visual`, undefined, css).display).toBe('grid');
     expect(declarations(`${enabled} .gallery-card-visual > .gallery-card-caption`, undefined, css)['grid-area']).toBe('1 / 1');
@@ -849,12 +860,16 @@ describe('全局外观覆盖审计', () => {
     expect(frost['mask-image']).toContain('transparent');
     expect(frost['pointer-events']).toBe('none');
     expect(declarations(`${enabled} .gallery-card-caption`, undefined, css)['text-shadow']).toBe('none');
-    const hover = "html[data-gallery-hover-float='true'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover";
+    const hover = "html[data-gallery-hover-float='true'][data-gallery-pointer-tilt='false'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover";
     const media = '(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)';
     expect(declarations(hover, media, css).translate).toBe('0 -3px');
     expect(declarations(`${hover} .mobile-gallery-frame img`, media, css).scale).toBe('1.035');
     expect(declarations(hover, undefined, css)).toEqual({});
     expect(declarations('.media-card:hover', undefined, css).transform).toBeUndefined();
+    // 倾斜期间覆盖卡片自带的 transform 过渡，避免弹簧被二次插值。
+    const tilt = ':is(.gallery-image-card, .media-card)[data-pointer-tilt]';
+    expect(declarations(tilt, undefined, css)['will-change']).toBe('transform');
+    expect(declarations(tilt, undefined, css)['transition-property']).toBe('filter, box-shadow, border-color');
   });
   it('磨砂标题优先于主题白底和文字映射，保留图标语义色及关闭后的普通底栏', () => {
     const root = "html[data-gallery-frosted-caption='true'] .gallery-card-caption";
@@ -990,7 +1005,7 @@ describe('全局外观覆盖审计', () => {
     ['light', true, false], ['dark', false, true], ['system', true, true], ['system', false, false],
   ] as const)('App 挂载前恢复 %s 模式，系统暗色 %s 时根主题为 %s', (themeMode, dark, expected) => {
     systemDark = dark;
-    saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, themeMode, accentColor: '#14b8a6', density: 'compact', corners: 'sharp', surfaces: 'translucent', motion: 'off', fontScale: 'large' });
+    saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, themeMode, accentColor: '#14b8a6', details: withoutDetailAccent(DEFAULT_APPEARANCE_PREFERENCES.details), density: 'compact', corners: 'sharp', surfaces: 'translucent', motion: 'off', fontScale: 'large' });
     restoreAppearancePreferences();
     expect(document.documentElement.classList.contains('dark')).toBe(expected);
     expect(document.documentElement.dataset).toMatchObject({ designTheme: 'nai-atelier', density: 'compact', corners: 'sharp', surfaces: 'translucent', motion: 'off', fontScale: 'large' });
@@ -1000,7 +1015,7 @@ describe('全局外观覆盖审计', () => {
   it('系统变化使用最新保存偏好，门禁与错误边界前即可生效', () => {
     saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, themeMode: 'system' });
     restoreAppearancePreferences(); expect(document.documentElement.classList.contains('dark')).toBe(false);
-    saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, themeMode: 'system', accentColor: '#d97706' });
+    saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, themeMode: 'system', accentColor: '#d97706', details: withoutDetailAccent(DEFAULT_APPEARANCE_PREFERENCES.details) });
     systemDark = true; restoreAppearancePreferences();
     expect(document.documentElement.classList.contains('dark')).toBe(true);
     expect(document.documentElement.style.getPropertyValue('--nai-accent')).toBe('#d97706');
@@ -1012,8 +1027,16 @@ describe('全局外观覆盖审计', () => {
   it('禁止读取本地存储时仍能在 React 挂载前恢复默认主题', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('不可访问', 'SecurityError'); });
     expect(() => restoreAppearancePreferences()).not.toThrow();
-    expect(document.documentElement.dataset).toMatchObject({ designTheme: 'nai-atelier', density: 'standard', corners: 'standard', fontScale: 'standard' });
-    expect(document.documentElement.style.getPropertyValue('--nai-accent')).toBe(DEFAULT_APPEARANCE_PREFERENCES.accentColor);
+    expect(document.documentElement.dataset).toMatchObject({
+      designTheme: 'nai-atelier',
+      density: DEFAULT_APPEARANCE_PREFERENCES.density,
+      corners: DEFAULT_APPEARANCE_PREFERENCES.corners,
+      fontScale: DEFAULT_APPEARANCE_PREFERENCES.fontScale,
+    });
+    // 默认主题自带双模式强调色，回退后的主色应与当前模式解析结果一致。
+    const isDark = document.documentElement.classList.contains('dark');
+    expect(document.documentElement.style.getPropertyValue('--nai-accent'))
+      .toBe(resolveThemeDetails(DEFAULT_APPEARANCE_PREFERENCES.details, isDark)?.accentColor || DEFAULT_APPEARANCE_PREFERENCES.accentColor);
   });
 
   it('未授权访问页沿用已恢复主题，密码输入与连接失败面板具备两套色阶', async () => {
@@ -1063,9 +1086,12 @@ it('文件夹复用固定面板避让，只有手机展开目录抵消相邻滚�
   });
   expect(declarations('.workspace-category-navigation:not([hidden]) + .workspace-scroll-viewport', '(max-width: 767px)', source)).toEqual({});
   const component = readFileSync('components/chain/ChainFolders.tsx', 'utf8');
-  expect(component).toContain('workspace-fixed-pane chain-folder-navigation appearance-panel min-h-0');
-  expect(component).toContain('workspace-category-navigation');
+  expect(component).toContain('chain-folder-navigation');
+  // 面板容器统一由 DirectoryTreeNavigation 渲染，固定面板避让与手机抵消顶栏的类名跟着它一起存在。
+  const navigation = readFileSync('components/DirectoryTreeNavigation.tsx', 'utf8');
+  expect(navigation).toContain('workspace-category-navigation appearance-panel workspace-fixed-pane');
+  expect(navigation).toContain('md:w-52');
+  expect(navigation).toContain('md:overflow-y-auto');
   const collection = readFileSync('components/InspirationGallery.tsx', 'utf8');
   expect(collection).toContain('workspace-category-navigation');
-  expect(component).toContain('md:overflow-y-auto');
 });

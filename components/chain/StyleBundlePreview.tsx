@@ -49,8 +49,8 @@ function BundleEntryCard({ preview, id, selected, imported, disabled, failure, o
     </MediaCardShell>
     <details open={expanded} onToggle={event => { setExpandedPreview(event.currentTarget.open ? preview : undefined); if (!event.currentTarget.open) setDescriptionPreview(undefined); }} className="text-xs text-gray-600 dark:text-gray-300">
       <summary className="mobile-touch cursor-pointer rounded-lg px-2 py-1.5 font-semibold">{t('配方详情')}</summary>
-      {expanded && <div className="space-y-2 px-2 pb-2"><pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-100 p-3 font-mono dark:bg-gray-800">{JSON.stringify({ ...entry, coverBlob: undefined, description: undefined }, null, 2)}</pre>
-        {description && <details open={descriptionExpanded} onToggle={event => setDescriptionPreview(event.currentTarget.open ? preview : undefined)}><summary className="mobile-touch cursor-pointer py-1.5 font-semibold">{t('原始描述')}</summary>{descriptionExpanded && <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-100 p-3 dark:bg-gray-800">{description}</pre>}</details>}
+      {expanded && <div className="space-y-2 px-2 pb-2"><pre className="appearance-media max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-100 p-3 font-mono dark:bg-gray-800">{JSON.stringify({ ...entry, coverBlob: undefined, description: undefined }, null, 2)}</pre>
+        {description && <details open={descriptionExpanded} onToggle={event => setDescriptionPreview(event.currentTarget.open ? preview : undefined)}><summary className="mobile-touch cursor-pointer py-1.5 font-semibold">{t('原始描述')}</summary>{descriptionExpanded && <pre className="appearance-media max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-100 p-3 dark:bg-gray-800">{description}</pre>}</details>}
       </div>}
     </details>
     {failure && <p role="alert" className="break-words text-xs text-red-600 dark:text-red-400">{t(failure)}</p>}

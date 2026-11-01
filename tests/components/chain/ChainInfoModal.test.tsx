@@ -242,6 +242,8 @@ describe('卡片信息编辑', () => {
     fireEvent.click(await screen.findByRole('option', { name: /masterpiece/ }));
     const translation = within(positiveGroup).getByLabelText('提示词中文翻译');
     expect(await within(translation).findByText('杰作')).toBeTruthy();
+    // 末尾插入点先是一个占位按钮，点开后才变成输入框。
+    fireEvent.click(within(positiveGroup).getByRole('button', { name: '在末尾插入提示词' }));
     const append = within(positiveGroup).getByRole('combobox', { name: '添加提示词' });
     fireEvent.change(append, { target: { value: 'red coat' } }); fireEvent.keyDown(append, { key: 'Enter' });
     await within(translation).findByRole('button', { name: /red coat/ });

@@ -87,7 +87,10 @@ describe('历史控件主题链路', () => {
     setup(); fireEvent.click(screen.getByRole('button', { name: '更多筛选 1' }));
     fireEvent.change(screen.getByPlaceholderText('可选关键词…'), { target: { value: '未应用草稿' } });
     const panel = screen.getByRole('dialog', { name: '更多筛选' });
-    await act(async () => applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, accentColor: '#14b8a6', density: 'compact', corners: 'sharp', surfaces: 'translucent', motion: 'off', fontScale: 'large' }, true));
+      // 默认主题的 details 自带双模式强调色；设置页改强调色会清掉变体色，这里保持同样前提。
+  const baseDetails = DEFAULT_APPEARANCE_PREFERENCES.details;
+  const noAccentDetails = baseDetails ? { ...baseDetails, light: { ...baseDetails.light, accentColor: undefined }, dark: { ...baseDetails.dark, accentColor: undefined } } : undefined;
+  await act(async () => applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, accentColor: '#14b8a6', details: noAccentDetails, density: 'compact', corners: 'sharp', surfaces: 'translucent', motion: 'off', fontScale: 'large' }, true));
     expect(document.documentElement.classList.contains('dark')).toBe(true);
     expect(document.documentElement.style.getPropertyValue('--nai-accent')).toBe('#14b8a6');
     expect(document.documentElement.dataset).toMatchObject({ density: 'compact', corners: 'sharp', surfaces: 'translucent', motion: 'off', fontScale: 'large' });

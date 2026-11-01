@@ -68,7 +68,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); delete document.documentElem
 const setup = async () => {
   const notify = vi.fn();
   const view = render(<DanbooruGallery active currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={vi.fn()} />);
-  await waitFor(() => expect(screen.queryByText('正在读取 Danbooru…')).toBeNull());
+  await waitFor(() => expect(document.querySelector('[data-page-spinner]')).toBeNull());
   return { ...view, notify };
 };
 it('首次首屏请求等待中不显示空结果，成功空结果与失败保持不同反馈', async () => {
@@ -76,7 +76,7 @@ it('首次首屏请求等待中不显示空结果，成功空结果与失败保�
   search.mockReturnValue(new Promise(done => { resolveSearch = done; }));
   const notify = vi.fn();
   const view = render(<DanbooruGallery active currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={vi.fn()} />);
-  expect(screen.getByText('正在读取 Danbooru…')).toBeTruthy();
+  expect(document.querySelector('[data-page-spinner]')).toBeTruthy();
   expect(screen.queryByText('没有找到匹配图片')).toBeNull();
   await act(async () => resolveSearch(result()));
   await screen.findByText('没有找到匹配图片');

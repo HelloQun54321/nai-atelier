@@ -35,8 +35,8 @@ const combination = { id: 'synthetic-combination', type: 'preset', name: '合成
 it.each([1280, 390])('%spx 组合封面选择位于管理窗口上方，关闭只退出选图，保存沿用原回调', async width => {
   vi.stubGlobal('innerWidth', width);
   const close = vi.fn(), save = vi.fn(async () => {});
-  render(<LibraryDialog title="管理提示词" onClose={close}><ContentRollLibrary active embedded chains={[combination]} notify={vi.fn()}
-    onLoad={vi.fn()} onRename={vi.fn(async () => {})} onDelete={vi.fn(async () => {})} onSetCover={save} /></LibraryDialog>);
+  render(<ConfirmDialogProvider><LibraryDialog title="管理提示词" onClose={close}><ContentRollLibrary active embedded chains={[combination]} notify={vi.fn()}
+    onLoad={vi.fn()} onRename={vi.fn(async () => {})} onDelete={vi.fn(async () => {})} onSetCover={save} /></LibraryDialog></ConfirmDialogProvider>);
   fireEvent.click(screen.getByRole('button', { name: '查看合成组合' }));
   fireEvent.click(screen.getByRole('button', { name: '从历史选封面' }));
   const picker = await screen.findByRole('dialog', { name: '选择历史图片' });

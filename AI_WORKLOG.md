@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-01
+- **DeepSeek Harness (deepseek-v4.1-flash)**：新增卡片指针倾斜（弹簧阻尼、与悬停浮动互斥、独立外观开关）；补齐封面生成等 7 处缺失译文；按当前实现修复 33 项过期回归（加载文案统一、Tag 输入控件角色、默认主题基准、确认框 Provider、外观审计）；清理 tests/.tmp 历史临时目录。
 - **Cursor (Composer)**：瀑布流首帧同步量宽，避免风格串先闪「加载更多」再出卡片。
 - **Cursor (Composer)**：PageSpinner 锚定 `.app-workspace` 正中，避免顶栏挂载时圆圈上跳。
 - **Cursor (Composer)**：修正加载居中与文案：Suspense／首读同一套「加载中…」，去掉工作区→页面名二次闪现。

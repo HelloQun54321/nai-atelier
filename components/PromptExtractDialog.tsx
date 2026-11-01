@@ -815,10 +815,10 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
                       <details className="mt-1">
                         <summary className="cursor-pointer text-gray-500 dark:text-gray-400">{t('查看图片内嵌提示词')}</summary>
                         {stored.globalPrompt && (
-                          <p className="mt-1 break-words rounded-lg bg-gray-50 p-2 font-mono! text-micro text-gray-600 dark:bg-gray-800 dark:text-gray-300">{stored.globalPrompt}</p>
+                          <p className="appearance-media mt-1 break-words rounded-lg bg-gray-50 p-2 font-mono! text-micro text-gray-600 dark:bg-gray-800 dark:text-gray-300">{stored.globalPrompt}</p>
                         )}
                         {stored.characters.map(entry => (
-                          <div key={entry.label} data-extract-character={entry.label} className="mt-1 rounded-lg bg-gray-50 p-2 dark:bg-gray-800">
+                          <div key={entry.label} data-extract-character={entry.label} className="appearance-media mt-1 rounded-lg bg-gray-50 p-2 dark:bg-gray-800">
                             <p className="text-micro font-semibold text-gray-600 dark:text-gray-300">{entry.label}</p>
                             <p className="break-words font-mono! text-micro text-gray-600 dark:text-gray-300">{entry.prompt}</p>
                             {entry.negative && <p className="mt-1 break-words text-micro text-gray-400">{t('角色负面：{0}', [entry.negative])}</p>}

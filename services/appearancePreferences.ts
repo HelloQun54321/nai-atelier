@@ -95,6 +95,7 @@ export interface AppearancePreset {
   fontScale: FontScale;
   galleryFrostedCaption: boolean;
   galleryHoverFloat: boolean;
+  galleryPointerTilt: boolean;
   gallerySelectionFocus: boolean;
   palette?: ThemePalettes;
   details?: ThemeDetails;
@@ -116,6 +117,7 @@ export const BUILTIN_APPEARANCE_PRESET: AppearancePreset = {
   fontScale: 'standard',
   galleryFrostedCaption: true,
   galleryHoverFloat: true,
+  galleryPointerTilt: true,
   gallerySelectionFocus: true,
 };
 
@@ -146,6 +148,8 @@ export interface AppearancePreferences {
   fontScale: FontScale;
   galleryFrostedCaption: boolean;
   galleryHoverFloat: boolean;
+  /** 卡片随鼠标偏转带重量的 3D 倾斜；开启时卡片悬停浮动不再抬起，避免两套位移互相干扰。 */
+  galleryPointerTilt: boolean;
   /** 选中作品时垂直居中并淡化其他卡片。 */
   gallerySelectionFocus: boolean;
   tagAssistEnabled: boolean;
@@ -249,6 +253,7 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     fontScale: isOneOf(input.fontScale, ['small', 'standard', 'large']) ? input.fontScale : DEFAULT_APPEARANCE_PREFERENCES.fontScale,
     galleryFrostedCaption: typeof input.galleryFrostedCaption === 'boolean' ? input.galleryFrostedCaption : DEFAULT_APPEARANCE_PREFERENCES.galleryFrostedCaption,
     galleryHoverFloat: typeof input.galleryHoverFloat === 'boolean' ? input.galleryHoverFloat : DEFAULT_APPEARANCE_PREFERENCES.galleryHoverFloat,
+    galleryPointerTilt: typeof input.galleryPointerTilt === 'boolean' ? input.galleryPointerTilt : DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTilt,
     gallerySelectionFocus: typeof input.gallerySelectionFocus === 'boolean' ? input.gallerySelectionFocus : DEFAULT_APPEARANCE_PREFERENCES.gallerySelectionFocus,
     tagAssistEnabled: typeof input.tagAssistEnabled === 'boolean'
       ? input.tagAssistEnabled
@@ -344,6 +349,7 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences, i
   const captionChanged = root.dataset.galleryFrostedCaption !== String(preferences.galleryFrostedCaption);
   root.dataset.galleryFrostedCaption = String(preferences.galleryFrostedCaption);
   root.dataset.galleryHoverFloat = String(preferences.galleryHoverFloat);
+  root.dataset.galleryPointerTilt = String(preferences.galleryPointerTilt);
   const inputAutoChanged = root.dataset.promptInputAutoHeight !== String(preferences.promptInputAutoHeight);
   const translationAutoChanged = root.dataset.promptTranslationAutoHeight !== String(preferences.promptTranslationAutoHeight);
   root.dataset.promptInputAutoHeight = String(preferences.promptInputAutoHeight);
