@@ -150,6 +150,10 @@ export interface AppearancePreferences {
   galleryHoverFloat: boolean;
   /** 卡片随鼠标偏转带重量的 3D 倾斜；开启时卡片悬停浮动不再抬起，避免两套位移互相干扰。 */
   galleryPointerTilt: boolean;
+  /** 倾斜的最大偏转角（度）。本端交互偏好，不写入外观预设；0 等同关闭。 */
+  galleryPointerTiltAngle: number;
+  /** 倾斜的重量感 0-100：越大跟进越慢、回弹越沉。本端交互偏好，不写入外观预设。 */
+  galleryPointerTiltWeight: number;
   /** 选中作品时垂直居中并淡化其他卡片。 */
   gallerySelectionFocus: boolean;
   tagAssistEnabled: boolean;
@@ -177,12 +181,19 @@ export interface AppearancePreferences {
   activePresetId?: string;
 }
 
+/** 指针倾斜角度（度）：0 等同关闭，上限避免卡片明显畸变。 */
+export const POINTER_TILT_ANGLE = { min: 0, max: 14, step: 1, default: 7 } as const;
+/** 指针倾斜重量感 0-100：0 轻快跟手，100 沉稳回弹慢。 */
+export const POINTER_TILT_WEIGHT = { min: 0, max: 100, step: 5, default: 50 } as const;
+
 const STORAGE_KEY = 'nai_appearance_preferences';
 const LEGACY_THEME_KEY = 'nai_theme';
 /** 新安装出厂外观：Cupertino Liquid Glass 深色；已有本端保存的外观不被覆盖。 */
 export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   designTheme: 'nai-atelier',
   ...factoryVisuals,
+  galleryPointerTiltAngle: POINTER_TILT_ANGLE.default,
+  galleryPointerTiltWeight: POINTER_TILT_WEIGHT.default,
   tagAssistEnabled: true,
   promptInputAutoHeight: true,
   labSectionedPrompt: false,
@@ -200,6 +211,14 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
 
 const isOneOf = <T extends string>(value: unknown, values: readonly T[]): value is T =>
   typeof value === 'string' && values.includes(value as T);
+
+/** 数值偏好按步长吸附并夹在范围内；非法值回退默认。 */
+const clampNumeric = (value: unknown, spec: { min: number; max: number; step: number; default: number }) => {
+  const number = typeof value === 'number' && Number.isFinite(value) ? value : Number.NaN;
+  if (!Number.isFinite(number)) return spec.default;
+  const snapped = Math.round((number - spec.min) / spec.step) * spec.step + spec.min;
+  return Math.min(spec.max, Math.max(spec.min, Number(snapped.toFixed(3))));
+};
 
 const normalizeLabPageLayout = (value: unknown, defaults: LabPageLayout): LabPageLayout => {
   const input = value && typeof value === 'object' ? value as Partial<LabPageLayout> : {};
@@ -254,6 +273,8 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     galleryFrostedCaption: typeof input.galleryFrostedCaption === 'boolean' ? input.galleryFrostedCaption : DEFAULT_APPEARANCE_PREFERENCES.galleryFrostedCaption,
     galleryHoverFloat: typeof input.galleryHoverFloat === 'boolean' ? input.galleryHoverFloat : DEFAULT_APPEARANCE_PREFERENCES.galleryHoverFloat,
     galleryPointerTilt: typeof input.galleryPointerTilt === 'boolean' ? input.galleryPointerTilt : DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTilt,
+    galleryPointerTiltAngle: clampNumeric(input.galleryPointerTiltAngle, POINTER_TILT_ANGLE),
+    galleryPointerTiltWeight: clampNumeric(input.galleryPointerTiltWeight, POINTER_TILT_WEIGHT),
     gallerySelectionFocus: typeof input.gallerySelectionFocus === 'boolean' ? input.gallerySelectionFocus : DEFAULT_APPEARANCE_PREFERENCES.gallerySelectionFocus,
     tagAssistEnabled: typeof input.tagAssistEnabled === 'boolean'
       ? input.tagAssistEnabled
@@ -350,6 +371,11 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences, i
   root.dataset.galleryFrostedCaption = String(preferences.galleryFrostedCaption);
   root.dataset.galleryHoverFloat = String(preferences.galleryHoverFloat);
   root.dataset.galleryPointerTilt = String(preferences.galleryPointerTilt);
+  const tiltAngleChanged = root.style.getPropertyValue('--nai-pointer-tilt') !== String(preferences.galleryPointerTiltAngle);
+  const tiltWeightChanged = root.style.getPropertyValue('--nai-pointer-tilt-weight') !== String(preferences.galleryPointerTiltWeight);
+  root.style.setProperty('--nai-pointer-tilt', String(preferences.galleryPointerTiltAngle));
+  root.style.setProperty('--nai-pointer-tilt-weight', String(preferences.galleryPointerTiltWeight));
+  if (tiltAngleChanged || tiltWeightChanged) window.dispatchEvent(new Event('nai-pointer-tilt-change'));
   const inputAutoChanged = root.dataset.promptInputAutoHeight !== String(preferences.promptInputAutoHeight);
   const translationAutoChanged = root.dataset.promptTranslationAutoHeight !== String(preferences.promptTranslationAutoHeight);
   root.dataset.promptInputAutoHeight = String(preferences.promptInputAutoHeight);

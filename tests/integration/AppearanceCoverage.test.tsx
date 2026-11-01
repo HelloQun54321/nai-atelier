@@ -840,6 +840,23 @@ describe('全局外观覆盖审计', () => {
     expect(declarations(docked)['padding-right']).toBeUndefined();
   });
 
+  it('指针倾斜参数作为本端滑块暴露，并写入根节点 CSS 变量', () => {
+    const settings = readFileSync(resolve('components/GlobalSettings.tsx'), 'utf8');
+    expect(settings).toContain("aria-label={t('倾斜角度')}");
+    expect(settings).toContain("aria-label={t('倾斜重量感')}");
+    expect(settings).toContain('min={POINTER_TILT_ANGLE.min}');
+    expect(settings).toContain('max={POINTER_TILT_WEIGHT.max}');
+    // 角度 0 等同关闭的边界写在引擎里，滑条才能安全暴露到 0。
+    const engine = readFileSync(resolve('services/pointerTilt.ts'), 'utf8');
+    expect(engine).toContain("getPropertyValue('--nai-pointer-tilt-weight')");
+    expect(engine).toContain('if (max <= 0) { release(); return; }');
+    const service = readFileSync(resolve('services/appearancePreferences.ts'), 'utf8');
+    expect(service).toContain("setProperty('--nai-pointer-tilt'");
+    expect(service).toContain('nai-pointer-tilt-change');
+    act(() => applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, galleryPointerTiltAngle: 4, galleryPointerTiltWeight: 80 }, false));
+    expect(document.documentElement.style.getPropertyValue('--nai-pointer-tilt')).toBe('4');
+    expect(document.documentElement.style.getPropertyValue('--nai-pointer-tilt-weight')).toBe('80');
+  });
   it('磨砂开关实时通知瀑布流，三个卡片开关独立映射到全局样式', () => {
     const { result } = renderHook(useGalleryFrostedCaption);
     for (const galleryFrostedCaption of [false, true]) for (const galleryHoverFloat of [false, true]) for (const galleryPointerTilt of [false, true]) {

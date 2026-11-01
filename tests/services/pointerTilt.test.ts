@@ -33,6 +33,9 @@ describe('卡片指针倾斜', () => {
     vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
     document.documentElement.dataset.motion = 'full';
     delete document.documentElement.dataset.galleryPointerTilt;
+    // 角度与重量感是 CSS 变量，跨用例必须显式复位，否则上一个用例的设置会漏到下一个。
+    document.documentElement.style.removeProperty('--nai-pointer-tilt');
+    document.documentElement.style.removeProperty('--nai-pointer-tilt-weight');
     card = document.createElement('article');
     card.className = 'gallery-image-card';
     card.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 100, right: 200, bottom: 100, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
@@ -151,5 +154,51 @@ describe('卡片指针倾斜', () => {
     move(190, 50);
     flush(2);
     expect(card.style.transform).toBe('');
+  });
+
+  it('角度设为 0 时不接管指针', () => {
+    document.documentElement.style.setProperty('--nai-pointer-tilt', '0');
+    const { flush } = installFrames();
+    cleanup = initPointerTilt();
+    move(180, 50);
+    flush(2);
+    expect(card.style.transform).toBe('');
+    expect(card.dataset.pointerTilt).toBeUndefined();
+  });
+
+  it('重量感越大，首帧跟随越慢', () => {
+    const sample = (weight: string) => {
+      document.documentElement.style.setProperty('--nai-pointer-tilt-weight', weight);
+      card.style.removeProperty('transform');
+      delete card.dataset.pointerTilt;
+      const { flush } = installFrames();
+      const stop = initPointerTilt();
+      move(190, 50);
+      flush(1);
+      const value = angleOf(card, 'rotateY') ?? 0;
+      stop();
+      card.style.removeProperty('transform');
+      delete card.dataset.pointerTilt;
+      return value;
+    };
+    const light = sample('0');
+    const heavy = sample('100');
+    expect(light).toBeGreaterThan(heavy);
+    expect(heavy).toBeGreaterThan(0);
+  });
+
+  it('修改角度后已悬停的卡片立即换用新角度', () => {
+    const { flush } = installFrames();
+    cleanup = initPointerTilt();
+    move(190, 50);
+    flush(20);
+    const before = angleOf(card, 'rotateY')!;
+    document.documentElement.style.setProperty('--nai-pointer-tilt', '3');
+    window.dispatchEvent(new Event('nai-pointer-tilt-change'));
+    move(190, 50);
+    flush(20);
+    const after = angleOf(card, 'rotateY')!;
+    expect(after).toBeLessThan(before);
+    expect(after).toBeLessThan(3.5);
   });
 });

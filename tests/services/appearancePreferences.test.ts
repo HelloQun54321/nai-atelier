@@ -167,6 +167,8 @@ describe('appearance preferences', () => {
       galleryFrostedCaption: true,
       galleryHoverFloat: true,
       galleryPointerTilt: true,
+      galleryPointerTiltAngle: 7,
+      galleryPointerTiltWeight: 50,
       gallerySelectionFocus: true,
       tagAssistEnabled: false,
       promptInputAutoHeight: true,
@@ -229,7 +231,7 @@ describe('appearance preferences', () => {
       labPageLayouts: cloneDefaultLabPageLayouts(),
       generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES },
     });
-    saveAppearancePreferences({ ...BUILTIN_APPEARANCE_PRESET, designTheme: 'nai-atelier', tagAssistEnabled: true, promptInputAutoHeight: true, labSectionedPrompt: false, promptTranslationAutoHeight: true, generationStreamPreview: false, rememberGenerationSettings: true, generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES }, continuousGenerationEnabled: true, forceEmptySeed: false, enforceFreeStepLimit: true, labPageLayouts: cloneDefaultLabPageLayouts(), customPresets: [], activePresetId: 'builtin-default' });
+    saveAppearancePreferences({ ...BUILTIN_APPEARANCE_PRESET, galleryPointerTiltAngle: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltAngle, galleryPointerTiltWeight: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltWeight, designTheme: 'nai-atelier', tagAssistEnabled: true, promptInputAutoHeight: true, labSectionedPrompt: false, promptTranslationAutoHeight: true, generationStreamPreview: false, rememberGenerationSettings: true, generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES }, continuousGenerationEnabled: true, forceEmptySeed: false, enforceFreeStepLimit: true, labPageLayouts: cloneDefaultLabPageLayouts(), customPresets: [], activePresetId: 'builtin-default' });
     expect(loadAppearancePreferences().activePresetId).toBe('builtin-default');
     expect(loadAppearancePreferences().surfaces).toBe('solid');
     expect(loadAppearancePreferences().palette).toBeUndefined();
@@ -386,5 +388,18 @@ describe('appearance preferences', () => {
       { name: '错误模式', palette: { system: { panel: '#ffffff' } } },
       { version: 2, presets: [] },
     ]) expect(() => readAppearancePresetImport(JSON.stringify(input))).toThrow();
+  });
+
+  it('指针倾斜角度与重量感按范围夹取、按步长吸附并持久化', () => {
+    expect(normalizeAppearancePreferences({}).galleryPointerTiltAngle).toBe(7);
+    expect(normalizeAppearancePreferences({}).galleryPointerTiltWeight).toBe(50);
+    expect(normalizeAppearancePreferences({ galleryPointerTiltAngle: 99 }).galleryPointerTiltAngle).toBe(14);
+    expect(normalizeAppearancePreferences({ galleryPointerTiltAngle: -5 }).galleryPointerTiltAngle).toBe(0);
+    expect(normalizeAppearancePreferences({ galleryPointerTiltAngle: 3.4 }).galleryPointerTiltAngle).toBe(3);
+    expect(normalizeAppearancePreferences({ galleryPointerTiltWeight: 1000 }).galleryPointerTiltWeight).toBe(100);
+    expect(normalizeAppearancePreferences({ galleryPointerTiltWeight: 73 }).galleryPointerTiltWeight).toBe(75);
+    expect(normalizeAppearancePreferences({ galleryPointerTiltAngle: 'nope', galleryPointerTiltWeight: null })).toMatchObject({ galleryPointerTiltAngle: 7, galleryPointerTiltWeight: 50 });
+    saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, galleryPointerTiltAngle: 3, galleryPointerTiltWeight: 90 });
+    expect(loadAppearancePreferences()).toMatchObject({ galleryPointerTiltAngle: 3, galleryPointerTiltWeight: 90 });
   });
 });

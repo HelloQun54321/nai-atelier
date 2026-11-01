@@ -54,6 +54,8 @@ import {
   readAppearancePresetImport,
   serializeAppearancePresets,
   saveAppearancePreferences,
+  POINTER_TILT_ANGLE,
+  POINTER_TILT_WEIGHT,
   SurfaceStyle,
   ThemeMode,
 } from '../services/appearancePreferences';
@@ -1033,6 +1035,19 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     <span><span className="block text-sm font-bold">{t(label)}</span><span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t(description)}</span></span>
                     <span aria-hidden="true" className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences[key] ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences[key] ? 'translate-x-5' : 'translate-x-0'}`} /></span>
                   </button>)}
+                  {appearancePreferences.galleryPointerTilt && <div className="appearance-group rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+                    {(() => {
+                      const tiltDisabled = appearancePreferences.motion !== 'full';
+                      const angle = appearancePreferences.galleryPointerTiltAngle;
+                      const weight = appearancePreferences.galleryPointerTiltWeight;
+                      const weightLabel = t(weight <= 25 ? '轻快' : weight >= 75 ? '沉稳' : '标准');
+                      return <>
+                        <label className="block text-meta text-gray-600 dark:text-gray-300">{t('倾斜角度')} · {angle}°<input aria-label={t('倾斜角度')} type="range" min={POINTER_TILT_ANGLE.min} max={POINTER_TILT_ANGLE.max} step={POINTER_TILT_ANGLE.step} value={angle} disabled={tiltDisabled} onChange={event => updateAppearance({ galleryPointerTiltAngle: Number(event.target.value) })} className="mt-2 block w-full accent-[var(--nai-accent)] disabled:cursor-not-allowed disabled:opacity-45" /></label>
+                        <label className="mt-3 block text-meta text-gray-600 dark:text-gray-300">{t('倾斜重量感')} · {weightLabel}<input aria-label={t('倾斜重量感')} aria-valuetext={weightLabel} type="range" min={POINTER_TILT_WEIGHT.min} max={POINTER_TILT_WEIGHT.max} step={POINTER_TILT_WEIGHT.step} value={weight} disabled={tiltDisabled} onChange={event => updateAppearance({ galleryPointerTiltWeight: Number(event.target.value) })} className="mt-2 block w-full accent-[var(--nai-accent)] disabled:cursor-not-allowed disabled:opacity-45" /></label>
+                        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{tiltDisabled ? t('动效设为「减少」或「关闭」时倾斜不生效。') : t('角度 0° 等同关闭；只在实际鼠标设备上生效。')}</p>
+                      </>;
+                    })()}
+                  </div>}
                 </div>
 
                 <AppearanceBackgroundEditor key={activePresetId} mode={backgroundMode} onModeChange={setBackgroundMode}

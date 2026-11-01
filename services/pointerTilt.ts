@@ -4,11 +4,14 @@
 
 const CARD_SELECTOR = '.gallery-image-card, .media-card';
 const PERSPECTIVE = '900px';
-const STIFFNESS = .16;   // 弹簧刚度：越小越沉
-const DAMPING = .74;     // 阻尼：越大回落越慢
+// 重量感 0-100 线性映射：0 轻快跟手（高刚度、低阻尼），100 沉稳（低刚度、高阻尼）。
+const STIFFNESS_LIGHT = .26, STIFFNESS_HEAVY = .10;
+const DAMPING_LIGHT = .62, DAMPING_HEAVY = .82;
+const DEFAULT_WEIGHT = 50;
 const REST = .015;       // 静止阈值，低于此值直接释放
 const MAX_SHIFT = 2;     // 随鼠标平移的上限（px），强化“被吸住”的重量感
-const DEFAULT_TILT = 7;  // 默认最大偏转角，可用 CSS 变量 --nai-pointer-tilt 覆盖
+const DEFAULT_TILT = 7;  // 最大偏转角兜底值，正常由 --nai-pointer-tilt 提供
+const MAX_TILT = 18;     // 角度上限，再大就会明显畸变
 
 interface Pair { x: number; y: number }
 const zero = (): Pair => ({ x: 0, y: 0 });
@@ -25,12 +28,25 @@ export const initPointerTilt = () => {
   let box: DOMRect | null = null;
   let pointer: Pair | null = null;
   let max = DEFAULT_TILT;
+  let stiffness = STIFFNESS_LIGHT - (STIFFNESS_LIGHT - STIFFNESS_HEAVY) / 2;
+  let damping = DAMPING_LIGHT + (DAMPING_HEAVY - DAMPING_LIGHT) / 2;
   let target = zero();
   let current = zero();
   let velocity = zero();
   let frame = 0;
   // 快速划过时上一张卡片还在淡出，集中登记以便重新悬停时复用。
   const fading = new Set<HTMLElement>();
+
+  /** 读取用户设置的角度与重量感；角度为 0 表示关闭。 */
+  const readTuning = () => {
+    const style = getComputedStyle(root);
+    const angle = parseFloat(style.getPropertyValue('--nai-pointer-tilt'));
+    max = Number.isFinite(angle) ? Math.min(Math.max(angle, 0), MAX_TILT) : DEFAULT_TILT;
+    const weight = parseFloat(style.getPropertyValue('--nai-pointer-tilt-weight'));
+    const ratio = (Number.isFinite(weight) ? Math.min(Math.max(weight, 0), 100) : DEFAULT_WEIGHT) / 100;
+    stiffness = STIFFNESS_LIGHT - (STIFFNESS_LIGHT - STIFFNESS_HEAVY) * ratio;
+    damping = DAMPING_LIGHT + (DAMPING_HEAVY - DAMPING_LIGHT) * ratio;
+  };
 
   const release = () => {
     cancelAnimationFrame(frame); frame = 0;
@@ -50,10 +66,10 @@ export const initPointerTilt = () => {
     frame = 0;
     if (!card) return;
     if (!card.isConnected) { release(); return; }
-    // 半隐式欧拉：先按刚度逼近期望角，再按阻尼衰减速度。
+    // 半隐式欧拉：先按刚度逼近期望角，再按阻尼衰减速度。刚度和阻尼跟随重量感设置。
     velocity = {
-      x: (velocity.x + (target.x - current.x) * STIFFNESS) * DAMPING,
-      y: (velocity.y + (target.y - current.y) * STIFFNESS) * DAMPING,
+      x: (velocity.x + (target.x - current.x) * stiffness) * damping,
+      y: (velocity.y + (target.y - current.y) * stiffness) * damping,
     };
     current = { x: current.x + velocity.x, y: current.y + velocity.y };
     paint();
@@ -85,8 +101,7 @@ export const initPointerTilt = () => {
     card = next;
     next.dataset.pointerTilt = 'true';
     box = next.getBoundingClientRect();
-    const configured = parseFloat(getComputedStyle(root).getPropertyValue('--nai-pointer-tilt'));
-    max = Number.isFinite(configured) && configured > 0 ? Math.min(configured, 18) : DEFAULT_TILT;
+    readTuning();
     current = zero(); velocity = zero();
   };
 
@@ -97,7 +112,11 @@ export const initPointerTilt = () => {
       if (pointer) { pointer = null; target = zero(); box = null; schedule(); }
       return;
     }
-    if (element !== card) adopt(element);
+    if (element !== card) {
+      adopt(element);
+      // 角度设为 0 时视为关闭，不再接管指针。
+      if (max <= 0) { release(); return; }
+    }
     // 悬停期间卡片尺寸不变，矩形只缓存一次，避免每帧读取布局。
     if (!box || !box.width || !box.height) box = element.getBoundingClientRect();
     if (!box.width || !box.height) return;
@@ -114,6 +133,12 @@ export const initPointerTilt = () => {
   const leave = () => { if (!card) return; pointer = null; target = zero(); box = null; schedule(); };
   const visibility = () => { if (document.hidden) release(); };
   const motion = () => { if (!active()) release(); };
+  // 拖动角度／重量感滑条时立即换用新参数，无需重新悬停。
+  const tuning = () => {
+    readTuning();
+    if (max <= 0 || !active()) { release(); return; }
+    if (card) schedule();
+  };
 
   document.addEventListener('pointermove', move, { passive: true });
   document.addEventListener('pointerdown', release, true);
@@ -123,6 +148,7 @@ export const initPointerTilt = () => {
   document.addEventListener('visibilitychange', visibility);
   window.addEventListener('blur', release);
   window.addEventListener('resize', reset);
+  window.addEventListener('nai-pointer-tilt-change', tuning);
   motionQuery.addEventListener('change', motion);
 
   return () => {
@@ -134,6 +160,7 @@ export const initPointerTilt = () => {
     document.removeEventListener('visibilitychange', visibility);
     window.removeEventListener('blur', release);
     window.removeEventListener('resize', reset);
+    window.removeEventListener('nai-pointer-tilt-change', tuning);
     motionQuery.removeEventListener('change', motion);
   };
 };
