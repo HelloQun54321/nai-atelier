@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-11-02
+- **DeepSeek Harness (deepseek-v4.1-flash)**：画师预览图库接入「原址下载 / 本地 .pack 导入」双来源并可互相切换（新增 import、useOriginal、deleteStore 动作与 .pack 索引读取、版本校验、文件身份失效），补齐「删除图包文件」入口与二次确认，补多语言文案和导入／切换／删除的回归测试。
+
 ## 2026-11-01
 - **DeepSeek Harness (deepseek-v4.1-flash)**：修复主色按钮黑字（	hemeForeground 改为白字达 AA 即优先，主色 600 档加深使白字达标），侧栏 Anlas 行分子分母改基线对齐；实测浅色下按钮 gb(255,255,255)。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：顶栏收起把手接入预设材质（新增 	hemeDetails.css 专用规则，复用顶栏的 glass surface／不透明度／边框／模糊，solid 材质去模糊），实测浅色液态玻璃下与顶栏同色 gb(0.933 0.949 0.980)/0.8。
