@@ -37,6 +37,10 @@ export interface ArtistSamplePackStatus {
   managed?: boolean;
   download?: ArtistSampleDownloadStatus;
   files?: { filename: string; size: number; active: boolean; download: ArtistSampleDownloadStatus; count?: number }[];
+  /** 当前生效的样张来源：本地导入的 .pack、原址下载的图包、本地原图文件，或尚未配置。 */
+  source?: 'pack' | 'download' | 'file' | 'none';
+  /** 本地导入的样张包信息（source 为 pack 时提供）。 */
+  packFile?: { path: string; bytes: number; artists: number; images: number };
 }
 export interface ArtistSampleStatus { available: boolean; canManage: boolean; packs: ArtistSamplePackStatus[]; downloadDirectory?: string }
 export interface ArtistSampleCatalog { pack: ArtistSamplePack; revision: string; tags: string[]; model?: string }
@@ -69,14 +73,21 @@ export const getArtistSampleStatus = (signal?: AbortSignal) => request<ArtistSam
 export const getArtistSampleCatalog = (pack: ArtistSamplePack) => request<ArtistSampleCatalog>(`catalog?${new URLSearchParams({ pack })}`);
 export const getArtistSampleLookup = (pack: ArtistSamplePack, tag: string, signal?: AbortSignal) => request<ArtistSampleLookup>(`lookup?${new URLSearchParams({ pack, tag })}`, { signal });
 export const buildArtistSampleImageUrl = (pack: ArtistSamplePack, tag: string, index: number, revision: string) => `/api/artist-samples/image?${new URLSearchParams({ pack, tag, index: String(index), revision })}`;
-export type ArtistSamplePackAction = 'pick' | 'cancel' | 'reindex' | 'remove' | 'download' | 'pause';
+export type ArtistSamplePackAction = 'pick' | 'cancel' | 'reindex' | 'remove' | 'download' | 'pause' | 'import' | 'useOriginal' | 'deleteStore';
 export const controlArtistSamplePack = async (action: ArtistSamplePackAction, pack: ArtistSamplePack, file?: string) => {
-  const result = await request<{ cancelled?: boolean; status: ArtistSampleStatus }>('control', {
+  const result = await request<ArtistSampleControlResult>('control', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-nai-local-control': 'true' }, body: JSON.stringify({ action, pack, ...(file !== undefined ? { file } : {}) }),
-  }, action === 'pick' ? 310_000 : 15_000);
+  }, action === 'pick' || action === 'import' ? 310_000 : 30_000);
   if (!result.cancelled) broadcastArtistSamplesChanged();
   return result;
 };
+export interface ArtistSampleControlResult {
+  cancelled?: boolean;
+  status?: ArtistSampleStatus;
+  /** 删除来源文件时真正移除与保留（位于应用目录外）的文件路径。 */
+  removed?: string[];
+  kept?: string[];
+}
 
 export const normalizeArtistSampleTag = (tag: string) => tag.replace(/_/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
 export const isArtistOwnSampleRemoved = (sample: ArtistOwnSample, removedSamples: ArtistSampleRemoval[] = []) =>

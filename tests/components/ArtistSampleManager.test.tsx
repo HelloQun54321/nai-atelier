@@ -2,8 +2,11 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { ArtistSampleManager } from '../../components/ArtistSampleManager';
 import type { ArtistSampleStatus } from '../../services/artistSamples';
+
+const renderManager = () => render(<ConfirmDialogProvider><ArtistSampleManager /></ConfirmDialogProvider>);
 
 const mocks = vi.hoisted(() => ({ status: vi.fn(), control: vi.fn(), broadcast: vi.fn() }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: mocks.status, controlArtistSamplePack: mocks.control, broadcastArtistSamplesChanged: mocks.broadcast }));
@@ -50,7 +53,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); });
 it('加载状态：图包状态未读完不报未下载，首次失败保持未知并可重试', async () => {
   let fail!: (error: Error) => void;
   mocks.status.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
-  render(<ArtistSampleManager />);
+  renderManager();
   expect(screen.queryByText('未下载')).toBeNull();
   expect(screen.getAllByText('加载中…')).toHaveLength(2);
   await act(async () => fail(new Error('合成状态失败')));
@@ -63,7 +66,7 @@ it('加载状态：图包状态未读完不报未下载，首次失败保持未�
 
 it.each([undefined, 'nai-diffusion-5-curated'])('旧V5来源%s不会显示Full可用或禁用新Full下载', async model => {
   const legacy = makeStatus(); legacy.packs[1] = { ...legacy.packs[1], model, phase: 'ready', filename: 'NAID5-33000-55000-Curated', managed: true, count: 22000, revision: 'legacy', download: { stage: 'missing', receivedBytes: 0, totalBytes: 16_507_137_927 } };
-  mocks.status.mockResolvedValue(legacy); render(<ArtistSampleManager />);
+  mocks.status.mockResolvedValue(legacy); renderManager();
   expect(await screen.findByText('当前图包未确认为 V5 Full，原文件已保留')).toBeTruthy(); expect(screen.getByText('NovelAI V5 Full')).toBeTruthy();
   expect(screen.queryByText('可用 · 22000 个画师 Tag')).toBeNull(); expect(screen.queryByRole('button', { name: '已下载' })).toBeNull();
   const download = screen.getByRole('button', { name: '下载图包 · 约 16.51 GB' }); expect((download as HTMLButtonElement).disabled).toBe(false);
@@ -72,7 +75,7 @@ it.each([undefined, 'nai-diffusion-5-curated'])('旧V5来源%s不会显示Full�
 
 it('V5 Full 下载大小优先使用后台注册来源的总字节数', async () => {
   const next = makeStatus(); next.packs[1].download = { stage: 'missing', receivedBytes: 0, totalBytes: 4_000_000_000 };
-  mocks.status.mockResolvedValue(next); render(<ArtistSampleManager />);
+  mocks.status.mockResolvedValue(next); renderManager();
   expect(await screen.findByRole('button', { name: '下载图包 · 约 4.00 GB' })).toBeTruthy();
   fireEvent.click(screen.getAllByRole('button', { name: '图包管理' })[1]);
   expect(screen.getByText(/V5 Full（7个图包）/)).toBeTruthy();
@@ -80,7 +83,7 @@ it('V5 Full 下载大小优先使用后台注册来源的总字节数', async ()
 
 it('七包Full的备用大小来自精确总字节，分组信息不误用单成员文件名', async () => {
   const ready = makeStatus(); ready.packs[1] = { ...ready.packs[1], phase: 'ready', path: 'D:\\samples\\NAID5F-55000-Q', managed: true };
-  mocks.status.mockResolvedValue(ready); render(<ArtistSampleManager />);
+  mocks.status.mockResolvedValue(ready); renderManager();
   expect(await screen.findByRole('button', { name: '下载图包 · 约 16.51 GB' })).toBeTruthy();
   fireEvent.click(screen.getAllByRole('button', { name: '图包管理' })[1]);
   const info = screen.getByText(/V5 Full（7个图包）/);
@@ -91,7 +94,7 @@ it('关联旧Curated仍ready时完成Full下载，来源切换也广播刷新Ful
   vi.useFakeTimers();
   const downloading = makeStatus(); downloading.packs[1] = { ...downloading.packs[1], model: 'nai-diffusion-5-curated', phase: 'ready', managed: true, revision: 'curated', download: { stage: 'downloading', receivedBytes: 500, totalBytes: 1000 } };
   const full = makeStatus(); full.packs[1] = { ...full.packs[1], phase: 'ready', managed: true, revision: 'full', count: 54880, download: { stage: 'ready', receivedBytes: 1000, totalBytes: 1000 } };
-  mocks.status.mockResolvedValueOnce(downloading).mockResolvedValue(full); render(<ArtistSampleManager />);
+  mocks.status.mockResolvedValueOnce(downloading).mockResolvedValue(full); renderManager();
   await act(async () => { await Promise.resolve(); });
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(screen.getByText('可用 · 54880 个画师 Tag')).toBeTruthy(); expect(mocks.broadcast).toHaveBeenCalledOnce();
@@ -106,7 +109,7 @@ it('直接下载V5调用后台而不是文件选择器；显示进度并支持�
     ...makeStatus().packs[1], download: { stage: 'paused', receivedBytes: 410 * 1024 * 1024, totalBytes: 1000 * 1024 * 1024 },
   }] });
   mocks.control.mockResolvedValueOnce({ status: downloading }).mockResolvedValueOnce({ status: paused }).mockResolvedValueOnce({ status: downloading });
-  render(<ArtistSampleManager />);
+  renderManager();
   expect(await screen.findByText('可用 · 31000 个画师 Tag')).toBeTruthy();
   fireEvent.click(screen.getAllByRole('button', { name: /下载图包/ })[1]);
   await waitFor(() => expect(mocks.control).toHaveBeenCalledWith('download', 'v5'));
@@ -121,10 +124,10 @@ it('直接下载V5调用后台而不是文件选择器；显示进度并支持�
 
 it('文件对话框取消不制造失败状态，也不会启动索引', async () => {
   mocks.control.mockResolvedValue({ cancelled: true, status: makeStatus() });
-  render(<ArtistSampleManager />);
+  renderManager();
   await screen.findByText('可用 · 31000 个画师 Tag');
   fireEvent.click(screen.getAllByRole('button', { name: '图包管理' })[1]);
-  fireEvent.click(screen.getByRole('button', { name: '使用本地文件' }));
+  fireEvent.click(screen.getByRole('button', { name: '使用本地原图包' }));
   await waitFor(() => expect(mocks.control).toHaveBeenCalledWith('pick', 'v5'));
   expect(screen.queryByRole('alert')).toBeNull();
   expect(screen.getByText('未下载')).toBeTruthy();
@@ -135,7 +138,7 @@ it('索引失败就地显示原因，仍可重新索引或解除关联；解除�
     { ...makeStatus().packs[0], phase: 'error', error: 'JSON 无法解析' }, makeStatus().packs[1],
   ] }));
   mocks.control.mockRejectedValueOnce(new Error('重新索引失败'));
-  render(<ArtistSampleManager />);
+  renderManager();
   expect(await screen.findByRole('alert')).toBeTruthy();
   fireEvent.click(screen.getAllByRole('button', { name: '图包管理' })[0]);
   fireEvent.click(screen.getByRole('button', { name: '重新建立索引' }));
@@ -155,7 +158,7 @@ it('下载失败说明原因并可重试', async () => {
     ...makeStatus().packs[1], download: { stage: 'downloading', receivedBytes: 0, totalBytes: 1024 },
   }] });
   mocks.control.mockRejectedValueOnce(new Error('网络中断')).mockResolvedValueOnce({ status: failed }).mockResolvedValueOnce({ status: downloading });
-  render(<ArtistSampleManager />);
+  renderManager();
   await screen.findByText('可用 · 31000 个画师 Tag');
   fireEvent.click(screen.getAllByRole('button', { name: /下载图包/ })[1]);
   expect(await screen.findByText('网络中断')).toBeTruthy();
@@ -172,7 +175,7 @@ it('校验期间仍可暂停，点击只调用后台pause', async () => {
   }] });
   mocks.status.mockResolvedValue(verifying);
   mocks.control.mockResolvedValue({ status: verifying });
-  render(<ArtistSampleManager />);
+  renderManager();
   expect((await screen.findAllByText('正在校验图包…')).length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole('button', { name: '暂停下载' }));
   await waitFor(() => expect(mocks.control).toHaveBeenCalledWith('pause', 'v5'));
@@ -190,7 +193,7 @@ it('托管包索引失败时允许重试后台关联并恢复已下载状态', a
   }] });
   mocks.status.mockResolvedValue(brokenManaged);
   mocks.control.mockResolvedValueOnce({ status: recovered });
-  render(<ArtistSampleManager />);
+  renderManager();
   expect(await screen.findByText('托管图包索引失败')).toBeTruthy();
   const retry = screen.getAllByRole('button', { name: '重试下载' })[0];
   expect((retry as HTMLButtonElement).disabled).toBe(false);
@@ -210,7 +213,7 @@ it('后台下载完成后索引就绪，轮询期间发一次图库更新事件'
   }] });
   mocks.status.mockResolvedValueOnce(makeStatus()).mockResolvedValueOnce(ready);
   mocks.control.mockResolvedValueOnce({ status: downloading });
-  render(<ArtistSampleManager />);
+  renderManager();
   await act(async () => { await Promise.resolve(); });
   fireEvent.click(screen.getAllByRole('button', { name: /下载图包/ })[1]);
   await act(async () => { await Promise.resolve(); });
@@ -230,7 +233,7 @@ it('状态轮询暂时失败会显示手动重试并继续按间隔读取，恢�
   }] });
   mocks.status.mockResolvedValueOnce(makeStatus()).mockRejectedValueOnce(new Error('暂时无法读取状态')).mockResolvedValueOnce(ready);
   mocks.control.mockResolvedValueOnce({ status: downloading });
-  render(<ArtistSampleManager />);
+  renderManager();
   await act(async () => { await Promise.resolve(); });
   fireEvent.click(screen.getAllByRole('button', { name: /下载图包/ })[1]);
   await act(async () => { await Promise.resolve(); });
@@ -254,7 +257,7 @@ it('卸载时中止在途下载状态轮询', async () => {
     return new Promise(() => {});
   });
   mocks.control.mockResolvedValueOnce({ status: downloading });
-  const view = render(<ArtistSampleManager />);
+  const view = renderManager();
   await act(async () => { await Promise.resolve(); });
   fireEvent.click(screen.getAllByRole('button', { name: /下载图包/ })[1]);
   await act(async () => { await Promise.resolve(); });
@@ -266,23 +269,23 @@ it('卸载时中止在途下载状态轮询', async () => {
 
 it('设置只保留资源管理，下载时不误报尚未关联，维护按状态禁用', async () => {
   mocks.status.mockResolvedValue(makeStatus({ packs: [{ ...makeStatus().packs[1], download: { stage: 'downloading', receivedBytes: 5, totalBytes: 10 } }] }));
-  render(<ArtistSampleManager />);
+  renderManager();
   await screen.findByText('图包下载中：50%');
   expect(screen.queryByText('样张配置')).toBeNull();
   expect(screen.queryByText('正向提示词')).toBeNull();
   expect(screen.queryAllByText('未下载')).toHaveLength(1);
   fireEvent.click(screen.getAllByRole('button', { name: '图包管理' })[1]);
-  expect((screen.getByRole('button', { name: '使用本地文件' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: '使用本地原图包' }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole('button', { name: '重新建立索引' }) as HTMLButtonElement).disabled).toBe(true);
 });
 it('没有关联路径时禁用重新索引与解除关联，另一包下载时不能选择文件或解除关联', async () => {
   const value = makeStatus();
   value.packs[1].download = { stage: 'downloading', receivedBytes: 5, totalBytes: 10 };
   mocks.status.mockResolvedValue(value);
-  render(<ArtistSampleManager />);
+  renderManager();
   await screen.findByText('可用 · 31000 个画师 Tag');
   fireEvent.click(screen.getAllByRole('button', { name: '图包管理' })[0]);
-  expect((screen.getByRole('button', { name: '使用本地文件' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: '使用本地原图包' }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole('button', { name: '解除关联（不删文件）' }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole('button', { name: '重新建立索引' }) as HTMLButtonElement).disabled).toBe(false);
   fireEvent.keyDown(window, { key: 'Escape' });
@@ -292,7 +295,7 @@ it('没有关联路径时禁用重新索引与解除关联，另一包下载时�
 
 it('V5在原行按需展开七个文件，使用实际文件名、体积及已接入计数', async () => {
   mocks.status.mockResolvedValue(makeFilesStatus());
-  render(<ArtistSampleManager />);
+  renderManager();
   await screen.findByText('可用 · 12345 个画师 Tag');
   expect(screen.getByRole('button', { name: '全部下载 · 约 16.51 GB' })).toBeTruthy();
   expect(screen.getByText('分别下载图包（7）').closest('details')!.open).toBe(false);
@@ -314,7 +317,7 @@ it('单片下载、暂停及继续精确传文件名，只有正在运行的片�
   paused.packs[1].files![6].download = { ...downloading.packs[1].files![6].download, stage: 'paused' };
   mocks.status.mockResolvedValue(initial);
   mocks.control.mockResolvedValueOnce({ status: downloading }).mockResolvedValueOnce({ status: paused }).mockResolvedValueOnce({ status: downloading });
-  render(<ArtistSampleManager />);
+  renderManager();
   await screen.findByText('分别下载图包（7）'); openFiles();
   fireEvent.click(fileRegion(6).getByRole('button'));
   await waitFor(() => expect(fileRegion(6).getByRole('button').textContent).toBe('暂停下载'));
@@ -339,7 +342,7 @@ it('全部下载及整体暂停保留两参数接口，逐片入口不会暂停�
   downloading.packs[1].download!.stage = 'downloading';
   downloading.packs[1].files![1].download.stage = 'verifying';
   mocks.status.mockResolvedValue(makeFilesStatus()); mocks.control.mockResolvedValue({ status: downloading });
-  render(<ArtistSampleManager />);
+  renderManager();
   fireEvent.click(await screen.findByRole('button', { name: '全部下载 · 约 16.51 GB' }));
   await waitFor(() => expect(mocks.control).toHaveBeenCalledWith('download', 'v5'));
   openFiles();
@@ -353,7 +356,7 @@ it('单片请求防重复且失败按文件保留，启动其他文件不清除�
   let rejectDownload!: (error: Error) => void;
   mocks.status.mockResolvedValue(makeFilesStatus());
   mocks.control.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectDownload = reject; })).mockResolvedValue({ status: makeFilesStatus() });
-  render(<ArtistSampleManager />); await screen.findByText('分别下载图包（7）'); openFiles();
+  renderManager(); await screen.findByText('分别下载图包（7）'); openFiles();
   fireEvent.click(fileRegion(6).getByRole('button'));
   fireEvent.click(fileRegion(6).getByRole('button')); fireEvent.click(fileRegion(1).getByRole('button'));
   expect(mocks.control).toHaveBeenCalledTimes(1);
@@ -374,7 +377,7 @@ it('单片独立接入保持ready并改变revision时广播刷新，尚缺其他
   ready.packs[1].count = 18000; ready.packs[1].revision = 'partial-stylish';
   ready.packs[1].download!.stage = 'ready';
   mocks.status.mockResolvedValueOnce(downloading).mockResolvedValue(ready);
-  render(<ArtistSampleManager />); await act(async () => { await Promise.resolve(); }); openFiles();
+  renderManager(); await act(async () => { await Promise.resolve(); }); openFiles();
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(screen.getByText('可用 · 18000 个画师 Tag')).toBeTruthy();
   expect(fileRegion(6).getByText('1.34 GB · 已接入 · 7742 个画师 Tag')).toBeTruthy();
@@ -388,13 +391,46 @@ it('七片全部接入禁用下载；远端查看也禁用逐片操作', async (
   const allReady = makeFilesStatus();
   allReady.packs[1].files!.forEach(file => { file.active = true; file.download.stage = 'ready'; });
   mocks.status.mockResolvedValue(allReady);
-  const view = render(<ArtistSampleManager />);
+  const view = renderManager();
   expect((await screen.findByRole('button', { name: '已全部接入' }) as HTMLButtonElement).disabled).toBe(true);
   openFiles();
   expect((fileRegion(6).getByRole('button') as HTMLButtonElement).disabled).toBe(true);
   view.unmount();
   mocks.status.mockResolvedValue({ ...makeFilesStatus(), canManage: false });
-  render(<ArtistSampleManager />); await screen.findByText('分别下载图包（7）'); openFiles();
+  renderManager(); await screen.findByText('分别下载图包（7）'); openFiles();
   expect((fileRegion(6).getByRole('button') as HTMLButtonElement).disabled).toBe(true);
+
   expect(screen.queryByRole('button', { name: '图包管理' })).toBeNull();
 });
+
+it('本地样张包来源显示包信息，菜单提供导入、切回原址与删除入口', async () => {
+  const status = makeStatus();
+  status.packs[0] = {
+    ...status.packs[0], source: 'pack', path: 'D:\\samples\\artist-samples-v45.pack',
+    packFile: { path: 'D:\\samples\\artist-samples-v45.pack', bytes: 415_832_645, artists: 31000, images: 31000 },
+  };
+  mocks.status.mockResolvedValue(status);
+  mocks.control.mockResolvedValue({ status });
+  renderManager();
+  await screen.findByText(/可用 · 31000 个画师 Tag（本地样张包/);
+  expect((screen.getByRole('button', { name: '使用中：本地样张包' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getAllByRole('button', { name: '图包管理' })[0]);
+  expect((screen.getByRole('button', { name: '使用本地原图包' }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '导入样张包（.pack）' }));
+  await waitFor(() => expect(mocks.control).toHaveBeenCalledWith('import', 'v45'));
+  fireEvent.click(screen.getAllByRole('button', { name: '图包管理' })[0]);
+  fireEvent.click(screen.getByRole('button', { name: '改用原址下载的图包' }));
+  await waitFor(() => expect(mocks.control).toHaveBeenCalledWith('useOriginal', 'v45'));
+});
+
+it('删除图包文件必须二次确认，确认后才调用 deleteStore', async () => {
+  mocks.status.mockResolvedValue(makeStatus());
+  renderManager();
+  await screen.findByText('可用 · 31000 个画师 Tag');
+  fireEvent.click(screen.getAllByRole('button', { name: '图包管理' })[0]);
+  fireEvent.click(screen.getByRole('button', { name: '删除已下载图包文件（释放空间）' }));
+  expect(mocks.control).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole('button', { name: '删除文件' }));
+  await waitFor(() => expect(mocks.control).toHaveBeenCalledWith('deleteStore', 'v45'));
+});
+

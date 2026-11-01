@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-01
+- **DeepSeek Harness (deepseek-v4.1-flash)**：修复主色按钮黑字（	hemeForeground 改为白字达 AA 即优先，主色 600 档加深使白字达标），侧栏 Anlas 行分子分母改基线对齐；实测浅色下按钮 gb(255,255,255)。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：顶栏收起把手接入预设材质（新增 	hemeDetails.css 专用规则，复用顶栏的 glass surface／不透明度／边框／模糊，solid 材质去模糊），实测浅色液态玻璃下与顶栏同色 gb(0.933 0.949 0.980)/0.8。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：电脑端侧边栏默认宽度改为最小值 192（旧默认 216 视为未选择过自动迁移），桌面图片列表默认 5 列不再按宽度自适应；同步更新 4 项断言。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：修复实验室「参考」「参数」页分区条下方 168px 空白（LabCategoryMode 在这两页无内容却仍渲染 128px 下留白），五个分区统一 16px 间距。

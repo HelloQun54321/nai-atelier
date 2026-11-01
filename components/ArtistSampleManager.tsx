@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { MoreHorizontal, ChevronRight, Database, Download, FolderOpen, Pause, RotateCw, X } from 'lucide-react';
+import { MoreHorizontal, ChevronRight, Database, Download, FolderOpen, PackageOpen, Pause, RotateCw, Trash2, X } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
+import { useConfirmDialog } from './ConfirmDialog';
 import { ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import {
   broadcastArtistSamplesChanged, controlArtistSamplePack, getArtistSampleStatus,
@@ -19,6 +20,7 @@ const isDownloadActive = (stage?: string) => stage === 'downloading' || stage ==
 
 export const ArtistSampleManager: React.FC = () => {
   useLanguage();
+  const confirm = useConfirmDialog();
   const [status, setStatus] = useState<ArtistSampleStatus>(emptyStatus);
   const [statusReady, setStatusReady] = useState(false);
   const [statusError, setStatusError] = useState('');
@@ -90,6 +92,23 @@ export const ArtistSampleManager: React.FC = () => {
     } finally { actionLock.current = false; if (activeRef.current) setBusy(current => ({ ...current, [key]: '' })); }
   };
 
+  // 删除当前来源占用的磁盘文件：原址下载的图包或用户导入的 .pack。
+  const deleteStore = async (pack: ArtistSamplePack, item?: ArtistSamplePackStatus) => {
+    const isPack = item?.source === 'pack';
+    const bytes = isPack ? item?.packFile?.bytes || 0 : item?.download?.totalBytes || 0;
+    const sizeText = bytes > 0 ? (bytes / 1024 / 1024 / 1024 >= 1 ? `${(bytes / 1_000_000_000).toFixed(2)} GB` : `${(bytes / 1024 / 1024).toFixed(0)} MB`) : t('未知大小');
+    const version = pack === 'v45' ? 'V4.5' : 'V5 Full';
+    const ok = await confirm({
+      title: isPack ? t('删除本地样张包文件？') : t('删除已下载的图包文件？'),
+      message: isPack
+        ? t('将从磁盘删除「{0}」（{1}），并解除与 NovelAI {2} 的关联。此操作不可撤销，需要时可重新导入或下载。', [item?.packFile?.path ? item.packFile.path.split(/[\\/]/).pop() || t('样张包') : t('样张包'), sizeText, version])
+        : t('将从磁盘删除 NovelAI {0} 的图包文件（{1}）。这只影响画师预览图库，不影响已生成的历史图片。', [version, sizeText]),
+      confirmLabel: t('删除文件'),
+      tone: 'danger',
+    });
+    if (ok) void act('deleteStore', pack);
+  };
+
   const title = t('画师预览图库');
   const packData = status.packs;
   const activeDownloadPack = packData.find(pack => isDownloadActive(pack.download?.stage) || pack.files?.some(file => isDownloadActive(file.download.stage)))?.id;
@@ -116,8 +135,10 @@ export const ArtistSampleManager: React.FC = () => {
       const sourceMatches = isArtistSampleSourceForPack(pack, item);
       const packageReady = sourceMatches && (files ? files.every(file => file.active) : download?.stage === 'ready' && item?.managed === true);
       const packDownloading = downloading || verifying || Boolean(files?.some(file => isDownloadActive(file.download.stage)));
-      const mainAction: ArtistSamplePackAction | undefined = packDownloading ? 'pause' : (download?.stage === 'paused' || download?.stage === 'error' || download?.stage === 'ready' || !download || download.stage === 'missing') ? 'download' : undefined;
+      const usingPack = item?.source === 'pack';
+      const mainAction: ArtistSamplePackAction | undefined = usingPack ? undefined : packDownloading ? 'pause' : (download?.stage === 'paused' || download?.stage === 'error' || download?.stage === 'ready' || !download || download.stage === 'missing') ? 'download' : undefined;
       const mainLabel = !canManageFiles ? t('仅工坊电脑可操作')
+        : usingPack ? t('使用中：本地样张包')
         : pending === 'download' ? t('正在启动下载…')
         : pending === 'pause' ? t('正在暂停…')
         : pending === 'pick' ? t('正在选择文件…')
@@ -130,21 +151,25 @@ export const ArtistSampleManager: React.FC = () => {
         : files ? t('全部下载 · 约 {0}', [packageInfo.size])
         : download?.stage === 'ready' ? t('使用已下载图包')
         : t('下载图包 · 约 {0}', [packageInfo.size]);
-      const mainDisabled = !canManageFiles || actionPending || anotherDownload || pickBusy || (item?.phase === 'indexing' && (!files || !packDownloading)) || (packageReady && item?.phase === 'ready' && (!files || !['paused', 'error'].includes(download?.stage || '')));
-      const statusText = !statusReady ? statusError ? '—' : t('加载中…') : files && item && sourceMatches && files.some(file => file.active) ? t('可用 · {0} 个画师 Tag', [item.count])
+      const mainDisabled = usingPack || !canManageFiles || actionPending || anotherDownload || pickBusy || (item?.phase === 'indexing' && (!files || !packDownloading)) || (packageReady && item?.phase === 'ready' && (!files || !['paused', 'error'].includes(download?.stage || '')));
+      const statusText = !statusReady ? statusError ? '—' : t('加载中…') : item?.source === 'pack' && item.phase === 'ready' ? t('可用 · {0} 个画师 Tag（本地样张包 {1}）', [item.count, formatBytes(item.packFile?.bytes || 0)]) : files && item && sourceMatches && files.some(file => file.active) ? t('可用 · {0} 个画师 Tag', [item.count])
         : downloading || verifying ? (verifying ? t('正在校验图包…') : t('图包下载中：{0}%', [percent])) : item?.phase === 'ready' && !sourceMatches ? t('当前图包未确认为 V5 Full，原文件已保留') : item?.phase === 'ready' ? t('可用 · {0} 个画师 Tag', [item.count]) : item?.phase === 'indexing' ? t('样张索引中：{0}%', [Math.round(item.progress)]) : download?.stage === 'paused' ? t('已暂停') : item?.phase === 'error' ? t('索引失败') : download?.stage === 'ready' ? t('未启用') : t('未下载');
       return <div key={pack} className={`${index === PACKS.length - 1 ? '' : 'border-b border-gray-100 pb-3 dark:border-gray-800'}`}>
         <div className="flex min-w-0 items-center gap-2"><div className="min-w-0 flex-1"><span className="text-sm font-bold text-gray-800 dark:text-gray-100">NovelAI {pack === 'v45' ? 'V4.5' : 'V5 Full'}</span><p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{statusText}</p></div>
           <button type="button" className={`mobile-touch flex-none inline-flex items-center rounded-lg px-2.5 py-2 text-xs font-semibold ${mainDisabled ? 'appearance-group bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500' : 'bg-indigo-600 text-white hover:bg-indigo-500'}`} onClick={() => mainAction && void act(mainAction, pack)} disabled={mainDisabled} aria-label={mainLabel}>
           {mainAction === 'pause' ? <Pause className="mr-1 h-3.5 w-3.5" /> : <Download className="mr-1 h-3.5 w-3.5" />}{mainLabel}
           </button>
-          {canManageFiles && <ToolbarPopover label={t('图包管理')} title={t('图包管理')} icon={<MoreHorizontal />} iconOnly width={300} disabled={actionPending || pickBusy}>
-            {close => <div className="space-y-1"><p title={path || undefined} className="break-all px-3 py-2 text-xs text-gray-500">{pack === 'v5' && sourceMatches ? item?.filename || packageInfo.filename : path || packageInfo.filename}<br />{t('Hugging Face · 约 {0}', [packageInfo.size])}</p>
-              <button type="button" className={TOOLBAR_MENU_CLASS} disabled={Boolean(activeDownloadPack) || item?.phase === 'indexing'} onClick={() => { close(); void act('pick', pack); }}><FolderOpen />{t('使用本地文件')}</button>
+          {canManageFiles && <ToolbarPopover label={t('图包管理')} title={t('图包管理')} icon={<MoreHorizontal />} iconOnly width={320} disabled={actionPending || pickBusy}>
+            {close => <div className="space-y-1"><p title={path || undefined} className="break-all px-3 py-2 text-xs text-gray-500">{usingPack ? item?.packFile?.path || path : pack === 'v5' && sourceMatches ? item?.filename || packageInfo.filename : path || packageInfo.filename}<br />{usingPack ? t('本地样张包 · {0}', [formatBytes(item?.packFile?.bytes || 0)]) : t('Hugging Face · 约 {0}', [packageInfo.size])}</p>
+              <p className="px-3 pb-1 text-xs font-semibold text-gray-500 dark:text-gray-400">{t('样张来源（可切换）')}</p>
+              <button type="button" className={TOOLBAR_MENU_CLASS} disabled={Boolean(activeDownloadPack) || item?.phase === 'indexing'} onClick={() => { close(); void act('pick', pack); }}><FolderOpen />{t('使用本地原图包')}</button>
+              <button type="button" className={TOOLBAR_MENU_CLASS} disabled={Boolean(activeDownloadPack) || item?.phase === 'indexing'} onClick={() => { close(); void act('import', pack); }}><PackageOpen />{t('导入样张包（.pack）')}</button>
+              {usingPack && <button type="button" className={TOOLBAR_MENU_CLASS} disabled={Boolean(activeDownloadPack) || item?.phase === 'indexing'} onClick={() => { close(); void act('useOriginal', pack); }}><Download />{t('改用原址下载的图包')}</button>}
               {item?.phase === 'indexing' ? <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); void act('cancel', pack); }}><X />{t('取消索引')}</button> : <>
                 <button type="button" className={TOOLBAR_MENU_CLASS} disabled={!linked || packDownloading} onClick={() => { close(); void act('reindex', pack); }}><RotateCw />{t('重新建立索引')}</button>
                 <button type="button" className={TOOLBAR_MENU_CLASS + ' !text-red-600 dark:!text-red-300'} disabled={!linked || Boolean(activeDownloadPack)} onClick={() => { close(); void act('remove', pack); }}><X />{t('解除关联（不删文件）')}</button>
               </>}
+              <button type="button" className={TOOLBAR_MENU_CLASS + ' !text-red-600 dark:!text-red-300'} disabled={(!linked && !usingPack) || Boolean(activeDownloadPack) || item?.phase === 'indexing'} onClick={() => { close(); void deleteStore(pack, item); }}><Trash2 />{usingPack ? t('删除样张包文件（释放空间）') : t('删除已下载图包文件（释放空间）')}</button>
             </div>}
           </ToolbarPopover>}
         </div>

@@ -50,7 +50,12 @@ export const themeContrast = (first: string, second: string): number => {
   const a = luminance(first), b = luminance(second);
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 };
-export const themeForeground = (background: string): string => themeContrast('#ffffff', background) >= themeContrast('#000000', background) ? '#ffffff' : '#000000';
+// 白字优先：只要白字达到 AA(4.5)，就用白字。饱和主色上黑字的数值对比度会略高于白字，
+// 单纯比大小会把蓝底按钮算成黑字；白字不达标时才退回对比度更高的那个。
+export const themeForeground = (background: string): string => {
+  if (themeContrast('#ffffff', background) >= 4.5) return '#ffffff';
+  return themeContrast('#000000', background) > themeContrast('#ffffff', background) ? '#000000' : '#ffffff';
+};
 
 // 保留色相，并给浅色选中底和透光材质留少量对比余量。
 const readableText = (accent: string, panel: string) => {
@@ -64,8 +69,8 @@ const readableText = (accent: string, panel: string) => {
 
 export const themeAccentColors = (accent: string, isDark: boolean): Record<number, string> => {
   const shades = isDark
-    ? [[50, .12], [100, .24], [200, .4], [300, .6], [400, .8], [500, 1], [600, .72], [700, .58], [800, .42], [900, .28], [950, .16]]
-    : [[50, .08], [100, .16], [200, .3], [300, .5], [400, .76], [500, 1], [600, .82], [700, .68], [800, .52], [900, .38], [950, .22]];
+    ? [[50, .12], [100, .24], [200, .4], [300, .6], [400, .8], [500, 1], [600, .64], [700, .54], [800, .42], [900, .28], [950, .16]]
+    : [[50, .08], [100, .16], [200, .3], [300, .5], [400, .76], [500, 1], [600, .68], [700, .6], [800, .52], [900, .38], [950, .22]];
   return Object.fromEntries(shades.map(([shade, weight]) => [shade, mixThemeColor(accent, shade < 500 ? '#ffffff' : isDark ? (shade === 600 ? '#11141b' : '#0d0f14') : '#000000', weight)]));
 };
 

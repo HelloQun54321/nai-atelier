@@ -796,3 +796,136 @@ test('旧六片偏好按已有 exact 或 concat descriptor 保留 revision，不
     } finally { await service?.close(); removeWorkspace(root); }
   }
 });
+const buildPackFile = async (path, entries, packId = 1) => {
+  const HEADER = 64;
+  let cursor = HEADER;
+  const data = [], index = [];
+  for (const [tag, buffers] of entries) {
+    const refs = [];
+    for (const buffer of buffers) {
+      data.push(buffer);
+      refs.push({ offset: cursor, len: buffer.length });
+      cursor += buffer.length;
+    }
+    index.push({ tag, refs });
+  }
+  const dataBuffer = Buffer.concat(data);
+  const chunks = [];
+  for (const item of index) {
+    const tagBuffer = Buffer.from(item.tag, 'utf8');
+    const head = Buffer.alloc(4);
+    head.writeUInt16LE(tagBuffer.length, 0);
+    head.writeUInt16LE(item.refs.length, 2);
+    chunks.push(head, tagBuffer);
+    for (const ref of item.refs) {
+      const bytes = Buffer.alloc(12);
+      bytes.writeBigUInt64LE(BigInt(ref.offset), 0);
+      bytes.writeUInt32LE(ref.len, 8);
+      chunks.push(bytes);
+    }
+  }
+  const indexBuffer = Buffer.concat(chunks);
+  const header = Buffer.alloc(HEADER);
+  header.write('NAIAASP1', 0, 'ascii');
+  header.writeUInt32LE(1, 8);
+  header.writeUInt32LE(packId, 12);
+  header.writeUInt32LE(index.length, 16);
+  header.writeUInt32LE(index.reduce((sum, item) => sum + item.refs.length, 0), 20);
+  header.writeBigUInt64LE(BigInt(HEADER + dataBuffer.length), 24);
+  header.writeBigUInt64LE(BigInt(HEADER), 32);
+  header.writeUInt32LE(384, 40);
+  header.writeUInt32LE(72, 44);
+  await writeFile(path, Buffer.concat([header, dataBuffer, indexBuffer]));
+};
+
+test('导入本地样张包按索引读图，可切回原址来源并删除包文件', async () => {
+  const root = createWorkspace('artist-pack-import-'); let service;
+  try {
+    const cacheDir = join(root, 'cache');
+    const originalPath = join(root, 'artist_thumbnail_nai');
+    const jpeg = await sharp({ create: { width: 4, height: 4, channels: 3, background: '#336699' } }).jpeg().toBuffer();
+    await writeFile(originalPath, JSON.stringify({ 'orig one': [jpeg.toString('base64')] }));
+    const packPath = join(root, 'artist-samples-v45.pack');
+    const webpA = await sharp({ create: { width: 384, height: 384, channels: 3, background: '#112233' } }).webp().toBuffer();
+    const webpB = await sharp({ create: { width: 384, height: 384, channels: 3, background: '#334455' } }).webp().toBuffer();
+    await buildPackFile(packPath, [['pack one', [webpA]], ['pack two', [webpB]]]);
+
+    let preferences = { artistSamplePacks: { v45: originalPath } };
+    let pick = { cancelled: true };
+    service = createArtistSamples({ cacheDir, loadPreferences: async () => preferences, savePreferences: async patch => { preferences = { ...preferences, ...patch }; }, pickFile: async () => pick });
+
+    const original = await ready(service);
+    assert.equal(original.phase, 'ready');
+    assert.equal(original.source, 'file');
+    assert.equal((await service.lookup('v45', 'orig one')).imageCount, 1);
+
+    pick = { path: packPath };
+    const imported = await service.control('import', 'v45');
+    assert.equal(imported.cancelled, false);
+    const pack = await ready(service);
+    assert.equal(pack.source, 'pack');
+    assert.equal(pack.count, 2);
+    assert.equal(pack.path, packPath);
+    assert.equal(pack.packFile.bytes, (await stat(packPath)).size);
+    const lookup = await service.lookup('v45', 'pack two');
+    assert.equal(lookup.imageCount, 1);
+    assert.ok(lookup.revision);
+    const image = await service.readImage(imageSource('pack two', lookup.revision));
+    assert.equal(image.headers['content-type'], 'image/webp');
+    assert.deepEqual(image.buffer, webpB);
+    assert.equal((await service.lookup('v45', 'orig one')).imageCount, 0);
+
+    // 切回原址来源：恢复导入前的原图包偏好
+    await service.control('useOriginal', 'v45');
+    const restored = await ready(service);
+    assert.equal(restored.source, 'file');
+    assert.equal(restored.path, originalPath);
+    assert.equal((await service.lookup('v45', 'orig one')).imageCount, 1);
+    assert.equal((await service.lookup('v45', 'pack one')).imageCount, 0);
+
+    // 再次导入后删除包文件：磁盘文件移除，来源回退到原图包
+    pick = { path: packPath };
+    await service.control('import', 'v45');
+    await ready(service);
+    const deleted = await service.control('deleteStore', 'v45');
+    assert.deepEqual(deleted.removed, [packPath]);
+    await assert.rejects(stat(packPath));
+    const fallback = await ready(service);
+    assert.equal(fallback.source, 'file');
+  } finally { await service?.close(); removeWorkspace(root); }
+});
+
+test('样张包版本不符或文件损坏时拒绝导入且不改动现有来源', async () => {
+  const root = createWorkspace('artist-pack-invalid-'); let service;
+  try {
+    const cacheDir = join(root, 'cache');
+    const originalPath = join(root, 'artist_thumbnail_nai');
+    const jpeg = await sharp({ create: { width: 4, height: 4, channels: 3, background: '#336699' } }).jpeg().toBuffer();
+    await writeFile(originalPath, JSON.stringify({ 'orig one': [jpeg.toString('base64')] }));
+    const v5Pack = join(root, 'artist-samples-v5.pack');
+    const webp = await sharp({ create: { width: 384, height: 384, channels: 3, background: '#112233' } }).webp().toBuffer();
+    await buildPackFile(v5Pack, [['pack one', [webp]]], 2);
+    const broken = join(root, 'broken.pack');
+    await writeFile(broken, 'x'.repeat(100));
+    const truncated = join(root, 'truncated.pack');
+    await writeFile(truncated, 'NAIAASP1');
+
+    let preferences = { artistSamplePacks: { v45: originalPath } };
+    let pick = { cancelled: true };
+    service = createArtistSamples({ cacheDir, loadPreferences: async () => preferences, savePreferences: async patch => { preferences = { ...preferences, ...patch }; }, pickFile: async () => pick });
+    const original = await ready(service);
+    assert.equal(original.source, 'file');
+
+    pick = { path: v5Pack };
+    await assert.rejects(service.control('import', 'v45'), /样张包版本与所选版本不一致/);
+    pick = { path: broken };
+    await assert.rejects(service.control('import', 'v45'), /不是画师样张包/);
+    pick = { path: truncated };
+    await assert.rejects(service.control('import', 'v45'), /样张包文件不完整/);
+    const after = await ready(service);
+    assert.equal(after.source, 'file');
+    assert.equal(after.path, originalPath);
+    assert.equal((await service.lookup('v45', 'orig one')).imageCount, 1);
+  } finally { await service?.close(); removeWorkspace(root); }
+});
+

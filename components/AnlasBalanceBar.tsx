@@ -99,11 +99,11 @@ export const AnlasBalanceBar: React.FC<AnlasBalanceBarProps> = ({ collapsed = fa
           </span>
           {!collapsed && <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Anlas</span>}
         </span>
-        <span className={`flex shrink-0 items-center tabular-nums ${collapsed ? 'w-11 flex-col' : 'gap-1'}`}>
+        <span className={`flex shrink-0 tabular-nums ${collapsed ? 'w-11 flex-col items-center' : 'items-baseline gap-1'}`}>
           <span className={`font-bold leading-none text-indigo-600 dark:text-indigo-300 ${compact ? 'text-xs' : 'text-sm'}`}>{budgetText}</span>
           {collapsed
             ? <span className="my-0.5 h-px w-8 bg-gray-300 dark:bg-gray-600" />
-            : <span className="text-micro text-gray-400 dark:text-gray-500">/</span>}
+            : <span className="text-xs leading-none text-gray-400 dark:text-gray-500">/</span>}
           <span className={`leading-none ${compact ? 'text-micro' : 'text-xs'} ${error ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>{balanceText}</span>
         </span>
       </span>

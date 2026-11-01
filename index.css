@@ -255,7 +255,7 @@ html[data-design-theme='nai-atelier'] {
   --color-indigo-300: color-mix(in srgb, var(--nai-accent) 50%, white);
   --color-indigo-400: color-mix(in srgb, var(--nai-accent) 76%, white);
   --color-indigo-500: var(--nai-accent);
-  --color-indigo-600: color-mix(in srgb, var(--nai-accent) 82%, black);
+  --color-indigo-600: color-mix(in srgb, var(--nai-accent) 68%, black);
   --color-indigo-700: color-mix(in srgb, var(--nai-accent) 68%, black);
   --color-indigo-800: color-mix(in srgb, var(--nai-accent) 52%, black);
   --color-indigo-900: color-mix(in srgb, var(--nai-accent) 38%, black);
@@ -309,7 +309,7 @@ html[data-design-theme='nai-atelier'].dark {
   --color-indigo-300: color-mix(in srgb, var(--nai-accent) 60%, white);
   --color-indigo-400: color-mix(in srgb, var(--nai-accent) 80%, white);
   --color-indigo-500: var(--nai-accent);
-  --color-indigo-600: color-mix(in srgb, var(--nai-accent) 72%, #11141b);
+  --color-indigo-600: color-mix(in srgb, var(--nai-accent) 64%, #11141b);
   --color-indigo-700: color-mix(in srgb, var(--nai-accent) 58%, #0d0f14);
   --color-indigo-800: color-mix(in srgb, var(--nai-accent) 42%, #0d0f14);
   --color-indigo-900: color-mix(in srgb, var(--nai-accent) 28%, #0d0f14);

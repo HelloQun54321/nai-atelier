@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { open, stat, readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { open, stat, readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join, isAbsolute } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -87,6 +87,60 @@ export async function indexArtistSampleFile(path, { signal, onProgress = () => {
   return entries;
 }
 
+/** 读取本地分享的样张包（.pack）：只读头部与索引区，不加载图片数据。 */
+export async function readArtistPack(path, signal) {
+  const info = await stat(path);
+  if (!info.isFile()) throw failure('请选择样张包文件');
+  if (info.size < 64) throw failure('样张包文件不完整');
+  const handle = await open(path, 'r');
+  try {
+    const head = Buffer.alloc(64);
+    let read = 0;
+    while (read < 64) { const result = await handle.read(head, read, 64 - read, read); if (!result.bytesRead) throw failure('样张包文件不完整'); read += result.bytesRead; }
+    signal?.throwIfAborted();
+    if (head.toString('ascii', 0, 8) !== 'NAIAASP1') throw failure('不是画师样张包（.pack）文件');
+    const version = head.readUInt32LE(8);
+    if (version !== 1) throw failure('不支持的样张包版本：' + version);
+    const packId = head.readUInt32LE(12);
+    const tagCount = head.readUInt32LE(16);
+    const imageCount = head.readUInt32LE(20);
+    const indexOffset = Number(head.readBigUInt64LE(24));
+    const dataOffset = Number(head.readBigUInt64LE(32));
+    if (dataOffset !== 64 || indexOffset < 64 || indexOffset > info.size) throw failure('样张包索引位置无效');
+    if (!tagCount || tagCount > 2_000_000) throw failure('样张包画师数量异常');
+    const size = info.size - indexOffset;
+    const buffer = Buffer.alloc(size);
+    read = 0;
+    while (read < size) { const result = await handle.read(buffer, read, size - read, indexOffset + read); if (!result.bytesRead) throw failure('样张包索引不完整'); read += result.bytesRead; }
+    signal?.throwIfAborted();
+    const entries = Object.create(null);
+    let position = 0, refs = 0;
+    for (let index = 0; index < tagCount; index++) {
+      if (position + 4 > buffer.length) throw failure('样张包索引损坏');
+      const tagLength = buffer.readUInt16LE(position), images = buffer.readUInt16LE(position + 2);
+      position += 4;
+      if (!images || images > 64 || position + tagLength > buffer.length) throw failure('样张包索引损坏');
+      const tag = buffer.toString('utf8', position, position + tagLength);
+      position += tagLength;
+      if (!tag || Object.hasOwn(entries, tag)) throw failure('样张包画师名称重复或为空');
+      const imageRefs = [];
+      for (let image = 0; image < images; image++) {
+        if (position + 12 > buffer.length) throw failure('样张包索引损坏');
+        const offset = Number(buffer.readBigUInt64LE(position));
+        const length = buffer.readUInt32LE(position + 8);
+        position += 12;
+        if (offset < dataOffset || !length || offset + length > indexOffset) throw failure('样张包图片偏移越界');
+        imageRefs.push({ offset, len: length });
+        refs++;
+      }
+      entries[tag] = { count: images, images: imageRefs };
+    }
+    if (position !== buffer.length) throw failure('样张包索引长度不符');
+    if (refs !== imageCount) throw failure('样张包图片数量不符');
+    return { version, packId, tagCount, imageCount, entries, fileSize: info.size };
+  } finally { await handle.close(); }
+}
+
 export function validateArtistSampleSource(source) {
   const url = new URL(source, 'http://localhost');
   if (!source.startsWith('/api/artist-samples/image?') || url.pathname !== '/api/artist-samples/image'
@@ -116,6 +170,13 @@ export function createArtistSamples({ cacheDir, loadPreferences, savePreferences
   const invalidate = pack => { pack.controller?.abort(); Object.assign(pack, { entries: null, count: 0, phase: 'error', error: '图包文件已变化或不可读取，请重新建立索引' }); };
   const verify = async pack => {
     if (pack.phase !== 'ready') return false;
+    if (pack.packMode) {
+      const { revision, path } = pack;
+      try {
+        if (revisionFor(packIdentity(path, await stat(path))) !== revision) { invalidate(pack); return false; }
+      } catch { invalidate(pack); return false; }
+      return true;
+    }
     const { revision, path, children, controller } = pack;
     // 核验期间可能接入下一分片；旧文件的 stat 结果不能使新集合失效。
     const unchanged = () => pack.phase === 'ready' && pack.revision === revision && pack.path === path && pack.children === children && pack.controller === controller;
@@ -246,11 +307,47 @@ export function createArtistSamples({ cacheDir, loadPreferences, savePreferences
     // 保存成功即完成本片接入；迟到的暂停不能让磁盘偏好与当前可用集合分叉。
     Object.assign(pack, candidate, { managed: Object.values(files).every(path => path === 'managed') });
   };
-  const initialized = (async () => {
-    const preferences = await loadPreferences();
+  // 本地样张包（.pack）身份：与索引缓存一致的文件签名，文件变动即自动失效。
+  const packIdentity = (path, info) => ({ path, size: info.size, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, ino: info.ino, dev: info.dev, version: 2 });
+  const resetPack = pack => {
+    pack.controller?.abort();
+    Object.assign(pack, { entries: null, aliases: new Map(), count: 0, phase: 'unconfigured', progress: 0, processedBytes: 0, totalBytes: 0, revision: '', error: undefined, path: '', managed: false, packMode: false, packBytes: 0, children: undefined, imageCount: undefined });
+    if (targetModel.get(pack.id)) { delete pack.model; delete pack.sourceId; }
+  };
+  // 只读索引、按需随机读取图片；不复制、不改动用户导入的文件。
+  const startPack = async (pack, path) => {
+    pack.controller?.abort();
+    const controller = new AbortController(); pack.controller = controller;
+    Object.assign(pack, { phase: 'indexing', progress: 0, processedBytes: 0, count: 0, entries: null, error: undefined, packMode: false });
+    try {
+      const loaded = await readArtistPack(path, controller.signal);
+      if ((loaded.packId === 1) !== (pack.id === 'v45')) throw failure('样张包版本与所选版本不一致，请选择对应的包');
+      const info = await stat(path);
+      controller.signal.throwIfAborted();
+      if (pack.controller !== controller) return;
+      const aliases = new Map();
+      for (const tag of Object.keys(loaded.entries)) { const name = normalize(tag); aliases.set(name, aliases.has(name) ? null : tag); }
+      Object.assign(pack, {
+        path, managed: false, packMode: true, packBytes: info.size, aliases,
+        entries: loaded.entries, count: loaded.tagCount, imageCount: loaded.imageCount,
+        revision: revisionFor(packIdentity(path, info)), phase: 'ready', progress: 100,
+        processedBytes: info.size, totalBytes: info.size,
+        download: { stage: 'ready', receivedBytes: info.size, totalBytes: info.size },
+      });
+      delete pack.model; delete pack.sourceId; delete pack.children;
+      pack.label = pack.id === 'v45' ? 'NAI V4.5（本地样张包）' : 'NAI V5 Full（本地样张包）';
+    } catch (error) {
+      if (pack.controller === controller && !controller.signal.aborted) Object.assign(pack, { phase: 'error', error: error.message || '样张包读取失败' });
+    }
+  };
+  // 单个图包的来源初始化：原图包（原址下载/本地文件）或本地样张包。切换来源时重跑，
+  // 原图包索引复用磁盘缓存，通常秒级完成。
+  const initializePack = async (pack, preference) => {
     if (closed) return;
-    for (const pack of packs.values()) {
-      const preference = preferences.artistSamplePacks?.[pack.id];
+    const packPreference = preference && typeof preference === 'object' && !Array.isArray(preference) && typeof preference.pack === 'string'
+      ? preference : null;
+    if (packPreference && isAbsolute(packPreference.pack)) { await startPack(pack, packPreference.pack); return; }
+
       if (pack.files) {
         const states = new Map(); fileStates.set(pack.id, states);
         for (const file of pack.files) {
@@ -286,7 +383,7 @@ export function createArtistSamples({ cacheDir, loadPreferences, savePreferences
             } catch { /* 缺文件由正常索引状态明确反馈，不自动下载。 */ }
           }
           Object.assign(pack, candidate, { managed: Object.values(sources).every(path => dirname(path) === downloadDirectory) });
-          void start(pack); continue;
+          void start(pack); return;
         }
       }
       const destination = join(downloadDirectory, pack.files?.[0].filename || pack.filename);
@@ -294,13 +391,13 @@ export function createArtistSamples({ cacheDir, loadPreferences, savePreferences
       if (closed) return;
       pack.download = { stage: size === pack.size ? 'ready' : partial ? 'paused' : 'missing', receivedBytes: size === pack.size ? size : partial, totalBytes: pack.size };
       pack.managed = preference === managedPreference(pack) || preference === 'managed';
-      if (pack.files && pack.managed && preference !== 'managed') { pack.path = destination; void start(pack); continue; }
+      if (pack.files && pack.managed && preference !== 'managed') { pack.path = destination; void start(pack); return; }
       const path = preference === 'managed' && pack.id === 'v5' && pack.sourceId
         ? join(downloadDirectory, LEGACY_V5_FILENAME) : pack.managed ? destination : preference;
       if (typeof path === 'string' && isAbsolute(path)) {
         pack.path = path;
         if (targetModel.get(pack.id)) {
-          if (pack.files && preference !== 'managed' && pack.files.some(file => file.filename === basename(path))) { void start(pack); continue; }
+          if (pack.files && preference !== 'managed' && pack.files.some(file => file.filename === basename(path))) { void start(pack); return; }
           const full = preference !== 'managed' && !pack.files && await verifiedFull(path, pack).catch(() => false);
           if (!full) {
             delete pack.model; delete pack.sourceId;
@@ -310,12 +407,25 @@ export function createArtistSamples({ cacheDir, loadPreferences, savePreferences
         }
         void start(pack);
       } else if (targetModel.get(pack.id)) { delete pack.model; delete pack.sourceId; }
-    }
+  };
+  const initialized = (async () => {
+    const preferences = await loadPreferences();
+    if (closed) return;
+    for (const pack of packs.values()) await initializePack(pack, preferences.artistSamplePacks?.[pack.id]);
   })();
+  // 来源切换：先落盘偏好，再重置并只加载新来源。
+  const switchPackSource = async (pack, preference) => {
+    const preferences = await loadPreferences();
+    const next = { ...preferences.artistSamplePacks };
+    if (preference === undefined) delete next[pack.id]; else next[pack.id] = preference;
+    await savePreferences({ artistSamplePacks: next });
+    resetPack(pack);
+    await initializePack(pack, preference);
+  };
   const status = async canManage => {
     await initialized;
     await Promise.all([...packs.values()].map(verify));
-    return { available: true, canManage, ...(canManage ? { downloadDirectory } : {}), packs: [...packs.values()].map(({ id, label, filename, path, managed, download, phase, progress, processedBytes, totalBytes, count, revision, error, model, imageCount, children }) => ({ id, ...(model ? { model } : {}), label, filename: children ? `V5 Full（${children.length}个图包）` : path ? basename(path) : filename, ...(children ? { imageCount } : {}), managed, download: { ...download }, ...(fileStates.has(id) ? { files: [...fileStates.get(id).values()].map(file => {
+    return { available: true, canManage, ...(canManage ? { downloadDirectory } : {}), packs: [...packs.values()].map(({ id, label, filename, path, managed, download, phase, progress, processedBytes, totalBytes, count, revision, error, model, imageCount, children, packMode, packBytes }) => ({ id, ...(model ? { model } : {}), label, filename: packMode ? basename(path) : children ? `V5 Full（${children.length}个图包）` : path ? basename(path) : filename, source: packMode ? 'pack' : managed ? 'download' : path ? 'file' : 'none', ...(packMode ? { packFile: { path, bytes: packBytes, artists: count, images: imageCount } } : {}), ...(children ? { imageCount } : {}), managed, download: { ...download }, ...(fileStates.has(id) ? { files: [...fileStates.get(id).values()].map(file => {
       const child = phase === 'ready' && children?.find(child => child.filename === file.filename);
       return { ...file, download: { ...file.download }, active: Boolean(child), ...(child ? { count: child.sampleTagCount } : {}) };
     }) } : {}), ...(canManage && path ? { path } : {}), phase, progress, processedBytes, totalBytes, count, revision, ...(error ? { error } : {}) })) };
@@ -346,6 +456,25 @@ export function createArtistSamples({ cacheDir, loadPreferences, savePreferences
     const key = match(pack, url.searchParams.get('tag'));
     let entry = key && pack.entries[key], index = Number(url.searchParams.get('index'));
     if (!entry || index >= entry.count) throw Object.assign(failure('未找到画师样张'), { status: 404 });
+    // 本地样张包：索引里直接是图片偏移，按需读取单张 WebP，不做 Base64 解析。
+    if (pack.packMode) {
+      const item = entry.images?.[index];
+      if (!item) throw Object.assign(failure('未找到画师样张'), { status: 404 });
+      const handle = await open(pack.path, 'r').catch(() => { invalidate(pack); throw failure('样张包文件不可读取，请重新导入'); });
+      try {
+        const buffer = Buffer.alloc(item.len);
+        let read = 0;
+        while (read < buffer.length) {
+          const result = await handle.read(buffer, read, buffer.length - read, item.offset + read);
+          if (!result.bytesRead) throw failure('样张包文件不完整，请重新导入');
+          read += result.bytesRead;
+        }
+        const { default: sharp } = await import('sharp');
+        try { await sharp(buffer, { failOn: 'warning', limitInputPixels: 16000000 }).stats(); }
+        catch { throw failure('画师样张图片损坏或尺寸过大'); }
+        return { status: 200, buffer, headers: { 'content-type': 'image/webp' } };
+      } finally { await handle.close(); }
+    }
     if (entry.segments) {
       const group = pack;
       for (const segment of entry.segments) {
@@ -427,6 +556,57 @@ export function createArtistSamples({ cacheDir, loadPreferences, savePreferences
     const definition = registry.find(item => item.id === id);
     if (filename !== undefined && (!['download', 'pause'].includes(action) || typeof filename !== 'string' || !definition.files?.some(file => file.filename === filename))) throw failure('无效的画师图包文件');
     if (closed) throw failure('工坊服务正在关闭，请重新打开后操作');
+    // 导入本地分享的样张包（.pack），与"原址下载"互为可切换的来源。
+    if (action === 'import') {
+      if (activeDownload) throw Object.assign(failure('请先暂停图包下载，再导入样张包'), { status: 409 });
+      if (pickerOpen) throw failure('已有文件选择窗口，请先完成或取消选择');
+      pickerOpen = true;
+      try {
+        const result = await pickFile(pack.packMode ? pack.path : '');
+        if (result.cancelled || !result.path) return { cancelled: true };
+        if (!isAbsolute(result.path) || !(await stat(result.path)).isFile()) throw failure('请选择样张包文件');
+        const loaded = await readArtistPack(result.path);
+        if ((loaded.packId === 1) !== (id === 'v45')) throw failure('样张包版本与所选版本不一致，请选择对应的包');
+        const preferences = await loadPreferences();
+        const current = preferences.artistSamplePacks?.[id];
+        const stored = current && typeof current === 'object' && !Array.isArray(current) && typeof current.pack === 'string' ? current.stored : current;
+        await switchPackSource(pack, { pack: result.path, mode: 'pack', stored });
+        return { cancelled: false, status: await status(false) };
+      } finally { pickerOpen = false; }
+    }
+    // 从本地样张包切回"原址下载/本地原图包"来源。
+    if (action === 'useOriginal') {
+      const preferences = await loadPreferences();
+      const current = preferences.artistSamplePacks?.[id];
+      if (!current || typeof current !== 'object' || Array.isArray(current) || typeof current.pack !== 'string') return {};
+      await switchPackSource(pack, current.stored);
+      return { status: await status(false) };
+    }
+    // 删除当前来源占用的磁盘文件（受管目录内的原图包或导入的 .pack），并清理关联。
+    if (action === 'deleteStore') {
+      if (activeDownload) throw Object.assign(failure('请先暂停图包下载，再删除图包文件'), { status: 409 });
+      const preferences = await loadPreferences();
+      const current = preferences.artistSamplePacks?.[id];
+      const stored = current && typeof current === 'object' && !Array.isArray(current) && typeof current.pack === 'string' ? current.stored : current;
+      const removed = [], kept = [], targets = new Set();
+      if (pack.packMode) targets.add(pack.path);
+      for (const file of (definition.files || [definition])) {
+        const destination = join(downloadDirectory, file.filename);
+        targets.add(destination);
+        targets.add(destination + '.download');
+      }
+      for (const target of targets) {
+        if (typeof target !== 'string' || !isAbsolute(target)) continue;
+        const managed = dirname(target) === downloadDirectory;
+        const importedPack = pack.packMode && target === pack.path && target.endsWith('.pack');
+        if (!managed && !importedPack) { if (await fileSize(target)) kept.push(target); continue; }
+        if (!await fileSize(target)) continue;
+        try { await unlink(target); removed.push(target); } catch { kept.push(target); }
+      }
+      if (pack.packMode && stored !== undefined) await switchPackSource(pack, stored);
+      else await switchPackSource(pack, undefined);
+      return { removed, kept, status: await status(false) };
+    }
     if (action === 'pause') {
       if (activeDownload?.pack === pack && (filename === undefined || activeDownload.currentFilename === filename)) { const task = activeDownload; task.controller.abort(); await task.promise; }
       return {};
@@ -515,12 +695,11 @@ export function createArtistSamples({ cacheDir, loadPreferences, savePreferences
       } finally { pickerOpen = false; }
     }
     if (action === 'cancel') { pack.controller?.abort(); Object.assign(pack, { phase: pack.path ? 'error' : 'unconfigured', entries: null, count: 0, error: pack.path ? '索引已取消，可重新建立索引' : undefined }); }
-    else if (action === 'reindex') { if (!pack.path) throw failure('请先选择图包文件'); void start(pack, false); }
+    else if (action === 'reindex') { if (!pack.path) throw failure('请先选择图包文件'); if (pack.packMode) void startPack(pack, pack.path); else void start(pack, false); }
     else if (action === 'remove') {
       const preferences = await loadPreferences(), configured = { ...preferences.artistSamplePacks }; delete configured[id];
-      await savePreferences({ artistSamplePacks: configured }); pack.controller?.abort();
-      Object.assign(pack, { path: '', managed: false, phase: 'unconfigured', entries: null, children: undefined, imageCount: undefined, count: 0, revision: '', progress: 0, processedBytes: 0, totalBytes: 0, error: undefined });
-      if (targetModel.get(id)) { delete pack.model; delete pack.sourceId; }
+      await savePreferences({ artistSamplePacks: configured });
+      resetPack(pack);
     } else throw failure('未知图包操作');
     return {};
   };
