@@ -1225,9 +1225,10 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     background: var(--nai-accent, var(--color-indigo-500));
   }
 
-  /* 实验室隐藏了底部导航，生成条只让开最底那行账户资源（44px）并留 12px，不再多抬一整条底栏。 */
+  /* 实验室隐藏了底部导航。资源行虽然占 44px，但文字靠底对齐、上方约 20px 是空白，
+     所以生成条只让到 safe + 32px，视觉上离「Anlas／额度」那行文字只留 8px。 */
   .mobile-generation-actions {
-    --mobile-generation-bottom: calc(env(safe-area-inset-bottom) + 3.5rem);
+    --mobile-generation-bottom: calc(env(safe-area-inset-bottom) + 2rem);
   }
 
   /* 助手面板同样停在底栏上沿，输入框整行都可点。 */
