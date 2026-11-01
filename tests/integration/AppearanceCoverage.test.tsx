@@ -840,6 +840,18 @@ describe('全局外观覆盖审计', () => {
     expect(declarations(docked)['padding-right']).toBeUndefined();
   });
 
+  it('卡片效果开关按两列排布，倾斜独占整行且参数收在同一张卡内', () => {
+    const settings = readFileSync(resolve('components/GlobalSettings.tsx'), 'utf8');
+    // 只有磨砂与浮动两个开关走两列网格，倾斜不参与该数组，避免出现 2+1 的空位行。
+    const mapBlock = settings.slice(settings.indexOf("['galleryFrostedCaption'"), settings.indexOf('</button>)}'));
+    expect(mapBlock).not.toContain('galleryPointerTilt');
+    // 倾斜卡自带 lg:col-span-2，参数区嵌在卡内并用分隔线衔接，不再并列一张参数卡。
+    const tiltStart = settings.indexOf('倾斜带可调参数');
+    const tiltBlock = settings.slice(tiltStart, settings.indexOf('</div>', settings.indexOf('角度 0° 等同关闭')));
+    expect(tiltBlock).toContain('lg:col-span-2');
+    expect(tiltBlock).toContain('border-t');
+    expect(tiltBlock).toContain('md:grid-cols-2');
+  });
   it('指针倾斜参数作为本端滑块暴露，并写入根节点 CSS 变量', () => {
     const settings = readFileSync(resolve('components/GlobalSettings.tsx'), 'utf8');
     expect(settings).toContain("aria-label={t('倾斜角度')}");

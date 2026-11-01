@@ -1030,24 +1030,30 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   {([
                     ['galleryFrostedCaption', '全图磨砂卡片', '图片铺满卡片，名称叠在底部渐变磨砂上；关闭后恢复图下信息栏。'],
                     ['galleryHoverFloat', '卡片悬停浮动', '鼠标经过时轻轻抬起并放大图片；与指针倾斜互斥，倾斜开启时不抬起。'],
-                    ['galleryPointerTilt', '卡片指针倾斜', '鼠标压在卡片哪一侧，那一侧就随惯性下沉、另一侧翘起；与卡片悬停浮动互斥。'],
                   ] as const).map(([key, label, description]) => <button key={key} type="button" role="switch" aria-checked={appearancePreferences[key]} aria-label={t(label)} onClick={() => updateAppearance({ [key]: !appearancePreferences[key] })} className="appearance-group flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                     <span><span className="block text-sm font-bold">{t(label)}</span><span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t(description)}</span></span>
                     <span aria-hidden="true" className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences[key] ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences[key] ? 'translate-x-5' : 'translate-x-0'}`} /></span>
                   </button>)}
-                  {appearancePreferences.galleryPointerTilt && <div className="appearance-group rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-                    {(() => {
+                  {/* 倾斜带可调参数，独占一整行；开关作卡头，参数收在同一张卡内展开，避免再塞一张并列卡片。 */}
+                  <div className="appearance-group rounded-xl border border-gray-200 bg-white transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700 lg:col-span-2">
+                    <button type="button" role="switch" aria-checked={appearancePreferences.galleryPointerTilt} aria-label={t('卡片指针倾斜')} onClick={() => updateAppearance({ galleryPointerTilt: !appearancePreferences.galleryPointerTilt })} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left">
+                      <span><span className="block text-sm font-bold">{t('卡片指针倾斜')}</span><span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t('鼠标压在卡片哪一侧，那一侧就随惯性下沉、另一侧翘起；与卡片悬停浮动互斥。')}</span></span>
+                      <span aria-hidden="true" className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.galleryPointerTilt ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.galleryPointerTilt ? 'translate-x-5' : 'translate-x-0'}`} /></span>
+                    </button>
+                    {appearancePreferences.galleryPointerTilt && (() => {
                       const tiltDisabled = appearancePreferences.motion !== 'full';
                       const angle = appearancePreferences.galleryPointerTiltAngle;
                       const weight = appearancePreferences.galleryPointerTiltWeight;
                       const weightLabel = t(weight <= 25 ? '轻快' : weight >= 75 ? '沉稳' : '标准');
-                      return <>
-                        <label className="block text-meta text-gray-600 dark:text-gray-300">{t('倾斜角度')} · {angle}°<input aria-label={t('倾斜角度')} type="range" min={POINTER_TILT_ANGLE.min} max={POINTER_TILT_ANGLE.max} step={POINTER_TILT_ANGLE.step} value={angle} disabled={tiltDisabled} onChange={event => updateAppearance({ galleryPointerTiltAngle: Number(event.target.value) })} className="mt-2 block w-full accent-[var(--nai-accent)] disabled:cursor-not-allowed disabled:opacity-45" /></label>
-                        <label className="mt-3 block text-meta text-gray-600 dark:text-gray-300">{t('倾斜重量感')} · {weightLabel}<input aria-label={t('倾斜重量感')} aria-valuetext={weightLabel} type="range" min={POINTER_TILT_WEIGHT.min} max={POINTER_TILT_WEIGHT.max} step={POINTER_TILT_WEIGHT.step} value={weight} disabled={tiltDisabled} onChange={event => updateAppearance({ galleryPointerTiltWeight: Number(event.target.value) })} className="mt-2 block w-full accent-[var(--nai-accent)] disabled:cursor-not-allowed disabled:opacity-45" /></label>
+                      return <div className="border-t border-gray-200/80 px-3 pb-3 pt-3 dark:border-gray-700/80">
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <label className="block min-w-0 text-meta text-gray-600 dark:text-gray-300">{t('倾斜角度')} · <span className="tabular-nums">{angle}°</span><input aria-label={t('倾斜角度')} type="range" min={POINTER_TILT_ANGLE.min} max={POINTER_TILT_ANGLE.max} step={POINTER_TILT_ANGLE.step} value={angle} disabled={tiltDisabled} onChange={event => updateAppearance({ galleryPointerTiltAngle: Number(event.target.value) })} className="mt-2 block w-full accent-[var(--nai-accent)] disabled:cursor-not-allowed disabled:opacity-45" /></label>
+                          <label className="block min-w-0 text-meta text-gray-600 dark:text-gray-300">{t('倾斜重量感')} · <span>{weightLabel}</span><input aria-label={t('倾斜重量感')} aria-valuetext={weightLabel} type="range" min={POINTER_TILT_WEIGHT.min} max={POINTER_TILT_WEIGHT.max} step={POINTER_TILT_WEIGHT.step} value={weight} disabled={tiltDisabled} onChange={event => updateAppearance({ galleryPointerTiltWeight: Number(event.target.value) })} className="mt-2 block w-full accent-[var(--nai-accent)] disabled:cursor-not-allowed disabled:opacity-45" /></label>
+                        </div>
                         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{tiltDisabled ? t('动效设为「减少」或「关闭」时倾斜不生效。') : t('角度 0° 等同关闭；只在实际鼠标设备上生效。')}</p>
-                      </>;
+                      </div>;
                     })()}
-                  </div>}
+                  </div>
                 </div>
 
                 <AppearanceBackgroundEditor key={activePresetId} mode={backgroundMode} onModeChange={setBackgroundMode}
