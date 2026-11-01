@@ -512,7 +512,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
           </> : <>
           {!isGuest && type === 'style' && <ToolbarButton data-agent-action="browse" aria-label={t(foldersExpanded ? '收起文件夹' : '展开文件夹')} title={[t(foldersExpanded ? '收起文件夹' : '展开文件夹'), activeFolder === '*' ? t('全部') : activeFolder === '' ? t('未整理') : activeFolder === DIRECTORY_FAVORITES_ID ? t('收藏') : folderStore.state.folders.find(folder => folder.id === activeFolder)?.name || t('全部')].join(' · ')} aria-expanded={foldersExpanded} active={foldersExpanded || activeFolder !== '*'} disabled={folderStore.busy} onClick={toggleFolders}><Folder className="h-4 w-4" /></ToolbarButton>}
-          <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t("搜索{0}", [title])} containerClassName="min-w-0 flex-1 max-md:min-w-[8.75rem] md:max-w-none!" />
+          <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t("搜索{0}", [title])} containerClassName="min-w-0 flex-1 max-md:min-w-[7.5rem] md:max-w-none!" />
           <div className="hidden flex-none items-center gap-2 md:flex">
             <div ref={filterAnchorRef} className="relative flex-none">
               <ToolbarButton active={filtersActive} onClick={() => setShowDesktopFilters(value => !value)} title={t("筛选与排序")} aria-label={t("筛选{0}", [filterCount > 0 ? ` ${filterCount}` : ''])} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" /><span className="hidden xl:inline">{t("筛选{0}", [filterCount > 0 ? ` ${filterCount}` : ''])}</span></ToolbarButton>
@@ -530,7 +530,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           {!isGuest && type === 'style' && <ToolbarButton aria-label={t('查找相似')} title={t('查找相似')} onClick={() => setSimilarityOpen(true)}>
             <ScanSearch className="h-4 w-4" /><span className="hidden xl:inline">{t('查找相似')}</span>
           </ToolbarButton>}
-          {!isGuest && <div className="flex flex-none items-center gap-1 border-l border-gray-200 pl-2 dark:border-gray-700 md:gap-2">
+          {!isGuest && <div className="flex flex-none items-center gap-1 md:gap-2 md:border-l md:border-gray-200 md:pl-2 dark:md:border-gray-700">
             {type === 'style' && <ToolbarButton onClick={() => setBundleScope('all')} title={t('风格串分享包')} aria-label={t('风格串分享包')}><Package className="h-4 w-4" /><span className="hidden xl:inline">{t('分享包')}</span></ToolbarButton>}
             {type === 'style' && <StyleCollectorControl onSaved={onRefresh} notify={notify} />}
             <div className="hidden items-center gap-2 md:flex">

@@ -145,19 +145,29 @@ it('自带窄屏排布的顶栏可关闭横滑，子元素仍是顶栏的直接�
   expect(container.querySelector('header.content-library-toolbar > [role="tablist"]')).not.toBeNull();
 });
 
-it('手机把手与顶栏第一排控件垂直居中，横滑只在手机断点生效且搜索框保底宽度', () => {
+it('手机顶栏不渲染折叠把手、整行宽度都给控件，横滑只在手机断点生效且搜索框保底宽度', () => {
   const css = readFileSync('index.css', 'utf8');
   const mobile = css.slice(css.indexOf('@media (max-width: 767px) {'));
-  expect(mobile).toContain(".workspace-chrome > [data-workspace-topbar-toggle][aria-expanded='true'] { margin-top: calc(env(safe-area-inset-top) + (var(--workspace-toolbar-height) - 2.75rem) / 2); }");
-  expect(mobile).toContain(".content-library > .workspace-chrome > [data-workspace-topbar-toggle][aria-expanded='true'] { align-self: center; margin-top: 0; }");
+  // 手机没有把手，原先为它留的居中、让位规则一并撤掉，避免留下 2.75rem 的空位。
+  expect(mobile).not.toContain('data-workspace-topbar-toggle');
+  expect(mobile).not.toContain("workspace-mode-tabs[data-topbar-collapsed='true']");
+  const design = readFileSync('components/DesignSystem.tsx', 'utf8');
+  // 手机单列铺满；把手只在手机隐藏，电脑仍是顶边中央那一枚。
+  expect(design).toContain('grid flex-none grid-cols-1 md:flex md:flex-col');
+  expect(design).not.toContain('grid-cols-[2.75rem_minmax(0,1fr)]');
+  expect(design).toContain('z-40 flex h-11 min-h-11');
+  expect(design).toContain('max-lg:hidden');
+  expect(design).not.toContain('max-md:hidden');
+  expect(design).toContain('md:h-5 md:min-h-0 md:w-auto');
   expect(mobile).toMatch(/\.workspace-toolbar-scroll \{ overflow-x: auto; overflow-y: hidden;/);
   expect(css.slice(0, css.indexOf('@media (max-width: 767px) {'))).not.toContain('.workspace-toolbar-scroll');
   // 曾因搜索框被压到 0～16px、输入框溢出盖住筛选按钮而出现双层边框。
-  for (const file of ['components/ChainList.tsx', 'components/InspirationGallery.tsx', 'components/CharacterLibrary.tsx']) expect(readFileSync(file, 'utf8'), file).toContain('max-md:min-w-[8.75rem]');
+  // 手机下限 120px：去掉把手后紧邻的那排操作能完整排下，不再把「新建」切掉一截。
+  for (const file of ['components/ChainList.tsx', 'components/InspirationGallery.tsx', 'components/CharacterLibrary.tsx']) expect(readFileSync(file, 'utf8'), file).toContain('max-md:min-w-[7.5rem]');
   expect(readFileSync('components/ContentLibraryPage.tsx', 'utf8')).toContain('<WorkspaceToolbar scrollable={false}');
 });
 
-it('收起后把手层级高于实验室分区条，手机分区条让出把手宽度', () => {
+it('收起后把手层级高于实验室分区条，电脑端仍保留这枚把手', () => {
   // 曾因顶栏与分区条同为 z-30、分区条在后，收起后把手被「全局」盖住，顶栏再也展开不了。
   const { container } = render(<div><WorkspaceChrome><header>顶栏</header></WorkspaceChrome><nav className="workspace-mode-tabs relative z-30">分区</nav></div>);
   const chrome = container.querySelector('.workspace-chrome')!;
@@ -165,7 +175,7 @@ it('收起后把手层级高于实验室分区条，手机分区条让出把手�
   fireEvent.click(container.querySelector('[data-workspace-topbar-toggle]')!);
   expect(chrome.classList.contains('z-[31]')).toBe(true);
   expect(chrome.classList.contains('z-30')).toBe(false);
-  const css = readFileSync('index.css', 'utf8');
-  const mobile = css.slice(css.indexOf('@media (max-width: 767px) {'));
-  expect(mobile).toContain("html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='true'] { margin-left: 2.75rem; }");
+  // 收起后子树只做视觉隐藏，把手本身留在原位供重新展开。
+  expect(container.querySelector('.workspace-chrome > .hidden')).not.toBeNull();
+  expect(container.querySelector('[data-workspace-topbar-toggle][aria-expanded="false"]')).not.toBeNull();
 });

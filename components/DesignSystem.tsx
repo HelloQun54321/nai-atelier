@@ -150,8 +150,9 @@ export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, [collapsed]);
   // 收起后只剩把手，抬高一层，避免被同为 z-30 的后续兄弟（实验室分区条）盖住而无法展开。
-  return <div ref={ref} className={`workspace-chrome relative ${collapsed ? 'z-[31]' : 'z-30'} grid flex-none grid-cols-[2.75rem_minmax(0,1fr)] md:flex md:flex-col`}>
-    {/* 手机展开时独占左列；电脑保留顶边中央把手和原有布局。 */}
+  // 手机不渲染把手，顶栏独占整行，把原先让给把手的左列宽度还给控件。
+  return <div ref={ref} className={`workspace-chrome relative ${collapsed ? 'z-[31]' : 'z-30'} grid flex-none grid-cols-1 md:flex md:flex-col`}>
+    {/* 把手只在电脑保留：手机收起态由 getTopbarCollapsed 直接按展开处理，无需恢复入口。 */}
     <button
       type="button"
       data-workspace-topbar-toggle="true"
@@ -159,7 +160,7 @@ export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ child
       aria-label={collapsed ? t('展开顶栏') : t('收起顶栏')}
       title={collapsed ? t('展开顶栏') : t('收起顶栏')}
       onClick={() => toggleTopbarCollapsed()}
-      className={`group ${collapsed ? 'absolute left-0 top-0' : 'self-start'} z-40 flex h-11 min-h-11 w-11 min-w-11 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-[var(--nai-toolbar-surface)] px-2 text-micro font-semibold leading-none text-gray-600 shadow-sm backdrop-blur-[18px] backdrop-saturate-125 transition-all duration-150 hover:border-indigo-500 hover:bg-indigo-600 hover:text-white focus-visible:border-indigo-500 focus-visible:bg-indigo-600 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 dark:border-gray-800/80 dark:text-gray-100 dark:hover:border-indigo-400 dark:hover:bg-indigo-500 md:absolute md:left-1/2 md:top-0 md:h-5 md:min-h-0 md:w-auto md:-translate-x-1/2`}
+      className={`group ${collapsed ? 'absolute left-0 top-0' : 'self-start'} z-40 flex h-11 min-h-11 w-11 min-w-11 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-[var(--nai-toolbar-surface)] px-2 text-micro font-semibold leading-none text-gray-600 shadow-sm backdrop-blur-[18px] backdrop-saturate-125 transition-all duration-150 max-lg:hidden hover:border-indigo-500 hover:bg-indigo-600 hover:text-white focus-visible:border-indigo-500 focus-visible:bg-indigo-600 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 dark:border-gray-800/80 dark:text-gray-100 dark:hover:border-indigo-400 dark:hover:bg-indigo-500 md:absolute md:left-1/2 md:top-0 md:h-5 md:min-h-0 md:w-auto md:-translate-x-1/2`}
     >
       {/* 矢量箭头：顶栏展开时指上（收起），收起后指下（展开）；不用 CSS border 三角以免叠影。 */}
       {collapsed

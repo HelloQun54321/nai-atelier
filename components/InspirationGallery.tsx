@@ -486,7 +486,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         </div>
         <ToolbarButton aria-label={t("退出多选")} title={t("退出多选")} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t("退出多选")}</span></ToolbarButton>
       </> : <>
-      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="h-11 min-w-0 flex-1 max-md:min-w-[8.75rem] md:h-10 md:max-w-none!" className="h-full! min-h-0!">
+      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="h-11 min-w-0 flex-1 max-md:min-w-[7.5rem] md:h-10 md:max-w-none!" className="h-full! min-h-0!">
         <SearchFilterChips chips={tagChips} expanded={showFilters} onMore={() => setShowFilters(true)} />
       </ToolbarSearch>
       <ToolbarPopover title={t("筛选收藏")} open={showFilters} onOpenChange={setShowFilters} count={mobile => activeFilterCount - (mobile ? 0 : Number(collection !== 'all') + Number(Boolean(boardId)))} width={360}>
