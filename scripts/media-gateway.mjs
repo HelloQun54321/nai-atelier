@@ -60,13 +60,12 @@ const PRECISE_REFERENCE_CACHE_LIMIT = 128 * 1024 * 1024;
 const NAI_GENERATE_URL = 'https://image.novelai.net/ai/generate-image';
 const NAI_GENERATE_STREAM_URL = 'https://image.novelai.net/ai/generate-image-stream';
 const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
-// NovelAI 在不同时期把账户接口摆在 api / image / text 三个域名上，并对旧域名回 400
-// 让第三方工具「改用新的 image URL」（2026-08 实测 api 域名；2026-11 实测 image 域名在部分
-// 网络下不可达而 text 域名可用）。这里按实测可用性依次回退，避免单个域名波动拖垮额度同步。
+// 账户接口的官方地址：`image` 域名是官方 400 报错里点名的地址（「update to the image URL」），
+// `text` 是官方文本域、实测账户接口同样可用。`api` 域名已弃用——裸请求与带 Origin/Referer/UA
+// 的请求一律回 400，所以不再尝试。两个域名串行回退，避免单个域名抖动拖垮额度同步。
 export const NAI_SUBSCRIPTION_URLS = [
-  'https://text.novelai.net/user/subscription',
   'https://image.novelai.net/user/subscription',
-  'https://api.novelai.net/user/subscription',
+  'https://text.novelai.net/user/subscription',
 ];
 const NAI_SUBSCRIPTION_URL = NAI_SUBSCRIPTION_URLS[0];
 const CLOUD_QUEUE_URL = '';

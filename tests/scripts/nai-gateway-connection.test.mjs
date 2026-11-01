@@ -51,7 +51,7 @@ test('成员余额查询用同一网关与 Key，禁止重定向；官方地址�
     let calls = 0;
     const authorization = gatewayUrl ? 'Bearer STA1N-synthetic' : 'Bearer pst-synthetic';
     const response = await fetchNovelAiSubscription(authorization, undefined, async (url, options) => {
-      calls++; assert.equal(url, `${gatewayUrl || 'https://text.novelai.net'}/user/subscription`);
+      calls++; assert.equal(url, `${gatewayUrl || 'https://image.novelai.net'}/user/subscription`);
       assert.equal(options.headers.Authorization, authorization);
       assert.equal(options.redirect, gatewayUrl ? 'error' : undefined);
       return new Response(JSON.stringify(payload));
@@ -68,7 +68,7 @@ test('电脑实际 HTTP 入口连接成员 Key、生图、余额与 Vibe；无�
   mock.disableNetConnect(); mock.enableNetConnect(host => host.startsWith('127.0.0.1:'));
   setGlobalDispatcher(mock);
   const calls = [];
-  const member = mock.get('https://gateway.example'), official = mock.get('https://text.novelai.net');
+  const member = mock.get('https://gateway.example'), official = mock.get('https://image.novelai.net');
   const subscription = { active: true, tier: 3, usage: { percent: 5, isNegative: false, timeUntilNextPercent: 0 }, trainingStepsLeft: { fixedTrainingStepsLeft: 100, purchasedTrainingSteps: 0 } };
   for (const [pool, prefix, key] of [[member, '/v1', 'STA1N-http'], [official, '', 'pst-http']]) {
     pool.intercept({ path: `${prefix}/user/subscription`, method: 'GET' }).reply(200, options => {
