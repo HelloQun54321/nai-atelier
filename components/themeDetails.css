@@ -556,3 +556,24 @@ html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-them
   .nai-theme-light { display: none !important; }
 }
 }
+
+/* 顶栏收起把手与顶栏共用同一层玻璃。它不在顶栏元素列表里时，浅色预设会沿用旧的深色 toolbar surface，
+   露出一块深色胶囊；这里按顶栏同样的材质、不透明度与边框重算，收起前后都与预设一致。 */
+html:root[data-theme-details='true'] .workspace-chrome [data-workspace-topbar-toggle] {
+  --nai-glass-surface: var(--nai-glass-toolbar);
+  --nai-layer-opacity: var(--nai-global-opacity, var(--nai-toolbar-opacity, var(--nai-glass-opacity, 85%)));
+  background-color: color-mix(in srgb, var(--nai-glass-surface) var(--nai-layer-opacity), transparent) !important;
+  background-image: none !important;
+  border-color: color-mix(in srgb, var(--nai-panel-border) var(--nai-border-opacity, 65%), transparent) !important;
+  color: var(--color-gray-700) !important;
+  -webkit-backdrop-filter: blur(var(--nai-glass-blur, 18px)) saturate(var(--nai-glass-saturation, 125%));
+  backdrop-filter: blur(var(--nai-glass-blur, 18px)) saturate(var(--nai-glass-saturation, 125%));
+}
+html:root[data-theme-details='true'].dark .workspace-chrome [data-workspace-topbar-toggle] {
+  color: var(--color-gray-100) !important;
+}
+html:root[data-theme-details='true'][data-theme-material='solid'] .workspace-chrome [data-workspace-topbar-toggle] {
+  background-color: var(--nai-panel-solid-surface) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
