@@ -298,16 +298,17 @@ it('拖宽时关闭内外过渡，结束恢复；拖到折叠阈值后保留此�
   expect(sidebar.classList.contains('transition-[width]')).toBe(false);
   fireEvent(window, new MouseEvent('pointermove', { clientX: 280 }));
   fireEvent(window, new MouseEvent('pointerup'));
-  expect(sidebar.style.width).toBe('280px');
+  // 默认宽度已收到最小值 192：从 clientX 216 拖到 280，宽度 = 192 + 64。
+  expect(sidebar.style.width).toBe('256px');
   expect(sidebar.dataset.resizing).toBe('false');
   expect(sidebar.classList.contains('transition-[width]')).toBe(true);
-  expect(localStorage.getItem('nai_sidebar_width')).toBe('280');
+  expect(localStorage.getItem('nai_sidebar_width')).toBe('256');
   fireEvent(handle, new MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: 280 }));
   fireEvent(window, new MouseEvent('pointermove', { clientX: 100 }));
   fireEvent(window, new MouseEvent('pointerup'));
   expect(sidebar.style.width).toBe('68px');
   fireEvent.click(within(sidebar).getAllByRole('button', { name: '展开侧边栏' })[0]);
-  expect(sidebar.style.width).toBe('280px');
+  expect(sidebar.style.width).toBe('256px');
   fireEvent.doubleClick(within(sidebar).getByRole('button', { name: '调整侧边栏宽度' }));
-  expect(sidebar.style.width).toBe('216px');
+  expect(sidebar.style.width).toBe('192px');
 });

@@ -89,8 +89,10 @@ const icons = {
 };
 
 const SIDEBAR_COLLAPSED_WIDTH = 68;
-const SIDEBAR_DEFAULT_WIDTH = 216;
+/** 默认就取最小值：导航文字最长 4 个字，底部 Anlas／Opus 行约需 195px，192 是能塞下的最窄一档。 */
 const SIDEBAR_MIN_WIDTH = 192;
+const SIDEBAR_DEFAULT_WIDTH = SIDEBAR_MIN_WIDTH;
+const SIDEBAR_LEGACY_DEFAULT_WIDTH = 216;
 const SIDEBAR_MAX_WIDTH = 320;
 const SIDEBAR_COLLAPSE_SNAP = 112;
 const clampSidebarWidth = (value: number) => Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, value));
@@ -140,7 +142,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   const [externalBrowseExpanded, setExternalBrowseExpanded] = useState(() => localStorage.getItem('nai_sidebar_external_gallery_expanded') === 'true');
   const [showExternalBrowsePopover, setShowExternalBrowsePopover] = useState(false);
   const externalBrowseTriggerRef = useRef<HTMLButtonElement>(null);
-  const [sidebarWidth, setSidebarWidth] = useState(() => clampSidebarWidth(Number(localStorage.getItem('nai_sidebar_width')) || SIDEBAR_DEFAULT_WIDTH));
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const stored = Number(localStorage.getItem('nai_sidebar_width'));
+    // 旧默认 216 视为「没选过」，跟着新默认一起收窄；只有真正拖到别的宽度才沿用。
+    return clampSidebarWidth(Number.isFinite(stored) && stored > 0 && stored !== SIDEBAR_LEGACY_DEFAULT_WIDTH ? stored : SIDEBAR_DEFAULT_WIDTH);
+  });
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [mobileAgentDock, setMobileAgentDock] = useState<MobileAgentDock>(readMobileAgentDock);
   const [mobileAgentDrag, setMobileAgentDrag] = useState<{ left: number; y: number } | null>(null);

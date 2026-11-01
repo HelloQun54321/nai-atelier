@@ -27,7 +27,8 @@ type PageOverrides = Partial<Record<ImageDisplayPage, MobileImageDisplayPreferen
 
 const STORAGE_KEY = 'nai_mobile_image_display';
 const CHANGE_EVENT = 'nai-mobile-image-display-change';
-const DEFAULTS: MobileImageDisplayPreferences = { layout: 'masonry', columns: 2, desktopColumns: 'auto' };
+// 电脑端默认一行 5 张，不再按窗口宽度自适应（原 auto 会在 4/5/6 之间跳）。
+const DEFAULTS: MobileImageDisplayPreferences = { layout: 'masonry', columns: 2, desktopColumns: 5 };
 
 const normalizePreferences = (value: unknown): MobileImageDisplayPreferences => {
   const saved = value && typeof value === 'object' ? value as Partial<MobileImageDisplayPreferences> : {};

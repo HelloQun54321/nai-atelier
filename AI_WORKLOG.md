@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-01
+- **DeepSeek Harness (deepseek-v4.1-flash)**：电脑端侧边栏默认宽度改为最小值 192（旧默认 216 视为未选择过自动迁移），桌面图片列表默认 5 列不再按宽度自适应；同步更新 4 项断言。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：修复实验室「参考」「参数」页分区条下方 168px 空白（LabCategoryMode 在这两页无内容却仍渲染 128px 下留白），五个分区统一 16px 间距。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：把实验室底部生成条的让位基准从元素盒改为文字基线（资源行 44px 高但文字靠底对齐，中间 20px 空白此前没算），视觉间隙 28px → 12px。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：手机实验室底部生成条下移贴住 Anlas／Opus 资源行（12px 间隙，此前按整条底栏抬高悬空）；分区条按用户选择做「降权 + 压缩」：透明底、选中改强调色文字加下划线、高度 44→40。

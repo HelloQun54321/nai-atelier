@@ -28,7 +28,7 @@ describe('图片显示的全局默认与页面覆盖', () => {
       expect(getImageDisplayPageOverride(id)).toBeNull();
     }
     localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout: 'square', columns: 1 }));
-    expect(getMobileImageDisplayPreferences('artists')).toEqual({ layout: 'square', columns: 1, desktopColumns: 'auto' });
+    expect(getMobileImageDisplayPreferences('artists')).toEqual({ layout: 'square', columns: 1, desktopColumns: 5 });
   });
 
   it('全局和页面都接受7列桌面值，保留旧的显式列数并限制手机仍为3列', () => {
@@ -65,7 +65,7 @@ describe('图片显示的全局默认与页面覆盖', () => {
   it('损坏配置与非法/残缺页面覆盖回退到全局，不创建半页继承规则', () => {
     for (const saved of ['null', '[]', 'invalid json']) {
       localStorage.setItem('nai_mobile_image_display', saved);
-      expect(getMobileImageDisplayPreferences('artists')).toEqual({ layout: 'masonry', columns: 2, desktopColumns: 'auto' });
+      expect(getMobileImageDisplayPreferences('artists')).toEqual({ layout: 'masonry', columns: 2, desktopColumns: 5 });
     }
     localStorage.setItem('nai_mobile_image_display', JSON.stringify({ ...global, pages: { artists: { layout: 'portrait' }, characters: { ...own, desktopColumns: 99 }, unknown: own } }));
     expect(getImageDisplayPageOverride('artists')).toBeNull();
@@ -104,7 +104,7 @@ describe('图片显示的全局默认与页面覆盖', () => {
     }
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
-    expect(getMobileImageDisplayPreferences('artists')).toEqual({ layout: 'masonry', columns: 2, desktopColumns: 'auto' });
+    expect(getMobileImageDisplayPreferences('artists')).toEqual({ layout: 'masonry', columns: 2, desktopColumns: 5 });
     expect(() => setMobileImageDisplayPreferences(own, 'artists')).not.toThrow();
     expect(() => clearImageDisplayPageOverride('artists')).not.toThrow();
   });
