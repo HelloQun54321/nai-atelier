@@ -60,8 +60,15 @@ const PRECISE_REFERENCE_CACHE_LIMIT = 128 * 1024 * 1024;
 const NAI_GENERATE_URL = 'https://image.novelai.net/ai/generate-image';
 const NAI_GENERATE_STREAM_URL = 'https://image.novelai.net/ai/generate-image-stream';
 const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
-// api.novelai.net 的订阅接口会以 400 拒绝第三方工具并提示改用 image 域名（2026-08 实测）。
-const NAI_SUBSCRIPTION_URL = 'https://image.novelai.net/user/subscription';
+// NovelAI 在不同时期把账户接口摆在 api / image / text 三个域名上，并对旧域名回 400
+// 让第三方工具「改用新的 image URL」（2026-08 实测 api 域名；2026-11 实测 image 域名在部分
+// 网络下不可达而 text 域名可用）。这里按实测可用性依次回退，避免单个域名波动拖垮额度同步。
+export const NAI_SUBSCRIPTION_URLS = [
+  'https://text.novelai.net/user/subscription',
+  'https://image.novelai.net/user/subscription',
+  'https://api.novelai.net/user/subscription',
+];
+const NAI_SUBSCRIPTION_URL = NAI_SUBSCRIPTION_URLS[0];
 const CLOUD_QUEUE_URL = '';
 const CLOUD_QUEUE_POLL_INTERVAL = 1000;
 const CLOUD_QUEUE_WAIT_TIMEOUT = 300_000;
@@ -976,12 +983,26 @@ export const createSseEventObserver = onEvent => {
   };
 };
 
-export const fetchNovelAiSubscription = (authorization, signal = AbortSignal.timeout(30_000), requestRemote = fetch, gatewayUrl = '') => requestRemote(gatewayUrl ? `${gatewayUrl}/user/subscription` : NAI_SUBSCRIPTION_URL, {
-  method: 'GET',
-  headers: { 'Authorization': authorization },
-  signal,
-  ...(gatewayUrl ? { redirect: 'error' } : {}),
-});
+export const fetchNovelAiSubscription = async (authorization, signal = AbortSignal.timeout(30_000), requestRemote = fetch, gatewayUrl = '') => {
+  if (gatewayUrl) return requestRemote(`${gatewayUrl}/user/subscription`, {
+    method: 'GET',
+    headers: { 'Authorization': authorization },
+    signal,
+    redirect: 'error',
+  });
+  // 逐个官方域名尝试：400 表示该域名已弃用，网络错误表示当前线路不可达，两者都换下一个；
+  // 401/403 才是真正的鉴权问题，直接返回让上层报失败。
+  let lastFailure;
+  for (const url of NAI_SUBSCRIPTION_URLS) {
+    try {
+      const response = await requestRemote(url, { method: 'GET', headers: { 'Authorization': authorization }, signal });
+      if (response.status === 400) { lastFailure = response; continue; }
+      return response;
+    } catch (error) { lastFailure = error; }
+  }
+  if (lastFailure instanceof Error) throw lastFailure;
+  return lastFailure;
+};
 
 // 只读取所选 Key 的接入地址，不把整个保管箱带入请求链。
 export const readNaiGatewayUrl = async (req, workerPort) => {

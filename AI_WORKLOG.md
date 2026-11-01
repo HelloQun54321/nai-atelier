@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-02
+- **DeepSeek Harness (deepseek-v4.1-flash)**：额度同步改为跨官方域名回退（text → image → api；400 与网络错误换下一个，401 直接失败）。实测三个 Key：api 域名固定回 400 要求换新地址，image 域名出现过一次瞬时不可达、同一 Key 几分钟后恢复 200；补 1 项回退用例、更新 2 处域名断言。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：画师预览图库接入「原址下载 / 本地 .pack 导入」双来源并可互相切换（新增 import、useOriginal、deleteStore 动作与 .pack 索引读取、版本校验、文件身份失效），补齐「删除图包文件」入口与二次确认，补多语言文案和导入／切换／删除的回归测试。
 
 ## 2026-11-01

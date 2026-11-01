@@ -1041,7 +1041,8 @@ test('NovelAI 订阅代理转发鉴权并剥离敏感字段', async () => {
   };
   const response = await fetchNovelAiSubscription('Bearer nai-test-key', undefined, fakeRemote);
   assert.equal(response.ok, true);
-  assert.equal(seenUrl, 'https://image.novelai.net/user/subscription');
+  // 首选 text.novelai.net：2026-11 实测 image 域名在部分线路不可达，text 可用。
+  assert.equal(seenUrl, 'https://text.novelai.net/user/subscription');
   assert.equal(seenInit.method, 'GET');
   assert.equal(seenInit.headers.Authorization, 'Bearer nai-test-key');
   const sanitized = sanitizeNovelAiSubscription(await response.json());
@@ -1060,6 +1061,45 @@ test('NovelAI 订阅代理转发鉴权并剥离敏感字段', async () => {
   assert.equal(expired.active, false);
   assert.equal(expired.usage, undefined);
   assert.equal(sanitizeNovelAiSubscription({ tier: 3, active: false, usage: { percent: 40 } }).usage, undefined);
+});
+
+test('官方账户接口在域名弃用或线路不可达时按顺序回退，鉴权失败不盲目重试', async () => {
+  const calls = [];
+  const remote = responses => async url => {
+    calls.push(url);
+    const hit = responses[url];
+    if (!hit) throw new Error('unexpected host ' + url);
+    if (hit instanceof Error) throw hit;
+    return hit;
+  };
+  // 400「请改用新地址」：换下一个域名。
+  const afterRetired = await fetchNovelAiSubscription('Bearer k', undefined, remote({
+    'https://text.novelai.net/user/subscription': new Response('{"statusCode":400}', { status: 400 }),
+    'https://image.novelai.net/user/subscription': new Response('{"tier":3}', { status: 200 }),
+  }));
+  assert.equal(afterRetired.status, 200);
+  assert.deepEqual(calls, ['https://text.novelai.net/user/subscription', 'https://image.novelai.net/user/subscription']);
+  // 网络错误（如代理对某域名分流异常）：同样换下一个。
+  calls.length = 0;
+  const afterNetworkError = await fetchNovelAiSubscription('Bearer k', undefined, remote({
+    'https://text.novelai.net/user/subscription': new Error('fetch failed'),
+    'https://image.novelai.net/user/subscription': new Response('{"tier":3}', { status: 200 }),
+  }));
+  assert.equal(afterNetworkError.status, 200);
+  assert.equal(calls.length, 2);
+  // 401 是真正的鉴权问题：直接返回，不再打其他域名。
+  calls.length = 0;
+  const unauthorized = await fetchNovelAiSubscription('Bearer k', undefined, remote({
+    'https://text.novelai.net/user/subscription': new Response('{"statusCode":401}', { status: 401 }),
+  }));
+  assert.equal(unauthorized.status, 401);
+  assert.equal(calls.length, 1);
+  // 三个域名都不可用时抛出最后一次的网络错误，交给上层报失败。
+  await assert.rejects(() => fetchNovelAiSubscription('Bearer k', undefined, remote({
+    'https://text.novelai.net/user/subscription': new Error('a down'),
+    'https://image.novelai.net/user/subscription': new Error('b down'),
+    'https://api.novelai.net/user/subscription': new Error('c down'),
+  })), /c down/);
 });
 
 test('NovelAI 流式代理使用 SSE 端点并保留鉴权与请求体', async () => {
