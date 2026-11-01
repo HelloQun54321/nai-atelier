@@ -1192,9 +1192,42 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     touch-action: manipulation;
   }
 
-  /* 生成条抬到底部导航之上，不再与导航重叠；留 8px 呼吸。 */
+  /* 实验室分区条降权并压矮：顶栏是唯一的一级导航，分区退成次级标签。
+     选中态由实心块改为强调色文字 + 下划线，整条不再铺不透明底。 */
+  .workspace-mode-tabs {
+    height: 2.5rem !important;
+    background: transparent !important;
+    border-bottom-color: transparent !important;
+  }
+  .workspace-mode-tabs > button {
+    position: relative;
+    font-size: 13px;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: var(--color-gray-500) !important;
+  }
+  .workspace-mode-tabs > button[aria-current='page'],
+  .workspace-mode-tabs > button[aria-selected='true'] {
+    background: transparent !important;
+    color: var(--nai-accent, var(--color-indigo-500)) !important;
+    box-shadow: none !important;
+  }
+  .workspace-mode-tabs > button[aria-current='page']::after,
+  .workspace-mode-tabs > button[aria-selected='true']::after {
+    content: '';
+    position: absolute;
+    left: 28%;
+    right: 28%;
+    bottom: 4px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--nai-accent, var(--color-indigo-500));
+  }
+
+  /* 实验室隐藏了底部导航，生成条只让开最底那行账户资源（44px）并留 12px，不再多抬一整条底栏。 */
   .mobile-generation-actions {
-    --mobile-generation-bottom: calc(var(--mobile-bottom-inset) + 0.5rem);
+    --mobile-generation-bottom: calc(env(safe-area-inset-bottom) + 3.5rem);
   }
 
   /* 助手面板同样停在底栏上沿，输入框整行都可点。 */
