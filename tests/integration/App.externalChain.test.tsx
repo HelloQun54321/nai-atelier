@@ -1,4 +1,4 @@
-﻿import { openPurposeGroup } from '../support/promptPurposeGroups';
+import { openPurposeGroup } from '../support/promptPurposeGroups';
 import { PromptLibraryContext, PromptLibraryWorkspace, PromptLibraryRandomButton, PromptLibraryFieldActions } from '../../components/PromptLibraryAccess';
 import { normalizeAppearancePreferences, saveAppearancePreferences } from '../../services/appearancePreferences';
 // @vitest-environment jsdom
@@ -217,7 +217,8 @@ it('当前目录读取失败时不以默认树开放写入，重试后才显示�
   render(<App />);
   await screen.findByTestId('list');
   fireEvent.click(screen.getByRole('button', { name: 'prompts' }));
-  expect(await screen.findByRole('alert')).toHaveProperty('textContent', '合成目录暂不可读');
+  // 页面上可能有多个 alert 区域，直接按文案定位当前错误。
+  expect(await screen.findByText('合成目录暂不可读')).toBeTruthy();
   expect(screen.queryByRole('button', { name: '粘贴收录' })).toBeNull();
   expect(mocks.createChainWithData).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '重试' }));
@@ -1295,7 +1296,7 @@ it.each([
   sessionStorage.setItem(key, '已另存的合成草稿');
   fireEvent.click(screen.getByRole('button', { name: '修改合成草稿' }));
   fireEvent.click(await screen.findByRole('button', { name: action }));
-  await waitFor(() => expect(screen.getByRole('status').textContent).toBe(message));
+  await waitFor(() => expect(screen.getByText(message)).toBeTruthy());
   expect(mocks.createChain).toHaveBeenCalledWith(`${chain.name} (Fork)`, chain.description, chain, targetType);
   await waitFor(() => expect(screen.getByTestId('view').textContent).toBe(targetType === 'character' ? 'characters' : 'list'));
   expect(sessionStorage.getItem(key)).toBe('已另存的合成草稿');

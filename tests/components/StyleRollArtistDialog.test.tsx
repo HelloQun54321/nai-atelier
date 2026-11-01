@@ -750,9 +750,11 @@ it('Roll目录或样张读取中及真实目录读取失败时分组计数未知
 });
 
 it('自动连续加载：Roll画师无需滚动事件或按钮继续到真实末尾', async () => {
-  vi.stubGlobal('IntersectionObserver', class { constructor(private callback: IntersectionObserverCallback) {} observe(target: Element) { queueMicrotask(() => this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver)); } disconnect() {} });
+  // 用宏任务模拟真实触底观察：微任务会被 waitFor 的 act 批处理吞掉，连续追加不会推进。
+  vi.stubGlobal('IntersectionObserver', class { constructor(private callback: IntersectionObserverCallback) {} observe(target: Element) { setTimeout(() => this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver), 0); } disconnect() {} });
   const library = Array.from({ length: 125 }, (_, i) => ({ name: 'auto artist ' + i, chinese: '', postCount: 1 }));
   render(<Fixture library={library} />);
-  await waitFor(() => expect(screen.getAllByRole('button', { name: /^锁定画师：/ })).toHaveLength(125));
+  // 自动追加依赖多轮宏任务；并发跑整套测试时给足余量。
+  await waitFor(() => expect(screen.getAllByRole('button', { name: /^锁定画师：/ })).toHaveLength(125), { timeout: 5000 });
   expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
 });

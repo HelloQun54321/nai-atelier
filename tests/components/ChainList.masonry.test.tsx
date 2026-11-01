@@ -200,7 +200,10 @@ describe('ChainList 最短列筛选与加载', () => {
     await waitFor(() => expect(columnIds(container).flat()).toHaveLength(120));
     expect(container.querySelector('[data-return-item-id="chain-0"]')).toBe(card);
     expect(root.scrollTop).toBe(700);
-    act(() => activeObserver.intersect([true, true, true, true, true]));
+    // 追加后列尾变化会重建观察器，旧实例 targets 已被 disconnect 清空，必须取最新实例再触发。
+    const nextObserver = GalleryIntersectionObserver.instances.at(-1)!;
+    await waitFor(() => expect(nextObserver.targets).toHaveLength(5));
+    act(() => nextObserver.intersect([true, true, true, true, true]));
     await waitFor(() => expect(columnIds(container).flat()).toHaveLength(130));
     expect(container.querySelector('[data-return-item-id="chain-0"]')).toBe(card);
     expect(root.scrollTop).toBe(700);
