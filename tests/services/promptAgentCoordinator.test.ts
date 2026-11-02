@@ -62,7 +62,7 @@ it('页面 RPC 由任务持有层执行，消息重复不重复操作，不依�
   } finally { run.mockRestore(); control.mockRestore(); document.body.innerHTML = ''; }
 });
 it('输入与图片按会话隔离，文字可以跨组件恢复', () => {
-  promptAgentCoordinator.saveComposer('a', 'draft a', [{ data: 'image', mimeType: 'image/png', name: 'a.png' }]);
+  promptAgentCoordinator.saveComposer('a', 'draft a', [{ kind: 'image', bytes: 5, data: 'image', mimeType: 'image/png', name: 'a.png' }]);
   promptAgentCoordinator.saveComposer('b', 'draft b', []);
   expect(promptAgentCoordinator.loadComposer('a').text).toBe('draft a');
   expect(promptAgentCoordinator.loadComposer('b').attachments).toEqual([]);

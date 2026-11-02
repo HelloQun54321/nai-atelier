@@ -6,7 +6,7 @@ import { normalizeAgentGenerationResult, agentGenerationFailure, agentOperationE
 import { getAgentContextUsage } from '../services/agentContextUsage';
 import { AgentProjectImage } from './AgentProjectImage';
 import { extractAgentMedia } from '../services/agentMedia';
-import { prepareAgentAttachment } from '../services/agentAttachments';
+import { agentAttachmentsText, isImageFile, prepareAgentFile, splitAgentAttachmentSegments, stripAgentAttachmentText, MAX_IMAGE_ATTACHMENTS, MAX_TEXT_ATTACHMENTS, type AgentAttachment, type AgentTextAttachment } from '../services/agentAttachments';
 import { findCharacterMention, matchCatalogCharacters, matchCustomCharacters, matchLooseCatalogEntries, mergeCharacterMentionOptions, toAgentCharacterReference, type AgentCharacterMentionOption, type AgentCharacterMentionQuery } from '../services/agentCharacterMentions';
 import { getNaiModelInfo, getRuntimeNaiModelInfo } from '../services/naiModels';
 import { getNaiRuntimeConfig } from '../services/naiRuntime';
@@ -59,7 +59,7 @@ type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string
 // 限额、截断、超时与服务中断后可直接接续；用户主动停止、鉴权或额度失败不提供。
 const RESUMABLE_STOPS = new Set(['turn_limit', 'output_limit', 'output_truncated', 'stalled', 'model_idle', 'model_timeout', 'timeout', 'truncated', 'aborted']);
 const resumableStop = (status?: string, stopReason?: string) => status === 'interrupted' || RESUMABLE_STOPS.has(String(stopReason));
-type AgentAttachment = { data: string; mimeType: string; name: string };const toolLabels: Record<string, string> = {
+const toolLabels: Record<string, string> = {
   request_user_input: '向你提问',
   request_local_image_folder_access: '确认本地目录权限', list_local_images: '浏览本地图片', show_local_image: '展示本地图片', inspect_local_image: '观察本地图片', save_project_image_to_folder: '保存图片到电脑', copy_local_image: '复制本地图片',
   get_local_time: '查询本机时间与时区', get_agent_capabilities: '查询实际可用能力', enable_tool_group: '查询工具分组', show_project_image: '展示项目图片', inspect_project_image: '观察项目图片',
@@ -165,6 +165,18 @@ const AgentMarkdown: React.FC<{ text: string }> = React.memo(({ text }) => {
   return <>{output}</>;
 });
 
+/** 用户消息：附件正文折叠成一行，只有自己的话平铺显示。 */
+const UserMessageText: React.FC<{ text: string }> = ({ text }) => {
+  const segments = splitAgentAttachmentSegments(text);
+  if (segments.length <= 1 && segments[0]?.type !== 'attachment') return <>{text}</>;
+  return <div className="space-y-1.5">{segments.map((segment, index) => segment.type === 'text'
+    ? <p key={index}>{segment.text}</p>
+    : <details key={index} className="rounded-lg bg-gray-200/60 px-2 py-1 dark:bg-gray-700/40">
+      <summary className="cursor-pointer select-none text-micro text-gray-600 dark:text-gray-300">{t('附件 {0} · {1} 字符', [segment.name, segment.size])}</summary>
+      <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all text-micro leading-5 text-gray-600 dark:text-gray-300">{segment.text}</pre>
+    </details>)}</div>;
+};
+
 const AgentUsageDetails: React.FC<{ message: PanelMessage }> = ({ message }) => <div aria-label={t("回答用量")} className="min-w-0">
   <div className="max-w-full break-words px-2 py-1 text-micro leading-5">
     {message.model}{typeof message.usage?.totalTokens === 'number' ? ` · ${message.usage.totalTokens.toLocaleString(getLanguage())} tokens` : ''}
@@ -206,7 +218,7 @@ const AgentMessageList = React.memo(({
       {!!message.tools?.length && <AgentDisclosure title={t("工具活动 · {0} 项{1}", [message.tools.length, message.tools.some(tool => tool.state === 'error' || tool.state === 'interrupted') ? t(' · 有未完成项') : message.tools.some(tool => tool.state === 'running') ? t(' · 处理中') : ''])} label={t("工具活动")} defaultExpanded={displayPreferences.toolsExpanded} error={message.tools.some(tool => tool.state === 'error' || tool.state === 'interrupted')}>
         <div className="space-y-1">{message.tools.map(tool => <details key={tool.id} className={`text-xs leading-6 ${tool.state === 'error' || tool.state === 'interrupted' ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}><summary className="cursor-pointer"><span className={tool.state === 'running' ? 'animate-pulse' : ''}>{tool.state === 'running' ? t("处理中") : tool.state === 'error' ? t("失败") : tool.state === 'interrupted' ? t("未完成") : t("完成")} · {t(toolLabels[tool.name] || tool.name)}</span></summary><AgentLiveOutput as="pre" text={JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)} live={running && index === visibleMessages.length - 1} label={t("工具回执")} className="appearance-group my-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-2 text-micro leading-5 dark:bg-gray-900" /></details>)}</div>
       </AgentDisclosure>}
-      {message.role === 'agent' ? <AgentMarkdown text={message.text || (running && index === visibleMessages.length - 1 && !message.tools?.length && !message.thinking ? t("正在思考…") : '')} /> : message.text}
+      {message.role === 'agent' ? <AgentMarkdown text={message.text || (running && index === visibleMessages.length - 1 && !message.tools?.length && !message.thinking ? t("正在思考…") : '')} /> : message.role === 'user' ? <UserMessageText text={message.text} /> : message.text}
       {message.role === 'user' && !!message.characterReferences?.length && <div className="mt-1 flex max-w-full flex-wrap justify-end gap-1">{message.characterReferences.map(reference => <span key={`${reference.source}:${reference.tag || reference.name}`} title={reference.tag || reference.name} className="max-w-48 truncate rounded-full bg-gray-200/70 px-2 py-0.5 text-micro text-gray-600 dark:bg-gray-700/50 dark:text-gray-300">@{reference.name}</span>)}</div>}
       {message.tools?.filter(tool => tool.name === 'request_user_input').map(tool => <AgentQuestionHistory key={tool.id} args={tool.args} result={tool.result} />)}
       {message.promptChange && <AgentPromptChangeCard change={message.promptChange} disabled={running} onAction={direction => onPromptChange(message.promptChange!, direction)} />}
@@ -667,6 +679,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const activeSession = sessions.find(item => item.id === activeSessionId);
   const activeModel = models.find(item => item.provider === activeSession?.provider && item.id === activeSession?.model);
   const supportsImages = Boolean(activeModel?.imageInput);
+  const attachmentsFull = (!supportsImages || attachments.filter(item => item.kind === 'image').length >= MAX_IMAGE_ATTACHMENTS)
+    && attachments.filter(item => item.kind === 'text').length >= MAX_TEXT_ATTACHMENTS;
   const sessionReady = Boolean(activeSessionId && activeSession && activeModel);
   const canCompact = sessionReady && !running && !compacting && !modelChanging && messages.some(message => message.role === 'user');
   const slashQuery = input.trim().slice(1).toLocaleLowerCase();
@@ -953,11 +967,16 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const run = async (suggestion?: string, mode: 'prompt' | 'retry' | 'resume' = 'prompt') => {
     if (mode === 'prompt' && !editingMessageId && !/[\r\n]/.test(suggestion ?? input) && (suggestion ?? input).trim().toLowerCase() === '/compact') { executeSlashCommand(); return; }
     if (running || compacting) return;
-    const prompt = (suggestion ?? input).trim() || (mode === 'prompt' && attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
+    const typed = (suggestion ?? input).trim();
+    const imageAttachments = attachments.filter(attachment => attachment.kind === 'image');
+    // 文字类文件并进消息正文，图片仍走看图通道；两者都不要求用户改输入框。
+    const attachmentText = mode === 'prompt' ? agentAttachmentsText(attachments) : '';
+    const prompt = [typed, attachmentText].filter(Boolean).join('\n\n')
+      || (mode === 'prompt' && imageAttachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
     // 引用标签与正文保持一致：正文里已经没有 @名称 的引用不再发送。
-    const activeReferences = characterReferences.filter(reference => prompt.includes(`@${reference.name}`));
+    const activeReferences = characterReferences.filter(reference => typed.includes(`@${reference.name}`));
     if (!sessionReady || modelChanging || attachmentLoadingRef.current || !activeSessionId || !activeSession || (mode !== 'retry' && !prompt)) return;
-    if (mode === 'prompt' && !editingMessageId && attachments.length && !supportsImages) {
+    if (mode === 'prompt' && !editingMessageId && imageAttachments.length && !supportsImages) {
       setMessages(previous => [...previous, { id: createUuid(), role: 'error', text: '当前模型不支持图片输入，请在发送键旁选择支持图片的模型。' }]);
       return;
     }
@@ -990,7 +1009,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     const controller = new AbortController();
     try {
       const imageDisplay = getMobileImageDisplayPreferences();
-      await promptAgentCoordinator.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], characterReferences: effectiveMode === 'prompt' ? activeReferences : [], draft: props.draft, context: { clientSettings: {
+      await promptAgentCoordinator.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? imageAttachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], characterReferences: effectiveMode === 'prompt' ? activeReferences : [], draft: props.draft, context: { clientSettings: {
         language: getLanguage(),
         currentPage: (() => { const page = readAgentPage(); return { view: page.view, title: page.title, snapshotId: page.snapshotId, capturedAt: page.capturedAt }; })(),
         themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true', safeModeStartup: localStorage.getItem('nai_safe_mode_startup') !== 'false',
@@ -1190,15 +1209,19 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     setFollowingBottom(false);
     setVisibleMessageCount(count => Math.min(messages.length, count + 60));
   };
+  const countAttachments = (list: readonly AgentAttachment[], kind: 'image' | 'text') => list.filter(item => item.kind === kind).length;
   const addAttachments = async (files: FileList | readonly File[] | null) => {
-    if (!files || attachmentLoadingRef.current || !sessionReady || running || !supportsImages) return;
+    if (!files || attachmentLoadingRef.current || !sessionReady || running) return;
     const session = activeSessionId; const next = [...attachments]; const errors: string[] = [];
     attachmentLoadingRef.current = true; setAttachmentBusy(true); setAttachmentError('');
     try {
       for (const file of Array.from(files)) {
-        if (next.length >= 4) { errors.push(`${file.name}：最多 4 张图片`); continue; }
-        try { next.push(await prepareAgentAttachment(file)); }
-        catch (error) { errors.push(`${file.name}：${error instanceof Error ? error.message : '图片处理失败'}`); }
+        const image = isImageFile(file);
+        if (image && !supportsImages) { errors.push(`${file.name}：当前模型不支持图片输入`); continue; }
+        if (image && countAttachments(next, 'image') >= MAX_IMAGE_ATTACHMENTS) { errors.push(`${file.name}：最多 ${MAX_IMAGE_ATTACHMENTS} 张图片`); continue; }
+        if (!image && countAttachments(next, 'text') >= MAX_TEXT_ATTACHMENTS) { errors.push(`${file.name}：最多 ${MAX_TEXT_ATTACHMENTS} 个文字文件`); continue; }
+        try { next.push(await prepareAgentFile(file)); }
+        catch (error) { errors.push(`${file.name}：${error instanceof Error ? error.message : '文件处理失败'}`); }
       }
       if (composerSessionRef.current === session && uiActiveRef.current) { setAttachments(next); setAttachmentError(errors.join('；')); }
     } finally { attachmentLoadingRef.current = false; setAttachmentBusy(false); }
@@ -1207,9 +1230,15 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     loadEarlier: loadEarlierMessages,
     copy: message => { void copyMessage(message.id, message.text).catch(reportControlError); },
     edit: message => {
+      // 附件正文不回到输入框：还原成附件 chip，原话保持可编辑。
+      const stripped = stripAgentAttachmentText(message.text);
+      const restored: AgentTextAttachment[] = splitAgentAttachmentSegments(message.text).flatMap(segment => segment.type !== 'attachment' ? [] : [{
+        kind: 'text' as const, data: '' as const, mimeType: 'text/plain', name: segment.name, bytes: segment.text.length, text: segment.text, note: '文本文件',
+      }]);
       setEditingMessageId(message.id);
-      setInput(message.text);
-      setCharacterReferences((message.characterReferences || []).filter(reference => message.text.includes(`@${reference.name}`)));
+      setInput(stripped);
+      setAttachments(previous => [...previous.filter(item => item.kind === 'image'), ...restored]);
+      setCharacterReferences((message.characterReferences || []).filter(reference => stripped.includes(`@${reference.name}`)));
       setReferenceLimitNotice('');
       setMention(null);
     },
@@ -1401,12 +1430,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             ))}
             {!mentionLoading && mentionOptions.length === 0 && <p className="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">{t('没有匹配的角色；可以继续输入角色名。')}</p>}
           </div>}
-          {!!attachments.length && <p className="mb-2 text-micro text-gray-500">{t("发送时交给 {0}；图片用量计入当前模型。原文件保持不变。", [`${activeModel?.provider}/${activeModel?.id}`])}</p>}
+          {!!attachments.length && <p className="mb-2 text-micro text-gray-500">{t("发送时交给 {0}；图片用量计入当前模型，文字文件并进这条消息。原文件保持不变。", [`${activeModel?.provider}/${activeModel?.id}`])}</p>}
           {!!attachments.length && (
             <div className="mb-2 flex flex-wrap gap-1.5">
               {attachments.map((attachment, index) => (
-                <span key={`${attachment.name}-${index}`} className="flex max-w-48 items-center gap-1.5 rounded-full bg-indigo-50 py-1 pl-2.5 pr-1.5 text-micro text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200">
+                <span key={`${attachment.name}-${index}`} title={attachment.kind === 'text' ? `${attachment.note} · ${attachment.bytes.toLocaleString(getLanguage())} 字符` : attachment.mimeType} className={`flex max-w-48 items-center gap-1.5 rounded-full py-1 pl-2.5 pr-1.5 text-micro ${attachment.kind === 'text' ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-200' : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200'}`}>
                   <span className="truncate">{attachment.name}</span>
+                  <span className="shrink-0 opacity-60">{attachment.kind === 'text' ? t('文字') : t('图片')}</span>
                   <button
                     type="button"
                     onClick={() => setAttachments(previous => previous.filter((_, itemIndex) => itemIndex !== index))}
@@ -1438,9 +1468,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               {characterReferences.length > referenceLimit && <p className="w-full text-micro text-amber-600 dark:text-amber-400">{t('当前模型最多引用 {0} 个角色，发送时只保留前 {0} 个。', [referenceLimit])}</p>}
             </div>
           )}
-          <textarea onPaste={event => { const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label={t("任务要求")} ref={inputRef} value={input} disabled={!sessionReady} aria-autocomplete="list" aria-controls={showMentionList ? mentionListId : showSlashCommand ? commandListId : undefined} aria-haspopup="listbox" aria-activedescendant={showMentionList && mentionOptions.length ? `${mentionListId}-${Math.min(mentionActive, mentionOptions.length - 1)}` : showSlashCommand ? `${commandListId}-compact` : undefined} onFocus={() => { setSlashDismissed(false); }} onBlur={() => { setSlashDismissed(true); setMention(null); }} onSelect={event => syncMention(event.currentTarget.value, event.currentTarget.selectionStart ?? 0)} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onChange={event => { const next = event.target.value; setInput(next); setSlashDismissed(false); syncMention(next, event.target.selectionStart ?? next.length); if (!(event.nativeEvent as InputEvent).isComposing && !composing) setCharacterReferences(previous => previous.filter(reference => next.includes(`@${reference.name}`))); }} onKeyDown={handleComposerKeyDown} rows={1} placeholder={!sessionReady ? modelsLoaded ? t("先接入或选择模型服务…") : t("正在加载对话…") : running ? t("可以先写下一条，任务结束后发送…") : editingMessageId ? t("修改这条消息后重新发送…") : t("输入要求，或用 / 查看命令，@ 引用角色库…")} className="agent-composer-input min-h-12 w-full min-w-0 resize-none bg-transparent px-1 py-2 text-sm leading-6 text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-55 dark:text-gray-100 dark:placeholder:text-gray-500" />
+          <textarea onPaste={event => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label={t("任务要求")} ref={inputRef} value={input} disabled={!sessionReady} aria-autocomplete="list" aria-controls={showMentionList ? mentionListId : showSlashCommand ? commandListId : undefined} aria-haspopup="listbox" aria-activedescendant={showMentionList && mentionOptions.length ? `${mentionListId}-${Math.min(mentionActive, mentionOptions.length - 1)}` : showSlashCommand ? `${commandListId}-compact` : undefined} onFocus={() => { setSlashDismissed(false); }} onBlur={() => { setSlashDismissed(true); setMention(null); }} onSelect={event => syncMention(event.currentTarget.value, event.currentTarget.selectionStart ?? 0)} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onChange={event => { const next = event.target.value; setInput(next); setSlashDismissed(false); syncMention(next, event.target.selectionStart ?? next.length); if (!(event.nativeEvent as InputEvent).isComposing && !composing) setCharacterReferences(previous => previous.filter(reference => next.includes(`@${reference.name}`))); }} onKeyDown={handleComposerKeyDown} rows={1} placeholder={!sessionReady ? modelsLoaded ? t("先接入或选择模型服务…") : t("正在加载对话…") : running ? t("可以先写下一条，任务结束后发送…") : editingMessageId ? t("修改这条消息后重新发送…") : t("输入要求，或用 / 命令、@ 引用角色；也可以拖入项目里的图片和本地文件…")} className="agent-composer-input min-h-12 w-full min-w-0 resize-none bg-transparent px-1 py-2 text-sm leading-6 text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-55 dark:text-gray-100 dark:placeholder:text-gray-500" />
           <div className="mt-1 flex min-w-0 items-center gap-2">
-            <label title={!sessionReady ? t("请配置或选择模型服务") : supportsImages ? t("添加图片") : t("当前模型不支持图片输入")} aria-disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} className={'flex h-9 w-9 flex-none items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 ' + (sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:bg-gray-200/60 dark:hover:bg-gray-800' : 'cursor-not-allowed opacity-35')}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label={t("选择图片附件")} onChange={event => { void addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} /></label>
+            <label title={!sessionReady ? t("请配置或选择模型服务") : attachmentsFull ? t("附件已满，先移除再添加") : t("添加图片或文字文件")} aria-disabled={!sessionReady || running || attachmentBusy || attachmentsFull} className={'flex h-9 w-9 flex-none items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 ' + (sessionReady && !running && !attachmentsFull ? 'cursor-pointer hover:bg-gray-200/60 dark:hover:bg-gray-800' : 'cursor-not-allowed opacity-35')}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/avif,image/svg+xml,application/pdf,text/*,.md,.json,.csv,.log,.yaml,.yml,.docx,.xlsx,.pptx" multiple hidden aria-label={t("选择图片或文字文件")} onChange={event => { void addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachmentBusy || attachmentsFull} /></label>
             <AgentPermissionSelect disabled={running || compacting} />
             <AgentModelControl key={activeSessionId} models={models} activeModel={activeModel} thinkingLevels={availableThinkingLevels} thinkingLevel={selectedThinkingLevel} contextUsage={getAgentContextUsage(messages, activeModel, activeSession?.context)} open={showModelMenu} disabled={!props.open || running || compacting || !activeSessionId || !activeSession} onOpenChange={changeModelMenu} onModelChange={updateSessionModel} onThinkingChange={updateThinkingLevel} onBusyChange={setModelChanging} onConfigure={openAgentSettings} />
             {(running || compactRequestPending) && <button type="button" onClick={() => void stopTask()} className="agent-composer-action flex items-center justify-center rounded-full" aria-label={t("停止")} title={t("停止任务；已完成的修改不会撤销")}><Square className="h-3.5 w-3.5 fill-current" /></button>}

@@ -251,7 +251,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     try {
       renderPanel(); await screen.findByText('保留的回答');
       const input = screen.getByRole('textbox', { name: '任务要求' });
-      expect(input.getAttribute('placeholder')).toBe('输入要求，或用 / 查看命令，@ 引用角色库…');
+      expect(input.getAttribute('placeholder')).toBe('输入要求，或用 / 命令、@ 引用角色；也可以拖入项目里的图片和本地文件…');
       fireEvent.change(input, { target: { value: '/' } });
       const list = screen.getByRole('listbox', { name: '助手命令' });
       const option = within(list).getByRole('option', { name: '/compact 压缩上下文' });
@@ -289,7 +289,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
 
   it.each(['/compact', ' /COMPACT '])('完整命令“%s”点击发送走压缩而非模型，失败仍保留附件与后来输入', async command => {
     stubServices({ imageInput: true }); vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ id: 'u', role: 'user', text: '原始目标' }]); vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
-    vi.spyOn(promptAgentCoordinator, 'loadComposer').mockReturnValue({ text: '', attachments: [{ name: 'slash-synthetic.png', data: 'c3ludGhldGlj', mimeType: 'image/png' }] });
+    vi.spyOn(promptAgentCoordinator, 'loadComposer').mockReturnValue({ text: '', attachments: [{ kind: 'image', bytes: 9, name: 'slash-synthetic.png', data: 'c3ludGhldGlj', mimeType: 'image/png' }] });
     const run = vi.spyOn(promptAgentService, 'run'); let reject!: (error: Error) => void;
     const compact = vi.spyOn(promptAgentService, 'compactSession').mockImplementation(() => new Promise((_resolve, fail) => { reject = fail; }));
     try {
@@ -417,7 +417,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     stubServices({ imageInput: true });
     vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ id: 'u', role: 'user', text: '原始内容' }]);
     vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
-    vi.spyOn(promptAgentCoordinator, 'loadComposer').mockReturnValue({ text: '尚未发送', attachments: [{ name: 'synthetic.png', data: 'c3ludGhldGlj', mimeType: 'image/png' }] });
+    vi.spyOn(promptAgentCoordinator, 'loadComposer').mockReturnValue({ text: '尚未发送', attachments: [{ kind: 'image', bytes: 9, name: 'synthetic.png', data: 'c3ludGhldGlj', mimeType: 'image/png' }] });
     let cancel!: (reason: Error) => void;
     vi.spyOn(promptAgentService, 'compactSession').mockImplementation(() => new Promise((_resolve, reject) => { cancel = reject; }));
     const abort = vi.spyOn(promptAgentService, 'control').mockImplementation(async () => { cancel(new Error('摘要压缩已停止')); });
@@ -874,10 +874,21 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
   });
   it('附件拒绝原因可见，格式错误不会消失在后台', async () => {
     stubServices({ imageInput: true }); renderPanel();
-    const chooser = await screen.findByLabelText('选择图片附件');
+    const chooser = await screen.findByLabelText('选择图片或文字文件');
     await waitFor(() => expect((chooser as HTMLInputElement).disabled).toBe(false));
-    fireEvent.change(chooser, { target: { files: [new File(['synthetic'], 'document.pdf', { type: 'application/pdf' })] } });
-    expect((await screen.findByRole('alert')).textContent).toContain('document.pdf：仅支持');
+    fireEvent.change(chooser, { target: { files: [new File(['synthetic'], 'archive.zip', { type: 'application/zip' })] } });
+    expect((await screen.findByRole('alert')).textContent).toContain('archive.zip：压缩包');
+  });
+  it('带文字附件的消息折叠显示，附件正文不默认展开', async () => {
+    stubServices({ imageInput: true });
+    const attachment = '[附件：设定.md · 12 字符]\n一只猫\n和一只狗\n[/附件]';
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ id: 'u', role: 'user', text: `按附件改写\n\n${attachment}` }]);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    renderPanel();
+    const summary = await screen.findByText('附件 设定.md · 12 字符');
+    expect(summary.tagName).toBe('SUMMARY');
+    expect(summary.closest('details')?.open).toBe(false);
+    expect(screen.getByText('按附件改写')).toBeTruthy();
   });
   it('生成完成回执包含准确历史 ID，后续保存不猜最新图片', async () => {
     stubServices(); const controls = vi.spyOn(promptAgentService, 'control').mockResolvedValue(undefined);

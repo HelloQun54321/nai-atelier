@@ -3,10 +3,11 @@ import type { PromptAgentDraft } from '../types';
 import { clearAgentPageHover, getAgentPageClientId, observeAgentPage, operateAgentPage, readAgentPage, type AgentPageSnapshot } from './agentWorkspace';
 import { diffAgentClientDraft } from './agentLabSync.mjs';
 import { executeAgentCommand, getAgentCommands } from './agentCommands';
+import type { AgentAttachment } from './agentAttachments';
 
 type RunInput = Parameters<typeof promptAgentService.run>[0];
 const active = new Map<string, Promise<void>>();
-const composers = new Map<string, { text: string; attachments: Array<{ data: string; mimeType: string; name: string }> }>();
+const composers = new Map<string, { text: string; attachments: AgentAttachment[] }>();
 let selectedSession: PromptAgentSession | undefined;
 let initialSession: Promise<PromptAgentSession> | undefined;
 type PageClient = { clientId: string; baseline: PromptAgentDraft; getDraft: () => PromptAgentDraft; stop: () => void; queue: Promise<void> };
@@ -123,9 +124,9 @@ export const promptAgentCoordinator = {
     if (task.clientDraft) attachClient(sessionId, task.clientDraft, getDraft);
     for (const request of task.pendingUI || []) void handlePageRequest(sessionId, request).catch(() => { /* 下一次轮询恢复仅剩的实时请求。 */ });
   },
-  saveComposer(sessionId: string, text: string, attachments: Array<{ data: string; mimeType: string; name: string }>) {
+  saveComposer(sessionId: string, text: string, attachments: AgentAttachment[]) {
     if (!sessionId) return;
-    composers.set(sessionId, { text, attachments: attachments.slice(0, 4) });
+    composers.set(sessionId, { text, attachments: attachments.slice(0, 10) });
     // 图片只留有限的标签页内缓存；文字承担浏览器草稿职责。
     while (composers.size > 8) composers.delete(composers.keys().next().value!);
     try { sessionStorage.setItem(`nai-agent-composer-${sessionId}`, text.slice(0, 8000)); } catch { /* 浏览器禁用存储或空间不足时继续保留内存草稿。 */ }

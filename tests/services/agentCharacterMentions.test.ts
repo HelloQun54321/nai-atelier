@@ -21,14 +21,25 @@ const hutao = chain({ id: 'catalog-hutao', name: '胡桃', basePrompt: 'hu tao (
 const raiden = chain({ id: 'custom-raiden', name: '雷电将军', basePrompt: 'raiden shogun', updatedAt: 30 });
 
 describe('findCharacterMention', () => {
-  it('只在行首或空白后的 @ 触发，并给出替换区间', () => {
+  it('行首、空白和括号后的 @ 触发，并给出替换区间', () => {
     expect(findCharacterMention('请用 @芙', 5)).toEqual({ start: 3, end: 5, query: '芙' });
     expect(findCharacterMention('@胡桃', 3)).toEqual({ start: 0, end: 3, query: '胡桃' });
     expect(findCharacterMention('（@芙', 3)).toEqual({ start: 1, end: 3, query: '芙' });
+    expect(findCharacterMention('请用 @', 4)).toMatchObject({ start: 3, query: '' });
+  });
+
+  it('先打字再直接接 @ 也能触发，中文与标点后面不再要求空格', () => {
+    expect(findCharacterMention('帮我画一张@胡桃', 8)).toEqual({ start: 5, end: 8, query: '胡桃' });
+    expect(findCharacterMention('看这个，@芙', 6)).toEqual({ start: 4, end: 6, query: '芙' });
+    expect(findCharacterMention('用"@芙', 4)).toMatchObject({ start: 2, query: '芙' });
+    expect(findCharacterMention('1girl@hutao', 11)).toEqual({ start: 5, end: 11, query: 'hutao' });
+  });
+
+  it('邮箱式写法仍让位给普通文本', () => {
     expect(findCharacterMention('邮件 a@b.com', 9)).toBeNull();
+    expect(findCharacterMention('a@sub.example.org', 16)).toBeNull();
     expect(findCharacterMention('普通文本', 4)).toBeNull();
     expect(findCharacterMention('请用 @芙宁娜 画', 8)).toBeNull();
-    expect(findCharacterMention('请用 @', 4)).toMatchObject({ start: 3, query: '' });
   });
 });
 

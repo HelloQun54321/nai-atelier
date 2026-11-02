@@ -22,13 +22,26 @@ export interface AgentCharacterMentionQuery {
   query: string;
 }
 
-/** 光标前是否正处于 @ 查询中；只在行首或空白后的 @ 触发，避免邮箱等普通文本误触发。 */
+/** 邮箱域名样式的 @ 尾巴（例如 b.com）不当作角色引用，其余位置一律触发。 */
+const EMAIL_TAIL = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
+/** 邮箱本地部分的字符；只有这类字符紧跟 @ 时才可能是邮箱。 */
+const EMAIL_LOCAL = /[A-Za-z0-9._%+-]/;
+
+/**
+ * 光标前是否正处于 @ 查询中。
+ *
+ * 中文和标点后面直接接 @ 是常见写法（"帮忙画一张@胡桃"），因此不再要求 @ 前是空白；
+ * 仅在「邮箱字符 + 域名样式尾巴」这一种组合下让位给普通文本，避免写完邮箱弹出角色候选。
+ */
 export const findCharacterMention = (text: string, caret: number): AgentCharacterMentionQuery | null => {
   if (caret < 1) return null;
   const before = text.slice(0, caret);
-  const match = /(?:^|[\s(（【\[])[@＠]([^\s@＠]{0,40})$/.exec(before);
+  const match = /[@＠]([^\s@＠]{0,40})$/.exec(before);
   if (!match) return null;
-  return { start: before.length - match[1].length - 1, end: caret, query: match[1] };
+  const start = before.length - match[1].length - 1;
+  const previous = start > 0 ? before[start - 1] : '';
+  if (previous && EMAIL_LOCAL.test(previous) && EMAIL_TAIL.test(match[1])) return null;
+  return { start, end: caret, query: match[1] };
 };
 
 const normalize = (value: string) => value.replaceAll('_', ' ').normalize('NFKC').toLowerCase().trim();
