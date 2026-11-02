@@ -30,7 +30,7 @@ vi.mock('../../services/naiRuntime', async original => ({ ...await original<type
   useNaiRuntime: () => DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig: async () => DEFAULT_NAI_RUNTIME }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => async () => true }));
 vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: () => null }));
-vi.mock('../../components/PromptLibraryAccess', () => ({ PromptLibraryWorkspace: ({ children }: any) => children }));
+vi.mock('../../components/PromptLibraryAccess', () => ({ PromptLibraryWorkspace: ({ children }: any) => children, PromptLibraryRandomButton: () => null }));
 vi.mock('../../components/TagAutocompleteTextarea', () => ({ TagAutocompleteTextarea: ({ value, onValueChange, libraryField: _libraryField, showTranslations: _showTranslations, ...props }: any) =>
   <textarea role="combobox" {...props} value={value} onChange={event => onValueChange(event.target.value)} /> }));
 

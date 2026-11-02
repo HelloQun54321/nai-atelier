@@ -1,5 +1,5 @@
 import GenerationTemplateEditor from '../GenerationTemplateEditor';
-import React, { useContext, useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Layers, LockKeyhole, X } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import { getRollArtistRange, getRollPinnedArtists, validateRollExperiment, type RollExperiment, type RollTemplate } from '../../services/styleRoll';
@@ -73,7 +73,7 @@ const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading 
         <div className={section === 'template' ? 'space-y-4' : 'hidden'}>
           {started && <p className="flex items-center gap-2 text-xs text-gray-500"><LockKeyhole className="h-4 w-4" />{t('这一记录已经出过图：修改提示词、模型或 Seed 只影响接下来生成的图片，已有的图保持不变。')}</p>}
           <GenerationTemplateEditor value={draft.template} onChange={template => setDraft(current => ({ ...current, template }))} disabled={busy} enforceFreeStepLimit={enforceFreeStepLimit} onBusyChange={setPresetBusy}
-            characterSlot={<RollCharacterComposer template={draft.template} disabled={busy} onChange={template => setDraft(current => ({ ...current, template }))} />} />
+            characterSlot={<RollCharacterComposer template={draft.template} disabled={editingBusy} onChange={template => setDraft(current => ({ ...current, template }))} />} />
         </div>
       </div>
       <footer className="flex flex-none items-center justify-end gap-3 border-t border-gray-200 p-3 dark:border-gray-800">
@@ -96,6 +96,23 @@ const RollCharacterComposer: React.FC<{ template: RollTemplate; disabled: boolea
   useLanguage();
   const characters = template.characters ?? [];
   const patch = (next: Partial<RollTemplate>) => onChange({ ...template, ...next });
+  // 旧记录把角色词存在 characterPrompt 上，而新编辑器只认 characters：
+  // 打开配置时迁移成第一个角色，避免这段词界面上看不见、却仍被拼进出图。
+  const latest = useRef(template);
+  latest.current = template;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const migrated = useRef(false);
+  useEffect(() => {
+    const current = latest.current;
+    const existing = current.characters ?? [];
+    const legacyPrompt = current.characterPrompt?.trim();
+    const paramCharacters = current.params?.characters ?? [];
+    // 参数级角色已经参与出图（rollGenerationParams 会取用），不在这里搬动，避免改变生成内容。
+    if (migrated.current || existing.length > 0 || paramCharacters.length > 0 || !legacyPrompt) return;
+    migrated.current = true;
+    onChangeRef.current({ ...current, characterPrompt: undefined, characters: [{ ...createBlankLabCharacter(), prompt: legacyPrompt }] });
+  }, []);
   const params: NAIParams = { ...template.params, characters };
   const setParams = (next: NAIParams) => patch({ characters: next.characters ?? [] });
   const updateCharacter = (index: number, updates: Partial<CharacterParams>) => {

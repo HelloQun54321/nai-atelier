@@ -97,6 +97,7 @@ export default function GenerationTemplateEditor({ value, onChange, disabled = f
           {characterSlot ?? <label className="block text-xs font-semibold">{t('角色提示词（可选）')}<TagAutocompleteTextarea libraryField={{ textOnly: true }} showTranslations={false} aria-label={t('角色提示词（可选）')} className={`${field} mt-1 min-h-20 font-mono`} value={value.characterPrompt || ''} disabled={editingBusy || readOnly} onValueChange={characterPrompt => onChange({ ...value, characterPrompt })} /><span className="mt-1 block text-micro font-normal text-gray-400">{t(characterHint || '自动接在画师串之后；也可在公共提示词里用 {character} 指定位置')}</span></label>}
           <label className="block text-xs font-semibold">{t('负面提示词')}<TagAutocompleteTextarea libraryField={{ negative: true }} showTranslations={false} aria-label={t('负面提示词')} className={`${field} mt-1 min-h-20 font-mono`} value={value.negativePrompt} disabled={editingBusy || readOnly} onValueChange={negativePrompt => onChange({ ...value, negativePrompt })} /></label>
           <ChainEditorParams params={value.params} prompt={value.prompt} setParams={params => onChange({ ...value, params })} modelFilter={modelFilter} canEdit={!editingBusy && !readOnly} markChange={() => {}} enforceFreeStepLimit={enforceFreeStepLimit} />
-          {!!value.params.characters?.length && <p className="text-xs text-gray-500">{t('保留 {0} 个角色的完整提示词与位置', [value.params.characters.length])}</p>}
+          {/* 角色由外部插槽编辑时（Roll），参数里的旧角色只是历史快照，不该再提示"保留"。 */}
+          {!characterSlot && !!value.params.characters?.length && <p className="text-xs text-gray-500">{t('保留 {0} 个角色的完整提示词与位置', [value.params.characters.length])}</p>}
   </div></PromptLibraryWorkspace>;
 }

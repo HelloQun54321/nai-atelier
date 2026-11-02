@@ -238,13 +238,22 @@ it.each(legacyTemplateCases)('打开旧默认模板不覆盖%s', async (_label, 
   if (templateCharacters.length) {
     expect(roleFields()[0]).toHaveProperty('value', 'structured role');
     expect(roleFields('选填')[0]).toHaveProperty('value', 'bad role');
+  } else if (characterPrompt) {
+    // 旧版单段角色词迁移成第一个角色，界面可见也可删。
+    expect(roleFields()[0]).toHaveProperty('value', characterPrompt);
   } else {
     expect(roleFields()).toHaveLength(0);
-    // 参数级旧角色仍按原样参与生成，界面以提示行标明保留
-    if (paramCharacters.length) expect(screen.getByText('保留 1 个角色的完整提示词与位置')).toBeTruthy();
+    // 参数级旧角色仍按原样参与生成；Roll 的角色由专用编辑器管理，不再另加"保留"提示。
+    if (paramCharacters.length) expect(screen.queryByText(/保留 1 个角色的完整提示词与位置/)).toBeNull();
   }
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
-  expect(save.mock.calls[0][0].template).toEqual(originalTemplate);
+  const saved = save.mock.calls[0][0].template;
+  if (characterPrompt) {
+    expect(saved.characters?.[0]?.prompt).toBe(characterPrompt);
+    expect(saved.characterPrompt).toBeUndefined();
+  } else {
+    expect(saved).toEqual(originalTemplate);
+  }
   expect(initial.template).toEqual(originalTemplate);
 });
 
