@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Dice5, Heart, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { Check, Dice5, Heart, Save, Trash2 } from 'lucide-react';
 import type { LocalGenItem } from '../../types';
 import { t } from '../../services/i18n';
 import { type RollCandidate, type RollExperiment } from '../../services/styleRoll';
@@ -59,8 +59,8 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
           #{index}{roundNo ? <span className="text-micro opacity-70">R{roundNo}</span> : null}
         </span>
         {!selecting && <div data-card-action="true" className="hover-reveal-md">
-          <button type="button" aria-label={t(candidate.archived ? '恢复候选 {0}' : '丢弃候选 {0}', [index])} title={t(candidate.archived ? '恢复' : '丢弃')} disabled={busy} onClick={event => { event.stopPropagation(); onArchive(candidate.id); }} className={`mobile-size-locked flex h-9 w-9 items-center justify-center rounded-full text-white shadow-md backdrop-blur-md transition-all hover:scale-110 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8 ${candidate.archived ? 'bg-amber-500/90 hover:bg-amber-600' : 'bg-black/50 hover:bg-red-600'}`}>
-            {candidate.archived ? <RotateCcw className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
+          <button type="button" aria-label={t('删除候选 {0}', [index])} title={t('删除')} disabled={busy} onClick={event => { event.stopPropagation(); onArchive(candidate.id); }} className="nai-float-btn mobile-size-locked flex items-center justify-center rounded-full bg-black/50 text-white shadow-md backdrop-blur-md transition-all hover:scale-110 hover:bg-red-600 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>}
       </div>
@@ -82,10 +82,10 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
           </>
         ) : (
           <>
-            {/* 右上角操作岛（分享 / 存为风格串） */}
+            {/* 右上角只留筛图要连点的两个：收藏与存为风格串；下载／复制在详情页做。 */}
             <ImageCardActions>
-              {item && <ImageShareActions imageUrl={item.imageUrl} filename={`roll-${item.id}.png`} generationData={item} favorite={{ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id }} notify={notify} variant="card" className="flex-col" />}
-              {!candidate.archived && item && (candidate.savedChainId
+              {item && <ImageShareActions imageUrl={item.imageUrl} filename={`roll-${item.id}.png`} generationData={item} favorite={{ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id }} notify={notify} variant="card" className="flex-col" showTransfer={false} />}
+              {item && (candidate.savedChainId
                 ? <span data-image-action-item aria-label={t('已保存候选 {0}', [index])} title={t('已保存到风格串')} className={`${IMAGE_CARD_ACTION_CLASS} inline-flex items-center justify-center rounded-full bg-emerald-700 text-white shadow-lg backdrop-blur-md`}><Check className="h-4 w-4" /></span>
                 : <button
                   type="button"

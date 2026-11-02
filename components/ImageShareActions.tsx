@@ -6,7 +6,8 @@ import type { ImageGenerationData } from '../services/imageClipboardContext';
 import { ImageCardActions } from './ImageCardActions';
 import { collectionRevision, collectionTargetActive, ensureCollection, loadCollection, subscribeCollection, toggleCollectionTarget, type CollectionTarget } from '../services/collectionFavorites';
 
-export const IMAGE_CARD_ACTION_CLASS = 'mobile-touch mobile-size-locked h-11 w-11 rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white dark:text-white/90 md:h-8 md:w-8';
+// 尺寸统一走 --nai-float-control（设置里可调），缺省 36px；mobile-size-locked 让全局 44px 触控下限不把它撑成竖条。
+export const IMAGE_CARD_ACTION_CLASS = 'nai-float-btn mobile-touch mobile-size-locked rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white dark:text-white/90';
 
 interface Props {
   imageUrl: string;

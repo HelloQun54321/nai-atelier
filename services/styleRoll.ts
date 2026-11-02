@@ -1,4 +1,5 @@
-import type { NAIParams, PromptChain } from '../types';
+import type { CharacterParams, NAIParams, PromptChain, PromptSections } from '../types';
+import type { LabSectionLayout } from './labSections';
 import { createUuid } from './id';
 import { applyNaiModelSettings, DEFAULT_NAI_MODEL } from './naiModels';
 import type { NaiRuntimeConfig } from './naiRuntime';
@@ -10,7 +11,22 @@ export interface RollTag { tag: string; weight: number }
 export interface RollRules { minArtists: number; maxArtists: number; minWeight: number; maxWeight: number; preferredMultiplier?: number; preferredMinArtists?: number; preferredOnly?: boolean }
 /** 所选来源及当时提取次数；抽样范围独立于每张图片的人数上限。 */
 export interface RollChainArtistSource { chainIds: string[]; artists: { tag: string; count: number }[] }
-export interface RollTemplate { prompt: string; negativePrompt: string; characterPrompt?: string; params: NAIParams }
+export interface RollTemplate {
+  prompt: string;
+  negativePrompt: string;
+  /** v1 的单角色提示词。存在 characters 时只为兼容旧记录保留，不再参与组装。 */
+  characterPrompt?: string;
+  /**
+   * 多角色：与实验室普通模式同构（各自的分区正面／负面、位置、启用状态）。
+   * 画师串仍只替换全局 `{style}`，不会进入角色内容——角色与画风是两个独立的维度。
+   */
+  characters?: CharacterParams[];
+  /** 与实验室同构的分区内容（角色栏之外的场景／补充等）；缺省时只用手写的 prompt。 */
+  sections?: PromptSections;
+  /** 分区布局，随 sections 一起保存。 */
+  sectionLayout?: LabSectionLayout;
+  params: NAIParams;
+}
 export interface RollPreset { id: string; name: string; template: RollTemplate; revision: number; createdAt: number; updatedAt: number }
 /** 只读取旧记录的模式字段；新轮次统一使用固定 Tag 列表。 */
 interface LegacyRollDrawPlan {
@@ -30,6 +46,11 @@ export interface RollCandidate {
   createdAt: number;
   archived: boolean;
   savedChainId?: string;
+  /**
+   * 生成这一串时所用模板的指纹。Roll 允许中途改配置，靠它把「旧图」和「当前配置」
+   * 区分开：模板变了以后旧候选图仍能正确归位，不会被当成不匹配而隐藏。
+   */
+  configKey?: string;
 }
 export interface RollRound {
   id: string; candidateIds: string[]; createdAt: number; closedAt?: number;
@@ -63,6 +84,7 @@ export const DEFAULT_ROLL_CHARACTER_PROMPT = '1girl, solo, upper body, looking a
 export const DEFAULT_ROLL_NEGATIVE = 'worst quality, lowres, bad quality, jpeg artifacts, very displeasing, logo, chromatic aberration, scan artifacts, film grain, artistic error, multiple views, dithering, halftone, too many watermarks, blank page, screentone, negative space, watermark, signature, bad anatomy, bad hands, blurry';
 export function createDefaultRollTemplate(runtime: NaiRuntimeConfig): RollTemplate {
   return { prompt: DEFAULT_ROLL_PROMPT, characterPrompt: DEFAULT_ROLL_CHARACTER_PROMPT, negativePrompt: DEFAULT_ROLL_NEGATIVE,
+    characters: [],
     params: applyNaiModelSettings({ model: DEFAULT_NAI_MODEL, width: 832, height: 1216, steps: runtime.freeMaxSteps, scale: 5, sampler: 'k_euler_ancestral', qualityToggle: false, ucPreset: 4, seed: 0, characters: [] }, runtime) };
 }
 
@@ -117,12 +139,40 @@ export const formatRollStyle = (tags: RollTag[]) => tags.map(item => `${item.wei
 export const rollSignature = (tags: RollTag[]) => JSON.stringify(tags.map(item => [tagKey(item.tag), tenth(item.weight)]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
 export const rollSourceId = (experimentId: string) => `style-roll:${experimentId}`;
 export const rollCandidateModuleId = (candidateId: string) => `style-roll:${candidateId}`;
+/** 多角色模板不看 `characterPrompt`：角色内容由 characters 各自的分区编译，画师串只替换全局 {style}。 */
+export const rollHasCharacters = (template: RollTemplate) => Array.isArray(template.characters) && template.characters.length > 0;
 /** 画师串后紧跟独立的角色提示词；模板可用 {character} 指定位置。 */
 export const rollPrompt = (template: RollTemplate, tags: RollTag[]) => {
-  const style = formatRollStyle(tags), character = template.characterPrompt?.trim() || '';
+  const style = formatRollStyle(tags);
+  // 多角色模式下角色正文走请求的 characters 字段，全局提示词只保留画风与画面描述。
+  const character = rollHasCharacters(template) ? '' : template.characterPrompt?.trim() || '';
   if (template.prompt.includes('{character}')) return template.prompt.replace('{character}', character).replace('{style}', style);
   if (!character) return template.prompt.replace('{style}', style);
   return template.prompt.replace('{style}', `${style}, ${character}`);
+};
+
+/** 生成用的参数：模板上的多角色优先，其次沿用参数里已有的角色；两者都会在请求前编译成分区正文。 */
+export const rollGenerationParams = (template: RollTemplate): NAIParams => {
+  const base = structuredClone(template.params);
+  const characters = template.characters?.length ? structuredClone(template.characters) : (base.characters || []);
+  return { ...base, characters };
+};
+
+/**
+ * 模板指纹：只覆盖影响出图结果的字段。
+ * 候选记录生成时的指纹后，中途修改模板不会让已出的图失去归属（旧实现靠比对完整 prompt，
+ * 模板一改旧图就匹配不上并整批消失）。
+ */
+export const rollTemplateSignature = (template: RollTemplate): string => {
+  const characters = (template.characters || []).map(person => [
+    person.id, person.prompt || '', person.negativePrompt || '', person.enabled !== false, person.x, person.y,
+    JSON.stringify(person.sections || null), JSON.stringify(person.sectionNegatives || null),
+  ]);
+  const { model, seed, steps, scale, width, height, sampler } = template.params;
+  const payload = JSON.stringify([template.prompt, template.negativePrompt, template.characterPrompt || '', characters, model, seed, steps, scale, width, height, sampler]);
+  let hash = 2166136261;
+  for (let index = 0; index < payload.length; index++) { hash ^= payload.charCodeAt(index); hash = Math.imul(hash, 16777619); }
+  return (hash >>> 0).toString(36);
 };
 
 export function validateRollTemplate(template: RollTemplate): void {
@@ -131,6 +181,16 @@ export function validateRollTemplate(template: RollTemplate): void {
     template.prompt.split('{character}').length > 2 ||
     (character !== undefined && typeof character !== 'string') || (typeof character === 'string' && character.length > 32000) ||
     typeof template.negativePrompt !== 'string' || template.negativePrompt.length > 32000) throw new Error('公共提示词需要且只能包含一个 {style} 占位符');
+  if (template.characters !== undefined) {
+    if (!Array.isArray(template.characters) || template.characters.length > 6) throw new Error('Roll 模板的角色数量需要在 0～6 之间');
+    for (const person of template.characters) {
+      if (!person || typeof person !== 'object') throw new Error('Roll 角色资料无效');
+      if (typeof person.id !== 'string' || !person.id || person.id.length > 100) throw new Error('Roll 角色资料无效');
+      if (person.prompt !== undefined && typeof person.prompt !== 'string') throw new Error('Roll 角色资料无效');
+      if (person.negativePrompt !== undefined && typeof person.negativePrompt !== 'string') throw new Error('Roll 角色资料无效');
+      if (!Number.isFinite(person.x) || !Number.isFinite(person.y) || person.x < 0 || person.x > 1 || person.y < 0 || person.y > 1) throw new Error('Roll 角色的位置需要在 0～1 之间');
+    }
+  }
   const p = template.params;
   if (!p || typeof p.model !== 'string' || !/^nai-diffusion-(?:4|4-5|5)-/.test(p.model) || p.model.endsWith('-inpainting') ||
     !Number.isSafeInteger(p.seed) || p.seed! < 0 || p.seed! > 4294967295 ||
@@ -302,7 +362,7 @@ export function rollCandidates(experiment: RollExperiment, count: number, option
     const signature = rollSignature(tags);
     if (signatures.has(signature)) continue;
     signatures.add(signature);
-    result.push({ id: createUuid(), tags, createdAt: Date.now() + result.length, archived: false });
+    result.push({ id: createUuid(), tags, createdAt: Date.now() + result.length, archived: false, configKey: rollTemplateSignature(experiment.template) });
   }
   if (!result.length) throw new Error('当前规则下没有新的组合，请调整画师数量、锁定项或权重范围');
   return result;
@@ -312,17 +372,13 @@ export function rollCandidates(experiment: RollExperiment, count: number, option
 export const rollCandidateCapacity = (experiment: RollExperiment) => Math.max(0, ROLL_CANDIDATE_LIMIT - experiment.candidates.length);
 
 /**
- * 永久清理已归档候选；轮次引用同步移除，空轮删除。
- * 只接受已归档项，避免用户误删仍在挑选的候选。
+ * 删除候选并同步移除轮次引用；空轮随之删除。
+ * Roll 的「丢弃」就是彻底删除（没有回收站、没有还原），调用方负责二次确认。
  */
 export function removeRollCandidates(experiment: RollExperiment, ids: readonly string[]): RollExperiment {
   const remove = new Set(ids);
   if (!remove.size) return experiment;
-  const candidates = experiment.candidates.filter(candidate => {
-    if (!remove.has(candidate.id)) return true;
-    if (!candidate.archived) throw new Error('只能永久清理已归档的候选');
-    return false;
-  });
+  const candidates = experiment.candidates.filter(candidate => !remove.has(candidate.id));
   const rounds = experiment.rounds
     .map(round => ({ ...round, candidateIds: round.candidateIds.filter(id => !remove.has(id)) }))
     .filter(round => round.candidateIds.length > 0);

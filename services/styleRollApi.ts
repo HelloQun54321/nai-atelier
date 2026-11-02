@@ -1,7 +1,7 @@
 import type { LocalGenItem } from '../types';
 import { api } from './api';
 import { localHistory } from './localHistory';
-import { rollCandidateModuleId, rollPrompt, rollSourceId, validateRollBlocklist, validateRollExperiment, validateRollPreset, type RollExperiment, type RollPreset } from './styleRoll';
+import { rollCandidateModuleId, rollPrompt, rollTemplateSignature, rollSourceId, validateRollBlocklist, validateRollExperiment, validateRollPreset, type RollExperiment, type RollPreset } from './styleRoll';
 
 export async function loadRollPresets(): Promise<RollPreset[]> {
   const result = await api.get('/style-roll/presets', { cache: 'no-store' });
@@ -66,8 +66,13 @@ export function rollCandidateImages(experiment: RollExperiment, history: LocalGe
   for (const item of [...history].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))) {
     if (item.sourceChainId !== rollSourceId(experiment.id) || item.edit) continue;
     const candidate = experiment.candidates.find(candidate => item.modules?.some(module => module.id === rollCandidateModuleId(candidate.id)));
-    if (candidate && !images.has(candidate.id) &&
-      item.prompt === rollPrompt(experiment.template, candidate.tags) && item.params.seed === experiment.template.params.seed) images.set(candidate.id, item);
+    if (!candidate || images.has(candidate.id)) continue;
+    // 候选记录了生成时的模板指纹：模板改过以后旧图仍归它自己，不再拿当前模板去比对整段 prompt。
+    // 没有指纹的旧记录继续沿用原来的 prompt 比对，避免历史数据错配。
+    const matched = candidate.configKey
+      ? true
+      : item.prompt === rollPrompt(experiment.template, candidate.tags) && item.params.seed === experiment.template.params.seed;
+    if (matched) images.set(candidate.id, item);
   }
   return images;
 }

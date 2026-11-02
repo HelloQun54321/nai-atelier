@@ -1,11 +1,11 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { flushSync } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Copy, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, CopyPlus, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { MobileOverflowMenu } from './MobileUI';
 import { t, useLanguage } from '../services/i18n';
-import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateCapacity, rollCandidateToChain, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollRules, type RollExperiment } from '../services/styleRoll';
+import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateCapacity, rollCandidateToChain, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollRules, type RollExperiment } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
 import { rollFavoriteMatches, rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
 import { ARTIST_SAMPLES_CHANGED, getArtistSampleLibrary, normalizeArtistSampleTag } from '../services/artistSamples';
@@ -43,7 +43,7 @@ import { normalizeArtistUsageKey } from '../services/artistParticipation';
 import { StyleRollChainArtistDialog } from './roll/StyleRollChainArtistDialog';
 import { StyleRollArtistDialog } from './roll/StyleRollArtistDialog';
 import { StyleRollRuleFields } from './roll/StyleRollRuleFields';
-import { collectionRevision, collectionSnapshot, collectionTargetActive, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
+import { collectionRevision, collectionSnapshot, collectionTargetActive, ensureCollection, subscribeCollection, toggleArtistPreference } from '../services/collectionFavorites';
 import { StyleRollGallery } from './roll/StyleRollGallery';
 import { rollChipColor } from './roll/rollPalette';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
@@ -65,6 +65,29 @@ const ROLL_TRIAGE_FILTERS: readonly string[] = ['unsaved', 'favorited', 'unfavor
 /** 画师库带入的固定画师只消费一次；页面被保活淘汰后重建也不重复建记录。 */
 const artistCountLabel = (rules: RollRules) => rules.minArtists === rules.maxArtists ? String(rules.maxArtists) : `${rules.minArtists}–${rules.maxArtists}`;
 const consumedPinnedTokens = new Set<number>();
+
+/** 候选里的画师收藏按钮：收藏的就是画师库里的同一条记录（收藏库 sourceType='artist'）。 */
+const ArtistFavoriteButton: React.FC<{ tag: string; sampleUrl?: string }> = ({ tag, sampleUrl }) => {
+  useLanguage();
+  const [favorite, setFavorite] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const sync = () => setFavorite(collectionSnapshot().some(item => item.sourceType === 'artist' && !item.archived && item.sourceId && normalizeRollArtistKey(item.sourceId) === normalizeRollArtistKey(tag)));
+  useEffect(() => {
+    ensureCollection().then(sync).catch(() => undefined);
+    return subscribeCollection(sync);
+  }, [tag]);
+  return <button type="button" aria-label={t(favorite ? '取消收藏画师 {0}' : '收藏画师 {0}', [tag])} title={t(favorite ? '取消收藏画师 {0}' : '收藏画师 {0}', [tag])} aria-pressed={favorite} disabled={busy}
+    onClick={async () => {
+      if (busy) return;
+      setBusy(true);
+      try { setFavorite(await toggleArtistPreference(tag, sampleUrl || `artist:${tag}`)); }
+      catch { /* 收藏失败保持原状，不打断候选浏览 */ }
+      finally { setBusy(false); }
+    }}
+    className={`mobile-touch flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition disabled:opacity-50 ${favorite ? 'text-rose-500' : 'text-gray-300 hover:bg-gray-100 hover:text-rose-400 dark:text-gray-600 dark:hover:bg-gray-800'}`}>
+    <Heart aria-hidden="true" className={`h-[18px] w-[18px] ${favorite ? 'fill-current' : ''}`} />
+  </button>;
+};
 
 export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStepLimit, generationStreamPreview, selectionFocusEnabled = true, continuousGenerationEnabled = true, notify, onSaveChain, onOpenChain, onNavigateToPlayground, onOpenArtistLibrary, initialPinned }) => {
   useLanguage();
@@ -459,10 +482,18 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       }
     } finally { if (mounted.current) setSavingProgress(null); }
   });
-  const archiveCandidates = (ids: string[], archived: boolean) => void perform(async () => {
+  /** 丢弃就是彻底删除：没有回收站，也没有还原，所以每次都要二次确认。 */
+  const deleteCandidates = (ids: string[]) => void perform(async () => {
     if (!experiment) return;
-    await store({ ...experiment, candidates: experiment.candidates.map(candidate => ids.includes(candidate.id) ? { ...candidate, archived } : candidate) });
+    const targets = experiment.candidates.filter(candidate => ids.includes(candidate.id));
+    if (!targets.length) return;
+    const label = targets.length === 1 ? `候选 ${experiment.candidates.indexOf(targets[0]) + 1}` : `${targets.length} 个候选`;
+    if (!await confirm({ title: '删除候选', message: t('将永久删除 {0}；已生成的历史图片与已保存的风格串仍保留，删除后不能还原。', [label]), confirmLabel: t('删除'), tone: 'danger' })) return;
+    const next = removeRollCandidates(experiment, targets.map(candidate => candidate.id));
+    await store(next);
+    if (roundId && !next.rounds.some(round => round.id === roundId)) setRoundId('');
     setSelectedIds(new Set()); setSelectedId('');
+    notify(t('已删除 {0}', [label]), 'success');
   });
   const purgeCandidates = (ids: string[]) => void perform(async () => {
     if (!experiment) return;
@@ -506,14 +537,17 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   });
   const selectedSavedChain = selected?.savedChainId && chains.some(chain => chain.id === selected.savedChainId);
   const detailIndex = visible.findIndex(candidate => candidate.id === selectedId);
+  /** 详情页的三个主动作收进标题栏，只留图标；关闭按钮在最右侧。 */
+  const detailActions = selected ? <>
+    <IconButton label={t(selectedSavedChain ? '打开风格串' : selectedImage ? '存为风格串' : '生成后可保存')} tone={selectedSavedChain ? 'primary' : 'save'} disabled={busy || loading || (!selectedImage && !selectedSavedChain)} onClick={selectedSavedChain ? () => onOpenChain(selected.savedChainId!) : selectedImage ? () => saveCandidate() : undefined}><Save /></IconButton>
+    <IconButton label={t('送往实验室')} tone="primary" disabled={busy} onClick={() => { try { sendToLab(); } catch (cause) { setError((cause as Error).message); } }}><FlaskConical /></IconButton>
+    <IconButton label={t('新建记录 · 固定这些画师')} disabled={busy || loading || selected.archived} onClick={() => createPinnedRecord(selected)}><CopyPlus /></IconButton>
+  </> : null;
   const detail = experiment && selected ? <div className="space-y-4 p-4">
-    <div className="flex items-center justify-between gap-2">
-      <IconButton label="上一张" disabled={detailIndex <= 0} onClick={() => setSelectedId(visible[detailIndex - 1].id)}><ChevronLeft /></IconButton>
-      <span className="text-xs tabular-nums text-gray-500">{detailIndex + 1} / {visible.length}</span>
-      <IconButton label="下一张" disabled={detailIndex < 0 || detailIndex >= visible.length - 1} onClick={() => setSelectedId(visible[detailIndex + 1].id)}><ChevronRight /></IconButton>
-    </div>
     {selectedImage ? <PressRevealSurface className="appearance-group group relative overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-950" data-safe-mode-work="true">
-      <button className="block w-full" type="button" aria-label={t('放大图片')} onClick={() => setLightbox(selectedImage)}><SmartImage src={selectedImage.imageUrl} alt={t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])} eager className="max-h-[45vh] w-full object-contain" containerClassName="w-full" /></button>
+      <button className="block w-full" type="button" aria-label={t('放大图片')} onClick={() => setLightbox(selectedImage)}><SmartImage src={selectedImage.imageUrl} alt={t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])} eager className="h-auto w-full object-contain" containerClassName="w-full" /></button>
+      {detailIndex > 0 && <button type="button" data-image-preview-navigation aria-label={t('上一张')} title={t('上一张')} onClick={() => setSelectedId(visible[detailIndex - 1].id)} className="nai-float-btn hover-reveal-lg mobile-size-locked absolute left-3 top-1/2 z-20 flex -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white transition-colors hover:bg-black/70"><ChevronLeft className="h-7 w-7" /></button>}
+      {detailIndex >= 0 && detailIndex < visible.length - 1 && <button type="button" data-image-preview-navigation aria-label={t('下一张')} title={t('下一张')} onClick={() => setSelectedId(visible[detailIndex + 1].id)} className="nai-float-btn hover-reveal-lg mobile-size-locked absolute right-3 top-1/2 z-20 flex -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white transition-colors hover:bg-black/70"><ChevronRight className="h-7 w-7" /></button>}
       <ImageCardActions><ImageShareActions imageUrl={selectedImage.imageUrl} filename={`roll-${selectedImage.id}.png`} generationData={selectedImage} favorite={{ imageUrl: selectedImage.imageUrl, sourceType: 'history', sourceId: selectedImage.id }} notify={notify} variant="card" /></ImageCardActions>
     </PressRevealSurface> : <div className="flex min-h-36 items-center justify-center rounded-lg border border-dashed border-gray-300 text-gray-400 dark:border-gray-700"><ImagePlus className="h-8 w-8" /></div>}
     <div className="appearance-group rounded-xl border border-gray-100 bg-gray-50/70 p-3.5 space-y-2.5 dark:border-gray-800/80 dark:bg-gray-900/40 shadow-inner">
@@ -525,9 +559,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         const chipColor = rollChipColor(index);
         const sampleUrl = sampleUrls.get(normalizeArtistSampleTag(entry.tag));
         const chinese = chineseNames.get(normalizeArtistSampleTag(entry.tag));
-        return <div key={entry.tag} className="flex min-w-0 items-center gap-2 text-sm">
-          <button type="button" disabled={!onOpenArtistLibrary} onClick={() => onOpenArtistLibrary?.(entry.tag)} title={onOpenArtistLibrary ? t('在画师库查看 {0}', [entry.tag]) : undefined} className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-default">
-            {sampleUrl ? <SmartImage src={sampleUrl} alt="" thumbnailVariant="thumb-160" containerClassName="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg" className="h-full w-full object-cover" previewTransform={sampleUrl.startsWith('/api/artist-samples/image?') ? 'artist-sample-padding-v2' : undefined} /> : <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-micro font-bold text-white" style={{ backgroundColor: chipColor }}>{entry.tag.slice(0, 1)}</span>}
+        return <div key={entry.tag} className="flex min-w-0 items-center gap-2.5 text-sm">
+          <ArtistFavoriteButton tag={entry.tag} sampleUrl={sampleUrl} />
+          <button type="button" disabled={!onOpenArtistLibrary} onClick={() => onOpenArtistLibrary?.(entry.tag)} title={onOpenArtistLibrary ? t('在画师库查看 {0}', [entry.tag]) : undefined} className="flex min-w-0 flex-1 items-center gap-2.5 text-left disabled:cursor-default">
+            {sampleUrl ? <SmartImage src={sampleUrl} alt="" thumbnailVariant="thumb-160" containerClassName="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl" className="h-full w-full object-cover" previewTransform={sampleUrl.startsWith('/api/artist-samples/image?') ? 'artist-sample-padding-v2' : undefined} /> : <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white" style={{ backgroundColor: chipColor }}>{entry.tag.slice(0, 1)}</span>}
             <span className="min-w-0 flex-1">
               <span className="block truncate text-xs font-medium text-gray-800 dark:text-gray-200" title={entry.tag}>{entry.tag}</span>
               {chinese && <span className="block truncate text-micro text-gray-400" title={chinese}>{chinese}</span>}
@@ -539,23 +574,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     </div>
     {!selectedImage && <ToolbarButton data-agent-action="business" tone="primary" className="!h-11 w-full" disabled={busy || loading || preparing || Boolean(session) || historyLoading || !historyReady || selected.archived} onClick={() => void generate()}>{preparing ? <LoaderCircle className="animate-spin" /> : <ImagePlus />}{t('生成图片')} · {costLabel}</ToolbarButton>}
     {!historyLoading && !historyReady && <p className="text-xs text-amber-600 dark:text-amber-400">{t('历史暂不可用，请重新加载后再生成。')}</p>}
-    <div className="grid grid-cols-2 gap-2">
-      <ToolbarButton disabled={busy || loading || (!selectedImage && !selectedSavedChain)} tone="primary" className="!h-10 rounded-xl font-bold shadow-sm" onClick={selectedSavedChain ? () => onOpenChain(selected.savedChainId!) : selectedImage ? () => saveCandidate() : undefined}><Save />{t(selectedSavedChain ? '打开风格串' : selectedImage ? '存为风格串' : '生成后可保存')}</ToolbarButton>
-      <ToolbarButton disabled={busy} className="!h-10 rounded-xl border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/40 dark:text-purple-300 font-bold shadow-sm" onClick={() => { try { sendToLab(); } catch (cause) { setError((cause as Error).message); } }}><FlaskConical />{t('送往实验室')}</ToolbarButton>
-    </div>
-    <details className="appearance-group rounded-xl border border-gray-100 bg-gray-50/50 p-3 transition-all dark:border-gray-800/80 dark:bg-gray-900/40">
-      <summary className="mobile-touch cursor-pointer text-xs font-semibold text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400">{t('更多操作')}</summary>
-      <div className="mt-2.5 grid grid-cols-2 gap-2">
-        <ToolbarButton disabled={busy || loading} onClick={() => void perform(async () => { if (!navigator.clipboard?.writeText) throw new Error('当前环境无法直接复制，请从完整提示词中手动复制'); await navigator.clipboard.writeText(formatRollStyle(selected.tags)); notify('已复制提示词'); })}><Copy />{t('复制画风')}</ToolbarButton>
-        <ToolbarButton disabled={busy || loading} onClick={() => archiveCandidates([selected.id], !selected.archived)}>{selected.archived ? <RotateCcw /> : <Trash2 />}{t(selected.archived ? '恢复候选' : '丢弃')}</ToolbarButton>
-        <ToolbarButton className={selected.archived ? 'col-span-1' : 'col-span-2'} disabled={busy || loading || selected.archived} onClick={() => createPinnedRecord(selected)}><Dice5 />{t('新建记录 · 固定这些画师')}</ToolbarButton>
-        {selected.archived && <ToolbarButton tone="danger" disabled={busy || loading} onClick={() => purgeCandidates([selected.id])}><Trash2 />{t('永久清理')}</ToolbarButton>}
-      </div>
-    </details>
-    <details className="appearance-group rounded-2xl border border-gray-100 bg-gray-50/50 p-3 transition-all dark:border-gray-800/80 dark:bg-gray-900/40 text-xs text-gray-500">
-      <summary className="mobile-touch cursor-pointer font-semibold text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400">{t('完整提示词')}</summary>
-      <p className="appearance-group mt-2 break-words rounded-xl bg-white p-2.5 font-mono leading-relaxed text-gray-700 shadow-inner dark:bg-gray-950 dark:text-gray-300">{rollCandidateToChain(experiment, selected).basePrompt}</p>
-    </details>
   </div> : null;
 
   useAgentCommand({
@@ -654,7 +672,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           <b aria-live="polite" className="shrink-0 text-xs text-gray-600 dark:text-gray-300">{savingProgress ? t('正在保存 {0}/{1}', [savingProgress.completed, savingProgress.total]) : t('已选 {0} 个候选', [chosen.length])}</b>
           {filter !== 'archived' && <ToolbarButton tone="primary" disabled={frozen || !historyReady || !saveable.length} onClick={() => saveChosen()}><Save />{t('保存所选')}</ToolbarButton>}
           {!!selectedPending.length && <ToolbarButton data-agent-action="business" disabled={frozen || working || !historyReady} onClick={() => generatePending(selectedPending.map(candidate => candidate.id))} title={!continuousGenerationEnabled && selectedPending.length > 1 ? t('连续生成已关闭，本次只生成 1 张，剩余 {0} 张', [selectedPending.length]) : undefined}><ImagePlus />{t('生成所选')} · {Math.min(selectedPending.length, continuousGenerationEnabled ? 24 : 1)}</ToolbarButton>}
-          <ToolbarButton tone={filter === 'archived' ? 'neutral' : 'danger'} disabled={frozen || !chosen.length} onClick={() => archiveCandidates(chosen.map(candidate => candidate.id), filter !== 'archived')}>{filter === 'archived' ? <RotateCcw /> : <Trash2 />}{t(filter === 'archived' ? '恢复所选' : '丢弃所选')}</ToolbarButton>
+          <ToolbarButton tone="danger" disabled={frozen || !chosen.length} onClick={() => deleteCandidates(chosen.map(candidate => candidate.id))}><Trash2 />{t('删除所选')}</ToolbarButton>
           {filter === 'archived' && <ToolbarButton tone="danger" disabled={frozen || !chosen.length} onClick={() => purgeCandidates(chosen.map(candidate => candidate.id))}><Trash2 />{t('永久清理所选')}</ToolbarButton>}
           <ToolbarButton disabled={frozen} onClick={() => setSelectedIds(new Set(visible.map(candidate => candidate.id)))}>{t('全选筛选结果')}</ToolbarButton>
           <ToolbarButton disabled={frozen} onClick={() => setSelectedIds(new Set(visible.filter(candidate => !selectedIds.has(candidate.id)).map(candidate => candidate.id)))}>{t('反选筛选结果')}</ToolbarButton>
@@ -753,10 +771,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     </WorkspaceChrome>
     {loading && !experiment ? <PageSpinner className="workspace-scroll-viewport overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
       : <div className="relative flex min-h-0 flex-1">
-        {ROLL_TRIAGE_FILTERS.includes(filter) && !filterReady ? ((filter === 'favorited' || filter === 'unfavorited') && collectionFailed ? <div role="alert" className="flex flex-1 items-center justify-center gap-2 p-6 text-sm text-gray-500"><span>{t('收藏状态读取失败')}</span><ToolbarButton onClick={() => void loadFavorites()}>{t('重新加载')}</ToolbarButton></div> : historyReady || historyLoading ? <PageSpinner /> : <div role="status" className="flex flex-1 items-center justify-center p-6 text-sm text-gray-500">{t('历史暂不可用')}</div>) : <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} roundNumbers={roundNumbers} generatingId={generatingCandidateId} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => archiveCandidates([id], !experiment.candidates.find(candidate => candidate.id === id)!.archived)} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />}
-        {!isMobile && selected && <aside className="workspace-fixed-pane appearance-surface flex w-84 max-w-[40%] flex-none flex-col border-l border-gray-200/80 bg-white/95 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/95 xl:w-92 shadow-sm"><div className="appearance-surface flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="appearance-surface text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div><div className="appearance-surface min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}
+        {ROLL_TRIAGE_FILTERS.includes(filter) && !filterReady ? ((filter === 'favorited' || filter === 'unfavorited') && collectionFailed ? <div role="alert" className="flex flex-1 items-center justify-center gap-2 p-6 text-sm text-gray-500"><span>{t('收藏状态读取失败')}</span><ToolbarButton onClick={() => void loadFavorites()}>{t('重新加载')}</ToolbarButton></div> : historyReady || historyLoading ? <PageSpinner /> : <div role="status" className="flex flex-1 items-center justify-center p-6 text-sm text-gray-500">{t('历史暂不可用')}</div>) : <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} roundNumbers={roundNumbers} generatingId={generatingCandidateId} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => deleteCandidates([id])} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />}
+        {!isMobile && selected && <aside className="workspace-fixed-pane appearance-surface flex w-84 max-w-[40%] flex-none flex-col border-l border-gray-200/80 bg-white/95 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/95 xl:w-92 shadow-sm"><div className="appearance-surface flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="appearance-surface text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><div className="flex items-center gap-1">{detailActions}<IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div></div><div className="appearance-surface min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}
       </div>}
-    {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')}>{detail}</MobileDetailView></ImagePreviewPortal>}
+    {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')} actions={detailActions}>{detail}</MobileDetailView></ImagePreviewPortal>}
     {active && chainTarget !== null && chainTarget === experimentId && !setup && <StyleRollChainArtistDialog knownArtists={knownArtists} source={chainArtistSource} blocked={[...blocklist, ...excludedArtistTags]} onConfirm={source => { if (active && !frozen && !working && chainTarget === experimentId) setChainArtistSource(source); }} onClose={() => setChainTarget(null)} />}
     {setup && <StyleRollSetup key={setup.id} initial={setup} libraryCount={library.length} libraryLoading={libraryLoading} libraryError={libraryError} blockedTags={blocklist} library={libraryEntries} onBlockedChange={updateBlocklist} enforceFreeStepLimit={enforceFreeStepLimit} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
     {artistDialogOpen && <StyleRollArtistDialog enforceFreeStepLimit={enforceFreeStepLimit} library={libraryEntries} loading={libraryLoading} libraryError={libraryError} pinned={pinnedArtists} onPinnedChange={setPinnedArtists} blocked={blocklist} onBlockedChange={updateBlocklist} excluded={excludedArtistTags} onExcludedChange={tags => setArtistOverrides(current => current.map(artist => ({ ...artist, excluded: tags.includes(artist.tag) })))} sampledOnly={sampledOnly} onSampledOnlyChange={setSampledOnly} rules={roundRules} onRulesChange={setRoundRules} onClose={() => setArtistDialogOpen(false)} />}

@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { Dice5 } from 'lucide-react';
 import { PromptLibraryWorkspace } from './PromptLibraryAccess';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { ChainEditorParams } from './ChainEditorParams';
@@ -20,10 +19,12 @@ interface Props {
   promptLabel?: string;
   /** 覆盖角色提示词辅助说明。 */
   characterHint?: string;
+  /** 提供后替换内置的单角色文本框（Roll 用实验室的多角色编辑器）。 */
+  characterSlot?: React.ReactNode;
 }
 const field = 'mobile-touch min-w-0 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950';
 
-export default function GenerationTemplateEditor({ value, onChange, disabled = false, readOnly = false, enforceFreeStepLimit = true, recommendedTemplate, modelFilter, onBusyChange, promptLabel, characterHint }: Props) {
+export default function GenerationTemplateEditor({ value, onChange, disabled = false, readOnly = false, enforceFreeStepLimit = true, recommendedTemplate, modelFilter, onBusyChange, promptLabel, characterHint, characterSlot }: Props) {
   useLanguage();
   const runtime = useNaiRuntime();
   const confirm = useConfirmDialog();
@@ -93,12 +94,9 @@ export default function GenerationTemplateEditor({ value, onChange, disabled = f
             {presetError && <div role="alert" className="flex items-center gap-2 text-xs text-red-500"><span>{t(presetError)}</span><ToolbarButton disabled={disabled || presetBusy || presetLoading} onClick={() => void loadPresets()}>{t('重新读取预设')}</ToolbarButton></div>}
           </div>
           <label className="block text-xs font-semibold">{t(promptLabel || '公共提示词（{style} 为画风位置）')}<TagAutocompleteTextarea aria-label={t('公共提示词')} showTranslations={false} className={`${field} mt-1 min-h-28 font-mono`} value={value.prompt} disabled={editingBusy || readOnly} onValueChange={prompt => onChange({ ...value, prompt })} /></label>
-          <label className="block text-xs font-semibold">{t('角色提示词（可选）')}<TagAutocompleteTextarea libraryField={{ textOnly: true }} showTranslations={false} aria-label={t('角色提示词（可选）')} className={`${field} mt-1 min-h-20 font-mono`} value={value.characterPrompt || ''} disabled={editingBusy || readOnly} onValueChange={characterPrompt => onChange({ ...value, characterPrompt })} /><span className="mt-1 block text-micro font-normal text-gray-400">{t(characterHint || '自动接在画师串之后；也可在公共提示词里用 {character} 指定位置')}</span></label>
+          {characterSlot ?? <label className="block text-xs font-semibold">{t('角色提示词（可选）')}<TagAutocompleteTextarea libraryField={{ textOnly: true }} showTranslations={false} aria-label={t('角色提示词（可选）')} className={`${field} mt-1 min-h-20 font-mono`} value={value.characterPrompt || ''} disabled={editingBusy || readOnly} onValueChange={characterPrompt => onChange({ ...value, characterPrompt })} /><span className="mt-1 block text-micro font-normal text-gray-400">{t(characterHint || '自动接在画师串之后；也可在公共提示词里用 {character} 指定位置')}</span></label>}
           <label className="block text-xs font-semibold">{t('负面提示词')}<TagAutocompleteTextarea libraryField={{ negative: true }} showTranslations={false} aria-label={t('负面提示词')} className={`${field} mt-1 min-h-20 font-mono`} value={value.negativePrompt} disabled={editingBusy || readOnly} onValueChange={negativePrompt => onChange({ ...value, negativePrompt })} /></label>
           <ChainEditorParams params={value.params} prompt={value.prompt} setParams={params => onChange({ ...value, params })} modelFilter={modelFilter} canEdit={!editingBusy && !readOnly} markChange={() => {}} enforceFreeStepLimit={enforceFreeStepLimit} />
-          {!readOnly && <div className="flex flex-wrap gap-2">
-            <ToolbarButton disabled={editingBusy} onClick={() => onChange({ ...value, params: { ...value.params, seed: crypto.getRandomValues(new Uint32Array(1))[0] } })}><Dice5 />{t('换一个固定 Seed')}</ToolbarButton>
-          </div>}
           {!!value.params.characters?.length && <p className="text-xs text-gray-500">{t('保留 {0} 个角色的完整提示词与位置', [value.params.characters.length])}</p>}
   </div></PromptLibraryWorkspace>;
 }

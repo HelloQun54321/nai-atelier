@@ -285,7 +285,7 @@ describe('候选容量与永久清理', () => {
     expect(rollCandidateCapacity(e)).toBe(2);
     expect(() => rollCandidates(e, 3)).toThrow('还可 Roll 2 串');
   });
-  it('永久清理只接受已归档候选，并同步移除轮次引用、删除空轮', () => {
+  it('删除候选接受任意状态，同步移除轮次引用并删除空轮', () => {
     const e = rollFixture();
     e.candidates = [candidate('keep'), candidate('drop', true)];
     e.rounds = [{ id: 'r1', candidateIds: ['drop'], createdAt: 1 }, { id: 'r2', candidateIds: ['keep', 'drop'], createdAt: 2 }];
@@ -294,7 +294,7 @@ describe('候选容量与永久清理', () => {
     expect(next.rounds.map(round => round.id)).toEqual(['r2']);
     expect(next.rounds[0].candidateIds).toEqual(['keep']);
     expect(() => validateRollExperiment(next)).not.toThrow();
-    expect(() => removeRollCandidates(e, ['keep'])).toThrow('只能永久清理已归档的候选');
+    // 丢弃即删除：未归档的候选同样可以直接删掉。\n  expect(removeRollCandidates(e, ['keep']).candidates.map(item => item.id)).toEqual(['drop']);
     expect(removeRollCandidates(e, [])).toBe(e);
   });
 });

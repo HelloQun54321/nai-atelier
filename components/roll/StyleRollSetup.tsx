@@ -2,7 +2,11 @@ import GenerationTemplateEditor from '../GenerationTemplateEditor';
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Layers, LockKeyhole, X } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
-import { getRollArtistRange, getRollPinnedArtists, validateRollExperiment, type RollExperiment } from '../../services/styleRoll';
+import { getRollArtistRange, getRollPinnedArtists, validateRollExperiment, type RollExperiment, type RollTemplate } from '../../services/styleRoll';
+import { ChainEditorCharacters } from '../chain/ChainEditorCharacters';
+import { DEFAULT_LAB_PAGE_LAYOUTS } from '../../services/appearancePreferences';
+import { createBlankLabCharacter } from '../../services/labWorkspace';
+import type { CharacterParams, NAIParams } from '../../types';
 import { ImageActivityContext } from '../SmartImage';
 import { normalizeArtistUsageKey } from '../../services/artistParticipation';
 import { StyleRollChainArtistDialog } from './StyleRollChainArtistDialog';
@@ -35,7 +39,8 @@ const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading 
   const editingBusy = busy || presetBusy;
   const dialog = useModalA11y<HTMLDivElement>(active);
   const close = useMobileHistoryLayer(active, () => { if (busy || presetBusy) return false; onClose(); }, 'roll-setup');
-  const frozen = draft.candidates.length > 0;
+  // 配置不再随候选固定：已出的图保持原样，改动只作用于之后的生成。
+  const started = draft.candidates.length > 0;
   useEffect(() => {
     const key = (event: KeyboardEvent) => { if (active && event.key === 'Escape' && !event.defaultPrevented && isTopmostModal(dialog.current)) { event.preventDefault(); close(); } };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
@@ -66,8 +71,9 @@ const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading 
           <ToolbarButton aria-label={t('从风格串提取')} title={draft.chainArtistSource ? t('已选 {0} 串 · {1} 位画师', [draft.chainArtistSource.chainIds.length, draft.chainArtistSource.artists.length]) : t('从风格串提取')} disabled={editingBusy || libraryLoading} onClick={() => setChainDialogOpen(true)}><Layers /><span className="flex min-w-0 max-w-[9rem] flex-col items-start sm:max-w-[12rem]"><span className="text-xs leading-4">{t('从风格串提取')}</span><span className="max-w-full truncate text-micro font-normal leading-3 tabular-nums opacity-70">{draft.chainArtistSource ? t('已选 {0} 串 · {1} 位画师', [draft.chainArtistSource.chainIds.length, draft.chainArtistSource.artists.length]) : t('画师库')}</span></span></ToolbarButton></div>
         </div>}
         <div className={section === 'template' ? 'space-y-4' : 'hidden'}>
-          {frozen && <p className="flex items-center gap-2 text-xs text-gray-500"><LockKeyhole className="h-4 w-4" />{t('配置已随候选固定；修改模型、提示词或 Seed 请新建画风记录。')}</p>}
-          <GenerationTemplateEditor value={draft.template} onChange={template => setDraft(current => ({ ...current, template }))} disabled={busy} readOnly={frozen} enforceFreeStepLimit={enforceFreeStepLimit} onBusyChange={setPresetBusy} />
+          {started && <p className="flex items-center gap-2 text-xs text-gray-500"><LockKeyhole className="h-4 w-4" />{t('这一记录已经出过图：修改提示词、模型或 Seed 只影响接下来生成的图片，已有的图保持不变。')}</p>}
+          <GenerationTemplateEditor value={draft.template} onChange={template => setDraft(current => ({ ...current, template }))} disabled={busy} enforceFreeStepLimit={enforceFreeStepLimit} onBusyChange={setPresetBusy}
+            characterSlot={<RollCharacterComposer template={draft.template} disabled={busy} onChange={template => setDraft(current => ({ ...current, template }))} />} />
         </div>
       </div>
       <footer className="flex flex-none items-center justify-end gap-3 border-t border-gray-200 p-3 dark:border-gray-800">
@@ -80,4 +86,40 @@ const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading 
 
     </div>
   </div>;
+};
+
+/**
+ * 角色编辑与实验室普通模式共用同一套组件与数据结构：
+ * 每个角色有自己的分区正文、独立负面和位置，画师串只作用于全局 {style}，不会混进角色内容。
+ */
+const RollCharacterComposer: React.FC<{ template: RollTemplate; disabled: boolean; onChange: (template: RollTemplate) => void }> = ({ template, disabled, onChange }) => {
+  useLanguage();
+  const characters = template.characters ?? [];
+  const patch = (next: Partial<RollTemplate>) => onChange({ ...template, ...next });
+  const params: NAIParams = { ...template.params, characters };
+  const setParams = (next: NAIParams) => patch({ characters: next.characters ?? [] });
+  const updateCharacter = (index: number, updates: Partial<CharacterParams>) => {
+    if (!characters[index]) return;
+    const next = [...characters];
+    next[index] = { ...next[index], ...updates };
+    patch({ characters: next });
+  };
+  return <section aria-label={t('角色')}>
+    <ChainEditorCharacters
+      params={params}
+      setParams={setParams}
+      characters={characters}
+      canEdit={!disabled}
+      tagAssistEnabled
+      characterPresetSources={{}}
+      markPresetSectionModified={() => undefined}
+      markChange={() => undefined}
+      addCharacter={() => { if (characters.length < 6) patch({ characters: [...characters, createBlankLabCharacter()] }); }}
+      updateCharacter={updateCharacter}
+      removeCharacter={index => patch({ characters: characters.filter((_, item) => item !== index) })}
+      activeLabLayout={DEFAULT_LAB_PAGE_LAYOUTS['text-to-image']}
+      mobileEditorTab="character"
+      coordinateHint={t('位置用于多人构图，单角色可以不动')}
+    />
+  </section>;
 };

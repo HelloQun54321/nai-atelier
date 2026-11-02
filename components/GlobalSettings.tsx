@@ -67,6 +67,7 @@ import { normalizeThemeDetails, resolveThemeDetails } from '../services/themeDet
 import { resolveWorkspaceBackground, type BackgroundMode } from '../services/themeBackground';
 import { sharedAppearancePresets } from '../services/sharedAppearancePresets';
 import { useSharedAppearancePresets } from './useSharedAppearancePresets';
+import { FLOATING_CONTROL_MAX, FLOATING_CONTROL_MIN, useFloatingControlSize } from '../services/floatingControls';
 import { ArrowLeft, Bot, Check, ChevronRight, Copy, Database, Edit2, ExternalLink, Eye, EyeOff, FileDown, FileUp, FolderInput, FolderOutput, KeyRound, Lock, Monitor, Moon, Palette, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
@@ -186,6 +187,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [imageDisplayScope, setImageDisplayScope] = useState<'global' | ImageDisplayPage>('global');
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>(isDark ? 'dark' : 'light');
   const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
+  const [floatingControlSize, setFloatingControlSize] = useFloatingControlSize();
   const [imageDisplayFollowsGlobal, setImageDisplayFollowsGlobal] = useState(true);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
   const [activeSection, setActiveSection] = useState<SettingsPage>('home');
@@ -783,6 +785,16 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                         <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.desktopColumns === 'auto' ? t("自适应") : t("{0} 列", [imageDisplay.desktopColumns])}</span>
                       </div>
                       <input type="range" min={0} max={7} step={1} value={imageDisplay.desktopColumns === 'auto' ? 0 : imageDisplay.desktopColumns} onChange={event => { const value = Number(event.target.value); updateImageDisplay({ ...imageDisplay, desktopColumns: (value === 0 ? 'auto' : value) as DesktopImageColumns }); }} className="mt-2 block w-full accent-indigo-500" aria-label={t("桌面端列数")} />
+                    </div>
+                    <div className="md:col-span-2">
+                      <div className="flex items-end justify-between gap-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{t("悬浮按钮大小")}</span>
+                          <p className="mt-0.5 text-micro text-gray-400">{t("图片上的收藏、下载、保存、删除与左右切换共用这一个尺寸")}</p>
+                        </div>
+                        <span className="shrink-0 text-xs font-bold tabular-nums text-gray-600 dark:text-gray-300">{floatingControlSize} px</span>
+                      </div>
+                      <input type="range" min={FLOATING_CONTROL_MIN} max={FLOATING_CONTROL_MAX} step={2} value={floatingControlSize} onChange={event => setFloatingControlSize(Number(event.target.value))} className="mt-2 block w-full accent-indigo-500" aria-label={t("悬浮按钮大小")} />
                     </div>
                   </div>
                 </fieldset>

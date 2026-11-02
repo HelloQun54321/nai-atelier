@@ -6,6 +6,7 @@ import { LanAccessGate } from './components/LanAccessGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { restoreRememberedNaiKey } from './services/naiKeyStorage';
 import { restoreAppearancePreferences } from './services/appearancePreferences';
+import { restoreFloatingControlSize } from './services/floatingControls';
 import { initThemeLight } from './services/themeDetails';
 import { initPointerTilt } from './services/pointerTilt';
 import { restoreUpdateDrafts } from './services/appUpdate';
@@ -16,6 +17,7 @@ if (!rootElement) {
 }
 
 restoreAppearancePreferences();
+restoreFloatingControlSize();
 initThemeLight();
 initPointerTilt();
 restoreUpdateDrafts();

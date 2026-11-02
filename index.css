@@ -1621,3 +1621,8 @@ html:root[data-theme-details='true'].dark .lab-editor-surface .lab-category-mode
   color: color-mix(in srgb, var(--color-gray-300) 78%, transparent) !important;
   opacity: 1;
 }
+
+/* 悬浮圆钮：尺寸由设置里的「悬浮按钮大小」统一控制，图标按同一比例缩放，
+   否则只放大外圈、里面的心形和垃圾桶还是原大。 */
+.nai-float-btn { width: var(--nai-float-control, 32px); height: var(--nai-float-control, 32px); }
+.nai-float-btn svg { width: calc(var(--nai-float-control, 32px) * .45); height: calc(var(--nai-float-control, 32px) * .45); }
