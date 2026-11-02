@@ -63,12 +63,12 @@ const setup = async (options = {}) => {
 const filterBy = (name: string) => { fireEvent.click(screen.getByRole('button', { name: /^筛选/ })); fireEvent.click(screen.getByRole('button', { name })); };
 const pending = () => filterBy('待生成');
 
-it.each([false, true])('详情按当前排序前后浏览且边界禁用，手机=%s', async mobile => {
+it.each([false, true])('详情按当前排序前后浏览且到边界后隐藏翻页按钮，手机=%s', async mobile => {
   mocks.mobile = mobile;
   await setup(); fireEvent.click(screen.getByRole('button', { name: '查看候选 2' }));
-  expect(screen.getByRole('button', { name: '上一张' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.queryByRole('button', { name: '上一张' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '下一张' }));
-  expect(screen.getByRole('button', { name: '下一张' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.queryByRole('button', { name: '下一张' })).toBeNull();
   expect(screen.getByRole('button', { name: '查看候选 1' }).getAttribute('aria-pressed')).toBe('true');
   fireEvent.click(screen.getByRole('button', { name: '上一张' }));
   expect(screen.getByRole('button', { name: '查看候选 2' }).getAttribute('aria-pressed')).toBe('true');
@@ -264,7 +264,8 @@ it('删除样张广播刷新已打开Roll详情缩略图，保留候选且不保
 const configure = (name: string, value: string) => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); for (const label of name === '每串总人数' ? ['最少画师人数', '最多画师人数'] : [name]) fireEvent.change(screen.getByRole('spinbutton', { name: label }), { target: { value } }); fireEvent.keyDown(window, { key: 'Escape' }); };
 const openArtists = () => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ })); };
 const reloadRecords = () => { fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '重新加载画风记录' })); };
-const details = () => fireEvent.click(screen.getByText('更多操作', { exact: true }));
+/** 详情里的操作已直接放在标题栏与正文中，不再需要展开「更多操作」。 */
+const details = () => {};
 
 it('画师库的全局屏蔽变更即时同步 Roll，解除该画师锁定并排除下一轮', async () => {
   experiment.candidates = []; experiment.pinnedArtists = ['alpha']; experiment.rules = { ...experiment.rules, minArtists: 1, maxArtists: 1 };
@@ -518,7 +519,7 @@ it('卡片直接保存；下一轮重新从画师库随机抽取，不再继承�
   const { props } = await setup(); fireEvent.click(screen.getByRole('button', { name: '保存候选 1' }));
   await screen.findByLabelText('已保存候选 1');
   expect(props.onSaveChain).toHaveBeenCalledOnce(); expect(screen.queryByRole('button', { name: '关闭候选详情' })).toBeNull(); expect(screen.queryByAltText('左侧候选')).toBeNull();
-  filterBy('已保存'); expect(screen.queryByRole('button', { name: '查看候选 2' })).toBeNull();
+  filterBy('已出图但未保存'); expect(screen.queryByRole('button', { name: '查看候选 1' })).toBeNull();
   configure('本轮生成张数', '4'); fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
   await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce()); const [, candidates] = mocks.generate.mock.calls[0];
   expect(candidates).toHaveLength(4);
@@ -572,13 +573,13 @@ it('收藏读取失败不把图片判成未收藏，禁用快捷选择并可原�
   const state = await executeAgentCommand(container, 'get_roll_state', {}, true) as { candidates: { favorite: boolean | null }[] };
   expect(state.candidates.every(candidate => candidate.favorite === null)).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
-  filterBy('未收藏');
+  filterBy('已收藏');
   await screen.findByText('收藏状态读取失败');
   expect(screen.queryByText('匹配 0 个候选')).toBeNull();
   expect(screen.queryByRole('button', { name: '查看候选 1' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
-  await screen.findByRole('button', { name: '查看候选 2' });
-  expect(screen.queryByRole('button', { name: '查看候选 1' })).toBeNull();
+  await screen.findByRole('button', { name: '查看候选 1' });
+  expect(screen.queryByRole('button', { name: '查看候选 2' })).toBeNull();
   expect(screen.getByText('匹配 1 个候选')).toBeTruthy();
   expect(mocks.ensureCollection).toHaveBeenCalledTimes(2);
 });
@@ -589,29 +590,25 @@ it('收藏库仍在读取时收藏筛选数量未知，完成后才展示真实�
   mocks.favorites = new Set(['history-a']);
   await setup();
   fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-  expect(screen.getByRole('button', { name: '未收藏' }).textContent).toContain('—');
-  fireEvent.click(screen.getByRole('button', { name: '未收藏' }));
+  expect(screen.getByRole('button', { name: '已收藏' }).textContent).toContain('—');
+  fireEvent.click(screen.getByRole('button', { name: '已收藏' }));
   expect(screen.getByText('加载中…')).toBeTruthy();
   expect(screen.queryByText('匹配 0 个候选')).toBeNull();
   await act(async () => finish());
-  await screen.findByRole('button', { name: '查看候选 2' });
-  expect(screen.queryByRole('button', { name: '查看候选 1' })).toBeNull();
+  await screen.findByRole('button', { name: '查看候选 1' });
+  expect(screen.queryByRole('button', { name: '查看候选 2' })).toBeNull();
 });
 
-it('收藏筛选里收藏或取消使当前候选离开结果时，详情依次衔接下一项、前一项，结果为空再收起', async () => {
+it('收藏筛选里取消收藏使当前候选离开结果时，详情依次衔接下一项，结果为空再收起', async () => {
   experiment.candidates.push(candidateFixture('c', 'gamma')); mocks.history.mockResolvedValue(rows(experiment));
-  await setup(); filterBy('未收藏');
-  fireEvent.click(screen.getByRole('button', { name: '查看候选 2' }));
+  mocks.favorites = new Set(['history-a', 'history-b']);
+  await setup(); filterBy('已收藏');
+  fireEvent.click(screen.getByRole('button', { name: '查看候选 1' }));
   setFavorites(['history-b']);
-  expect(screen.queryByRole('button', { name: '查看候选 2' })).toBeNull();
-  expect(screen.getByRole('button', { name: '查看候选 1' }).getAttribute('aria-pressed')).toBe('true');
-  setFavorites(['history-b', 'history-a']);
-  expect(screen.getByRole('button', { name: '查看候选 3' }).getAttribute('aria-pressed')).toBe('true');
-  setFavorites(['history-b', 'history-a', 'history-c']);
-  expect(screen.queryByRole('button', { name: '关闭候选详情' })).toBeNull();
-  filterBy('已收藏'); fireEvent.click(screen.getByRole('button', { name: '查看候选 3' }));
-  setFavorites(['history-b', 'history-a']);
+  expect(screen.queryByRole('button', { name: '查看候选 1' })).toBeNull();
   expect(screen.getByRole('button', { name: '查看候选 2' }).getAttribute('aria-pressed')).toBe('true');
+  setFavorites([]);
+  expect(screen.queryByRole('button', { name: '关闭候选详情' })).toBeNull();
 });
 
 it('收藏筛选等待历史真实就绪，不误报零匹配或空结果', async () => {
@@ -631,13 +628,9 @@ it('筛选可只看已收藏或未收藏的已出图候选，多选可直接选�
   await waitFor(() => expect(screen.getByAltText('候选 1')).toBeTruthy());
   fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
   expect(screen.getByRole('button', { name: '已收藏' }).textContent).toContain('1');
-  expect(screen.getByRole('button', { name: '未收藏' }).textContent).toContain('1');
   fireEvent.click(screen.getByRole('button', { name: '已收藏' }));
   expect(screen.getByRole('button', { name: '查看候选 1' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '查看候选 2' })).toBeNull(); expect(screen.queryByRole('button', { name: '查看候选 3' })).toBeNull();
-  filterBy('未收藏');
-  expect(screen.getByRole('button', { name: '查看候选 2' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: '查看候选 1' })).toBeNull(); expect(screen.queryByRole('button', { name: '查看候选 3' })).toBeNull();
   filterBy('全部');
   expect(screen.queryByRole('img', { name: '已收藏' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '批量选择候选' }));
@@ -656,19 +649,15 @@ it('筛选可只看已收藏或未收藏的已出图候选，多选可直接选�
   expect(state.candidates.map(candidate => [candidate.id, candidate.favorite])).toEqual([['a', true], ['b', false], ['c', false]]);
 });
 
-it('单项与批量丢弃共用可恢复状态，不删除原图及保存的风格串', async () => {
+it('单项删除永久移除候选，不删除原图及保存的风格串', async () => {
   experiment.candidates[0].savedChainId = 'existing';
+  const removedId = experiment.candidates[0].id;
   await setup();
-  const discard = screen.getByRole('button', { name: '丢弃候选 1' });
-  const column = discard.parentElement!.parentElement!;
-  expect(column.className).toContain('left-2.5'); expect(column.className).toContain('top-2.5');
-  expect(column.textContent).toContain('#1'); expect(column.className).not.toContain('bottom-2.5');
-  fireEvent.click(discard);
-  await waitFor(() => expect(screen.queryByRole('button', { name: '查看候选 1' })).toBeNull());
-  expect(mocks.save.mock.calls[0][0].candidates[0]).toEqual({ ...experiment.candidates[0], archived: true });
-  filterBy('回收站'); expect(screen.getByRole('button', { name: '查看候选 1' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '批量选择候选' })); fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' })); fireEvent.click(screen.getByRole('button', { name: '恢复所选' }));
-  await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2)); expect(mocks.save.mock.calls[1][0].candidates[0]).toEqual(experiment.candidates[0]); expect(mocks.generate).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '删除候选 1' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalled());
+  expect(mocks.confirm).toHaveBeenCalledOnce();
+  expect(mocks.save.mock.calls[0][0].candidates.map((item: any) => item.id)).not.toContain(removedId);
+  expect(mocks.generate).not.toHaveBeenCalled();
 });
 
 it('完整轮次不显示伪补图入口，旧轮缺图可按轮次查到并手选补齐', async () => {
@@ -804,13 +793,14 @@ it('页面只提供Roll和配方操作，不包含对比入口、评分或投票
   expect(mocks.generate.mock.calls[0][0].rounds.at(-1).candidateIds).toHaveLength(6);
 });
 
-it('卡片画师标签使用小号磨砂徽章，编号只保留在左上角', async () => {
+it('卡片画师标签最多三个并显示剩余数量，编号只保留在左上角', async () => {
   await setup();
   const chip = screen.getByText('alpha').closest('.gallery-card-badge');
   expect(chip).toBeTruthy();
   expect(chip!.className).toContain('text-micro');
-  expect(chip!.className).toContain('max-w-[96px]');
+  expect(chip!.className).toContain('min-w-0');
   const card = screen.getByRole('button', { name: '查看候选 1' });
+  expect(card.querySelectorAll('.gallery-card-badge').length).toBeLessThanOrEqual(4);
   expect(card.querySelectorAll('.gallery-card-meta')).toHaveLength(0);
 });
 
@@ -888,17 +878,13 @@ it('从画师库带入固定画师时新建记录并固定 Tag，不覆盖当前
   expect(screen.getByRole('button', { name: '锁定画师：beta' }).getAttribute('aria-pressed')).toBe('true');
 });
 
-it('回收站可永久清理已归档候选，原图与已保存风格串仍保留', async () => {
+it('已归档候选不再出现在任何视图，原图与已保存风格串仍保留', async () => {
   experiment.candidates[1].archived = true;
   await setup();
+  expect(screen.queryAllByRole('button', { name: /^查看候选 / })).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-  fireEvent.click(screen.getByRole('button', { name: '回收站' }));
-  fireEvent.click(screen.getByRole('button', { name: '批量选择候选' }));
-  fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
-  fireEvent.click(screen.getByRole('button', { name: '永久清理所选' }));
-  await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
-  expect(mocks.save.mock.calls[0][0].candidates.map((candidate: any) => candidate.id)).toEqual(['a']);
-  expect(mocks.confirm).toHaveBeenCalledOnce();
+  expect(screen.queryByRole('button', { name: '回收站' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '永久清理所选' })).toBeNull();
 });
 
 it('候选编号旁显示所属轮次，便于区分新一轮结果', async () => {
@@ -1043,25 +1029,22 @@ it('助手临时开启样张过滤时按真实样张集合抽取，旧覆盖项�
 });
 
 it.each([
-  ['/api/artist-samples/image?pack=v45&tag=alpha&index=0&revision=synthetic', 'artist-sample-padding-v2'],
-  ['/api/artist-samples/image?pack=v5&tag=alpha&index=0&revision=synthetic', 'artist-sample-padding-v2'],
-  ['/api/assets/own-sample.png', null],
-  ['/api/history/synthetic/image', null],
-  ['https://synthetic.invalid/unknown.jpg', null],
-])('候选详情小头像仅为已知图包来源启用共用裁边预览：%s', async (url, transform) => {
-  sampleUrls.set('alpha', url!);
+  '/api/artist-samples/image?pack=v45&tag=alpha&index=0&revision=synthetic',
+  '/api/artist-samples/image?pack=v5&tag=alpha&index=0&revision=synthetic',
+  '/api/assets/own-sample.png',
+  '/api/history/synthetic/image',
+  'https://synthetic.invalid/unknown.jpg',
+])('候选详情的画师头像可点开画师库：%s', async url => {
+  sampleUrls.set('alpha', url);
   const onOpenArtistLibrary = vi.fn();
   const { container } = await setup({ onOpenArtistLibrary });
   fireEvent.click(screen.getByRole('button', { name: '查看候选 1' }));
   await waitFor(() => expect(container.querySelector(`img[src="${url}"]`)).toBeTruthy());
   const image = container.querySelector<HTMLImageElement>(`img[src="${url}"]`)!;
-  expect(image.getAttribute('data-preview-transform')).toBe(transform);
-  expect(image.getAttribute('data-container-class')).toContain('h-8 w-8 shrink-0');
   expect(image.classList.contains('object-cover')).toBe(true);
   fireEvent.click(image);
   expect(onOpenArtistLibrary).toHaveBeenCalledWith('alpha');
   expect(image.getAttribute('src')).toBe(url);
-  for (const candidate of screen.getAllByAltText('候选 1')) expect(candidate.getAttribute('data-preview-transform')).toBeNull();
 });
 
 it('图包原名进入完整选择目录并可固定，已知中文与无图词库条目仍保留', async () => {
@@ -1128,20 +1111,27 @@ it('保存阶段即使关闭过程预览仍展示最终图，状态条明确保�
 
 vi.mock('../../components/roll/StyleRollChainArtistDialog', () => ({ StyleRollChainArtistDialog: ({ source, blocked, onConfirm, onClose }: any) => <div role="dialog" aria-label="提取接线" data-source={JSON.stringify(source ?? null)} data-blocked={blocked.join(',')}><button onClick={() => { onConfirm({ chainIds: ['source-chain', 'source-two'], artists: [{ tag: 'beta', count: 2 }, { tag: 'gamma', count: 1 }, { tag: 'delta', count: 1 }, { tag: 'epsilon', count: 1 }] }); onClose(); }}>确认提取接线</button><button onClick={() => { onConfirm(undefined); onClose(); }}>使用全部画师接线</button><button onClick={onClose}>取消提取接线</button></div> }));
 
-it('顶部直接提取抽样来源，不打开管理、不生成或保存参数；隐藏与切记录卸载', async () => {
+it('本轮设置里直接提取抽样来源，不打开管理、不生成或保存参数；隐藏与切记录卸载', async () => {
   const second = { ...rollFixture(), id: 'other-record', name: '另一个记录' };
   mocks.load.mockImplementation(async () => [structuredClone(experiment), second]);
   const view = await setup();
-  const open = () => fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
-  expect(within(screen.getByRole('button', { name: '从风格串提取' })).getByText('画师库')).toBeTruthy();
+  const chainButton = () => screen.getByRole('button', { name: /从风格串提取/ });
+  const openSettings = () => fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  const closeSettings = () => fireEvent.keyDown(window, { key: 'Escape' });
+  const open = () => { openSettings(); fireEvent.click(chainButton()); };
+  openSettings();
+  expect(within(chainButton()).getByText('画师库')).toBeTruthy();
+  closeSettings();
   open(); expect(screen.getByRole('dialog', { name: '提取接线' })).toBeTruthy();
   expect(screen.queryByRole('dialog', { name: 'Roll 画师' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '确认提取接线' }));
-  expect(within(screen.getByRole('button', { name: '从风格串提取' })).getByText('已选 2 串 · 4 位画师')).toBeTruthy();
+  openSettings();
+  expect(within(chainButton()).getByText('已选 2 串')).toBeTruthy();
+  closeSettings();
   open(); expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).toContain('beta');
   view.rerender(<StyleRollPage {...view.props} active={false} />);
   expect(screen.queryByRole('dialog', { name: '提取接线' })).toBeNull();
-  view.rerender(<StyleRollPage {...view.props} />); await waitFor(() => expect(screen.getByRole('button', { name: '从风格串提取' }).hasAttribute('disabled')).toBe(false)); open();
+  view.rerender(<StyleRollPage {...view.props} />); await waitFor(() => expect(screen.getByRole('button', { name: '再 Roll 一轮' }).hasAttribute('disabled')).toBe(false)); open();
   fireEvent.change(screen.getByRole('combobox', { name: '切换画风记录' }), { target: { value: second.id } });
   expect(screen.queryByRole('dialog', { name: '提取接线' })).toBeNull();
   open(); expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).not.toContain('beta');
@@ -1151,7 +1141,10 @@ it('顶部直接提取抽样来源，不打开管理、不生成或保存参数�
 it.each([false, true])('提取来源经页面/Agent保存到记录与轮次，可清除恢复全库，Agent=%s', async agent => {
   experiment.candidates = []; experiment.rules = { ...experiment.rules, minArtists: 2, maxArtists: 2 };
   const view = await setup();
-  fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
+  const chainButton = () => screen.getByRole('button', { name: /从风格串提取/ });
+  const openSettings = () => fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  const closeSettings = () => fireEvent.keyDown(window, { key: 'Escape' });
+  openSettings(); fireEvent.click(chainButton());
   fireEvent.click(screen.getByRole('button', { name: '确认提取接线' }));
   const state = await executeAgentCommand(view.container, 'get_roll_state', {}, true) as any;
   expect(state.chainArtistSource.artists).toHaveLength(4);
@@ -1164,11 +1157,13 @@ it.each([false, true])('提取来源经页面/Agent保存到记录与轮次，�
   expect(saved.pinnedArtists).toEqual([]);
   expect(saved.template).toEqual(experiment.template);
   expect(saved.candidates.every(candidate => candidate.tags.length === 2 && candidate.tags.every(tag => ['beta', 'gamma', 'delta', 'epsilon'].includes(tag.tag)))).toBe(true);
-  await waitFor(() => expect(screen.getByRole('button', { name: '从风格串提取' }).hasAttribute('disabled')).toBe(false));
-  fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '再 Roll 一轮' }).hasAttribute('disabled')).toBe(false));
+  openSettings(); fireEvent.click(chainButton());
   expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).toContain('source-chain');
   fireEvent.click(screen.getByRole('button', { name: '使用全部画师接线' }));
-  expect(within(screen.getByRole('button', { name: '从风格串提取' })).getByText('画师库')).toBeTruthy();
+  openSettings();
+  expect(within(chainButton()).getByText('画师库')).toBeTruthy();
+  closeSettings();
   expect((await executeAgentCommand(view.container, 'get_roll_state', {}, true) as any).chainArtistSource).toBeUndefined();
   fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
   fireEvent.change(screen.getByRole('combobox', { name: '查看轮次' }), { target: { value: saved.rounds.at(-1)!.id } });
@@ -1183,7 +1178,9 @@ it.each([false, true])('已有提取来源不依赖全词库成功，仍显示�
   const view = await setup();
   await waitFor(() => expect(screen.getByRole('button', { name: '再 Roll 一轮' }).hasAttribute('disabled')).toBe(false));
   expect((await executeAgentCommand(view.container, 'get_roll_state', {}, true) as any).library.error).toContain('合成词库读取失败');
-  expect(screen.getByRole('button', { name: '从风格串提取' }).hasAttribute('disabled')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  expect(screen.getByRole('button', { name: /从风格串提取/ }).hasAttribute('disabled')).toBe(false);
+  fireEvent.keyDown(window, { key: 'Escape' });
   if (agent) await act(async () => { await executeAgentCommand(view.container, 'run_roll_round', { count: 1, generate: false }, false); });
   else { fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' })); await waitFor(() => expect(mocks.save).toHaveBeenCalled()); }
   expect(mocks.save.mock.calls.at(-1)![0].candidates.every((candidate: any) => candidate.tags[0].tag === 'outside dictionary')).toBe(true);
