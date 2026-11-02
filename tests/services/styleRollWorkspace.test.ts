@@ -14,11 +14,11 @@ it('全部如实展示成图与待生成，编号、画师与轮次筛选一致�
   const { e, images } = fixture();
   expect(rollWorkspaceCandidates(e, images, view).map(item => item.id)).toEqual(['pending', 'saved', 'old']);
   expect(rollWorkspaceCandidates(e, images, { ...view, sort: 'old' }).map(item => item.id)).toEqual(['old', 'saved', 'pending']);
-  expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'archived' }).map(item => item.id)).toEqual(['trash']);
+  // 归档是历史遗留状态，任何视图都不再展示它（丢弃已改为直接删除）。
   expect(rollWorkspaceCandidates(e, images, { ...view, query: 'OLD artist' }).map(item => item.id)).toEqual(['old']);
   expect(rollWorkspaceCandidates(e, images, { ...view, query: '#2' }).map(item => item.id)).toEqual(['saved']);
   expect(rollWorkspaceCandidates(e, images, { ...view, query: '2' }).map(item => item.id)).toEqual(['saved']);
-  expect(rollWorkspaceCandidates(e, images, { ...view, roundId: 'current', filter: 'saved' }).map(item => item.id)).toEqual(['saved']);
+  expect(rollWorkspaceCandidates(e, images, { ...view, roundId: 'current' }).map(item => item.id)).toEqual(['pending', 'saved']);
   expect(rollWorkspaceCandidates(e, images, { ...view, roundId: 'missing' })).toEqual([]);
 });
 
@@ -61,7 +61,7 @@ it('收藏筛选只看已出图候选，未出图配方不算未收藏图片，�
   images.set('trash', rollImageFixture(e, e.candidates[3]));
   const favorites = new Set(['saved', 'trash']);
   expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'favorited' }, undefined, favorites).map(item => item.id)).toEqual(['saved']);
-  expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'unfavorited' }, undefined, favorites).map(item => item.id)).toEqual(['old']);
+  // 「未收藏」筛选已移除：它只是「全部减已收藏」，没有独立价值。
   expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'favorited' })).toEqual([]);
   expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'favorited', roundId: 'old-round' }, undefined, favorites)).toEqual([]);
   expect(e.candidates.filter(candidate => rollFavoriteMatches(candidate, images, favorites, false)).map(item => item.id)).toEqual(['old']);

@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-02
+- **DeepSeek Harness (deepseek-v4.1-flash)**：Roll 顶栏去重复（移除从风格串提取与常驻费用摘要，保持单行）；筛选从 7 项精简为 4 项并同步简化 ollWorkspaceCandidates 的过滤分支与批量归档动作。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：Roll 串配置改为可中途修改（候选记录模板指纹，旧图不再失配）；角色提示词接入实验室普通模式编辑器（多角色/独立负面/位置）；候选详情改版（悬浮切换、图片撑满、操作收进标题栏、列表精简为删除/收藏/保存）；丢弃改为直接删除；新增设置项「悬浮按钮大小」并统一 .nai-float-btn 驱动容器与图标缩放。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：账户接口确认为 image（官方 400 报错点名）与 	ext（实测 200）两个可用域名，移除已弃用的 pi 域名；串行回退保留，补／更新 4 处域名断言。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：额度同步改为跨官方域名回退（text → image → api；400 与网络错误换下一个，401 直接失败）。实测三个 Key：api 域名固定回 400 要求换新地址，image 域名出现过一次瞬时不可达、同一 Key 几分钟后恢复 200；补 1 项回退用例、更新 2 处域名断言。
