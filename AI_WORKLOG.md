@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-02
+- **DeepSeek Harness (deepseek-v4.1-flash)**：分离"归属"与"筛选"：收藏库的 `activeFilterCount` 只统计来源与标签（收藏夹不再计入，桌面/手机口径统一），切换收藏夹不再清空来源筛选，「重置筛选」统一把收藏夹带回「全部」；风格串的 `resetFilters` 同步把文件夹重置到全部。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：修 Roll 角色配置三处不一致：旧记录的单段 `characterPrompt` 打开配置时迁移成第一个角色（参数级 `params.characters` 不动，避免改变出图内容）；角色编辑器的 `disabled` 改用 `editingBusy`，预设保存在途时一并锁定；`GenerationTemplateEditor` 在外部插槽接管角色时不再显示「保留 N 个角色」提示。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：测试体系清理：全量跑出 51 个失败用例后逐类修复（i18n 与目录文案补 20 个漏翻键、组件测试改用 `nai-float-btn`/`data-tone`/`data-image-action-left` 等 token 与结构断言替代 Tailwind 工具类、慢用例超时放到 30s、`run.mjs` 开跑前清理中断残留的 `tests/.tmp` 工作区）；顺带修掉外观审计查出的 `text-[10px]` 与缺失 `appearance-group`，并去重 StyleRollGallery 编号徽标里重复的一段 className。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：同步 `StyleRollPage` 测试到当前实现（此前 23 项因功能已改而失败）：翻页按钮到边界即隐藏、筛选改为「已出图但未保存／已收藏」、丢弃改为删除并去掉回收站用例、卡片徽章与画师头像尺寸、从风格串提取收进本轮设置。

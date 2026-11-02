@@ -473,6 +473,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     : typeChains.length;
   const resetFilters = () => {
     setSelectedModel(''); setFavOnly(false); setUntestedOnly(false); setSortOption('updated_desc'); setSelectedTags(new Set()); setTagSearch('');
+    // 重置浏览条件时把文件夹也带回「全部」，避免清完筛选仍被目录限制、看到空列表找不到原因。
+    if (type === 'style' && !isGuest) selectFolder('*');
   };
   const emptyFiltersActive = filterCount > 0 || Boolean(searchTerm) || (type === 'style' && !isGuest && activeFolder !== '*');
   // 桌面弹层与手机抽屉共享筛选内容，切换视图也保持同一份筛选状态。

@@ -385,7 +385,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     finally { deletingRef.current = false; setBusy(''); }
   }, [busy, items, currentUser, confirmAction, onRefresh, notify]);
 
-  const activeFilterCount = Number(collection !== 'all') + Number(Boolean(boardId)) + Number(Boolean(sourceFilter)) + tagFilter.length;
+  // 收藏夹是"归属"不是"筛选"：选中文件夹不参与筛选计数，只在树与空状态里体现。
+  const categoryActive = collection !== 'all' || Boolean(boardId);
+  const activeFilterCount = Number(Boolean(sourceFilter)) + tagFilter.length;
   const tagChips = tagFilter.map(tag => ({ key: tag, label: `#${tag}`, onRemove: () => setTagFilter(previous => previous.filter(value => value !== tag)) }));
   const renderBoardHandle = (board: InspirationBoard) => <button type="button" data-card-action="true" data-agent-interaction="drag" aria-label={t("排序收藏夹：{0}", [board.name])} title={t("拖动排序；上下方向键调整")}
       disabled={boards.filter(candidate => (candidate.parentId || null) === (board.parentId || null)).length < 2 || currentUser.role === 'guest'} aria-disabled={Boolean(busy)}
@@ -419,7 +421,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     <DirectoryTreeNavigation label={t('收藏夹目录')} title={t('自定义收藏夹')} nodes={boards} expanded embedded preferenceKey="nai-collection-tree-branches" selectedId={boardId || (collection === 'unorganized' ? '' : '*')}
       selectedIds={sourceFilter ? [] : undefined} createLabel={t('新建收藏夹')} renameLabel={t('编辑收藏夹')} deleteLabel={t('删除收藏夹')}
       actionDisabled={boardsLoading || Boolean(boardsError)} counts={inspirationsData === null ? undefined : boardCounts} totalCount={inspirationsData === null ? undefined : counts.all} unclassifiedCount={inspirationsData === null ? undefined : counts.unorganized} allLabel={t('全部')} unclassifiedLabel={t('未整理')} disabled={Boolean(busy)}
-      onSelect={id => { setBoardId(id === '*' || !id ? '' : id); setCollection(id === '' ? 'unorganized' : 'all'); setSourceFilter(''); }}
+      onSelect={id => { setBoardId(id === '*' || !id ? '' : id); setCollection(id === '' ? 'unorganized' : 'all'); }}
       onMove={currentUser.role === 'guest' ? undefined : (id, parentId) => { void moveBoard(id, parentId); }}
       onCreate={currentUser.role === 'guest' ? undefined : parentId => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length], parentId })}
       onRename={currentUser.role === 'guest' ? undefined : id => { const board = boards.find(board => board.id === id); if (board) setBoardEditor({ id, name: board.name, color: board.color || '#6366f1', parentId: board.parentId || null }); }}
@@ -490,11 +492,11 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="h-11 min-w-0 flex-1 max-md:min-w-[7.5rem] md:h-10 md:max-w-none!" className="h-full! min-h-0!">
         <SearchFilterChips chips={tagChips} expanded={showFilters} onMore={() => setShowFilters(true)} />
       </ToolbarSearch>
-      <ToolbarPopover title={t("筛选收藏")} open={showFilters} onOpenChange={setShowFilters} count={mobile => activeFilterCount - (mobile ? 0 : Number(collection !== 'all') + Number(Boolean(boardId)))} width={360}>
+      <ToolbarPopover title={t("筛选收藏")} open={showFilters} onOpenChange={setShowFilters} count={activeFilterCount} width={360}>
         {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile, () => {
           // 先卸载筛选层并归还焦点，再打开标签管理，避免两层抢焦点和返回操作。
           flushSync(close); setTagManagerOpen(true);
-        })}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); if (mobile) { setBoardId(''); setCollection('all'); } }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t("确认")}</button></div></div>}
+        })}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); setBoardId(''); setCollection('all'); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t("确认")}</button></div></div>}
       </ToolbarPopover>
       <ToolbarSelect label="收藏排序" icon={<ArrowDownUp />} value={sort} containerClassName="max-md:hidden" className="w-auto!" onChange={event => setSort(event.target.value as CollectionSort)}>{Object.entries(COLLECTION_SORT_LABELS).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</ToolbarSelect>
       <ToolbarButton aria-label={t('批量选择图片')} title={t('批量选择图片')} disabled={Boolean(busy) || !filtered.some(item => editableIds.has(item.id))} onClick={() => { if (workGroup) closeGroup(); setSelectedIds(new Set()); setSelectionMode(true); }} className="mobile-touch !px-2.5 max-md:hidden md:!px-3"><ListChecks /><span className="hidden sm:inline">{t('多选')}</span></ToolbarButton>
@@ -534,7 +536,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
             </div>
           )}
           {visibleCount < groups.length && <div className="flex justify-center py-6"><button type="button" onClick={() => setVisibleCount(count => count + COLLECTION_RENDER_BATCH)} className="appearance-group mobile-touch rounded-xl border border-gray-300 bg-white px-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">{t("加载更多（{0}）", [groups.length - visibleCount])}</button><div ref={loadMoreSentinelRef} className="h-4 w-full max-w-40" aria-hidden="true" /></div>}
-        </> : loadError ? null : activeFilterCount > 0 || search.trim() || debouncedSearch.trim() ? (
+        </> : loadError ? null : activeFilterCount > 0 || categoryActive || search.trim() || debouncedSearch.trim() ? (
           <div className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
             <p>{t("无匹配结果")}</p>
             <button type="button" onClick={() => { setSearch(''); setDebouncedSearch(''); setTagFilter([]); setTagQuery(''); setSourceFilter(''); setBoardId(''); setCollection('all'); }} className="mobile-touch mt-2 px-3 text-xs font-semibold text-indigo-600 dark:text-indigo-400">{t("清除筛选")}</button>

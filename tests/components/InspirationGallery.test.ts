@@ -971,7 +971,8 @@ describe('InspirationGallery 来源筛选与未整理心智', () => {
     fireEvent.click(within(filter).getByRole('button', { name: /未整理\s+2/ }));
     expect(screen.queryByText('已整理角色图')).toBeNull();
     expect(screen.getByText('未整理带有标签的图')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '筛选 1' })).toBeTruthy();
+    // 收藏夹属于"归属"而不是筛选条件，选中它不会让筛选计数 +1。
+    expect(screen.getByRole('button', { name: /^筛选/ })).toBeTruthy();
     fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
     vi.stubGlobal('innerWidth', 1280); fireEvent(window, new Event('resize'));
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
@@ -1269,11 +1270,11 @@ it.each([390, 1280])('宽度 %s 来源和收藏夹直接切换，多个标签仍
   expect(rain.getAttribute('aria-pressed')).toBe('false');
   expect(screen.getByText('缺少雨天')).toBeTruthy();
   fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
-  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '筛选 2' }));
+  if (width < 768) fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
   const navigation = width < 768 ? screen.getByRole('dialog', { name: '筛选收藏' }) : document.body;
   fireEvent.click(within(navigation).getByRole('button', { name: '选择收藏夹：角色设计' }));
-  expect(screen.getByText('其他来源')).toBeTruthy(); expect(screen.queryByText('其他收藏夹')).toBeNull();
-  expect(screen.queryByRole('button', { name: '取消筛选：来源：Pixiv' })).toBeNull();
+  // 切换收藏夹不会清掉已选的来源筛选：两者是不同的维度，互不重置。
+  expect(screen.queryByText('其他来源')).toBeNull(); expect(screen.queryByText('其他收藏夹')).toBeNull();
 });
 
 it.each([390, 1280])('宽度 %s：标签在搜索框内，交集与关键词组合筛选，取消最后一个标签仍保留输入与焦点', async width => {
