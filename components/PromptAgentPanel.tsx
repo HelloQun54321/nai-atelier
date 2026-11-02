@@ -171,7 +171,7 @@ const UserMessageText: React.FC<{ text: string }> = ({ text }) => {
   if (segments.length <= 1 && segments[0]?.type !== 'attachment') return <>{text}</>;
   return <div className="space-y-1.5">{segments.map((segment, index) => segment.type === 'text'
     ? <p key={index}>{segment.text}</p>
-    : <details key={index} className="rounded-lg bg-gray-200/60 px-2 py-1 dark:bg-gray-700/40">
+    : <details key={index} className="appearance-group rounded-lg bg-gray-200/60 px-2 py-1 dark:bg-gray-700/40">
       <summary className="cursor-pointer select-none text-micro text-gray-600 dark:text-gray-300">{t('附件 {0} · {1} 字符', [segment.name, segment.size])}</summary>
       <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all text-micro leading-5 text-gray-600 dark:text-gray-300">{segment.text}</pre>
     </details>)}</div>;

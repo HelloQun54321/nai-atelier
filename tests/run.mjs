@@ -4,7 +4,7 @@ import { createWriteStream, readdirSync, mkdirSync } from 'node:fs';
 import { once } from 'node:events';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createWorkspace, projectRoot, removeWorkspace } from './support/workspace.mjs';
+import { cleanupStaleWorkspaces, createWorkspace, projectRoot, removeWorkspace } from './support/workspace.mjs';
 
 export const discoverNodeTests = (root = projectRoot) => {
   const files = [];
@@ -27,7 +27,7 @@ export const discoverGatewayTests = (root = projectRoot) => discoverNodeTests(ro
 export const nodeTestArguments = (args, files = discoverNodeTests()) => {
   const selected = args.filter(value => value.endsWith('.test.mjs')).map(value => resolve(projectRoot, value));
   if (selected.some(value => !files.includes(value))) throw new Error('指定的 Node 测试不在已发现的测试集合中');
-  return ['--test', '--test-concurrency=4', '--import', pathToFileURL(join(projectRoot, 'tests/support/node-environment.mjs')).href,
+  return ['--test', '--test-concurrency=2', '--import', pathToFileURL(join(projectRoot, 'tests/support/node-environment.mjs')).href,
     ...args.filter(value => !value.endsWith('.test.mjs')), ...(selected.length ? selected : files)];
 };
 
@@ -60,6 +60,8 @@ const main = async () => {
   };
   if (!modes[mode]) throw new Error('测试类型应为 unit、node、gateway 或 live-sync');
   const commands = modes[mode]();
+  // 上次被中断的运行会留下工作区，开跑前先清掉，避免 tests/.tmp 越积越大。
+  cleanupStaleWorkspaces();
   const logPath = testLogPath(mode);
   const runRoot = ['gateway', 'node'].includes(mode) ? createWorkspace('run-') : undefined;
   console.log(`测试完整日志：${relative(projectRoot, logPath)}`);

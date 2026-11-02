@@ -55,9 +55,9 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
       <div data-image-action-left className="absolute left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5">
         {/* 左上角：编号（参与搜索与详情标题）与删除按钮上下排列。 */}
-                <span className="pointer-events-none flex flex-col items-start rounded-md bg-black/35 px-1.5 py-1 font-mono text-micro leading-tight text-white/90 backdrop-blur-sm rounded-md bg-black/35 px-1.5 py-1 font-mono text-micro leading-tight text-white/90 backdrop-blur-sm">
+                <span className="pointer-events-none flex flex-col items-start rounded-md bg-black/35 px-1.5 py-1 font-mono text-micro leading-tight text-white/90 backdrop-blur-sm">
           <span>#{index}</span>
-          {roundNo ? <span className="text-[10px] opacity-60">R{roundNo}</span> : null}
+          {roundNo ? <span className="text-mini opacity-60">R{roundNo}</span> : null}
         </span>
         {!selecting && <div data-card-action="true" className="hover-reveal-md">
           <button type="button" aria-label={t('删除候选 {0}', [index])} title={t('删除')} disabled={busy} onClick={event => { event.stopPropagation(); onArchive(candidate.id); }} className="nai-float-btn mobile-size-locked flex items-center justify-center rounded-full bg-black/50 text-white shadow-md backdrop-blur-md transition-all hover:scale-110 hover:bg-red-600 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">

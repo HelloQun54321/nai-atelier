@@ -6,6 +6,7 @@ import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 import { ChainList } from '../../components/ChainList';
+import { IMAGE_CARD_ACTION_CLASS } from '../../components/ImageShareActions';
 import { copySharedImage } from '../../services/imageSharing';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}) }));
@@ -40,6 +41,15 @@ const beginBulkSelection = async () => {
   await waitFor(() => expect((screen.getByRole('button', { name: '批量选择风格串' }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: '批量选择风格串' }));
 };
+// 封面右上角的图片操作共用一份设计 token：尺寸走 --nai-float-control（nai-float-btn），
+// 命中区保 44px（mobile-touch），并用 mobile-size-locked 防止触控下限把圆拉成椭圆。
+// 因此这里断言 token 与外观性质，不再锁定 h-11 / md:h-8 这类具体尺寸工具类。
+const FLOAT_ACTION_TOKENS = ['nai-float-btn', 'mobile-touch', 'mobile-size-locked'];
+const assertFloatActionStyle = (button: Element) => {
+  for (const token of [...FLOAT_ACTION_TOKENS, ...IMAGE_CARD_ACTION_CLASS.split(/\s+/).filter(Boolean)]) expect(button.classList.contains(token)).toBe(true);
+  // 透明深底浮钮，不是白底实心按钮。
+  expect(button.classList.contains('bg-white/90')).toBe(false);
+};
 it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操作，左上恢复红色删除，子操作不打开工作台', async type => {
   const p = props();
   const label = type === 'character' ? '自定义角色' : '风格串';
@@ -52,8 +62,10 @@ it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操�
   const imageCopy = within(card).getByRole('button', { name: '复制图片' });
   const edit = within(card).getByRole('button', { name: `编辑${label}信息：风格 A` });
   const controls = edit.parentElement!;
-  expect(controls.className).toContain('absolute right-2 top-2');
+  // 右上组＝卡片角标组（image-card-actions），且不登记为左侧操作组。
   expect(controls.classList.contains('image-card-actions')).toBe(true);
+  expect(controls.getAttribute('data-card-action')).toBe('true');
+  expect(controls.hasAttribute('data-image-action-left')).toBe(false);
   expect(controls.classList.contains('hover-reveal-md')).toBe(false);
   expect(within(controls).getByRole('button', { name: '收藏' }).closest('.hover-reveal-md')).toBeNull();
   expect(controls.contains(imageCopy)).toBe(true);
@@ -63,14 +75,17 @@ it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操�
     ...(type === 'style' ? ['发送到实验室：风格 A'] : []),
     `编辑${label}信息：风格 A`,
   ]);
-  for (const button of buttons) {
-    for (const token of ['bg-black/45', 'border-white/60', 'rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'focus-visible:ring-white']) expect(button.classList.contains(token)).toBe(true);
-    expect(button.classList.contains('bg-white/90')).toBe(false);
-  }
+  for (const button of buttons) assertFloatActionStyle(button);
   const remove = within(card).getByRole('button', { name: '删除：风格 A' });
-  expect(remove.parentElement!.className).toContain('absolute left-2 top-2');
+  // 左上删除组登记为左侧操作，供角标组换列时避让。
+  expect(remove.parentElement!.hasAttribute('data-image-action-left')).toBe(true);
   expect(remove.parentElement!.classList.contains('hover-reveal-md')).toBe(true);
-  for (const token of ['bg-red-500', 'text-white', 'rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'focus-visible:ring-white']) expect(remove.classList.contains(token)).toBe(true);
+  expect(remove.classList.contains('rounded-full')).toBe(true);
+  // 红色危险填充是本用例意图，不锁定具体色阶（bg-red-600 等等价）。
+  expect(remove.className).toMatch(/(^|\s)bg-red-\d{2,3}(\s|$)/);
+  expect(remove.classList.contains('text-white')).toBe(true);
+  expect(remove.classList.contains('mobile-size-locked')).toBe(true);
+  expect(remove.classList.contains('nai-float-btn')).toBe(false);
   expect(within(card).queryByRole('button', { name: '复制/查看详情：风格 A' })).toBeNull();
   fireEvent.click(imageCopy);
   await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/synthetic/cover.png', false));
@@ -349,7 +364,9 @@ describe('风格串列表的酒馆筛选交互', () => {
     act(() => { operation = operateAgentPage({ action: 'press', snapshotId: page.snapshotId, controlId: page.controls[0].id, key: 'Enter' }); }); await operation;
     expect(p.onSelect).toHaveBeenCalledExactlyOnceWith('a');
     const edit = screen.getByRole('button', { name: '编辑风格串信息：风格 A' });
-    expect(edit.parentElement!.className).toContain('absolute right-2 top-2');
+    // 无封面时编辑仍在右上角标组里，且不登记为左侧操作组。
+    expect(edit.parentElement!.classList.contains('image-card-actions')).toBe(true);
+    expect(edit.parentElement!.hasAttribute('data-image-action-left')).toBe(false);
     expect(screen.queryByRole('button', { name: '下载图片' })).toBeNull();
     expect(screen.queryByRole('button', { name: '复制图片' })).toBeNull();
     fireEvent.keyDown(edit, { key: 'Enter' }); expect(p.onSelect).toHaveBeenCalledTimes(1);

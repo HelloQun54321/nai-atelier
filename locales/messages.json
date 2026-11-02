@@ -1,4 +1,160 @@
 {
+  "合并分类": [
+    "合併分類",
+    "Merge categories",
+    "カテゴリを統合",
+    "분류 병합"
+  ],
+  "合并分类：{0}": [
+    "合併分類：{0}",
+    "Merge categories: {0}",
+    "カテゴリを統合：{0}",
+    "분류 병합: {0}"
+  ],
+  "更改上级分类": [
+    "變更上級分類",
+    "Change parent category",
+    "親カテゴリを変更",
+    "상위 분류 변경"
+  ],
+  "更改上级分类：{0}": [
+    "變更上級分類：{0}",
+    "Change parent category: {0}",
+    "親カテゴリを変更：{0}",
+    "상위 분류 변경: {0}"
+  ],
+  "上级分类": [
+    "上級分類",
+    "Parent category",
+    "親カテゴリ",
+    "상위 분류"
+  ],
+  "上级分类已不存在": [
+    "上級分類已不存在",
+    "The parent category no longer exists",
+    "親カテゴリが存在しません",
+    "상위 분류가 더 이상 없습니다"
+  ],
+  "例如：D:\\\\SillyTavern": [
+    "例如：D:\\\\SillyTavern",
+    "For example: D:\\\\SillyTavern",
+    "例：D:\\\\SillyTavern",
+    "예: D:\\\\SillyTavern"
+  ],
+  "将停止当前工坊，复制并核验资料后在新位置重新打开。旧目录保留。\\n目标：{0}": [
+    "將停止目前工坊，複製並核驗資料後在新位置重新開啟。舊目錄保留。\n目標：{0}",
+    "Stops the current workshop, copies and verifies the data, then reopens in the new location. The old folder is kept.\nTarget: {0}",
+    "現在の工房を停止し、資料をコピーして検証した後、新しい場所で開き直します。元のフォルダは保持されます。\n対象：{0}",
+    "현재 공방을 중지하고 자료를 복사·검증한 뒤 새 위치에서 다시 엽니다. 이전 폴더는 유지됩니다.\n대상: {0}"
+  ],
+  "将停止当前工坊，打开目标位置已有的工坊。当前资料保留，不合并。\\n目标：{0}": [
+    "將停止目前工坊，開啟目標位置既有的工坊。目前資料保留，不合併。\n目標：{0}",
+    "Stops the current workshop and opens the one that already exists at the target. Current data is kept and not merged.\nTarget: {0}",
+    "現在の工房を停止し、対象の場所にある既存の工房を開きます。現在の資料は保持され、統合されません。\n対象：{0}",
+    "현재 공방을 중지하고 대상 위치의 기존 공방을 엽니다. 현재 자료는 유지되며 병합되지 않습니다.\n대상: {0}"
+  ],
+  "删除候选 {0}": [
+    "刪除候選 {0}",
+    "Delete candidate {0}",
+    "候補 {0} を削除",
+    "후보 {0} 삭제"
+  ],
+  "这一记录已经出过图：修改提示词、模型或 Seed 只影响接下来生成的图片，已有的图保持不变。": [
+    "這一記錄已經出過圖：修改提示詞、模型或 Seed 只影響接下來生成的圖片，已有的圖保持不變。",
+    "This record already has images: changing the prompt, model or seed only affects the next generations; existing images stay as they are.",
+    "この記録には既に画像があります。プロンプト・モデル・シードの変更は次回以降の生成にだけ影響し、既存の画像は変わりません。",
+    "이 기록에는 이미 생성된 이미지가 있습니다. 프롬프트, 모델, 시드를 바꾸면 다음 생성에만 적용되고 기존 이미지는 그대로 유지됩니다."
+  ],
+  "位置用于多人构图，单角色可以不动": [
+    "位置用於多人構圖，單角色可以不動",
+    "Position matters for multi-character layouts; a single character can stay put",
+    "位置は複数キャラの構図用です。1 キャラならそのままで構いません",
+    "위치는 다인 구도에 필요합니다. 단일 캐릭터는 그대로 두어도 됩니다"
+  ],
+  "将永久删除 {0}；已生成的历史图片与已保存的风格串仍保留，删除后不能还原。": [
+    "將永久刪除 {0}；已生成的歷史圖片與已儲存的風格串仍保留，刪除後無法還原。",
+    "Permanently deletes {0}; generated history images and saved style chains are kept, and it cannot be undone.",
+    "{0} を完全に削除します。生成済みの履歴画像と保存済みのスタイルチェーンは残りますが、元に戻せません。",
+    "{0}을(를) 영구 삭제합니다. 생성된 기록 이미지와 저장된 스타일 체인은 유지되며 되돌릴 수 없습니다."
+  ],
+  "删除所选": [
+    "刪除所選",
+    "Delete selected",
+    "選択を削除",
+    "선택 항목 삭제"
+  ],
+  "本记录候选已满，请删除部分候选后再 Roll": [
+    "本記錄候選已滿，請刪除部分候選後再 Roll",
+    "This record is at its candidate limit; delete some candidates before rolling again",
+    "この記録の候補が上限です。いくつか削除してから Roll してください",
+    "이 기록의 후보가 가득 찼습니다. 일부를 삭제한 뒤 다시 Roll 하세요"
+  ],
+  "本轮将生成 {0} 张，点击后确认费用": [
+    "本輪將生成 {0} 張，點擊後確認費用",
+    "This round generates {0} images; confirm the cost after clicking",
+    "このラウンドで {0} 枚生成します。クリック後に費用を確認します",
+    "이번 라운드에서 {0}장을 생성합니다. 클릭 후 비용을 확인하세요"
+  ],
+  "已选 {0} 串": [
+    "已選 {0} 串",
+    "{0} chains selected",
+    "{0} 件のチェーンを選択中",
+    "{0}개 체인 선택됨"
+  ],
+  "附件 {0} · {1} 字符": [
+    "附件 {0} · {1} 字元",
+    "Attachment {0} · {1} characters",
+    "添付 {0} · {1} 文字",
+    "첨부 {0} · {1}자"
+  ],
+  "文字": [
+    "文字",
+    "Text",
+    "テキスト",
+    "텍스트"
+  ],
+  "发送时交给 {0}；图片用量计入当前模型，文字文件并进这条消息。原文件保持不变。": [
+    "傳送時交給 {0}；圖片用量計入目前模型，文字檔併入這則訊息。原檔保持不變。",
+    "Sent to {0}; image usage counts toward the current model and text files are merged into this message. Original files stay unchanged.",
+    "{0} に送信されます。画像は現在のモデルの使用量に、テキストファイルはこのメッセージに含まれます。元のファイルは変更されません。",
+    "{0}(으)로 전송됩니다. 이미지는 현재 모델 사용량에 포함되고 텍스트 파일은 이 메시지에 합쳐집니다. 원본 파일은 변경되지 않습니다."
+  ],
+  "添加图片或文字文件": [
+    "新增圖片或文字檔",
+    "Add images or text files",
+    "画像またはテキストファイルを追加",
+    "이미지 또는 텍스트 파일 추가"
+  ],
+  "附件已满，先移除再添加": [
+    "附件已滿，先移除再加",
+    "Attachments are full; remove one first",
+    "添付がいっぱいです。先に削除してください",
+    "첨부가 가득 찼습니다. 먼저 제거하세요"
+  ],
+  "选择图片或文字文件": [
+    "選擇圖片或文字檔",
+    "Choose images or text files",
+    "画像またはテキストファイルを選択",
+    "이미지 또는 텍스트 파일 선택"
+  ],
+  "输入要求，或用 / 命令、@ 引用角色；也可以拖入项目里的图片和本地文件…": [
+    "輸入要求，或用 / 命令、@ 引用角色；也可以拖入專案裡的圖片和本機檔案…",
+    "Type a request, use / for commands or @ to reference a character; you can also drop in project images and local files…",
+    "要件を入力。／でコマンド、＠でキャラクター参照。プロジェクトの画像やローカルファイルもドロップできます…",
+    "요구 사항을 입력하거나 / 명령, @ 캐릭터 참조를 사용하세요. 프로젝트 이미지와 로컬 파일을 끌어다 놓을 수도 있습니다…"
+  ],
+  "{0} 个候选没有保存成功": [
+    "{0} 個候選沒有儲存成功",
+    "{0} candidates failed to save",
+    "{0} 件の候補を保存できませんでした",
+    "{0}개 후보를 저장하지 못했습니다"
+  ],
+  "本轮还有 {0} 张没出，点击后确认费用": [
+    "本輪還有 {0} 張沒出，點擊後確認費用",
+    "{0} images from this round are still pending; confirm the cost after clicking",
+    "このラウンドはまだ {0} 枚未生成です。クリック後に費用を確認します",
+    "이번 라운드에 아직 {0}장이 남아 있습니다. 클릭 후 비용을 확인하세요"
+  ],
   "\n\n⚠ 剩余预算 {0} 点不足以覆盖本次消耗。": [
     "\n\n? 剩餘預算 {0} 點不足以覆蓋本次消耗。",
     "\n\n⚠ Remaining budget of {0} points cannot cover this cost.",
@@ -11158,6 +11314,24 @@
     "Close and keep draft",
     "閉じて下書きを保持",
     "닫고 초안 유지"
+  ],
+  "图片上的收藏、下载、保存、删除与左右切换共用这一个尺寸": [
+    "圖片上的收藏、下載、儲存、刪除與左右切換共用這一個尺寸",
+    "One size for the favorite, download, save, delete and previous/next controls on images",
+    "画像上のお気に入り・ダウンロード・保存・削除・左右切り替えで共通のサイズです",
+    "이미지의 즐겨찾기, 다운로드, 저장, 삭제, 좌우 전환 버튼이 함께 쓰는 크기입니다"
+  ],
+  "悬浮按钮大小": [
+    "懸浮按鈕大小",
+    "Floating button size",
+    "フローティングボタンのサイズ",
+    "플로팅 버튼 크기"
+  ],
+  "关闭提示": [
+    "關閉提示",
+    "Dismiss notice",
+    "通知を閉じる",
+    "알림 닫기"
   ],
   "关闭错误提示": [
     "關閉錯誤提示",

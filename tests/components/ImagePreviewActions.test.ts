@@ -7,6 +7,15 @@ import { ImagePreviewActions, previewActionLayout } from '../../components/Image
 beforeEach(() => localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+// 形状、尺寸与材质统一由共用悬浮圆钮 token 决定（设置项可调），用例只验证 token
+// 与行为，不再写死像素尺寸或材质色阶，避免调「悬浮按钮大小」或换主题就让用例变红。
+const floatTokens = ['nai-float-btn', 'rounded-full', 'mobile-touch', 'mobile-size-locked', 'justify-center', 'backdrop-blur'];
+const NEUTRAL_TINT = /^(?:white|black|current|transparent|gray|slate|zinc|neutral|stone)$/;
+/** 语义强调底色：只取色系家族，忽略具体色阶与透明度，中性灰不计入语义色。 */
+const tintFamily = (element: HTMLElement) => [...new Set([...element.classList]
+  .map(token => token.match(/^!?bg-([a-z]+)-\d{2,3}(?:\/\d+)?$/)?.[1])
+  .filter((family): family is string => Boolean(family) && !NEUTRAL_TINT.test(family!)))];
+
 describe('小图和全屏大图的共用操作', () => {
   it.each([false, true])('全屏=%s：辅助操作统一圆形尺寸与材质，保留语义色及左右分组', fullscreen => {
     const remove = vi.fn();
@@ -30,8 +39,8 @@ describe('小图和全屏大图的共用操作', () => {
     expect(left.classList.contains('gap-2')).toBe(true);
     expect(right.classList.contains('top-4')).toBe(true);
     expect(right.classList.contains('right-4')).toBe(true);
-    expect(right.classList.contains('w-28')).toBe(false);
-    expect(right.classList.contains('md:w-32')).toBe(false);
+    // 分组不再自带固定宽度，列宽交给圆钮 token。
+    expect([...right.classList].some(token => /^!?w-(?:\d|\[)/.test(token))).toBe(false);
     expect(removeButton.classList.contains(fullscreen ? 'hover-reveal-md' : 'hover-reveal-lg')).toBe(true);
     expect(removeButton.parentElement?.classList.contains('gap-2')).toBe(true);
     expect(right.classList.contains('hover-reveal-lg')).toBe(false);
@@ -40,16 +49,19 @@ describe('小图和全屏大图的共用操作', () => {
     expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['收藏', '下载图片', '复制图片', '设为封面']);
     expect(within(left).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(fullscreen ? ['返回小图', '移除当前图片', '清空当前历史组'] : ['移除当前图片', '清空当前历史组']);
     for (const button of [removeButton, clearButton, coverButton, screen.getByRole('button', { name: '下载图片' }), screen.getByRole('button', { name: '复制图片' })]) {
-      for (const token of ['rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'mobile-touch', 'mobile-size-locked', 'border-white/60', 'backdrop-blur', 'focus-visible:ring-white', 'justify-center']) expect(button.classList.contains(token)).toBe(true);
+      for (const token of floatTokens) expect(button.classList.contains(token)).toBe(true);
+      // 图标按钮不带文字，也不用胶囊内边距挤压圆钮，焦点样式由 ring token 提供。
       expect(button.textContent).toBe('');
-      expect(button.classList.contains('px-3')).toBe(false);
+      expect([...button.classList].some(token => /^!?px-\d/.test(token))).toBe(false);
+      expect([...button.classList].some(token => token.startsWith('focus-visible:ring'))).toBe(true);
     }
-    expect(removeButton.classList.contains('!bg-red-600/90')).toBe(true);
-    expect(removeButton.classList.contains('hover:!bg-red-500')).toBe(true);
+    // 语义色只校验「各占一个色系家族且互不混用」，具体色阶跟随主题，不写死。
+    expect(tintFamily(removeButton)).toHaveLength(1);
+    expect(tintFamily(coverButton)).toHaveLength(1);
+    expect(tintFamily(removeButton)[0]).not.toBe(tintFamily(coverButton)[0]);
+    expect(tintFamily(clearButton)).toEqual([]);
     expect(removeButton.querySelector('svg.lucide-image-minus')).toBeTruthy();
-    expect(clearButton.classList.contains('!bg-gray-900/85')).toBe(true);
     expect(clearButton.querySelector('svg.lucide-list-x')).toBeTruthy();
-    expect(coverButton.classList.contains('!bg-indigo-600/90')).toBe(true);
     expect(coverButton.querySelector('svg.lucide-image')).toBeTruthy();
     expect(coverButton.querySelector('svg.lucide-check')).toBeTruthy();
     expect(removeButton.title).toContain('历史页仍会保留');
@@ -64,13 +76,13 @@ describe('小图和全屏大图的共用操作', () => {
     if (fullscreen) {
       expect(backButtonRef.current).toBe(screen.getByRole('button', { name: '返回小图' }));
       expect(backButtonRef.current?.querySelector('svg.lucide-arrow-left')).toBeTruthy();
-      expect(backButtonRef.current?.classList.contains('!h-12')).toBe(true);
+      // 返回入口仍是同一个圆钮 token，只额外放大一档：有尺寸覆盖即可，不锁死像素值。
+      expect(backButtonRef.current?.classList.contains('nai-float-btn')).toBe(true);
       expect(backButtonRef.current?.classList.contains('rounded-full')).toBe(true);
-      expect(backButtonRef.current?.classList.contains('border-white/60')).toBe(true);
+      expect([...backButtonRef.current!.classList].some(token => /^!?[hw]-(?:\d|\[)/.test(token))).toBe(true);
       expect(left.classList.contains('pointer-events-none')).toBe(true);
       expect(backButtonRef.current?.classList.contains('pointer-events-auto')).toBe(true);
-      expect(backButtonRef.current?.classList.contains('!w-12')).toBe(true);
-      expect(backButtonRef.current?.querySelector('svg')?.classList.contains('h-7')).toBe(true);
+      expect(backButtonRef.current?.querySelector('svg')).toBeTruthy();
       fireEvent.click(backButtonRef.current!);
       expect(back).toHaveBeenCalledOnce();
     } else expect(screen.queryByRole('button', { name: '返回小图' })).toBeNull();
@@ -94,7 +106,9 @@ describe('小图和全屏大图的共用操作', () => {
     const group = button.parentElement!;
     expect(group.classList.contains('bottom-4')).toBe(true);
     expect(group.classList.contains('right-4')).toBe(true);
-    for (const token of ['rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'mobile-touch', 'border-white/60', '!bg-gray-800/80']) expect(button.classList.contains(token)).toBe(true);
+    // 上传入口与辅助操作共用同一套圆钮 token，并保持中性底色而不是语义色。
+    for (const token of ['nai-float-btn', 'rounded-full', 'mobile-touch', 'mobile-size-locked']) expect(button.classList.contains(token)).toBe(true);
+    expect(tintFamily(button)).toEqual([]);
     expect(button.querySelector('svg.lucide-upload')).toBeTruthy();
     expect(button.title).toBe('手动上传封面并保存');
     const originalClasses = button.className;

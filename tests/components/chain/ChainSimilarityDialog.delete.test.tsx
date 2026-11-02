@@ -9,7 +9,11 @@ import { isTopmostModal } from '../../../components/useModalA11y';
 import { rememberDailyConfirmation } from '../../../services/dailyConfirmation';
 import { setLanguage, t } from '../../../services/i18n';
 
-vi.mock('../../../services/artistSamples', () => ({ getArtistSampleDictionary: async () => [] }));
+vi.mock('../../../services/artistSamples', () => ({
+  getArtistSampleDictionary: async () => [],
+  isArtistSampleModelForPack: (pack: string, model = '') => pack === 'v45' ? /^nai-diffusion-4-5-/.test(model) && !model.endsWith('-inpainting') : /^nai-diffusion-5-full(?:-medium)?$/.test(model),
+  isArtistSampleSourceForPack: (pack: string, source?: { model?: string } | null) => pack === 'v45' || source?.model === 'nai-diffusion-5-full',
+}));
 vi.mock('../../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true),
   SmartImage: ({ src, alt }: { src: string; alt: string }) => <img src={src} alt={alt} /> }));
 const chains: PromptChain[] = ['a', 'b', 'c'].map(id => ({ id, name: id, userId: 'synthetic', type: 'style',

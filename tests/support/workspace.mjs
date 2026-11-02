@@ -1,9 +1,29 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 export const temporaryRoot = join(projectRoot, 'tests', '.tmp');
+
+/**
+ * 清掉上次运行被中断后留下的工作区。
+ *
+ * 只动 tests/.tmp 下、超过一小时的目录：正在并行运行的测试刚创建，不会被误删。
+ */
+export const cleanupStaleWorkspaces = (maxAgeMs = 60 * 60 * 1000) => {
+  if (!existsSync(temporaryRoot)) return 0;
+  let removed = 0;
+  for (const entry of readdirSync(temporaryRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const target = join(temporaryRoot, entry.name);
+    try {
+      if (Date.now() - statSync(target).mtimeMs < maxAgeMs) continue;
+      removeWorkspace(target);
+      removed += 1;
+    } catch { /* 仍在被占用或权限不足：留给下一次。 */ }
+  }
+  return removed;
+};
 
 /** 只清理由本次测试创建、且仍位于指定临时父目录下的目录。 */
 export const removeWorkspace = (root, parent = temporaryRoot) => {

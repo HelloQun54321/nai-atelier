@@ -53,6 +53,7 @@ it('Roll与画师样张通过真实共用编辑器双向选择完整预设，后
   await screen.findByRole('option', { name: '来自Roll' });
   const fromRoll = [...state.presets.values()][0] as RollPreset;
   expect(fromRoll.template).toEqual(initial.template);
+  await waitFor(() => expect(screen.getByRole('button', { name: '关闭' }).hasAttribute('disabled')).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: '关闭' })); expect(rollClose).toHaveBeenCalledOnce(); roll.unmount();
 
   const sampleSave = vi.fn();

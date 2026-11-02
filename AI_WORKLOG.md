@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-02
+- **DeepSeek Harness (deepseek-v4.1-flash)**：测试体系清理：全量跑出 51 个失败用例后逐类修复（i18n 与目录文案补 20 个漏翻键、组件测试改用 `nai-float-btn`/`data-tone`/`data-image-action-left` 等 token 与结构断言替代 Tailwind 工具类、慢用例超时放到 30s、`run.mjs` 开跑前清理中断残留的 `tests/.tmp` 工作区）；顺带修掉外观审计查出的 `text-[10px]` 与缺失 `appearance-group`，并去重 StyleRollGallery 编号徽标里重复的一段 className。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：同步 `StyleRollPage` 测试到当前实现（此前 23 项因功能已改而失败）：翻页按钮到边界即隐藏、筛选改为「已出图但未保存／已收藏」、丢弃改为删除并去掉回收站用例、卡片徽章与画师头像尺寸、从风格串提取收进本轮设置。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：把页面级临时状态条改为不占布局：新增 `ChromeNoticeStack`/`ChromeNotice`（绝对定位在顶栏下沿），Roll 串的五条状态条收敛为浮层、进度改底部悬浮、补齐入口并入顶栏与计数行；法典状态条与风格串编辑器补图提示同步替换。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：创作助手输入两项改造：@ 角色引用不再要求前置空格（中文/标点后直接可用，仅邮箱式写法让位）；输入框支持 BMP/AVIF/SVG/ICO 图片、常见纯文本与代码、DOCX/XLSX/PPTX 与 PDF 文本层，文字附件折叠进消息并可随编辑还回附件。

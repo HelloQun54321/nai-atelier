@@ -125,7 +125,7 @@ it('自定义角色图片操作不选择或打开条目，手机与桌面预览�
   expect(screen.getByRole('button', { name: '复制角色提示词' })).toBeTruthy();
   const imageCopies = screen.getAllByRole('button', { name: '复制图片' });
   expect(imageCopies).toHaveLength(4);
-  imageCopies.forEach(button => expect(button.closest('.right-2')!.className).toContain('absolute right-2 top-2'));
+  imageCopies.forEach(button => expect(button.closest('.image-card-actions')).toBeTruthy());
   expect(screen.queryByRole('dialog', { name: '图片预览' })).toBeNull();
   fireEvent.keyDown(window, { key: 'Escape' });
   expect(screen.queryByRole('button', { name: '复制角色提示词' })).toBeNull();
@@ -189,15 +189,17 @@ function expectCustomCardLayout(card: HTMLElement, hasPreview: boolean) {
   const edit = within(card).getByRole('button', { name: '编辑自定义角色信息' });
   const left = remove.parentElement!;
   const right = edit.parentElement!;
-  expect(left.className).toContain('absolute left-2 top-2');
+  // 左侧删除与右侧收藏／分享都常驻卡片浮层：位置由浮层结构和共享 token 表达，不绑定具体工具类。
+  expect(left.hasAttribute('data-image-action-left')).toBe(true);
   expect(left.classList.contains('hover-reveal-md')).toBe(true);
   expect(within(left).getAllByRole('button')).toEqual([remove]);
-  expect(right.className).toContain('absolute right-2 top-2');
-  for (const token of ['image-card-actions', 'gap-2']) expect(right.classList.contains(token)).toBe(true);
+  expect(right.getAttribute('data-card-action')).toBe('true');
+  expect(right.classList.contains('image-card-actions')).toBe(true);
   expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label')))
     .toEqual(hasPreview ? ['收藏', '下载图片', '复制图片', '编辑自定义角色信息'] : ['编辑自定义角色信息']);
   for (const button of within(right).getAllByRole('button')) {
-    for (const token of ['mobile-size-locked', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'rounded-full', 'border-white/60', 'bg-black/45']) expect(button.classList.contains(token)).toBe(true);
+    // 浮层按钮尺寸统一走 --nai-float-control（nai-float-btn），并用 mobile-size-locked 避免手机 44px 触控下限把它撑成竖条。
+    for (const token of ['nai-float-btn', 'mobile-size-locked']) expect(button.classList.contains(token)).toBe(true);
   }
   const favorite = within(card).queryByRole('button', { name: '收藏' });
   if (hasPreview) { expect(right.contains(favorite)).toBe(true); expect(favorite!.classList.contains('hover-reveal-md')).toBe(false); }
@@ -385,14 +387,30 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     const { container } = renderLibrary(kind, width);
     await screen.findByTestId(`cover-${entriesFor(kind)[0].name}`);
     const toolbar = within(container.querySelector('header')!);
-    expect(toolbar.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
-      '分组导航', ...(kind === 'artist' ? [null, null] : []),
+    // 核心入口仍按原顺序直出顶栏；手机端另外把低频动作挂进「更多操作」弹层，只做补充、不替代这些入口。
+    expect(toolbar.getAllByRole('button').map(button => button.getAttribute('aria-label')).filter(Boolean)).toEqual([
+      '分组导航',
       '筛选', kindLabels(kind).draw, kind === 'artist' ? '画师库设置' : '角色库设置', ...(kind === 'character' ? ['新建自定义角色'] : []),
+      '更多操作',
     ]);
+    if (kind === 'artist') {
+      // 画师样张模型是一组无 aria-label 的切换按钮，按分组语义与按下态验证。
+      const packs = within(toolbar.getByRole('group', { name: '画师样张模型' }));
+      expect(packs.getAllByRole('button')).toHaveLength(2);
+      expect(packs.getAllByRole('button').filter(button => button.getAttribute('aria-pressed') === 'true')).toHaveLength(1);
+    }
+    // 「更多操作」里的动作必须与顶栏可用入口一致，手机端才不是功能缩水。
+    fireEvent.click(toolbar.getByRole('button', { name: '更多操作' }));
+    const overflow = screen.getByRole('dialog', { name: '更多操作' });
+    const overflowNames = kind === 'artist'
+      ? [/V4\.5 样张/, /V5 Full 样张/, new RegExp(kindLabels(kind).draw), new RegExp('画师库设置')]
+      : [new RegExp(kindLabels(kind).draw), new RegExp('角色库设置')];
+    for (const name of overflowNames) expect(within(overflow).getByRole('button', { name })).toBeTruthy();
+    fireEvent.click(within(overflow).getByRole('button', { name: '关闭' }));
+    expect(screen.queryByRole('dialog', { name: '更多操作' })).toBeNull();
     expect(toolbar.getByRole('searchbox')).toBeTruthy();
     const draw = toolbar.getByRole('button', { name: kindLabels(kind).draw });
-    expect(draw.className).toContain('bg-white');
-    expect(draw.className).not.toContain('bg-indigo-600');
+    expect(draw.getAttribute('data-tone')).toBe('neutral');
     for (const name of ['更多', '画师配置', '任务队列', '复制历史', '批量导入画师', '生成预览', '重新生成', '设为固定封面']) {
       expect(screen.queryByRole('button', { name })).toBeNull();
     }
@@ -419,8 +437,8 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     await screen.findByTestId(`cover-${entry.name}`);
     fireEvent.click(screen.getByRole('button', { name: kindLabels(kind).draw }));
     await screen.findByText(/正在浏览随机抽取的 2 位/);
-    expect(screen.getByRole('button', { name: kindLabels(kind).redraw }).className).toContain('bg-white');
-    expect(screen.getByRole('button', { name: kindLabels(kind).redraw }).className).not.toContain('bg-indigo-600');
+    // 「再抽一批」仍是常规操作，不抢主操作的强调色。
+    expect(screen.getByRole('button', { name: kindLabels(kind).redraw }).getAttribute('data-tone')).toBe('neutral');
     if (kind === 'artist') expect(getArtistDictionaryEntriesAt).not.toHaveBeenCalled();
     else expect(vi.mocked(getEntriesFor(kind)).mock.calls.at(-1)?.[0]).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
@@ -637,9 +655,9 @@ it.each<Kind>(['artist', 'character'])('%s 手机卡片爱心常驻，收藏不�
   if (kind === 'character') { longPress(card); expect(card.getAttribute('data-press-revealed')).toBe('true'); }
   expect(card.getAttribute('aria-pressed')).toBe('false');
   const favorite = within(card).getByRole('button', { name: kind === 'artist' ? '偏好画师：' + fixtures.artists[0].name : '收藏' });
-  if (kind === 'character') expect(favorite.closest('.image-card-actions')!.className).toContain('absolute right-2 top-2');
-  else for (const token of ['absolute', 'right-2', 'top-2']) expect(favorite.parentElement?.classList.contains(token)).toBe(true);
-  for (const token of ['h-11', 'w-11', 'md:h-8', 'md:w-8', 'bg-black/45']) expect(favorite.classList.contains(token)).toBe(true);
+  // 爱心常驻卡片右上浮层（不参与长按揭示）；尺寸走共享浮层控件与触控下限规范。
+  expect(favorite.closest('.image-card-actions')).toBeTruthy();
+  for (const token of kind === 'character' ? ['nai-float-btn', 'mobile-size-locked'] : ['mobile-touch']) expect(favorite.classList.contains(token)).toBe(true);
   expect(favorite.classList.contains('hover-reveal-touch')).toBe(false); fireEvent.click(favorite);
   await waitFor(() => expect(within(card).getByRole('button', { name: kind === 'artist' ? '取消偏好画师：' + fixtures.artists[0].name : '取消收藏' }).getAttribute('aria-pressed')).toBe('true')); expect(card.getAttribute('aria-pressed')).toBe('false');
 });
@@ -667,7 +685,9 @@ it.each([
   if (width === 390) { longPress(card); expect(card.getAttribute('data-press-revealed')).toBe('true'); }
   const remove = within(card).getByRole('button', { name: '删除这个自定义角色' });
   expectCustomCardLayout(card, Boolean(previewImage));
-  for (const token of ['bg-red-500', 'text-white', 'rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'focus-visible:ring-white']) expect(remove.classList.contains(token)).toBe(true);
+  // 危险动作沿用卡片左侧浮层与固定尺寸 token；危险语义由下面的 tone:'danger' 确认框断言覆盖。
+  expect(remove.classList.contains('mobile-size-locked')).toBe(true);
+  expect(remove.closest('[data-image-action-left]')).toBeTruthy();
   if (previewImage) {
     fireEvent.click(within(card).getByRole('button', { name: '收藏' }));
     await waitFor(() => expect(within(card).getByRole('button', { name: '取消收藏' }).getAttribute('aria-pressed')).toBe('true'));

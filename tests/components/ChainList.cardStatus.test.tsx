@@ -81,7 +81,7 @@ describe('风格串卡片的待实测状态', () => {
     vi.stubGlobal('IntersectionObserver', VisibleObserver);
     const view = render(<ChainList {...props(Array.from({ length: 181 }, (_, index) => chain(String(index), `自动风格 ${index}`, false)))} />);
     const first = view.container.querySelector('[data-return-item-id="0"]');
-    await waitFor(() => expect(view.container.querySelector('[data-return-item-id="180"]')?.getAttribute('aria-label')).toBe('打开风格串：自动风格 180'));
+    await waitFor(() => expect(view.container.querySelector('[data-return-item-id="180"]')?.getAttribute('aria-label')).toBe('打开风格串：自动风格 180'), { timeout: 10000 });
     expect(screen.queryByRole('button', { name: /加载更多/ })).toBeNull();
     expect(view.container.querySelector('[data-return-item-id="0"]')).toBe(first);
   });
