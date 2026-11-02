@@ -53,10 +53,11 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
       onClick={activate} onKeyDown={event => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); activate(); } }}
       className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border bg-white shadow-sm text-left transition-all duration-200 dark:bg-gray-850 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${selected ? '!border-indigo-500 ring-2 ring-indigo-500/25 shadow-md shadow-indigo-500/10' : 'border-gray-200/90 hover:border-indigo-400 hover:shadow-md dark:border-gray-800/80 dark:hover:border-indigo-500/50'} ${!selecting && selectionFocusEnabled && selectedId && !selected ? 'brightness-[.7]' : ''}`}>
 
-      {/* 左上角：编号与丢弃操作 */}
       <div data-image-action-left className="absolute left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5">
-        <span className="pointer-events-none flex items-center gap-1 rounded-full border border-black/10 bg-black/40 px-2 py-0.5 text-xs font-mono font-medium text-white shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-black/60">
-          #{index}{roundNo ? <span className="text-micro opacity-70">R{roundNo}</span> : null}
+        {/* 左上角：编号（参与搜索与详情标题）与删除按钮上下排列。 */}
+                <span className="pointer-events-none flex flex-col items-start rounded-md bg-black/35 px-1.5 py-1 font-mono text-micro leading-tight text-white/90 backdrop-blur-sm rounded-md bg-black/35 px-1.5 py-1 font-mono text-micro leading-tight text-white/90 backdrop-blur-sm">
+          <span>#{index}</span>
+          {roundNo ? <span className="text-[10px] opacity-60">R{roundNo}</span> : null}
         </span>
         {!selecting && <div data-card-action="true" className="hover-reveal-md">
           <button type="button" aria-label={t('删除候选 {0}', [index])} title={t('删除')} disabled={busy} onClick={event => { event.stopPropagation(); onArchive(candidate.id); }} className="nai-float-btn mobile-size-locked flex items-center justify-center rounded-full bg-black/50 text-white shadow-md backdrop-blur-md transition-all hover:scale-110 hover:bg-red-600 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
@@ -114,19 +115,18 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
 
 
-      {/* 卡片底栏信息：小号磨砂标签，磨砂偏好下叠在图片底部并上移一行 */}
+      {/* 卡片底栏：只露画师名与剩余数量，权重留到详情——挑图时不关心 0.7 还是 1.3。 */}
       <div className="gallery-card-caption flex items-center justify-between px-3 py-2 gap-2 bg-white/95 dark:bg-gray-850/95 border-t border-gray-100 dark:border-gray-800" style={frosted ? { paddingBottom: '1.75rem' } : undefined}>
-        <div className="flex flex-wrap items-center gap-1 overflow-hidden min-w-0 flex-1" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
-          {candidate.tags.slice(0, 6).map((entry, entryIndex) => (
-            <span key={entry.tag} className="gallery-card-badge inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-1 py-0.5 text-micro font-medium text-gray-700 dark:text-gray-200 truncate max-w-[96px] border border-gray-200/50 dark:border-gray-700/50">
+        <div className="flex flex-nowrap items-center gap-1 overflow-hidden min-w-0 flex-1" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
+          {candidate.tags.slice(0, 3).map((entry, entryIndex) => (
+            <span key={entry.tag} className="gallery-card-badge inline-flex min-w-0 shrink items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-1 py-0.5 text-micro font-medium text-gray-700 dark:text-gray-200 border border-gray-200/50 dark:border-gray-700/50">
               <span className="inline-block h-1 w-1 shrink-0 rounded-full" style={{ backgroundColor: rollChipColor(entryIndex) }} />
               <span className="truncate">{entry.tag}</span>
-              <span className="font-mono text-micro opacity-60 font-semibold">{entry.weight.toFixed(1)}</span>
             </span>
           ))}
-          {candidate.tags.length > 6 && (
-            <span className="gallery-card-badge rounded-md bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-              +{candidate.tags.length - 6}
+          {candidate.tags.length > 3 && (
+            <span className="gallery-card-badge shrink-0 rounded-md bg-gray-100 px-1.5 py-0.5 text-micro font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+              +{candidate.tags.length - 3}
             </span>
           )}
         </div>
