@@ -28,7 +28,7 @@ import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { createUuid } from '../services/id';
 import { useConfirmDialog } from './ConfirmDialog';
 import { useAgentCommand } from '../services/agentCommands';
-import { EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { ChromeNotice, ChromeNoticeStack, EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { SmartImage } from './SmartImage';
@@ -728,6 +728,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
 
       {/* 主 CTA 固定在滚动区外，窄屏也始终可见；张数与费用在点击后的确认框里给出，顶栏不再常驻摘要。 */}
       {!selecting && <div className="ml-1 flex shrink-0 items-center gap-2">
+        {/* 本轮还没出完时，补齐入口直接放进顶栏，不再单独占一行。 */}
+        {!working && roundPending.length > 0 && <ToolbarButton className="max-md:hidden" aria-label={t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])} title={t('本轮还有 {0} 张没出，点击后确认费用', [roundPending.length])} data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus /><span className="hidden xl:inline">{t(continuousGenerationEnabled ? '补齐剩余 {0} 张' : '生成本轮 1 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])}</span><span className="xl:hidden tabular-nums">{continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1}</span></ToolbarButton>}
         <div className="flex shrink-0 items-center">
           <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} title={remaining <= 0 ? t('本记录候选已满，请删除部分候选后再 Roll') : t('本轮将生成 {0} 张，点击后确认费用', [count])} data-agent-action="business" tone="primary" disabled={!canStart} className="!rounded-r-none !border-r-0 font-bold shadow-sm transition-transform active:scale-95" onClick={() => runRound()}><Dice5 className="h-4 w-4" /><span className="sm:hidden">Roll</span><span className="hidden sm:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
           <ToolbarPopover label={t('本轮设置')} title={t('本轮设置')} icon={<ChevronDown />} disabled={frozen || working} width={360} className="[&_button[aria-haspopup]]:rounded-l-none">
@@ -747,6 +749,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           </ToolbarPopover>
           {/* 手机顶栏只留画风记录、搜索、筛选与 Roll；管理、多选、提取画师收进「更多」。 */}
           <MobileOverflowMenu className="md:hidden" items={[
+            ...(roundPending.length > 0 ? [{ label: t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1]), icon: <ImagePlus />, disabled: frozen || working || !historyReady, onClick: () => generatePending() }] : []),
             { label: '画风记录管理', icon: <MoreHorizontal />, disabled: frozen || working, onClick: () => setMobileRecordMenuOpen(true) },
             { label: '批量选择候选', icon: <ListChecks />, disabled: frozen || !experiment, onClick: () => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); } },
             { label: chainArtistSource ? `已选 ${chainArtistSource.chainIds.length} 串` : '从风格串提取', icon: <Layers />, disabled: frozen || working || libraryLoading, onClick: () => setChainTarget(experimentId) },
@@ -756,13 +759,37 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     </WorkspaceToolbar>
     {experiment && filterReady && <ToolbarCountCaption>{filter !== 'all' || roundId || query.trim()
       ? t('匹配 {0} 个候选', [visible.length])
-      : t('共 {0} 个候选', [visible.length])}</ToolbarCountCaption>}
-    {error && <div role="alert" className="flex flex-none items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"><div className="min-w-0 flex-1 break-words"><span>{t(error)}</span>{saveFailures?.experimentId === experimentId && saveFailures.messages.length > 0 && <details open><summary>{t('失败详情')}</summary><ul className="max-h-32 overflow-y-auto">{saveFailures.messages.map((message, index) => <li key={index}>{message}</li>)}</ul></details>}</div>{errorSource !== 'generation' && <button type="button" className="mobile-touch shrink-0 px-2 underline" onClick={() => { void reload(); if (experimentId) void refreshHistory(experimentId); }}>{t('重新加载')}</button>}<IconButton label="关闭错误提示" className="!h-8 !w-8 !border-transparent !bg-transparent !text-current" onClick={() => setError('')}><X /></IconButton></div>}
-    {saveFailures?.experimentId === experimentId && saveFailures.ids.length > 0 && <div className="flex flex-none justify-end px-4 py-2"><ToolbarButton disabled={busy || !historyReady} onClick={() => saveChosen(true)}>{t(saveFailures.unprocessed ? '重试待保存项' : '重试失败项')}</ToolbarButton></div>}
-    {libraryError && <div role="alert" className="flex flex-none items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300"><span className="flex-1">{t(libraryError)}</span>{onOpenArtistLibrary && <button type="button" className="mobile-touch px-2 underline" onClick={() => onOpenArtistLibrary()}>{t('打开画师库')}</button>}<button type="button" className="mobile-touch px-2 underline" onClick={() => void reloadLibrary()}>{t('重新加载')}</button></div>}
-    {working && <div role="status" className="flex flex-none flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-xs text-indigo-600 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300"><LoaderCircle className="h-4 w-4 animate-spin" /><span className="min-w-0 flex-1">{t(session?.connectionError || (session?.awaiting ? '等待费用确认' : session?.state === 'paused' ? '任务已暂停' : session?.state === 'saving' ? '正在保存…' : '正在逐张出图…'))}{session ? ` ${session.progress.current}/${session.progress.total}` : ''}</span>{session?.awaiting && <ToolbarButton data-agent-action="business" disabled={busy} onClick={approve}>{t('确认费用')}</ToolbarButton>}{session?.state === 'paused' ? <ToolbarButton data-agent-action="business" disabled={busy} onClick={resume}>{t('继续')}</ToolbarButton> : session && continuousGenerationEnabled && <ToolbarButton disabled={busy} onClick={() => void perform(async () => { if (readRollApiKey() !== session.key) throw new Error('NovelAI Key 已变化，请重新发起生成'); await setGenerationQueuePaused(session.key, true); })}><Pause />{t('暂停')}</ToolbarButton>}{session && <button type="button" disabled={session.stopped} className="mobile-touch px-2 underline" onClick={() => { const current = getGenerationSeriesSession(session.scope); if (current) stopGenerationSeriesSession(current); }}>{t(session.stopped ? '取消中…' : '取消')}</button>}</div>}
-    {!working && historyReady && experiment && roundPending.length > 0 && <div className="flex flex-none items-center gap-2 border-b border-gray-200 px-3 py-2 text-xs text-gray-500 dark:border-gray-800 md:px-5"><span className="min-w-0 flex-1">{t('本轮已出图 {0}/{1}', [round!.candidateIds.filter(id => images.has(id)).length, round!.candidateIds.length])}{!continuousGenerationEnabled && roundPending.length > 1 ? ` · ${t('连续生成已关闭，本次生成 1 张')}` : ''}</span><ToolbarButton data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus />{t(continuousGenerationEnabled ? '补齐剩余 {0} 张' : '生成本轮 1 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])}</ToolbarButton></div>}
+      : t('共 {0} 个候选', [visible.length])}{round && roundPending.length > 0
+      ? ` · ${t('本轮已出图 {0}/{1}', [round.candidateIds.filter(id => images.has(id)).length, round.candidateIds.length])}`
+      : ''}</ToolbarCountCaption>}
+    {/* 临时状态统一浮在顶栏下沿：出现和消失都不再推动候选区。 */}
+    {(error || libraryError || (saveFailures?.experimentId === experimentId && saveFailures.ids.length > 0)) && <ChromeNoticeStack>
+      {error && <ChromeNotice tone="error" closeLabel={t('关闭错误提示')} onClose={() => setError('')}>
+        <span>{t(error)}</span>
+        {saveFailures?.experimentId === experimentId && saveFailures.messages.length > 0 && <details open><summary>{t('失败详情')}</summary><ul className="max-h-32 overflow-y-auto">{saveFailures.messages.map((message, index) => <li key={index}>{message}</li>)}</ul></details>}
+        {errorSource !== 'generation' && <button type="button" className="mobile-touch ml-2 underline" onClick={() => { void reload(); if (experimentId) void refreshHistory(experimentId); }}>{t('重新加载')}</button>}
+      </ChromeNotice>}
+      {libraryError && <ChromeNotice tone="warning">
+        <span>{t(libraryError)}</span>
+        {onOpenArtistLibrary && <button type="button" className="mobile-touch ml-2 underline" onClick={() => onOpenArtistLibrary()}>{t('打开画师库')}</button>}
+        <button type="button" className="mobile-touch ml-2 underline" onClick={() => void reloadLibrary()}>{t('重新加载')}</button>
+      </ChromeNotice>}
+      {saveFailures?.experimentId === experimentId && saveFailures.ids.length > 0 && <ChromeNotice tone="warning">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="min-w-0 flex-1">{t('{0} 个候选没有保存成功', [saveFailures.ids.length])}</span>
+          <ToolbarButton disabled={busy || !historyReady} onClick={() => saveChosen(true)}>{t(saveFailures.unprocessed ? '重试待保存项' : '重试失败项')}</ToolbarButton>
+        </div>
+      </ChromeNotice>}
+    </ChromeNoticeStack>}
     </WorkspaceChrome>
+    {/* 出图进度悬浮在底部，不再占用顶栏高度。 */}
+    {working && <div role="status" className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 z-[60] flex w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 flex-wrap items-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50/95 px-3 py-2 text-xs text-indigo-700 shadow-xl backdrop-blur md:bottom-5 dark:border-indigo-800 dark:bg-indigo-950/95 dark:text-indigo-200">
+      <LoaderCircle className="h-4 w-4 flex-none animate-spin" />
+      <span className="min-w-0 flex-1">{t(session?.connectionError || (session?.awaiting ? '等待费用确认' : session?.state === 'paused' ? '任务已暂停' : session?.state === 'saving' ? '正在保存…' : '正在逐张出图…'))}{session ? ` ${session.progress.current}/${session.progress.total}` : ''}</span>
+      {session?.awaiting && <ToolbarButton data-agent-action="business" disabled={busy} onClick={approve}>{t('确认费用')}</ToolbarButton>}
+      {session?.state === 'paused' ? <ToolbarButton data-agent-action="business" disabled={busy} onClick={resume}>{t('继续')}</ToolbarButton> : session && continuousGenerationEnabled && <ToolbarButton disabled={busy} onClick={() => void perform(async () => { if (readRollApiKey() !== session.key) throw new Error('NovelAI Key 已变化，请重新发起生成'); await setGenerationQueuePaused(session.key, true); })}><Pause />{t('暂停')}</ToolbarButton>}
+      {session && <button type="button" disabled={session.stopped} className="mobile-touch px-2 underline" onClick={() => { const current = getGenerationSeriesSession(session.scope); if (current) stopGenerationSeriesSession(current); }}>{t(session.stopped ? '取消中…' : '取消')}</button>}
+    </div>}
     {loading && !experiment ? <PageSpinner className="workspace-scroll-viewport overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
       : <div className="relative flex min-h-0 flex-1">
         {ROLL_TRIAGE_FILTERS.includes(filter) && !filterReady ? (filter === 'favorited' && collectionFailed ? <div role="alert" className="flex flex-1 items-center justify-center gap-2 p-6 text-sm text-gray-500"><span>{t('收藏状态读取失败')}</span><ToolbarButton onClick={() => void loadFavorites()}>{t('重新加载')}</ToolbarButton></div> : historyReady || historyLoading ? <PageSpinner /> : <div role="status" className="flex flex-1 items-center justify-center p-6 text-sm text-gray-500">{t('历史暂不可用')}</div>) : <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} roundNumbers={roundNumbers} generatingId={generatingCandidateId} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => deleteCandidates([id])} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />}

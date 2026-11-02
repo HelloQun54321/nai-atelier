@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-02
+- **DeepSeek Harness (deepseek-v4.1-flash)**：把页面级临时状态条改为不占布局：新增 `ChromeNoticeStack`/`ChromeNotice`（绝对定位在顶栏下沿），Roll 串的五条状态条收敛为浮层、进度改底部悬浮、补齐入口并入顶栏与计数行；法典状态条与风格串编辑器补图提示同步替换。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：创作助手输入两项改造：@ 角色引用不再要求前置空格（中文/标点后直接可用，仅邮箱式写法让位）；输入框支持 BMP/AVIF/SVG/ICO 图片、常见纯文本与代码、DOCX/XLSX/PPTX 与 PDF 文本层，文字附件折叠进消息并可随编辑还回附件。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：Roll 顶栏去重复（移除从风格串提取与常驻费用摘要，保持单行）；筛选从 7 项精简为 4 项并同步简化 ollWorkspaceCandidates 的过滤分支与批量归档动作。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：Roll 串配置改为可中途修改（候选记录模板指纹，旧图不再失配）；角色提示词接入实验室普通模式编辑器（多角色/独立负面/位置）；候选详情改版（悬浮切换、图片撑满、操作收进标题栏、列表精简为删除/收藏/保存）；丢弃改为直接删除；新增设置项「悬浮按钮大小」并统一 .nai-float-btn 驱动容器与图标缩放。

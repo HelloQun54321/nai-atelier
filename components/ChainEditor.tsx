@@ -49,7 +49,7 @@ import { compileCharacterContent } from '../services/characterPrompts';
 import { LabModuleSection } from './LabModuleSection';
 import { FileDown } from 'lucide-react';
 import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags, isNativePromptText } from '../services/tagTranslations';
-import { UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
+import { ChromeNotice, ChromeNoticeStack, UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
 import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
 import { LabCategoryMode, labCategoryTabOptions } from './chain/LabCategoryMode';
@@ -2167,10 +2167,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                 onSectionedPromptChange={onSectionedPromptChange && activeGenerationMode === 'text-to-image' ? turnSectioned : undefined}
             />
 
-            {activeGenerationMode === 'text-to-image' && artistSampleTarget && <div className="flex min-w-0 flex-none items-center justify-between gap-3 border-b border-gray-200 px-4 py-2 text-xs dark:border-gray-800">
-                <span className="min-w-0 truncate text-gray-600 dark:text-gray-300" title={artistSampleTarget.tag}>{t('补充自建样张：{0} · {1}', [artistSampleTarget.tag, artistSampleTarget.pack === 'v45' ? 'V4.5' : 'V5'])}</span>
-                <button type="button" className="mobile-touch shrink-0 text-gray-500 hover:text-indigo-500 dark:text-gray-400" onClick={() => setArtistSampleTarget(null)}>{t('结束补图')}</button>
-            </div>}
+            {activeGenerationMode === 'text-to-image' && artistSampleTarget && <ChromeNoticeStack><ChromeNotice tone="info">
+                <div className="flex min-w-0 items-center justify-between gap-3">
+                  <span className="min-w-0 truncate" title={artistSampleTarget.tag}>{t('补充自建样张：{0} · {1}', [artistSampleTarget.tag, artistSampleTarget.pack === 'v45' ? 'V4.5' : 'V5'])}</span>
+                  <button type="button" className="mobile-touch shrink-0 opacity-80 underline hover:opacity-100" onClick={() => setArtistSampleTarget(null)}>{t('结束补图')}</button>
+                </div>
+            </ChromeNotice></ChromeNoticeStack>}
             </WorkspaceChrome>
 
             <PromptAgentOverlayController

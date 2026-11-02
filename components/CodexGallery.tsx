@@ -9,7 +9,7 @@ import { codexCharactersToParams, codexEntryMatches, codexPromptImport, loadCode
 import { collectionRevision, collectionTargetActive, collectionTargetComplete, subscribeCollection, type CollectionImage, type CollectionTarget } from '../services/collectionFavorites';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
-import { EmptyState, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { ChromeNotice, ChromeNoticeStack, EmptyState, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { DetailSidePanel } from './DetailPanel';
 import { ImageShareOverlay } from './ImageShareActions';
@@ -303,7 +303,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
       <span role="status" aria-label={loading ? t('读取中…') : t('{0} 条结果', [filtered.length])} className="flex-none text-xs tabular-nums text-gray-500">{loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <><span className="sm:hidden">{filtered.length.toLocaleString()}</span><span className="hidden sm:inline">{t('{0} 条结果', [filtered.length])}</span></>}</span>
       <div className="hidden sm:block"><IconButton label={t('刷新')} disabled={loading} onClick={() => setReload(value => value + 1)}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton></div>
     </WorkspaceToolbar>
-    {(error || result?.error || boot?.offline || progress) && <div role="status" className="flex-none border-b border-gray-200 px-3 py-2 text-xs text-amber-700 dark:border-gray-800 dark:text-amber-300">{progress || error || result?.error || boot?.error}{(result?.offline || boot?.offline) && ` · ${t('正在使用上次成功的数据')}`}</div>}
+    {(error || result?.error || boot?.offline || progress) && <ChromeNoticeStack><ChromeNotice tone="warning">{progress || error || result?.error || boot?.error}{(result?.offline || boot?.offline) && ` · ${t('正在使用上次成功的数据')}`}</ChromeNotice></ChromeNoticeStack>}
     <ToolbarCountCaption>{t('{0} 条结果', [result && !loading ? filtered.length.toLocaleString() : '—'])}</ToolbarCountCaption>
     </WorkspaceChrome>
     <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>

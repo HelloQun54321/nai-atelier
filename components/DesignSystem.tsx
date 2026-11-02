@@ -173,6 +173,30 @@ export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ child
   </div>;
 };
 
+const CHROME_NOTICE_TONE: Record<'error' | 'warning' | 'info', string> = {
+  error: 'border-red-200 bg-red-50 text-red-600 dark:border-red-900 dark:bg-red-950/95 dark:text-red-300',
+  warning: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/95 dark:text-amber-300',
+  info: 'border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-900 dark:bg-indigo-950/95 dark:text-indigo-300',
+};
+
+/** 临时状态条的容器：叠在顶栏下沿，不参与布局，出现与消失都不推动下方内容。 */
+export const ChromeNoticeStack: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div data-chrome-notice-stack="true" className="pointer-events-none absolute inset-x-0 top-full z-[35] flex flex-col">{children}</div>
+);
+
+/** 一条临时状态；错误必须一眼可见，因此做成浮起的整行而不是挤进顶栏。 */
+export const ChromeNotice: React.FC<{
+  tone?: 'error' | 'warning' | 'info';
+  children: React.ReactNode;
+  onClose?: () => void;
+  closeLabel?: string;
+}> = ({ tone = 'info', children, onClose, closeLabel }) => (
+  <div role={tone === 'error' ? 'alert' : 'status'} className={`pointer-events-auto flex items-start gap-2 border-b px-3 py-2 text-xs shadow-lg backdrop-blur-sm md:px-5 ${CHROME_NOTICE_TONE[tone]}`}>
+    <div className="min-w-0 flex-1 break-words">{children}</div>
+    {onClose && <button type="button" aria-label={closeLabel || t('关闭提示')} onClick={onClose} className="mobile-touch shrink-0 rounded px-1 text-current opacity-70 hover:opacity-100">×</button>}
+  </div>
+);
+
 export const WorkspaceToolbar: React.FC<{
   children: React.ReactNode;
   className?: string;

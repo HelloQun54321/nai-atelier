@@ -419,7 +419,7 @@ it('普通轮次第六张失败后仅手动补缺图，保留五张成品，不�
   const before = structuredClone(experiment);
   mocks.history.mockResolvedValue(rows(experiment).slice(0, 5));
   mocks.generate.mockResolvedValueOnce({ session: {}, settle: Promise.resolve({ success: false, outcome: 'failed', error: '<!DOCTYPE html><html><title>502 Bad Gateway</title><body>synthetic-ray</body></html>' }) });
-  await setup(); expect(screen.getByText('本轮已出图 5/6')).toBeTruthy(); expect(mocks.generate).not.toHaveBeenCalled();
+  await setup(); expect(screen.getByText(/本轮已出图 5\/6/)).toBeTruthy(); expect(mocks.generate).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '补齐剩余 1 张' }));
   const alert = await screen.findByRole('alert');
   expect(alert.textContent).toContain('服务返回了错误页面，请稍后重试'); expect(alert.textContent).not.toMatch(/DOCTYPE|synthetic-ray|<html/);
