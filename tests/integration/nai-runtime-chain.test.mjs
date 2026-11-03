@@ -83,7 +83,9 @@ for (const protocol of ['node:http', 'node:https']) {
       else child.kill('SIGTERM');
       if (child.exitCode === null) await once(child, 'exit').catch(() => {});
     }
-    removeWorkspace(root);
+    // wrangler 的 workerd 退出后仍会短暂占着 --persist-to 目录：删不掉只留下残留目录，
+    // 由下次运行的 cleanupStaleWorkspaces 统一清理，不能因此把整条链路判成失败。
+    try { removeWorkspace(root); } catch (error) { console.warn(`测试临时目录留待下次清理：${error.message}`); }
   });
   let ready;
   for (let i = 0; i < 200; i++) {
@@ -131,8 +133,13 @@ for (const protocol of ['node:http', 'node:https']) {
   }).persist();
   const gateway = await createMediaGateway({ port: 0, workerPort: port });
   t.after(async () => {
-    gateway.closeAllConnections(); await new Promise(resolve => gateway.close(resolve));
-    setGlobalDispatcher(original); await mock.close(); cacheNovelAiSubscription(authorization, null);
+    // 先还原分发器并关掉 mock 的连接池：到 127.0.0.1 的 keep-alive 连接由 mock 的 passthrough 持有，
+    // 不先释放它们，gateway.close 的回调永远不会触发，收尾就此挂住。
+    setGlobalDispatcher(original);
+    await mock.close();
+    gateway.closeAllConnections();
+    await Promise.race([new Promise(resolve => gateway.close(resolve)), pause(5000)]);
+    cacheNovelAiSubscription(authorization, null);
   });
   const base = `http://127.0.0.1:${gateway.address().port}`;
   const request = async (path, method = 'GET', body, headers = {}) => {

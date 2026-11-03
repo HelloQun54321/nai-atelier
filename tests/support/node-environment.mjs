@@ -27,6 +27,12 @@ process.on('exit', () => {
 // 并一直占着工作目录里的文件句柄，退出清理随之报 EPERM。全部测试结束后统一关闭一次。
 after(async () => {
   try { const esbuild = await import('esbuild'); await esbuild.stop?.(); } catch { /* 本次运行未用 esbuild。 */ }
+  // 兜底：个别集成用例会留下没关闭的流式连接（真实 Pages 那条链路），不能让它把整批回归拖死。
+  // 定时器 unref：正常收尾时进程会先退出；真被句柄钉住时，到点强制结束并保留真实退出码。
+  setTimeout(() => {
+    console.warn('收尾超时：仍有句柄未释放，已强制结束本测试进程。');
+    process.exit(process.exitCode ?? 0);
+  }, 20_000).unref();
 });
 
 const { DEFAULT_NAI_RUNTIME } = await import(new URL('../../scripts/media-gateway.mjs', import.meta.url));
