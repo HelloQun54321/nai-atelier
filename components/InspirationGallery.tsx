@@ -438,6 +438,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         <h3 className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('标签（同时满足）')}</h3>
         {/* 重读提示放在标题行内，避免插进标签云把面板撑高。 */}
         {tagsLoading && <InlineSpinner label={t('正在读取…')} className="ml-auto mr-1" />}
+        {/* 重读失败也放在标题行，不出现在标签云里把面板撑高。 */}
+        {tagsError && <span role="alert" title={t(tagsError)} className="min-w-0 truncate text-xs font-semibold text-red-500">{t(tagsError)}<button type="button" onClick={() => void loadTagNames()} className="ml-1 underline">{t('重新加载标签')}</button></span>}
         <button type="button" disabled={Boolean(busy)} onClick={onManageTags} className="mobile-touch inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"><Tags className="h-3.5 w-3.5" />{t('管理标签')}</button>
       </div>
       <ToolbarSearch aria-label={t('搜索标签')} placeholder={t('搜索已有标签')} value={tagQuery} onChange={event => setTagQuery(event.target.value)} containerClassName="md:max-w-none!" />
@@ -446,7 +448,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
           const selected = tagFilter.includes(tag);
           return <button type="button" key={tag} aria-pressed={selected} title={tag} onClick={() => setTagFilter(previous => previous.includes(tag) ? previous.filter(value => value !== tag) : [...previous, tag])} className={`mobile-touch inline-flex max-w-full items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 ${selected ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:border-indigo-300 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-gray-50 text-gray-600 hover:border-indigo-200 hover:text-indigo-600 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-300 dark:hover:border-indigo-700 dark:hover:text-indigo-300'}`}><span className="min-w-0 truncate">#{tag}</span></button>;
         })}
-          {tagsError && <p role="alert" className="py-3 text-xs text-red-500">{t(tagsError)} <button type="button" onClick={() => void loadTagNames()} className="underline">{t('重新加载标签')}</button></p>}
+    
         {!tagsLoading && !tagsError && tagNames !== null && inspirationsData !== null && !matchingTags.length && <p className="py-3 text-xs text-gray-400">{t('没有匹配的标签')}</p>}
       </div>
     </section>

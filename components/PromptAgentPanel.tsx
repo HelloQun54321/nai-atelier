@@ -1277,12 +1277,12 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         <button type="button" onClick={() => { setShowSessions(false); setSessionMenuId(''); }} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("关闭会话列表")} title={t("关闭")}><X className="h-5 w-5" /></button>
       </div>
       <div className="px-2 py-2"><input value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} placeholder={t("搜索对话")} className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-600" /></div>
-      <div className="flex-1 space-y-1 overflow-y-auto px-2 pb-3">
+      <div className="relative flex-1 space-y-1 overflow-y-auto px-2 pb-3">
         {!sessionsLoaded && sessionsLoadError ? <div role="alert" className="py-6 text-center text-xs text-red-600 dark:text-red-400">
           <p>{t(sessionsLoadError)}</p>
           <button type="button" onClick={() => { void refreshSessions().catch(() => {}); }} className="mobile-touch mt-3 rounded-lg px-3 py-2 font-bold text-indigo-600 underline dark:text-indigo-300">{t('重试')}</button>
         </div> : !sessionsLoaded || sessionsLoading ? <div role="status" className="py-8 text-center text-xs text-gray-400">{t('正在加载对话…')}</div> : <>
-        {sessionsLoadError && <div role="status" className="mb-2 flex items-center justify-between gap-2 rounded-lg bg-red-50 px-2 py-2 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">
+        {sessionsLoadError && <div role="status" className="absolute inset-x-2 top-0 z-10 flex items-center justify-between gap-2 rounded-lg bg-red-50 px-2 py-2 text-xs text-red-600 shadow dark:bg-red-950/30 dark:text-red-300">
           <span>{t(sessionsLoadError)}</span>
           <button type="button" onClick={() => { void refreshSessions().catch(() => {}); }} className="mobile-touch shrink-0 rounded px-2 py-1 font-bold underline">{t('重试')}</button>
         </div>}
@@ -1413,7 +1413,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           {editingMessageId && !running && <div className="mb-2 flex items-center rounded-xl bg-amber-50 px-3 py-1.5 text-meta text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><b>{t("正在编辑旧消息")}</b><span className="ml-1">{t("发送后会从这里重新执行，后面的旧回答将被替换。")}</span><span className="flex-1" /><button type="button" onClick={() => { setEditingMessageId(''); setInput(''); setCharacterReferences([]); setMention(null); setReferenceLimitNotice(''); }} className="font-bold">{t("取消")}</button></div>}
           {input.length >= 7000 && <p className="mb-2 text-micro text-gray-500">{t("任务要求 {0} / 8000 字符，请分段发送。", [input.length])}</p>}
           {attachmentBusy && <p role="status" className="pointer-events-none absolute bottom-full right-2 z-20 mb-1 rounded-lg bg-gray-100 px-2 py-1 text-micro font-bold text-gray-700 shadow dark:bg-gray-800 dark:text-gray-200">{t("正在处理图片副本…")}</p>}
-          {attachmentError && <p role="alert" className="mb-2 text-xs text-red-600 dark:text-red-300">{attachmentError}</p>}
+          {attachmentError && <p role="alert" className="pointer-events-none absolute bottom-full left-2 z-20 mb-1 rounded-lg bg-red-50 px-2 py-1 text-micro font-bold text-red-600 shadow dark:bg-red-950/40 dark:text-red-300">{attachmentError}</p>}
           {showSlashCommand && <div id={commandListId} role="listbox" aria-label={t('助手命令')} className="appearance-panel appearance-overlay absolute inset-x-0 bottom-full z-20 mb-2 max-w-full overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-700 dark:bg-gray-900">
             <button id={`${commandListId}-compact`} type="button" role="option" aria-selected={canCompact} aria-disabled={!canCompact} disabled={!canCompact} tabIndex={-1} onPointerDown={event => event.preventDefault()} onClick={executeSlashCommand} className="mobile-touch flex min-h-11 w-full min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"><span className="shrink-0 font-mono">/compact</span><span className="min-w-0 truncate">{t('压缩上下文')}</span></button>
           </div>}

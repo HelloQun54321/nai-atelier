@@ -859,9 +859,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              <label className="mobile-touch mb-3 flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={linkVariantFavorites} onChange={event => { const enabled = event.target.checked; if (enabled) { backfillAttempted.current.clear(); backfillFailed.current.clear(); setVariantBackfillError(''); } setLinkVariantFavorites(enabled); localStorage.setItem('nai_character_link_variant_favorites', String(enabled)); }} />{t('同角色变体联动收藏')}</label>
              <p className="mb-3 text-xs text-gray-500">{t('每个变体收藏一张代表封面')}</p>
              {/* 补齐提示占用固定高度槽位，提示以 absolute 叠在槽位内，出现/消失不推动下方抽卡设置 */}
-             <div className="relative h-4">
-               {linkVariantFavorites && variantBackfillBusy && <p role="status" className="absolute inset-0 text-xs text-gray-500">{t('正在补齐已有角色收藏…')}</p>}
-             </div>
+             {linkVariantFavorites && variantBackfillBusy && <p role="status" className="sr-only">{t('正在补齐已有角色收藏…')}</p>}
              {(linkVariantFavorites || !collectionReady) && variantBackfillError && <div role="alert" className="mb-3 text-xs text-red-500">{t(variantBackfillError)}<button type="button" disabled={variantBackfillBusy} onClick={() => { for (const key of backfillFailed.current) backfillAttempted.current.delete(key); backfillFailed.current.clear(); setVariantBackfillError(''); setVariantBackfillRetry(value => value + 1); }}>{t('重试')}</button></div>}
              <div className="grid grid-cols-2 gap-3">
                <label className="text-sm font-semibold dark:text-white">{t("抽卡范围")}<select value={drawMode} disabled={tab !== 'all'} onChange={event => setGachaMode(event.target.value as GachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">{t("Tag + 自定义")}</option><option value="catalog">{t("只抽角色 Tag")}</option><option value="custom">{t("只抽自定义")}</option></select></label>

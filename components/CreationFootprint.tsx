@@ -685,9 +685,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
               </SectionCard>
 
               <SectionCard title={t('收藏概览')} hint={t('全部收藏，不随上方范围变化')} action={<button type="button" onClick={onOpenCollection} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开收藏库')}</button>}>
-                <div className="relative mb-1 h-5">
-                  {collectionLoading && <p role="status" className="absolute inset-0 text-sm leading-5 text-gray-400">{t('正在读取收藏库…')}</p>}
-                </div>
+                {collectionLoading && <p role="status" className="sr-only">{t('正在读取收藏库…')}</p>}
                 {collectionError && <p role="alert" className="mb-3 text-sm text-red-500">{collectionError} <button type="button" onClick={() => setReload(value => value + 1)} className="underline">{t('重试')}</button></p>}
                 <div className="grid grid-cols-3 gap-2">
                   <button type="button" onClick={onOpenCollection} className="appearance-group mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{(collectionReady ? formatNumber(collectionStats.chains) : '—')}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的风格串')}</span></button>

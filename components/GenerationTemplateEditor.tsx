@@ -90,9 +90,7 @@ export default function GenerationTemplateEditor({ value, onChange, disabled = f
                 <ToolbarButton className="!px-2" disabled={editingBusy || !presetsReady || !selectedPreset} onClick={() => void deletePreset()}>{t('删除当前预设')}</ToolbarButton>
               </div>
             </div>
-            <div className="relative h-4">
-              {presetLoading && <p role="status" className="absolute inset-0 text-xs leading-4 text-gray-500">{t('正在读取生成预设…')}</p>}
-            </div>
+            {presetLoading && <p role="status" className="sr-only">{t('正在读取生成预设…')}</p>}
             {presetError && <div role="alert" className="flex items-center gap-2 text-xs text-red-500"><span>{t(presetError)}</span><ToolbarButton disabled={disabled || presetBusy || presetLoading} onClick={() => void loadPresets()}>{t('重新读取预设')}</ToolbarButton></div>}
           </div>
           <label className="block text-xs font-semibold">{t(promptLabel || '公共提示词（{style} 为画风位置）')}<TagAutocompleteTextarea aria-label={t('公共提示词')} showTranslations={false} className={`${field} mt-1 min-h-28 font-mono`} value={value.prompt} disabled={editingBusy || readOnly} onValueChange={prompt => onChange({ ...value, prompt })} /></label>
