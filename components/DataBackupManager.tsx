@@ -163,10 +163,10 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
     }
   };
 
-  if (!status) return <div className="space-y-3">
+  if (!status) return <div className="relative space-y-3">
     <h4 className="font-semibold text-gray-900 dark:text-white">{t("重要数据备份")}</h4>
     {error && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{t(error)} <button type="button" disabled={loading} onClick={() => void fetchStatus()} className="mobile-touch rounded-lg px-3 font-bold disabled:opacity-40">{t("重试")}</button></p>}
-    {loading && <p role="status" className="flex items-center gap-2 text-xs text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />{t("正在读取…")}</p>}
+    {loading && <p role="status" className="pointer-events-none absolute right-0 top-0 flex h-6 items-center gap-2 text-xs text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />{t("正在读取…")}</p>}
   </div>;
 
   const isRunning = Boolean(status.running);

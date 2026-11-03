@@ -5,7 +5,7 @@ import { db } from '../../services/dbService';
 import { getCollectionTags, normalizeInspirationTags, sourceLabel } from '../../services/inspirationUtils';
 import { t, useLanguage } from '../../services/i18n';
 import { useConfirmDialog } from '../ConfirmDialog';
-import { IconButton, ToolbarButton, ToolbarSearch } from '../DesignSystem';
+import { IconButton, InlineSpinner, ToolbarButton, ToolbarSearch } from '../DesignSystem';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
@@ -108,13 +108,15 @@ export const CollectionTagManager: React.FC<{
   const visibleTags = tagCounts.filter(([tag]) => tag.toLowerCase().includes(search.trim().toLowerCase()));
   return <ImagePreviewPortal><div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-end justify-center bg-black/55 backdrop-blur-sm md:items-center md:p-4" onClick={requestClose}>
     <section ref={dialogRef} role="dialog" aria-modal="true" aria-label={t('管理标签')} aria-busy={busy} className="appearance-panel ui-sheet-enter mobile-safe-bottom flex max-h-[85dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:rounded-2xl" onClick={event => event.stopPropagation()}>
-      <header className="flex flex-none items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800"><h2 className="text-lg font-bold">{t('管理标签')}</h2><IconButton label={t('关闭')} disabled={busy} onClick={requestClose}><X /></IconButton></header>
+      <header className="relative flex flex-none items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800"><h2 className="text-lg font-bold">{t('管理标签')}</h2>
+        {/* 重读叠在标题行内：插进列表会让内容上下跳一下。 */}
+        {loading && <InlineSpinner label={t('正在读取…')} className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />}
+        <IconButton label={t('关闭')} disabled={busy} onClick={requestClose}><X /></IconButton></header>
       <div className="flex-none p-3"><ToolbarSearch autoFocus aria-label={t('搜索标签')} value={search} onChange={event => setSearch(event.target.value)} placeholder={t('搜索标签')} /></div>
       <form className="flex flex-none gap-2 px-3 pb-3" onSubmit={event => { event.preventDefault(); void addTag(); }}>
         <input aria-label={t('新标签名称')} maxLength={200} value={newTag} disabled={busy || loading || Boolean(loadError) || tagNames === null || currentUser.role === 'guest'} onChange={event => setNewTag(event.target.value)} placeholder={t('新标签名称')} className="mobile-touch h-10 min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 text-sm outline-none focus:border-indigo-400 dark:border-gray-700" />
         <ToolbarButton type="submit" disabled={busy || loading || Boolean(loadError) || tagNames === null || currentUser.role === 'guest' || !normalizeInspirationTags([newTag])[0]}>{t('添加标签')}</ToolbarButton>
       </form>
-      {loading && <p role="status" className="px-3 pb-3 text-sm text-gray-400">{t('正在读取…')}</p>}
       {!loading && (loadError || tagNames === null) && <div role="alert" className="px-3 pb-3 text-sm text-red-500">{loadError && <p>{t(loadError)}</p>}<ToolbarButton disabled={busy} onClick={() => void onReloadTagNames()}>{t('重新加载标签')}</ToolbarButton></div>}
       <ul className="min-h-0 overflow-y-auto px-3 pb-3">
         {visibleTags.map(([tag, count]) => <li key={tag} className="flex min-h-12 items-center gap-2 border-b border-gray-100 py-1 dark:border-gray-800">

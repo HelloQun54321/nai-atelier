@@ -1226,7 +1226,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             {activeSection === 'novelai' && <div>
             {/* 密钥保管箱：多把密钥 + 命名备注，点击使用即切换 */}
             <div data-agent-private="true" className="space-y-2">
-              {!keyVaultLoaded && keyVaultLoading && <p role="status" className="py-3 text-center text-xs text-gray-500">{t('正在读取配置…')}</p>}
+              {/* 载入提示占用固定高度槽位，提示以 absolute 叠在槽位内，出现/消失不推动下方密钥列表 */}
+              <div className="relative h-5">
+                {!keyVaultLoaded && keyVaultLoading && <p role="status" className="absolute inset-0 flex items-center justify-center text-xs text-gray-500">{t('正在读取配置…')}</p>}
+              </div>
               {!keyVaultLoaded && keyVaultLoadError && <div role="alert" className="flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">
                 <span>{t(keyVaultLoadError)}</span>
                 <button type="button" onClick={() => { void refreshVault().catch(() => {}); }} className="mobile-touch shrink-0 rounded px-2 py-1 font-bold underline">{t('重试')}</button>

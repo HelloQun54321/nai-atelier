@@ -218,14 +218,14 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       <div data-agent-surface className="agent-theme mt-3 space-y-4">
       {/* 阶段二：层级 1 - 当前运行模型卡 */}
       <div className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        {!settingsLoaded && settingsLoading && <p role="status" className="mb-3 text-xs text-gray-500">{t('正在读取模型列表…')}</p>}
         {!settingsLoaded && settingsLoadError && <div role="alert" className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">
           <span>{t(settingsLoadError)}</span>
           <button type="button" onClick={() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }} className="mobile-touch shrink-0 rounded-lg px-2 py-1 font-bold underline">{t('重试')}</button>
         </div>}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-meta font-bold uppercase tracking-wider text-indigo-500">{t("当前助手模型")}</div>
-          <div className="flex items-center gap-2">
+          <div className="relative flex items-center gap-2">
+            {!settingsLoaded && settingsLoading && <p role="status" className="pointer-events-none absolute right-full top-1/2 mr-2 -translate-y-1/2 whitespace-nowrap text-micro text-gray-500">{t('正在读取模型列表…')}</p>}
             <button
               type="button"
               disabled={models.length === 0}

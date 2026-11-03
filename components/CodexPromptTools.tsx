@@ -74,9 +74,10 @@ export function CodexPromptTools({ entry, boot, onOpenEntry }: { entry: CodexEnt
       </div>)}</div>
       {samples.length > 9 && <ToolbarButton className="mt-2" onClick={() => setExpanded(value => !value)}>{t(expanded ? '收起' : '展开全部')}</ToolbarButton>}
     </details>}
-    {tokens.length > 0 && <details className="rounded-xl border border-gray-200 p-3 dark:border-gray-800" onToggle={event => { if (event.currentTarget.open) setMeaningsRequested(true); }}>
+    {tokens.length > 0 && <details className="relative rounded-xl border border-gray-200 p-3 dark:border-gray-800" onToggle={event => { if (event.currentTarget.open) setMeaningsRequested(true); }}>
       <summary className="cursor-pointer text-sm font-semibold">{t('中文词义')}</summary>
-      {meaningBusy && <p className="mt-2 text-xs text-gray-500">{t('加载中…')}</p>}
+      {/* 加载提示叠在标题行右侧，absolute 脱离文档流，出现/消失都不挤动下方词义列表 */}
+      {meaningBusy && <p role="status" className="pointer-events-none absolute right-3 top-3 text-xs text-gray-500">{t('加载中…')}</p>}
       {meaningError && <button className="mt-2 text-xs text-amber-600" onClick={() => setMeaningRetry(value => value + 1)}>{meaningError}</button>}
       {meanings && <dl className="mt-3 space-y-2">{tokens.map(token => <div key={token.id} className="grid grid-cols-2 gap-3 text-xs"><dt className="break-words text-gray-500">{token.displayTag}</dt><dd className="break-words">{meanings[token.id] || '—'}</dd></div>)}</dl>}
     </details>}

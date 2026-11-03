@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Folder } from 'lucide-react';
+import { InlineSpinner } from '../DesignSystem';
 import { t } from '../../services/i18n';
 import { getDirectoryPath } from '../../services/directoryTree.mjs';
 import { DirectoryTreeChecklist } from '../DirectoryTreeChecklist';
@@ -55,8 +56,9 @@ export const CollectionFolderPicker: React.FC<{
     return () => window.removeEventListener('resize', resize);
   }, [close]);
   const content = <div className="space-y-3">
-    <div className="max-h-72 space-y-1 overflow-y-auto">
-      {loading && <p role="status" className="py-3 text-sm text-gray-400">{t('正在读取…')}</p>}
+    <div className="relative max-h-72 space-y-1 overflow-y-auto">
+      {/* 读取提示悬浮在列表右上角，插进行内会让树往下跳。 */}
+      {loading && <InlineSpinner label={t('正在读取…')} className="pointer-events-none absolute right-2 top-2 z-10" />}
       {error && <p role="alert" className="py-3 text-sm text-red-500">{t(error)} {onRetry && <button type="button" disabled={loading} onClick={onRetry} className="underline">{t('重试')}</button>}</p>}
       <DirectoryTreeChecklist nodes={boards} selectedIds={value} mixedIds={mixedIds} onToggle={onToggle} disabled={disabled || loading || Boolean(error)} label={t(label)} />
       {!loading && !error && !boards.length && <p className="py-3 text-sm text-gray-400">{t('暂无收藏夹')}</p>}

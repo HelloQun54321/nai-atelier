@@ -101,9 +101,12 @@ const ChainTagPanel: React.FC<ChainTagManagerProps> = ({ chains, isLoading = fal
   const visibleTags = tagCounts.filter(([tag]) => tag.toLowerCase().includes(search.trim().toLowerCase()));
   return <div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-end justify-center bg-black/55 backdrop-blur-sm md:items-center md:p-4" onClick={close}>
     <section ref={dialogRef} role="dialog" aria-modal="true" aria-label={t('管理标签')} aria-busy={busy} className="appearance-panel ui-sheet-enter mobile-safe-bottom flex max-h-[85dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:rounded-2xl" onClick={event => event.stopPropagation()}>
-      <header className="flex flex-none items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800"><h2 className="text-lg font-bold">{t('管理标签')}</h2><IconButton label={t('关闭')} disabled={busy} onClick={close}><X /></IconButton></header>
+      <header className="relative flex flex-none items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800"><h2 className="text-lg font-bold">{t('管理标签')}</h2>
+        {/* 重读叠在标题行内：插进列表会让内容上下跳一下。 */}
+        {readPending && isLoading && visibleTags.length > 0 && <InlineSpinner className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />}
+        <IconButton label={t('关闭')} disabled={busy} onClick={close}><X /></IconButton></header>
       <div className="flex-none p-3"><ToolbarSearch aria-label={t('搜索标签')} value={search} disabled={busy} onChange={event => setSearch(event.target.value)} placeholder={t('搜索标签')} /></div>
-      {readPending && (isLoading ? (visibleTags.length ? <InlineSpinner className="mx-auto mb-3" /> : <PageSpinner fill={false} className="py-6" />) : <WorkspacePageState role="alert" className="px-3 pb-3 text-center text-sm text-gray-500">{t(loadError || '')}<ToolbarButton disabled={busy} onClick={() => void reload()}>{t('重试')}</ToolbarButton></WorkspacePageState>)}
+      {readPending && !isLoading && <WorkspacePageState role="alert" className="px-3 pb-3 text-center text-sm text-gray-500">{t(loadError || '')}<ToolbarButton disabled={busy} onClick={() => void reload()}>{t('重试')}</ToolbarButton></WorkspacePageState>}
       {needsReload && <div className="px-3 pb-3"><p role="alert" className="mb-2 text-xs text-red-500">{t('标签回读失败，请重新加载后再操作')}</p><ToolbarButton disabled={busy} onClick={() => void reload()}>{t('重新加载标签')}</ToolbarButton></div>}
       <ul className="min-h-0 overflow-y-auto px-3 pb-3">
         {visibleTags.map(([tag, count]) => <li key={tag} className="flex min-h-12 items-center gap-2 border-b border-gray-100 py-1 dark:border-gray-800">
@@ -117,6 +120,7 @@ const ChainTagPanel: React.FC<ChainTagManagerProps> = ({ chains, isLoading = fal
             <IconButton label={t('移除标签：{0}', [tag])} disabled={busy || readPending || needsReload} onClick={() => void updateTag(tag)} className="text-red-500"><Trash2 /></IconButton>
           </>}
         </li>)}
+        {!visibleTags.length && readPending && isLoading && <li className="py-6"><PageSpinner fill={false} /></li>}
         {!visibleTags.length && !readPending && <li className="py-8 text-center text-sm text-gray-400">{t('没有匹配的标签')}</li>}
       </ul>
     </section>

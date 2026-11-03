@@ -1639,9 +1639,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           )}
           </div>
 
-          <div className="flex flex-col items-center gap-2 py-6">
+          <div className="relative flex flex-col items-center gap-2 py-6">
             <div ref={appendSentinelRef} className="h-1 w-full" aria-hidden="true" />
-            {isAppending && <span role="status" className="flex items-center gap-1 text-xs text-gray-500"><LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />{t('正在加载更多…')}</span>}
+            {/* 追加提示悬浮在底部留白内，absolute 不参与布局，出现/消失都不挤动下方统计行 */}
+            {isAppending && <span role="status" className="pointer-events-none absolute left-1/2 top-1 flex -translate-x-1/2 items-center gap-1 text-xs text-gray-500"><LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />{t('正在加载更多…')}</span>}
             {appendError && <div role="alert" className="flex items-center gap-2 text-xs text-red-600 dark:text-red-300"><span>{appendError}</span><ToolbarButton onClick={() => void appendNextPage()}>{t('重试加载')}</ToolbarButton></div>}
             <div className="flex justify-center items-center gap-2 text-xs text-gray-500">
               <span>{t("已加载 {0} 条 / 共 {1} 条 · 滚动浏览，可跳转", [formatCount(visibleItems.length), formatCount(total)])}</span>

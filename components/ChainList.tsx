@@ -14,7 +14,7 @@ import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, EyeOff, FileOutput, Filter, FlaskConical, FolderUp, Heart, Image, Link2, ListChecks, Package, Pencil, Plus, ScanSearch, Tags, Trash2, User, X } from 'lucide-react';
-import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
+import { PageSpinner, ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
@@ -553,9 +553,12 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           ]} className="md:hidden" />
           </>}
         </WorkspaceToolbar>
-        {!isLoading && !loadError && <ToolbarCountCaption>{countCaptionFiltered
-          ? t('匹配 {0} 条 · 共 {1} 条', [filteredChains.length, countCaptionTotal])
-          : t('共 {0} 条', [filteredChains.length])}</ToolbarCountCaption>}
+        {/* 刷新提示并入已存在的计数行（绝对定位在顶栏下沿），不再往列表上方插一行。 */}
+        {!loadError && <ToolbarCountCaption>{isLoading && filteredChains.length > 0
+          ? t('加载中…')
+          : countCaptionFiltered
+            ? t('匹配 {0} 条 · 共 {1} 条', [filteredChains.length, countCaptionTotal])
+            : t('共 {0} 条', [filteredChains.length])}</ToolbarCountCaption>}
 
         {!selecting && canSync && syncSelection.open && <WisdomSyncToolbar sync={syncSelection} filteredIds={filteredChains.map(chain => chain.id)} />}
 
@@ -565,8 +568,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         <div data-workspace-body className="flex min-h-0 flex-1 flex-col md:flex-row">
         {type === 'style' && !isGuest && <ChainFolderNavigation expanded={foldersExpanded} store={folderStore} selected={activeFolder} onSelect={selectFolder} chainIds={chains.filter(chain => chain.type === 'style' || !chain.type).map(chain => chain.id)} countsPending={Boolean((isLoading || loadError) && !chains.length)} favoriteCount={favoritesReady && !((isLoading || loadError) && !chains.length) ? new Set(chains.filter(chain => (chain.type === 'style' || !chain.type) && favorites.has(chain.id)).map(chain => chain.id)).size : '—'} onMove={(ids, folder) => setFolderMemberships(ids, { [folder]: true })} notify={notify} disabled={bulkDeleteBusy || syncSelection.busy} />}
         <div ref={chainScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-5">
-          {filteredChains.length > 0 && isLoading && <InlineSpinner label={t('加载中…')} className="mb-3 w-full" />}
-          {filteredChains.length > 0 && !isLoading && loadError && <div role="alert" className="mb-3 flex items-center justify-center gap-2 text-center text-sm text-gray-500">{t(loadError)}<button type="button" onClick={onRefresh} className="mobile-touch underline">{t('重试')}</button></div>}
+            {filteredChains.length > 0 && !isLoading && loadError && <div role="alert" className="mb-3 flex items-center justify-center gap-2 text-center text-sm text-gray-500">{t(loadError)}<button type="button" onClick={onRefresh} className="mobile-touch underline">{t('重试')}</button></div>}
           {filteredChains.length === 0 && (isLoading || loadError) ? (isLoading ? <PageSpinner /> : <WorkspacePageState role="alert" className="py-20 text-center text-sm text-gray-500">{t(loadError || '')}{loadError && <button type="button" onClick={onRefresh} className="mobile-touch ml-2 underline">{t('重试')}</button>}</WorkspacePageState>) : activeFolder === DIRECTORY_FAVORITES_ID && !favoritesReady ? (favoritesError ? <WorkspacePageState role="alert" className="py-20 text-center text-sm text-gray-500">{favoritesError}<button type="button" className="mobile-touch ml-2 underline" onClick={() => setFavoritesRetry(value => value + 1)}>{t('重新加载')}</button></WorkspacePageState> : <PageSpinner />) : filteredChains.length === 0 ? emptyFiltersActive ? (
             <WorkspacePageState className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
               <p>{t("无匹配结果")}</p>

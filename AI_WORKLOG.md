@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-11-03
+- **DeepSeek Harness (deepseek-v4.1-flash)**：消除异步提示造成的布局跳动：ChainTagManager、CollectionTagManager 的「正在读取」移进标题行绝对居中；ChainList 的刷新提示并入计数行；CollectionControls、InspirationGallery 标签区与收藏夹树改为已有数据时不再插入加载行；DataBackupManager、CodexPromptTools、PromptAgentPanel、PromptAgentSettings、AitagGallery 的提示改为绝对定位；GenerationTemplateEditor、CreationFootprint 用固定高度状态位；GlobalSettings、CharacterLibrary 预留 h-5/h-4 槽位。
+
 ## 2026-11-02
 - **DeepSeek Harness (deepseek-v4.1-flash)**：新增 `alertNaiRuntimeFailure`：官方常量同步的四个失败分支（抓不到页面、找不到 JS 包、部分提取失效、同步异常）改为打印带边框的红色告警，写明失效项、影响范围和排查命令，非 TTY 时自动去掉 ANSI；服务照常启动并后台重试。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：跟进官方计价重构：`extractNaiImagesPerPercent` 增加按语义锚点的兜底（导出名被压成单字母）、`extractNaiPriceCalculator`/`extractNaiVibeCostCalculator`/`extractNaiCostCalculator` 兼容 `$` 别名与新函数形状、`extractNaiBillingRules` 识别 medium 专用算式（固定等效步数 ÷ 折扣因子）并区分扁平／嵌套会话形态；`worker/naiBilling.mjs` 按新算式估算 medium，`billing` 新增 `mediumCostRules` 字段；live-sync 全绿（2180 组计价与官方一致）。
