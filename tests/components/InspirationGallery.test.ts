@@ -1699,7 +1699,9 @@ it.each([390, 1280])('宽度 %s：作品组只显示一张首图卡片，点开�
   expect(container.querySelector('main')!.classList.contains('hidden')).toBe(true); expect(container.querySelector('main')!.classList.contains('lg:block')).toBe(true);
   const images = within(panel).getAllByRole('img');
   expect(images.map(image => image.getAttribute('src'))).toEqual([0, 1, 2].map(page => '/synthetic/group-' + page + '.png'));
-  expect(within(panel).getAllByRole('button', { name: '收藏' })).toHaveLength(3);
+  // 收藏库里「爱心」与「取消收藏」是同一个动作，详情页只保留后者。
+  expect(within(panel).getAllByRole('button', { name: '取消收藏' })).toHaveLength(3);
+  expect(within(panel).queryAllByRole('button', { name: '收藏' })).toHaveLength(0);
   expect(within(panel).getAllByRole('button', { name: '修改收藏标题' })).toHaveLength(3);
   expect(within(panel).getAllByRole('textbox', { name: '提示词' }).map(input => (input as HTMLTextAreaElement).value)).toEqual(['prompt-0', 'prompt-1', 'prompt-2']);
   expect(document.querySelector('[data-agent-page-title^="收藏详情"]')).toBeNull();
