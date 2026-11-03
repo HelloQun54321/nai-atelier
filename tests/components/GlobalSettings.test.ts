@@ -228,6 +228,19 @@ describe('GlobalSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: '恢复出厂默认外观' }));
     expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
   });
+  it('指针倾斜默认关闭，与卡片悬停浮动一次只能开一个', async () => {
+    const changed = vi.fn<(preferences: AppearancePreferences) => void>();
+    render(React.createElement(SettingsHarness, { onAppearancePreferencesChange: changed }));
+    const tilt = await screen.findByRole('switch', { name: '卡片指针倾斜' });
+    const hover = screen.getByRole('switch', { name: '卡片悬停浮动' });
+    expect(tilt.getAttribute('aria-checked')).toBe('false');
+    expect(hover.getAttribute('aria-checked')).toBe('true');
+    // 开局倾斜、自动关掉悬停浮动；反过来开浮动也会把倾斜关掉。
+    fireEvent.click(tilt);
+    expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryPointerTilt: true, galleryHoverFloat: false });
+    fireEvent.click(hover);
+    expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryHoverFloat: true, galleryPointerTilt: false });
+  });
   it('连续生成开关默认开启，点击后即时关闭', async () => {
     const onAppearancePreferencesChange = vi.fn<(preferences: AppearancePreferences) => void>();
     render(React.createElement(SettingsHarness, {

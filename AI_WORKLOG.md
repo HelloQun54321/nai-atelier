@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-11-04
+- **DeepSeek Harness (deepseek-v4.1-flash)**：按用户要求把卡片「指针倾斜」默认改成关闭，并在开关下方加小字提醒「虽然好玩，但卡片会跟着晃、按钮也跟着移动，容易点不到」；倾斜与「卡片悬停浮动」由运行时抑制改为开关级互斥，`updateAppearance` 开一个自动关另一个，`normalizeAppearancePreferences` 与 `validateAppearancePreset` 在外部预设／旧存档同时打开时保留悬停浮动，内置苹果主题不再开启倾斜。同步 README、产品决策、四语文案与外观／预设回归（154 项全过）。
+
 ## 2026-11-03
 - **DeepSeek Harness (deepseek-v4.1-flash)**：修「真实 Pages → 网关 → D1/R2」链路用例跑完不退出：收尾顺序改为先还原分发器并 `mock.close()` 释放 passthrough 的 keep-alive 连接，再 `gateway.closeAllConnections()/close()`，并给 close 加 5 秒超时；`t.after` 里删除临时目录失败只告警（workerd 退出后仍短暂占用 `--persist-to`），不再把整条链路判成失败；`node-environment.mjs` 增加 20 秒收尾兜底定时器，个别用例留下未释放句柄时强制结束本测试进程并保留真实退出码。7 个此前必失败的后端文件复跑 59 项全过、29 秒结束。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：修后端测试基建：各测试文件用 esbuild 打包后从不关闭，常驻 service 子进程一直占着临时工作区文件句柄，导致退出清理 `rmSync` 报 `EPERM` 并把整个文件判失败；改为在 `tests/support/node-environment.mjs` 注册根级 `after` 钩子统一 `esbuild.stop()`，退出清理失败改为告警并留给下次运行（不再污染测试结论），`removeWorkspace` 重试窗口放宽到 5 秒。6 个此前必失败的文件（aitag-cache、nai-accounting、nai-key-vault、codex-gateway、mobile-generation-jobs、nai-usage）复跑 43 项全过、7 秒结束。

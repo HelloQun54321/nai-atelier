@@ -117,7 +117,8 @@ export const BUILTIN_APPEARANCE_PRESET: AppearancePreset = {
   fontScale: 'standard',
   galleryFrostedCaption: true,
   galleryHoverFloat: true,
-  galleryPointerTilt: true,
+  // 倾斜会让卡片跟着指针晃、按钮跟着位移，容易点空；默认关闭，需要时在外观里单独打开。
+  galleryPointerTilt: false,
   gallerySelectionFocus: true,
 };
 
@@ -255,6 +256,15 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
       DEFAULT_LAB_PAGE_LAYOUTS[pageId],
     ),
   ])) as LabPageLayouts;
+  const galleryHoverFloat = typeof input.galleryHoverFloat === 'boolean'
+    ? input.galleryHoverFloat
+    : DEFAULT_APPEARANCE_PREFERENCES.galleryHoverFloat;
+  // 两套位移互斥：旧存档或主题同时打开时保留更温和的悬停浮动、关掉倾斜，避免按钮跟着晃动点不准。
+  const galleryPointerTilt = galleryHoverFloat
+    ? false
+    : typeof input.galleryPointerTilt === 'boolean'
+      ? input.galleryPointerTilt
+      : DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTilt;
   return {
     designTheme: input.designTheme === 'nai-atelier' ? input.designTheme : DEFAULT_APPEARANCE_PREFERENCES.designTheme,
     themeMode: isOneOf(input.themeMode, ['light', 'dark', 'system']) ? input.themeMode : DEFAULT_APPEARANCE_PREFERENCES.themeMode,
@@ -271,8 +281,8 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     motion: isOneOf(input.motion, ['full', 'reduced', 'off']) ? input.motion : DEFAULT_APPEARANCE_PREFERENCES.motion,
     fontScale: isOneOf(input.fontScale, ['small', 'standard', 'large']) ? input.fontScale : DEFAULT_APPEARANCE_PREFERENCES.fontScale,
     galleryFrostedCaption: typeof input.galleryFrostedCaption === 'boolean' ? input.galleryFrostedCaption : DEFAULT_APPEARANCE_PREFERENCES.galleryFrostedCaption,
-    galleryHoverFloat: typeof input.galleryHoverFloat === 'boolean' ? input.galleryHoverFloat : DEFAULT_APPEARANCE_PREFERENCES.galleryHoverFloat,
-    galleryPointerTilt: typeof input.galleryPointerTilt === 'boolean' ? input.galleryPointerTilt : DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTilt,
+    galleryHoverFloat,
+    galleryPointerTilt,
     galleryPointerTiltAngle: clampNumeric(input.galleryPointerTiltAngle, POINTER_TILT_ANGLE),
     galleryPointerTiltWeight: clampNumeric(input.galleryPointerTiltWeight, POINTER_TILT_WEIGHT),
     gallerySelectionFocus: typeof input.gallerySelectionFocus === 'boolean' ? input.gallerySelectionFocus : DEFAULT_APPEARANCE_PREFERENCES.gallerySelectionFocus,

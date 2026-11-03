@@ -39556,5 +39556,23 @@
     "Switching to a model that does not support this reference disables it; switch back or press Enable to restore.",
     "この参照に対応していないモデルに切り替えると自動的に無効になります。対応モデルに戻すか「有効化」を押すと復元します。",
     "이 참조를 지원하지 않는 모델로 바꾸면 자동으로 비활성화됩니다. 지원하는 모델로 돌아가거나 '활성화'를 누르면 복원됩니다."
+  ],
+  "鼠标压在卡片哪一侧，那一侧就随惯性下沉、另一侧翘起。": [
+    "滑鼠壓在卡片哪一側，那一側就隨慣性下沉、另一側翹起。",
+    "The hovered side of a card sinks with inertia while the opposite side lifts.",
+    "マウスを置いた側が慣性で沈み、反対側が浮き上がります。",
+    "마우스를 둔 쪽이 관성으로 가라앉고 반대쪽이 들립니다."
+  ],
+  "虽然好玩，但卡片会跟着晃、按钮也跟着移动，容易点不到；与卡片悬停浮动互斥，只能二选一。": [
+    "雖然好玩，但卡片會跟著晃、按鈕也跟著移動，容易點不到；與卡片懸停浮動互斥，只能二選一。",
+    "Fun, but the card sways and its buttons move with it, so clicks often miss. Mutually exclusive with card hover motion — pick one.",
+    "楽しいですが、カードが揺れてボタンも動くため押し外しやすくなります。カードのホバー効果とは排他で、どちらか一方のみです。",
+    "재미있지만 카드가 흔들리고 버튼도 함께 움직여 클릭을 놓치기 쉽습니다. 카드 호버 효과와 상호 배타이며 하나만 사용할 수 있습니다."
+  ],
+  "鼠标经过时轻轻抬起并放大图片；与卡片指针倾斜互斥，只能二选一。": [
+    "滑鼠經過時輕輕抬起並放大圖片；與卡片指標傾斜互斥，只能二選一。",
+    "Cards lift slightly and the image scales up on hover. Mutually exclusive with card pointer tilt — pick one.",
+    "マウスを重ねるとカードが浮き上がり画像が拡大します。カードのポインタ傾斜とは排他で、どちらか一方のみです。",
+    "마우스를 올리면 카드가 살짝 떠오르고 이미지가 확대됩니다. 카드 포인터 기울기와 상호 배타이며 하나만 사용할 수 있습니다."
   ]
 }

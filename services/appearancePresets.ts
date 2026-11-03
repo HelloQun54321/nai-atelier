@@ -53,7 +53,9 @@ export const validateAppearancePreset = (input: unknown): AppearancePreset | nul
     fontScale,
     galleryFrostedCaption: typeof obj.galleryFrostedCaption === 'boolean' ? obj.galleryFrostedCaption : true,
     galleryHoverFloat: typeof obj.galleryHoverFloat === 'boolean' ? obj.galleryHoverFloat : true,
-    galleryPointerTilt: typeof obj.galleryPointerTilt === 'boolean' ? obj.galleryPointerTilt : true,
+    // 与偏好归一化同一互斥规则：悬停浮动开着时倾斜一律关掉，避免按钮跟着晃动点不准。
+    galleryPointerTilt: (typeof obj.galleryHoverFloat === 'boolean' ? obj.galleryHoverFloat : true) ? false
+      : typeof obj.galleryPointerTilt === 'boolean' ? obj.galleryPointerTilt : false,
     gallerySelectionFocus: typeof obj.gallerySelectionFocus === 'boolean' ? obj.gallerySelectionFocus : true,
     ...(normalizeThemePalettes(obj.palette) ? { palette: normalizeThemePalettes(obj.palette) } : {}),
     ...(normalizeThemeDetails(obj.details) ? { details: normalizeThemeDetails(obj.details) } : {}),

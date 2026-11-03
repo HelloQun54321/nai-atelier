@@ -529,17 +529,23 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   };
 
   const updateAppearance = (patch: Partial<AppearancePreferences>) => {
+    // 指针倾斜与悬停浮动互斥：开一个自动关另一个，两套位移叠加会让按钮跟着移动、点不准。
+    const next: Partial<AppearancePreferences> = patch.galleryPointerTilt === true
+      ? { ...patch, galleryHoverFloat: false }
+      : patch.galleryHoverFloat === true
+        ? { ...patch, galleryPointerTilt: false }
+        : patch;
     setAppearancePreferences(current => {
-      if ((!patch.corners && !patch.accentColor) || 'details' in patch || !current.details) return { ...current, ...patch };
+      if ((!next.corners && !next.accentColor) || 'details' in next || !current.details) return { ...current, ...next };
       const details = { ...current.details };
-      if (patch.corners) { delete details.controlRadius; delete details.panelRadius; delete details.cardRadius; }
+      if (next.corners) { delete details.controlRadius; delete details.panelRadius; delete details.cardRadius; }
       for (const mode of ['light', 'dark'] as const) {
         const variant = { ...details[mode] };
-        if (patch.corners) { delete variant.controlRadius; delete variant.panelRadius; delete variant.cardRadius; }
-        if (patch.accentColor) delete variant.accentColor;
+        if (next.corners) { delete variant.controlRadius; delete variant.panelRadius; delete variant.cardRadius; }
+        if (next.accentColor) delete variant.accentColor;
         details[mode] = variant;
       }
-      return { ...current, ...patch, details: normalizeThemeDetails(details) };
+      return { ...current, ...next, details: normalizeThemeDetails(details) };
     });
   };
 
@@ -1047,7 +1053,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   </div>
                   {([
                     ['galleryFrostedCaption', '全图磨砂卡片', '图片铺满卡片，名称叠在底部渐变磨砂上；关闭后恢复图下信息栏。'],
-                    ['galleryHoverFloat', '卡片悬停浮动', '鼠标经过时轻轻抬起并放大图片；与指针倾斜互斥，倾斜开启时不抬起。'],
+                    ['galleryHoverFloat', '卡片悬停浮动', '鼠标经过时轻轻抬起并放大图片；与卡片指针倾斜互斥，只能二选一。'],
                   ] as const).map(([key, label, description]) => <button key={key} type="button" role="switch" aria-checked={appearancePreferences[key]} aria-label={t(label)} onClick={() => updateAppearance({ [key]: !appearancePreferences[key] })} className="appearance-group flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                     <span><span className="block text-sm font-bold">{t(label)}</span><span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t(description)}</span></span>
                     <span aria-hidden="true" className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences[key] ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences[key] ? 'translate-x-5' : 'translate-x-0'}`} /></span>
@@ -1055,7 +1061,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   {/* 倾斜带可调参数，独占一整行；开关作卡头，参数收在同一张卡内展开，避免再塞一张并列卡片。 */}
                   <div className="appearance-group rounded-xl border border-gray-200 bg-white transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700 lg:col-span-2">
                     <button type="button" role="switch" aria-checked={appearancePreferences.galleryPointerTilt} aria-label={t('卡片指针倾斜')} onClick={() => updateAppearance({ galleryPointerTilt: !appearancePreferences.galleryPointerTilt })} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left">
-                      <span><span className="block text-sm font-bold">{t('卡片指针倾斜')}</span><span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t('鼠标压在卡片哪一侧，那一侧就随惯性下沉、另一侧翘起；与卡片悬停浮动互斥。')}</span></span>
+                      <span><span className="block text-sm font-bold">{t('卡片指针倾斜')}</span><span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t('鼠标压在卡片哪一侧，那一侧就随惯性下沉、另一侧翘起。')}</span><span className="mt-1 block text-meta text-amber-600 dark:text-amber-400">{t('虽然好玩，但卡片会跟着晃、按钮也跟着移动，容易点不到；与卡片悬停浮动互斥，只能二选一。')}</span></span>
                       <span aria-hidden="true" className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.galleryPointerTilt ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.galleryPointerTilt ? 'translate-x-5' : 'translate-x-0'}`} /></span>
                     </button>
                     {appearancePreferences.galleryPointerTilt && (() => {
