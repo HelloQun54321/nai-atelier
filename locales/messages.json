@@ -39556,5 +39556,461 @@
     "Switching to a model that does not support this reference disables it; switch back or press Enable to restore.",
     "この参照に対応していないモデルに切り替えると自動的に無効になります。対応モデルに戻すか「有効化」を押すと復元します。",
     "이 참조를 지원하지 않는 모델로 바꾸면 자동으로 비활성화됩니다. 지원하는 모델로 돌아가거나 '활성화'를 누르면 복원됩니다."
+  ],
+  "画风串": [
+    "畫風串",
+    "Style string",
+    "画風プロンプト",
+    "화풍 프롬프트"
+  ],
+  "保留画师、画风、线条、质量词等整段配方，去掉人物、场景和光照": [
+    "保留畫師、畫風、線條、品質詞等整段配方，去掉人物、場景和光照",
+    "Keeps the whole recipe (artists, style, linework, quality tags) and drops characters, scenery and lighting",
+    "絵師・画風・線・品質タグなどのレシピ全体を残し、人物・シーン・光源を外します",
+    "작가·화풍·선·퀄리티 태그 등 레시피 전체를 남기고 인물·장면·조명은 뺍니다"
+  ],
+  "只留画师": [
+    "只留畫師",
+    "Artists only",
+    "絵師のみ",
+    "작가만"
+  ],
+  "只保留画师，连同原来的权重": [
+    "只保留畫師，連同原本的權重",
+    "Keeps only the artists, with their original weights",
+    "絵師だけを元の重みごと残します",
+    "작가만 원래 가중치와 함께 남깁니다"
+  ],
+  "去掉画风": [
+    "去掉畫風",
+    "Remove style",
+    "画風を外す",
+    "화풍 제거"
+  ],
+  "去掉画风配方，只留人物、场景等画面内容": [
+    "去掉畫風配方，只留人物、場景等畫面內容",
+    "Drops the style recipe and keeps scene content such as characters and setting",
+    "画風レシピを外し、人物やシーンなどの画面内容だけを残します",
+    "화풍 레시피를 빼고 인물·장면 등 화면 내용만 남깁니다"
+  ],
+  "只整理格式": [
+    "只整理格式",
+    "Format only",
+    "書式だけ整える",
+    "형식만 정리"
+  ],
+  "不删内容，只去重、补前缀，并用逗号连成一行": [
+    "不刪內容，只去重、補前綴，並用逗號連成一行",
+    "Keeps everything; only removes duplicates, adds prefixes and joins it into one comma-separated line",
+    "内容は消さず、重複削除と接頭辞の補完をして、カンマ区切りの1行にまとめます",
+    "내용은 지우지 않고 중복 제거·접두사 보완 후 쉼표로 한 줄로 잇습니다"
+  ],
+  "自定义要求": [
+    "自訂要求",
+    "Custom request",
+    "カスタム指示",
+    "사용자 지정 요청"
+  ],
+  "用一句话告诉 AI 想怎么整理": [
+    "用一句話告訴 AI 想怎麼整理",
+    "Tell the AI in one sentence how to tidy it",
+    "どう整えたいかを一文で AI に伝えます",
+    "어떻게 정리할지 AI에게 한 문장으로 알려 주세요"
+  ],
+  "规则": [
+    "規則",
+    "Rules",
+    "ルール",
+    "규칙"
+  ],
+  "允许改写": [
+    "允許改寫",
+    "Rewrite allowed",
+    "書き換え可",
+    "재작성 허용"
+  ],
+  "去重": [
+    "去重",
+    "Dedupe",
+    "重複削除",
+    "중복 제거"
+  ],
+  "补 artist:": [
+    "補 artist:",
+    "Add artist:",
+    "artist: 補完",
+    "artist: 보완"
+  ],
+  "没有可整理的提示词": [
+    "沒有可整理的提示詞",
+    "There is no prompt to tidy",
+    "整えるプロンプトがありません",
+    "정리할 프롬프트가 없습니다"
+  ],
+  "整理期间提示词有改动，这次结果没有覆盖": [
+    "整理期間提示詞有變動，這次結果沒有覆蓋",
+    "The prompt changed while tidying, so this result was not applied",
+    "整理中にプロンプトが変更されたため、今回の結果は上書きしていません",
+    "정리하는 동안 프롬프트가 바뀌어 이번 결과는 덮어쓰지 않았습니다"
+  ],
+  "没有找到要保留的内容，提示词没有改动": [
+    "沒有找到要保留的內容，提示詞沒有變動",
+    "Nothing to keep was found; the prompt is unchanged",
+    "残す内容が見つからなかったため、プロンプトは変更していません",
+    "남길 내용을 찾지 못해 프롬프트를 바꾸지 않았습니다"
+  ],
+  "整理后没有变化": [
+    "整理後沒有變化",
+    "Nothing changed after tidying",
+    "整えても変化はありませんでした",
+    "정리 후 달라진 내용이 없습니다"
+  ],
+  "已按要求改写，可以撤销": [
+    "已按要求改寫，可以復原",
+    "Rewritten as requested. You can undo it.",
+    "指示どおりに書き換えました。元に戻せます",
+    "요청대로 다시 썼습니다. 실행 취소할 수 있습니다"
+  ],
+  "已整理：保留 {0} 段，去掉 {1} 段，可以撤销": [
+    "已整理：保留 {0} 段，去掉 {1} 段，可以復原",
+    "Tidied: kept {0} segments, removed {1}. You can undo it.",
+    "整えました：{0} 個を残し、{1} 個を外しました。元に戻せます",
+    "정리했습니다: {0}개 유지, {1}개 제거. 실행 취소할 수 있습니다"
+  ],
+  "整理提示词": [
+    "整理提示詞",
+    "Tidy prompt",
+    "プロンプトを整える",
+    "프롬프트 정리"
+  ],
+  "整理提示词：提取画风、清洗格式": [
+    "整理提示詞：擷取畫風、清理格式",
+    "Tidy prompt: extract the style, clean up the format",
+    "プロンプトを整える：画風の抽出・書式の整理",
+    "프롬프트 정리: 화풍 추출, 형식 정리"
+  ],
+  "撤销整理": [
+    "復原整理",
+    "Undo tidy",
+    "整理を元に戻す",
+    "정리 실행 취소"
+  ],
+  "快捷整理：{0}": [
+    "快捷整理：{0}",
+    "Quick tidy: {0}",
+    "クイック整理：{0}",
+    "빠른 정리: {0}"
+  ],
+  "保留什么": [
+    "保留什麼",
+    "Keep",
+    "残す内容",
+    "남길 내용"
+  ],
+  "识别方式": [
+    "識別方式",
+    "Detection",
+    "判定方法",
+    "판별 방식"
+  ],
+  "规则（本地）": [
+    "規則（本機）",
+    "Rules (local)",
+    "ルール（ローカル）",
+    "규칙(로컬)"
+  ],
+  "AI 精准": [
+    "AI 精準",
+    "AI (precise)",
+    "AI（高精度）",
+    "AI(정밀)"
+  ],
+  "点一次调用一次设置里选的创作助手模型，不消耗 Anlas，模型服务可能另外计费。": [
+    "點一次就呼叫一次設定裡選的創作助手模型，不消耗 Anlas，模型服務可能另外計費。",
+    "Each click calls the assistant model chosen in Settings once. It uses no Anlas, but the model service may charge separately.",
+    "クリックごとに設定で選んだアシスタントモデルを1回呼び出します。Anlas は消費しませんが、モデルサービス側で課金される場合があります。",
+    "클릭할 때마다 설정에서 고른 어시스턴트 모델을 한 번 호출합니다. Anlas는 쓰지 않지만 모델 서비스에서 따로 과금될 수 있습니다."
+  ],
+  "这一项靠词库识别，不需要 AI。": [
+    "這一項靠詞庫識別，不需要 AI。",
+    "This option uses the tag dictionary; no AI needed.",
+    "この項目はタグ辞書で判定するため、AI は不要です。",
+    "이 항목은 태그 사전으로 판별하므로 AI가 필요 없습니다."
+  ],
+  "按词库和常见画风词判断，瞬间完成、不花钱；写得乱的串可以换 AI。": [
+    "依詞庫和常見畫風詞判斷，瞬間完成、不花錢；寫得亂的串可以改用 AI。",
+    "Uses the tag dictionary and common style tags: instant and free. Switch to AI for messy prompts.",
+    "タグ辞書とよくある画風タグで判定します。一瞬で終わり無料です。乱雑なプロンプトは AI に切り替えてください。",
+    "태그 사전과 흔한 화풍 태그로 판별합니다. 즉시 끝나고 무료입니다. 정리가 안 된 프롬프트는 AI로 바꿔 보세요."
+  ],
+  "整理要求": [
+    "整理要求",
+    "Tidy request",
+    "整理の指示",
+    "정리 요청"
+  ],
+  "例如：只保留画师和光影，去掉质量词": [
+    "例如：只保留畫師和光影，去掉品質詞",
+    "e.g. keep only artists and lighting, drop quality tags",
+    "例：絵師と光影だけ残し、品質タグを外す",
+    "예: 작가와 광원만 남기고 퀄리티 태그는 빼기"
+  ],
+  "允许 AI 改写词句": [
+    "允許 AI 改寫詞句",
+    "Allow the AI to rewrite tags",
+    "AI による書き換えを許可",
+    "AI의 문구 재작성 허용"
+  ],
+  "默认只挑选保留哪些段，原词一字不改；要统一权重、翻译等改动时再打开。": [
+    "預設只挑選保留哪些段，原詞一字不改；需要統一權重、翻譯等改動時再開啟。",
+    "By default the AI only picks which segments to keep and never changes a word. Turn this on for changes like unifying weights or translating.",
+    "既定では残す区切りを選ぶだけで、元の語は一字も変えません。重みの統一や翻訳などが必要なときにオンにします。",
+    "기본적으로는 남길 구간만 고르고 원래 단어는 한 글자도 바꾸지 않습니다. 가중치 통일이나 번역 같은 변경이 필요할 때 켜세요."
+  ],
+  "去掉重复词": [
+    "去掉重複詞",
+    "Remove duplicates",
+    "重複タグを外す",
+    "중복 태그 제거"
+  ],
+  "给画师补 artist: 前缀": [
+    "為畫師補上 artist: 前綴",
+    "Add the artist: prefix to artists",
+    "絵師に artist: 接頭辞を付ける",
+    "작가에 artist: 접두사 붙이기"
+  ],
+  "整理并覆盖": [
+    "整理並覆蓋",
+    "Tidy and replace",
+    "整えて上書き",
+    "정리 후 덮어쓰기"
+  ],
+  "直接覆盖当前提示词，可以点撤销或按 Ctrl+Z 恢复。": [
+    "直接覆蓋目前的提示詞，可以點復原或按 Ctrl+Z 還原。",
+    "Replaces the current prompt directly. Click undo or press Ctrl+Z to restore it.",
+    "現在のプロンプトを直接上書きします。元に戻すボタンか Ctrl+Z で復元できます。",
+    "현재 프롬프트를 바로 덮어씁니다. 실행 취소 버튼이나 Ctrl+Z로 되돌릴 수 있습니다."
+  ],
+  "快捷按钮": [
+    "快捷按鈕",
+    "Quick buttons",
+    "クイックボタン",
+    "빠른 버튼"
+  ],
+  "把上面的设置存成按钮，排在提示词工具栏里一键使用，最多 {0} 个。": [
+    "把上面的設定存成按鈕，排在提示詞工具列裡一鍵使用，最多 {0} 個。",
+    "Save the settings above as a button in the prompt toolbar for one-click use, up to {0}.",
+    "上の設定をボタンとして保存し、プロンプトのツールバーからワンクリックで使えます。最大 {0} 個。",
+    "위 설정을 버튼으로 저장해 프롬프트 도구 모음에서 한 번에 쓸 수 있습니다. 최대 {0}개."
+  ],
+  "快捷按钮名称": [
+    "快捷按鈕名稱",
+    "Quick button name",
+    "クイックボタン名",
+    "빠른 버튼 이름"
+  ],
+  "快捷按钮已满，请先删掉一个": [
+    "快捷按鈕已滿，請先刪掉一個",
+    "Quick buttons are full. Delete one first.",
+    "クイックボタンが上限です。先に1つ削除してください",
+    "빠른 버튼이 가득 찼습니다. 먼저 하나를 삭제하세요"
+  ],
+  "按钮名称": [
+    "按鈕名稱",
+    "Button name",
+    "ボタン名",
+    "버튼 이름"
+  ],
+  "存为快捷按钮": [
+    "存為快捷按鈕",
+    "Save as quick button",
+    "クイックボタンとして保存",
+    "빠른 버튼으로 저장"
+  ],
+  "删除快捷按钮：{0}": [
+    "刪除快捷按鈕：{0}",
+    "Delete quick button: {0}",
+    "クイックボタンを削除：{0}",
+    "빠른 버튼 삭제: {0}"
+  ],
+  "请先写好整理要求": [
+    "請先寫好整理要求",
+    "Write a tidy request first",
+    "先に整理の指示を書いてください",
+    "먼저 정리 요청을 작성하세요"
+  ],
+  "助手返回的整理结果无效": [
+    "助手回傳的整理結果無效",
+    "The assistant returned an invalid tidy result",
+    "アシスタントが返した整理結果が無効です",
+    "어시스턴트가 반환한 정리 결과가 올바르지 않습니다"
+  ],
+  "助手返回的整理结果不完整": [
+    "助手回傳的整理結果不完整",
+    "The assistant returned an incomplete tidy result",
+    "アシスタントが返した整理結果が不完全です",
+    "어시스턴트가 반환한 정리 결과가 불완전합니다"
+  ],
+  "请先给快捷按钮起个名字": [
+    "請先為快捷按鈕取個名字",
+    "Give the quick button a name first",
+    "先にクイックボタンの名前を付けてください",
+    "먼저 빠른 버튼 이름을 정하세요"
+  ],
+  "整理要求太长，请精简后再试": [
+    "整理要求太長，請精簡後再試",
+    "The tidy request is too long. Shorten it and try again.",
+    "整理の指示が長すぎます。短くしてから再試行してください",
+    "정리 요청이 너무 깁니다. 줄여서 다시 시도하세요"
+  ],
+  "待整理的提示词过长": [
+    "待整理的提示詞過長",
+    "The prompt to tidy is too long",
+    "整えるプロンプトが長すぎます",
+    "정리할 프롬프트가 너무 깁니다"
+  ],
+  "待整理的提示词无效": [
+    "待整理的提示詞無效",
+    "The prompt to tidy is invalid",
+    "整えるプロンプトが無効です",
+    "정리할 프롬프트가 올바르지 않습니다"
+  ],
+  "助手未返回有效的整理结果": [
+    "助手未回傳有效的整理結果",
+    "The assistant did not return a valid tidy result",
+    "アシスタントから有効な整理結果が返りませんでした",
+    "어시스턴트가 올바른 정리 결과를 반환하지 않았습니다"
+  ],
+  "没有在提示词里找到画风": [
+    "沒有在提示詞裡找到畫風",
+    "No style was found in the prompt",
+    "プロンプトに画風が見つかりませんでした",
+    "프롬프트에서 화풍을 찾지 못했습니다"
+  ],
+  "生成样张：提取画风串，接上 main 与角色出一张图": [
+    "生成樣張：擷取畫風串，接上 main 與角色出一張圖",
+    "Generate sample: extract the style string and render one image with main and characters",
+    "サンプル生成：画風プロンプトを抽出し、main とキャラクターをつなげて1枚生成します",
+    "샘플 생성: 화풍 프롬프트를 추출해 main과 캐릭터를 붙여 한 장 생성합니다"
+  ],
+  "参数来源": [
+    "參數來源",
+    "Parameters",
+    "パラメータの出どころ",
+    "매개변수 출처"
+  ],
+  "沿用原图设置": [
+    "沿用原圖設定",
+    "Use original image settings",
+    "元画像の設定を使う",
+    "원본 이미지 설정 사용"
+  ],
+  "用我的样张设置": [
+    "用我的樣張設定",
+    "Use my sample settings",
+    "自分のサンプル設定を使う",
+    "내 샘플 설정 사용"
+  ],
+  "用当前编辑器里的模型、尺寸、步数、采样器、种子、负面词和氛围参考，也就是这串原图的设置。": [
+    "用目前編輯器裡的模型、尺寸、步數、取樣器、種子、負面詞和氛圍參考，也就是這串原圖的設定。",
+    "Uses the model, size, steps, sampler, seed, negative prompt and vibe references in the current editor, i.e. this string's original image settings.",
+    "現在のエディターのモデル・サイズ・ステップ数・サンプラー・シード・ネガティブ・Vibe 参照、つまりこのプロンプトの元画像の設定を使います。",
+    "현재 편집기의 모델·크기·스텝·샘플러·시드·네거티브·바이브 참조, 즉 이 프롬프트 원본 이미지의 설정을 사용합니다."
+  ],
+  "main 提示词": [
+    "main 提示詞",
+    "Main prompt",
+    "main プロンプト",
+    "main 프롬프트"
+  ],
+  "例如：1girl, solo, upper body, simple background": [
+    "例如：1girl, solo, upper body, simple background",
+    "e.g. 1girl, solo, upper body, simple background",
+    "例：1girl, solo, upper body, simple background",
+    "예: 1girl, solo, upper body, simple background"
+  ],
+  "角色 {0} 提示词": [
+    "角色 {0} 提示詞",
+    "Character {0} prompt",
+    "キャラクター {0} のプロンプト",
+    "캐릭터 {0} 프롬프트"
+  ],
+  "删除角色 {0}": [
+    "刪除角色 {0}",
+    "Remove character {0}",
+    "キャラクター {0} を削除",
+    "캐릭터 {0} 삭제"
+  ],
+  "画风串由本地规则从当前提示词提取，接上 main，角色放进角色栏；提示词框不会改变。图片进当前预览和历史，扣费前照常确认。": [
+    "畫風串由本機規則從目前提示詞擷取，接上 main，角色放進角色欄；提示詞框不會改變。圖片進入目前預覽和歷史，扣費前照常確認。",
+    "The style string is extracted from the current prompt with local rules and followed by main; characters go into the character slots. The prompt box is not changed. The image goes to the current preview and history, with the usual cost confirmation.",
+    "画風プロンプトはローカルルールで現在のプロンプトから抽出され、main をつなげ、キャラクターはキャラクター欄に入ります。プロンプト欄は変わりません。画像は現在のプレビューと履歴に入り、課金前にはいつもどおり確認します。",
+    "화풍 프롬프트는 로컬 규칙으로 현재 프롬프트에서 추출해 main을 잇고, 캐릭터는 캐릭터 칸에 넣습니다. 프롬프트 칸은 바뀌지 않습니다. 이미지는 현재 미리보기와 기록에 들어가며 과금 전에 평소처럼 확인합니다."
+  ],
+  "出样张": [
+    "出樣張",
+    "Sample",
+    "サンプル生成",
+    "샘플 생성"
+  ],
+  "整理后生成样张": [
+    "整理後生成樣張",
+    "Generate a sample after tidying",
+    "整えた後にサンプルを生成",
+    "정리 후 샘플 생성"
+  ],
+  "用整理结果接上样张面板里的 main 和角色出一张图，参数按样张面板的选择。": [
+    "用整理結果接上樣張面板裡的 main 和角色出一張圖，參數依樣張面板的選擇。",
+    "Renders one image from the tidied result plus the main and characters from the sample panel, using the parameters chosen there.",
+    "整えた結果にサンプルパネルの main とキャラクターをつなげて1枚生成します。パラメータはサンプルパネルの選択に従います。",
+    "정리 결과에 샘플 패널의 main과 캐릭터를 붙여 한 장 생성합니다. 매개변수는 샘플 패널의 선택을 따릅니다."
+  ],
+  "尺寸": [
+    "尺寸",
+    "Size",
+    "サイズ",
+    "크기"
+  ],
+  "留空为随机": [
+    "留空為隨機",
+    "Leave empty for random",
+    "空欄でランダム",
+    "비워 두면 무작위"
+  ],
+  "只用于样张，不含角色、氛围参考与精准参考；第一次切换时已按当前参数填好。": [
+    "只用於樣張，不含角色、氛圍參考與精準參考；第一次切換時已依目前的參數填好。",
+    "Used only for samples, without characters, vibe references or character references. Filled from the current parameters the first time you switch.",
+    "サンプル専用で、キャラクター・Vibe 参照・精密参照は含みません。初めて切り替えたときに現在のパラメータで入力済みです。",
+    "샘플에만 쓰이며 캐릭터·바이브 참조·정밀 참조는 포함하지 않습니다. 처음 전환할 때 현재 매개변수로 채워 둡니다."
+  ],
+  "已填入当前参数": [
+    "已填入目前的參數",
+    "Filled in the current parameters",
+    "現在のパラメータを入力しました",
+    "현재 매개변수를 채웠습니다"
+  ],
+  "从当前参数填入": [
+    "從目前參數填入",
+    "Fill from current parameters",
+    "現在のパラメータから入力",
+    "현재 매개변수로 채우기"
+  ],
+  "沿用原图角色": [
+    "沿用原圖角色",
+    "Keep the original characters",
+    "元画像のキャラクターを使う",
+    "원본 캐릭터 유지"
+  ],
+  "角色、站位和精准参考都按原图来；下面填的样张角色先不用，取消勾选即恢复。": [
+    "角色、站位和精準參考都依原圖；下面填的樣張角色先不用，取消勾選即恢復。",
+    "Characters, positions and character references follow the original image; the sample characters below are set aside and come back when you uncheck this.",
+    "キャラクター・配置・精密参照は元画像のまま使います。下のサンプルキャラクターは一時的に使わず、チェックを外すと戻ります。",
+    "캐릭터·위치·정밀 참조는 원본 그대로 사용합니다. 아래 샘플 캐릭터는 잠시 쓰지 않으며 체크를 해제하면 돌아옵니다."
+  ],
+  "留空沿用原图的负面词": [
+    "留空沿用原圖的負面詞",
+    "Leave empty to use the original negative prompt",
+    "空欄なら元画像のネガティブを使う",
+    "비워 두면 원본 네거티브 사용"
   ]
 }

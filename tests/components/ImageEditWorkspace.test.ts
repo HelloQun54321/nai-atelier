@@ -236,7 +236,9 @@ describe('ImageEditControls', () => {
     const [clearPositive, clearNegative] = screen.getAllByRole('button', { name: '清空当前提示词' });
     expect(positive.parentElement!.contains(clearPositive)).toBe(false);
     expect(negative.parentElement!.contains(clearNegative)).toBe(false);
-    expect(clearPositive.parentElement!.parentElement!.parentElement!.textContent).toContain(operation === 'inpaint' ? '重绘提示词' : operation === 'outpaint' ? '扩图提示词' : '图生图提示词');
+    const positiveHeader = clearPositive.closest('div.justify-between')!;
+    expect(positiveHeader.textContent).toContain(operation === 'inpaint' ? '重绘提示词' : operation === 'outpaint' ? '扩图提示词' : '图生图提示词');
+    expect(positiveHeader.contains(screen.getByRole('button', { name: '整理提示词' }))).toBe(true);
     expect(clearNegative.parentElement!.parentElement!.textContent).toContain('全局负面提示词');
     const originalNegative = negative.value;
     fireEvent.click(clearPositive); expect(onDraftChange).toHaveBeenLastCalledWith(expect.objectContaining({ prompt: '', promptSource: 'custom', negativePrompt: originalNegative }));

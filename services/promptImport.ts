@@ -74,7 +74,8 @@ const atomicTags = (segment: string): string[] => unwrapSegment(segment)
   .map(tag => normalizeTagQuery(tag.replace(/^[{}[\]()]+|[{}[\]()]+$/g, '')))
   .filter(Boolean);
 
-const isStyleTag = (tag: string, categories: ReadonlyMap<string, TagSuggestion>): boolean => {
+/** 画师、质量、年代、媒介与渲染词；tag 须先经 normalizeTagQuery。 */
+export const isNovelAiStyleTag = (tag: string, categories: ReadonlyMap<string, TagSuggestion>): boolean => {
   if (categories.get(tag)?.category === 1) return true;
   return STYLE_EXACT.has(tag) || STYLE_PATTERNS.some(pattern => pattern.test(tag));
 };
@@ -91,7 +92,7 @@ export const splitNovelAiPromptWithCategories = (
   const subjectSegments: string[] = [];
   for (const segment of tokenizeNovelAiPrompt(prompt)) {
     const tags = atomicTags(segment);
-    (tags.length > 0 && tags.every(tag => isStyleTag(tag, categories))
+    (tags.length > 0 && tags.every(tag => isNovelAiStyleTag(tag, categories))
       ? styleSegments
       : subjectSegments).push(segment);
   }

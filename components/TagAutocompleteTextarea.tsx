@@ -5,6 +5,7 @@ import { Eraser, Info, Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide
 import type { PromptTagLibraryTarget } from './PromptTagLibraryInfo';
 import { InfoPopover } from './InfoPopover';
 import { PromptHeightHandle } from './PromptHeightHandle';
+import { PromptTidyActions, type PromptTidyOptions } from './PromptTidyActions';
 import type { PromptChain } from '../types';
 import { PromptLibraryChooser, PromptLibraryFieldActions, usePromptLibrary } from './PromptLibraryAccess';
 import { isLibraryOnlyQuery, libraryEntryText, librarySectionOf, searchLibraryEntries, type PromptLibraryField } from '../services/promptLibraryEntries';
@@ -48,6 +49,8 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   libraryEnabled?: boolean;
   /** 为 false 时不渲染「使用／收录提示词」（由外层标题旁自行放置，避免 portal 错绑用途）。 */
   promptLibraryActions?: boolean;
+  /** 提供时在工具栏加「整理」：提取画风、清洗格式，结果覆盖原文并可撤销。 */
+  promptTidy?: PromptTidyOptions;
 }
 type PromptSuggestion = TagSuggestion & { libraryEntry?: PromptChain };
 const PromptTagLibraryInfo = React.lazy(() => import('./PromptTagLibraryInfo').then(module => ({ default: module.PromptTagLibraryInfo })));
@@ -105,6 +108,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   libraryField,
   libraryEnabled = true,
   promptLibraryActions = true,
+  promptTidy,
   disabled,
   readOnly,
   onFocus,
@@ -159,6 +163,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [insertionIndex, setInsertionIndex] = useState<number | null>(null);
   const [editingTag, setEditingTag] = useState<{ id: string; start: number; end: number } | null>(null);
   const [clearActionState, setClearActionState] = useState<'cleared' | 'undone' | null>(null);
+  // 清空与整理共用一次性撤销状态，按钮只在对应操作之后显示撤销。
+  const [undoableAction, setUndoableAction] = useState<'clear' | 'tidy'>('clear');
   const historyRef = useRef({ value, past: [] as string[], future: [] as string[], typedAt: 0 });
   const neutralGroupsRef = useRef({ value, groups: [] as Array<{ start: number; end: number }> });
   const [, refreshHistory] = useState(0);
@@ -448,7 +454,18 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     closeSuggestions();
     commitValue('');
     setClearActionState('cleared');
+    setUndoableAction('clear');
     textareaRef.current?.focus();
+  };
+  const applyTidy = (next: string) => {
+    if (!editable || next === value) return;
+    clearSelection();
+    setDeleteMode(false);
+    setTagInput('');
+    closeSuggestions();
+    commitValue(next);
+    setClearActionState('cleared');
+    setUndoableAction('tidy');
   };
   const deleteSelected = () => {
     if (!editable || !selectedTokens.length) return;
@@ -776,14 +793,15 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     };
   }, [isOpen, completionSource]);
 
+  const clearUndo = clearActionState === 'cleared' && undoableAction === 'clear';
   const clearAction = <button type="button"
-    disabled={!editable || (!value.length && clearActionState !== 'cleared')}
-    aria-label={t(clearActionState === 'cleared' ? '撤销清空' : '清空当前提示词')}
-    title={t(clearActionState === 'cleared' ? '撤销清空' : '清空当前提示词')}
+    disabled={!editable || (!value.length && !clearUndo)}
+    aria-label={t(clearUndo ? '撤销清空' : '清空当前提示词')}
+    title={t(clearUndo ? '撤销清空' : '清空当前提示词')}
     onMouseDown={event => event.preventDefault()}
-    onClick={() => { if (clearActionState === 'cleared') moveHistory(); else clearPrompt(); textareaRef.current?.focus(); }}
+    onClick={() => { if (clearUndo) moveHistory(); else clearPrompt(); textareaRef.current?.focus(); }}
     className="mobile-touch flex h-7 w-7 items-center justify-center rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-700 dark:hover:text-gray-200">
-    {clearActionState === 'cleared' ? <RotateCcw aria-hidden="true" className="h-4 w-4" /> : <Eraser aria-hidden="true" className="h-4 w-4" />}
+    {clearUndo ? <RotateCcw aria-hidden="true" className="h-4 w-4" /> : <Eraser aria-hidden="true" className="h-4 w-4" />}
   </button>;
   const tagInputField = <span key="tag-input" className="inline-grid min-w-[4ch] max-w-full grid-cols-[minmax(0,1fr)] rounded-md border border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_8%,transparent)] font-mono text-micro leading-tight ring-1 ring-[var(--nai-accent)]">
     <span aria-hidden="true" className="invisible min-w-0 whitespace-pre-wrap px-1 py-0.5 [grid-area:1/1] [overflow-wrap:anywhere]">{tagInput + '\u200b'}</span>
@@ -841,7 +859,11 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const libraryAction = personalLibrary && promptLibraryActions !== false
     ? <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />
     : null;
-  const promptActions = <>{libraryAction}{clearAction}<PromptHeightHandle targetRef={textareaRef} label={t('调整输入框高度')} alwaysVisible={inputAutoHeight} onManualResize={() => { inputManualHeightRef.current = true; }} /></>;
+  const tidyAction = promptTidy
+    ? <PromptTidyActions value={value} disabled={!editable} notify={promptTidy.notify} sample={promptTidy.sample} onApply={applyTidy}
+      canUndo={clearActionState === 'cleared' && undoableAction === 'tidy'} onUndo={() => { moveHistory(); textareaRef.current?.focus(); }} />
+    : null;
+  const promptActions = <>{tidyAction}{libraryAction}{clearAction}<PromptHeightHandle targetRef={textareaRef} label={t('调整输入框高度')} alwaysVisible={inputAutoHeight} onManualResize={() => { inputManualHeightRef.current = true; }} /></>;
 
   return (
     <div className={`group relative ${containerClassName}`} onKeyDownCapture={event => {
@@ -866,7 +888,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       }
       if (event.key === 'Escape' && deleteMode) { event.preventDefault(); event.stopPropagation(); setDeleteMode(false); clearSelection(); }
     }}>
-      {clearActionSlotRef && clearActionTarget ? createPortal(libraryAction ? <span className="flex items-center gap-1">{promptActions}</span> : promptActions, clearActionTarget) : <div className="mb-1 flex justify-end gap-1">{promptActions}</div>}
+      {clearActionSlotRef && clearActionTarget ? createPortal(libraryAction || tidyAction ? <span className="flex items-center gap-1">{promptActions}</span> : promptActions, clearActionTarget) : <div className="mb-1 flex justify-end gap-1">{promptActions}</div>}
       {librarySelection && <PromptLibraryChooser value={value} onText={commitValue} field={libraryField} initialEntry={librarySelection.entry} completion={librarySelection.edit} onClose={() => setLibrarySelection(null)} />}
       <div className="relative min-w-0">
       <textarea

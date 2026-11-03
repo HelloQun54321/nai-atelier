@@ -9,6 +9,8 @@ import { PresetSection, PresetSource, PresetSourceBadges, PromptCopyButton } fro
 import type { PromptFragmentKind } from '../../services/promptLibraryEntries';
 import type { PromptSectionSource, PromptSections } from '../../types';
 import { getEditableGlobalPrompt } from '../../services/promptUtils';
+import type { PromptTidyNotify, PromptTidyOptions } from '../PromptTidyActions';
+import type { PromptSampleBridge } from '../../services/promptSampleSettings';
 
 interface PromptFieldProps {
     label: string;
@@ -27,9 +29,11 @@ interface PromptFieldProps {
     onNegativeChange?: (value: string) => void;
     /** 外层分区标题已是同名时只保留给读屏，不再显示第二行重复标题 */
     hideLabel?: boolean;
+    /** 提供时工具栏显示「整理」，带 sample 时再显示「样张」 */
+    tidy?: PromptTidyOptions;
 }
 
-export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, directoryId, purposeId, roleId, negativeLabel, disabled, tagAssistEnabled, onChange, onCopy, sourceName, negative, negativeLocked, onNegativeChange, hideLabel }) => {
+export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, directoryId, purposeId, roleId, negativeLabel, disabled, tagAssistEnabled, onChange, onCopy, sourceName, negative, negativeLocked, onNegativeChange, hideLabel, tidy }) => {
     const id = useId();
     const clearSlot = useRef<HTMLSpanElement>(null);
     const negativeContent = onNegativeChange && <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
@@ -50,6 +54,7 @@ export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placehol
             </div>
         </div>
         <TagAutocompleteTextarea id={id} aria-label={t(label)} clearActionSlotRef={clearSlot}
+            promptTidy={tidy}
             libraryField={{ kind: library, directoryId, purposeId, roleId }}
             tagAssistEnabled={tagAssistEnabled} showTranslations={!!value.trim()} disabled={disabled} value={value} onValueChange={onChange}
             placeholder={t(placeholder)}
@@ -77,13 +82,15 @@ export interface ChainEditorPromptInputsProps {
     markChange: () => void;
     activeLabLayout: LabPageLayout;
     mobileEditorTab: 'global' | 'character' | 'reference' | 'params';
+    notify?: PromptTidyNotify;
+    sample?: PromptSampleBridge;
 }
 
 export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = ({
     prompt, setPrompt, sections, setSections, supplementPrompt = mergePromptSections(sections), setSupplementPrompt,
     presetSources, tagAssistEnabled, canEdit, copyPromptToClipboard,
     onPlainPromptChange, embedded = false,
-    markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab,
+    markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab, notify, sample,
 }) => {
     useLanguage();
     const content = <section hidden={mobileEditorTab !== 'global'} className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>
@@ -93,7 +100,7 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
             </div>
             <div className="flex flex-col gap-3">
                 <PromptField label="全局正面提示词" hideLabel={!embedded} value={getEditableGlobalPrompt(prompt, supplementPrompt)} placeholder="全局正面提示词" disabled={!canEdit}
-                    tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={value => {
+                    tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} tidy={notify && { notify, sample }} onChange={value => {
                         if (onPlainPromptChange) onPlainPromptChange(value);
                         else { setPrompt(value); setSupplementPrompt?.(''); setSections?.({}); }
                         markPresetSectionModified('base'); markPresetSectionModified('subject'); markChange();

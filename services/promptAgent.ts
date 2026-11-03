@@ -457,6 +457,14 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json() as Promise<{ items: Array<{ id: string; kind: 'global' | 'character'; sections: Record<string, string> }> }>;
   },
+  /** 按要求整理提示词：默认只回每段去留，原文由调用方拼回；rewrite 时才返回模型改写的正文。 */
+  tidyPrompt: async (input: { instruction: string; chunks: string[] } | { instruction: string; rewrite: true; prompt: string }) => {
+    const response = await fetch('/api/prompt-agent/tidy-prompt', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    });
+    if (!response.ok) return readError(response) as never;
+    return response.json() as Promise<{ keep?: boolean[]; prompt?: string }>;
+  },
   /**
    * 提示词／图片 → 当前目录候选（忠实提取，不是创作补全）。
    *

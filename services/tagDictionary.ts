@@ -201,7 +201,8 @@ export const lookupTagTranslations = async (rawTags: string[]): Promise<Map<stri
 };
 
 /** 当前提示词的精确目录身份；不依赖中文译名，也不受补全候选数量限制。 */
-export const lookupTagCatalogEntries = async (rawTags: string[]): Promise<Map<string, TagSuggestion>> => {
+/** 按原名精确查词库条目，包含全部分类，不要求有中文译名。 */
+export const lookupTagDictionaryEntries = async (rawTags: string[]): Promise<Map<string, TagSuggestion>> => {
   const tags = new Set(rawTags.map(normalizeTagQuery).filter(Boolean));
   if (!tags.size) return new Map();
   const manifest = await loadManifest();
@@ -209,11 +210,14 @@ export const lookupTagCatalogEntries = async (rawTags: string[]): Promise<Map<st
   const shards = await Promise.all(keys.map(key => loadShard(manifest, key, 'english')));
   return new Map(shards.flatMap(entries => entries.flatMap(entry => {
     const key = normalizeTagQuery(entry[0]);
-    return tags.has(key) && (entry[2] === 1 || entry[2] === 4) ? [[key, {
-      name: entry[0], chinese: entry[1], category: entry[2], categoryLabel: CATEGORY_LABELS[entry[2]], postCount: entry[3], isNovelAI: entry[4] === 1,
+    return tags.has(key) ? [[key, {
+      name: entry[0], chinese: entry[1], category: entry[2], categoryLabel: CATEGORY_LABELS[entry[2]] || 'Tag', postCount: entry[3], isNovelAI: entry[4] === 1,
     }] as const] : [];
   })));
 };
+
+export const lookupTagCatalogEntries = async (rawTags: string[]): Promise<Map<string, TagSuggestion>> =>
+  new Map([...await lookupTagDictionaryEntries(rawTags)].filter(([, entry]) => entry.category === 1 || entry.category === 4));
 
 export interface ArtistDictionaryEntry {
   name: string;
