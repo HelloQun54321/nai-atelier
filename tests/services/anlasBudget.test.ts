@@ -126,7 +126,8 @@ describe('image edit cost estimation', () => {
   it('Medium 步数系数在向上取整前生效，文生图与图生图／重绘共用动态规则', () => {
     const medium = { ...params, model: 'nai-diffusion-5-full-medium' };
     try {
-      applyEstimatorRuntime({ ...DEFAULT_NAI_RUNTIME, billing: { ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: {
+      applyEstimatorRuntime({ ...DEFAULT_NAI_RUNTIME, // 清空新式 medium 规则，单独验证旧的步数倍率路径仍然生效。
+      billing: { ...DEFAULT_NAI_RUNTIME.billing, mediumCostRules: {}, modelStepMultipliers: {
         [medium.model]: 1 / 1.06521739, [`${medium.model}-inpainting`]: 1 / 1.06521739,
       } } });
       expect(estimateV45GenerationCost(medium, false)).toBe(17);

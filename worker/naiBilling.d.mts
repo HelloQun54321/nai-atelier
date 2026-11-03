@@ -6,6 +6,8 @@ export interface NaiBillingRules {
   freeWithCharacterReference: boolean;
   modelMultipliers: Record<string, number>;
   modelStepMultipliers: Record<string, number>;
+  /** medium 专用算式：面积项与固定等效步数一起除以折扣因子。 */
+  mediumCostRules: Record<string, { steps: number; divisor: number }>;
   smeaMultiplier: number;
   smeaDynamicMultiplier: number;
   freeVibeCount: number;

@@ -1234,11 +1234,11 @@ test('模型能力只读取返回对象，Medium 继承额度、流式和角色�
 });
 
 test('官方计费提取覆盖免费资格、模型倍率与附加费，结构失配必须告警', () => {
-  assert.deepEqual(extractNaiBillingRules(NAI_BILLING_BUNDLE), { ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: {} });
+  assert.deepEqual(extractNaiBillingRules(NAI_BILLING_BUNDLE), { ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: {}, mediumCostRules: {} });
   const changed = NAI_BILLING_BUNDLE.replace('!e.characterRef&&', '!e.characterRef&&!e.image&&!e.mask&&')
     .replace('w*=1.5', 'w*=2').replace('v-=1', 'v-=2').replace('e-4', 'e-3')
     .replace(',p=2;', ',p=4;').replace('g+=5', 'g+=7').replace('price:2', 'price:6');
-  assert.deepEqual(extractNaiBillingRules(changed), { ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: {},
+  assert.deepEqual(extractNaiBillingRules(changed), { ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: {}, mediumCostRules: {},
     freeImageToImage: false, freeInpainting: false, freeSamples: 2, modelMultipliers: { v5: 2 },
     freeVibeCount: 3, extraVibeCost: 4, characterReferenceCost: 7, vibeEncodingCost: 6 });
   for (const broken of [NAI_BILLING_BUNDLE.replace('w*=1.5', 'w*=getPrice(a)'),
@@ -1280,7 +1280,7 @@ test('官方 Medium 步数系数动态提取，未知算式不能伪装成健康
     costCoefficientSteps: DEFAULT_NAI_RUNTIME.costCoefficientSteps,
   });
   assert.deepEqual(extractNaiBillingRules(NAI_MEDIUM_BILLING_BUNDLE), {
-    ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: stepMultipliers,
+    ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: stepMultipliers, mediumCostRules: {},
   });
   assert.deepEqual(extractNaiBillingRules(NAI_MEDIUM_BILLING_BUNDLE.replace('1/1.06521739', '1/2')).modelStepMultipliers,
     { 'nai-diffusion-5-full-medium': 0.5, 'nai-diffusion-5-full-medium-inpainting': 0.5 });

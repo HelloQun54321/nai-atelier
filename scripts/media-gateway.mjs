@@ -1229,19 +1229,26 @@ export const applyNaiRuntimeOverride = partial => {
 };
 
 export const extractNaiImagesPerPercent = text => {
-  // Turbopack 保留导出名，恢复速率与张数函数的排列不再固定。
+  const accept = value => Number.isFinite(value) && value > 0 && value < 1000;
+  // 具名导出：早期 Turbopack 会保留 usageImagesForPercent，恢复速率与张数函数的排列不固定。
   const exported = text.match(/"usageImagesForPercent",0,function\((\w+)\)\{return Math\.round\((\d+(?:\.\d+)?)\*\1\)\}/);
-  if (exported) {
-    const value = Number(exported[2]);
-    return Number.isFinite(value) && value > 0 && value < 1000 ? value : null;
+  if (exported) return accept(Number(exported[2])) ? Number(exported[2]) : null;
+  // 现版把导出名压成单个字母（如 "z",0,function(e){...}），改按同组用法语义定位：
+  // 「每百分比张数」与「已耗尽/低于 5%」判定、timeUntilNextPercent 换算写在同一导出表里。
+  for (const match of text.matchAll(/Math\.round\((\d+(?:\.\d+)?)\*(\w+)\)/g)) {
+    const scope = text.slice(match.index, match.index + 600);
+    if (!new RegExp(`${match[2]}\\.isNegative`).test(scope)) continue;
+    if (!/\.percent<5/.test(scope) || !/timeUntilNextPercent/.test(scope)) continue;
+    const value = Number(match[1]);
+    if (accept(value)) return value;
   }
-  // 系数函数紧跟在 timeUntilNextPercent 的恢复速率函数之后，只在锚点后的小窗口
+  // 兜底：系数函数紧跟 timeUntilNextPercent 的恢复速率函数之后，只在锚点后的小窗口
   // 内查找，避免误匹配其他模块里同样形如 Math.round(N*var) 的代码。
   const pattern = /Math\.round\((\d+(?:\.\d+)?)\*\w+\)\}/;
   for (const anchor of text.matchAll(/timeUntilNextPercent/g)) {
     const m = pattern.exec(text.slice(anchor.index, anchor.index + 400));
     const value = m ? Number(m[1]) : NaN;
-    if (Number.isFinite(value) && value > 0 && value < 1000) return value;
+    if (accept(value)) return value;
   }
   return null;
 };
@@ -1261,7 +1268,8 @@ export const extractNaiFreeTierLimits = text => {
 };
 
 // 费用界面拷贝实际参数后叠加参考附加费。免费判定也用于自动重试，不能只看判定函数。
-export const extractNaiPriceCalculator = text => text.match(/async\([^)]*\)=>\{let (\w+)=\{\.\.\.(\w+)\};[\s\S]{0,3500}?\w+\(\{price:\(0,\w+\.\w+\)\(\1,(?:\w+|\(0,\w+\.pricingSubscription\)\(\w+\)),\w+\)\+\w+,additionalPrice:\w+\}\)\}/)?.[0] || null;
+// 第二参数既可能是归一化后的会话、也可能是惰性订阅转换的调用结果，按「变量或一次调用」接受。
+export const extractNaiPriceCalculator = text => text.match(/async\([^)]*\)=>\{let (\w+)=\{\.\.\.(\w+)\};[\s\S]{0,4000}?\w+\(\{price:\(0,[\w$]+\.[\w$]+\)\(\1,(?:\(0,[\w$]+\.[\w$]+\)\(\w+\)|\w+),\w+\)\+\w+,additionalPrice:\w+\}\)\}/)?.[0] || null;
 
 // 新版将会话转换为扁平计价订阅，字段含义变化时仍要求人工核对。
 export const extractNaiPricingSubscription = text => {
@@ -1272,7 +1280,7 @@ export const extractNaiPricingSubscription = text => {
 export const extractNaiCostCalculator = text => {
   const formula = text.match(/Math\.ceil\(\d+(?:\.\d+)?e-?\d+\*\w+\+\d+(?:\.\d+)?e-?\d+\*\w+\*\w+(?:\*\w+)?\)/);
   if (!formula) return null;
-  const declaration = [...text.slice(0, formula.index).matchAll(/(?:let \w+=|"checkStableDiffusionPrice",0,)function\(\w+,\w+,\w+\)\{/g)].at(-1);
+  const declaration = [...text.slice(0, formula.index).matchAll(/(?:let \w+=|"[^"]{0,48}",0,)function\(\w+,\w+,\w+\)\{/g)].at(-1);
   if (!declaration) return null;
   const start = declaration.index + declaration[0].indexOf('function');
   const end = findBalancedEnd(text, text.indexOf('{', start), '{', '}');
@@ -1280,7 +1288,13 @@ export const extractNaiCostCalculator = text => {
   return /return (\w+)(?:>(?:\w+\.\w+|\d+)\?-3:\1)?\*\w+\}$/.test(calculator) ? calculator : null;
 };
 
-export const extractNaiVibeCostCalculator = text => text.match(/"vtAdditionalPrice",0,(function\((\w+)\)\{return (\d+)\*Math\.max\(0,\2-(\d+)\)\})/);
+export const extractNaiVibeCostCalculator = text => {
+  const named = text.match(/"vtAdditionalPrice",0,(function\((\w+)\)\{return (\d+)\*Math\.max\(0,\2-(\d+)\)\})/);
+  if (named) return named;
+  // 导出名被压成单个字母后按函数体形状认领；全局唯一才采用，避免误取同形状的其他算式。
+  const candidates = [...text.matchAll(/"[\w$]+",0,(function\((\w+)\)\{return (\d+)\*Math\.max\(0,\2-(\d+)\)\})/g)];
+  return candidates.length === 1 ? candidates[0] : null;
+};
 
 export const extractNaiPriceCallback = (text, name) => text.match(new RegExp(`function ${name}\\((\\w+)\\)\\{return \\1\\.enabled\\}|function ${name}\\((\\w+),(\\w+)\\)\\{return \\2\\+\\3\\}|function ${name}\\((\\w+)\\)\\{let\\{price:(\\w+)\\}=\\4;return \\5\\}`))?.[0] || null;
 
@@ -1291,7 +1305,9 @@ export const extractNaiBillingRules = text => {
   const variable = free[1];
   const clauses = free[2].split('&&');
   if (!clauses.every(clause => new RegExp(`^(?:!${variable}\\.(?:characterRef|image|mask)|${variable}\\.width\\*${variable}\\.height<=\\d+|${variable}\\.steps<=\\d+)$`).test(clause))) return null;
-  const formula = text.match(/Math\.ceil\((\d+(?:\.\d+)?e-?\d+)\*\w+\+(\d+(?:\.\d+)?e-?\d+)\*\w+\*\w+(?:\*(\w+))?\)\*\(\w+\?([\d.]+):\w+\?([\d.]+):1\)/);
+  // 条件因子可能写成连续判断（如 smea&&smeaDyn?1.4:smea?1.2:1），不再保证单个变量；
+  // 新版把整段算式包进三元（如 h?...:Math.ceil(...)），ceil 后可能跟着额外的右括号。
+  const formula = text.match(/Math\.ceil\((\d+(?:\.\d+)?e-?\d+)\*\w+\+(\d+(?:\.\d+)?e-?\d+)\*\w+\*\w+(?:\*(\w+))?\)\)?\*\([^()?]{0,48}\?([\d.]+):[^()?]{0,48}\?([\d.]+):1\)/);
   if (!formula) return null;
   const calculator = extractNaiCostCalculator(text);
   if (!calculator || /\w+\+=/.test(calculator) || [...calculator.matchAll(/\w+-=/g)].length !== 1) return null;
@@ -1304,13 +1320,19 @@ export const extractNaiBillingRules = text => {
   const normalizedSubscription = /\(0,\w+\.pricingSubscription\)\(\w+\)/.test(priceCalculator);
   if (normalizedSubscription && !extractNaiPricingSubscription(text)) return null;
   const subscription = calculator.match(/^function\(\w+,(\w+),\w+\)/)[1];
-  const freeSamples = calculator.match(normalizedSubscription
-    ? new RegExp(`\\b${subscription}\\.tier>=3&&${subscription}\\.active&&!\\w+&&!\\w+&&\\(\\w+-=(\\d+)\\)`)
-    : /subscription\.tier>=3[^;]{0,150}&&\(\w+-=(\d+)\)/);
+  // 参数名随压缩变化，两种形态都按捕获到的会话变量名匹配，不再假定它叫 subscription。
+  // 归一化后会话是扁平的 `t.tier`；未归一化时是 `t.subscription.tier` 加一次判定调用。
+  const flatFree = new RegExp(`\\b${subscription}\\.tier>=3&&${subscription}\\.active&&!\\w+&&!\\w+&&\\(\\w+-=(\\d+)\\)`).exec(calculator);
+  const nestedFree = new RegExp(`\\b${subscription}\\.subscription\\.tier>=3&&\\(0,[\\w$]+\\.[\\w$]+\\)\\(${subscription}\\.subscription\\)&&!\\w+&&!\\w+&&\\(\\w+-=(\\d+)\\)`).exec(calculator);
+  // 官方提供计价订阅转换函数时，未归一化的会话必须真的调用它，否则说明结构已变。
+  if ((flatFree || nestedFree) && /"pricingSubscription",\(\)=>/.test(text) && !normalizedSubscription) return null;
+  const freeSamples = flatFree || nestedFree;
+
   const additional = priceCalculator.match(/additionalPrice:(\w+)/)?.[1];
   if (!additional) return null;
   const additions = [...priceCalculator.matchAll(new RegExp(`\\b${additional}\\+=`, 'g'))].length;
-  const exportedVibeAssignment = priceCalculator.match(new RegExp(`\\b${additional}=0\\+\\(await Promise\\.all\\(\\w+\\.map\\(\\w+=>\\{let\\{id:\\w+,information_extracted:\\w+,mask:\\w+,enabled:\\w+\\}=\\w+;return!1===\\w+\\?\\{exists:!0,price:0\\}:\\w+\\.\\w+\\.getPrice\\(\\w+,\\w+,\\w+,\\{information_extracted:\\w+,mask:\\w+\\}\\)\\}\\)\\)\\)\\.map\\(\\w+\\)\\.reduce\\(\\w+,0\\)\\+\\(0,\\w+\\.vtAdditionalPrice\\)\\(\\w+\\.filter\\(\\w+\\)\\.length\\)`));
+  // 压缩后的模块别名可能带 `$`（如 A$.b），附加费函数也不再叫 vtAdditionalPrice，按形状认领。
+  const exportedVibeAssignment = priceCalculator.match(new RegExp(`\\b${additional}=0\\+\\(await Promise\\.all\\([\\w$]+\\.map\\([\\w$]+=>\\{let\\{id:[\\w$]+,information_extracted:[\\w$]+,mask:[\\w$]+,enabled:[\\w$]+\\}=[\\w$]+;return!1===[\\w$]+\\?\\{exists:!0,price:0\\}:[\\w$]+\\.[\\w$]+\\.getPrice\\([\\w$]+,[\\w$]+,[\\w$]+,\\{information_extracted:[\\w$]+,mask:[\\w$]+\\}\\)\\}\\)\\)\\)\\.map\\([\\w$]+\\)\\.reduce\\([\\w$]+,0\\)\\+\\(0,[\\w$]+\\.[\\w$]+\\)\\([\\w$]+\\.filter\\([\\w$]+\\)\\.length\\)`));
   if (exportedVibe ? additions !== 1 || !exportedVibeAssignment
     || [...priceCalculator.matchAll(new RegExp(`\\b${additional}=(?!=)`, 'g'))].length !== 2 : additions !== 3) return null;
   if (exportedVibe && [...priceCalculator.matchAll(/\.(?:filter|map|reduce)\((\w+)(?:,0)?\)/g)]
@@ -1344,6 +1366,19 @@ export const extractNaiBillingRules = text => {
       }
     }
   }
+  // medium 改成专用算式：面积项与等效步数项一起除以固定因子，旧版只对步数项打折。
+  // 形如 `h?(A*i+B*i*23)/1.75:Math.ceil(A*i+B*i*steps)`，h 是 medium 的模型判定。
+  const mediumCostRules = {};
+  const mediumBranch = text.match(/(\w+)\?\((\d+(?:\.\d+)?e-?\d+)\*(\w+)\+(\d+(?:\.\d+)?e-?\d+)\*\3\*(\d+)\)\/([\d.]+):Math\.ceil\(/);
+  if (mediumBranch) {
+    const enums = text.match(new RegExp(`\\b${mediumBranch[1]}=\\([^)]*\\)===([\\w$.]+)\\|\\|\\w+===([\\w$.]+)`));
+    for (const name of [enums?.[1], enums?.[2]]) {
+      const model = officialModelEnumToId(name);
+      if (!model) continue;
+      mediumCostRules[model] = { steps: Number(mediumBranch[5]), divisor: Number(mediumBranch[6]) };
+    }
+    if (!Object.keys(mediumCostRules).length) return null;
+  }
   const rules = {
     minimumCost: Number(minimum[1]), freeSamples: Number(freeSamples[1]),
     freeImageToImage: !clauses.includes(`!${variable}.image`),
@@ -1351,6 +1386,7 @@ export const extractNaiBillingRules = text => {
     freeWithCharacterReference: true,
     modelMultipliers,
     modelStepMultipliers,
+    mediumCostRules,
     smeaMultiplier: Number(formula[5]), smeaDynamicMultiplier: Number(formula[4]),
     freeVibeCount: Number(exportedVibe ? exportedVibe[4] : vibe[4]), extraVibeCost: Number(exportedVibe ? exportedVibe[3] : vibe[2]),
     characterReferenceCost: Number(reference[2]), vibeEncodingCost: Number(encoding[1]),

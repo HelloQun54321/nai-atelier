@@ -8,6 +8,11 @@ export const DEFAULT_NAI_BILLING = {
   freeWithCharacterReference: true,
   modelMultipliers: { v5: 1.5 },
   modelStepMultipliers: { 'nai-diffusion-5-full-medium': 1 / 1.06521739, 'nai-diffusion-5-full-medium-inpainting': 1 / 1.06521739 },
+  // 官方现版把 medium 的折扣挪进专用算式：面积项一起打折，步数项换成固定等效步数。
+  mediumCostRules: {
+    'nai-diffusion-5-full-medium': { steps: 23, divisor: 1.75 },
+    'nai-diffusion-5-full-medium-inpainting': { steps: 23, divisor: 1.75 },
+  },
   smeaMultiplier: 1.2,
   smeaDynamicMultiplier: 1.4,
   freeVibeCount: 4,
@@ -22,6 +27,9 @@ export const isNaiBillingRules = value => Boolean(value && typeof value === 'obj
     const actual = value[key];
     if (key === 'modelMultipliers' || key === 'modelStepMultipliers') return actual && typeof actual === 'object' && !Array.isArray(actual)
       && Object.values(actual).every(multiplier => Number.isFinite(multiplier) && multiplier > 0);
+    if (key === 'mediumCostRules') return actual && typeof actual === 'object' && !Array.isArray(actual)
+      && Object.values(actual).every(rule => rule && typeof rule === 'object'
+        && Number.isFinite(rule.steps) && rule.steps > 0 && Number.isFinite(rule.divisor) && rule.divisor > 0);
     return typeof baseline === 'boolean' ? typeof actual === 'boolean' : Number.isFinite(actual) && actual >= 0;
   });
 
@@ -39,8 +47,13 @@ export const estimateNaiBilling = (parameters, model, runtime, opus = false, usa
     && (!referenceCount || rules.freeWithCharacterReference)
     && (!parameters.image || rules.freeImageToImage)
     && (!parameters.mask || rules.freeInpainting);
-  const stepMultiplier = rules.modelStepMultipliers[model] ?? 1;
-  const raw = Math.ceil(runtime.costCoefficientArea * width * height + runtime.costCoefficientSteps * width * height * steps * stepMultiplier);
+  // medium 走专用算式：面积项与固定等效步数一起除以折扣因子，且官方不再先向上取整。
+  const medium = rules.mediumCostRules?.[model];
+  const area = runtime.costCoefficientArea * width * height;
+  const stepTerm = runtime.costCoefficientSteps * width * height;
+  const raw = medium
+    ? (area + stepTerm * medium.steps) / medium.divisor
+    : Math.ceil(area + stepTerm * steps * (rules.modelStepMultipliers[model] ?? 1));
   const family = String(model || '').match(/^nai-diffusion-(\d+)(?:-|$)/)?.[1];
   const multiplier = rules.modelMultipliers[`v${family}`] ?? 1;
   const smea = parameters.sm ? parameters.sm_dyn ? rules.smeaDynamicMultiplier : rules.smeaMultiplier : 1;

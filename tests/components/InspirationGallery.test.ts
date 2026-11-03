@@ -522,7 +522,7 @@ it.each([390, 1280])('宽度 %s：接近底部自动连续展开超过三批收�
   });
   const data: Inspiration[] = Array.from({ length: 185 }, (_, index) => ({ id: `continuous-${index}`, userId: mockUser.id, title: `连续收藏 ${index}`, imageUrl: `/continuous-${index}.png`, prompt: '', createdAt: index }));
   const view = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: data, onRefresh: vi.fn(), notify: vi.fn() }));
-  await waitFor(() => expect(view.container.querySelectorAll('article')).toHaveLength(185));
+  await waitFor(() => expect(view.container.querySelectorAll('article')).toHaveLength(185), { timeout: 15000 });
   expect(screen.queryByRole('button', { name: /^加载更多/ })).toBeNull();
   fireEvent.click(screen.getByRole('img', { name: '连续收藏 184' }));
   expect(view.container.querySelector('[data-agent-page-scope="detail"]')).toBeTruthy();

@@ -82,16 +82,33 @@ const compareOfficialBilling = async (bundle, runtime) => {
   const priceSource = extractNaiPriceCalculator(bundle);
   assert.ok(priceSource, '未识别官方实际费用调用');
   const params = priceSource.match(/^async\(([^)]*)\)/)?.[1].split(',');
-  const price = priceSource.match(/price:\(0,(\w+)\.(\w+)\)\(/);
-  const account = priceSource.match(/let \w+=\(0,(\w+)\.(\w+)\)\(\w+\((\w+)\.(\w+)\),\w+\(\1\.(\w+)\)\)/);
-  const capability = priceSource.match(/\(0,(\w+)\.(\w+)\)\(\w+\)\.encodedVibes/);
-  const vibePrice = priceSource.match(/\(0,(\w+)\.(\w+)\)\(\w+\.filter\((?:\w+=>\w+\.enabled|\w+)\)\.length\)/);
-  const validate = priceSource.match(/!\(0,(\w+)\.(\w+)\)\(\w+\)/);
-  const inpainting = priceSource.match(/\w+\.mask\?\(0,(\w+)\.(\w+)\)\(\w+\):\w+/);
-  const encoding = priceSource.match(/(\w+)\.(\w+)\.getPrice\(/);
+  // 压缩后的模块别名可能带 $；调用运算符也可能被拆成 (0,mod.fn)(...) 的写法。
+  const price = priceSource.match(/price:\(0,([\w$]+)\.([\w$]+)\)\(/);
+  const account = priceSource.match(/let \w+=\(0,([\w$]+)\.([\w$]+)\)\(\w+\(([\w$]+)\.([\w$]+)\),\w+\(\1\.([\w$]+)\)\)/);
+  const capability = priceSource.match(/\(0,([\w$]+)\.([\w$]+)\)\([\w$]+\)\.encodedVibes/);
+  const vibePrice = priceSource.match(/\(0,([\w$]+)\.([\w$]+)\)\([\w$]+\.filter\((?:[\w$]+=>[\w$]+\.enabled|[\w$]+)\)\.length\)/);
+  const validate = priceSource.match(/!\(0,([\w$]+)\.([\w$]+)\)\([\w$]+\)/);
+  const inpainting = priceSource.match(/[\w$]+\.mask\?\(0,([\w$]+)\.([\w$]+)\)\([\w$]+\):[\w$]+/);
+  const encoding = priceSource.match(/([\w$]+)\.([\w$]+)\.getPrice\(/);
   assert.ok(params?.length === 11 && price && account && capability && vibePrice && validate && inpainting && encoding, '官方费用调用依赖发生变化');
   bind(price[1], price[2], context.cost);
-  const pricingSubscription = priceSource.match(/\(0,(\w+)\.pricingSubscription\)\(\w+\)/);
+  // 现版把订阅视图包成独立调用 `(0,AX.J)(p)`：p 已是 account 绑定返回的会话，直接取用。
+  const sessionVar = priceSource.match(/let ([\w$]+)=\(0,/)?.[1] || "";
+  const subscriptionCall = sessionVar ? priceSource.match(new RegExp(`\\(0,([\\w$]+)\\.([\\w$]+)\\)\\(${sessionVar}\\)`)) : null;
+  // 官方把会话拍平成订阅视图（tier/active/usageNegative）后再交给计价函数；
+  // 能提取到官方归一化函数就复用，否则按同样的字段形状构造。
+  if (subscriptionCall) {
+    const flatten = extractNaiPricingSubscription(bundle);
+    bind(subscriptionCall[1], subscriptionCall[2], flatten
+      ? new Script(`(${flatten[0]})`).runInContext(context, { timeout: 1000 })
+      : session => ({ tier: session.subscription?.tier, active: session.subscription?.active, usageNegative: session.subscription?.usage?.isNegative }));
+  }
+  // 现版 medium 判断改用 `===n.A.naiDiffusion...` 而不是 case，模型枚举命名空间需要补绑。
+  const mediumEnum = source.match(/===([\w$]+)\.([\w$]+)\.naiDiffusion/);
+  if (mediumEnum) bind(mediumEnum[1], mediumEnum[2], Object.fromEntries(
+    [...bundle.matchAll(/\w+\.(naiDiffusion\w+)="(nai-diffusion-[^"]+)"/g)].map(match => [match[1], match[2]]),
+  ));
+  const pricingSubscription = priceSource.match(/\(0,([\w$]+)\.pricingSubscription\)\(\w+\)/);
   if (pricingSubscription) {
     const normalizer = extractNaiPricingSubscription(bundle);
     assert.ok(normalizer && flatActive, '未识别官方计价订阅转换');

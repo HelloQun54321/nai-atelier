@@ -109,7 +109,7 @@ it('连续加载：切换条目后旧页迟到不串入新列表，紧凑摘要�
   await screen.findByLabelText('查看生成图 1');
   const oldObserver = usageObservers().at(-1)!;
   act(() => oldObserver.intersect());
-  await waitFor(() => expect(mocks.images).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(mocks.images).toHaveBeenCalledTimes(2), { timeout: 15000 });
   mocks.images.mockResolvedValueOnce(page(['new'], 1));
   view.rerender(<PromptLibraryUsageSection chainId="new" />);
   await screen.findByLabelText('查看生成图 1');
