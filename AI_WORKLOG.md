@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-04
+- **DeepSeek Harness (deepseek-v4.1-flash)**：收藏库去重「爱心」与「垃圾桶」。两者底层都是取消收藏：`deleteCollected` 的确认弹窗就叫「取消 N 张图片的收藏？」，完成后提示「已取消收藏」，工具栏批量按钮同样叫「取消收藏」并用垃圾桶图标。改为卡片 `ImageShareOverlay` 传 `showFavorite={false}` 只留垃圾桶；详情页同样去掉爱心，并新增 `onDelete` prop 由 `InspirationGallery` 传入 `deleteCollected`，在底部操作区补「取消收藏」按钮，三处入口统一到同一条确认流程。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：让设置里的「悬浮按钮大小」覆盖全部图上按钮。此前只有 `.nai-float-btn` 一个类跟随 `--nai-float-control`，其余删除／选择／翻页／编辑／生成等圆钮各自写死 `h-11 w-11 md:h-8 md:w-8` 或靠 `p-2` 撑尺寸，滑块对它们无效。`index.css` 改为按标记/特征统一约束：`.nai-float-btn`、`mobile-size-locked` + `rounded-full`、`[data-image-preview-navigation]`，以及图库卡片内的 `image-card-actions`／`data-card-action`／`data-image-action-left` 按钮；强制 `inline-flex` 居中、清内边距与行高、`min-*` 归零抵消移动端 44px 下限，图标按 50% 同比缩放。补充外观审计用例逐条断言五个选择器的尺寸与居中，66 项通过。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：修指针倾斜按下时瞬移：`pointerdown` 原本直接 `release()` 把 transform 抹掉（无过渡）导致卡片瞬回正、按钮从指针下跳开；改为按下定格当前角度并清掉残余速度、`move` 冻结，`pointerup`／`pointercancel` 恢复跟随，只有 `dragstart` 才真正释放。新增「按下定格」「拖拽才回正」两条用例，倾斜与外观审计 78 项通过。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：按用户要求把卡片「指针倾斜」默认改成关闭，并在开关下方加小字提醒「虽然好玩，但卡片会跟着晃、按钮也跟着移动，容易点不到」；倾斜与「卡片悬停浮动」由运行时抑制改为开关级互斥，`updateAppearance` 开一个自动关另一个，`normalizeAppearancePreferences` 与 `validateAppearancePreset` 在外部预设／旧存档同时打开时保留悬停浮动，内置苹果主题不再开启倾斜。同步 README、产品决策、四语文案与外观／预设回归（154 项全过）。

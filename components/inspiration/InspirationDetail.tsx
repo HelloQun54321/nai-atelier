@@ -27,6 +27,7 @@ import { PressRevealSurface } from '../PressRevealSurface';
 import { ViewableImage } from '../ImageLightbox';
 import { getMobileOriginalUrl } from '../../services/mobileImageCache';
 import { ImageTaggerPanel } from '../ImageTaggerPanel';
+import { Trash2 } from 'lucide-react';
 import { canEditItem, DEFAULT_PARAMS, formatDate, sourceIcon, splitTags } from './InspirationShared';
 
 interface Props {
@@ -40,6 +41,8 @@ interface Props {
   notify: (msg: string, type?: 'success' | 'error') => void;
   onClose: () => void;
   onRefresh: () => Promise<void>;
+  /** 取消收藏：与卡片上的垃圾桶同一个动作，收藏库里两者等价。 */
+  onDelete?: (ids: string[]) => Promise<void>;
   onNavigateToPlayground?: () => void;
 }
 
@@ -54,6 +57,7 @@ export const InspirationDetail = React.memo(function InspirationDetail({
   notify,
   onClose,
   onRefresh,
+  onDelete,
   onNavigateToPlayground,
 }: Props) {
   useLanguage();
@@ -316,7 +320,7 @@ export const InspirationDetail = React.memo(function InspirationDetail({
       <PressRevealSurface as="section" pressResetKey={draft.id} className="appearance-media group relative bg-gray-100 dark:bg-black/60">
         {draft.imageUrl ? <>
         <ViewableImage src={draft.imageUrl} previewTransform={getCollectionPreviewTransform(draft)} alt={draft.title} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} loading="lazy" className="max-h-[62vh] w-full object-contain" data-safe-mode-ignore="true" />
-        <ImageShareOverlay imageUrl={getMobileOriginalUrl(draft.imageUrl)} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} />
+        <ImageShareOverlay showFavorite={false} imageUrl={getMobileOriginalUrl(draft.imageUrl)} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} />
         </> : <div className="flex min-h-40 items-center justify-center text-sm text-gray-400">{t('暂无样张')}</div>}
       </PressRevealSurface>
       {/* 每张图片的整理与生成信息 */}
@@ -427,6 +431,7 @@ export const InspirationDetail = React.memo(function InspirationDetail({
 
 
           </div>
+          {onDelete && <ToolbarButton tone="danger" aria-label={t('取消收藏')} title={t('取消收藏')} disabled={Boolean(busy)} onClick={() => void onDelete([draft.id])} className="mobile-touch !px-2.5"><Trash2 /><span>{t('取消收藏')}</span></ToolbarButton>}
 
           {/* 底部操作条：窄屏换行，分享操作保持可靠触控宽度。 */}
           <footer className="appearance-group flex-none border-t border-gray-200 p-3.5 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/60 backdrop-blur-sm">

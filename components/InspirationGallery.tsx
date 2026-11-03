@@ -556,7 +556,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         </div>
       </main>
       {openedGroup && <DetailSidePanel key={workGroup} open title={openedGroup.length > 1 || Number(openedGroup[0].analysis?.collectionGroupSize) > 1 ? openedGroup[0].title.replace(/ · \d+$/, '') : openedGroup[0].title} sensitiveTitle subInfo={t('{0}页', [openedGroup.length])} sourceUrl={openedGroup[0].sourceUrl} headerActions={openedGroup.length > 1 ? renderFolderPicker(openedGroup, '管理整组收藏夹', true) : undefined} onBack={closeGroup} onClose={closeGroup}>
-        <div className="space-y-4">{openedGroup.map(image => <InspirationDetail key={image.id} item={image} boards={boards} boardsLoading={boardsLoading} boardsError={boardsError} onReloadBoards={() => void loadBoards()} tagSuggestions={detailTagSuggestions} currentUser={currentUser} notify={notify} onClose={closeGroup} onRefresh={onRefresh} onNavigateToPlayground={onNavigateToPlayground} />)}</div>
+        <div className="space-y-4">{openedGroup.map(image => <InspirationDetail key={image.id} item={image} onDelete={deleteCollected} boards={boards} boardsLoading={boardsLoading} boardsError={boardsError} onReloadBoards={() => void loadBoards()} tagSuggestions={detailTagSuggestions} currentUser={currentUser} notify={notify} onClose={closeGroup} onRefresh={onRefresh} onNavigateToPlayground={onNavigateToPlayground} />)}</div>
       </DetailSidePanel>}
       </div>
     </div>
