@@ -128,6 +128,12 @@ it('样张面板自动提取画风串交给编辑器出图，提示词框不变�
 
   fireEvent.click(screen.getByRole('button', { name: '生成样张' }));
   panel = screen.getByRole('dialog', { name: '生成样张' });
+  const originalSize = within(panel).getByLabelText('尺寸') as HTMLSelectElement;
+  expect(originalSize.value).toBe('');
+  fireEvent.change(originalSize, { target: { value: '1024x1024' } });
+  expect(JSON.parse(localStorage.getItem('nai_prompt_sample')!).originalSize).toEqual({ width: 1024, height: 1024 });
+  fireEvent.change(originalSize, { target: { value: '' } });
+  expect(JSON.parse(localStorage.getItem('nai_prompt_sample')!).originalSize).toBeNull();
   fireEvent.click(within(panel).getByRole('button', { name: '用我的样张设置' }));
   const stored = () => JSON.parse(localStorage.getItem('nai_prompt_sample')!).snapshot;
   expect(stored()).toMatchObject({ params: { model: 'nai-diffusion-4-5-full', width: 832, height: 1216, steps: 28, seed: 7 }, negativePrompt: '' });

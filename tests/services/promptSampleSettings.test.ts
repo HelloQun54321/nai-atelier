@@ -10,7 +10,7 @@ const original = {
   characterReferences: { enabled: true, slots: [] },
   _promptSections: { scene: 'old scene' },
 } as unknown as NAIParams;
-const settings = (patch: Partial<PromptSampleSettings> = {}): PromptSampleSettings => ({ source: 'original', main: '1girl, solo', characters: [], keepOriginalCharacters: false, snapshot: null, ...patch });
+const settings = (patch: Partial<PromptSampleSettings> = {}): PromptSampleSettings => ({ source: 'original', main: '1girl, solo', characters: [], keepOriginalCharacters: false, originalSize: null, snapshot: null, ...patch });
 
 beforeEach(() => { localStorage.clear(); reloadPromptSampleSettings(); });
 
@@ -38,6 +38,13 @@ describe('样张组装', () => {
     expect(buildPromptSampleDraft('artist:a', settings({ source: 'mine' }), { params: original, negativePrompt: 'lowres' }).params.width).toBe(832);
   });
 
+  it('沿用原图设置时可单独换尺寸，其余参数不变；用我的样张设置时不受影响', () => {
+    const resized = buildPromptSampleDraft('artist:a', settings({ originalSize: { width: 1024, height: 1024 } }), { params: original, negativePrompt: 'lowres' });
+    expect(resized.params).toMatchObject({ width: 1024, height: 1024, steps: 28, seed: 42, model: 'nai-diffusion-4-5-full' });
+    const snapshot = createPromptSampleSnapshot({ ...original, width: 1216, height: 832 }, '');
+    expect(buildPromptSampleDraft('artist:a', settings({ source: 'mine', snapshot, originalSize: { width: 1024, height: 1024 } }), { params: original, negativePrompt: 'lowres' }).params).toMatchObject({ width: 1216, height: 832 });
+  });
+
   it('沿用原图角色：角色、站位与精准参考按原图；所选模型不支持精准参考时只去掉参考', () => {
     const kept = buildPromptSampleDraft('artist:a', settings({ keepOriginalCharacters: true, characters: ['ignored'] }), { params: original, negativePrompt: 'lowres' });
     expect(kept.params).toMatchObject({ characters: original.characters, useCoords: true, characterReferences: original.characterReferences });
@@ -55,7 +62,9 @@ describe('样张设置保存', () => {
     expect(JSON.parse(localStorage.getItem('nai_prompt_sample')!)).toMatchObject({ source: 'original', main: 'solo', characters: ['a', 'b'], snapshot: null });
     localStorage.setItem('nai_prompt_sample', JSON.stringify({ source: 'mine', characters: Array(9).fill('x'), snapshot: { params: { width: 'big' } } }));
     reloadPromptSampleSettings();
-    expect(getPromptSampleSettings()).toEqual({ source: 'mine', main: '', characters: Array(6).fill('x'), keepOriginalCharacters: false, snapshot: null });
-    expect(normalizePromptSampleSettings('broken')).toEqual({ source: 'original', main: '', characters: [], keepOriginalCharacters: false, snapshot: null });
+    expect(getPromptSampleSettings()).toEqual({ source: 'mine', main: '', characters: Array(6).fill('x'), keepOriginalCharacters: false, originalSize: null, snapshot: null });
+    expect(normalizePromptSampleSettings('broken')).toEqual({ source: 'original', main: '', characters: [], keepOriginalCharacters: false, originalSize: null, snapshot: null });
+    expect(normalizePromptSampleSettings({ originalSize: { width: 1024, height: 1024 } }).originalSize).toEqual({ width: 1024, height: 1024 });
+    expect(normalizePromptSampleSettings({ originalSize: { width: 1.5, height: 99999 } }).originalSize).toBeNull();
   });
 });

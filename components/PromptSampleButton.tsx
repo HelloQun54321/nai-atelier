@@ -56,7 +56,9 @@ export const PromptSampleButton: React.FC<{ value: string; disabled?: boolean; n
     updatePromptSampleSettings({ snapshot: { params: { ...base.params, ...params }, negativePrompt: negativePrompt ?? base.negativePrompt, savedAt: Date.now() } });
   };
   const sizeValue = snapshot ? `${snapshot.params.width}x${snapshot.params.height}` : '';
-  const knownSize = BUILTIN_ASPECT_RATIOS.some(item => `${item.baseWidth}x${item.baseHeight}` === sizeValue);
+  const originalSizeValue = settings.originalSize ? `${settings.originalSize.width}x${settings.originalSize.height}` : '';
+  const isBuiltinSize = (value: string) => BUILTIN_ASPECT_RATIOS.some(item => `${item.baseWidth}x${item.baseHeight}` === value);
+  const ratioOptions = BUILTIN_ASPECT_RATIOS.map(item => <option key={item.id} value={`${item.baseWidth}x${item.baseHeight}`}>{t(item.label)} · {item.baseWidth}×{item.baseHeight}</option>);
 
   const generate = async () => {
     if (busy || disabled) return;
@@ -90,7 +92,16 @@ export const PromptSampleButton: React.FC<{ value: string; disabled?: boolean; n
             <FilterPill active={settings.source === 'mine'} onClick={() => updatePromptSampleSettings({ source: 'mine', ...(settings.snapshot ? {} : { snapshot: fromCurrent() }) })}>{t('用我的样张设置')}</FilterPill>
           </div>
           {settings.source === 'original'
-            ? <p className={HINT_CLASS}>{t('用当前编辑器里的模型、尺寸、步数、采样器、种子、负面词和氛围参考，也就是这串原图的设置。')}</p>
+            ? <div className="mt-2 space-y-1.5">
+              <label className={PARAM_LABEL_CLASS}>{t('尺寸')}
+                <select value={originalSizeValue} onChange={event => { const [width, height] = event.target.value.split('x').map(Number); updatePromptSampleSettings({ originalSize: event.target.value ? { width, height } : null }); }} className={SELECT_CLASS}>
+                  <option value="">{t('跟原图一致')}</option>
+                  {ratioOptions}
+                  {originalSizeValue && !isBuiltinSize(originalSizeValue) && <option value={originalSizeValue}>{t('自定义尺寸')} · {originalSizeValue.replace('x', '×')}</option>}
+                </select>
+              </label>
+              <p className={HINT_CLASS}>{t('其余沿用当前编辑器里的模型、步数、采样器、种子、负面词和氛围参考，也就是这串原图的设置。')}</p>
+            </div>
             : snapshot && <div className="mt-2 space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 <label className={PARAM_LABEL_CLASS}>{t('模型')}
@@ -101,8 +112,8 @@ export const PromptSampleButton: React.FC<{ value: string; disabled?: boolean; n
                 </label>
                 <label className={PARAM_LABEL_CLASS}>{t('尺寸')}
                   <select value={sizeValue} onChange={event => { const [width, height] = event.target.value.split('x').map(Number); patchSnapshot({ width, height }); }} className={SELECT_CLASS}>
-                    {BUILTIN_ASPECT_RATIOS.map(item => <option key={item.id} value={`${item.baseWidth}x${item.baseHeight}`}>{t(item.label)} · {item.baseWidth}×{item.baseHeight}</option>)}
-                    {!knownSize && <option value={sizeValue}>{t('自定义尺寸')} · {snapshot.params.width}×{snapshot.params.height}</option>}
+                    {ratioOptions}
+                    {!isBuiltinSize(sizeValue) && <option value={sizeValue}>{t('自定义尺寸')} · {snapshot.params.width}×{snapshot.params.height}</option>}
                   </select>
                 </label>
                 <NumberField label={t('步数')} value={snapshot.params.steps} min={1} max={50} step={1} integer onChange={steps => patchSnapshot({ steps })} />

@@ -39911,11 +39911,11 @@
     "自分のサンプル設定を使う",
     "내 샘플 설정 사용"
   ],
-  "用当前编辑器里的模型、尺寸、步数、采样器、种子、负面词和氛围参考，也就是这串原图的设置。": [
-    "用目前編輯器裡的模型、尺寸、步數、取樣器、種子、負面詞和氛圍參考，也就是這串原圖的設定。",
-    "Uses the model, size, steps, sampler, seed, negative prompt and vibe references in the current editor, i.e. this string's original image settings.",
-    "現在のエディターのモデル・サイズ・ステップ数・サンプラー・シード・ネガティブ・Vibe 参照、つまりこのプロンプトの元画像の設定を使います。",
-    "현재 편집기의 모델·크기·스텝·샘플러·시드·네거티브·바이브 참조, 즉 이 프롬프트 원본 이미지의 설정을 사용합니다."
+  "其余沿用当前编辑器里的模型、步数、采样器、种子、负面词和氛围参考，也就是这串原图的设置。": [
+    "其餘沿用目前編輯器裡的模型、步數、取樣器、種子、負面詞和氛圍參考，也就是這串原圖的設定。",
+    "Everything else uses the model, steps, sampler, seed, negative prompt and vibe references in the current editor, i.e. this string's original image settings.",
+    "その他は現在のエディターのモデル・ステップ数・サンプラー・シード・ネガティブ・Vibe 参照、つまりこのプロンプトの元画像の設定を使います。",
+    "나머지는 현재 편집기의 모델·스텝·샘플러·시드·네거티브·바이브 참조, 즉 이 프롬프트 원본 이미지의 설정을 따릅니다."
   ],
   "main 提示词": [
     "main 提示詞",
@@ -40012,5 +40012,11 @@
     "Leave empty to use the original negative prompt",
     "空欄なら元画像のネガティブを使う",
     "비워 두면 원본 네거티브 사용"
+  ],
+  "跟原图一致": [
+    "跟原圖一致",
+    "Same as original",
+    "元画像と同じ",
+    "원본과 동일"
   ]
 }

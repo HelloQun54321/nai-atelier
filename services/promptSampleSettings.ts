@@ -9,7 +9,9 @@ import { findNaiModelInfo } from './naiModels';
  */
 export type PromptSampleSource = 'original' | 'mine';
 export interface PromptSampleSnapshot { params: NAIParams; negativePrompt: string; savedAt: number }
-export interface PromptSampleSettings { source: PromptSampleSource; main: string; characters: string[]; keepOriginalCharacters: boolean; snapshot: PromptSampleSnapshot | null }
+export interface PromptSampleSize { width: number; height: number }
+/** originalSize：沿用原图设置时单独改的尺寸，null 表示跟原图一致。 */
+export interface PromptSampleSettings { source: PromptSampleSource; main: string; characters: string[]; keepOriginalCharacters: boolean; originalSize: PromptSampleSize | null; snapshot: PromptSampleSnapshot | null }
 export interface PromptSampleDraft { basePrompt: string; subjectPrompt: string; negativePrompt: string; modules: PromptModule[]; params: NAIParams }
 /** 编辑器提供的出图通道：generate 走与「生成」相同的扣费确认和历史保存。 */
 export interface PromptSampleBridge {
@@ -22,7 +24,7 @@ export interface PromptSampleBridge {
 export const PROMPT_SAMPLE_CHARACTER_LIMIT = 6;
 export const PROMPT_SAMPLE_TEXT_LIMIT = 4000;
 const STORAGE_KEY = 'nai_prompt_sample';
-const DEFAULT_SETTINGS: PromptSampleSettings = { source: 'original', main: '', characters: [], keepOriginalCharacters: false, snapshot: null };
+const DEFAULT_SETTINGS: PromptSampleSettings = { source: 'original', main: '', characters: [], keepOriginalCharacters: false, originalSize: null, snapshot: null };
 const listeners = new Set<() => void>();
 
 /** 角色、精准参考、氛围参考与 `_` 开头的编辑器元数据都不进样张设置；氛围参考体积大，也不适合存进浏览器。 */
@@ -41,6 +43,11 @@ const readSnapshot = (value: unknown): PromptSampleSnapshot | null => {
   return createPromptSampleSnapshot(params as NAIParams, typeof snapshot?.negativePrompt === 'string' ? snapshot.negativePrompt : '', typeof snapshot?.savedAt === 'number' ? snapshot.savedAt : 0);
 };
 
+const readSize = (value: unknown): PromptSampleSize | null => {
+  const size = value as Partial<PromptSampleSize> | null;
+  return size && [size.width, size.height].every(item => Number.isInteger(item) && item! >= 64 && item! <= 4096) ? { width: size.width!, height: size.height! } : null;
+};
+
 export function normalizePromptSampleSettings(value: unknown): PromptSampleSettings {
   const input = value && typeof value === 'object' ? value as Partial<Record<keyof PromptSampleSettings, unknown>> : {};
   return {
@@ -49,12 +56,13 @@ export function normalizePromptSampleSettings(value: unknown): PromptSampleSetti
     characters: (Array.isArray(input.characters) ? input.characters : []).filter((item): item is string => typeof item === 'string')
       .map(item => item.slice(0, PROMPT_SAMPLE_TEXT_LIMIT)).slice(0, PROMPT_SAMPLE_CHARACTER_LIMIT),
     keepOriginalCharacters: input.keepOriginalCharacters === true,
+    originalSize: readSize(input.originalSize),
     snapshot: readSnapshot(input.snapshot),
   };
 }
 
 /**
- * 最终正向＝画风串＋main，原图的主体和模块都不带。角色默认用样张角色、由 AI 自动摆位；
+ * 最终正向＝画风串＋main，原图的主体和模块都不带；沿用原图设置时可单独换尺寸。角色默认用样张角色、由 AI 自动摆位；
  * 沿用原图角色时连同站位与精准参考一起带上，所选模型不支持精准参考时只去掉参考，避免整次请求被拒。
  */
 export function buildPromptSampleDraft(style: string, settings: PromptSampleSettings, current: { params: NAIParams; negativePrompt: string }): PromptSampleDraft {
@@ -63,7 +71,7 @@ export function buildPromptSampleDraft(style: string, settings: PromptSampleSett
   const keep = settings.keepOriginalCharacters;
   const characters: CharacterParams[] = keep ? structuredClone(current.params.characters ?? [])
     : settings.characters.map(prompt => prompt.trim()).filter(Boolean).map((prompt, index) => ({ id: `sample-${index + 1}`, enabled: true, prompt, x: 0.5, y: 0.5 }));
-  const params: NAIParams = { ...structuredClone(base), characters, useCoords: keep ? current.params.useCoords : false };
+  const params: NAIParams = { ...structuredClone(base), ...(!mine && settings.originalSize ? settings.originalSize : {}), characters, useCoords: keep ? current.params.useCoords : false };
   if (keep && current.params.characterReferences && findNaiModelInfo(params.model)?.supportsCharacterReferences) params.characterReferences = structuredClone(current.params.characterReferences);
   return {
     basePrompt: [style.trim(), settings.main.trim()].filter(Boolean).join(', '),
