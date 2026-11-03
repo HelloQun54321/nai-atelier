@@ -1651,6 +1651,16 @@ const persistNaiRuntimeState = async () => {
 
 // 同步失败只改写进程内 health（供本轮 API 响应与前端提示），不落盘：
 // 磁盘记录始终是最近一次完整成功，避免一次性网络抖动跨重启残留红色同步警告。
+/**
+ * 同步失效必须显眼：启动可以继续，但提醒里要写清影响与排查入口。
+ * 非 TTY（写日志、被管道捕获）时去掉颜色，避免转义符污染输出。
+ */
+export const alertNaiRuntimeFailure = (title, details) => {
+  const paint = (code, value) => process.stderr.isTTY ? `\x1b[${code}m${value}\x1b[0m` : value;
+  const rule = '─'.repeat(64);
+  const body = [title, ...details.map(detail => `  ${detail}`), '  服务不受影响，仍在正常启动；同步会自动重试。'];
+  console.warn([paint('1;31', rule), ...body.map((line, index) => paint(index === 0 ? '1;31' : '31', line)), paint('1;31', rule)].join('\n'));
+};
 const runNaiRuntimeSync = async (requestRemote = fetch) => {
   let html;
   try {
@@ -1660,7 +1670,11 @@ const runNaiRuntimeSync = async (requestRemote = fetch) => {
       ...naiRuntimeState,
       health: { ok: false, reason: 'fetch', error: error.message || String(error), attemptedAt: Date.now() },
     };
-    console.warn('[nai-runtime] 官方页面抓取失败，沿用最近可用常量：', error.message || error);
+    alertNaiRuntimeFailure('⚠ NovelAI 官方常量同步失败：读不到官方页面', [
+      `原因：${error.message || error}`,
+      '影响：Opus 张数换算与费用估算沿用上次快照，可能与官方当前规则不一致',
+      '排查：检查网络或代理后运行 npm run test:live-sync',
+    ]);
     return false;
   }
   const paths = extractNaiRuntimeChunkPaths(html);
@@ -1669,7 +1683,11 @@ const runNaiRuntimeSync = async (requestRemote = fetch) => {
       ...naiRuntimeState,
       health: { ok: false, reason: 'page', error: 'official page exposes no chunks', attemptedAt: Date.now() },
     };
-    console.warn('[nai-runtime] 官方页面结构变化（未找到 JS 包），沿用最近可用常量');
+    alertNaiRuntimeFailure('⚠ NovelAI 官方页面结构变化：找不到 JS 包', [
+      '原因：官方改版换了打包方式或路径，提取器需要跟着更新',
+      '影响：官方常量沿用上次快照，可能与官方当前规则不一致',
+      '排查：npm run test:live-sync',
+    ]);
     return false;
   }
   const chunks = await Promise.all(paths.map(path =>
@@ -1681,7 +1699,11 @@ const runNaiRuntimeSync = async (requestRemote = fetch) => {
       ...naiRuntimeState,
       health: { ...health, ok: false, reason: 'partial', attemptedAt: Date.now() },
     };
-    console.warn('[nai-runtime] 官方常量部分提取失效，将沿用最近完整快照并稍后重试：', health.missed.join(', '));
+    alertNaiRuntimeFailure(`⚠ NovelAI 官方常量部分提取失效：${health.missed.join(', ')}`, [
+      '影响：Opus 张数换算与费用估算沿用上次完整快照，可能与官方当前规则不一致',
+      '原因：官方改版让部分结构变化，提取器需要跟着更新',
+      '排查：npm run test:live-sync',
+    ]);
     return false;
   }
   naiRuntimeState = { ...runtime, syncedAt: Date.now(), health };
@@ -1705,7 +1727,10 @@ const scheduleNaiRuntimeSync = (delay, requestRemote = fetch) => {
     try {
       succeeded = await syncNaiRuntime(requestRemote);
     } catch (error) {
-      console.warn('[nai-runtime] 同步任务异常，将稍后重试：', error.message || error);
+      alertNaiRuntimeFailure('⚠ NovelAI 官方常量同步任务异常', [
+        `原因：${error.message || error}`,
+        '排查：npm run test:live-sync',
+      ]);
     }
     scheduleNaiRuntimeSync(succeeded ? NAI_RUNTIME_SYNC_INTERVAL : NAI_RUNTIME_RETRY_INTERVAL, requestRemote);
   }, delay);

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { NAI_MEDIUM_BILLING_BUNDLE, NAI_TURBOPACK_BILLING_BUNDLE, NAI_PRICING_SUBSCRIPTION_BUNDLE } from '../fixtures/nai-runtime.mjs';
 import { Script, createContext } from 'node:vm';
 import { extractNaiRuntimeChunkPaths, extractNaiImagesPerPercent, extractNaiMetadataModelMappings,
-  extractNaiBillingRules, extractNaiCostCalculator, extractNaiPricingSubscription, computeNaiRuntimeSync, syncNaiRuntime, getNaiRuntime } from '../../scripts/media-gateway.mjs';
+  extractNaiBillingRules, extractNaiCostCalculator, extractNaiPricingSubscription, computeNaiRuntimeSync, syncNaiRuntime, getNaiRuntime, alertNaiRuntimeFailure } from '../../scripts/media-gateway.mjs';
 import { compareOfficialVibeBilling } from '../live/nai-live-sync.mjs';
 
 const bundle = [
@@ -134,4 +134,19 @@ test('部署查询参数新页面完成全部提取，部分失败保持完整�
     assert.equal(getNaiRuntime().imagesPerPercent, 21.4);
     assert.equal(await readFile(path, 'utf8'), saved);
   } finally { await writeFile(path, backup); }
+});
+test('同步失效告警写清原因与排查入口，非 TTY 输出不带颜色', () => {
+  const original = console.warn;
+  const lines = [];
+  console.warn = value => lines.push(String(value));
+  try {
+    alertNaiRuntimeFailure('⚠ 测试标题', ['影响：张数换算可能过期', '排查：npm run test:live-sync']);
+  } finally { console.warn = original; }
+  const output = lines.join('\n');
+  assert.match(output, /⚠ 测试标题/);
+  assert.match(output, /影响：张数换算可能过期/);
+  assert.match(output, /排查：npm run test:live-sync/);
+  assert.match(output, /服务不受影响，仍在正常启动/);
+  assert.ok(!output.includes('\u001b['), '非 TTY 环境不应输出 ANSI 转义');
+  assert.equal(lines.length, 1, '一次性输出整块告警，避免多行散落');
 });
