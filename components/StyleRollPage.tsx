@@ -36,6 +36,7 @@ import { ImageLightbox } from './ImageLightbox';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageShareActions } from './ImageShareActions';
 import { ImageCardActions } from './ImageCardActions';
+import { ArtistExtractButton } from './ArtistExtractButton';
 import { PressRevealSurface } from './PressRevealSurface';
 import { MobileDetailView } from './MobileUI';
 import { StyleRollSetup } from './roll/StyleRollSetup';
@@ -80,7 +81,8 @@ const ArtistFavoriteButton: React.FC<{ tag: string; sampleUrl?: string }> = ({ t
     onClick={async () => {
       if (busy) return;
       setBusy(true);
-      try { setFavorite(await toggleArtistPreference(tag, sampleUrl || `artist:${tag}`)); }
+      // 无样张只收藏 Tag，空封面与画师库一致，不写入假图片地址。
+      try { setFavorite(await toggleArtistPreference(tag, sampleUrl || '')); }
       catch { /* 收藏失败保持原状，不打断候选浏览 */ }
       finally { setBusy(false); }
     }}
@@ -547,7 +549,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       <button className="block w-full" type="button" aria-label={t('放大图片')} onClick={() => setLightbox(selectedImage)}><SmartImage src={selectedImage.imageUrl} alt={t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])} eager className="h-auto w-full object-contain" containerClassName="w-full" /></button>
       {detailIndex > 0 && <button type="button" data-image-preview-navigation aria-label={t('上一张')} title={t('上一张')} onClick={() => setSelectedId(visible[detailIndex - 1].id)} className="nai-float-btn hover-reveal-lg mobile-size-locked absolute left-3 top-1/2 z-20 flex -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white transition-colors hover:bg-black/70"><ChevronLeft className="h-7 w-7" /></button>}
       {detailIndex >= 0 && detailIndex < visible.length - 1 && <button type="button" data-image-preview-navigation aria-label={t('下一张')} title={t('下一张')} onClick={() => setSelectedId(visible[detailIndex + 1].id)} className="nai-float-btn hover-reveal-lg mobile-size-locked absolute right-3 top-1/2 z-20 flex -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white transition-colors hover:bg-black/70"><ChevronRight className="h-7 w-7" /></button>}
-      <ImageCardActions><ImageShareActions imageUrl={selectedImage.imageUrl} filename={`roll-${selectedImage.id}.png`} generationData={selectedImage} favorite={{ imageUrl: selectedImage.imageUrl, sourceType: 'history', sourceId: selectedImage.id }} notify={notify} variant="card" /></ImageCardActions>
+      <ImageCardActions><ImageShareActions imageUrl={selectedImage.imageUrl} filename={`roll-${selectedImage.id}.png`} generationData={selectedImage} favorite={{ imageUrl: selectedImage.imageUrl, sourceType: 'history', sourceId: selectedImage.id }} notify={notify} variant="card" /><ArtistExtractButton source={{ kind: 'tags', tags: selected.tags.map(entry => entry.tag) }} notify={notify} /></ImageCardActions>
     </PressRevealSurface> : <div className="flex min-h-36 items-center justify-center rounded-lg border border-dashed border-gray-300 text-gray-400 dark:border-gray-700"><ImagePlus className="h-8 w-8" /></div>}
     <div className="appearance-group rounded-xl border border-gray-100 bg-gray-50/70 p-3.5 space-y-2.5 dark:border-gray-800/80 dark:bg-gray-900/40 shadow-inner">
       <div className="flex items-center justify-between text-xs font-semibold text-gray-500 dark:text-gray-400">

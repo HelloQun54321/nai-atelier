@@ -9,6 +9,7 @@ import { MobileBottomSheet, MobileIconButton, MobileOverflowMenu } from './Mobil
 import { SmartImage } from './SmartImage';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
 import { ImageCardActions } from './ImageCardActions';
+import { ArtistExtractButton } from './ArtistExtractButton';
 import type { ChainSimilaritySession } from './chain/ChainSimilarityDialog';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
@@ -404,6 +405,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           {!selecting && !syncSelection.open && (chain.previewImage || !isGuest) && <ImageCardActions>
             {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} favorite={{ imageUrl: chain.previewImage, title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }} />}
             {!isGuest && type === 'style' && <button type="button" onClick={event => { event.stopPropagation(); sendToPlayground(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("发送到实验室")} aria-label={t("发送到实验室：{0}", [chain.name])}><FlaskConical className="h-4 w-4" /></button>}
+            {!isGuest && type === 'style' && <ArtistExtractButton source={{ kind: 'chain', chain }} notify={notify} label={t('收藏风格串的画师：{0}', [chain.name])} />}
             {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("编辑信息")} aria-label={t("编辑{0}信息：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}><Pencil className="h-4 w-4" /></button>}
           </ImageCardActions>}
           {chain.previewImage ? (

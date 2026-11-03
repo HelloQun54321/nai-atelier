@@ -10,6 +10,7 @@ import { ImagePreviewActions } from './ImagePreviewActions';
 import { GenerationCountControl, type GenerationCountControlProps } from './GenerationCountControl';
 import type { CollectionTarget } from '../services/collectionFavorites';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
+import type { ArtistExtractionSource } from '../services/artistFavoriteExtraction';
 
 interface ChainEditorPreviewProps {
     isGenerating: boolean;
@@ -27,6 +28,7 @@ interface ChainEditorPreviewProps {
     getDownloadFilename: () => string;
     generationData?: ImageGenerationData;
     favorite?: CollectionTarget;
+    artistSource?: ArtistExtractionSource;
     hideCoverActions?: boolean;
     canNavigateHistory?: boolean;
     historyLabel?: string;
@@ -64,6 +66,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     getDownloadFilename,
     generationData,
     favorite,
+    artistSource,
     hideCoverActions,
     canNavigateHistory = false,
     historyLabel,
@@ -158,7 +161,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                     <ImagePreviewActions
                         imageUrl={generatedImage || previewImage}
                         filename={getDownloadFilename()}
-                        generationData={generationData} favorite={favorite}
+                        generationData={generationData} favorite={favorite} artistSource={artistSource}
                         notify={notify}
                         canManageHistoryGroup={Boolean(generatedImage && canManageHistoryGroup)}
                         onRemoveCurrentHistory={onRemoveCurrentHistory}

@@ -149,6 +149,43 @@ it('缺样张画师可收藏 Tag，不同空封面互不合并，取消偏好同
   expect(service.collectionSnapshot().find(item => item.sourceId === 'alpha')?.archived).toBe(true);
 });
 
+it('一串画师批量补收藏只加不减：已收藏保留、取消过的恢复、重复名只算一次，样张封面失败退回只收藏 Tag', async () => {
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  await service.toggleArtistPreference('alpha', '');
+  await service.toggleArtistPreference('gamma', ''); await service.toggleArtistPreference('gamma', '');
+  const sample = (tag: string) => `/api/artist-samples/image?pack=v45&tag=${tag}&index=0&revision=revision`;
+  const fetchSample = vi.fn(async (url: string) => {
+    if (url.includes('beta')) throw new Error('样张读取失败');
+    return new Response(new Blob(['synthetic jpeg'], { type: 'image/jpeg' }));
+  });
+  vi.stubGlobal('fetch', fetchSample);
+  try {
+    const loadCovers = vi.fn(async () => (tag: string) => tag === 'gamma' ? undefined : sample(tag.toLowerCase()));
+    expect(await service.addArtistPreferences(['alpha', 'Beta', 'beta', ' ', 'delta', 'gamma'], loadCovers))
+      .toEqual({ tags: ['alpha', 'Beta', 'delta', 'gamma'], added: ['Beta', 'delta', 'gamma'], existing: ['alpha'], failed: [] });
+    expect(loadCovers).toHaveBeenCalledOnce();
+    const active = service.collectionSnapshot().filter(item => item.sourceType === 'artist' && !item.archived);
+    expect(active.map(item => item.sourceId).sort()).toEqual(['Beta', 'alpha', 'delta', 'gamma']);
+    expect(active.find(item => item.sourceId === 'Beta')?.imageUrl).toBe('');
+    expect(active.find(item => item.sourceId === 'delta')).toMatchObject({ imageUrl: '/api/assets/inspirations/saved.png', analysis: { collectionOriginalUrl: sample('delta') } });
+    expect(service.collectionSnapshot().filter(item => item.sourceId === 'gamma')).toHaveLength(1);
+    expect(mocks.uploadFile).toHaveBeenCalledOnce();
+    const again = vi.fn(loadCovers);
+    expect(await service.addArtistPreferences(['alpha', 'DELTA'], again)).toMatchObject({ added: [], existing: ['alpha', 'DELTA'], failed: [] });
+    expect(again).not.toHaveBeenCalled();
+    expect(service.collectionSnapshot().filter(item => item.sourceType === 'artist' && !item.archived)).toHaveLength(4);
+  } finally { vi.unstubAllGlobals(); }
+});
+
+it('批量补收藏逐个报告失败画师，不把失败算作已收藏，访客直接拒绝', async () => {
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  mocks.post.mockImplementationOnce(async () => { throw new Error('写入失败'); });
+  expect(await service.addArtistPreferences(['alpha', 'beta'])).toEqual({ tags: ['alpha', 'beta'], added: ['beta'], existing: [], failed: ['alpha'], error: '写入失败' });
+  expect(service.collectionSnapshot().filter(item => !item.archived).map(item => item.sourceId)).toEqual(['beta']);
+  await service.loadCollection({ ...user, role: 'guest' });
+  await expect(service.addArtistPreferences(['gamma'])).rejects.toThrow('访客');
+});
+
 it('已有画师图片收藏直接作为偏好，取消时仅归档引用且不会另存封面', async () => {
   const service = await import('../../services/collectionFavorites');
   await service.toggleCollectionTarget({ sourceType: 'artist', sourceId: 'alpha', imageUrl: '/api/assets/original.png' });

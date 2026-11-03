@@ -1,4 +1,4 @@
-import type { PromptChain } from '../types';
+import type { NAIParams, PromptChain } from '../types';
 import { extractArtistParticipation } from './artistParticipation';
 import { getChainPromptTokenWeight, parseChainPromptTokens } from './chainSimilarity';
 import { compileCharacterContent, getActiveCharacters } from './characterPrompts';
@@ -7,10 +7,21 @@ import type { RollChainArtistSource } from './styleRoll';
 
 /** 只取实际正向中的画师名字；knownArtists 由调用方用 normalizeArtistUsageKey 一次规范化，不继承原权重或其它生成配置。 */
 export function extractRollChainArtistTags(chain: PromptChain, knownArtists: ReadonlySet<string>): string[] {
-  const texts = [
+  return extractPromptArtistTags([
     compilePrompt(chain, chain.variableValues?.subject || ''),
     ...getActiveCharacters(chain.params?.characters).map(character => compileCharacterContent(character).prompt),
-  ];
+  ], knownArtists);
+}
+
+/** 成图记录保存的是当时的完整全局正向与角色栏，直接按同一规则读取。 */
+export function extractGenerationArtistTags(data: { prompt?: string; params?: Partial<NAIParams> }, knownArtists: ReadonlySet<string>): string[] {
+  return extractPromptArtistTags([
+    data.prompt || '',
+    ...getActiveCharacters(data.params?.characters).map(character => compileCharacterContent(character).prompt),
+  ], knownArtists);
+}
+
+function extractPromptArtistTags(texts: readonly string[], knownArtists: ReadonlySet<string>): string[] {
   const artists = new Set<string>();
   // 全局与各角色独立解析，未闭合的数值范围不能跨角色延续。
   for (const text of texts) {

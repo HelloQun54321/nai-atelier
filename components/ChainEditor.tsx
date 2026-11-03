@@ -2351,6 +2351,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                 <ChainEditorPreview
                     favorite={displayedPreviewItem ? { imageUrl: displayedPreviewItem.imageUrl, sourceType: 'history', sourceId: displayedPreviewItem.id } : { imageUrl: chain.previewImage || '', title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }}
                     generationData={displayedPreviewItem ? { prompt: displayedPreviewItem.prompt, negativePrompt: displayedPreviewItem.negativePrompt, params: displayedPreviewItem.params } : undefined}
+                    artistSource={displayedPreviewItem ? undefined : { kind: 'chain', chain }}
                     isGenerating={isGenerating}
                     generationDisabled={externalGenerationBusy}
                     unavailableLabel={generationUnavailableLabel}
@@ -2552,6 +2553,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                         imageUrl={lightboxImg}
                         favorite={lightboxItem ? { imageUrl: lightboxItem.imageUrl, sourceType: 'history', sourceId: lightboxItem.id } : { imageUrl: lightboxImg, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, title: chain.name, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }}
                         generationData={lightboxItem ? { prompt: lightboxItem.prompt, negativePrompt: lightboxItem.negativePrompt, params: lightboxItem.params } : undefined}
+                        artistSource={lightboxItem ? undefined : { kind: 'chain', chain }}
                         filename={getDownloadFilename()}
                         notify={notify}
                         canManageHistoryGroup={Boolean(lightboxItem)}

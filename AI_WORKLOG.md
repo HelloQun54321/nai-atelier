@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-11-03
+- **Claude Code (Opus 5.5)**：新增「收藏这串的画师」一键按钮（Roll 候选卡片／详情、实验室预览／大图、风格串卡片／编辑页预览），新增 `artistFavoriteExtraction` 识别服务与 `addArtistPreferences` 只加不减的批量收藏，抽出 `extractGenerationArtistTags` 复用风格串画师解析；修复 Roll 详情无样张画师收藏写入假图片地址；补四语文案与定向测试，同步更新风格串卡片按钮清单断言。
+
 ## 2026-11-02
 - **DeepSeek Harness (deepseek-v4.1-flash)**：Roll 顶栏去重复（移除从风格串提取与常驻费用摘要，保持单行）；筛选从 7 项精简为 4 项并同步简化 ollWorkspaceCandidates 的过滤分支与批量归档动作。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：Roll 串配置改为可中途修改（候选记录模板指纹，旧图不再失配）；角色提示词接入实验室普通模式编辑器（多角色/独立负面/位置）；候选详情改版（悬浮切换、图片撑满、操作收进标题栏、列表精简为删除/收藏/保存）；丢弃改为直接删除；新增设置项「悬浮按钮大小」并统一 .nai-float-btn 驱动容器与图标缩放。

@@ -11,6 +11,7 @@ import { PressRevealSurface } from '../PressRevealSurface';
 import { SmartImage } from '../SmartImage';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from '../ImageShareActions';
 import { ImageCardActions } from '../ImageCardActions';
+import { ArtistExtractButton } from '../ArtistExtractButton';
 import { EmptyState } from '../DesignSystem';
 
 interface Props {
@@ -99,6 +100,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
                   <Save className="h-4 w-4" />
                 </button>
               )}
+              {item && <ArtistExtractButton source={{ kind: 'tags', tags: candidate.tags.map(entry => entry.tag) }} notify={notify} label={t('收藏候选 {0} 的画师', [index])} />}
             </ImageCardActions>
           </>
         )}

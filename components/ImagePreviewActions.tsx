@@ -2,8 +2,10 @@ import { t, useLanguage } from '../services/i18n';
 import React, { useLayoutEffect, useRef } from 'react';
 import { ArrowLeft, Check, Image, ImageMinus, ListX, LoaderCircle, Palette, Upload } from 'lucide-react';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
+import { ArtistExtractButton } from './ArtistExtractButton';
 import type { CollectionTarget } from '../services/collectionFavorites';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
+import type { ArtistExtractionSource } from '../services/artistFavoriteExtraction';
 
 const IMAGE_PREVIEW_BUTTON_CLASS = `${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition disabled:cursor-wait disabled:opacity-50`;
 
@@ -37,6 +39,8 @@ interface Props {
   isUploading?: boolean;
   onSaveArtistSample?: () => void;
   savingArtistSample?: boolean;
+  /** 未指定时读取成图记录的正向；显示风格串封面时由调用方传入整条风格串。 */
+  artistSource?: ArtistExtractionSource;
   onBack?: () => void;
   backButtonRef?: React.Ref<HTMLButtonElement>;
 }
@@ -44,9 +48,10 @@ interface Props {
 /** 小图与大图共用操作位置、紧凑尺寸及权限，仅大图增加返回入口。 */
 export const ImagePreviewActions: React.FC<Props> = ({
   imageUrl, filename, generationData, favorite, notify, canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
-  onSetCover, onUploadCover, isUploading = false, onSaveArtistSample, savingArtistSample = false, onBack, backButtonRef,
+  onSetCover, onUploadCover, isUploading = false, onSaveArtistSample, savingArtistSample = false, artistSource, onBack, backButtonRef,
 }) => {
   useLanguage();
+  const extractSource = artistSource ?? (generationData ? { kind: 'prompt' as const, prompt: generationData.prompt, params: generationData.params } : undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
   const visibility = onBack ? 'hover-reveal-md' : 'hover-reveal-lg';
@@ -118,6 +123,7 @@ export const ImagePreviewActions: React.FC<Props> = ({
     </div>}
     {imageUrl && <div data-card-action="true" className="image-preview-action-group image-preview-action-group-right absolute top-4 right-4 z-30 gap-2" onClick={event => event.stopPropagation()}>
       <ImageShareActions imageUrl={imageUrl} generationData={generationData} favorite={favorite} filename={filename} notify={notify} variant="card" className="flex-col" revealClassName={visibility} />
+      {extractSource && <ArtistExtractButton source={extractSource} notify={notify} revealClassName={visibility} />}
       {onSaveArtistSample && <button type="button" onClick={onSaveArtistSample} disabled={savingArtistSample} aria-busy={savingArtistSample} aria-label={t('保存为画师样张')} title={t('保存为画师样张')} className={`${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS}`}>
         {savingArtistSample ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Palette className="h-4 w-4" />}
       </button>}

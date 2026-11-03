@@ -479,14 +479,47 @@ export async function toggleCollectionTarget(target: CollectionTarget, desiredFa
 }
 
 /** 画师偏好与收藏库共用来源组，取消偏好只归档收藏引用，原图保留。 */
-export async function toggleArtistPreference(tag: string, imageUrl: string, sample?: CollectionImage): Promise<boolean> {
+export async function toggleArtistPreference(tag: string, imageUrl: string, sample?: CollectionImage, desiredFavorite?: boolean): Promise<boolean> {
   await ensureCollection();
   const saved = collectionSnapshot().filter(item => item.userId === owner?.id && item.sourceType === 'artist' && item.sourceId && normalizeRollArtistKey(item.sourceId) === normalizeRollArtistKey(tag));
   const existing = saved.find(item => !item.archived) || saved[0];
   const sourceId = existing?.sourceId || tag;
   const ownSample = !sample && !saved.length && imageUrl.startsWith('/api/assets/') ? (await getArtistSampleData()).samples.find(sample => sample.imageUrl === imageUrl && normalizeRollArtistKey(sample.tag) === normalizeRollArtistKey(tag)) : undefined;
   const image: CollectionImage = { title: tag, prompt: ownSample?.prompt ?? `artist:${tag}`, negativePrompt: ownSample?.negativePrompt, params: ownSample?.params, imageId: imageUrl || 'tag', ...sample, imageUrl, sourceType: 'artist', sourceId };
-  return toggleCollectionTarget({ ...image, ...(existing ? { collectionId: existing.id, groupSourceIds: [...new Set(saved.map(item => item.sourceId!))] } : {}), getGroup: async () => saved.length ? saved.map(item => ({ ...item, collectionId: item.id })) : [image] });
+  return toggleCollectionTarget({ ...image, ...(existing ? { collectionId: existing.id, groupSourceIds: [...new Set(saved.map(item => item.sourceId!))] } : {}), getGroup: async () => saved.length ? saved.map(item => ({ ...item, collectionId: item.id })) : [image] }, desiredFavorite);
+}
+
+export interface ArtistPreferenceBatchResult { tags: string[]; added: string[]; existing: string[]; failed: string[]; error?: string }
+
+/** 一串画师批量补进偏好：只加不减，已收藏的原样保留；样张封面写入失败时退回只收藏 Tag。 */
+export async function addArtistPreferences(tags: readonly string[], loadCovers?: () => Promise<(tag: string) => string | undefined>): Promise<ArtistPreferenceBatchResult> {
+  await ensureCollection();
+  if (owner?.role === 'guest') throw new Error('访客无法修改收藏');
+  const preferred = (tag: string) => items.some(item => item.userId === owner?.id && item.sourceType === 'artist' && !item.archived && item.sourceId && normalizeRollArtistKey(item.sourceId) === normalizeRollArtistKey(tag));
+  const unique: string[] = [], seen = new Set<string>();
+  for (const tag of tags.map(tag => tag.trim())) {
+    const key = normalizeRollArtistKey(tag);
+    if (key && !seen.has(key)) { seen.add(key); unique.push(tag); }
+  }
+  const existing = unique.filter(preferred), missing = unique.filter(tag => !preferred(tag));
+  const coverOf = missing.length && loadCovers ? await loadCovers() : () => undefined;
+  const added: string[] = [], failed: string[] = [];
+  let error: string | undefined;
+  for (const tag of missing) {
+    const cover = coverOf(tag) || '';
+    try {
+      await toggleArtistPreference(tag, cover, undefined, true).catch(cause => {
+        if (preferred(tag)) return true;
+        if (!cover) throw cause;
+        return toggleArtistPreference(tag, '', undefined, true);
+      });
+      added.push(tag);
+    } catch (cause) {
+      failed.push(tag);
+      error ||= cause instanceof Error ? cause.message : '收藏失败';
+    }
+  }
+  return { tags: unique, added, existing, failed, ...(error ? { error } : {}) };
 }
 
 export async function syncHistoryCollectionFavorites(ids: string[], favorite: boolean): Promise<void> {
