@@ -1622,7 +1622,38 @@ html:root[data-theme-details='true'].dark .lab-editor-surface .lab-category-mode
   opacity: 1;
 }
 
-/* 悬浮圆钮：尺寸由设置里的「悬浮按钮大小」统一控制，图标按同一比例缩放，
-   否则只放大外圈、里面的心形和垃圾桶还是原大。 */
-.nai-float-btn { width: var(--nai-float-control, 32px); height: var(--nai-float-control, 32px); }
-.nai-float-btn svg { width: calc(var(--nai-float-control, 32px) * .45); height: calc(var(--nai-float-control, 32px) * .45); }
+/* 图中悬浮圆钮：外框尺寸、图标尺寸与居中，全部由下面这一组规则统一约束。
+   识别按标记/特征而不是按组件逐个列举，所以现在已有与以后新加的按钮，只要落进任一情形就自动生效：
+     1) 带 nai-float-btn 类；
+     2) 锁定尺寸的圆角圆钮（图片预览层、灯箱、历史查看器、编辑器预览）；
+     3) 图片预览的左右翻页按钮；
+     4) 图库卡片内带 image-card-actions / data-card-action / data-image-action-left 的按钮。
+   居中三属性用 !important：这些按钮原本有的靠 p-2 撑尺寸、有的把图标写死 h-7 w-7、
+   有的靠自身 flex，不强制统一的话调整尺寸后图标就会偏心。
+   min-* 归零抵消移动端 .mobile-touch 的 44px 下限，保证圆钮缩放后仍是正圆而不是蛋形。 */
+.nai-float-btn,
+button.mobile-size-locked[class*='rounded-full'],
+button[data-image-preview-navigation],
+:is(.gallery-image-card, .media-card) :is(.image-card-actions, [data-card-action], [data-image-action-left], [data-image-preview-navigation]) button,
+:is(.gallery-image-card, .media-card) button[data-card-action] {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  line-height: 0 !important;
+  width: var(--nai-float-control, 32px);
+  height: var(--nai-float-control, 32px);
+  min-width: 0;
+  min-height: 0;
+}
+.nai-float-btn > svg,
+button.mobile-size-locked[class*='rounded-full'] > svg,
+button[data-image-preview-navigation] > svg,
+:is(.gallery-image-card, .media-card) :is(.image-card-actions, [data-card-action], [data-image-action-left], [data-image-preview-navigation]) button > svg,
+:is(.gallery-image-card, .media-card) button[data-card-action] > svg {
+  display: block;
+  flex: none;
+  margin: 0 !important;
+  width: calc(var(--nai-float-control, 32px) * .5) !important;
+  height: calc(var(--nai-float-control, 32px) * .5) !important;
+}

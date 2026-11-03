@@ -900,6 +900,22 @@ describe('全局外观覆盖审计', () => {
     expect(declarations(tilt, undefined, css)['will-change']).toBe('transform');
     expect(declarations(tilt, undefined, css)['transition-property']).toBe('filter, box-shadow, border-color');
   });
+  it('卡片与图片预览层的悬浮圆钮统一跟随「悬浮按钮大小」', () => {
+    // 图库卡片里按标记兜底：新加的卡片按钮只要带这些标记就自动纳入。
+    const cardButton = ':is(.gallery-image-card, .media-card) :is(.image-card-actions, [data-card-action], [data-image-action-left], [data-image-preview-navigation]) button';
+    const overlayButton = "button.mobile-size-locked[class*='rounded-full']";
+    for (const selector of ['.nai-float-btn', overlayButton, 'button[data-image-preview-navigation]', cardButton, ':is(.gallery-image-card, .media-card) button[data-card-action]']) {
+      const style = declarations(selector, undefined, css);
+      expect(style.width, selector).toBe('var(--nai-float-control, 32px)');
+      expect(style.height, selector).toBe('var(--nai-float-control, 32px)');
+      expect(style['min-width'], selector).toBe('0');
+      // 图标随按钮同比例缩放并强制居中，否则只放大外圈、或图标被内边距挤偏。
+      expect(style['align-items'], selector).toBe('center');
+      expect(style['justify-content'], selector).toBe('center');
+      expect(declarations(selector + ' > svg', undefined, css).width, selector).toBe('calc(var(--nai-float-control, 32px) * .5)');
+    }
+  });
+
   it('磨砂标题优先于主题白底和文字映射，保留图标语义色及关闭后的普通底栏', () => {
     const root = "html[data-gallery-frosted-caption='true'] .gallery-card-caption";
     const expected = new Map([
