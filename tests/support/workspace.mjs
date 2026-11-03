@@ -33,7 +33,8 @@ export const removeWorkspace = (root, parent = temporaryRoot) => {
   if (dirname(target) !== base || !relative(base, target)) throw new Error('拒绝清理测试父目录以外的位置');
   if (!existsSync(target)) return;
   if (realpathSync(target) !== target || realpathSync(base) !== base) throw new Error('测试临时目录位置已变化，停止清理');
-  rmSync(target, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  // Windows 上 wrangler/workerd 退出后句柄通常要几百毫秒才释放，重试窗口给足 5 秒。
+  rmSync(target, { recursive: true, force: true, maxRetries: 25, retryDelay: 200 });
 };
 
 export const createWorkspace = (prefix = 'case-', parent = temporaryRoot) => {
