@@ -8,6 +8,7 @@ import { copyTagText } from '../services/externalImageTags';
 import { DEFAULT_NOISE_SCHEDULE, NOISE_SCHEDULE_LABELS, normalizeNoiseSchedule } from '../services/naiNoiseSchedule.mjs';
 import { InfoPopover } from './InfoPopover';
 import { PromptLibraryCaptureButton } from './PromptLibraryAccess';
+import { characterReferenceTypeLabel } from '../services/characterReferenceTypes';
 
 /**
  * UC Preset 的人类可读标签映射
@@ -183,7 +184,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                             <div key={`${slot.assetId}-${index}`} className="rounded-lg border border-cyan-100 bg-cyan-50/60 p-2.5 dark:border-cyan-900/60 dark:bg-cyan-950/20">
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="truncate text-xs font-bold text-cyan-700 dark:text-cyan-300">{slot.assetName || t("精准参考 {0}", [index + 1])}</span>
-                                    <span className="flex-none text-micro text-gray-500">{slot.type === 'character' ? t("角色") : slot.type === 'style' ? t("画风") : t("角色与画风")}</span>
+                                    <span className="flex-none text-micro text-gray-500">{t(characterReferenceTypeLabel(slot.type))}</span>
                                 </div>
                                 <p className="mt-1 text-micro text-gray-500">{t("强度 {0} · 保真 {1}", [slot.strength.toFixed(2), slot.fidelity.toFixed(2)])}</p>
                             </div>

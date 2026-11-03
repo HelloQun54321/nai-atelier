@@ -490,6 +490,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   return (
     <>
       <ReferenceSelectionPreview enabled={vibes.enabled} manageLabel={t('管理氛围参考')} onManage={() => setOpen(true)}
+        onEnable={vibes.slots.length ? () => updateVibes({ ...vibes, enabled: true }) : undefined}
         items={vibes.slots.map((slot, index) => {
           const asset = allAssets.find(item => item.id === slot.vibeId);
           return { id: `${slot.vibeId}:${index}`, name: slot.vibeName || asset?.name || t('未知氛围参考'),

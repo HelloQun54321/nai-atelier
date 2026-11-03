@@ -23,14 +23,20 @@ export const ReferenceSelectionPreview: React.FC<{
   enabled: boolean;
   manageLabel: string;
   onManage: () => void;
+  /** 切到不支持该参考的模型后会自动停用；提供后可在摘要处一键恢复。 */
+  onEnable?: () => void;
   summary?: React.ReactNode;
   actions?: React.ReactNode;
-}> = ({ items, enabled, manageLabel, onManage, summary, actions }) => {
+}> = ({ items, enabled, manageLabel, onManage, onEnable, summary, actions }) => {
   useLanguage();
   return <div className="space-y-2">
     <div className="flex items-center justify-between gap-2">
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
-        <span className={items.length && enabled ? 'font-semibold text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}>{items.length ? enabled ? t('已启用') : t('已停用') : t('未选择参考图')}</span>
+        <span
+          className={items.length && enabled ? 'font-semibold text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}
+          title={items.length && !enabled ? t('切到不支持该参考的模型时会自动停用，切回支持模型或点「启用」即可恢复') : undefined}
+        >{items.length ? enabled ? t('已启用') : t('已停用') : t('未选择参考图')}</span>
+        {items.length > 0 && !enabled && onEnable && <button type="button" onClick={onEnable} className="flex-none rounded-md border border-indigo-300 px-2 py-0.5 text-micro font-bold text-indigo-700 dark:border-indigo-800 dark:text-indigo-300">{t('启用')}</button>}
         {items.length > 0 && <span className="text-gray-500 dark:text-gray-400">{t('已选 {0} 张', [items.length])}</span>}
         {summary}
       </div>

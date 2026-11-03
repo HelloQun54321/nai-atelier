@@ -13,6 +13,7 @@ import { useAssetManagerLayer } from './useAssetManagerLayer';
 import { AssetDefaultsForm } from './AssetDefaultsForm';
 import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
 import { ReferenceSelectionPreview } from './ReferenceSelectionPreview';
+import { CHARACTER_REFERENCE_TYPES, characterReferenceTypeLabel } from '../services/characterReferenceTypes';
 
 interface Props {
   params: NAIParams;
@@ -22,11 +23,7 @@ interface Props {
   operation?: ImageEditOperation;
 }
 
-const referenceTypes: Array<{ value: CharacterReferenceSelection['type']; label: string; hint: string }> = [
-  { value: 'character', label: '角色', hint: '保留人物身份与外观' },
-  { value: 'style', label: '画风', hint: '参考图像的风格表现' },
-  { value: 'character_style', label: '角色与画风', hint: '同时参考人物和风格' },
-];
+const referenceTypes = CHARACTER_REFERENCE_TYPES;
 
 const emptyReferences = (): NonNullable<NAIParams['characterReferences']> => ({ enabled: false, slots: [] });
 
@@ -122,9 +119,10 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
       slots: [...current.slots, {
         assetId: asset.id,
         assetName: asset.name,
-        type: 'character',
-        strength: asset.defaultStrength ?? 0.6,
-        fidelity: asset.defaultFidelity ?? 0.6,
+        // 官方新加入的参考图默认「Character & Style」、强度 1、保真 1。
+        type: 'character_style',
+        strength: asset.defaultStrength ?? 1,
+        fidelity: asset.defaultFidelity ?? 1,
         informationExtracted: 1,
       }],
     });
@@ -195,6 +193,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
 
   return <>
     <ReferenceSelectionPreview enabled={references.enabled} manageLabel={t('管理精准参考')} onManage={() => setOpen(true)}
+      onEnable={references.slots.length ? () => updateReferences({ enabled: true, slots: references.slots }) : undefined}
       items={references.slots.map((slot, index) => {
         const asset = allAssets.find(item => item.id === slot.assetId);
         return { id: `${slot.assetId}:${index}`, name: slot.assetName || asset?.name || t('未知参考'),

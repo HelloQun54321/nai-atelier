@@ -125,7 +125,7 @@ const cleanParams = (value: unknown): NAIParams => {
   if (item.characterReferences !== undefined) {
     const references = object(item.characterReferences);
     result.characterReferences = { enabled: bool(references.enabled), slots: list(references.slots, 16).map(value => {
-      const slot = object(value); if (!['character', 'style', 'character_style'].includes(String(slot.type))) fail('精准参考类型无效');
+      const slot = object(value); if (!['character', 'style', 'costume', 'character_style', 'delta'].includes(String(slot.type))) fail('精准参考类型无效');
       return { assetId: text(slot.assetId, 200), ...(slot.assetName !== undefined ? { assetName: text(slot.assetName, 200) } : {}), type: slot.type, strength: finite(slot.strength), fidelity: finite(slot.fidelity), ...(slot.informationExtracted !== undefined ? { informationExtracted: finite(slot.informationExtracted) } : {}) };
     }) };
   }

@@ -13,7 +13,7 @@ interface Props {
 /** 资料默认值显式保存，与右侧即时生效的本次参考参数区分。 */
 export const AssetDefaultsForm: React.FC<Props> = ({ name, strength, fidelity, min = 0, max = 1, onSave }) => {
   useLanguage();
-  const [draft, setDraft] = useState({ name, strength: String(strength), fidelity: String(fidelity ?? 0.6) });
+  const [draft, setDraft] = useState({ name, strength: String(strength), fidelity: String(fidelity ?? 1) });
   const [saved, setSaved] = useState({ name, strength, fidelity });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -29,7 +29,7 @@ export const AssetDefaultsForm: React.FC<Props> = ({ name, strength, fidelity, m
     const next = { name: draft.name.trim(), strength: normalize(draft.strength), fidelity: fidelity === undefined ? undefined : normalize(draft.fidelity) };
     try {
       await onSave(next.name, next.strength, next.fidelity);
-      setSaved(next); setDraft({ name: next.name, strength: String(next.strength), fidelity: String(next.fidelity ?? 0.6) });
+      setSaved(next); setDraft({ name: next.name, strength: String(next.strength), fidelity: String(next.fidelity ?? 1) });
       setMessage('资料默认值已保存');
     } catch (error) { setMessage(error instanceof Error ? error.message : '保存失败'); }
     finally { setSaving(false); }

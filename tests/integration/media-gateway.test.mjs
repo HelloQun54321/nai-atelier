@@ -198,10 +198,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   VibeEncodingMemoryCache,
+  buildCachedPreciseReferences,
   buildCachedVibeReferences,
   buildPreciseReferenceParameters,
   clearPreciseReferenceParameters,
   createThumbnailPreWarmer,
+  generateWithCacheRetry,
   generateWithVibeCacheRetry,
   getVibeCacheSecretKey,
   classifyAitagRemoteTarget,
@@ -1498,6 +1500,37 @@ test('cached Vibe references use stable private keys and optionally include data
   const retry = buildCachedVibeReferences(encodings, includeOnlySecond);
   assert.equal('data' in retry[0], false);
   assert.equal(retry[1].data, encodings[1]);
+});
+
+test('cached Precise References only omit data for confirmed server cache keys', () => {
+  const images = ['image-a', 'image-b'];
+  // includeDataFor 是「这些键必须带原图」（重试用），空集合表示全部只发缓存键。
+  const mustIncludeData = new Set([getVibeCacheSecretKey(images[0])]);
+  const mixed = buildCachedPreciseReferences(images, mustIncludeData);
+  assert.equal(mixed[0].data, images[0]);
+  assert.equal('data' in mixed[1], false);
+  assert.equal(mixed[1].cache_secret_key, getVibeCacheSecretKey(images[1]));
+
+  assert.deepEqual(buildCachedPreciseReferences(images, new Set()).map(item => 'data' in item), [false, false]);
+});
+
+test('invalid Precise Reference cache keys are retried with the original image', async () => {
+  const image = Buffer.from('synthetic-reference-image').toString('base64');
+  const cacheKey = getVibeCacheSecretKey(image);
+  const requests = [];
+  const requestGeneration = async nextPayload => {
+    requests.push(JSON.parse(JSON.stringify(nextPayload)));
+    if (requests.length === 1) {
+      return new Response(JSON.stringify({ message: 'INVALID_CACHE_KEYS', details: { invalidKeys: [cacheKey] } }), { status: 400 });
+    }
+    return new Response('zip', { status: 200 });
+  };
+  const payload = { parameters: { director_reference_images_cached: [{ cache_secret_key: cacheKey }] } };
+  const response = await generateWithCacheRetry(payload, 'Bearer test', { preciseImages: [image] }, requestGeneration);
+  assert.equal(response.status, 200);
+  assert.equal(requests.length, 2);
+  assert.equal('data' in requests[0].parameters.director_reference_images_cached[0], false);
+  assert.equal(requests[1].parameters.director_reference_images_cached[0].data, image);
 });
 
 test('encoding memory cache merges concurrent loads and evicts least recently used data', async () => {

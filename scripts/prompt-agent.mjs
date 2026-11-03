@@ -724,15 +724,15 @@ const sanitizeParams = raw => {
   if (value.vibes && typeof value.vibes === 'object') params.vibes = value.vibes;
   if (value.characterReferences && typeof value.characterReferences === 'object') {
     const slots = Array.isArray(value.characterReferences.slots) ? value.characterReferences.slots.slice(0, 4).flatMap(slot => {
-      const type = ['character', 'style', 'character_style'].includes(slot?.type) ? slot.type : 'character';
+      const type = ['character', 'style', 'costume', 'character_style', 'delta'].includes(slot?.type) ? slot.type : 'character_style';
       const assetId = text(slot?.assetId).slice(0, 200);
       if (!assetId) return [];
       return [{
         assetId,
         assetName: text(slot?.assetName).slice(0, 100),
         type,
-        strength: clamp(slot?.strength, -1, 2, 0.6),
-        fidelity: clamp(slot?.fidelity, -1, 2, 0.6),
+        strength: clamp(slot?.strength, -1, 2, 1),
+        fidelity: clamp(slot?.fidelity, -1, 2, 1),
         informationExtracted: clamp(slot?.informationExtracted, 0, 1, 1),
       }];
     }) : [];
@@ -4810,7 +4810,7 @@ export class PromptAgentService {
         name: 'set_character_references', label: '设置精准参考', description: '从精准参考资料库选择最多4张图片并设置类型、Strength和Fidelity。会自动关闭Vibe Transfer；每张每次生成的附加费以当前官方同步规则估算。',
         parameters: Type.Object({ slots: Type.Array(Type.Object({
           assetId: Type.String(),
-          type: Type.Optional(Type.Union([Type.Literal('character'), Type.Literal('style'), Type.Literal('character_style')])),
+          type: Type.Optional(Type.Union([Type.Literal('character'), Type.Literal('style'), Type.Literal('costume'), Type.Literal('character_style'), Type.Literal('delta')])),
           strength: Type.Optional(Type.Number()), fidelity: Type.Optional(Type.Number()),
         }), { maxItems: 4 }) }),
         execute: async (_id, args) => {
@@ -4821,9 +4821,9 @@ export class PromptAgentService {
             if (!asset?.id || asset.id !== requested.assetId) throw new Error('指定的精准参考不存在，原参考配置已保留');
             slots.push({
               assetId: asset.id, assetName: asset.name,
-              type: ['character', 'style', 'character_style'].includes(requested.type) ? requested.type : 'character',
-              strength: clamp(requested.strength, -1, 2, asset.defaultStrength ?? 0.6),
-              fidelity: clamp(requested.fidelity, -1, 2, asset.defaultFidelity ?? 0.6),
+              type: ['character', 'style', 'costume', 'character_style', 'delta'].includes(requested.type) ? requested.type : 'character_style',
+              strength: clamp(requested.strength, -1, 2, asset.defaultStrength ?? 1),
+              fidelity: clamp(requested.fidelity, -1, 2, asset.defaultFidelity ?? 1),
               informationExtracted: 1,
             });
           }

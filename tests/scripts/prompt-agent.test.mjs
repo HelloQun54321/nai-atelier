@@ -1421,7 +1421,8 @@ test('工具注册表同时提供创作、知识与项目能力，实际权限�
   assert.ok(names.includes('set_characters'));
 }));
 test('真实流适配器遵守输出预算，并持久化唯一终态与目标草稿', () => isolated(async service => {
-  await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', contextWindow: 32768, maxTokens: 32000 }], apiKey: 'synthetic', select: true });
+  // 工具与系统提示的固定占用随能力增长；这里给足输入预算，只验证输出上限与终态持久化。
+  await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', contextWindow: 65536, maxTokens: 32000 }], apiKey: 'synthetic', select: true });
   const session = await service.createSession();
   const previous = globalThis.fetch;
   const requests = [], events = [];

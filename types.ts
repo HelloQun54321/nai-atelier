@@ -111,7 +111,8 @@ export interface CharacterReferenceAsset {
 export interface CharacterReferenceSelection {
   assetId: string;
   assetName?: string;
-  type: 'character' | 'style' | 'character_style';
+  /** 与官方 Precise Reference 的 Description 一致：角色／画风／服装／角色与画风／差异。 */
+  type: 'character' | 'style' | 'costume' | 'character_style' | 'delta';
   strength: number;
   fidelity: number;
   informationExtracted?: number;

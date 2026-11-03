@@ -57,14 +57,14 @@ export async function ensureCharacterReferenceSchema(db: D1Database) {
     id TEXT PRIMARY KEY, name TEXT NOT NULL, source_hash TEXT NOT NULL UNIQUE,
     original_key TEXT NOT NULL, original_type TEXT NOT NULL,
     thumbnail_key TEXT, thumbnail_type TEXT,
-    default_strength REAL NOT NULL DEFAULT 0.6,
-    default_fidelity REAL NOT NULL DEFAULT 0.6,
+    default_strength REAL NOT NULL DEFAULT 1,
+    default_fidelity REAL NOT NULL DEFAULT 1,
     archived INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
   )`).run();
   await db.prepare(`CREATE INDEX IF NOT EXISTS idx_character_reference_assets_archived_updated
     ON character_reference_assets(archived, updated_at DESC)`).run();
-  await addColumnIfMissing(db, 'ALTER TABLE character_reference_assets ADD COLUMN default_fidelity REAL NOT NULL DEFAULT 0.6');
+  await addColumnIfMissing(db, 'ALTER TABLE character_reference_assets ADD COLUMN default_fidelity REAL NOT NULL DEFAULT 1');
   characterReferenceSchemaEnsured = true;
 }
 
@@ -528,7 +528,7 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
         (id, name, source_hash, original_key, original_type, thumbnail_key, thumbnail_type,
          default_strength, default_fidelity, archived, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`)
-        .bind(id, name, sourceHash, originalKey, original.contentType, thumbnailKey, thumbnailType, 0.6, 0.6, now, now).run();
+        .bind(id, name, sourceHash, originalKey, original.contentType, thumbnailKey, thumbnailType, 1, 1, now, now).run();
       const created = await db.prepare('SELECT * FROM character_reference_assets WHERE id = ?').bind(id).first<any>();
       return json({ item: mapCharacterReferenceAsset(created) }, 201);
     }
@@ -588,13 +588,13 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
       const name = String(body.name || '').trim().slice(0, 100);
       if (!name) return error('精准参考图名称不能为空', 400);
       const requestedStrength = body.defaultStrength === undefined
-        ? Number(existing.default_strength ?? 0.6)
+        ? Number(existing.default_strength ?? 1)
         : Number(body.defaultStrength);
       if (!Number.isFinite(requestedStrength) || requestedStrength < -1 || requestedStrength > 2) {
         return error('默认强度必须在 -1 到 2 之间', 400);
       }
       const requestedFidelity = body.defaultFidelity === undefined
-        ? Number(existing.default_fidelity ?? 0.6)
+        ? Number(existing.default_fidelity ?? 1)
         : Number(body.defaultFidelity);
       if (!Number.isFinite(requestedFidelity) || requestedFidelity < -1 || requestedFidelity > 2) {
         return error('默认保真度必须在 -1 到 2 之间', 400);

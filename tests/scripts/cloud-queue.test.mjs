@@ -419,12 +419,19 @@ test('SSE 角色参考：文生图、图生图、重绘与扩图共用原图解�
         setup(() => assert.fail('未开启公共队列')), { enabled: false }, async (_url, options) => {
           calls++; const parameters = JSON.parse(options.body).parameters;
           assert.equal(parameters._local_character_references, undefined);
-          assert.equal(parameters.director_reference_images.length, 1);
-          assert.ok(Buffer.from(parameters.director_reference_images[0], 'base64').length > image.length);
+          // 官方直连改发 cached 形式：首次附带原图数据，同一张图确认后只发缓存键。
+          assert.equal(parameters.director_reference_images, undefined);
+          assert.equal(parameters.director_reference_images_cached.length, 1);
+          assert.match(parameters.director_reference_images_cached[0].cache_secret_key, /^[a-f0-9]{64}$/);
+          if (operation === 'generate') {
+            assert.ok(Buffer.from(parameters.director_reference_images_cached[0].data, 'base64').length > image.length);
+          } else {
+            assert.equal('data' in parameters.director_reference_images_cached[0], false);
+          }
           assert.deepEqual(parameters.director_reference_strength_values, [-0.5]);
           assert.deepEqual(parameters.director_reference_descriptions.map(d => d.caption.base_caption), ['character&style']);
           return new Response(finalFrame);
-        }, { ...generationOptions, settleGeneration: async ({ payload }) => { settlements++; assert.equal(payload.parameters.director_reference_images.length, 1); return { estimatedCost: 0 }; } });
+        }, { ...generationOptions, settleGeneration: async ({ payload }) => { settlements++; assert.equal(payload.parameters.director_reference_images_cached.length, 1); return { estimatedCost: 0 }; } });
       assert.equal(res.statusCode, 200, res.body()); assert.equal(calls, 1); assert.equal(settlements, 1);
     }
   } finally { worker.closeAllConnections(); await new Promise(resolve => worker.close(resolve)); }

@@ -192,11 +192,11 @@ describe.each(['vibe', 'reference'] as const)('%s 已选参考摘要', kind => {
   });
 });
 
-it('精准参考摘要直接区分角色、画风、角色与画风三种含义', () => {
-  const types = ['character', 'style', 'character_style'] as const;
-  render(<CharacterReferenceManager params={{ ...params, characterReferences: { enabled: true, slots: types.map((type, i) => ({ assetId: String(i), assetName: `参考 ${i}`, type, strength: 0.6, fidelity: 0.6 })) } }} setParams={vi.fn()} notify={vi.fn()} markChange={vi.fn()} />);
-  expect(screen.getAllByRole('img')).toHaveLength(3);
-  for (const label of ['角色', '画风', '角色与画风']) expect(screen.getByText(label)).toBeTruthy();
+it('精准参考摘要直接区分角色、画风、服装、角色与画风、变化五种含义', () => {
+  const types = ['character', 'style', 'costume', 'character_style', 'delta'] as const;
+  render(<CharacterReferenceManager params={{ ...params, characterReferences: { enabled: true, slots: types.map((type, i) => ({ assetId: String(i), assetName: `参考 ${i}`, type, strength: 1, fidelity: 1 })) } }} setParams={vi.fn()} notify={vi.fn()} markChange={vi.fn()} />);
+  expect(screen.getAllByRole('img')).toHaveLength(5);
+  for (const label of ['角色', '画风', '服装', '角色与画风', '变化']) expect(screen.getByText(label)).toBeTruthy();
   expect(fixtures.listReference).not.toHaveBeenCalled();
 });
 

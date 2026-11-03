@@ -127,7 +127,7 @@ test('电脑实际 HTTP 入口连接成员 Key、生图、余额与 Vibe；无�
   }
 });
 
-test('第三方网关的精确参考改写为附原图的缓存形式，官方直连保持原始字段', async () => {
+test('第三方网关与官方直连都发送参考图缓存形式，网关始终附原图', async () => {
   const parameters = { director_reference_images: ['aGVsbG8=', 'd29ybGQ='], director_reference_strength_values: [0.6, 0.6] };
   toCachedPreciseReferenceParameters(parameters);
   assert.equal(parameters.director_reference_images, undefined);
@@ -174,9 +174,11 @@ test('第三方网关的精确参考改写为附原图的缓存形式，官方�
     assert.match(bodies.gateway.director_reference_images_cached[0].cache_secret_key, /^[a-f0-9]{64}$/);
     assert.ok(bodies.gateway.director_reference_images_cached[0].data.length > 100, '网关请求必须附带原图数据');
     assert.equal(bodies.gateway.director_reference_descriptions.length, 1);
-    assert.equal(bodies.official.director_reference_images_cached, undefined);
-    assert.equal(bodies.official.director_reference_images.length, 1);
-    assert.equal(bodies.official.director_reference_images[0], bodies.gateway.director_reference_images_cached[0].data);
+    assert.equal(bodies.official.director_reference_images, undefined);
+    assert.equal(bodies.official.director_reference_images_cached.length, 1);
+    // 首次使用同一张参考图时官方也要原图数据，缓存键与网关一致（同一份内容派生）。
+    assert.equal(bodies.official.director_reference_images_cached[0].data, bodies.gateway.director_reference_images_cached[0].data);
+    assert.equal(bodies.official.director_reference_images_cached[0].cache_secret_key, bodies.gateway.director_reference_images_cached[0].cache_secret_key);
     assert.equal(events.length, 2);
     assert.ok(events.every(event => event.cost > 0 && event.images === 1 && event.receiptId));
     mock.assertNoPendingInterceptors();

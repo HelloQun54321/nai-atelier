@@ -24,7 +24,7 @@ it('参考图所有费用提示跟随动态单价', () => {
   expect(screen.getByText('本次生成额外消耗 1 × 9 = 9 Anlas')).toBeTruthy();
 });
 
-it('精准参考保持三种类型及原值，已有资产名称不随通用名称变更', async () => {
+it('精准参考保持官方五种描述类型及原值，已有资产名称不随通用名称变更', async () => {
   const params: NAIParams = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral',
     characterReferences: { enabled: true, slots: [{ assetId: 'ref', assetName: '已有角色参考名字', type: 'character', strength: 1, fidelity: 1 }] } };
   const setParams = vi.fn();
@@ -38,9 +38,10 @@ it('精准参考保持三种类型及原值，已有资产名称不随通用名�
   fireEvent.click(screen.getByText('参数 · 角色 · 强度 1.00'));
   const select = screen.getByRole('combobox');
   expect(Array.from((select as HTMLSelectElement).options).map(option => [option.value, option.textContent])).toEqual([
-    ['character', '角色 · 保留人物身份与外观'], ['style', '画风 · 参考图像的风格表现'], ['character_style', '角色与画风 · 同时参考人物和风格'],
+    ['character', '角色 · 保留人物身份与外观'], ['style', '画风 · 参考图像的风格表现'], ['costume', '服装 · 服装与配饰'],
+    ['character_style', '角色与画风 · 同时参考人物和风格'], ['delta', '变化 · 变化量'],
   ]);
-  for (const type of ['style', 'character_style', 'character']) {
+  for (const type of ['style', 'costume', 'character_style', 'delta', 'character']) {
     fireEvent.change(select, { target: { value: type } });
     expect(setParams.mock.lastCall?.[0].characterReferences.slots[0]).toMatchObject({ type, assetId: 'ref', assetName: '已有角色参考名字' });
   }
