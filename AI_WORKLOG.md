@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-04
+- **DeepSeek Harness (deepseek-v4.1-flash)**：修指针倾斜按下时瞬移：`pointerdown` 原本直接 `release()` 把 transform 抹掉（无过渡）导致卡片瞬回正、按钮从指针下跳开；改为按下定格当前角度并清掉残余速度、`move` 冻结，`pointerup`／`pointercancel` 恢复跟随，只有 `dragstart` 才真正释放。新增「按下定格」「拖拽才回正」两条用例，倾斜与外观审计 78 项通过。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：按用户要求把卡片「指针倾斜」默认改成关闭，并在开关下方加小字提醒「虽然好玩，但卡片会跟着晃、按钮也跟着移动，容易点不到」；倾斜与「卡片悬停浮动」由运行时抑制改为开关级互斥，`updateAppearance` 开一个自动关另一个，`normalizeAppearancePreferences` 与 `validateAppearancePreset` 在外部预设／旧存档同时打开时保留悬停浮动，内置苹果主题不再开启倾斜。同步 README、产品决策、四语文案与外观／预设回归（154 项全过）。
 
 ## 2026-11-03

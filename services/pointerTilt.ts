@@ -27,6 +27,8 @@ export const initPointerTilt = () => {
   let card: HTMLElement | null = null;
   let box: DOMRect | null = null;
   let pointer: Pair | null = null;
+  // 按下期间定格角度：否则移除 transform 会让卡片瞬间回正，按钮在指尖下方跳开。
+  let frozen = false;
   let max = DEFAULT_TILT;
   let stiffness = STIFFNESS_LIGHT - (STIFFNESS_LIGHT - STIFFNESS_HEAVY) / 2;
   let damping = DAMPING_LIGHT + (DAMPING_HEAVY - DAMPING_LIGHT) / 2;
@@ -51,7 +53,7 @@ export const initPointerTilt = () => {
   const release = () => {
     cancelAnimationFrame(frame); frame = 0;
     if (card) { card.style.removeProperty('transform'); delete card.dataset.pointerTilt; }
-    card = null; box = null; pointer = null;
+    card = null; box = null; pointer = null; frozen = false;
     target = zero(); current = zero(); velocity = zero();
   };
 
@@ -107,6 +109,7 @@ export const initPointerTilt = () => {
 
   const move = (event: PointerEvent) => {
     if (event.pointerType !== 'mouse' || !active()) { if (card) release(); return; }
+    if (frozen) return;
     const element = event.target instanceof Element ? event.target.closest<HTMLElement>(CARD_SELECTOR) : null;
     if (!element) {
       if (pointer) { pointer = null; target = zero(); box = null; schedule(); }
@@ -141,7 +144,13 @@ export const initPointerTilt = () => {
   };
 
   document.addEventListener('pointermove', move, { passive: true });
-  document.addEventListener('pointerdown', release, true);
+  // 按下只定格、不回正；抬起后继续跟随，拖拽才真正释放。
+  const freeze = () => { frozen = true; target = { ...current }; velocity = zero(); };
+  const thaw = () => { if (!frozen) return; frozen = false; if (card) schedule(); };
+  document.addEventListener('pointerdown', freeze, true);
+  document.addEventListener('pointerup', thaw, true);
+  document.addEventListener('pointercancel', thaw, true);
+  document.addEventListener('dragstart', release, true);
   // pointerleave 不冒泡，挂在根元素上只用于指针甩出窗口时兜底回正。
   document.documentElement.addEventListener('pointerleave', leave);
   document.addEventListener('scroll', reset, true);
@@ -154,7 +163,10 @@ export const initPointerTilt = () => {
   return () => {
     release();
     document.removeEventListener('pointermove', move);
-    document.removeEventListener('pointerdown', release, true);
+    document.removeEventListener('pointerdown', freeze, true);
+    document.removeEventListener('pointerup', thaw, true);
+    document.removeEventListener('pointercancel', thaw, true);
+    document.removeEventListener('dragstart', release, true);
     document.documentElement.removeEventListener('pointerleave', leave);
     document.removeEventListener('scroll', reset, true);
     document.removeEventListener('visibilitychange', visibility);

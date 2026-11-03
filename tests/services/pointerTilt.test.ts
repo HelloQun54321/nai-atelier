@@ -138,12 +138,31 @@ describe('卡片指针倾斜', () => {
     expect(card.style.transform).toBe('');
   });
 
-  it('按下指针时立即释放，避免拖拽卡片时仍带偏转', () => {
+  it('按下时定格角度不回正，抬起后继续跟随，拖拽才释放', () => {
+    const { flush } = installFrames();
+    cleanup = initPointerTilt();
+    move(190, 50);
+    flush(4);
+    const pressed = card.style.transform;
+    expect(pressed).not.toBe('');
+    // 按下后即使指针还在动，角度也不重新计算，卡片不会瞬间回正把按钮甩开。
+    card.dispatchEvent(Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType: 'mouse' }));
+    move(40, 20);
+    flush(6);
+    expect(card.style.transform).toBe(pressed);
+    card.dispatchEvent(Object.assign(new Event('pointerup', { bubbles: true }), { pointerType: 'mouse' }));
+    move(40, 20);
+    flush(6);
+    expect(card.style.transform).not.toBe(pressed);
+  });
+
+  it('真正开始拖拽时才回正，避免卡片带着偏转被拖走', () => {
     const { flush } = installFrames();
     cleanup = initPointerTilt();
     move(190, 50);
     flush(3);
-    card.dispatchEvent(Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType: 'mouse' }));
+    expect(card.style.transform).not.toBe('');
+    card.dispatchEvent(Object.assign(new Event('dragstart', { bubbles: true }), {}));
     expect(card.style.transform).toBe('');
   });
 
