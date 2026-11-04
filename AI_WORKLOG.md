@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-04
+- **Codex**：为创作助手增加本机 GitHub／ZIP 插件管理、Cordis 子进程工具与静态规则接入、停用包预览及隔离测试；随附带来源和 MIT 声明的独立 Atelier 适配包，规则明确限制非性化外观标签。只提交插件及必要文档／版本，私人预设与无关本地续修不分发。 插件专属 Node 9 项、UI／主题 161 项与 Worker 463 项通过；共享 Node 回归保留 8 项既有失败，3 项测试环境问题在入口及短路径修正后连同子项 18 项复测通过；未调用真实模型或生图。
+
 - **DeepSeek Harness (deepseek-v4.1-flash)**：合并外部 PR #22（clanso 的「整理提示词」与「生成样张」）。冲突只在流水账文件：`locales/messages.json` 用 key 合并脚本保留 6596 项、追加 77 项；`package.json`／`package-lock.json`／`README` 徽章／manifest 取主干后统一 `bump-version.mjs minor` 到 1.166.0。功能代码零冲突直接合入，顺带把 README「来源与致谢」补上 @clanso。回归：整理／样张／面板 27 项、Node 端整理 4 项、ChainEditor 与 ImageEditWorkspace 319 项、gateway 463 项通过；gateway 仍有 5 项既有失败（`prompt-agent-capabilities`、`PROMPT_PURPOSES` 计数、`style-collector-wallpaper`），与本次无关。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：从外部 PR #21 吸收服务层改动。该 PR 的「一键收藏整串画师」按钮与既有逐个点爱心的收藏粒度冲突，只取提取规则与收藏写入约定：`extractPromptArtistTags` 统一负权重排除与逐段解析，`extractChainArtistParticipation`／`extractHistoryParticipation` 改用它（此前 `-1::artist:x::` 会被算进生成量、全局未闭合的 `artists:{` 会把角色栏描述当成画师名），`toggleArtistPreference` 支持目标状态，并修掉无样张画师写入假封面 `artist:名字` 的破图。新增服务 `artistFavoriteExtraction` 与批量 `addArtistPreferences`，暂不接入 UI。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：统一各页面顶栏搜索框。`ToolbarSearch` 原本有两条结构：带前置内容时容器带 `appearance-group`（背景由主题材质接管），不带时容器是 `label`、由 `input` 自己铺 `dark:bg-gray-950/70`，同一主题下收藏库与风格串观感不一致，磨砂条还会露出圆角外。改为两条统一走容器 + `appearance-group` + 透明 input，并给容器加 `overflow-hidden` 让内部高光贴合圆角。同步修正 `56f1c812` 引入的测试脱节（当时测试路径多写了一层目录导致未执行）：收藏库用例改为断言详情页 3 个「取消收藏」、0 个「收藏」。收藏库 114 项、外观 180 项通过。

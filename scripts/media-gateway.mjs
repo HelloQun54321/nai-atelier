@@ -3450,6 +3450,7 @@ const serveDistFile = async (req, res, url) => {
     loadOriginal: source => source.startsWith('/api/artist-samples/') ? artistSamples.readImage(source) : requestRemoteBuffer(source, remoteFetch),
   });
   const promptAgent = new PromptAgentService({ lanSecret, outboundProxyUrl, getDefaultExportDirectory: () => getDefaultExportDirectory(process.cwd()) });
+  promptAgent.plugins.fetchRemote = remoteFetch;
   const stChatu8Bridge = new StChatu8Bridge({
     projectRoot: process.cwd(),
     requestWorkerJson: (path, options) => requestWorkerJson(path, internalWorkerRequest, workerPort, options),
@@ -3806,6 +3807,27 @@ const serveDistFile = async (req, res, url) => {
     if (url.pathname.startsWith('/api/prompt-agent/')) {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       try {
+        if (url.pathname === '/api/prompt-agent/plugins' || url.pathname.startsWith('/api/prompt-agent/plugins/')) {
+          const address = req.socket?.remoteAddress || '';
+          if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address)) return sendJson(res, 403, { error: '请在这台电脑上管理插件' });
+          if (req.headers['sec-fetch-site'] === 'cross-site' || (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`)) return sendJson(res, 403, { error: '仅允许工坊本机页面管理插件' });
+          if (url.pathname === '/api/prompt-agent/plugins' && req.method === 'GET') return sendJson(res, 200, await promptAgent.plugins.list());
+          if (url.pathname === '/api/prompt-agent/plugins/install' && req.method === 'POST') {
+            const zip = String(req.headers['content-type'] || '').startsWith('application/zip');
+            const body = await readRequestBody(req, zip ? 50 * 1024 * 1024 : 8192);
+            const result = zip ? await promptAgent.plugins.installZip(body, { name: decodeURIComponent(url.searchParams.get('name') || '本地 ZIP') }) : await promptAgent.plugins.github(JSON.parse(body.toString('utf8')).url);
+            return sendJson(res, 201, result);
+          }
+          const preview = url.pathname.match(/^\/api\/prompt-agent\/plugins\/([a-f0-9]{20})\/preview$/);
+          if (preview && req.method === 'GET') return sendJson(res, 200, await promptAgent.plugins.preview(preview[1]));
+          const match = url.pathname.match(/^\/api\/prompt-agent\/plugins\/([a-f0-9]{20})$/);
+          if (match && req.method === 'PUT') {
+            const body = JSON.parse((await readRequestBody(req, 65536)).toString('utf8') || '{}');
+            return sendJson(res, 200, await promptAgent.plugins.enable(match[1], body.enabled === true, body.config));
+          }
+          if (match && req.method === 'DELETE') return sendJson(res, 200, await promptAgent.plugins.remove(match[1]));
+          return sendJson(res, 405, { error: '不支持的插件操作' });
+        }
         if (url.pathname === '/api/prompt-agent/providers') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           return sendJson(res, 200, { items: promptAgent.listProviders() });

@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/yexi-by/dsh-unrestricted",
+  "version": "0.2.7",
+  "commit": "1b4d8b9205dfa0177bd6e1e96ef1a5995e9cc6da",
+  "rulesGitBlob": "74cc388311e2e584576b702532898e45af3cdaa6",
+  "files": {
+    "upstream/LICENSE": "c2c8747bfcaf75daa05b1b489734df3e1692766629a6d9f9227494db71fca91f",
+    "upstream/THIRD_PARTY_NOTICES.md": "0cffce73cdaaa324a0a6aab1a8fd1061fbbcf2645ece1aaed9cbd2113a468fb6"
+  },
+  "fragmentSha256": "b97d313d2ee769b3b908738236e29029fbc757ed62713d1179313b17d5628fb7",
+  "adaptation": "Static Atelier registration; age-disregard and forced-adult NSFW clauses removed; separate non-sexual appearance-tag clarification added. Upstream source is referenced by commit and hash, not bundled as an unchanged copy.",
+  "originalRulesSha256": "cf32063d79d80d6370642aa8669b53cb055f996e8e962364ed8b43f59b10101f",
+  "appearanceSha256": "f565885c479ebda52892d0956fb37d5758eb5415fc527e88aa716c641f557972"
+}

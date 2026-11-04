@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.166.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.167.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -545,6 +545,8 @@ flowchart TD
   - **准确显示状态**：中转等待显示「中转排队／生成中…」，不猜测服务端人数，隐藏仅对 st-chatu 生效的个性语输入及显示开关。可「停止等待」中断本次连接，实际生成是否停止由服务端决定；失败不自动重发或回退官方，费用仍按已有官方规则估算。
 
 ---
+
+本机创作助手支持安装 GitHub／ZIP 插件，安装默认停用，启用后仅供完全访问任务使用；[插件接口、运行边界与适配示例](./docs/AGENT_PLUGINS.md)。
 
 ## 🛠️ 技术架构
 

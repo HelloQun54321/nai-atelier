@@ -74,6 +74,7 @@ docs/plans/
 # local-cache/ 为可再生成缓存（缩略图/模型），可清理但删除只影响速度。
 local-data/
 local-cache/
+local-plugins/
 .atelier-storage*.json
 .atelier-storage-switch.lock/
 atelier-storage-workspace.json

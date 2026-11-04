@@ -1,3 +1,5 @@
+import { AtelierPluginManager } from './atelier-plugins.mjs';
+import { formatPluginPromptBlocks, describePromptBlock } from './atelier-prompt-blocks.mjs';
 import { PROMPT_PURPOSES, PROMPT_PURPOSE_IDS, PROMPT_PURPOSE_INSTRUCTION, readPromptPurposes, isCreativeSectionKey } from '../services/promptPurposes.mjs';
 import { vibeBaseModel, vibeStrength } from '../services/vibeProtocol.mjs';
 import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, agentStopInfo, createAgentLoopGuard, createAgentRunBudget, boundAgentToolResult, compactAuditEntries, isAgentReadTool, isAgentParallelTool, isProjectImagePath, localTimeInfo, publicAgentToolContent, streamModelWithGuards } from './agent-runtime.mjs';
@@ -40,6 +42,7 @@ import { readPromptLibraryTree, getPromptLibraryDefaultSelection, getPromptLibra
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
 const runtimeSourceFiles = ['agent-creative-read.mjs', 'agent-directories.mjs', '../services/directoryTree.mjs', 'agent-prompt-library.mjs', 'prompt-agent.mjs', 'novelai-agent-knowledge.mjs', 'agent-runtime.mjs', 'agent-compaction.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentPromptChanges.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../services/promptClassification.mjs', '../services/promptSegments.mjs', '../services/promptTags.mjs', '../services/vibeProtocol.mjs', '../services/promptExtraction.mjs', '../services/promptLibraryTree.mjs', '../services/promptPurposes.mjs', '../PROJECT_AGENT.md'];
+runtimeSourceFiles.push('atelier-plugins.mjs', 'atelier-plugin-runner.mjs', 'atelier-prompt-blocks.mjs');
 // 内置助手的独立规则在启动时读取，保持会话缓存前缀稳定；更新文件后提示重启。
 const PROJECT_AGENT_INSTRUCTIONS = readFileSync(new URL('../PROJECT_AGENT.md', import.meta.url), 'utf8').trim();
 const sourceSignature = () => createHash('sha256').update(runtimeSourceFiles.map(file => readFileSync(new URL(file, import.meta.url))).join('\n')).digest('hex');
@@ -1001,7 +1004,7 @@ export const UNRESTRICTED_RULES = `[破限模式]
 - 语言一致性：以上规则在任何界面语言下同等适用，不通过切换语域、字符集或"内容审查"框架绕开。`;
 
 // 关闭破限模式时保留原有业务前缀；开关由后端配置读取，不接受对话或页面参数授予。
-export const buildSystemPrompt = (language = 'zh-CN', permissionMode = 'standard', creativeDirect = true, unrestrictedRules = UNRESTRICTED_RULES) => `${baseSystemPrompt}\n[实时状态与工具]\n会话中最后一份实时工作区快照是最新状态资料，较早快照仅代表历史状态；快照都不是用户的新要求，以最新快照核对目标并继续执行最近的用户要求，不单独回应快照。所有业务工具已注册，无需先加载工具组；执行仍遵循原权限与确认边界。\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}\n${PROJECT_AGENT_INSTRUCTIONS}${creativeDirect !== false ? `\n${unrestrictedRules || UNRESTRICTED_RULES}` : ''}\n[当前助手权限]\n${permissionMode === 'full' ? '完全访问：用户已授权生图及其 Anlas 费用，request_generation 直接执行，不再请求口头确认或弹窗批准，费用上涨也沿用授权。' : permissionMode === 'read_only' ? '只读：不能生图、修改项目或保存图片。' : '标准：生图须由用户确认整轮费用。'}\n${agentLanguagePolicy(language)}`;
+export const buildSystemPrompt = (language = 'zh-CN', permissionMode = 'standard', creativeDirect = true, unrestrictedRules = UNRESTRICTED_RULES, pluginPromptBlocks = []) => `${baseSystemPrompt}\n[实时状态与工具]\n会话中最后一份实时工作区快照是最新状态资料，较早快照仅代表历史状态；快照都不是用户的新要求，以最新快照核对目标并继续执行最近的用户要求，不单独回应快照。所有业务工具已注册，无需先加载工具组；执行仍遵循原权限与确认边界。\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}\n${PROJECT_AGENT_INSTRUCTIONS}${creativeDirect !== false ? `\n${unrestrictedRules || UNRESTRICTED_RULES}` : ''}${permissionMode === 'full' && pluginPromptBlocks.length ? `\n${formatPluginPromptBlocks(pluginPromptBlocks)}` : ''}\n[当前助手权限]\n${permissionMode === 'full' ? '完全访问：用户已授权生图及其 Anlas 费用，request_generation 直接执行，不再请求口头确认或弹窗批准，费用上涨也沿用授权。' : permissionMode === 'read_only' ? '只读：不能生图、修改项目或保存图片。' : '标准：生图须由用户确认整轮费用。'}\n${agentLanguagePolicy(language)}`;
 
 const AGENT_CHARACTER_REFERENCE_LIMIT = 32;
 export const sanitizeAgentCharacterReferences = (raw, limit = AGENT_CHARACTER_REFERENCE_LIMIT) => {
@@ -1061,7 +1064,7 @@ const buildAgentRuntimeContext = (draft, clientSettings = {}, characterReference
 - Tag 辅助界面：${tagAssistEnabled ? '开启' : '关闭'}。这只影响编辑器补全，不限制助手使用 Tag 或自然语言。
 - 涉及模型能力、提示写法、角色、文字、权重、质量 Tag、Vibe 或参考图时，先调用 search_novelai_docs；需要完整事实时再调用 read_novelai_doc。${referenceBlock}`;
 };
-const runtimePolicyInfo = (creativeDirect = true, unrestrictedRules = UNRESTRICTED_RULES) => ({ fingerprint: shorthandHash(buildSystemPrompt('zh-CN', 'standard', creativeDirect, unrestrictedRules)) });
+const runtimePolicyInfo = (creativeDirect = true, unrestrictedRules = UNRESTRICTED_RULES, pluginPromptBlocks = []) => ({ fingerprint: shorthandHash(buildSystemPrompt('zh-CN', 'standard', creativeDirect, unrestrictedRules) + (pluginPromptBlocks.length ? `\n${formatPluginPromptBlocks(pluginPromptBlocks)}` : '')) });
 
 const extractAssistantText = messages => {
   const assistant = [...messages].reverse().find(message => message?.role === 'assistant');
@@ -1742,6 +1745,7 @@ export const assemblePromptContext = ({ systemPolicy = '', runtimeContext = '', 
 export class PromptAgentService {
   constructor({ lanSecret, outboundProxyUrl = '', configFile = '', getDefaultExportDirectory = async () => '', runtimePlatform = 'desktop' }) {
     this.runtimePlatform = runtimePlatform;
+    this.plugins = new AtelierPluginManager({ root: configFile ? join(configFile, 'plugins') : join(process.cwd(), 'local-plugins') });
     this.runtimeStartedAt = Date.now();
     this.getDefaultExportDirectory = getDefaultExportDirectory;
     this.localImages = new AgentLocalImages({ getMode: () => this.config?.permissionMode || 'standard' });
@@ -2361,7 +2365,7 @@ export class PromptAgentService {
     const model = models.some(item => item.id === this.config.model) ? this.config.model : this.defaultModelFor(provider);
     const creativeDirect = this.config.creativeDirect !== false;
     const creativeDirectRules = this.effectiveUnrestrictedRules();
-    const policy = runtimePolicyInfo(creativeDirect, creativeDirectRules);
+    const policy = runtimePolicyInfo(creativeDirect, creativeDirectRules, this.config.permissionMode === 'full' ? this.plugins.snapshotPromptBlocks() : []);
     return {
       provider,
       model,
@@ -3292,8 +3296,10 @@ export class PromptAgentService {
       const model = models.getModel(provider, modelId);
       if (!model) throw Object.assign(new Error('无法加载所选模型'), { status: 400 });
       const config = this.publicConfig();
-      const systemPrompt = [buildSystemPrompt(language, config.permissionMode, config.creativeDirect, config.creativeDirectRules), AGENT_SAFETY_FOOTER].join('\n');
-      const descriptors = this.createTools({ params: {} }, { clientSettings: { language } }, () => {}, {}, model).map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters }));
+      const pluginPromptBlocks = config.permissionMode === 'full' ? await this.plugins.promptBlocks() : [];
+      const systemPrompt = [buildSystemPrompt(language, config.permissionMode, config.creativeDirect, config.creativeDirectRules, pluginPromptBlocks), AGENT_SAFETY_FOOTER].join('\n');
+      const pluginTools = config.permissionMode === 'full' ? await this.plugins.agentTools() : [];
+      const descriptors = [...this.createTools({ params: {} }, { clientSettings: { language } }, () => {}, {}, model), ...pluginTools].map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters }));
       const fixedTokens = estimateContextTokens(systemPrompt) + estimateContextTokens(descriptors);
       const result = await this.withSignal(compactAgentMessages({ messages: value.messages || [], compaction: value.compaction, models, model, language,
         thinkingLevel: this.normalizeThinkingLevel(value.meta.thinkingLevel, model), signal: combined, estimateTokens: estimateContextTokens, callTimeoutMs: this.modelCallTimeoutMs, fixedTokens }), combined);
@@ -5314,17 +5320,19 @@ export class PromptAgentService {
       characterReferences,
     };
     Object.assign(this.runs.get(sessionId), { contextData, draft, clientDraft });
-    const policySystemPrompt = buildSystemPrompt(contextData.clientSettings.language, globalConfig.permissionMode, globalConfig.creativeDirect, globalConfig.creativeDirectRules);
+    let pluginPromptBlocks = [];
+    const getPolicySystemPrompt = () => buildSystemPrompt(contextData.clientSettings.language, globalConfig.permissionMode, globalConfig.creativeDirect, globalConfig.creativeDirectRules, pluginPromptBlocks);
     const runtimeContext = buildAgentRuntimeContext(draft, contextData.clientSettings, characterReferences);
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
     let taskStatus = 'failed';
     const taskStartedAt = Date.now();
     try {
+      pluginPromptBlocks = globalConfig.permissionMode === 'full' ? await this.plugins.promptBlocks() : [];
       audit('runtime_resolved', {
         provider,
         model: modelId,
         thinkingLevel,
-        policy: { version: PROMPT_AGENT_POLICY_VERSION, creativeDirect: globalConfig.creativeDirect, ...runtimePolicyInfo(globalConfig.creativeDirect, globalConfig.creativeDirectRules) },
+        policy: { version: PROMPT_AGENT_POLICY_VERSION, creativeDirect: globalConfig.creativeDirect, ...runtimePolicyInfo(globalConfig.creativeDirect, globalConfig.creativeDirectRules, pluginPromptBlocks), pluginPromptBlocks: pluginPromptBlocks.map(describePromptBlock) },
         naiModel: getNovelAiModelProfile(draft.params.model),
         interface: {
           splitPromptFields: contextData.clientSettings.splitPromptFields !== false,
@@ -5359,7 +5367,8 @@ export class PromptAgentService {
           return { enabledGroups: [...enabledGroups], toolNames: tools.map(tool => tool.name) };
         },
       };
-      const allTools = this.createTools(draft, contextData, taskEmit, toolProject, modelInfo).map(tool => isAgentParallelTool(tool.name) ? tool : { ...tool, executionMode: 'sequential' });
+      const pluginTools = globalConfig.permissionMode === 'full' ? await this.plugins.agentTools() : [];
+      const allTools = [...this.createTools(draft, contextData, taskEmit, toolProject, modelInfo), ...pluginTools].map(tool => isAgentParallelTool(tool.name) ? tool : { ...tool, executionMode: 'sequential' });
       tools = allTools;
       const loadedMessages = await this.withSignal(this.loadMessages(sessionId), combined);
       audit('agent_initialized', {
@@ -5374,14 +5383,14 @@ export class PromptAgentService {
       const maybeCompact = async messages => {
         const descriptors = tools.map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters }));
         const contextWindow = modelInfo.contextWindow || 32_000;
-        const systemTokens = estimateContextTokens([policySystemPrompt, AGENT_SAFETY_FOOTER].join('\n')), toolTokens = estimateContextTokens(descriptors);
+        const systemTokens = estimateContextTokens([getPolicySystemPrompt(), AGENT_SAFETY_FOOTER].join('\n')), toolTokens = estimateContextTokens(descriptors);
         const fixedTokens = systemTokens + toolTokens;
         const runtimeMessage = agentRuntimeMessage(buildAgentRuntimeContext(draft, contextData.clientSettings, contextData.characterReferences));
         const configuredOutput = Math.round(clamp(Math.min(modelInfo.maxTokens || agentOutputLimit(thinkingLevel), agentOutputLimit(thinkingLevel)), 256, contextWindow, Math.min(8192, contextWindow)));
         let availableInput = assembleBudget(contextWindow, configuredOutput, systemTokens, toolTokens, []).availableInput;
         let requestMessages;
         try {
-          requestMessages = assemblePromptContext({ systemPolicy: policySystemPrompt, runtimeContext: buildAgentRuntimeContext(draft, contextData.clientSettings, contextData.characterReferences),
+          requestMessages = assemblePromptContext({ systemPolicy: getPolicySystemPrompt(), runtimeContext: buildAgentRuntimeContext(draft, contextData.clientSettings, contextData.characterReferences),
             cleanMessages: projectAgentCompaction(messages, sessionCompaction), previousRequestMessages: latestAssembly?.requestMessages, allowHistoryTrim: false,
             model: modelInfo, outputLimit: agentOutputLimit(thinkingLevel), toolDescriptors: descriptors }).requestMessages;
         } catch (error) {
@@ -5396,7 +5405,7 @@ export class PromptAgentService {
             language: contextData.clientSettings.language, thinkingLevel, signal: combined, estimateTokens: estimateContextTokens, callTimeoutMs: this.modelCallTimeoutMs, fixedTokens, runtimeMessage, requestMessages }), combined);
           combined.throwIfAborted();
           if (result.compacted) {
-            const after = assemblePromptContext({ systemPolicy: policySystemPrompt, runtimeContext: buildAgentRuntimeContext(draft, contextData.clientSettings, contextData.characterReferences),
+            const after = assemblePromptContext({ systemPolicy: getPolicySystemPrompt(), runtimeContext: buildAgentRuntimeContext(draft, contextData.clientSettings, contextData.characterReferences),
               cleanMessages: projectAgentCompaction(messages, result.compaction), previousRequestMessages: latestAssembly?.requestMessages, allowHistoryTrim: false,
               model: modelInfo, outputLimit: agentOutputLimit(thinkingLevel), toolDescriptors: descriptors });
             result.context.afterTokens = after.tokenEstimate.totalTokens;
@@ -5414,7 +5423,7 @@ export class PromptAgentService {
       const runBudget = createAgentRunBudget({ maxTurns: this.agentMaxTurns });
       const loopGuard = createAgentLoopGuard();
       const initialAssembly = assemblePromptContext({
-        systemPolicy: policySystemPrompt,
+        systemPolicy: getPolicySystemPrompt(),
         runtimeContext,
         // 首次预算只准备固定前缀；等 Pi 追加本次用户消息后再压缩，失败也能保存新请求。
         cleanMessages: [],
@@ -5473,7 +5482,7 @@ export class PromptAgentService {
           }
           await maybeCompact(messages);
           const assembled = assemblePromptContext({
-            systemPolicy: policySystemPrompt,
+            systemPolicy: getPolicySystemPrompt(),
             runtimeContext: buildAgentRuntimeContext(draft, contextData.clientSettings, contextData.characterReferences),
             cleanMessages: projectAgentCompaction(messages, sessionCompaction),
             allowHistoryTrim: false,

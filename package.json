@@ -1,7 +1,7 @@
 {
   "name": "nai-atelier",
   "private": true,
-  "version": "1.166.0",
+  "version": "1.167.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -35,6 +35,7 @@
   "dependencies": {
     "@capacitor/android": "8.5.3",
     "@capacitor/core": "8.5.3",
+    "@deepseek-ai/cordis": "4.0.5",
     "@earendil-works/pi-agent-core": "^0.81.1",
     "@earendil-works/pi-ai": "^0.81.1",
     "@noble/ciphers": "2.1.1",

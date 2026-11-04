@@ -10,6 +10,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { PromptLibrarySettings } from './PromptLibrarySettings';
+import { AgentPluginSettings } from './AgentPluginSettings';
 import { AGENT_PROVIDER_PRESETS, type AgentProviderPreset } from '../services/agentProviders';
 
 interface PromptAgentSettingsProps {
@@ -241,6 +242,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       {config && agentRuntimeWarning(config) && <div role="status" className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{agentRuntimeWarning(config)}</div>}
       {config?.credentialWarning && <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{config.credentialWarning}</div>}
 
+      <AgentPluginSettings notify={notify} />
       {/* 阶段二：层级 3 - 模型服务管理区 */}
       <div className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center justify-between gap-2">
