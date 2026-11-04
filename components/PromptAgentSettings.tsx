@@ -5,7 +5,7 @@ import { AgentGenerationOptions } from './AgentChatPreferences';
 import { useAgentRuntimeRecheck } from './useAgentRuntimeRecheck';
 import { AgentConnectionForm } from './AgentConnectionForm';
 import { ArrowLeft, Plus } from 'lucide-react';
-import { PromptAgentConfig, PromptAgentCustomProvider, PromptAgentModel, PromptAgentProbeResult, agentRuntimeWarning, displayModelName, formatModelOptionTitle, mergePromptAgentModelCapabilities, promptAgentService } from '../services/promptAgent';
+import { PromptAgentConfig, PromptAgentCustomProvider, PromptAgentModel, PromptAgentProbeResult, PromptAgentRulePreset, agentRuntimeWarning, displayModelName, formatModelOptionTitle, mergePromptAgentModelCapabilities, promptAgentService } from '../services/promptAgent';
 import { useConfirmDialog } from './ConfirmDialog';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
@@ -53,6 +53,8 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
   const [creativeSaving, setCreativeSaving] = useState(false);
   const [rulesDraft, setRulesDraft] = useState('');
   const [rulesSaving, setRulesSaving] = useState(false);
+  const [presetId, setPresetId] = useState('');
+  const [presetsSaving, setPresetsSaving] = useState(false);
   const [searchBaseUrl, setSearchBaseUrl] = useState('https://api.deepseek.com');
   const [searchKeyDraft, setSearchKeyDraft] = useState('');
   const [searchSaving, setSearchSaving] = useState(false);
@@ -86,6 +88,16 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
 
   useEffect(() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }, []);
   useEffect(() => { setRulesDraft(config?.creativeDirectRules || ''); }, [config?.creativeDirectRules]);
+  const rulePresets = useMemo(() => config?.creativeDirectPresets || [], [config?.creativeDirectPresets]);
+  // 生效正文与某条规则一致时自动选中它，用户手动改动草稿不会丢失选择。
+  useEffect(() => {
+    const active = config?.creativeDirectRules || '';
+    setPresetId(current => {
+      const chosen = rulePresets.find(item => item.id === current);
+      if (chosen && chosen.content === active) return current;
+      return rulePresets.find(item => item.content === active)?.id || '';
+    });
+  }, [config?.creativeDirectRules, rulePresets]);
   useAgentRuntimeRecheck(setConfig, true, Boolean(config && agentRuntimeWarning(config)));
 
   const filteredModels = useMemo(() => models.filter(model => fuzzyMatch(`${model.name} ${model.id} ${model.provider}`, query)), [models, query]);
@@ -131,6 +143,55 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
     } catch (error) {
       notify(error instanceof Error ? error.message : t('保存破限规则失败'), 'error');
     } finally { setRulesSaving(false); }
+  };
+
+  /** 规则库整表保存：改名、增删都在这里一次性落盘，生效正文仍走单条规则接口。 */
+  const persistRulePresets = async (presets: PromptAgentRulePreset[]) => {
+    setPresetsSaving(true);
+    try {
+      const next = await promptAgentService.saveCreativeDirectPresets(presets);
+      setConfig(next);
+      window.dispatchEvent(new CustomEvent('nai-agent-runtime-changed'));
+      return next;
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('保存破限规则失败'), 'error');
+      return null;
+    } finally { setPresetsSaving(false); }
+  };
+
+  const selectRulePreset = async (value: string) => {
+    setPresetId(value);
+    const preset = rulePresets.find(item => item.id === value);
+    if (!preset) return;
+    setRulesDraft(preset.content);
+    if (preset.content !== (config?.creativeDirectRules || '')) await saveCreativeDirectRules(preset.content);
+  };
+
+  const saveRulePreset = async () => {
+    const content = rulesDraft.trim();
+    if (!content || !presetId) return;
+    if (!await persistRulePresets(rulePresets.map(item => item.id === presetId ? { ...item, content } : item))) return;
+    await saveCreativeDirectRules(content);
+  };
+
+  const addRulePreset = async () => {
+    const content = rulesDraft.trim();
+    if (!content) return;
+    let index = rulePresets.length + 1;
+    const label = () => t('规则 {0}', [index]);
+    while (rulePresets.some(item => item.name === label())) index += 1;
+    const id = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `rule-${Date.now()}`;
+    if (!await persistRulePresets([...rulePresets, { id, name: label(), content }])) return;
+    setPresetId(id);
+    await saveCreativeDirectRules(content);
+  };
+
+  const deleteRulePreset = async () => {
+    const removing = rulePresets.find(item => item.id === presetId);
+    if (!removing) return;
+    if (!await persistRulePresets(rulePresets.filter(item => item.id !== presetId))) return;
+    setPresetId('');
+    if (removing.content === (config?.creativeDirectRules || '')) await saveCreativeDirectRules('');
   };
 
   useEffect(() => { setSearchBaseUrl(config?.searchApiBaseUrl || 'https://api.deepseek.com'); }, [config?.searchApiBaseUrl]);
@@ -321,23 +382,42 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t('保存后从下一次助手请求生效，不改变正在运行的任务或已有对话；本模式只约束输出内容与交付尺度，不改变工具权限、费用确认或模型服务端的审核过滤。')}</p>
         {config && <details className="mt-3">
           <summary className="mobile-touch cursor-pointer text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('查看与编辑破限规则')}</summary>
+          <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+            <span className="font-semibold">{t('规则库')}</span>
+            <select
+              value={presetId}
+              onChange={event => { void selectRulePreset(event.target.value); }}
+              disabled={rulesSaving || presetsSaving}
+              aria-label={t('选择破限规则')}
+              className="mobile-touch min-w-0 flex-1 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-indigo-400 disabled:opacity-40 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
+            >
+              <option value="">{config.creativeDirectRulesCustom ? t('当前自定义') : t('内置默认')}</option>
+              {rulePresets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+            </select>
+          </label>
           <textarea
             value={rulesDraft}
             onChange={event => setRulesDraft(event.target.value)}
-            disabled={rulesSaving}
+            disabled={rulesSaving || presetsSaving}
             rows={10}
             aria-label={t('破限规则正文')}
             className="mt-2 w-full resize-y rounded-lg border border-gray-200 bg-gray-50 p-3 font-mono text-xs leading-5 text-gray-700 outline-none focus:border-indigo-400 disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
           />
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => { void saveCreativeDirectRules(rulesDraft); }}
-              disabled={rulesSaving || !rulesDraft.trim() || rulesDraft === (config.creativeDirectRules || '')}
+            <button type="button" onClick={() => { void (presetId ? saveRulePreset() : saveCreativeDirectRules(rulesDraft)); }}
+              disabled={rulesSaving || presetsSaving || !rulesDraft.trim() || (rulesDraft === (config.creativeDirectRules || '') && !presetId)}
               className="mobile-touch rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-40">{t('保存规则')}</button>
+            <button type="button" onClick={() => { void addRulePreset(); }}
+              disabled={rulesSaving || presetsSaving || !rulesDraft.trim() || rulePresets.length >= 16}
+              className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('另存为新规则')}</button>
+            <button type="button" onClick={() => { void deleteRulePreset(); }}
+              disabled={rulesSaving || presetsSaving || !presetId}
+              className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('删除规则')}</button>
             <button type="button" onClick={() => { void saveCreativeDirectRules(''); }}
-              disabled={rulesSaving || !config.creativeDirectRulesCustom}
+              disabled={rulesSaving || presetsSaving || !config.creativeDirectRulesCustom}
               className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('恢复内置默认')}</button>
           </div>
-          <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{config.creativeDirectRulesCustom ? t('当前使用自定义规则') : t('当前使用内置默认规则')}；{t('保存后从下一次助手任务生效。')}</p>
+          <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{config.creativeDirectRulesCustom ? t('当前使用自定义规则') : t('当前使用内置默认规则')}；{t('已保存 {0} 条规则', [rulePresets.length])}；{t('保存后从下一次助手任务生效。')}</p>
         </details>}
       </section>
     </div>

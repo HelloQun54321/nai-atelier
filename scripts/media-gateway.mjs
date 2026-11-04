@@ -3868,8 +3868,13 @@ const serveDistFile = async (req, res, url) => {
         }
         if (url.pathname === '/api/prompt-agent/creative-direct-rules') {
           if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });
-          const body = JSON.parse((await readRequestBody(req, 65536)).toString('utf8') || '{}');
+          const body = JSON.parse((await readRequestBody(req, 128 * 1024)).toString('utf8') || '{}');
           return sendJson(res, 200, await promptAgent.setCreativeDirectRules(body?.rules));
+        }
+        if (url.pathname === '/api/prompt-agent/creative-direct-presets') {
+          if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 512 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, await promptAgent.saveCreativeDirectPresets(body?.presets));
         }
         if (url.pathname === '/api/prompt-agent/search-api') {
           if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });

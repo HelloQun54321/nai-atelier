@@ -134,6 +134,77 @@ it('破限规则可编辑保存并恢复内置默认，失败保留草稿与提�
   await waitFor(() => expect(field().value).toBe('synthetic default rules'));
 });
 
+it('破限规则可另存、切换、覆盖与删除，规则库与生效正文分别保存', async () => {
+  let currentRules = 'synthetic direct rules', custom = true;
+  let presets: { id: string; name: string; content: string }[] = [];
+  const presetWrites: { presets: typeof presets }[] = [], ruleWrites: { rules: string }[] = [];
+  const config = () => ({ provider: '', model: '', configured: false, configuredProviders: [], backendVersion: 'synthetic', sourceVersion: 'synthetic',
+    creativeDirect: true, creativeDirectRules: currentRules, creativeDirectRulesDefault: 'synthetic default rules',
+    creativeDirectRulesCustom: custom, creativeDirectPresets: presets });
+  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/config')) return Response.json(config());
+    if (url.endsWith('/available-models') || url.endsWith('/custom-providers')) return Response.json({ items: [] });
+    if (url.endsWith('/library-prompts')) return Response.json({ spec: '', extra: '' });
+    if (url.endsWith('/creative-direct-presets')) {
+      expect(init?.method).toBe('PUT');
+      const body = JSON.parse(String(init?.body));
+      presetWrites.push(body); presets = body.presets;
+      return Response.json(config());
+    }
+    if (url.endsWith('/creative-direct-rules')) {
+      expect(init?.method).toBe('PUT');
+      const body = JSON.parse(String(init?.body));
+      ruleWrites.push(body);
+      currentRules = body.rules.trim() || 'synthetic default rules';
+      custom = Boolean(body.rules.trim());
+      return Response.json(config());
+    }
+    throw new Error(`不应调用的接口：${url}`);
+  });
+  vi.stubGlobal('fetch', fetch);
+  render(<ConfirmDialogProvider><PromptAgentSettings notify={vi.fn()} /></ConfirmDialogProvider>);
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: '破限模式' })).toBeTruthy());
+  fireEvent.click(screen.getByText('查看与编辑破限规则'));
+  const field = () => screen.getByRole('textbox', { name: '破限规则正文' }) as HTMLTextAreaElement;
+  const picker = () => screen.getByRole('combobox', { name: '选择破限规则' }) as HTMLSelectElement;
+  await waitFor(() => expect(field().value).toBe('synthetic direct rules'));
+  expect(picker().value).toBe('');
+  expect(screen.getByRole('button', { name: '删除规则' }).hasAttribute('disabled')).toBe(true);
+
+  // 另存为新规则：整表写规则库，同时把草稿设为生效正文，选择跟着新规则走。
+  fireEvent.change(field(), { target: { value: 'first preset' } });
+  fireEvent.click(screen.getByRole('button', { name: '另存为新规则' }));
+  await waitFor(() => expect(presetWrites).toHaveLength(1));
+  expect(presetWrites[0].presets).toEqual([{ id: expect.any(String), name: '规则 1', content: 'first preset' }]);
+  const firstId = presetWrites[0].presets[0].id;
+  await waitFor(() => expect(ruleWrites.at(-1)).toEqual({ rules: 'first preset' }));
+  await waitFor(() => expect(picker().value).toBe(firstId));
+
+  // 再存一条，然后回切：选择即载入并应用，不会把两条规则的内容混在一起。
+  fireEvent.change(field(), { target: { value: 'second preset' } });
+  fireEvent.click(screen.getByRole('button', { name: '另存为新规则' }));
+  await waitFor(() => expect(presetWrites).toHaveLength(2));
+  expect(presetWrites[1].presets.map(item => item.name)).toEqual(['规则 1', '规则 2']);
+  await waitFor(() => expect(field().value).toBe('second preset'));
+  fireEvent.change(picker(), { target: { value: firstId } });
+  await waitFor(() => expect(field().value).toBe('first preset'));
+  await waitFor(() => expect(ruleWrites.at(-1)).toEqual({ rules: 'first preset' }));
+
+  // 覆盖当前所选规则：改的是规则库里的那一条，不是新增。
+  fireEvent.change(field(), { target: { value: 'first preset edited' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存规则' }));
+  await waitFor(() => expect(presetWrites.at(-1)?.presets[0].content).toBe('first preset edited'));
+  expect(presetWrites.at(-1)?.presets).toHaveLength(2);
+
+  // 删除正在生效的规则，回到内置默认并解绑选择。
+  fireEvent.click(screen.getByRole('button', { name: '删除规则' }));
+  await waitFor(() => expect(presetWrites.at(-1)?.presets).toHaveLength(1));
+  await waitFor(() => expect(ruleWrites.at(-1)).toEqual({ rules: '' }));
+  await waitFor(() => expect(field().value).toBe('synthetic default rules'));
+  expect(picker().value).toBe('');
+});
+
 it('联网搜索可保存独立地址与 Key，未配置时提示回退免费搜索', async () => {
   let enabled = false, baseUrl = 'https://api.deepseek.com', custom = false;
   const config = () => ({ provider: '', model: '', configured: false, configuredProviders: [], backendVersion: 'synthetic', sourceVersion: 'synthetic', creativeDirect: false, creativeDirectRules: '', creativeDirectRulesCustom: false, searchEnabled: enabled, searchApiBaseUrl: baseUrl, searchApiKeyConfigured: custom, searchApiKeyCustom: custom });

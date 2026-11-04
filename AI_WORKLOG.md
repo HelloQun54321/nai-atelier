@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-11-05
+- **DeepSeek Harness (deepseek-v4.1-flash)**：破限规则支持多套保存与切换。后端 `prompt-agent.mjs` 配置新增 `unrestrictedPresets`，新增 `saveCreativeDirectPresets`（整表替换，校验编号/名称/正文、编号去重、最多 16 条、单条 20000 字符，与既有写方法同样走隔离快照事务），`publicConfig` 暴露 `creativeDirectPresets`；`media-gateway.mjs` 新增 `PUT /api/prompt-agent/creative-direct-presets`（512KB 上限），并把单条规则的请求体上限从 64KB 提到 128KB（20000 个中文字节约 60KB，JSON 转义后贴边）。前端 `PromptAgentSettings` 加规则库下拉与「另存为新规则」「删除规则」，「保存规则」在选中规则时覆盖该条、否则沿用原行为；切换规则立即写入生效正文。注入路径未改，`buildSystemPrompt` 仍只读当前生效正文。补后端 1 项、组件 1 项用例与 8 条五语文案。
+
 ## 2026-11-04
 - **DeepSeek Harness (deepseek-v4.1-flash)**：合并外部 PR #22（clanso 的「整理提示词」与「生成样张」）。冲突只在流水账文件：`locales/messages.json` 用 key 合并脚本保留 6596 项、追加 77 项；`package.json`／`package-lock.json`／`README` 徽章／manifest 取主干后统一 `bump-version.mjs minor` 到 1.166.0。功能代码零冲突直接合入，顺带把 README「来源与致谢」补上 @clanso。回归：整理／样张／面板 27 项、Node 端整理 4 项、ChainEditor 与 ImageEditWorkspace 319 项、gateway 463 项通过；gateway 仍有 5 项既有失败（`prompt-agent-capabilities`、`PROMPT_PURPOSES` 计数、`style-collector-wallpaper`），与本次无关。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：从外部 PR #21 吸收服务层改动。该 PR 的「一键收藏整串画师」按钮与既有逐个点爱心的收藏粒度冲突，只取提取规则与收藏写入约定：`extractPromptArtistTags` 统一负权重排除与逐段解析，`extractChainArtistParticipation`／`extractHistoryParticipation` 改用它（此前 `-1::artist:x::` 会被算进生成量、全局未闭合的 `artists:{` 会把角色栏描述当成画师名），`toggleArtistPreference` 支持目标状态，并修掉无样张画师写入假封面 `artist:名字` 的破图。新增服务 `artistFavoriteExtraction` 与批量 `addArtistPreferences`，暂不接入 UI。

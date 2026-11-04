@@ -19,6 +19,12 @@ const promptVersionPayload = (draft: PromptAgentDraft) => ({ ...pickPromptVersio
 
 export type AgentPermissionMode = 'read_only' | 'standard' | 'full';
 
+export interface PromptAgentRulePreset {
+  id: string;
+  name: string;
+  content: string;
+}
+
 export interface PromptAgentConfig {
   provider: string;
   model: string;
@@ -31,6 +37,7 @@ export interface PromptAgentConfig {
   creativeDirectRules?: string;
   creativeDirectRulesDefault?: string;
   creativeDirectRulesCustom?: boolean;
+  creativeDirectPresets?: PromptAgentRulePreset[];
   deepseekSearch?: boolean;
   searchEnabled?: boolean;
   searchApiBaseUrl?: string;
@@ -495,6 +502,12 @@ export const promptAgentService = {
   },
   setCreativeDirectRules: async (rules: string): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/creative-direct-rules', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rules }) });
+    if (!response.ok) throw await parseErrorResponse(response);
+    return response.json();
+  },
+  /** 破限规则预设整体保存；当前生效正文仍由 setCreativeDirectRules 写入。 */
+  saveCreativeDirectPresets: async (presets: PromptAgentRulePreset[]): Promise<PromptAgentConfig> => {
+    const response = await fetch('/api/prompt-agent/creative-direct-presets', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ presets }) });
     if (!response.ok) throw await parseErrorResponse(response);
     return response.json();
   },

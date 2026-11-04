@@ -115,6 +115,32 @@ test('破限模式默认开启，严格校验开关，与权限原子保存且�
   assert.equal(service.publicConfig().creativeDirect, false);
 }));
 
+test('破限规则预设可增删改，整表校验且不改变当前生效正文', () => isolated(async service => {
+  assert.deepEqual(service.publicConfig().creativeDirectPresets, []);
+  await service.setCreativeDirectRules('自定义破限规则');
+  const saved = await service.saveCreativeDirectPresets([
+    { id: 'rule-a', name: '规则 1', content: '预设甲' },
+    { id: 'rule-b', name: '规则 2', content: '预设乙' },
+  ]);
+  assert.deepEqual(saved.creativeDirectPresets, [
+    { id: 'rule-a', name: '规则 1', content: '预设甲' },
+    { id: 'rule-b', name: '规则 2', content: '预设乙' },
+  ]);
+  // 规则库只是可选项，注入正文仍取当前生效字段，选中后才由页面写回。
+  assert.equal(saved.creativeDirectRules, '自定义破限规则');
+  assert.ok(!buildSystemPrompt('zh-CN', 'standard', true, saved.creativeDirectRules).includes('预设甲'));
+  assert.deepEqual(JSON.parse(await readFile(service.configFilePath(), 'utf8')).unrestrictedPresets, saved.creativeDirectPresets);
+  await assert.rejects(service.saveCreativeDirectPresets('x'), /数组/);
+  await assert.rejects(service.saveCreativeDirectPresets([{ id: '', name: 'n', content: 'c' }]), /编号/);
+  await assert.rejects(service.saveCreativeDirectPresets([{ id: 'a', name: '', content: 'c' }]), /名称/);
+  await assert.rejects(service.saveCreativeDirectPresets([{ id: 'a', name: 'n', content: '' }]), /正文/);
+  await assert.rejects(service.saveCreativeDirectPresets([{ id: 'a', name: 'n', content: 'c' }, { id: 'a', name: 'm', content: 'd' }]), /重复/);
+  await assert.rejects(service.saveCreativeDirectPresets(Array.from({ length: 17 }, (_, index) => ({ id: `r${index}`, name: `n${index}`, content: 'c' }))), /最多/);
+  const cleared = await service.saveCreativeDirectPresets([]);
+  assert.deepEqual(cleared.creativeDirectPresets, []);
+  assert.equal(cleared.creativeDirectRules, '自定义破限规则');
+}));
+
 test('破限模式进入真实 Pi 请求，切换只影响下一次任务，客户端不能覆盖开关且工具和历史不变', () => isolated(async service => {
   const originalFingerprint = service.publicConfig().policyFingerprint;
   await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
