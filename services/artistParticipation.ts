@@ -1,6 +1,6 @@
 import type { CharacterParams, NAIParams, PromptChain } from '../types';
 import { compileCharacterContent, getActiveCharacters } from './characterPrompts';
-import { parseChainPromptTokens } from './chainSimilarity';
+import { getChainPromptTokenWeight, parseChainPromptTokens } from './chainSimilarity';
 import { compilePrompt } from './promptUtils';
 import { normalizeRollArtistKey } from './styleRollSeed';
 
@@ -20,6 +20,24 @@ export function extractArtistParticipation(text: string, knownArtists?: Readonly
   }))];
 }
 
+/**
+ * 实际参与生成的画师：全局与各段角色栏独立解析，未闭合的数值范围不跨段延续；
+ * 负权重画师是被压低的，不算参与。
+ */
+export function extractPromptArtistTags(texts: readonly string[], knownArtists?: ReadonlySet<string>): string[] {
+  const artists = new Set<string>();
+  // 全局与各角色独立解析，未闭合的数值范围不能跨角色延续。
+  for (const text of texts) {
+    for (const token of parseChainPromptTokens(text.normalize('NFKC').replace(/\\([()])/g, '$1'))) {
+      // 比较器对括号／by 等写法保守标记“不确定”；这里只读取词法已经确定的倍率符号。
+      const weight = getChainPromptTokenWeight({ ...token, uncertainWeight: false });
+      if (weight !== null && weight <= 0) continue;
+      for (const artist of extractArtistParticipation(token.text, knownArtists)) artists.add(artist);
+    }
+  }
+  return [...artists];
+}
+
 const parsed = <T,>(value: unknown, fallback: T): T => {
   if (value == null) return fallback;
   if (typeof value !== 'string') return value as T;
@@ -32,9 +50,9 @@ const characterTexts = (params: Partial<NAIParams>) => activeCharacters(params.c
   .map(character => compileCharacterContent(character).prompt);
 
 export function extractChainArtistParticipation(chain: PromptChain, knownArtists?: ReadonlySet<string>): string[] {
-  return extractArtistParticipation([
+  return extractPromptArtistTags([
     compilePrompt(chain, chain.variableValues?.subject || ''), ...characterTexts(chain.params || {}),
-  ].join(', '), knownArtists);
+  ], knownArtists);
 }
 
 export interface ArtistParticipationHistory {
@@ -55,7 +73,8 @@ export function extractHistoryParticipation(row: ArtistParticipationHistory, kno
   const tags = [...new Set(tokens.map(token => token.key).filter(key => key && key.length <= 80 && !artistName(key, knownArtists)))];
   const names = [...new Set(roles.map(prompt => prompt.replace(/\s+/g, ' ').trim().slice(0, 100)).filter(Boolean))];
   return {
-    artists: extractArtistParticipation([global, ...roles].join(', '), knownArtists),
+    // 全局与角色栏分别解析：全局未闭合的权重或 `artists:` 分组不能把角色栏的描述当成画师名。
+    artists: extractPromptArtistTags([global, ...roles], knownArtists),
     tags,
     characters: names.map(name => ({ id: name, name })),
   };

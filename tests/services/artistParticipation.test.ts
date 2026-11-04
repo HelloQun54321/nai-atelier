@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { PromptChain } from '../../types';
-import { extractArtistParticipation, extractChainArtistParticipation, extractHistoryParticipation, normalizeArtistUsageKey } from '../../services/artistParticipation';
+import { extractArtistParticipation, extractChainArtistParticipation, extractHistoryParticipation, extractPromptArtistTags, normalizeArtistUsageKey } from '../../services/artistParticipation';
 
 it('画师参与按名字去重，保留多词名字并识别加权、分组、裸词和负权重', () => {
   const known = new Set(['bare artist', 'other artist']);
@@ -29,4 +29,18 @@ it('历史完整文本、角色及分栏各自去重，容忍旧JSON格式', () 
   expect(result.characters).toEqual([{ id: 'artist:beta, girl', name: 'artist:beta, girl' }]);
   expect(extractHistoryParticipation({ params: '{invalid' })).toEqual({ artists: [], tags: [], characters: [] });
   expect(extractHistoryParticipation({ prompt: 'artist:alpha', params: '{"characters":{}}' }).artists).toEqual(['alpha']);
+});
+
+it('负权重画师是被压低的，参与统计与实际生成口径一致', () => {
+  const known = new Set(['kept', 'suppressed', 'zero', 'bare kept', 'bare suppressed']);
+  expect(extractPromptArtistTags(['1.4::artist:kept::, -1::artist:suppressed::, 0::artist:zero::, bare kept, -0.5::bare suppressed::'], known))
+    .toEqual(['kept', 'bare kept']);
+  expect(extractHistoryParticipation({ prompt: 'artist:kept, -1::artist:suppressed::' }, known).artists).toEqual(['kept']);
+});
+
+it('全局未闭合的分组不跨到角色栏，角色描述不会被当成画师名', () => {
+  const characters = JSON.stringify({ characters: [{ id: 'one', prompt: 'girl, long hair', x: 0.5, y: 0.5 }] });
+  // 全局以未闭合的 artists: 分组结尾时，join 成一段解析会让角色栏的普通描述全被当成画师。
+  expect(extractHistoryParticipation({ prompt: 'artist:alpha, artists:{', params: characters }).artists).toEqual(['alpha']);
+  expect(extractPromptArtistTags(['artist:alpha, artists:{', 'girl, long hair'])).toEqual(['alpha']);
 });

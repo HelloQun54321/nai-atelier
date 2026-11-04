@@ -80,7 +80,8 @@ const ArtistFavoriteButton: React.FC<{ tag: string; sampleUrl?: string }> = ({ t
     onClick={async () => {
       if (busy) return;
       setBusy(true);
-      try { setFavorite(await toggleArtistPreference(tag, sampleUrl || `artist:${tag}`)); }
+      // 无样张只收藏 Tag，空封面与画师库一致，不写入假图片地址。
+      try { setFavorite(await toggleArtistPreference(tag, sampleUrl || '')); }
       catch { /* 收藏失败保持原状，不打断候选浏览 */ }
       finally { setBusy(false); }
     }}

@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 import { extractArtistParticipation, normalizeArtistUsageKey } from '../../services/artistParticipation';
-import { buildRollChainArtistSource, extractRollChainArtistTags } from '../../services/styleRollChainArtists';
+import { buildRollChainArtistSource, extractGenerationArtistTags, extractRollChainArtistTags } from '../../services/styleRollChainArtists';
 
 const chainOf = (basePrompt: string): PromptChain => ({
   id: 'synthetic-style', userId: 'synthetic-user', type: 'style', name: '合成风格串',
@@ -73,4 +73,12 @@ it('未闭合数值权重只约束所在正向通道，空串正常返回空集�
   chain.params.characters = [{ id: 'role', prompt: 'artist:visible', x: 0.5, y: 0.5 }];
   expect(extractRollChainArtistTags(chain, new Set())).toEqual(['visible']);
   expect(extractRollChainArtistTags(chainOf(''), new Set())).toEqual([]);
+});
+
+it('成图记录按保存时的全局正向与启用角色栏提取，负权重与停用角色不计入', () => {
+  expect(extractGenerationArtistTags({ prompt: 'artist:base, known_name, -1::artist:muted::, solo', params: { characters: [
+    { id: 'one', prompt: 'artist:role, smile', x: 0.5, y: 0.5 },
+    { id: 'off', prompt: 'artist:disabled', enabled: false, x: 0.5, y: 0.5 },
+  ] } }, new Set(['known name']))).toEqual(['base', 'known name', 'role']);
+  expect(extractGenerationArtistTags({}, new Set())).toEqual([]);
 });
