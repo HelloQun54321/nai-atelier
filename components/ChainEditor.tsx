@@ -39,7 +39,7 @@ import { buildImageEditMetadataPatch, buildPromptFragmentPatch, canSaveLabModeTo
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences, type LabPageLayouts } from '../services/appearancePreferences';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
-import { applyNaiModelSettings, getRuntimeNaiModelInfo, isNaiMediumModel } from '../services/naiModels';
+import { applyNaiModelSettings, getRuntimeNaiModelInfo, getSelectableNaiModels, isNaiMediumModel } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
 import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createBlankLabCharacter, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, mergePromptSections, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
@@ -52,6 +52,7 @@ import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags,
 import { ChromeNotice, ChromeNoticeStack, UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
 import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
+import { buildPromptSampleDraft, getPromptSampleSettings, type PromptSampleBridge, type PromptSampleDraft } from '../services/promptSampleSettings';
 import { LabCategoryMode, labCategoryTabOptions } from './chain/LabCategoryMode';
 import { enterSectionedPrompt, subjectFromSections } from '../services/labSections';
 import { PromptLibraryWorkspace, PromptLibraryRandomButton } from './PromptLibraryAccess';
@@ -1689,7 +1690,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
         }
     };
 
-    const handleGenerate = async (placement?: GenerationPlacement) => {
+    /** sampleDraft 用于样张：固定单张，沿用同一套扣费确认与后台保存，不改动编辑器草稿。 */
+    const handleGenerate = async (placement?: GenerationPlacement, sampleDraft?: PromptSampleDraft) => {
         setErrorMsg(null);
         if (placement && !continuousGenerationEnabledRef.current) {
             notify('连续生成与排队已关闭，请在设置中开启后再请求多张或排队', 'error');
@@ -1706,15 +1708,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
             notify(message, 'error');
             return false;
         }
-        const draft = structuredClone({ basePrompt, subjectPrompt, negativePrompt,
+        const draft = structuredClone(sampleDraft ?? { basePrompt, subjectPrompt, negativePrompt,
             modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })), params });
-        const count = validateGenerationCount(effectiveGenerationCount);
+        const count = sampleDraft ? 1 : validateGenerationCount(effectiveGenerationCount);
         const freshSubscription = novelaiSubscription;
         void refreshUsageIfStale();
         const cost = estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
         const totalCost = cost * count;
         if (count > 1 || placement) {
-            if (!await confirmAction({ rememberKey: 'generation.text-series', rememberScope: confirmationCostScope(apiKey, cost, count, anlasBudget.remaining, [params.model, placement]),
+            if (!await confirmAction({ rememberKey: 'generation.text-series', rememberScope: confirmationCostScope(apiKey, cost, count, anlasBudget.remaining, [draft.params.model, placement]),
                 title: placement ? placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
                 message: `使用本轮固定的提示词与参数，逐张生成并保存 ${count} 张图片。${cost > 0 ? `\n每张预计 ${cost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
                 confirmLabel: cost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
@@ -1722,15 +1724,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
             })) return false;
         } else if (cost > 0 && anlasBudget.remaining <= 0) {
             // 本地 Anlas 预算已用尽但仍需扣费：红色警告，由用户确认后才继续。
-            if (!await confirmAction({ rememberKey: 'generation.text-budget', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, params.model),
+            if (!await confirmAction({ rememberKey: 'generation.text-budget', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, draft.params.model),
                 title: 'Anlas 预算已用尽',
                 message: `本地预算已扣到 0，本次生成仍需消耗 ${cost} Anlas（共享账号额度），继续将透支你手动设定的预算线。\n\n若预算数字过期，可先到全局设置校准。`,
                 confirmLabel: `仍要消耗 ${cost} 点生成`,
                 tone: 'danger',
             })) return false;
-        } else if (cost > 0 && !await confirmAction({ rememberKey: 'generation.text', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, params.model),
+        } else if (cost > 0 && !await confirmAction({ rememberKey: 'generation.text', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, draft.params.model),
             title: '确认生成图片',
-            message: `当前参数预计消耗 ${cost} Anlas${params.characterReferences?.enabled && params.characterReferences.slots.length ? `\n其中精准参考：${params.characterReferences.slots.length} × ${(naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} = ${params.characterReferences.slots.length * (naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} Anlas` : ''}${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
+            message: `当前参数预计消耗 ${cost} Anlas${draft.params.characterReferences?.enabled && draft.params.characterReferences.slots.length ? `\n其中精准参考：${draft.params.characterReferences.slots.length} × ${(naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} = ${draft.params.characterReferences.slots.length * (naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} Anlas` : ''}${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
             confirmLabel: `消耗 ${cost} 点并生成`,
         })) return false;
         try {
@@ -1740,6 +1742,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
             if (mountedRef.current) { setErrorMsg(message); notify(message, 'error'); }
             return false;
         }
+    };
+
+    const currentSampleSource = () => ({ params, negativePrompt: getEditableGlobalNegative(negativePrompt, params._promptSections) });
+    const promptSample: PromptSampleBridge = {
+        current: currentSampleSource,
+        models: getSelectableNaiModels(naiRuntimeConfig || DEFAULT_NAI_RUNTIME),
+        generate: style => handleGenerate(undefined, buildPromptSampleDraft(style, getPromptSampleSettings(), currentSampleSource())),
     };
 
     const imageEditCostLabel = (operation: ImageEditOperation, focused: boolean, context?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number }) => {
@@ -2234,6 +2243,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                             copyPromptToClipboard={copyPromptToClipboard}
                             markPresetSectionModified={markPresetSectionModified}
                             markChange={markChange}
+                            notify={notify}
+                            sample={promptSample}
                             activeLabLayout={activeLabLayout}
                             mobileEditorTab={sectionedActive ? 'reference' : mobileEditorTab}
                         />

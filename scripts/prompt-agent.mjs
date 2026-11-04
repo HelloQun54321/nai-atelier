@@ -34,6 +34,7 @@ import { AGENT_THINKING_LEVELS, createAgentThinkingMap, normalizeAgentThinkingLe
 
 import { agentLanguagePolicy } from '../locales/index.mjs';
 import { preparePromptClassification, parsePromptClassification } from '../services/promptClassification.mjs';
+import { buildPromptTidySystemPrompt, parsePromptTidy, preparePromptTidy } from '../services/promptTidyAgent.mjs';
 import { buildTextExtractionSystemPrompt, buildVisionExtractionSystemPrompt, assembleTextExtraction, parseTextExtractionResponse, parseVisionExtractionResponse, prepareExtractionChunks } from '../services/promptExtraction.mjs';
 import { readPromptLibraryTree, getPromptLibraryDefaultSelection, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryTarget, getPromptLibraryDirectoryLegacyKind, isPromptLibraryFragmentEntry, normalizePromptLibraryDirectorySelection, PROMPT_LIBRARY_DIRECTORY_IDS_KEY } from '../services/promptLibraryTree.mjs';
 
@@ -2185,6 +2186,39 @@ export class PromptAgentService {
       await agent.prompt(JSON.stringify(documents));
       if (agent.state.errorMessage) throw Object.assign(new Error(agent.state.errorMessage), { status: 502 });
       return { items: parsePromptClassification(extractAssistantText(agent.state.messages), documents), provider, model: modelId };
+    } finally { leaveOutboundProxy(); }
+  }
+
+  /**
+   * 提示词整理：默认只让模型决定每段去留，原文由前端按原样拼回；
+   * 用户勾选「允许改写」时才接受模型给出的新正文。只调用当前助手模型一次，不写助手对话。
+   */
+  async tidyPrompt(input = {}) {
+    const prepared = preparePromptTidy(input);
+    const { provider: selectedProvider, model: modelId } = this.publicConfig();
+    const provider = this.normalizeProvider(selectedProvider);
+    const storedCredential = this.getCredential(provider);
+    if (!storedCredential) throw Object.assign(new Error('请先在设置中配置创作助手的模型服务'), { status: 400 });
+    if (!this.listModels(provider).some(item => item.id === modelId)) throw Object.assign(new Error('当前助手模型不可用，请在设置中重新选择'), { status: 400 });
+    const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
+    try {
+      const credentials = new InMemoryCredentialStore();
+      await credentials.modify(provider, async () => ({ ...storedCredential,
+        ...(this.outboundProxyUrl ? { env: { ...(storedCredential.env || {}), HTTPS_PROXY: this.outboundProxyUrl, HTTP_PROXY: this.outboundProxyUrl } } : {}),
+      }));
+      const runtime = createPromptAgentModelRuntime(credentials, [...this.customProviders.values()]);
+      const customProvider = this.customProviders.get(provider);
+      if (customProvider) runtime.setProvider(customProviderRuntime(customProvider));
+      const model = runtime.getModel(provider, modelId);
+      if (!model) throw Object.assign(new Error('无法加载当前助手模型'), { status: 400 });
+      const agent = new Agent({ initialState: {
+        systemPrompt: buildPromptTidySystemPrompt(prepared.rewrite), model, thinkingLevel: 'off', tools: [], messages: [],
+      }, streamFn: runtime.streamSimple.bind(runtime), sessionId: `nai-tidy-${randomUUID()}` });
+      await agent.prompt(JSON.stringify(prepared.rewrite
+        ? { instruction: prepared.instruction, prompt: prepared.prompt }
+        : { instruction: prepared.instruction, chunks: prepared.chunks }));
+      if (agent.state.errorMessage) throw Object.assign(new Error(agent.state.errorMessage), { status: 502 });
+      return { ...parsePromptTidy(extractAssistantText(agent.state.messages), prepared), provider, model: modelId };
     } finally { leaveOutboundProxy(); }
   }
 

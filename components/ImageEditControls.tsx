@@ -191,6 +191,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
             </div>
             <TagAutocompleteTextarea
               clearActionSlotRef={promptClearActionSlotRef}
+              promptTidy={{ notify }}
               tagAssistEnabled={tagAssistEnabled}
               disabled={isBusy}
               value={draft.prompt}
