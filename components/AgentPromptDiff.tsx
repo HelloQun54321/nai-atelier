@@ -47,11 +47,16 @@ const diffBlocks = (before: string, after: string) => {
   const afterBounds = new Set(afterSpans.map(span => `${span.start}:${span.end}`));
   const blocks: DiffBlock[] = [];
   let oldPosition = 0, newPosition = 0;
+  // 换行只是排版：单独成块会渲染成一条只有「+」的空行，这里不计入内容但照常推进位置。
+  // 普通空格不跳过，Tag 内部的空格是正文的一部分。
+  const lineBreakOnly = (part: ReturnType<typeof diffPromptText>[number]) => part.kind !== 'equal' && /^[\r\n]+$/.test(part.text);
   for (const part of parts) {
     // Tag 列表按完整未变片段分块；改动 Tag 内共用的词、逗号和权重继续原位显示。
     const context = part.kind === 'equal' && (tagList ? beforeSpans.some(span => span.start >= oldPosition && span.end <= oldPosition + part.text.length
       && afterBounds.has(`${newPosition + span.start - oldPosition}:${newPosition + span.end - oldPosition}`)) : !/^[\s\d\p{P}]+$/u.test(part.text));
-    if (context) blocks.push({ kind: 'context', text: part.text });
+    if (lineBreakOnly(part)) {
+      // 不产生块。
+    } else if (context) blocks.push({ kind: 'context', text: part.text });
     else {
       const previous = blocks.at(-1);
       if (previous?.kind === 'change') previous.parts.push(part);
@@ -71,7 +76,8 @@ export const AgentPromptDiff: React.FC<{ changes: AgentPromptFieldChange[] }> = 
   return <div className="min-w-0 text-xs leading-5">
     {fields.map(({ change, blocks }, index) => <div key={index} className="border-t border-gray-200 px-3 py-2 dark:border-gray-700">
       <div className="mb-1 break-words font-semibold text-gray-600 dark:text-gray-300">{fieldLabel(change)}</div>
-      {blocks.map((block, blockIndex) => block.kind === 'context'
+      {/* 只有换行、逗号与空格的改动不产生内容，跳过整块，避免渲染成一排只有「+」的空行。 */}
+      {blocks.filter(block => block.kind === 'context' || block.parts.some(part => part.kind !== 'equal' && part.text.trim())).map((block, blockIndex) => block.kind === 'context'
         ? <div key={blockIndex} className="whitespace-pre-wrap px-2 text-gray-500 [overflow-wrap:anywhere] dark:text-gray-400">{expanded ? block.text : '…'}</div>
         : <div key={blockIndex} className="overflow-hidden rounded-lg">{(['delete', 'insert'] as const).filter(kind => block.parts.some(part => part.kind === kind)).map(kind => <div key={kind} className={`flex gap-2 px-2 py-0.5 ${kind === 'delete' ? 'bg-red-50/70 text-red-900 dark:bg-red-950/30 dark:text-red-200' : 'bg-emerald-50/70 text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200'}`}>
           <span aria-label={t(kind === 'delete' ? '删除' : '新增')} className="select-none font-bold">{kind === 'delete' ? '−' : '+'}</span>

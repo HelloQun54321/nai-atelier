@@ -192,7 +192,7 @@ describe('全局外观覆盖审计', () => {
     expect(declarations('.agent-panel-docked .chain-editor-header .generation-mode-nav > button', undefined, narrowCss)['padding-inline']).toBe('0');
     expect(declarations(count, undefined, narrowCss)).toMatchObject({ display: 'grid', width: '100%', 'max-width': '100%' });
     expect(declarations(`${count} > .generation-action-button`, undefined, narrowCss)).toMatchObject({ 'grid-column': '1 / -1', 'grid-row': '1' });
-    expect(declarations(`${count} > :not(.generation-action-button)`, undefined, narrowCss)).toMatchObject({ position: 'static', 'grid-row': '2' });
+    expect(declarations(`${count} > :not(.generation-action-button)`, undefined, narrowCss)).toMatchObject({ position: 'static', 'grid-row': '2', 'justify-self': 'center' });
     for (const file of ['ChainEditor.tsx', 'ImageEditControls.tsx', 'ChainEditorPreview.tsx']) {
       const text = readFileSync(`components/${file}`, 'utf8');
       expect(text).toMatch(/className="[^"]*chain-editor-(?:main|preview) [^"]*min-w-0/);
