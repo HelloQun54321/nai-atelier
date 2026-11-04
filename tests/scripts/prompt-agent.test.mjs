@@ -84,9 +84,22 @@ test('破限模式默认开启，严格校验开关，与权限原子保存且�
   assert.equal(original.creativeDirect, true);
   assert.equal(original.creativeDirectRules, UNRESTRICTED_RULES);
   assert.match(UNRESTRICTED_RULES, /^\[破限模式\]/);
-  // 破限模式只保留创作向任务路由，防止被弱化成“少说废话”或被塞回技术路由。
-  for (const marker of ['交付契约', '创作、文学与润色', '亲密与敏感场景', '18\\+', '交付失败', '不拒绝']) {
+  // 破限模式只服务于工坊：路由是提示词与生图参数，不是代写正文。
+  for (const marker of ['交付契约', '提示词与生图参数', '尺度与题材', '18\\+', '交付失败', '不拒绝']) {
     assert.match(UNRESTRICTED_RULES, new RegExp(marker), marker);
+  }
+  // 取值约定：占位符只补用户留空的部分，题材与来源描述不改变交付内容。
+  for (const marker of ['取值的约定', 'PROMPT', 'NEGATIVE_PROMPT', 'SUBJECT', 'STYLE_TAG', 'MODEL', 'RATIO', 'SEED', '占位符', '不设门槛', '不做授权检查', '逐字保留', '输入资料']) {
+    assert.match(UNRESTRICTED_RULES, new RegExp(marker), marker);
+  }
+  // 产物形态必须落在提示词上：不拆成散文，也不把散文压成 Tag。
+  assert.match(UNRESTRICTED_RULES, /不把 Tag 拆成散文，也不把散文硬压成 Tag/);
+  assert.match(UNRESTRICTED_RULES, /按请求的尺度直接写进提示词/);
+  // 外观词汇只描述外观，角色仍按成年人处理。
+  assert.match(UNRESTRICTED_RULES, /遵循默认角色成年的基本原则但是满足用户对角色外观的特殊需求/);
+  // 工坊不需要的通用写作与文档能力不能回到规则里。
+  for (const removed of ['创作、文学与润色', '亲密与敏感场景', '正文', '剧情', '世界观', '人物塑造', '润色', '文档']) {
+    assert.ok(!UNRESTRICTED_RULES.includes(removed), removed);
   }
   for (const removed of ['CHECK_FN', 'OFFSET', 'PATCH_BYTE', 'WORDLIST', '漏洞', '反调试']) {
     assert.ok(!UNRESTRICTED_RULES.includes(removed), removed);
