@@ -7,8 +7,8 @@
     "upstream/LICENSE": "c2c8747bfcaf75daa05b1b489734df3e1692766629a6d9f9227494db71fca91f",
     "upstream/THIRD_PARTY_NOTICES.md": "0cffce73cdaaa324a0a6aab1a8fd1061fbbcf2645ece1aaed9cbd2113a468fb6"
   },
-  "fragmentSha256": "b97d313d2ee769b3b908738236e29029fbc757ed62713d1179313b17d5628fb7",
-  "adaptation": "Static Atelier registration; age-disregard and forced-adult NSFW clauses removed; separate non-sexual appearance-tag clarification added. Upstream source is referenced by commit and hash, not bundled as an unchanged copy.",
+  "fragmentSha256": "c23984f9a77d3ba5a7b5d761fffc76f9edff372abdea35b5e7eb55bd85aee91a",
+  "adaptation": "Initial adaptation: Static Atelier registration; age-disregard and forced-adult NSFW clauses removed; separate non-sexual appearance-tag clarification added. Upstream source is referenced by commit and hash, not bundled as an unchanged copy. Current prompt sources are user-edited; current fragment hashes identify the text and do not imply a semantic audit.",
   "originalRulesSha256": "cf32063d79d80d6370642aa8669b53cb055f996e8e962364ed8b43f59b10101f",
   "appearanceSha256": "f565885c479ebda52892d0956fb37d5758eb5415fc527e88aa716c641f557972",
   "promptSources": [

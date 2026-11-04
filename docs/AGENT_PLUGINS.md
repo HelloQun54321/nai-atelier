@@ -39,7 +39,7 @@ GitHub 下载固定到提交 SHA，记录来源和 ZIP SHA256。ZIP 校验文件
 
 ## 随附适配示例
 
-[`dsh-unrestricted-atelier`](../plugins/dsh-unrestricted-atelier/README.md) 0.1.2 是可独立打包的适配示例，保留 MIT 许可、固定来源和差异说明。它提供执行规则及非性化外观标签说明，不包含私人预设；与上游原文的区别在该包 README／UPSTREAM.json 中逐项列明。
+[`dsh-unrestricted-atelier`](../plugins/dsh-unrestricted-atelier/README.md) 0.1.3 是可独立打包的适配示例，保留 MIT 许可、固定来源和差异说明。它提供执行规则及非性化外观标签说明，不包含私人预设；与上游原文的区别在该包 README／UPSTREAM.json 中逐项列明。
 
 源码目录内双击 `编辑提示词.cmd`，直接审阅并编辑 `prompts/` 下两份 UTF-8 TXT；保存后双击 `重新打包.cmd`，输出至适配包目录的 `dist/dsh-unrestricted-atelier.zip`。不需要模型读取正文。打包脚本从文本自动生成运行模块、预览声明和当前散列，只输出路径、大小及散列，不改写正文，也不自动上传。详见适配包说明。
 
@@ -49,4 +49,4 @@ GitHub 下载固定到提交 SHA，记录来源和 ZIP SHA256。ZIP 校验文件
 node scripts/package-atelier-adapter.mjs
 ```
 
-将生成的 `tests/.tmp/dsh-unrestricted-atelier-0.1.2.zip` 导入管理器。也可把输出 ZIP 的路径作为首个参数。打包只读取维护目录的明确文件，不复制真实安装目录；同步派生文件时保留两份 TXT 原件。未用真实模型或 NovelAI 验证效果。
+将生成的 `tests/.tmp/dsh-unrestricted-atelier-0.1.3.zip` 导入管理器。也可把输出 ZIP 的路径作为首个参数。打包只读取维护目录的明确文件，不复制真实安装目录；同步派生文件时保留两份 TXT 原件。未用真实模型或 NovelAI 验证效果。

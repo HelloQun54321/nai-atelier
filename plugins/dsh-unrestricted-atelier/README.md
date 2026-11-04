@@ -1,6 +1,8 @@
 # dsh-unrestricted 的 Atelier 适配包
 
-版本 0.1.2，基于 [dsh-unrestricted v0.2.7](https://github.com/yexi-by/dsh-unrestricted/tree/v0.2.7) 的执行规则适配。它不是原始 DSH 插件，不提供 DSH 四模式、子代理或客户端扩展。
+版本 0.1.3，基于 [dsh-unrestricted v0.2.7](https://github.com/yexi-by/dsh-unrestricted/tree/v0.2.7) 的执行规则适配。它不是原始 DSH 插件，不提供 DSH 四模式、子代理或客户端扩展。
+
+0.1.3 收录用户重新编辑并保存的文本。本轮仅确认散列变化并机械打包，未进行正文语义复核；下文规则来源差异描述的是初始适配基线，当前正文以 prompts/ 文本及其散列为准。
 
 ## 审阅和编辑提示词
 
@@ -17,7 +19,7 @@
 
 ## 使用
 
-也可在工坊源码根目录执行 `node scripts/package-atelier-adapter.mjs`，得到 `tests/.tmp/dsh-unrestricted-atelier-0.1.2.zip` 和 SHA256 收据；首个参数可指定输出 ZIP 路径。
+也可在工坊源码根目录执行 `node scripts/package-atelier-adapter.mjs`，得到 `tests/.tmp/dsh-unrestricted-atelier-0.1.3.zip` 和 SHA256 收据；首个参数可指定输出 ZIP 路径。
 
 进入「全局设置 → 创作助手 → 管理插件 → 导入 ZIP」，先查看提示词片段，再按需要启用。安装默认停用；启用后两段规则只加入下一次完全访问权限的助手任务。停用后下一次不再加入，当前运行任务保持开始时的快照。已有同名旧版须先停用并移除后安装新版。
 
