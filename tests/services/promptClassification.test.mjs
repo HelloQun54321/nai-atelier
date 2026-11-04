@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { preparePromptClassification, parsePromptClassification } from '../../services/promptClassification.mjs';
+import { PROMPT_PURPOSE_IDS } from '../../services/promptPurposes.mjs';
 
 test('分类保留重复词、自然语言及完整权重组，只重排类别', () => {
   const documents = preparePromptClassification({ documents: [{ id: 'global', kind: 'global', prompt: 'artist:test, 1.3::blue hair, blue eyes::, (red dress, hat), A girl looks at the sky., blue eyes, blue eyes' }] });
@@ -26,11 +27,13 @@ test('目录任意命名、层级或空树都得到相同用途字段', () => {
   const documents = preparePromptClassification({ ...input, directories: { revision: 7, nodes: [{ id: 'anything', parentId: null, name: '随便起名' }] } });
   const empty = preparePromptClassification({ ...input, directories: { revision: 8, nodes: [] } });
   assert.deepEqual(documents, empty);
-  assert.equal(documents[0].categories.length, 23);
+  // 画风细项已合并为 style，栏位数量跟随用途清单，另加一档 extra。
+  assert.equal(documents[0].categories.length, PROMPT_PURPOSE_IDS.length + 1);
   const items = parsePromptClassification(JSON.stringify([
-    { id: 'global', categories: ['purpose:artist', 'purpose:lighting', 'purpose:clothing', 'purpose:clothing'] },
+    { id: 'global', categories: ['purpose:style', 'purpose:style', 'purpose:clothing', 'purpose:clothing'] },
     { id: 'role', categories: ['extra', 'purpose:expression'] },
   ]), documents);
+  assert.equal(items[0].sections['purpose:style'], 'artist:test, {{golden light}}');
   assert.equal(items[0].sections['purpose:clothing'], 'shiny armor, shiny armor');
   assert.equal(items[1].sections.extra, '1.2::silver armor, blue eyes::');
   assert.deepEqual(items[0].sectionMeta['purpose:clothing'], { source: 'ai', directoryName: '服饰与配件' });

@@ -5,6 +5,7 @@ import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
 import { PromptAgentService, buildLibrarySystemPrompt, parseDirectoryLibraryResponse, buildPurposeLibraryPrompt, parseLibraryResponse } from '../../scripts/prompt-agent.mjs';
 import { AGENT_TOOL_GROUPS } from '../../scripts/agent-runtime.mjs';
 import { createDefaultPromptLibraryTree, getPromptLibraryDefaultSelection, selectPromptLibraryDirectoryEntries } from '../../services/promptLibraryTree.mjs';
+import { PROMPT_PURPOSE_IDS } from '../../services/promptPurposes.mjs';
 
 const directories = { revision: 4, nodes: [
   { id: 'custom', parentId: null, name: '我的创作', target: 'character' },
@@ -153,9 +154,9 @@ test('导入分类先读取当前真实树，单次mock模型请求按路径分�
   globalThis.fetch = async (_url, options) => {
     const request = JSON.parse(options.body); requests.push(request);
     const classifications = current.nodes.length ? [
-      { id: 'global', categories: ['purpose:artist', 'purpose:lighting', 'extra'] },
+      { id: 'global', categories: ['purpose:style', 'purpose:style', 'extra'] },
       { id: 'role', categories: ['purpose:interaction', 'extra'] },
-    ] : [{ id: 'global', categories: ['purpose:artist', 'extra', 'extra'] }, { id: 'role', categories: ['extra', 'extra'] }];
+    ] : [{ id: 'global', categories: ['purpose:style', 'extra', 'extra'] }, { id: 'role', categories: ['extra', 'extra'] }];
     return new Response('data: ' + JSON.stringify({ id: 'synthetic', object: 'chat.completion.chunk', created: 1, model: 'a', choices: [{ index: 0, delta: { role: 'assistant', content: JSON.stringify(classifications) }, finish_reason: 'stop' }] }) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
   };
   try {
@@ -166,20 +167,19 @@ test('导入分类先读取当前真实树，单次mock模型请求按路径分�
     assert.match(prompt, /固定用途/); assert.match(prompt, /不是用户文件夹/);
     const userContent = requests[0].messages.find(message => message.role === 'user').content;
     const sent = JSON.parse(typeof userContent === 'string' ? userContent : userContent.map(part => part.text || '').join(''));
-    assert.ok(sent[0].categories.includes('purpose:artist'));
-    assert.ok(sent[0].categories.includes('purpose:lighting'));
-    assert.ok(sent[1].categories.includes('purpose:artist'));
-    assert.ok(sent[1].categories.includes('purpose:lighting'));
+    assert.ok(sent[0].categories.includes('purpose:style'));
+    assert.ok(sent[1].categories.includes('purpose:style'));
+    assert.ok(!sent[0].categories.includes('purpose:artist') && !sent[0].categories.includes('purpose:lighting'));
     assert.equal(sent[1].directoryCategories.find(item => item.key === 'purpose:interaction').directoryName, '互动与关系');
-    assert.equal(result.items[0].sections['purpose:lighting'], 'soft light');
-    assert.equal(result.items[0].sections['purpose:artist'], 'artist:synthetic');
+    assert.equal(result.items[0].sections['purpose:style'], 'artist:synthetic, soft light');
+    assert.equal(result.items[0].sections.extra, 'other text');
     assert.equal(result.items[1].sections.extra, 'uncertain');
     assert.equal(result.items[1].sectionMeta['purpose:interaction'].directoryName, '互动与关系');
     current = { revision: 5, nodes: [] };
     const emptyTree = await service.classifyPrompts({ documents }, project);
     assert.equal(requests.length, 2);
-    assert.equal(Object.keys(emptyTree.items[0].sections).length, 23);
-    assert.equal(Object.keys(emptyTree.items[1].sections).length, 23);
+    assert.equal(Object.keys(emptyTree.items[0].sections).length, PROMPT_PURPOSE_IDS.length + 1);
+    assert.equal(Object.keys(emptyTree.items[1].sections).length, PROMPT_PURPOSE_IDS.length + 1);
     await assert.rejects(service.classifyPrompts({ documents }, { requestJson: async () => { throw Error('目录读取失败'); } }), /目录读取失败/);
     assert.equal(requests.length, 2);
     assert.deepEqual(await service.classifyPrompts({ documents: [] }, { requestJson: async () => { throw Error('不应读取'); } }), { items: [] });
@@ -205,7 +205,7 @@ test('Agent 固定用途清单、纯用途查询、创建更新和分类栏位�
     return path === '/api/chains' ? [pure, mixed] : pure;
   } });
   const call = async (name, args = {}) => content(await tools.find(tool => tool.name === name).execute('t', args));
-  assert.equal((await call('get_prompt_library_directories')).purposes.length, 22);
+  assert.deepEqual((await call('get_prompt_library_directories')).purposes.map(item => item.id), [...PROMPT_PURPOSE_IDS]);
   assert.deepEqual((await call('search_prompt_library_items', { purposes: ['clothing'], pure: true })).items.map(item => item.id), ['a']);
   assert.deepEqual((await call('search_prompt_library_items', { pure: true })).items.map(item => item.id), ['a']);
   await call('create_prompt_library_item', { name: 'dress', prompt: 'dress', purposes: ['clothing'], directoryIds: [] });

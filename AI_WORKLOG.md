@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-05
+- **DeepSeek Harness (deepseek-v4.1-flash)**：清掉 6 项长期失败的过期断言，让 `npm run test:gateway` 首次全绿（1017 项）。根因三条历史变更没同步到测试：① 画风细项合并成 `style` 后用途从 22 项降到 16 项——`prompt-agent-directories`／`prompt-agent-library-read`／`promptClassification` 里写死的 22、23 改成从 `PROMPT_PURPOSE_IDS` 派生，分类 mock 里的 `purpose:artist`／`purpose:lighting` 改成 `purpose:style`；② 组合文件夹改由角色库投影管理后目录接口一律拒绝，把「确认删除部分完成」用例改成验证拒绝（删除与改名都被挡、不写入、只记 `project_action_failed`），并把执行器与确认回执两条 rejection 都接住；③ 苹果主题默认固定深色后 `themeMode` 不再是 `system`，壁纸用例显式传 `themeMode: 'system'` 以保留「跟随系统切换」的原意。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：破限规则支持多套保存与切换。后端 `prompt-agent.mjs` 配置新增 `unrestrictedPresets`，新增 `saveCreativeDirectPresets`（整表替换，校验编号/名称/正文、编号去重、最多 16 条、单条 20000 字符，与既有写方法同样走隔离快照事务），`publicConfig` 暴露 `creativeDirectPresets`；`media-gateway.mjs` 新增 `PUT /api/prompt-agent/creative-direct-presets`（512KB 上限），并把单条规则的请求体上限从 64KB 提到 128KB（20000 个中文字节约 60KB，JSON 转义后贴边）。前端 `PromptAgentSettings` 加规则库下拉与「另存为新规则」「删除规则」，「保存规则」在选中规则时覆盖该条、否则沿用原行为；切换规则立即写入生效正文。注入路径未改，`buildSystemPrompt` 仍只读当前生效正文。补后端 1 项、组件 1 项用例与 8 条五语文案。
 
 ## 2026-11-04

@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
 import { PromptAgentService, parseLibraryResponse, foldAgentToolResults } from '../../scripts/prompt-agent.mjs';
+import { PROMPT_PURPOSE_IDS } from '../../services/promptPurposes.mjs';
 
 const directories = { revision: 3, nodes: [
   { id: 'parent', parentId: null, name: '人物与叙事' },
@@ -53,7 +54,7 @@ test('85层目录与全路径经过实际工具预算可分段取全，nextOffse
     const ids = [];
     do {
       const page = await call('get_prompt_library_directories', { offset, limit: 100 });
-      assert.equal(page.purposes.length, 22);
+      assert.deepEqual(page.purposes.map(item => item.id), [...PROMPT_PURPOSE_IDS]);
       assert.equal(page.limit, page.nodes.length);
       assert.equal(page.directories.length, page.nodes.length);
       ids.push(...page.nodes.map(node => node.id));

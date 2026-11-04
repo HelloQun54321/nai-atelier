@@ -305,48 +305,33 @@ test('Roll与样张持久资料只读工具无需页面，完整模板可续读�
   } finally { removeWorkspace(root); }
 });
 
-test('确认删除部分完成不冒充成功，大回执仅同轮续读且新一轮拒绝旧结果编号', async () => {
+test('组合文件夹只由角色库维护：目录删除被拒绝，不写入也不冒充完成', async () => {
   const root = createWorkspace('agent-directory-receipt-');
   try {
     const service = new PromptAgentService({ lanSecret: 'synthetic', configFile: root });
-    const audits = [], events = [];
+    const audits = [], writes = [];
     service.appendAuditLog = async (_sessionId, event) => { audits.push(event); };
-    const nodes = Array.from({ length: 41 }, (_, index) => ({ id: `child${index}`, name: `child${index}`, parentId: null }));
-    const fullResult = { ok: false, partial: true, completedIds: ['done'], failedItems: [{ id: 'failed', status: 409, error: 'synthetic conflict' }], tree: { revision: 2, nodes } };
     const project = { agentSessionId: 's', keyHash: 'synthetic', requestJson: async (path, options) => {
       assert.equal(path, '/api/prompt-library-category-tree/actions');
-      return options ? fullResult : { tree: { revision: 1, nodes: [{ id: 'parent', name: 'parent', parentId: null }, ...nodes] } };
+      if (options) { writes.push(options); return { ok: true, tree: { revision: 2, nodes: [] } }; }
+      return { tree: { revision: 1, nodes: [{ id: 'parent', name: 'parent', parentId: null }] } };
     } };
     let execution;
     const tools = service.createTools({ params: {} }, {}, event => {
-      events.push(event);
       if (event.type !== 'action' || event.action.kind !== 'request_project_action') return;
       const patch = event.action.patch;
       service.pendingConfirmations.get(patch.requestId).approved = true;
-      execution = service.executeConfirmedProjectAction({ sessionId: 's', confirmationRequestId: patch.requestId, action: patch.action, resourceId: patch.resourceId, payload: patch.payload }, project);
+      // 拒绝会同时让执行器和确认回执抛错，两边都要接住，否则变成未处理的拒绝。
+      execution = service.executeConfirmedProjectAction({ sessionId: 's', confirmationRequestId: patch.requestId, action: patch.action, resourceId: patch.resourceId, payload: patch.payload }, project).catch(error => error);
     }, project);
-    const call = async (name, args) => JSON.parse((await tools.find(tool => tool.name === name).execute('receipt', args)).content[0].text);
-    const removed = await call('request_delete_directory', { scope: 'combinations', id: 'parent' });
-    const executed = await execution;
-    assert.equal(executed.ok, false);
-    assert.equal(executed.success, false);
-    assert.equal(executed.outcome, 'partial');
-    assert.equal(removed.ok, false);
-    assert.equal(removed.confirmed, true);
-    assert.equal(removed.partial, true);
-    assert.ok(audits.some(event => event.type === 'project_action_partial'));
-    assert.equal(audits.some(event => event.type === 'project_action_completed'), false);
-    assert.ok(events.some(event => event.resource === 'prompt_library_directories'));
-    assert.ok(events.some(event => event.resource === 'chains'));
-    const resultId = removed.result.resultId;
-    assert.ok(resultId);
-    let offset = 0, content = '';
-    do { const page = await call('list_directories', { scope: 'combinations', resultId, field: 'result', offset }); content += page.content; offset = page.nextOffset; } while (offset !== null);
-    const restored = JSON.parse(content);
-    assert.deepEqual(restored.tree, fullResult.tree);
-    assert.deepEqual(restored.completedIds, ['done']);
-    assert.deepEqual(restored.failedItems, fullResult.failedItems);
-    await assert.rejects(toolsFor(service, { params: {} }, project)('list_directories', { scope: 'combinations', resultId, field: 'result' }), /过期|不存在/);
+    const call = (name, args) => tools.find(tool => tool.name === name).execute('receipt', args);
+    // 组合文件夹由角色库投影产生：目录接口只能拒绝，不能写入或冒充完成。
+    await assert.rejects(call('request_delete_directory', { scope: 'combinations', id: 'parent' }), /组合文件夹只保留「角色」/);
+    assert.match(String((await execution)?.message || ''), /组合文件夹只保留「角色」/);
+    await assert.rejects(call('update_directory', { scope: 'combinations', id: 'parent', name: '改名' }), /组合文件夹只保留「角色」/);
+    assert.equal(writes.length, 0);
+    assert.ok(audits.some(event => event.type === 'project_action_failed'));
+    assert.equal(audits.some(event => event.type === 'project_action_completed' || event.type === 'project_action_partial'), false);
   } finally { removeWorkspace(root); }
 });
 
