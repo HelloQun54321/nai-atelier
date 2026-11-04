@@ -1,6 +1,6 @@
 {
   "name": "dsh-unrestricted-atelier",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "license": "MIT",
   "description": "dsh-unrestricted v0.2.7 的 NAI Atelier 提示词适配包",

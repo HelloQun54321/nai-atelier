@@ -10,5 +10,9 @@
   "fragmentSha256": "b97d313d2ee769b3b908738236e29029fbc757ed62713d1179313b17d5628fb7",
   "adaptation": "Static Atelier registration; age-disregard and forced-adult NSFW clauses removed; separate non-sexual appearance-tag clarification added. Upstream source is referenced by commit and hash, not bundled as an unchanged copy.",
   "originalRulesSha256": "cf32063d79d80d6370642aa8669b53cb055f996e8e962364ed8b43f59b10101f",
-  "appearanceSha256": "f565885c479ebda52892d0956fb37d5758eb5415fc527e88aa716c641f557972"
+  "appearanceSha256": "f565885c479ebda52892d0956fb37d5758eb5415fc527e88aa716c641f557972",
+  "promptSources": [
+    "prompts/local_execution.txt",
+    "prompts/appearance_tags.txt"
+  ]
 }

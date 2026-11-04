@@ -1,10 +1,23 @@
 # dsh-unrestricted 的 Atelier 适配包
 
-版本 0.1.1，基于 [dsh-unrestricted v0.2.7](https://github.com/yexi-by/dsh-unrestricted/tree/v0.2.7) 的执行规则适配。它不是原始 DSH 插件，不提供 DSH 四模式、子代理或客户端扩展。
+版本 0.1.2，基于 [dsh-unrestricted v0.2.7](https://github.com/yexi-by/dsh-unrestricted/tree/v0.2.7) 的执行规则适配。它不是原始 DSH 插件，不提供 DSH 四模式、子代理或客户端扩展。
+
+## 审阅和编辑提示词
+
+双击本目录的 **编辑提示词.cmd**，会用 Windows 记事本打开两份 UTF-8 文本；也可用自己习惯的文本编辑器打开：
+
+- [prompts/local_execution.txt](./prompts/local_execution.txt)：本地执行规则正文。
+- [prompts/appearance_tags.txt](./prompts/appearance_tags.txt)：外观标签说明正文。
+
+只修改这两份文本并保存，不需要处理 JavaScript 引号、JSON 预览或校验值。正文不会自动添加说明、裁切或整理换行；UTF-8 BOM 仅作为编码标记处理。空白正文、错误编码和超出宿主片段长度限制会阻止打包。
+
+保存后双击 **重新打包.cmd**，安装包输出到本目录的 `dist/dsh-unrestricted-atelier.zip`，旁边是 SHA256 收据。它使用源码版要求的已安装 Node.js，仅执行本机打包脚本，不调用模型或自动上传。命令行只输出 ZIP 路径、大小与散列；失败也不回显正文或异常堆栈。
+
+打包以两份 TXT 为准，自动同步派生的 `rules.js`、`package.json` 预览声明和 `UPSTREAM.json` 散列；不要直接编辑这三份派生内容。脚本不改两份源文本，只处理结构、编码、长度、版权文件校验及打包，不做语义改写。源码编辑入口依赖工坊的开发脚本；安装 ZIP 中的文本供审阅，编辑后仍须从源码版重新打包、安装，才会改变运行规则。
 
 ## 使用
 
-在工坊源码根目录执行 `node scripts/package-atelier-adapter.mjs`，得到 `tests/.tmp/dsh-unrestricted-atelier-0.1.1.zip` 和 SHA256 收据。
+也可在工坊源码根目录执行 `node scripts/package-atelier-adapter.mjs`，得到 `tests/.tmp/dsh-unrestricted-atelier-0.1.2.zip` 和 SHA256 收据；首个参数可指定输出 ZIP 路径。
 
 进入「全局设置 → 创作助手 → 管理插件 → 导入 ZIP」，先查看提示词片段，再按需要启用。安装默认停用；启用后两段规则只加入下一次完全访问权限的助手任务。停用后下一次不再加入，当前运行任务保持开始时的快照。已有同名旧版须先停用并移除后安装新版。
 
@@ -18,4 +31,4 @@
 
 固定上游提交 `1b4d8b9205dfa0177bd6e1e96ef1a5995e9cc6da`；来源和新旧校验值记录于 `UPSTREAM.json`。MIT 许可及第三方致谢保留在 `upstream/`。原始整份规则文件不随此包分发，也不包含任何只许自用的第三方预设。
 
-预览声明与运行正文必须相同，打包时检查两段 SHA256 及版权文件。隔离测试覆盖安装、预览、启停和恢复；未以真实模型或 NovelAI 生图验证效果。
+预览声明与运行正文由同一份 TXT 生成，两段当前 SHA256 自动更新，上游来源和版权文件校验继续保留。隔离测试覆盖文本编辑同步、安装、预览、启停和恢复；未以真实模型或 NovelAI 生图验证效果。

@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-04
+- **Codex**：为插件 PR 增加纯文本提示词源、Windows 编辑／打包入口与不回显正文的本机打包流程；用原散列验证正文原样迁出，补齐特殊字符／UTF-8 BOM／旧模块不执行／错误不泄露正文及保留上次产物的隔离回归。保留本机私人规则与运行实例，仅提交插件及必要说明和版本。 文本／安装回归 3 项及实际 Windows 打包入口通过；两份源正文 SHA256 与迁移前一致。
+
 - **Codex**：为创作助手增加本机 GitHub／ZIP 插件管理、Cordis 子进程工具与静态规则接入、停用包预览及隔离测试；随附带来源和 MIT 声明的独立 Atelier 适配包，规则明确限制非性化外观标签。只提交插件及必要文档／版本，私人预设与无关本地续修不分发。 插件专属 Node 9 项、UI／主题 161 项与 Worker 463 项通过；共享 Node 回归保留 8 项既有失败，3 项测试环境问题在入口及短路径修正后连同子项 18 项复测通过；未调用真实模型或生图。
 
 - **DeepSeek Harness (deepseek-v4.1-flash)**：合并外部 PR #22（clanso 的「整理提示词」与「生成样张」）。冲突只在流水账文件：`locales/messages.json` 用 key 合并脚本保留 6596 项、追加 77 项；`package.json`／`package-lock.json`／`README` 徽章／manifest 取主干后统一 `bump-version.mjs minor` 到 1.166.0。功能代码零冲突直接合入，顺带把 README「来源与致谢」补上 @clanso。回归：整理／样张／面板 27 项、Node 端整理 4 项、ChainEditor 与 ImageEditWorkspace 319 项、gateway 463 项通过；gateway 仍有 5 项既有失败（`prompt-agent-capabilities`、`PROMPT_PURPOSES` 计数、`style-collector-wallpaper`），与本次无关。

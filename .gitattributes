@@ -6,3 +6,6 @@
 # Windows 批处理必须用 CRLF，否则 cmd 会把行切错（如 chcp 65001 后出现 'p' 不是内部或外部命令）
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# 提示词是用户编辑的原始数据，保留其 UTF-8 字节及换行，不由 Git 自动转换。
+plugins/dsh-unrestricted-atelier/prompts/*.txt -text
