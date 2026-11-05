@@ -34,7 +34,7 @@ import { AGENT_THINKING_LEVELS, createAgentThinkingMap, normalizeAgentThinkingLe
 
 import { agentLanguagePolicy } from '../locales/index.mjs';
 import { preparePromptClassification, parsePromptClassification } from '../services/promptClassification.mjs';
-import { buildPromptTidySystemPrompt, parsePromptTidy, preparePromptTidy } from '../services/promptTidyAgent.mjs';
+import { buildPromptTidySystemPrompt, buildPromptTidyUserMessage, parsePromptTidy, preparePromptTidy } from '../services/promptTidyAgent.mjs';
 import { buildTextExtractionSystemPrompt, buildVisionExtractionSystemPrompt, assembleTextExtraction, parseTextExtractionResponse, parseVisionExtractionResponse, prepareExtractionChunks } from '../services/promptExtraction.mjs';
 import { readPromptLibraryTree, getPromptLibraryDefaultSelection, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryTarget, getPromptLibraryDirectoryLegacyKind, isPromptLibraryFragmentEntry, normalizePromptLibraryDirectorySelection, PROMPT_LIBRARY_DIRECTORY_IDS_KEY } from '../services/promptLibraryTree.mjs';
 
@@ -2221,9 +2221,7 @@ export class PromptAgentService {
       const agent = new Agent({ initialState: {
         systemPrompt: buildPromptTidySystemPrompt(prepared.rewrite), model, thinkingLevel: 'off', tools: [], messages: [],
       }, streamFn: runtime.streamSimple.bind(runtime), sessionId: `nai-tidy-${randomUUID()}` });
-      await agent.prompt(JSON.stringify(prepared.rewrite
-        ? { instruction: prepared.instruction, prompt: prepared.prompt }
-        : { instruction: prepared.instruction, chunks: prepared.chunks }));
+      await agent.prompt(buildPromptTidyUserMessage(prepared));
       if (agent.state.errorMessage) throw Object.assign(new Error(agent.state.errorMessage), { status: 502 });
       return { ...parsePromptTidy(extractAssistantText(agent.state.messages), prepared), provider, model: modelId };
     } finally { leaveOutboundProxy(); }

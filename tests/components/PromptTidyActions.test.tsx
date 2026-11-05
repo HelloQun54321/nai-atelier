@@ -11,7 +11,7 @@ import type { NAIParams } from '../../types';
 const mocks = vi.hoisted(() => ({ tidy: vi.fn() }));
 vi.mock('../../services/promptTidy', async importOriginal => ({ ...await importOriginal<typeof import('../../services/promptTidy')>(), tidyPrompt: mocks.tidy }));
 
-const result = (text: string, kept = 1, removed = 1): PromptTidyResult => ({ text, kept, removed, rewritten: false });
+const result = (text: string, kept = 1, removed = 1, dropped: PromptTidyResult['dropped'] = []): PromptTidyResult => ({ text, kept, removed, rewritten: false, dropped });
 const Harness: React.FC<{ initial: string; notify: (message: string, type?: 'success' | 'error') => void; sample?: PromptSampleBridge }> = ({ initial, notify, sample }) => {
   const [value, setValue] = useState(initial);
   return <TagAutocompleteTextarea value={value} onValueChange={setValue} tagAssistEnabled={false} showTranslations={false} promptTidy={{ notify, sample }} aria-label="Prompt" />;
@@ -46,6 +46,38 @@ it('整理结果覆盖原文，撤销按钮只撤销这次整理，快捷键可�
   expect(screen.queryByRole('button', { name: '撤销整理' })).toBeNull();
   fireEvent.keyDown(textarea(), { key: 'y', ctrlKey: true });
   expect(textarea().value).toBe('artist:a');
+});
+
+it('整理后可查看去掉了哪些段，重复词单独标出；撤销或继续编辑后不再显示', async () => {
+  mocks.tidy.mockResolvedValue(result('artist:a', 1, 2, [{ text: '1girl', duplicate: false }, { text: 'artist:a', duplicate: true }]));
+  render(<Harness initial="artist:a, 1girl, artist:a" notify={vi.fn()} />);
+  expect(screen.queryByRole('button', { name: '查看去掉的 2 段' })).toBeNull();
+  openPanel();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: '整理并覆盖' })); });
+  const toggle = screen.getByRole('button', { name: '查看去掉的 2 段' });
+  expect(toggle.textContent).toBe('去掉 2');
+  fireEvent.click(toggle);
+  const panel = screen.getByRole('dialog', { name: '这次去掉的内容' });
+  expect(within(panel).getByText('按原文顺序共 2 段，其中 1 段是重复词。')).toBeTruthy();
+  expect(within(within(panel).getByRole('list', { name: '去掉的段' })).getAllByRole('listitem').map(item => item.textContent)).toEqual(['1girl', 'artist:a重复']);
+  fireEvent.click(within(panel).getByRole('button', { name: '撤销整理' }));
+  expect(textarea().value).toBe('artist:a, 1girl, artist:a');
+  expect(screen.queryByRole('dialog', { name: '这次去掉的内容' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '查看去掉的 2 段' })).toBeNull();
+  // 重做回来仍是这次整理的结果，列表跟着回来；继续编辑后撤销失效，列表也收起
+  fireEvent.keyDown(textarea(), { key: 'y', ctrlKey: true });
+  expect(screen.getByRole('button', { name: '查看去掉的 2 段' })).toBeTruthy();
+  fireEvent.change(textarea(), { target: { value: 'artist:a, smile' } });
+  expect(screen.queryByRole('button', { name: '查看去掉的 2 段' })).toBeNull();
+});
+
+it('改写或全部保留时没有去掉的段，不显示查看按钮', async () => {
+  mocks.tidy.mockResolvedValue({ ...result('1.0::artist:a::', 0, 0), rewritten: true });
+  render(<Harness initial="artist:a" notify={vi.fn()} />);
+  openPanel();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: '整理并覆盖' })); });
+  expect(screen.getByRole('button', { name: '撤销整理' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /查看去掉的/ })).toBeNull();
 });
 
 it('设置面板把当前设置存成快捷按钮，工具栏一键按所存设置整理，可删除', async () => {

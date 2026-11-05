@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-11-06
+- **Claude Code (Opus 5.5)**：提示词整理三处修正加一个查看入口：AI 挑选模式改为给片段编号、模型只回要保留的编号（解决片段多时「整理结果不完整」），兼容旧的逐段 true／false 并能从带说明的回复里读出 JSON；本地规则认得权重前多写的 `::` 并保住收尾 `::`、清掉权重组内侧多余逗号，`hyperrealistic` 记为画风词；AI 说明把年份年代词列为画风与质量标记；整理结果附带按原文顺序的去掉段落，撤销按钮旁新增「去掉 N」弹窗查看并可在其中撤销（feat: list removed segments after prompt tidy and number AI tidy chunks）。
+
 ## 2026-11-05
 - **DeepSeek Harness (deepseek-v4.1-flash)**：按用户改写的版本落地破限规则，「尺度与题材」补一句外观与年龄的区分：提到萝莉、正太等词时按“有那个外观的角色”理解而不是真的未成年人，仍按默认角色成年处理但满足外观要求。补一条 marker 断言，`PROMPT_AGENT_POLICY_VERSION` 升到 `2026-11-05.3`；`prompt-agent` 115 项通过。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：把破限规则收回工坊本职，删掉从 dsh-unrestricted 带进来的通用写作能力。`baseSystemPrompt` 定义的职责只有「读取项目真实数据并用工具完成操作」，`VIBER_INTENT` 的「尊重题材、尺度与表达」指的是不改写用户已写的提示词，不是代写正文；原「创作、文学与润色」整条（写正文、剧情、世界观、人物塑造、润色）和「亲密与敏感场景」的散文要求都是写作助手语境，还会把「改得更有画面感」引向输出散文，污染提示词任务的产物形态。改为：任务路由只剩「提示词与生图参数」（按 V4/V5 写法给 tag 串、完整风格串、负面词、角色栏，不把 Tag 拆成散文也不把散文压成 Tag）和「尺度与题材」（敏感题材按请求尺度写进提示词、该有的 Tag 一个不少）；产物清单换成正向词／负面词／tag 分组／风格串／角色栏／参数；占位符去 `SCENE`／`MOOD`，补 `PROMPT`／`NEGATIVE_PROMPT`／`MODEL`／`STEP`／`CFG`／`WEIGHT`。`PROMPT_AGENT_POLICY_VERSION` 升到 `2026-11-05.2`，并把「正文、剧情、世界观、人物塑造、润色、文档」列入禁止回归的 removed 断言。

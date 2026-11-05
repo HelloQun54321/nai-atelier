@@ -17,23 +17,28 @@ export interface PromptTidySettings {
   /** 整理后接着出一张样张，只在编辑器提供出图通道时生效。 */
   sample: boolean;
 }
-export interface PromptTidyResult { text: string; kept: number; removed: number; rewritten: boolean }
+/** 被去掉的一段，原文照录；duplicate 表示和前面保留的段重复。 */
+export interface PromptTidyDropped { text: string; duplicate: boolean }
+/** dropped 按原文顺序列出去掉的段，模型改写时为空。 */
+export interface PromptTidyResult { text: string; kept: number; removed: number; rewritten: boolean; dropped: PromptTidyDropped[] }
 type PromptTidyService = Pick<typeof promptAgentService, 'tidyPrompt'>;
 
 export const PROMPT_TIDY_INSTRUCTION_LIMIT = 500;
 export const DEFAULT_PROMPT_TIDY_SETTINGS: Readonly<PromptTidySettings> = Object.freeze<PromptTidySettings>({ method: 'rules', keep: 'style', instruction: '', rewrite: false, dedupe: true, artistPrefix: false, sample: false });
 const KEEPS: readonly PromptTidyKeep[] = ['style', 'artists', 'content', 'all', 'custom'];
 const AI_INSTRUCTIONS: Record<'style' | 'content', string> = {
-  style: '只保留画风配方：画师、画风、媒介、线条、明暗、质感、特效、质量词（含拼错的 masterpice 等）与色彩，以及由这些词组成的权重组；去掉人物、外貌、服饰、动作、表情、构图、镜头、文字、光照与光色（如 orange lighting、sunlight），以及地点、自然、花草与时间天气（如 flower field、day、sunset）等画面内容。',
-  content: '去掉画风配方（画师、画风、媒介、线条、明暗、质感、特效、质量词与色彩），只保留人物、外貌、服饰、动作、表情、构图、镜头、文字、光照、地点、自然与时间天气等画面内容。',
+  style: '只保留画风配方：画师、画风、媒介、线条、明暗、质感、特效、质量词（含拼错的 masterpice 等，以及 year 2025、2020s (style) 这类年份年代词）与色彩，以及由这些词组成的权重组；去掉人物、外貌、服饰、动作、表情、构图、镜头、文字、光照与光色（如 orange lighting、sunlight），以及地点、自然、花草与时间天气（如 flower field、day、sunset）等画面内容。',
+  content: '去掉画风配方（画师、画风、媒介、线条、明暗、质感、特效、质量词、year 2025 这类年份年代词与色彩），只保留人物、外貌、服饰、动作、表情、构图、镜头、文字、光照、地点、自然与时间天气等画面内容。',
 };
 const WEIGHTED = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+)::)([\s\S]*?)(\s*::)$/;
 const WEIGHT_HEAD = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::/;
+/** 权重前多写的 `::`（`::0.5::cloudyman::`）：不去掉的话认不出权重，词库也查不到里面的画师。 */
+const STRAY_COLONS = /^:+\s*(?=[+-]?(?:\d+(?:\.\d+)?|\.\d+)::)/;
 /** 词库里没有、但写法本身就说明是画风的描述：…style／illustration／lineart／shading 等；orange lighting 这类光照按画面内容处理。 */
 const TIDY_STYLE_PATTERNS = [
   /(?:^|\s)(?:style|illustration|lineart|line art|linework|shading|chiaroscuro|brushstrokes?|rendering)$/,
   /\((?:medium|style)\)$/,
-  /^(?:official art|newest|traditional media|depth of field|bokeh|film grain|chromatic aberration|lens flare|bloom|cinematic|monochrome|greyscale|high contrast|limited palette|vibrant colors|pastel colors|muted colors)$/,
+  /^(?:official art|newest|traditional media|hyperrealistic|hyperrealism|depth of field|bokeh|film grain|chromatic aberration|lens flare|bloom|cinematic|monochrome|greyscale|high contrast|limited palette|vibrant colors|pastel colors|muted colors)$/,
 ];
 const QUALITY_WORDS = ['masterpiece', 'best quality', 'amazing quality', 'very aesthetic', 'absurdres', 'highres'];
 const BRACKETS: Record<string, string> = { '{': '}', '[': ']', '(': ')' };
@@ -89,7 +94,7 @@ export function splitPromptTidySegments(prompt: string): string[] {
   const push = () => {
     const runaway = depth > 0 || weighted;
     for (const piece of runaway ? buffer.split(/[,，]/) : [buffer]) {
-      const value = runaway ? completeBrackets(piece) : piece.trim();
+      const value = (runaway ? completeBrackets(piece) : piece.trim()).replace(STRAY_COLONS, '');
       if (value) segments.push(value);
     }
     buffer = '';
@@ -99,7 +104,7 @@ export function splitPromptTidySegments(prompt: string): string[] {
     if (char === '\n' || char === '\r') { push(); weighted = false; depth = 0; continue; }
     if (char === ':' && prompt[index + 1] === ':') {
       if (weighted) weighted = false;
-      else if (/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(buffer.trim())) weighted = true;
+      else if (/^(?::+\s*)?[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(buffer.trim())) weighted = true;
       buffer += '::';
       index += 1;
       continue;
@@ -125,8 +130,8 @@ const splitBrackets = (piece: string) => {
   return { lead, open, core, close, trail };
 };
 const segmentPieces = (segment: string) => {
-  const weighted = segment.match(WEIGHTED);
-  return { head: weighted?.[1] ?? '', body: weighted?.[2] ?? segment, tail: weighted?.[3] ?? '' };
+  const text = segment.replace(STRAY_COLONS, ''), weighted = text.match(WEIGHTED);
+  return { head: weighted?.[1] ?? '', body: weighted?.[2] ?? text, tail: weighted?.[3] ?? '' };
 };
 const parenBalanced = (text: string) => {
   let depth = 0;
@@ -197,7 +202,13 @@ export function repairPromptTidySegment(segment: string): string {
   });
   stack.forEach(index => drop.add(index));
   const text = chars.filter((_, index) => !drop.has(index)).join('').replace(/[ \t]{2,}/g, ' ')
-    .replace(/([[{])[\s,，]+/g, '$1').replace(/[\s,，]+([\]}])/g, '$1').trim();
+    .replace(/([[{])[\s,，]+/g, '$1').replace(/[\s,，]+([\]}])/g, '$1').trim().replace(STRAY_COLONS, '');
+  // 权重组内侧多出的逗号与空格一并去掉：`0.8::artist:kieed,::` → `0.8::artist:kieed::`。
+  const weighted = text.match(WEIGHTED);
+  if (weighted) {
+    const body = weighted[2].replace(/^[\s,，]+|[\s,，]+$/g, '');
+    return body ? `${weighted[1]}${body}::` : '';
+  }
   return (WEIGHT_HEAD.test(text) ? text : text.replace(/^:+\s*/, '').replace(/\s*:+$/, '')).trim();
 }
 
@@ -221,7 +232,7 @@ export async function tidyPrompt(prompt: string, input: PromptTidySettings, serv
   if (isPromptTidyRewrite(settings)) {
     const text = (await service.tidyPrompt({ instruction, rewrite: true, prompt: prompt.trim() })).prompt?.trim();
     if (!text) throw new Error('助手返回的整理结果无效');
-    return { text, kept: 0, removed: 0, rewritten: true };
+    return { text, kept: 0, removed: 0, rewritten: true, dropped: [] };
   }
   const categories = method === 'rules' || settings.artistPrefix ? await lookupCategories(segments) : new Map<string, TagSuggestion>();
   let keep: readonly boolean[];
@@ -231,13 +242,17 @@ export async function tidyPrompt(prompt: string, input: PromptTidySettings, serv
     keep = result.keep;
   } else keep = segments.map(segment => keepByRules(classifyPromptTidySegment(segment, categories), settings.keep));
   const seen = new Set<string>();
-  const kept = segments.filter((_, index) => keep[index]).map(repairPromptTidySegment).filter(segment => {
-    if (!segment) return false;
-    if (!settings.dedupe) return true;
-    const key = dedupeKey(segment);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).map(segment => settings.artistPrefix ? addPromptArtistPrefix(segment, categories) : segment);
-  return { text: kept.join(', '), kept: kept.length, removed: segments.length - kept.length, rewritten: false };
+  const kept: string[] = [], dropped: PromptTidyDropped[] = [];
+  segments.forEach((segment, index) => {
+    // 修完只剩空括号、冒号的笔误段也算去掉，列表条数与「去掉 N 段」一致。
+    const repaired = keep[index] ? repairPromptTidySegment(segment) : '';
+    if (!repaired) { dropped.push({ text: segment, duplicate: false }); return; }
+    if (settings.dedupe) {
+      const key = dedupeKey(repaired);
+      if (seen.has(key)) { dropped.push({ text: segment, duplicate: true }); return; }
+      seen.add(key);
+    }
+    kept.push(settings.artistPrefix ? addPromptArtistPrefix(repaired, categories) : repaired);
+  });
+  return { text: kept.join(', '), kept: kept.length, removed: dropped.length, rewritten: false, dropped };
 }

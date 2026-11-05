@@ -57,6 +57,16 @@ describe('提示词整理切段', () => {
     expect(repairPromptTidySegment('] [')).toBe('');
     expect(repairPromptTidySegment('[ushikani_kassen,]')).toBe('[ushikani_kassen]');
     expect(repairPromptTidySegment('[,haku89 ]')).toBe('[haku89]');
+    // 权重前多写的冒号去掉，收尾的 :: 必须留着，否则权重会一直延续到后面所有词
+    expect(repairPromptTidySegment('::0.5::cloudyman::')).toBe('0.5::cloudyman::');
+    expect(repairPromptTidySegment('0.8::artist:kieed,::')).toBe('0.8::artist:kieed::');
+    expect(repairPromptTidySegment('0.6::artist:betanonbeet ::')).toBe('0.6::artist:betanonbeet::');
+    expect(repairPromptTidySegment('1.2::, ::')).toBe('');
+  });
+
+  it('权重前多写的 :: 不影响切段与识别，组内逗号照样不切开', () => {
+    expect(splitPromptTidySegments('::0.5::a, b::, ::1.2::c::')).toEqual(['0.5::a, b::', '1.2::c::']);
+    expect(classifyPromptTidySegment('::0.5::cloudyman::', new Map([['cloudyman', artist('cloudyman')]]))).toBe('artist');
   });
 
   it('画师、画风与内容分开识别，混入内容的权重组整段算内容', () => {
@@ -65,6 +75,9 @@ describe('提示词整理切段', () => {
     expect(classifyPromptTidySegment('1.2::masterpiece, rella::', dictionary)).toBe('style');
     expect(classifyPromptTidySegment('1.2::rella, 1girl::', dictionary)).toBe('content');
     expect(classifyPromptTidySegment('<scene>', dictionary)).toBe('content');
+    // 年份年代词算画风与质量标记，不当成画面里的时间
+    for (const year of ['year 2025', 'year_2026', 'Year 2024', '{year 2025}', '0.8::year 2023::', '2020s (style)', 'year 2026 ']) expect(classifyPromptTidySegment(year, new Map())).toBe('style');
+    expect(classifyPromptTidySegment('night', new Map())).toBe('content');
   });
 
   it('只给词库认得的裸画师名补 artist:，括号、权重和名字自带的括号保持不变', () => {
@@ -86,6 +99,13 @@ describe('提示词整理规则', () => {
     expect((await tidyPrompt(MESSY, settings({ keep: 'artists', artistPrefix: true }))).text).toBe('[[artist:healthyman]], [artist:modare], [artist:hintobento], [artist:cutesexyrobutts], [[artist:onineko]], [artist:haku89], [artist:matanonki], artist:omone_hokoma_agm, [artist:rhasta], [artist:kkuem], [artist:ushikani_kassen], [artist:dishwasher1910], [artist:chen bin]');
   });
 
+  it('多写冒号的权重画师按真实词库保留，权重照样收尾', async () => {
+    mocks.lookup.mockImplementation(realLookup);
+    const prompt = '::hyperrealistic::,\n0.6::artist:betanonbeet ::,::0.5::cloudyman::,-2::artist collaboration::, year 2026 ,0.8::artist:houkisei,::,0.8::artist:kieed,::\n0.1::artist:yoneyama_mai,konya karasue::,year 2025,\nnsfw,uncensored,, very aesthetic, masterpiece, 1girl, on bed, warm lighting';
+    expect((await tidyPrompt(prompt, settings())).text).toBe('hyperrealistic, 0.6::artist:betanonbeet::, 0.5::cloudyman::, -2::artist collaboration::, year 2026, 0.8::artist:houkisei::, 0.8::artist:kieed::, 0.1::artist:yoneyama_mai,konya karasue::, year 2025, very aesthetic, masterpiece');
+    expect((await tidyPrompt(prompt, settings({ keep: 'artists', artistPrefix: true }))).text).toBe('0.6::artist:betanonbeet::, 0.5::artist:cloudyman::, 0.8::artist:houkisei::, 0.8::artist:kieed::, 0.1::artist:yoneyama_mai,artist:konya karasue::');
+  });
+
   it('AI 拿到逐段切开的片段，可以单独去掉 flower_field', async () => {
     const service = { tidyPrompt: vi.fn(async ({ chunks }: { chunks: string[] }) => ({ keep: chunks.map(chunk => !['flower_field', 'day', 'sunset'].includes(chunk)) })) };
     const result = await tidyPrompt(MESSY, settings({ method: 'ai' }), service as never);
@@ -97,7 +117,10 @@ describe('提示词整理规则', () => {
   it('规则提取画风串：保留画师、质量词与画风词，去掉内容并去重', async () => {
     const service = { tidyPrompt: vi.fn() };
     const result = await tidyPrompt(PROMPT, settings(), service);
-    expect(result).toEqual({ text: '1::artist:ashima_(roro046)::, 0.5::chen_bin::, rella, masterpiece, best quality, very aesthetic, no text', kept: 7, removed: 9, rewritten: false });
+    expect(result).toEqual({ text: '1::artist:ashima_(roro046)::, 0.5::chen_bin::, rella, masterpiece, best quality, very aesthetic, no text', kept: 7, removed: 9, rewritten: false, dropped: [
+      ...['astonishing elements', '<scene>', 'bakery', 'warm sunlight', '</scene>', '1girl', 'solo', 'cowboy shot'].map(text => ({ text, duplicate: false })),
+      { text: 'masterpiece', duplicate: true },
+    ] });
     expect(service.tidyPrompt).not.toHaveBeenCalled();
   });
 
@@ -127,7 +150,9 @@ describe('提示词整理 AI', () => {
     const service = { tidyPrompt: vi.fn().mockResolvedValue({ keep: [true, false, true, true] }) };
     const result = await tidyPrompt('artist:a, 1girl, astonishing elements, artist:a', settings({ method: 'ai' }), service);
     expect(service.tidyPrompt).toHaveBeenCalledWith({ instruction: expect.stringContaining('质量词'), chunks: ['artist:a', '1girl', 'astonishing elements', 'artist:a'] });
-    expect(result).toEqual({ text: 'artist:a, astonishing elements', kept: 2, removed: 2, rewritten: false });
+    // 年份词明确列进画风配方，免得模型按「时间」去掉
+    expect(service.tidyPrompt.mock.calls[0][0].instruction).toMatch(/year 2025/);
+    expect(result).toEqual({ text: 'artist:a, astonishing elements', kept: 2, removed: 2, rewritten: false, dropped: [{ text: '1girl', duplicate: false }, { text: 'artist:a', duplicate: true }] });
     expect(mocks.lookup).not.toHaveBeenCalled();
   });
 
@@ -136,7 +161,7 @@ describe('提示词整理 AI', () => {
     expect((await tidyPrompt('a, b', settings({ keep: 'custom', instruction: ' 只留 b ' }), select)).text).toBe('b');
     expect(select.tidyPrompt).toHaveBeenCalledWith({ instruction: '只留 b', chunks: ['a', 'b'] });
     const rewrite = { tidyPrompt: vi.fn().mockResolvedValue({ prompt: ' 1.0::a::,\n1.0::b:: ' }) };
-    expect(await tidyPrompt(' a, b ', settings({ keep: 'custom', instruction: '统一权重', rewrite: true, artistPrefix: true }), rewrite)).toEqual({ text: '1.0::a::,\n1.0::b::', kept: 0, removed: 0, rewritten: true });
+    expect(await tidyPrompt(' a, b ', settings({ keep: 'custom', instruction: '统一权重', rewrite: true, artistPrefix: true }), rewrite)).toEqual({ text: '1.0::a::,\n1.0::b::', kept: 0, removed: 0, rewritten: true, dropped: [] });
     expect(rewrite.tidyPrompt).toHaveBeenCalledWith({ instruction: '统一权重', rewrite: true, prompt: 'a, b' });
   });
 
