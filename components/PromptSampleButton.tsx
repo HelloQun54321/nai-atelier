@@ -1,11 +1,10 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { ImagePlay, LoaderCircle, Plus, Trash2 } from 'lucide-react';
+import { ImagePlay, Plus, Trash2 } from 'lucide-react';
 import { FilterPill } from './DesignSystem';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { BUILTIN_ASPECT_RATIOS } from '../services/aspectRatio';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
-import { DEFAULT_PROMPT_TIDY_SETTINGS, tidyPrompt } from '../services/promptTidy';
 import { createPromptSampleSnapshot, getPromptSampleSettings, PROMPT_SAMPLE_CHARACTER_LIMIT, PROMPT_SAMPLE_TEXT_LIMIT, updatePromptSampleSettings, usePromptSampleSettings, type PromptSampleBridge } from '../services/promptSampleSettings';
 import type { NAIParams } from '../types';
 
@@ -34,7 +33,7 @@ const NumberField: React.FC<{ label: string; value: number | undefined; min: num
   </label>;
 };
 
-/** 提示词工具栏里的「样张」：从当前提示词提取画风串，接上 main 与角色出一张图。 */
+/** 提示词工具栏里的「样张」：当前提示词原样接上 main 与角色出一张图。 */
 export const PromptSampleButton: React.FC<{ value: string; disabled?: boolean; notify: (message: string, type?: 'success' | 'error') => void; sample: PromptSampleBridge }> = ({ value, disabled = false, notify, sample }) => {
   useLanguage();
   const settings = usePromptSampleSettings();
@@ -43,7 +42,6 @@ export const PromptSampleButton: React.FC<{ value: string; disabled?: boolean; n
   const valueRef = useRef(value);
   valueRef.current = value;
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
   // 负面词默认留空，出图时沿用每串原图自己的负面词。
   const fromCurrent = () => createPromptSampleSnapshot(sample.current().params, '');
   // 第一次用「我的样张设置」时先按当前参数填好，之后直接在面板里改。
@@ -60,27 +58,22 @@ export const PromptSampleButton: React.FC<{ value: string; disabled?: boolean; n
   const isBuiltinSize = (value: string) => BUILTIN_ASPECT_RATIOS.some(item => `${item.baseWidth}x${item.baseHeight}` === value);
   const ratioOptions = BUILTIN_ASPECT_RATIOS.map(item => <option key={item.id} value={`${item.baseWidth}x${item.baseHeight}`}>{t(item.label)} · {item.baseWidth}×{item.baseHeight}</option>);
 
-  const generate = async () => {
-    if (busy || disabled) return;
-    setBusy(true);
-    try {
-      const style = (await tidyPrompt(valueRef.current, { ...DEFAULT_PROMPT_TIDY_SETTINGS, keep: 'style' })).text;
-      if (!style) { notify(t('没有在提示词里找到画风'), 'error'); return; }
-      setOpen(false);
-      // 扣费确认、出图与保存由编辑器的生成流程负责，失败也在那里提示。
-      void sample.generate(style);
-    } catch (error) {
-      notify(t((error as Error).message), 'error');
-    } finally {
-      setBusy(false);
-    }
+  // 提示词框里的内容原样当画风串用，不再自动整理：整理会改动用户手动调好的写法（如数字结尾权重前的空格）。
+  // 要先提取画风串，用整理面板的「整理后生成样张」。
+  const generate = () => {
+    if (disabled) return;
+    const style = valueRef.current.trim();
+    if (!style) { notify(t('提示词是空的，先写好画风串再生成样张'), 'error'); return; }
+    setOpen(false);
+    // 扣费确认、出图与保存由编辑器的生成流程负责，失败也在那里提示。
+    void sample.generate(style);
   };
   const setCharacter = (index: number, prompt: string) => updatePromptSampleSettings({ characters: settings.characters.map((item, current) => current === index ? prompt : item) });
 
   return <span ref={anchorRef} className="inline-flex">
-    <button type="button" disabled={disabled} aria-label={t('生成样张')} title={t('生成样张：提取画风串，接上 main 与角色出一张图')} aria-haspopup="dialog" aria-expanded={open}
+    <button type="button" disabled={disabled} aria-label={t('生成样张')} title={t('生成样张：用当前提示词接上 main 与角色出一张图')} aria-haspopup="dialog" aria-expanded={open}
       onClick={() => setOpen(!open)} className={ICON_CLASS}>
-      {busy ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" /> : <ImagePlay aria-hidden="true" className="h-4 w-4" />}
+      <ImagePlay aria-hidden="true" className="h-4 w-4" />
     </button>
     {open && <AnchoredToolbarPopover anchorRef={anchorRef} title={t('生成样张')} width={380} allowMobile onClose={() => setOpen(false)}>
       <div className="space-y-4">
@@ -157,11 +150,11 @@ export const PromptSampleButton: React.FC<{ value: string; disabled?: boolean; n
           </div>}
         </fieldset>
         <div>
-          <button type="button" disabled={disabled || busy} onClick={() => { void generate(); }}
+          <button type="button" disabled={disabled} onClick={generate}
             className="mobile-touch inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
-            {busy ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" /> : <ImagePlay aria-hidden="true" className="h-4 w-4" />}{t('生成样张')}
+            <ImagePlay aria-hidden="true" className="h-4 w-4" />{t('生成样张')}
           </button>
-          <p className={HINT_CLASS}>{t('画风串由本地规则从当前提示词提取，接上 main，角色放进角色栏；提示词框不会改变。图片进当前预览和历史，扣费前照常确认。')}</p>
+          <p className={HINT_CLASS}>{t('提示词框里的内容原样接上 main，不会先整理；想先提取画风串，可在整理面板勾选「整理后生成样张」。角色放进角色栏，图片进当前预览和历史，扣费前照常确认。')}</p>
         </div>
       </div>
     </AnchoredToolbarPopover>}
