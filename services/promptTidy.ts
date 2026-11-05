@@ -204,10 +204,11 @@ export function repairPromptTidySegment(segment: string): string {
   const text = chars.filter((_, index) => !drop.has(index)).join('').replace(/[ \t]{2,}/g, ' ')
     .replace(/([[{])[\s,，]+/g, '$1').replace(/[\s,，]+([\]}])/g, '$1').trim().replace(STRAY_COLONS, '');
   // 权重组内侧多出的逗号与空格一并去掉：`0.8::artist:kieed,::` → `0.8::artist:kieed::`。
+  // 以数字结尾时收尾 :: 前必须留空格：`gebijiade89::` 会被 NovelAI 读成权重 89 的新组，出图直接坏掉。
   const weighted = text.match(WEIGHTED);
   if (weighted) {
     const body = weighted[2].replace(/^[\s,，]+|[\s,，]+$/g, '');
-    return body ? `${weighted[1]}${body}::` : '';
+    return body ? `${weighted[1]}${body}${/[\d.]$/.test(body) ? ' ' : ''}::` : '';
   }
   return (WEIGHT_HEAD.test(text) ? text : text.replace(/^:+\s*/, '').replace(/\s*:+$/, '')).trim();
 }

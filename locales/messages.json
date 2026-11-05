@@ -39947,18 +39947,6 @@
     "アシスタントから有効な整理結果が返りませんでした",
     "어시스턴트가 올바른 정리 결과를 반환하지 않았습니다"
   ],
-  "没有在提示词里找到画风": [
-    "沒有在提示詞裡找到畫風",
-    "No style was found in the prompt",
-    "プロンプトに画風が見つかりませんでした",
-    "프롬프트에서 화풍을 찾지 못했습니다"
-  ],
-  "生成样张：提取画风串，接上 main 与角色出一张图": [
-    "生成樣張：擷取畫風串，接上 main 與角色出一張圖",
-    "Generate sample: extract the style string and render one image with main and characters",
-    "サンプル生成：画風プロンプトを抽出し、main とキャラクターをつなげて1枚生成します",
-    "샘플 생성: 화풍 프롬프트를 추출해 main과 캐릭터를 붙여 한 장 생성합니다"
-  ],
   "参数来源": [
     "參數來源",
     "Parameters",
@@ -40006,12 +39994,6 @@
     "Remove character {0}",
     "キャラクター {0} を削除",
     "캐릭터 {0} 삭제"
-  ],
-  "画风串由本地规则从当前提示词提取，接上 main，角色放进角色栏；提示词框不会改变。图片进当前预览和历史，扣费前照常确认。": [
-    "畫風串由本機規則從目前提示詞擷取，接上 main，角色放進角色欄；提示詞框不會改變。圖片進入目前預覽和歷史，扣費前照常確認。",
-    "The style string is extracted from the current prompt with local rules and followed by main; characters go into the character slots. The prompt box is not changed. The image goes to the current preview and history, with the usual cost confirmation.",
-    "画風プロンプトはローカルルールで現在のプロンプトから抽出され、main をつなげ、キャラクターはキャラクター欄に入ります。プロンプト欄は変わりません。画像は現在のプレビューと履歴に入り、課金前にはいつもどおり確認します。",
-    "화풍 프롬프트는 로컬 규칙으로 현재 프롬프트에서 추출해 main을 잇고, 캐릭터는 캐릭터 칸에 넣습니다. 프롬프트 칸은 바뀌지 않습니다. 이미지는 현재 미리보기와 기록에 들어가며 과금 전에 평소처럼 확인합니다."
   ],
   "出样张": [
     "出樣張",
@@ -40132,5 +40114,23 @@
     "If something was removed by mistake, undo to restore the prompt from before tidying.",
     "誤って外した場合は元に戻すと、整理前のプロンプトに戻ります。",
     "잘못 제거됐다면 실행 취소로 정리 전 프롬프트를 되돌리세요."
+  ],
+  "提示词是空的，先写好画风串再生成样张": [
+    "提示詞是空的，先寫好畫風串再生成樣張",
+    "The prompt is empty. Write a style string first, then generate a sample.",
+    "プロンプトが空です。画風文字列を書いてからサンプルを生成してください",
+    "프롬프트가 비어 있습니다. 화풍 문자열을 먼저 작성한 뒤 샘플을 생성하세요"
+  ],
+  "生成样张：用当前提示词接上 main 与角色出一张图": [
+    "生成樣張：用目前提示詞接上 main 與角色出一張圖",
+    "Generate sample: use the current prompt plus main and characters for one image",
+    "サンプル生成：現在のプロンプトに main とキャラクターを足して 1 枚生成",
+    "샘플 생성: 현재 프롬프트에 main과 캐릭터를 붙여 한 장 생성"
+  ],
+  "提示词框里的内容原样接上 main，不会先整理；想先提取画风串，可在整理面板勾选「整理后生成样张」。角色放进角色栏，图片进当前预览和历史，扣费前照常确认。": [
+    "提示詞框裡的內容原樣接上 main，不會先整理；想先提取畫風串，可在整理面板勾選「整理後生成樣張」。角色放進角色欄，圖片進目前預覽和歷史，扣費前照常確認。",
+    "The prompt box is used as-is, followed by main, without tidying first. To extract a style string first, tick \"Generate a sample after tidying\" in the tidy panel. Characters go into the character slots; the image goes to the current preview and history, and you confirm the cost as usual.",
+    "プロンプト欄の内容をそのまま main とつなげます。先に整理はしません。先に画風文字列を抽出したい場合は、整理パネルで「整えた後にサンプルを生成」にチェックしてください。キャラクターはキャラクター欄に入り、画像は現在のプレビューと履歴に入ります。消費前の確認はいつも通りです。",
+    "프롬프트 칸의 내용을 정리하지 않고 그대로 main과 이어 붙입니다. 먼저 화풍 문자열을 추출하려면 정리 패널에서 「정리 후 샘플 생성」을 체크하세요. 캐릭터는 캐릭터 칸에 들어가고, 이미지는 현재 미리보기와 기록에 들어가며, 비용 확인은 평소대로 진행됩니다."
   ]
 }

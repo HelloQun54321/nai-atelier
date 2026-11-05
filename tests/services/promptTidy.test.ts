@@ -62,6 +62,10 @@ describe('提示词整理切段', () => {
     expect(repairPromptTidySegment('0.8::artist:kieed,::')).toBe('0.8::artist:kieed::');
     expect(repairPromptTidySegment('0.6::artist:betanonbeet ::')).toBe('0.6::artist:betanonbeet::');
     expect(repairPromptTidySegment('1.2::, ::')).toBe('');
+    // 以数字结尾时收尾 :: 前留空格，`gebijiade89::` 会被读成权重 89；没写空格的也补上
+    expect(repairPromptTidySegment('0.8::gebijiade89 ::')).toBe('0.8::gebijiade89 ::');
+    expect(repairPromptTidySegment('0.8::gebijiade89::')).toBe('0.8::gebijiade89 ::');
+    expect(repairPromptTidySegment('1.1::artist:a, year 2025,::')).toBe('1.1::artist:a, year 2025 ::');
   });
 
   it('权重前多写的 :: 不影响切段与识别，组内逗号照样不切开', () => {
@@ -86,6 +90,7 @@ describe('提示词整理切段', () => {
     expect(addPromptArtistPrefix('1.1::rella， chen_bin ::', dictionary)).toBe('1.1::artist:rella， artist:chen_bin ::');
     expect(addPromptArtistPrefix('artist:rella', dictionary)).toBe('artist:rella');
     expect(addPromptArtistPrefix('ashima_(roro046)', dictionary)).toBe('ashima_(roro046)');
+    expect(addPromptArtistPrefix('0.8::gebijiade89 ::', new Map([['gebijiade89', artist('gebijiade89')]]))).toBe('0.8::artist:gebijiade89 ::');
   });
 });
 

@@ -135,6 +135,16 @@ it('模型返回前提示词被改动时放弃结果；失败与空结果如实�
   expect(screen.queryByRole('button', { name: '撤销整理' })).toBeNull();
 });
 
+it('提示词为空时样张如实提示，不出图', () => {
+  const notify = vi.fn(), sample = bridge();
+  render(<Harness initial="  " notify={notify} sample={sample} />);
+  fireEvent.click(screen.getByRole('button', { name: '生成样张' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '生成样张' })).getByRole('button', { name: '生成样张' }));
+  expect(notify).toHaveBeenCalledWith('提示词是空的，先写好画风串再生成样张', 'error');
+  expect(sample.generate).not.toHaveBeenCalled();
+  expect(screen.getByRole('dialog', { name: '生成样张' })).toBeTruthy();
+});
+
 it('没有出图通道时不显示样张按钮，也不显示整理后出图的勾选', () => {
   render(<Harness initial="artist:a" notify={vi.fn()} />);
   expect(screen.queryByRole('button', { name: '生成样张' })).toBeNull();
@@ -142,19 +152,18 @@ it('没有出图通道时不显示样张按钮，也不显示整理后出图的�
   expect(screen.queryByRole('checkbox', { name: /整理后生成样张/ })).toBeNull();
 });
 
-it('样张面板自动提取画风串交给编辑器出图，提示词框不变；我的设置直接在面板里选', async () => {
-  mocks.tidy.mockResolvedValue(result('artist:a'));
+it('样张面板把提示词框原样交给编辑器出图，不先整理，提示词框不变；我的设置直接在面板里选', async () => {
   const notify = vi.fn(), sample = bridge();
-  render(<Harness initial="artist:a, 1girl" notify={notify} sample={sample} />);
+  render(<Harness initial={' artist:a, 0.8::gebijiade89 ::, 1girl\n'} notify={notify} sample={sample} />);
   fireEvent.click(screen.getByRole('button', { name: '生成样张' }));
   let panel = screen.getByRole('dialog', { name: '生成样张' });
   fireEvent.change(within(panel).getByLabelText('main 提示词'), { target: { value: 'solo, upper body' } });
   fireEvent.click(within(panel).getByRole('button', { name: '添加角色' }));
   fireEvent.change(within(panel).getByRole('textbox', { name: '角色 1 提示词' }), { target: { value: 'blue hair' } });
   await act(async () => { fireEvent.click(within(panel).getByRole('button', { name: '生成样张' })); });
-  expect(mocks.tidy).toHaveBeenCalledWith('artist:a, 1girl', { ...DEFAULT_PROMPT_TIDY_SETTINGS, keep: 'style' });
-  expect(sample.generate).toHaveBeenCalledWith('artist:a');
-  expect(textarea().value).toBe('artist:a, 1girl');
+  expect(mocks.tidy).not.toHaveBeenCalled();
+  expect(sample.generate).toHaveBeenCalledWith('artist:a, 0.8::gebijiade89 ::, 1girl');
+  expect(textarea().value).toBe(' artist:a, 0.8::gebijiade89 ::, 1girl\n');
   expect(screen.queryByRole('dialog', { name: '生成样张' })).toBeNull();
   expect(JSON.parse(localStorage.getItem('nai_prompt_sample')!)).toMatchObject({ main: 'solo, upper body', characters: ['blue hair'] });
 
