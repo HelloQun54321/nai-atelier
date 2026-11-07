@@ -27,6 +27,9 @@ interface ChainEditorPreviewProps {
     getDownloadFilename: () => string;
     generationData?: ImageGenerationData;
     favorite?: CollectionTarget;
+    /** 当前预览对应的历史记录；存在时才允许调用官方放大。 */
+    historyId?: string;
+    historyCreatedAt?: number;
     hideCoverActions?: boolean;
     canNavigateHistory?: boolean;
     historyLabel?: string;
@@ -64,6 +67,8 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     getDownloadFilename,
     generationData,
     favorite,
+    historyId,
+    historyCreatedAt,
     hideCoverActions,
     canNavigateHistory = false,
     historyLabel,
@@ -159,6 +164,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                         imageUrl={generatedImage || previewImage}
                         filename={getDownloadFilename()}
                         generationData={generationData} favorite={favorite}
+                        historyId={historyId} historyCreatedAt={historyCreatedAt}
                         notify={notify}
                         canManageHistoryGroup={Boolean(generatedImage && canManageHistoryGroup)}
                         onRemoveCurrentHistory={onRemoveCurrentHistory}
