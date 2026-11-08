@@ -60,6 +60,12 @@ const PRECISE_REFERENCE_CACHE_LIMIT = 128 * 1024 * 1024;
 const NAI_GENERATE_URL = 'https://image.novelai.net/ai/generate-image';
 const NAI_GENERATE_STREAM_URL = 'https://image.novelai.net/ai/generate-image-stream';
 const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
+// 官方独立放大器：线性 2×（像素面积 4×），不走扩散重绘，只接受 V5 系列模型，倍率由接口固定。
+const NAI_UPSCALE_URL = 'https://image.novelai.net/ai/upscale';
+const NAI_UPSCALE_MODEL = 'nai-diffusion-5-full';
+// 原图 24 MB 足以覆盖 4K 以上成品；4× 结果按 4096² PNG 上限预留余量。
+const MAX_UPSCALE_SOURCE_BYTES = 24 * 1024 * 1024;
+const MAX_UPSCALE_RESULT_BYTES = 128 * 1024 * 1024;
 // 账户接口的官方地址：`image` 域名是官方 400 报错里点名的地址（「update to the image URL」），
 // `text` 是官方文本域、实测账户接口同样可用。`api` 域名已弃用——裸请求与带 Origin/Referer/UA
 // 的请求一律回 400，所以不再尝试。两个域名串行回退，避免单个域名抖动拖垮额度同步。
@@ -2594,6 +2600,63 @@ export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, v
   }
 };
 
+/**
+ * 官方独立放大器：取历史原图 → POST /ai/upscale（倍率由官方固定 4×）→ 原样返回 PNG。
+ * 不做扩散重绘，输出保持原图色彩与宽高比；费用按源图面积由官方结算，这里只转发结果。
+ */
+export const handleNaiUpscaleRequest = async (req, res, lanSecret, workerPort, requestRemote, gatewayUrl = '') => {
+  if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+  if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+  const authorization = String(req.headers.authorization || '');
+  if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
+  try {
+    const body = JSON.parse((await readRequestBody(req, 8 * 1024)).toString('utf8'));
+    const historyId = typeof body?.historyId === 'string' ? body.historyId.trim() : '';
+    if (!historyId) return sendJson(res, 400, { error: '缺少要放大的历史图片' });
+    const original = await requestWorkerBuffer(`/api/local-history/${encodeURIComponent(historyId)}/image`, req, workerPort);
+    if (original.status >= 400 || !original.buffer.length) return sendJson(res, original.status || 404, { error: '原图不存在，无法放大' });
+    if (original.buffer.length > MAX_UPSCALE_SOURCE_BYTES) return sendJson(res, 413, { error: '原图过大，无法放大' });
+    const response = await requestRemote(gatewayUrl ? `${gatewayUrl}/ai/upscale` : NAI_UPSCALE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': authorization },
+      body: JSON.stringify({ image: original.buffer.toString('base64'), model: NAI_UPSCALE_MODEL, declared_blur_sigma: 0 }),
+      signal: AbortSignal.timeout(300_000),
+      ...(gatewayUrl ? { redirect: 'error' } : {}),
+    });
+    if (!response.ok) {
+      const detail = await response.text();
+      const message = gatewayUrl ? (detail || `网关放大失败 (${response.status})`)
+        : response.status === 401 ? 'NovelAI API Key 无效'
+          : response.status === 402 ? 'NovelAI Anlas 不足'
+            : response.status === 400 && /standalone upscaling/i.test(detail) ? '当前模型不支持独立放大，请改用 V5 系列'
+              : (detail || `NovelAI 放大失败 (${response.status})`);
+      return sendJson(res, response.status, { error: message });
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    // 官方返回的是 ZIP（内含 image_0.png），放大 2× 即像素面积 4×，与生成接口的打包方式一致。
+    let output = buffer;
+    if (buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
+      const { default: JSZip } = await import('jszip');
+      const zip = await JSZip.loadAsync(buffer);
+      const entry = Object.keys(zip.files).find(name => /\.png$/i.test(name));
+      if (!entry) return sendJson(res, 502, { error: 'NovelAI 返回的放大包内容异常' });
+      output = await zip.file(entry).async('nodebuffer');
+    }
+    if (output.length < 1024 || output.length > MAX_UPSCALE_RESULT_BYTES) return sendJson(res, 502, { error: 'NovelAI 返回的放大结果大小异常' });
+    res.writeHead(200, {
+      'Content-Type': 'image/png', 'Content-Length': output.length,
+      'Cache-Control': 'no-store', 'X-Nai-Upscale-Model': NAI_UPSCALE_MODEL,
+    });
+    return res.end(output);
+  } catch (error) {
+    const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    return sendJson(res, Number(error.status) || (timedOut ? 504 : 502), {
+      error: timedOut ? '电脑连接 NovelAI 放大服务超时，请检查电脑 VPN' : (error.message || 'NovelAI 放大失败'),
+      code: error.code,
+    });
+  }
+};
+
 /** 图库低优先级预热：按实际缩略图档位入队，同来源共享任务；页面离开撤销未启动租约。 */
 const PREWARM_CONCURRENCY = 2;
 const PREWARM_MAX_PENDING = 300;
@@ -4359,6 +4422,7 @@ const serveDistFile = async (req, res, url) => {
     }
     const vibeEncodeMatch = url.pathname.match(/^\/api\/vibes\/([^/]+)\/encodings$/);
     if (vibeEncodeMatch) return handleVibeEncodeRequest(req, res, lanSecret, workerPort, decodeURIComponent(vibeEncodeMatch[1]), remoteFetch, await readNaiGatewayUrl(req, workerPort));
+    if (url.pathname === '/api/nai/upscale') return handleNaiUpscaleRequest(req, res, lanSecret, workerPort, remoteFetch, await readNaiGatewayUrl(req, workerPort));
     if (url.pathname === '/api/media/history-index/status') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });

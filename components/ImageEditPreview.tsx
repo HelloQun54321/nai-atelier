@@ -23,6 +23,9 @@ interface ImageEditPreviewProps {
   getDownloadFilename: () => string;
   generationData?: ImageGenerationData;
   favorite?: CollectionTarget;
+  /** 当前预览对应的历史记录；编辑结果入库后同样允许官方放大。 */
+  historyId?: string;
+  historyCreatedAt?: number;
   notify?: (message: string, type?: 'success' | 'error') => void;
   canNavigateHistory?: boolean;
   historyLabel?: string;
@@ -39,7 +42,7 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
   operation, image, error, generationCostLabel, isGenerating = false, generationProgress, generationCountControl, isLoading = false,
   canGenerate, generationDisabled, unavailableLabel,
   onGenerate, onOpenLightbox, getDownloadFilename, generationData, favorite, notify, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory,
-  canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
+  canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup, historyId, historyCreatedAt,
 }) => {
   useLanguage();
   const isGenerationDisabled = generationDisabled !== undefined
@@ -63,6 +66,7 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
         handleUploadCover={() => undefined}
         getDownloadFilename={getDownloadFilename}
         generationData={generationData} favorite={favorite} notify={notify}
+        historyId={historyId} historyCreatedAt={historyCreatedAt}
         hideCoverActions
         canNavigateHistory={canNavigateHistory}
         historyLabel={historyLabel}

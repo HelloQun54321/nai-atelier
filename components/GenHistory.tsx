@@ -14,7 +14,7 @@ import { ImageActivityContext, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Footprints, Heart, Layers, ListChecks, LoaderCircle, Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Footprints, Heart, Layers, ListChecks, LoaderCircle, Maximize2, Save, Trash2 } from 'lucide-react';
 import { CloseButton, EmptyState, IconButton, InlineSpinner, PageSpinner, ToolbarButton, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -29,6 +29,8 @@ import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { type HistoryBrowseOrder, type HistoryBrowseQuery } from '../services/historyBrowse';
 import { HistoryBrowseControls } from './HistoryBrowseControls';
 import { HistoryImageViewer } from './HistoryImageViewer';
+import { NAI_UPSCALE_FACTOR, UPSCALE_MAX_AREA, downloadUpscaledImage, upscaleCostHint, upscaleHistoryImage, upscaleSupported } from '../services/naiUpscale';
+import { beginExportTarget } from '../services/exportLocation';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 
 interface GenHistoryProps {
@@ -183,6 +185,7 @@ const HistoryCard = React.memo(function HistoryCard({
 export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNavigateToPlayground, onRefreshInspiration, initialQuery, onOpenFootprint }) => {
   const language = useLanguage();
     const confirmAction = useConfirmDialog();
+    const [upscalingId, setUpscalingId] = useState<string | null>(null);
     const imageDisplay = useMobileImageDisplayPreferences('history');
     // 与 CSS 768px 断点一致：手机端卡片底部有额外的时间文字行，计入预计高度
     const [isMobileViewport, setIsMobileViewport] = useState(() => (typeof window === 'undefined' ? false : window.innerWidth < 768));
@@ -734,6 +737,27 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
         return { start: first + 1, end: last + 1 };
     };
 
+    /** 官方独立放大器：不进历史、不覆盖原图，付费拿回 2× 成品后走统一导出通道保存。 */
+    const handleUpscale = async (item: LocalGenItem) => {
+        if (upscalingId) return;
+        const width = item.params?.width || 0, height = item.params?.height || 0;
+        // 目录选择需要用户手势，必须在点击的同步栈里取好，不能等确认弹窗和网络往返之后。
+        const target = beginExportTarget();
+        if (!await confirmAction({
+            title: `用官方放大器把这张图放大 ${NAI_UPSCALE_FACTOR} 倍？`,
+            message: `放大结果是原图的 ${NAI_UPSCALE_FACTOR} 倍边长（像素面积 4 倍），不覆盖原图、不写入历史，完成后按导出设置保存。${upscaleCostHint(width, height)}`,
+            confirmLabel: '放大并保存',
+        })) return;
+        setUpscalingId(item.id);
+        try {
+            const result = await upscaleHistoryImage(item.id, { createdAt: item.createdAt });
+            const receipt = await downloadUpscaledImage(result, target);
+            notify(receipt.path ? `已放大并保存到 ${receipt.path}` : (result.width && result.height ? `已放大到 ${result.width}×${result.height}，文件已开始下载` : '已放大，文件已开始下载'), 'success');
+        } catch (error) {
+            notify(error instanceof Error ? error.message : '放大失败', 'error');
+        } finally { setUpscalingId(null); }
+    };
+
     const handleDelete = async (id: string, e?: React.MouseEvent) => {
         e?.stopPropagation();
         if (await confirmAction({
@@ -1234,6 +1258,11 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                                 <ToolbarButton tone="primary" className="w-full" onClick={handleImportToLab} disabled={isPreparingImport}>
                                     <Save />
                                     {isPreparingImport ? t("正在读取元数据...") : t("导入到实验室")}
+                                </ToolbarButton>
+                                <ToolbarButton className="w-full" onClick={() => void handleUpscale(lightbox)} disabled={isPreparingImport || Boolean(upscalingId) || !upscaleSupported(lightbox.params?.width, lightbox.params?.height)} aria-busy={upscalingId === lightbox.id}
+                                    title={upscaleSupported(lightbox.params?.width, lightbox.params?.height) ? undefined : t("这张图超过官方 {0} 像素上限，无法放大", [String(UPSCALE_MAX_AREA)])}>
+                                    {upscalingId === lightbox.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Maximize2 className="h-4 w-4" />}
+                                    {upscalingId === lightbox.id ? t("正在放大…") : t("官方放大 {0} 倍", [String(NAI_UPSCALE_FACTOR)])}
                                 </ToolbarButton>
                             </div>
                             <div className="space-y-4">

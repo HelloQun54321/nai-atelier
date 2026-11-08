@@ -84,6 +84,9 @@ interface ImageEditPanelProps {
   getDownloadFilename: () => string;
   generationData?: ImageGenerationData;
   favorite?: CollectionTarget;
+  /** 当前预览对应的历史记录；编辑结果入库后同样允许官方放大。 */
+  historyId?: string;
+  historyCreatedAt?: number;
   canNavigateHistory?: boolean;
   historyLabel?: string;
   onPreviousHistory?: () => void;
@@ -157,6 +160,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   getDownloadFilename,
   generationData,
   favorite,
+  historyId,
+  historyCreatedAt,
   canNavigateHistory,
   historyLabel,
   onPreviousHistory,
@@ -1286,6 +1291,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           onOpenLightbox={onOpenLightbox}
           getDownloadFilename={getDownloadFilename}
           generationData={generationData} favorite={favorite}
+          historyId={historyId} historyCreatedAt={historyCreatedAt}
           canNavigateHistory={canNavigateHistory}
           historyLabel={historyLabel}
           onPreviousHistory={onPreviousHistory}

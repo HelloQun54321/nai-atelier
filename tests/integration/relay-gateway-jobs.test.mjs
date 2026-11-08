@@ -1,7 +1,7 @@
 import '../support/node-environment.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { once } from 'node:events';
 import JSZip from 'jszip';
 import sharp from 'sharp';
@@ -66,11 +66,29 @@ async function fixture(t, { status, member = true, stale = false }) {
   };
   const gateway = await createMediaGateway({ port: 0, workerPort: worker.address().port });
   const base = `http://127.0.0.1:${gateway.address().port}`;
+  // 用 node:http 而不是 fetch：测试服务器的端口由系统在动态范围（本机 1024–15000）里分配，
+  // 偶尔会落在 undici 的保留端口（5060、6665–6669、10080 等），fetch 会直接抛 bad port。
   const request = async (path, method = 'GET', body, extra = {}) => {
-    const response = await fetch(base + path, { method, headers: { authorization, 'Content-Type': 'application/json', ...extra },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    assert.equal(response.status, 200, await response.clone().text());
-    return response.json();
+    const payload = body === undefined ? undefined : JSON.stringify(body);
+    const response = await new Promise((resolve, reject) => {
+      const req = httpRequest(base + path, {
+        method,
+        headers: {
+          authorization, 'content-type': 'application/json',
+          ...(payload === undefined ? {} : { 'content-length': Buffer.byteLength(payload) }),
+          ...extra,
+        },
+      }, res => {
+        const chunks = [];
+        res.on('data', chunk => chunks.push(chunk));
+        res.on('end', () => resolve({ status: res.statusCode, text: Buffer.concat(chunks).toString('utf8') }));
+      });
+      req.on('error', reject);
+      if (payload !== undefined) req.write(payload);
+      req.end();
+    });
+    assert.equal(response.status, 200, response.text);
+    return JSON.parse(response.text);
   };
   const token = 'synthetic-relay-batch';
   t.after(async () => {

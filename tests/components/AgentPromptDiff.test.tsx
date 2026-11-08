@@ -117,6 +117,23 @@ it.each([['', 'new prompt'], ['old prompt', '']])('纯新增或删除没有未�
   expect(screen.queryByRole('button')).toBeNull();
 });
 
+it('只有换行与逗号的排版差异不生成空改动行', () => {
+  const { container } = render(<AgentPromptDiff changes={[{ path: ['basePrompt'], before: 'a, b, c, d, e', after: 'a\nb\nc\nd\ne' }]} />);
+  // 换行本身不再算新增内容，没有一行只剩「+」。
+  const inserted = [...container.querySelectorAll('ins')].map(node => node.textContent).join('');
+  expect(inserted.trim()).toBe('');
+  expect([...container.querySelectorAll('ins')].every(node => (node.textContent || '').trim() === '')).toBe(true);
+});
+
+it('换行混在真实改动里时仍保留正文，只是不把换行本身算作改动', () => {
+  const { container } = render(<AgentPromptDiff changes={[{ path: ['basePrompt'], before: 'white shirt,\nred hat', after: 'black jacket, blue cape' }]} />);
+  const marks = [...container.querySelectorAll('del, ins')].map(node => node.textContent).join(' ');
+  expect(marks).toContain('white');
+  expect(marks).toContain('shirt');
+  expect(marks).toContain('black');
+  expect(marks).toContain('jacket');
+});
+
 it('不同消息卡片独立展开，查看上下文不会改变撤回重做状态', () => {
   const onAction = vi.fn(async () => {});
   const other = { ...change, id: 'other', changes: [{ path: ['basePrompt'], before: 'second context old', after: 'second context new' }] };

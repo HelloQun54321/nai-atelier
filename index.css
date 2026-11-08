@@ -1002,7 +1002,7 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     position: static;
     margin: 0;
     grid-row: 2;
-    justify-self: start;
+    justify-self: center;
   }
   .agent-panel-docked .chain-editor-preview .generation-count-control > div { grid-column: 2; justify-self: end; }
 

@@ -2183,3 +2183,12 @@ test('Pi压缩：已折叠旧工具原文很大但请求未达80%时不反复摘
   assert.deepEqual(saved.messages.slice(0, original.length), original);
   assert.equal(saved.compaction, undefined);
 }));
+
+test('非对话任务按模型支持的档位思考，不再把关闭思考写死', async () => {
+  const source = await readFile(new URL('../../scripts/prompt-agent.mjs', import.meta.url), 'utf8');
+  // 不允许关闭思考的模型（如 GLM-5.3-Flash）收到 disabled 会直接 400，
+  // 所以翻译、分类、整理、提取、连接测试都必须走支持档位的判定。
+  assert.equal(source.includes("thinkingLevel: 'off'"), false);
+  assert.equal((source.match(/thinkingLevel: lightestThinkingLevel\(model\)/g) || []).length, 7);
+  assert.match(source, /const lightestThinkingLevel = model => supportedThinkingLevelsFor\(model\)\[0\] \|\| 'off';/);
+});
