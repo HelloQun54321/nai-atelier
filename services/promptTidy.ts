@@ -17,23 +17,28 @@ export interface PromptTidySettings {
   /** 整理后接着出一张样张，只在编辑器提供出图通道时生效。 */
   sample: boolean;
 }
-export interface PromptTidyResult { text: string; kept: number; removed: number; rewritten: boolean }
+/** 被去掉的一段，原文照录；duplicate 表示和前面保留的段重复。 */
+export interface PromptTidyDropped { text: string; duplicate: boolean }
+/** dropped 按原文顺序列出去掉的段，模型改写时为空。 */
+export interface PromptTidyResult { text: string; kept: number; removed: number; rewritten: boolean; dropped: PromptTidyDropped[] }
 type PromptTidyService = Pick<typeof promptAgentService, 'tidyPrompt'>;
 
 export const PROMPT_TIDY_INSTRUCTION_LIMIT = 500;
 export const DEFAULT_PROMPT_TIDY_SETTINGS: Readonly<PromptTidySettings> = Object.freeze<PromptTidySettings>({ method: 'rules', keep: 'style', instruction: '', rewrite: false, dedupe: true, artistPrefix: false, sample: false });
 const KEEPS: readonly PromptTidyKeep[] = ['style', 'artists', 'content', 'all', 'custom'];
 const AI_INSTRUCTIONS: Record<'style' | 'content', string> = {
-  style: '只保留画风配方：画师、画风、媒介、线条、明暗、质感、特效、质量词（含拼错的 masterpice 等）与色彩，以及由这些词组成的权重组；去掉人物、外貌、服饰、动作、表情、构图、镜头、文字、光照与光色（如 orange lighting、sunlight），以及地点、自然、花草与时间天气（如 flower field、day、sunset）等画面内容。',
-  content: '去掉画风配方（画师、画风、媒介、线条、明暗、质感、特效、质量词与色彩），只保留人物、外貌、服饰、动作、表情、构图、镜头、文字、光照、地点、自然与时间天气等画面内容。',
+  style: '只保留画风配方：画师、画风、媒介、线条、明暗、质感、特效、质量词（含拼错的 masterpice 等，以及 year 2025、2020s (style) 这类年份年代词）与色彩，以及由这些词组成的权重组；去掉人物、外貌、服饰、动作、表情、构图、镜头、文字、光照与光色（如 orange lighting、sunlight），以及地点、自然、花草与时间天气（如 flower field、day、sunset）等画面内容。',
+  content: '去掉画风配方（画师、画风、媒介、线条、明暗、质感、特效、质量词、year 2025 这类年份年代词与色彩），只保留人物、外貌、服饰、动作、表情、构图、镜头、文字、光照、地点、自然与时间天气等画面内容。',
 };
 const WEIGHTED = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+)::)([\s\S]*?)(\s*::)$/;
 const WEIGHT_HEAD = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::/;
+/** 权重前多写的 `::`（`::0.5::cloudyman::`）：不去掉的话认不出权重，词库也查不到里面的画师。 */
+const STRAY_COLONS = /^:+\s*(?=[+-]?(?:\d+(?:\.\d+)?|\.\d+)::)/;
 /** 词库里没有、但写法本身就说明是画风的描述：…style／illustration／lineart／shading 等；orange lighting 这类光照按画面内容处理。 */
 const TIDY_STYLE_PATTERNS = [
   /(?:^|\s)(?:style|illustration|lineart|line art|linework|shading|chiaroscuro|brushstrokes?|rendering)$/,
   /\((?:medium|style)\)$/,
-  /^(?:official art|newest|traditional media|depth of field|bokeh|film grain|chromatic aberration|lens flare|bloom|cinematic|monochrome|greyscale|high contrast|limited palette|vibrant colors|pastel colors|muted colors)$/,
+  /^(?:official art|newest|traditional media|hyperrealistic|hyperrealism|depth of field|bokeh|film grain|chromatic aberration|lens flare|bloom|cinematic|monochrome|greyscale|high contrast|limited palette|vibrant colors|pastel colors|muted colors)$/,
 ];
 const QUALITY_WORDS = ['masterpiece', 'best quality', 'amazing quality', 'very aesthetic', 'absurdres', 'highres'];
 const BRACKETS: Record<string, string> = { '{': '}', '[': ']', '(': ')' };
@@ -57,6 +62,13 @@ export const resolvePromptTidyMethod = (settings: PromptTidySettings): PromptTid
 
 /** 模型改写时以用户要求为准，不再套用去重与补前缀。 */
 export const isPromptTidyRewrite = (settings: PromptTidySettings) => settings.keep === 'custom' && settings.rewrite;
+
+/** 形如 `<artist>`、`</style>` 的分段标记：是提示词的结构，既不算画风也不算画面内容。 */
+const MARKER = /^<(\/?)([a-zA-Z][\w-]*)>$/;
+const MARKER_AHEAD = /^<\/?[a-zA-Z][\w-]*>/;
+/** gap 是这一段和前一段在原文里隔着什么，分段标记据此还原排版。 */
+type PromptTidyGap = '' | ',' | '\n';
+interface PromptTidyToken { text: string; gap: PromptTidyGap }
 
 const CLOSERS: Record<string, string> = { '[': ']', '{': '}' };
 const OPENERS: Record<string, string> = { ']': '[', '}': '{' };
@@ -83,23 +95,29 @@ const completeBrackets = (piece: string) => {
  * 按顶层逗号与换行切段，`1.2::a, b::` 权重组与括号内的逗号保持原样。
  * 括号或权重到行尾仍未闭合多半是笔误，这一截改按逗号逐个切开并补齐括号，避免一处笔误把后面整段并成一块。
  */
-export function splitPromptTidySegments(prompt: string): string[] {
-  const segments: string[] = [];
-  let buffer = '', weighted = false, depth = 0;
+const tokenizePrompt = (prompt: string): PromptTidyToken[] => {
+  const tokens: PromptTidyToken[] = [];
+  let buffer = '', weighted = false, depth = 0, gap: PromptTidyGap = '';
+  const add = (text: string) => { tokens.push({ text, gap }); gap = ''; };
   const push = () => {
     const runaway = depth > 0 || weighted;
     for (const piece of runaway ? buffer.split(/[,，]/) : [buffer]) {
-      const value = runaway ? completeBrackets(piece) : piece.trim();
-      if (value) segments.push(value);
+      const value = (runaway ? completeBrackets(piece) : piece.trim()).replace(STRAY_COLONS, '');
+      if (value) add(value);
     }
     buffer = '';
   };
   for (let index = 0; index < prompt.length; index += 1) {
     const char = prompt[index];
-    if (char === '\n' || char === '\r') { push(); weighted = false; depth = 0; continue; }
+    if (char === '\n' || char === '\r') { push(); weighted = false; depth = 0; gap = '\n'; continue; }
+    // 分段标记单独成段，`<artist>a, b</artist>` 写在一行时也不会和画师名粘在一起。
+    if (!weighted && depth === 0 && char === '<') {
+      const marker = prompt.slice(index).match(MARKER_AHEAD)?.[0];
+      if (marker) { push(); add(marker); index += marker.length - 1; continue; }
+    }
     if (char === ':' && prompt[index + 1] === ':') {
       if (weighted) weighted = false;
-      else if (/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(buffer.trim())) weighted = true;
+      else if (/^(?::+\s*)?[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(buffer.trim())) weighted = true;
       buffer += '::';
       index += 1;
       continue;
@@ -109,13 +127,15 @@ export function splitPromptTidySegments(prompt: string): string[] {
     if (!weighted) {
       if ('{[(（'.includes(char)) depth += 1;
       else if ('}])）'.includes(char)) depth = Math.max(0, depth - 1);
-      if (depth === 0 && (char === ',' || char === '，')) { push(); continue; }
+      if (depth === 0 && (char === ',' || char === '，')) { push(); if (!gap) gap = ','; continue; }
     }
     buffer += char;
   }
   push();
-  return segments;
-}
+  return tokens;
+};
+
+export const splitPromptTidySegments = (prompt: string): string[] => tokenizePrompt(prompt).map(token => token.text);
 
 /** 只剥成对的外层强调括号，`ashima_(roro046)` 这类名字自带的括号保留。 */
 const splitBrackets = (piece: string) => {
@@ -125,8 +145,8 @@ const splitBrackets = (piece: string) => {
   return { lead, open, core, close, trail };
 };
 const segmentPieces = (segment: string) => {
-  const weighted = segment.match(WEIGHTED);
-  return { head: weighted?.[1] ?? '', body: weighted?.[2] ?? segment, tail: weighted?.[3] ?? '' };
+  const text = segment.replace(STRAY_COLONS, ''), weighted = text.match(WEIGHTED);
+  return { head: weighted?.[1] ?? '', body: weighted?.[2] ?? text, tail: weighted?.[3] ?? '' };
 };
 const parenBalanced = (text: string) => {
   let depth = 0;
@@ -197,7 +217,14 @@ export function repairPromptTidySegment(segment: string): string {
   });
   stack.forEach(index => drop.add(index));
   const text = chars.filter((_, index) => !drop.has(index)).join('').replace(/[ \t]{2,}/g, ' ')
-    .replace(/([[{])[\s,，]+/g, '$1').replace(/[\s,，]+([\]}])/g, '$1').trim();
+    .replace(/([[{])[\s,，]+/g, '$1').replace(/[\s,，]+([\]}])/g, '$1').trim().replace(STRAY_COLONS, '');
+  // 权重组内侧多出的逗号与空格一并去掉：`0.8::artist:kieed,::` → `0.8::artist:kieed::`。
+  // 以数字结尾时收尾 :: 前必须留空格：`gebijiade89::` 会被 NovelAI 读成权重 89 的新组，出图直接坏掉。
+  const weighted = text.match(WEIGHTED);
+  if (weighted) {
+    const body = weighted[2].replace(/^[\s,，]+|[\s,，]+$/g, '');
+    return body ? `${weighted[1]}${body}${/[\d.]$/.test(body) ? ' ' : ''}::` : '';
+  }
   return (WEIGHT_HEAD.test(text) ? text : text.replace(/^:+\s*/, '').replace(/\s*:+$/, '')).trim();
 }
 
@@ -210,34 +237,73 @@ const lookupCategories = async (segments: readonly string[]) => {
   catch { return new Map<string, TagSuggestion>(); }
 };
 
-/** 结果统一用「, 」连成一行；模型改写时原样采用模型给出的正文。 */
+/** 内容全被去掉的成对标记一起去掉，不留 `<scene></scene>` 空壳；配不上对的标记不动。 */
+const dropEmptySections = (segments: readonly string[], keep: readonly boolean[]) => {
+  const result = [...keep], open: Array<{ name: string; index: number }> = [];
+  segments.forEach((segment, index) => {
+    const [, closing, name] = segment.match(MARKER) ?? [];
+    if (!name) return;
+    if (!closing) { open.push({ name, index }); return; }
+    const at = open.map(item => item.name).lastIndexOf(name);
+    if (at < 0) return;
+    const start = open[at].index;
+    open.length = at;
+    if (!result.slice(start + 1, index).some(Boolean)) result[start] = result[index] = false;
+  });
+  return result;
+};
+
+/** 普通段用「, 」连；分段标记按原文排版：原来单独成行的还单独成行，写在一行的紧贴内容，内侧不加逗号。 */
+const joinPromptTidyTokens = (tokens: readonly PromptTidyToken[]) => tokens.reduce((text, token, index) => {
+  if (!index) return token.text;
+  const previous = tokens[index - 1].text.match(MARKER), current = token.text.match(MARKER);
+  if (!previous && !current) return `${text}, ${token.text}`;
+  if (token.gap === '\n') return `${text}\n${token.text}`;
+  if ((previous && !previous[1]) || current?.[1]) return text + token.text;
+  return `${text}${token.gap === ',' ? ', ' : ' '}${token.text}`;
+}, '');
+
+/** 普通段用「, 」连成一行，分段标记保持原来的排版；模型改写时原样采用模型给出的正文。 */
 export async function tidyPrompt(prompt: string, input: PromptTidySettings, service: PromptTidyService = promptAgentService): Promise<PromptTidyResult> {
   const settings = normalizePromptTidySettings(input);
   const method = resolvePromptTidyMethod(settings);
   const instruction = settings.keep === 'custom' ? settings.instruction.trim() : '';
   if (settings.keep === 'custom' && !instruction) throw new Error('请先写好整理要求');
-  const segments = splitPromptTidySegments(prompt);
+  const tokens = tokenizePrompt(prompt), segments = tokens.map(token => token.text);
   if (!segments.length) throw new Error('没有可整理的提示词');
   if (isPromptTidyRewrite(settings)) {
     const text = (await service.tidyPrompt({ instruction, rewrite: true, prompt: prompt.trim() })).prompt?.trim();
     if (!text) throw new Error('助手返回的整理结果无效');
-    return { text, kept: 0, removed: 0, rewritten: true };
+    return { text, kept: 0, removed: 0, rewritten: true, dropped: [] };
   }
   const categories = method === 'rules' || settings.artistPrefix ? await lookupCategories(segments) : new Map<string, TagSuggestion>();
   let keep: readonly boolean[];
   if (method === 'ai') {
     const result = await service.tidyPrompt({ instruction: instruction || AI_INSTRUCTIONS[settings.keep as 'style' | 'content'], chunks: segments });
     if (!Array.isArray(result.keep) || result.keep.length !== segments.length) throw new Error('助手返回的整理结果不完整');
-    keep = result.keep;
-  } else keep = segments.map(segment => keepByRules(classifyPromptTidySegment(segment, categories), settings.keep));
+    // 内置选项的分段标记不交给模型取舍；自定义要求可能就是要去掉标记，按模型的决定来。
+    keep = instruction ? result.keep : result.keep.map((value, index) => value || MARKER.test(segments[index]));
+  } else keep = segments.map(segment => MARKER.test(segment) || keepByRules(classifyPromptTidySegment(segment, categories), settings.keep));
   const seen = new Set<string>();
-  const kept = segments.filter((_, index) => keep[index]).map(repairPromptTidySegment).filter(segment => {
-    if (!segment) return false;
-    if (!settings.dedupe) return true;
-    const key = dedupeKey(segment);
-    if (seen.has(key)) return false;
+  // 修完只剩空括号、冒号的笔误段也算去掉，列表条数与「去掉 N 段」一致；同名标记可以出现多次，不参与去重。
+  const texts = segments.map((segment, index) => keep[index] ? repairPromptTidySegment(segment) : '');
+  const duplicates = texts.map(text => {
+    if (!text || !settings.dedupe || MARKER.test(text)) return false;
+    const key = dedupeKey(text);
+    if (seen.has(key)) return true;
     seen.add(key);
-    return true;
-  }).map(segment => settings.artistPrefix ? addPromptArtistPrefix(segment, categories) : segment);
-  return { text: kept.join(', '), kept: kept.length, removed: segments.length - kept.length, rewritten: false };
+    return false;
+  });
+  const retained = texts.map((text, index) => Boolean(text) && !duplicates[index]);
+  const final = settings.keep === 'all' ? retained : dropEmptySections(segments, retained);
+  const kept: PromptTidyToken[] = [], dropped: PromptTidyDropped[] = [];
+  let carried: PromptTidyGap = '';
+  tokens.forEach((token, index) => {
+    // 中间的段被去掉时，换行优先于逗号传给下一段，排版才对得上原文。
+    const gap: PromptTidyGap = carried === '\n' || token.gap === '\n' ? '\n' : carried || token.gap;
+    if (!final[index]) { carried = gap; dropped.push({ text: token.text, duplicate: duplicates[index] }); return; }
+    carried = '';
+    kept.push({ text: settings.artistPrefix ? addPromptArtistPrefix(texts[index], categories) : texts[index], gap });
+  });
+  return { text: joinPromptTidyTokens(kept), kept: kept.length, removed: dropped.length, rewritten: false, dropped };
 }

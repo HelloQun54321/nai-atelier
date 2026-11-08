@@ -954,21 +954,22 @@ it.each(['图生图', '局部重绘', '扩图'])('%s 普通生成复用已有免
   expect(state.getJob).not.toHaveBeenCalled();
 });
 
-it('样张用提取出的画风串接上 main 与角色单张提交，不带模块与原主体，提示词框不变', async () => {
+it('样张把提示词框原样接上 main 与角色单张提交，不先整理、不带模块与原主体，提示词框不变', async () => {
   sessionStorage.setItem('nai_api_key', 'sample-key');
   state.subscription = { active: true, tier: 3 };
   updatePromptSampleSettings({ source: 'original', main: 'solo', characters: ['blue hair'], snapshot: null });
-  setup({ ...chain, id: 'sample-style', basePrompt: 'artist:alpha, masterpiece, 1girl, beach', variableValues: { subject: '' } });
-  await waitFor(() => expect(textPrompt().value).toBe('artist:alpha, masterpiece, 1girl, beach'));
+  // 数字结尾的画师在收尾 :: 前手动留的空格必须原样带进请求，否则会被读成权重 89
+  setup({ ...chain, id: 'sample-style', basePrompt: 'artist:alpha, 0.8::gebijiade89 ::, masterpiece', variableValues: { subject: '' } });
+  await waitFor(() => expect(textPrompt().value).toBe('artist:alpha, 0.8::gebijiade89 ::, masterpiece'));
   fireEvent.click(screen.getByRole('button', { name: '生成样张' }));
   const panel = screen.getByRole('dialog', { name: '生成样张' });
   await act(async () => fireEvent.click(within(panel).getByRole('button', { name: '生成样张' })));
   await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
   expect(state.started[0].count).toBe(1);
   const submitted = state.buildDescriptor.mock.calls[0][0];
-  expect(submitted).toMatchObject({ prompt: 'artist:alpha, masterpiece, solo', negative: 'saved negative', params: { width: 832, height: 1216, useCoords: false } });
+  expect(submitted).toMatchObject({ prompt: 'artist:alpha, 0.8::gebijiade89 ::, masterpiece, solo', negative: 'saved negative', params: { width: 832, height: 1216, useCoords: false } });
   expect(submitted.params.characters).toEqual([expect.objectContaining({ prompt: 'blue hair' })]);
-  expect(textPrompt().value).toBe('artist:alpha, masterpiece, 1girl, beach');
+  expect(textPrompt().value).toBe('artist:alpha, 0.8::gebijiade89 ::, masterpiece');
   updatePromptSampleSettings({ main: '', characters: [] });
 });
 

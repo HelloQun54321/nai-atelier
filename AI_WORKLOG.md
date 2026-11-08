@@ -5,8 +5,14 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-08
+- **Claude Code (Opus 5.5)**：把上游 main（1.169.2）合并进提示词整理分支，解决日志、README 版本徽章、翻译词典与版本文件冲突；日志保留双方条目并按日期排序，词典三方合并（合入本分支新增 11 项、删除 3 项，保留上游新增 3 项），含 `feat` 按 minor 升到 1.170.0；无功能改动。
+- **Claude Code (Opus 5.5)**：提示词整理认得 `<artist>`、`</style>` 这类分段标记：切段时单独成段（写在一行也拆得开），内置选项由程序决定去留（段内有内容才留，全去掉时成对收掉），自定义要求交给模型并在系统提示里默认保留，标记不参与去重；输出记录原文间隔，单独成行的还单独成行、同行的紧贴内容，修复一长行两侧带逗号与 `<artist>a, b</artist>` 被整理成落单 `b</artist>` 的问题（fix: keep section markers like <artist> and their layout when tidying prompts）。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：修掉 `test:gateway` 的偶发失败。`relay-gateway-jobs.test.mjs` 里 8 个参数化用例（「成员网关 N 仍停止」）时而挂一个，且每次挂的用例不同。从 `logs/tests/` 里的完整日志抓到真实报错是 `TypeError: fetch failed / [cause] bad port`，发生在 `fixture()` 末尾请求 `/api/generation-queue/preferences` 时。根因：`netsh int ipv4 show dynamicport tcp` 显示本机动态端口从 **1024** 起（13977 个），而 undici 的 `fetch` 带一份保留端口黑名单（5060、5061、6665–6669、10080 等），`port: 0` 偶尔正好分到这些端口就抛 `bad port`；单跑该文件命中率低所以一直是绿的。改为测试内部的 `request()` 用 `node:http` 发请求（`fetch` 只保留给被 gateway 内部调用的那段拦截），绕开黑名单。连跑该文件 5 次全绿；`test:gateway` 1018 项通过。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：修 Issue #25。`scripts/prompt-agent.mjs` 里 7 处非对话任务（`translateTags`、`generateLibraryPrompt`、`generateLibraryBundle`、`classifyPrompts`、`tidyPrompt`、`extractCandidates`、`testCustomProvider`）把 `thinkingLevel` 写死为 `'off'`；接入不允许关闭思考的模型（如 `glm-5.3-flash`，勾选档位只有 low/high/max）时，pi-ai 的 zai 分支仍会发 `thinking: {type:"disabled"}`，服务端回 400 `code 1210`。新增 `lightestThinkingLevel(model) = supportedThinkingLevelsFor(model)[0] || 'off'`（复用已有的档位排序，支持关闭的模型行为不变），7 处全部改为调用它。补 1 项源码断言锁住回归（不允许再出现硬编码、必须恰好 7 处走新函数）；`prompt-agent` 116 项通过。
+
+## 2026-11-06
+- **Claude Code (Opus 5.5)**：修两处用户实测问题：整理输出的权重组以数字结尾时收尾 `::` 前保留（或补上）空格，`0.8::gebijiade89 ::` 不再被清成 `gebijiade89::` 让 NovelAI 读成权重 89，AI 改写说明同步写明；「样张」不再先用本地规则整理，提示词框原样接上 main 出图，空提示词直接提示，去掉无用的处理中状态并更新四语文案（fix: keep the space before a closing weight after digits and use the prompt as-is for samples）。
+- **Claude Code (Opus 5.5)**：提示词整理三处修正加一个查看入口：AI 挑选模式改为给片段编号、模型只回要保留的编号（解决片段多时「整理结果不完整」），兼容旧的逐段 true／false 并能从带说明的回复里读出 JSON；本地规则认得权重前多写的 `::` 并保住收尾 `::`、清掉权重组内侧多余逗号，`hyperrealistic` 记为画风词；AI 说明把年份年代词列为画风与质量标记；整理结果附带按原文顺序的去掉段落，撤销按钮旁新增「去掉 N」弹窗查看并可在其中撤销（feat: list removed segments after prompt tidy and number AI tidy chunks）。
 
 ## 2026-11-05
 - **DeepSeek Harness (deepseek-v4.1-flash)**：修正放大结果的保存方式。原实现用 `URL.createObjectURL` + `<a download>` 直接下载，绕过了项目的导出通道，用户设好的导出目录不生效、文件被甩进浏览器默认下载文件夹。改为 `saveExportBlob(blob, filename, target)`，与其它下载（`downloadSharedImage`）走同一条路径：设了目录就写入该目录，没设置才回退浏览器下载；`target` 由 `beginExportTarget()` 在点击的同步栈里取好再传入——目录选择需要用户手势，等确认弹窗和网络往返之后再取会失效。保存成功时提示实际落盘的 `receipt.path`。补 1 项断言确保走 `saveExportBlob` 而不是浏览器下载。

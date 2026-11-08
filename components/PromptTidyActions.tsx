@@ -3,7 +3,7 @@ import React, { useRef, useState } from 'react';
 import { LoaderCircle, RotateCcw, Sparkles, Trash2, WandSparkles } from 'lucide-react';
 import { FilterPill } from './DesignSystem';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
-import { isPromptTidyRewrite, PROMPT_TIDY_INSTRUCTION_LIMIT, resolvePromptTidyMethod, tidyPrompt, type PromptTidyKeep, type PromptTidySettings } from '../services/promptTidy';
+import { isPromptTidyRewrite, PROMPT_TIDY_INSTRUCTION_LIMIT, resolvePromptTidyMethod, tidyPrompt, type PromptTidyDropped, type PromptTidyKeep, type PromptTidySettings } from '../services/promptTidy';
 import { addPromptTidyPreset, PROMPT_TIDY_NAME_LIMIT, PROMPT_TIDY_PRESET_LIMIT, removePromptTidyPreset, setPromptTidyDraft, usePromptTidyState } from '../services/promptTidyPresets';
 import type { PromptSampleBridge } from '../services/promptSampleSettings';
 import { PromptSampleButton } from './PromptSampleButton';
@@ -37,6 +37,10 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [presetName, setPresetName] = useState('');
+  // 最近一次整理去掉的段：和撤销按钮同生同灭，撤销或继续编辑后就不再显示。
+  const [dropped, setDropped] = useState<PromptTidyDropped[]>([]);
+  const [droppedOpen, setDroppedOpen] = useState(false);
+  const droppedRef = useRef<HTMLButtonElement>(null);
   const keepOptions: Array<{ value: PromptTidyKeep; label: string; hint: string }> = [
     { value: 'style', label: t('画风串'), hint: t('保留画师、画风、线条、质量词等整段配方，去掉人物、场景和光照') },
     { value: 'artists', label: t('只留画师'), hint: t('只保留画师，连同原来的权重') },
@@ -71,6 +75,8 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
       if (!result.text) { notify(t('没有找到要保留的内容，提示词没有改动'), 'error'); return false; }
       if (result.text === base) notify(t('整理后没有变化'), 'success');
       else {
+        setDropped(result.dropped);
+        setDroppedOpen(false);
         onApply(result.text);
         notify(result.rewritten ? t('已按要求改写，可以撤销') : t('已整理：保留 {0} 段，去掉 {1} 段，可以撤销', [result.kept, result.removed]), 'success');
       }
@@ -93,6 +99,8 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
   };
   const spinner = <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />;
   const full = presets.length >= PROMPT_TIDY_PRESET_LIMIT;
+  const showDropped = canUndo && dropped.length > 0;
+  const duplicates = dropped.filter(item => item.duplicate).length;
 
   return <span className="flex items-center gap-1">
     <span ref={anchorRef} className="inline-flex">
@@ -104,6 +112,30 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
     {canUndo && <button type="button" disabled={disabled} aria-label={t('撤销整理')} title={t('撤销整理')} onMouseDown={event => event.preventDefault()} onClick={onUndo} className={`${ICON_CLASS} text-[var(--nai-accent)]`}>
       <RotateCcw aria-hidden="true" className="h-4 w-4" />
     </button>}
+    {showDropped && <button ref={droppedRef} type="button" aria-label={t('查看去掉的 {0} 段', [dropped.length])} title={t('查看去掉的 {0} 段', [dropped.length])} aria-haspopup="dialog" aria-expanded={droppedOpen}
+      onClick={() => setDroppedOpen(!droppedOpen)}
+      className="mobile-touch inline-flex h-7 flex-none items-center rounded px-1.5 text-xs font-medium tabular-nums text-[var(--nai-accent)] transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:bg-gray-700">
+      {t('去掉 {0}', [dropped.length])}
+    </button>}
+    {showDropped && droppedOpen && <AnchoredToolbarPopover anchorRef={droppedRef} title={t('这次去掉的内容')} width={340} allowMobile onClose={() => setDroppedOpen(false)}>
+      <div className="space-y-3">
+        <div>
+          <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">{t('这次去掉的内容')}</div>
+          <p className={HINT_CLASS}>{duplicates ? t('按原文顺序共 {0} 段，其中 {1} 段是重复词。', [dropped.length, duplicates]) : t('按原文顺序共 {0} 段。', [dropped.length])}</p>
+        </div>
+        <ul aria-label={t('去掉的段')} className="flex flex-wrap gap-1.5">{dropped.map((item, index) => <li key={index}
+          className="max-w-full break-words rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">
+          {item.text}{item.duplicate && <span className="ml-1.5 font-sans text-micro text-gray-400">{t('重复')}</span>}
+        </li>)}</ul>
+        <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
+          <button type="button" disabled={disabled} onClick={() => { setDroppedOpen(false); onUndo(); }}
+            className="mobile-touch inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+            <RotateCcw aria-hidden="true" className="h-4 w-4" />{t('撤销整理')}
+          </button>
+          <p className={HINT_CLASS}>{t('去错了就撤销，恢复整理前的提示词。')}</p>
+        </div>
+      </div>
+    </AnchoredToolbarPopover>}
     {presets.map(preset => <button key={preset.id} type="button" disabled={disabled || Boolean(busy)} aria-label={t('快捷整理：{0}', [preset.name])} title={describe(preset.settings)}
       onClick={() => { void run(preset.settings, preset.id); }}
       className="mobile-touch hidden h-7 max-w-[7rem] items-center gap-1 rounded px-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 sm:inline-flex">
