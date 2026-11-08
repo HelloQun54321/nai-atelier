@@ -111,6 +111,52 @@ describe('提示词整理规则', () => {
     expect((await tidyPrompt(prompt, settings({ keep: 'artists', artistPrefix: true }))).text).toBe('0.6::artist:betanonbeet::, 0.5::artist:cloudyman::, 0.8::artist:houkisei::, 0.8::artist:kieed::, 0.1::artist:yoneyama_mai,artist:konya karasue::');
   });
 
+  describe('分段标记', () => {
+    const LINES = '<artist>\nartist:a, 0.5::artist:b::\n</artist>\n<style>\nmasterpiece, 1girl, thin lineart\n</style>\n<scene>\nbeach, night\n</scene>\n1girl';
+    const INLINE = '<artist>artist:a, artist:b</artist>, <style>masterpiece</style>, 1girl';
+    const LINES_STYLE = '<artist>\nartist:a, 0.5::artist:b::\n</artist>\n<style>\nmasterpiece, thin lineart\n</style>';
+    const dropContent = () => ({ tidyPrompt: vi.fn(async ({ chunks }: { chunks: string[] }) => ({ keep: chunks.map(chunk => !/^(?:1girl|beach|night|<\/?[a-z]+>)$/.test(chunk)) })) });
+
+    it('写在一行的标记也单独成段，不和词粘在一起', () => {
+      expect(splitPromptTidySegments(INLINE)).toEqual(['<artist>', 'artist:a', 'artist:b', '</artist>', '<style>', 'masterpiece', '</style>', '1girl']);
+      expect(splitPromptTidySegments('1.2::<a>x, y::, x<3, <lora:y:1>')).toEqual(['1.2::<a>x, y::', 'x<3', '<lora:y:1>']);
+    });
+
+    it('规则整理保留有内容的标记和原来的排版，内容全去掉的标记一起去掉', async () => {
+      expect((await tidyPrompt(LINES, settings())).text).toBe(LINES_STYLE);
+      expect((await tidyPrompt(INLINE, settings())).text).toBe('<artist>artist:a, artist:b</artist>, <style>masterpiece</style>');
+      expect((await tidyPrompt(LINES, settings({ keep: 'content' }))).text).toBe('<style>\n1girl\n</style>\n<scene>\nbeach, night\n</scene>');
+    });
+
+    it('前面的段被去掉时，排版仍按原文：同行内容不会贴到单独成行的标记上', async () => {
+      expect((await tidyPrompt('<style>\n1girl, masterpiece\n</style>', settings())).text).toBe('<style>\nmasterpiece\n</style>');
+      expect((await tidyPrompt('<style>1girl, masterpiece</style>', settings())).text).toBe('<style>masterpiece</style>');
+    });
+
+    it('内置 AI 选项不让模型决定标记去留，自定义要求按模型的决定', async () => {
+      expect((await tidyPrompt(LINES, settings({ method: 'ai' }), dropContent() as never)).text).toBe(LINES_STYLE);
+      expect((await tidyPrompt(LINES, settings({ keep: 'custom', instruction: '去掉标记' }), dropContent() as never)).text).toBe('artist:a, 0.5::artist:b::, masterpiece, thin lineart');
+    });
+
+    it('自定义要求保留了标记但去掉内容时不留空壳', async () => {
+      const service = { tidyPrompt: vi.fn(async ({ chunks }: { chunks: string[] }) => ({ keep: chunks.map(chunk => !/^(?:beach|night|1girl)$/.test(chunk)) })) };
+      expect((await tidyPrompt(LINES, settings({ keep: 'custom', instruction: '提取画风串，标记别去掉' }), service as never)).text).toBe('<artist>\nartist:a, 0.5::artist:b::\n</artist>\n<style>\nmasterpiece, thin lineart\n</style>');
+    });
+
+    it('同名标记不被去重，只整理格式时空标记也不动', async () => {
+      const prompt = '<a>\nartist:x\n</a>\n<a>\nartist:y\n</a>\n<b>\n</b>';
+      expect((await tidyPrompt(prompt, settings())).text).toBe('<a>\nartist:x\n</a>\n<a>\nartist:y\n</a>');
+      expect((await tidyPrompt(prompt, settings({ keep: 'all' }))).text).toBe(prompt);
+    });
+
+    it('配不上对的标记保留，只有内部内容全被当作重复去掉时才收掉空壳', async () => {
+      expect((await tidyPrompt('<a>\nartist:x', settings())).text).toBe('<a>\nartist:x');
+      const result = await tidyPrompt('artist:x\n<a>\nartist:x\n</a>', settings());
+      expect(result.text).toBe('artist:x');
+      expect(result.dropped).toEqual([{ text: '<a>', duplicate: false }, { text: 'artist:x', duplicate: true }, { text: '</a>', duplicate: false }]);
+    });
+  });
+
   it('AI 拿到逐段切开的片段，可以单独去掉 flower_field', async () => {
     const service = { tidyPrompt: vi.fn(async ({ chunks }: { chunks: string[] }) => ({ keep: chunks.map(chunk => !['flower_field', 'day', 'sunset'].includes(chunk)) })) };
     const result = await tidyPrompt(MESSY, settings({ method: 'ai' }), service as never);
@@ -131,7 +177,7 @@ describe('提示词整理规则', () => {
 
   it('只留画师、去掉画风与只整理格式各按所选保留，补前缀与去重可关闭', async () => {
     expect((await tidyPrompt(PROMPT, settings({ keep: 'artists', method: 'ai', artistPrefix: true }), { tidyPrompt: vi.fn() })).text).toBe('1::artist:ashima_(roro046)::, 0.5::artist:chen_bin::, artist:rella');
-    expect((await tidyPrompt(PROMPT, settings({ keep: 'content' }))).text).toBe('astonishing elements, <scene>, bakery, warm sunlight, </scene>, 1girl, solo, cowboy shot');
+    expect((await tidyPrompt(PROMPT, settings({ keep: 'content' }))).text).toBe('astonishing elements\n<scene>\nbakery, warm sunlight\n</scene>\n1girl, solo, cowboy shot');
     expect((await tidyPrompt('a, b, a', settings({ keep: 'all', dedupe: false }))).text).toBe('a, b, a');
     expect((await tidyPrompt('a,\nb, A', settings({ keep: 'all' }))).text).toBe('a, b');
   });

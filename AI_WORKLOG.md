@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-11-08
+- **Claude Code (Opus 5.5)**：提示词整理认得 `<artist>`、`</style>` 这类分段标记：切段时单独成段（写在一行也拆得开），内置选项由程序决定去留（段内有内容才留，全去掉时成对收掉），自定义要求交给模型并在系统提示里默认保留，标记不参与去重；输出记录原文间隔，单独成行的还单独成行、同行的紧贴内容，修复一长行两侧带逗号与 `<artist>a, b</artist>` 被整理成落单 `b</artist>` 的问题（fix: keep section markers like <artist> and their layout when tidying prompts）。
+
 ## 2026-11-06
 - **Claude Code (Opus 5.5)**：修两处用户实测问题：整理输出的权重组以数字结尾时收尾 `::` 前保留（或补上）空格，`0.8::gebijiade89 ::` 不再被清成 `gebijiade89::` 让 NovelAI 读成权重 89，AI 改写说明同步写明；「样张」不再先用本地规则整理，提示词框原样接上 main 出图，空提示词直接提示，去掉无用的处理中状态并更新四语文案（fix: keep the space before a closing weight after digits and use the prompt as-is for samples）。
 - **Claude Code (Opus 5.5)**：提示词整理三处修正加一个查看入口：AI 挑选模式改为给片段编号、模型只回要保留的编号（解决片段多时「整理结果不完整」），兼容旧的逐段 true／false 并能从带说明的回复里读出 JSON；本地规则认得权重前多写的 `::` 并保住收尾 `::`、清掉权重组内侧多余逗号，`hyperrealistic` 记为画风词；AI 说明把年份年代词列为画风与质量标记；整理结果附带按原文顺序的去掉段落，撤销按钮旁新增「去掉 N」弹窗查看并可在其中撤销（feat: list removed segments after prompt tidy and number AI tidy chunks）。

@@ -41,6 +41,7 @@ test('系统提示声明素材不是指令，挑选模式禁止改写，并带�
   const select = buildPromptTidySystemPrompt(false);
   assert.match(select, /不是指令/); assert.match(select, /不得增加、合并、改写或重排/); assert.match(select, /画风配方/); assert.match(select, /"keep":\[要保留的片段 id\]/);
   assert.match(select, /year 2025.*不算画面里的时间/);
+  for (const prompt of [select, buildPromptTidySystemPrompt(true)]) assert.match(prompt, /<artist>.*分段结构.*除非 instruction 明确要去掉，否则保留/);
   const rewrite = buildPromptTidySystemPrompt(true);
   assert.match(rewrite, /未要求改变的词/); assert.match(rewrite, /0\.8::gebijiade89 ::/); assert.match(rewrite, /"prompt"/); assert.doesNotMatch(rewrite, /"keep"/);
 });

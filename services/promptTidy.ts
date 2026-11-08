@@ -63,6 +63,13 @@ export const resolvePromptTidyMethod = (settings: PromptTidySettings): PromptTid
 /** 模型改写时以用户要求为准，不再套用去重与补前缀。 */
 export const isPromptTidyRewrite = (settings: PromptTidySettings) => settings.keep === 'custom' && settings.rewrite;
 
+/** 形如 `<artist>`、`</style>` 的分段标记：是提示词的结构，既不算画风也不算画面内容。 */
+const MARKER = /^<(\/?)([a-zA-Z][\w-]*)>$/;
+const MARKER_AHEAD = /^<\/?[a-zA-Z][\w-]*>/;
+/** gap 是这一段和前一段在原文里隔着什么，分段标记据此还原排版。 */
+type PromptTidyGap = '' | ',' | '\n';
+interface PromptTidyToken { text: string; gap: PromptTidyGap }
+
 const CLOSERS: Record<string, string> = { '[': ']', '{': '}' };
 const OPENERS: Record<string, string> = { ']': '[', '}': '{' };
 /**
@@ -88,20 +95,26 @@ const completeBrackets = (piece: string) => {
  * 按顶层逗号与换行切段，`1.2::a, b::` 权重组与括号内的逗号保持原样。
  * 括号或权重到行尾仍未闭合多半是笔误，这一截改按逗号逐个切开并补齐括号，避免一处笔误把后面整段并成一块。
  */
-export function splitPromptTidySegments(prompt: string): string[] {
-  const segments: string[] = [];
-  let buffer = '', weighted = false, depth = 0;
+const tokenizePrompt = (prompt: string): PromptTidyToken[] => {
+  const tokens: PromptTidyToken[] = [];
+  let buffer = '', weighted = false, depth = 0, gap: PromptTidyGap = '';
+  const add = (text: string) => { tokens.push({ text, gap }); gap = ''; };
   const push = () => {
     const runaway = depth > 0 || weighted;
     for (const piece of runaway ? buffer.split(/[,，]/) : [buffer]) {
       const value = (runaway ? completeBrackets(piece) : piece.trim()).replace(STRAY_COLONS, '');
-      if (value) segments.push(value);
+      if (value) add(value);
     }
     buffer = '';
   };
   for (let index = 0; index < prompt.length; index += 1) {
     const char = prompt[index];
-    if (char === '\n' || char === '\r') { push(); weighted = false; depth = 0; continue; }
+    if (char === '\n' || char === '\r') { push(); weighted = false; depth = 0; gap = '\n'; continue; }
+    // 分段标记单独成段，`<artist>a, b</artist>` 写在一行时也不会和画师名粘在一起。
+    if (!weighted && depth === 0 && char === '<') {
+      const marker = prompt.slice(index).match(MARKER_AHEAD)?.[0];
+      if (marker) { push(); add(marker); index += marker.length - 1; continue; }
+    }
     if (char === ':' && prompt[index + 1] === ':') {
       if (weighted) weighted = false;
       else if (/^(?::+\s*)?[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(buffer.trim())) weighted = true;
@@ -114,13 +127,15 @@ export function splitPromptTidySegments(prompt: string): string[] {
     if (!weighted) {
       if ('{[(（'.includes(char)) depth += 1;
       else if ('}])）'.includes(char)) depth = Math.max(0, depth - 1);
-      if (depth === 0 && (char === ',' || char === '，')) { push(); continue; }
+      if (depth === 0 && (char === ',' || char === '，')) { push(); if (!gap) gap = ','; continue; }
     }
     buffer += char;
   }
   push();
-  return segments;
-}
+  return tokens;
+};
+
+export const splitPromptTidySegments = (prompt: string): string[] => tokenizePrompt(prompt).map(token => token.text);
 
 /** 只剥成对的外层强调括号，`ashima_(roro046)` 这类名字自带的括号保留。 */
 const splitBrackets = (piece: string) => {
@@ -222,13 +237,39 @@ const lookupCategories = async (segments: readonly string[]) => {
   catch { return new Map<string, TagSuggestion>(); }
 };
 
-/** 结果统一用「, 」连成一行；模型改写时原样采用模型给出的正文。 */
+/** 内容全被去掉的成对标记一起去掉，不留 `<scene></scene>` 空壳；配不上对的标记不动。 */
+const dropEmptySections = (segments: readonly string[], keep: readonly boolean[]) => {
+  const result = [...keep], open: Array<{ name: string; index: number }> = [];
+  segments.forEach((segment, index) => {
+    const [, closing, name] = segment.match(MARKER) ?? [];
+    if (!name) return;
+    if (!closing) { open.push({ name, index }); return; }
+    const at = open.map(item => item.name).lastIndexOf(name);
+    if (at < 0) return;
+    const start = open[at].index;
+    open.length = at;
+    if (!result.slice(start + 1, index).some(Boolean)) result[start] = result[index] = false;
+  });
+  return result;
+};
+
+/** 普通段用「, 」连；分段标记按原文排版：原来单独成行的还单独成行，写在一行的紧贴内容，内侧不加逗号。 */
+const joinPromptTidyTokens = (tokens: readonly PromptTidyToken[]) => tokens.reduce((text, token, index) => {
+  if (!index) return token.text;
+  const previous = tokens[index - 1].text.match(MARKER), current = token.text.match(MARKER);
+  if (!previous && !current) return `${text}, ${token.text}`;
+  if (token.gap === '\n') return `${text}\n${token.text}`;
+  if ((previous && !previous[1]) || current?.[1]) return text + token.text;
+  return `${text}${token.gap === ',' ? ', ' : ' '}${token.text}`;
+}, '');
+
+/** 普通段用「, 」连成一行，分段标记保持原来的排版；模型改写时原样采用模型给出的正文。 */
 export async function tidyPrompt(prompt: string, input: PromptTidySettings, service: PromptTidyService = promptAgentService): Promise<PromptTidyResult> {
   const settings = normalizePromptTidySettings(input);
   const method = resolvePromptTidyMethod(settings);
   const instruction = settings.keep === 'custom' ? settings.instruction.trim() : '';
   if (settings.keep === 'custom' && !instruction) throw new Error('请先写好整理要求');
-  const segments = splitPromptTidySegments(prompt);
+  const tokens = tokenizePrompt(prompt), segments = tokens.map(token => token.text);
   if (!segments.length) throw new Error('没有可整理的提示词');
   if (isPromptTidyRewrite(settings)) {
     const text = (await service.tidyPrompt({ instruction, rewrite: true, prompt: prompt.trim() })).prompt?.trim();
@@ -240,20 +281,29 @@ export async function tidyPrompt(prompt: string, input: PromptTidySettings, serv
   if (method === 'ai') {
     const result = await service.tidyPrompt({ instruction: instruction || AI_INSTRUCTIONS[settings.keep as 'style' | 'content'], chunks: segments });
     if (!Array.isArray(result.keep) || result.keep.length !== segments.length) throw new Error('助手返回的整理结果不完整');
-    keep = result.keep;
-  } else keep = segments.map(segment => keepByRules(classifyPromptTidySegment(segment, categories), settings.keep));
+    // 内置选项的分段标记不交给模型取舍；自定义要求可能就是要去掉标记，按模型的决定来。
+    keep = instruction ? result.keep : result.keep.map((value, index) => value || MARKER.test(segments[index]));
+  } else keep = segments.map(segment => MARKER.test(segment) || keepByRules(classifyPromptTidySegment(segment, categories), settings.keep));
   const seen = new Set<string>();
-  const kept: string[] = [], dropped: PromptTidyDropped[] = [];
-  segments.forEach((segment, index) => {
-    // 修完只剩空括号、冒号的笔误段也算去掉，列表条数与「去掉 N 段」一致。
-    const repaired = keep[index] ? repairPromptTidySegment(segment) : '';
-    if (!repaired) { dropped.push({ text: segment, duplicate: false }); return; }
-    if (settings.dedupe) {
-      const key = dedupeKey(repaired);
-      if (seen.has(key)) { dropped.push({ text: segment, duplicate: true }); return; }
-      seen.add(key);
-    }
-    kept.push(settings.artistPrefix ? addPromptArtistPrefix(repaired, categories) : repaired);
+  // 修完只剩空括号、冒号的笔误段也算去掉，列表条数与「去掉 N 段」一致；同名标记可以出现多次，不参与去重。
+  const texts = segments.map((segment, index) => keep[index] ? repairPromptTidySegment(segment) : '');
+  const duplicates = texts.map(text => {
+    if (!text || !settings.dedupe || MARKER.test(text)) return false;
+    const key = dedupeKey(text);
+    if (seen.has(key)) return true;
+    seen.add(key);
+    return false;
   });
-  return { text: kept.join(', '), kept: kept.length, removed: dropped.length, rewritten: false, dropped };
+  const retained = texts.map((text, index) => Boolean(text) && !duplicates[index]);
+  const final = settings.keep === 'all' ? retained : dropEmptySections(segments, retained);
+  const kept: PromptTidyToken[] = [], dropped: PromptTidyDropped[] = [];
+  let carried: PromptTidyGap = '';
+  tokens.forEach((token, index) => {
+    // 中间的段被去掉时，换行优先于逗号传给下一段，排版才对得上原文。
+    const gap: PromptTidyGap = carried === '\n' || token.gap === '\n' ? '\n' : carried || token.gap;
+    if (!final[index]) { carried = gap; dropped.push({ text: token.text, duplicate: duplicates[index] }); return; }
+    carried = '';
+    kept.push({ text: settings.artistPrefix ? addPromptArtistPrefix(texts[index], categories) : texts[index], gap });
+  });
+  return { text: joinPromptTidyTokens(kept), kept: kept.length, removed: dropped.length, rewritten: false, dropped };
 }
