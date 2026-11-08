@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-11-08
+- **DeepSeek Harness (deepseek-v4.1-flash)**：修 Issue #25。`scripts/prompt-agent.mjs` 里 7 处非对话任务（`translateTags`、`generateLibraryPrompt`、`generateLibraryBundle`、`classifyPrompts`、`tidyPrompt`、`extractCandidates`、`testCustomProvider`）把 `thinkingLevel` 写死为 `'off'`；接入不允许关闭思考的模型（如 `glm-5.3-flash`，勾选档位只有 low/high/max）时，pi-ai 的 zai 分支仍会发 `thinking: {type:"disabled"}`，服务端回 400 `code 1210`。新增 `lightestThinkingLevel(model) = supportedThinkingLevelsFor(model)[0] || 'off'`（复用已有的档位排序，支持关闭的模型行为不变），7 处全部改为调用它。补 1 项源码断言锁住回归（不允许再出现硬编码、必须恰好 7 处走新函数）；`prompt-agent` 116 项通过。
+
 ## 2026-11-05
 - **DeepSeek Harness (deepseek-v4.1-flash)**：修正放大结果的保存方式。原实现用 `URL.createObjectURL` + `<a download>` 直接下载，绕过了项目的导出通道，用户设好的导出目录不生效、文件被甩进浏览器默认下载文件夹。改为 `saveExportBlob(blob, filename, target)`，与其它下载（`downloadSharedImage`）走同一条路径：设了目录就写入该目录，没设置才回退浏览器下载；`target` 由 `beginExportTarget()` 在点击的同步栈里取好再传入——目录选择需要用户手势，等确认弹窗和网络往返之后再取会失效。保存成功时提示实际落盘的 `receipt.path`。补 1 项断言确保走 `saveExportBlob` 而不是浏览器下载。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：把官方放大接到实验室预览，省掉「生成完切历史页再放大」这一步。`ImagePreviewActions` 加可选 `historyId`／`historyCreatedAt`：有历史记录且面积不超 3,145,728 像素时才在右侧操作组插入「官方放大 2 倍」按钮，点击走与历史页相同的确认框、调用与下载流程，结果不覆盖原图、不写历史；`ChainEditorPreview` → `ImageEditPreview` → `ImageEditPanel` 逐层透传，`ChainEditor` 用 `displayedPreviewItem`／`imageEditPreviewItem`／`lightboxItem` 三个来源的 id 填值。布局由 `previewActionLayout` 自动测量按钮数量，无需手改行数。未入库的临时图不显示入口（后端拿不到原图）。补 3 项渲染条件用例；`ChainEditor.workspace` 258 项通过。
