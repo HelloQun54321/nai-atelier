@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-08
+- **DeepSeek Harness (deepseek-v4.1-flash)**：修掉 `test:gateway` 的偶发失败。`relay-gateway-jobs.test.mjs` 里 8 个参数化用例（「成员网关 N 仍停止」）时而挂一个，且每次挂的用例不同。从 `logs/tests/` 里的完整日志抓到真实报错是 `TypeError: fetch failed / [cause] bad port`，发生在 `fixture()` 末尾请求 `/api/generation-queue/preferences` 时。根因：`netsh int ipv4 show dynamicport tcp` 显示本机动态端口从 **1024** 起（13977 个），而 undici 的 `fetch` 带一份保留端口黑名单（5060、5061、6665–6669、10080 等），`port: 0` 偶尔正好分到这些端口就抛 `bad port`；单跑该文件命中率低所以一直是绿的。改为测试内部的 `request()` 用 `node:http` 发请求（`fetch` 只保留给被 gateway 内部调用的那段拦截），绕开黑名单。连跑该文件 5 次全绿；`test:gateway` 1018 项通过。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：修 Issue #25。`scripts/prompt-agent.mjs` 里 7 处非对话任务（`translateTags`、`generateLibraryPrompt`、`generateLibraryBundle`、`classifyPrompts`、`tidyPrompt`、`extractCandidates`、`testCustomProvider`）把 `thinkingLevel` 写死为 `'off'`；接入不允许关闭思考的模型（如 `glm-5.3-flash`，勾选档位只有 low/high/max）时，pi-ai 的 zai 分支仍会发 `thinking: {type:"disabled"}`，服务端回 400 `code 1210`。新增 `lightestThinkingLevel(model) = supportedThinkingLevelsFor(model)[0] || 'off'`（复用已有的档位排序，支持关闭的模型行为不变），7 处全部改为调用它。补 1 项源码断言锁住回归（不允许再出现硬编码、必须恰好 7 处走新函数）；`prompt-agent` 116 项通过。
 
 ## 2026-11-05
