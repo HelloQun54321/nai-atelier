@@ -2192,3 +2192,32 @@ test('非对话任务按模型支持的档位思考，不再把关闭思考写�
   assert.equal((source.match(/thinkingLevel: lightestThinkingLevel\(model\)/g) || []).length, 7);
   assert.match(source, /const lightestThinkingLevel = model => supportedThinkingLevelsFor\(model\)\[0\] \|\| 'off';/);
 });
+
+test('不允许关闭思考的模型在翻译时不收到 disabled，支持关闭的模型仍然关闭', () => isolated(async service => {
+  const previous = globalThis.fetch, bodies = [];
+  globalThis.fetch = async (_url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return syntheticAgentStream({ text: '[{"tag":"1girl","chinese":"一个女孩"}]' });
+  };
+  try {
+    // GLM-5.3-Flash 这类：可用档位只有 low/high/max，收到 disabled 直接 400。
+    await service.saveCustomProvider({ ...customInput('zai-synthetic'), baseUrl: 'https://api.z.ai/api/coding/paas/v4', models: [{ id: 'glm-5.3-flash', reasoning: true, thinkingLevels: ['low', 'high', 'max'] }], apiKey: 'synthetic', select: true });
+    await service.translateTags(['1girl']);
+    assert.equal(bodies.length, 1);
+    assert.notEqual(bodies[0].thinking?.type, 'disabled', '不允许关闭思考的模型不能收到 disabled');
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('支持关闭思考的模型，非对话任务维持不思考', () => isolated(async service => {
+  const previous = globalThis.fetch, bodies = [];
+  globalThis.fetch = async (_url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return syntheticAgentStream({ text: '[{"tag":"1girl","chinese":"一个女孩"}]' });
+  };
+  try {
+    await service.saveCustomProvider({ ...customInput(), models: [{ id: 'deepseek-v4-flash', reasoning: true, thinkingLevels: ['off', 'low', 'high'] }], apiKey: 'synthetic', select: true });
+    await service.translateTags(['1girl']);
+    assert.equal(bodies[0].thinking?.type, 'disabled');
+  } finally { globalThis.fetch = previous; }
+}));
+
