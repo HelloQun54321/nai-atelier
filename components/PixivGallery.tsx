@@ -845,7 +845,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                   aria-pressed={active}
                   className={`h-10 flex-none whitespace-nowrap rounded-xl border px-3 text-xs font-semibold transition-colors ${
                     active
-                      ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
+                      ? 'border-indigo-600 bg-indigo-700 text-white shadow-sm dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90'
                       : 'appearance-group border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
                   }`}
                 >
@@ -859,7 +859,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
               aria-pressed={showHistory}
               className={`h-10 flex-none whitespace-nowrap rounded-xl border px-3 text-xs font-semibold transition-colors ${
                 showHistory
-                  ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
+                  ? 'border-indigo-600 bg-indigo-700 text-white shadow-sm dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90'
                   : 'appearance-group border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
               }`}
             >
@@ -898,7 +898,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
               aria-pressed={active}
               className={`h-9 flex-none whitespace-nowrap rounded-lg border px-2.5 text-meta font-semibold transition-colors ${
                 active
-                  ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
+                  ? 'border-indigo-600 bg-indigo-700 text-white shadow-sm dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90'
                   : 'appearance-group border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
               }`}
             >
@@ -912,7 +912,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
           aria-pressed={showHistory}
           className={`h-9 flex-none whitespace-nowrap rounded-lg border px-2.5 text-meta font-semibold transition-colors ${
             showHistory
-              ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
+              ? 'border-indigo-600 bg-indigo-700 text-white shadow-sm dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90'
               : 'appearance-group border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
           }`}
         >

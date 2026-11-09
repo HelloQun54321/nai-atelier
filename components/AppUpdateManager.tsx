@@ -36,7 +36,7 @@ export const AppUpdateManager: React.FC = () => {
       setState(previous => ({ ...previous, phase: previous.phase === 'downloaded' ? 'downloaded' : 'error', message: error instanceof Error ? error.message : '更新失败，请稍后重试' }));
     }
   };
-  const button = 'mobile-touch inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-indigo-500 disabled:opacity-50';
+  const button = 'mobile-touch inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-indigo-600 disabled:opacity-50';
   const status = state.phase === 'checking' ? '正在检查…' : state.phase === 'latest' ? '当前渠道没有更新版本' : state.phase === 'downloading' ? `正在下载 ${state.progress}%` : state.phase === 'downloaded' ? `v${state.version} 已下载` : state.phase === 'installing' ? '正在退出工坊并安装…' : state.version ? `可用版本 v${state.version}` : '';
   return <div className="space-y-2">
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -52,9 +52,9 @@ export const AppUpdateManager: React.FC = () => {
         catch (error) { setState(previous => ({ ...previous, message: error instanceof Error ? error.message : '设置保存失败' })); }
       }} className="h-4 w-4 accent-indigo-600" />{t("接收预发布版本")}</label>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className={button} disabled={busy || state.phase === 'downloaded'} onClick={() => void action('check')}><RefreshCw className={`h-3.5 w-3.5 ${state.phase === 'checking' ? 'animate-spin' : ''}`} />{t("检查更新")}</button>
-        {bridge && state.version && ['available', 'error'].includes(state.phase) && <button type="button" className={button} onClick={() => void action('download')}><Download className="h-3.5 w-3.5" />{t("下载更新")}</button>}
-        {bridge && state.phase === 'downloaded' && <button type="button" className={button} onClick={() => void action('install')}>{t("重启并安装")}</button>}
+        <button type="button" data-appearance="control" data-tone="primary" className={button} disabled={busy || state.phase === 'downloaded'} onClick={() => void action('check')}><RefreshCw className={`h-3.5 w-3.5 ${state.phase === 'checking' ? 'animate-spin' : ''}`} />{t("检查更新")}</button>
+        {bridge && state.version && ['available', 'error'].includes(state.phase) && <button type="button" data-appearance="control" data-tone="primary" className={button} onClick={() => void action('download')}><Download className="h-3.5 w-3.5" />{t("下载更新")}</button>}
+        {bridge && state.phase === 'downloaded' && <button type="button" data-appearance="control" data-tone="primary" className={button} onClick={() => void action('install')}>{t("重启并安装")}</button>}
         <a href={RELEASE_PAGE} target="_blank" rel="noreferrer" className="mobile-touch inline-flex items-center gap-1.5 px-2 py-2 text-xs text-indigo-600 dark:text-indigo-300"><ExternalLink className="h-3.5 w-3.5" />{t("下载页")}</a>
       </div>
     </div>

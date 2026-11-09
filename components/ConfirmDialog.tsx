@@ -178,7 +178,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                     ? 'order-2 min-h-11 bg-red-600 text-white shadow-lg shadow-red-600/20 hover:bg-red-500 focus:ring-red-500 md:order-1 md:mr-auto'
                                     : isDanger
                                     ? 'bg-red-600 text-white shadow-lg shadow-red-600/20 hover:bg-red-500 focus:ring-red-500'
-                                    : 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 focus:ring-indigo-500'
+                                    : 'bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-600 focus:ring-indigo-500'
                                     }`}
                             >
                                 {t(options.confirmLabel) || t("确认")}

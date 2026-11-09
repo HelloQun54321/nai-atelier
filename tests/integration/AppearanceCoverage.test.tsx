@@ -375,7 +375,7 @@ describe('全局外观覆盖审计', () => {
   });
   it('图片上的定位点、导入标记与拖入提示保留独立承托，不被中性分组清空', () => {
     const overlays = [
-      ['components/chain/CharacterPositionStage.tsx', '定位点', /absolute flex h-7 w-7/, ['bg-white', 'bg-indigo-600']],
+      ['components/chain/CharacterPositionStage.tsx', '定位点', /absolute flex h-7 w-7/, ['bg-white', 'bg-indigo-700']],
       ['components/chain/FolderBatchImportModal.tsx', '重复提示', /absolute right-1\.5 top-1\.5 max-w-/, ['bg-gray-900/85', 'text-amber-300']],
       ['components/ImageEditPanel.tsx', '拖入提示', /border-2 border-dashed border-white\/80/, ['bg-white/95', 'dark:bg-gray-900/95']],
     ] as const;
@@ -459,7 +459,7 @@ describe('全局外观覆盖审计', () => {
     expect(detailCss).not.toContain('.generation-action-surface');
     expect(sources.find(source => source.file === 'components/GenerationCountControl.tsx')!.text).toContain('appearance-reading-surface mobile-touch');
     const action = `${root} .generation-action-button--workbench:not(.generation-action-button--loading)`;
-    expect(declarations(action, undefined, detailCss)['background-color']).toBe('var(--color-indigo-600)');
+    expect(declarations(action, undefined, detailCss)['background-color']).toBe('var(--color-indigo-700)');
     expect(declarations(action, undefined, detailCss).color).toBe('var(--nai-on-accent-600)');
     expect(declarations(`${action} .generation-action-button__cost`, undefined, detailCss).color).toBe('inherit');
     const [preset] = readAppearancePresetImport(readFileSync('public/themes/cupertino-liquid-glass.json', 'utf8'));
@@ -598,7 +598,7 @@ describe('全局外观覆盖审计', () => {
     expect(declarations("html[data-theme-material='glass']:not(.dark) .lab-preview-stage:has(.lab-preview-empty)", undefined, source)['background-color']).toContain('8%, transparent');
     expect(source).not.toContain('.lab-preview-image');
     const nav = declarations("html[data-control-style='filled'] .generation-mode-nav > button[aria-current='page']", undefined, source);
-    expect(nav['background-color']).toBe('var(--color-indigo-600)');
+    expect(nav['background-color']).toBe('var(--color-indigo-700)');
     expect(nav.color).toBe('var(--nai-on-accent-600)');
     expect(declarations(`${root} .generation-action-button--workbench:not(.generation-action-button--loading) .generation-action-button__cost`, undefined, source)).toMatchObject({ color: 'inherit', background: 'transparent' });
     const secondary = declarations("html[data-control-style='filled'] .workspace-mode-tabs > button[aria-selected='true']", undefined, source);

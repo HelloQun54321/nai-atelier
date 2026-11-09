@@ -93,7 +93,7 @@ export const LanAccessGate: React.FC<LanAccessGateProps> = ({ children }) => {
           <div className="text-3xl">⚠️</div>
           <h1 className="mt-3 text-xl font-bold">{t("无法连接电脑端")}</h1>
           <p className="mt-2 text-sm leading-6 text-gray-500 dark:text-gray-400">{t(message)}</p>
-          <button onClick={() => { setState('checking'); void checkAccess(); }} className="mt-6 min-h-12 w-full rounded-xl bg-indigo-600 px-4 font-bold text-white hover:bg-indigo-500">{t("重新连接")}</button>
+          <button onClick={() => { setState('checking'); void checkAccess(); }} className="mt-6 min-h-12 w-full rounded-xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-4 font-bold text-white hover:bg-indigo-600">{t("重新连接")}</button>
         </div>
       </div>
     );
@@ -130,7 +130,7 @@ export const LanAccessGate: React.FC<LanAccessGateProps> = ({ children }) => {
           {t(message)}
         </div>
 
-        <button type="submit" disabled={submitting || pin.length !== 4} className="mt-2 min-h-14 w-full rounded-2xl bg-indigo-600 px-5 text-base font-bold text-white shadow-lg shadow-indigo-950/40 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">
+        <button type="submit" disabled={submitting || pin.length !== 4} className="mt-2 min-h-14 w-full rounded-2xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-5 text-base font-bold text-white shadow-lg shadow-indigo-950/40 transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-40">
           {submitting ? t("正在验证…") : t("进入项目")}
         </button>
         <p className="mt-5 text-center text-meta leading-5 text-gray-500 dark:text-gray-400">{t("输错 5 次暂停 1 分钟；勿开放公网。")}</p>

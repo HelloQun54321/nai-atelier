@@ -13,7 +13,7 @@ export const useAgentDisplayPreferences = () => {
   return value;
 };
 
-const AgentPreferenceSwitch: React.FC<{ label: string; checked: boolean; onChange: () => void }> = ({ label, checked, onChange }) => <button type="button" role="switch" aria-label={t(label)} aria-checked={checked} onClick={onChange} className="mobile-touch inline-flex h-11 w-11 shrink-0 items-center justify-center bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2"><span className={`inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${checked ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}><span className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} /></span></button>;
+const AgentPreferenceSwitch: React.FC<{ label: string; checked: boolean; onChange: () => void }> = ({ label, checked, onChange }) => <button type="button" role="switch" aria-label={t(label)} aria-checked={checked} onClick={onChange} className="mobile-touch inline-flex h-11 w-11 shrink-0 items-center justify-center bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2"><span className={`inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${checked ? 'bg-indigo-700' : 'bg-gray-200 dark:bg-gray-700'}`}><span className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} /></span></button>;
 
 export const AgentChatDisplayOptions: React.FC = () => {
   useLanguage();

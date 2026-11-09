@@ -40,8 +40,8 @@ export const AgentUserQuestionCard: React.FC<{ request: AgentQuestionRequest; on
     {error && <p role="alert" className="mt-2 whitespace-pre-wrap text-xs text-red-600 dark:text-red-300">{error}</p>}
     <div className="mt-3 flex items-center justify-end gap-2">
       {index > 0 && <button type="button" disabled={busy} onClick={() => saveDraft({ ...draft, index: index - 1 })} className="mobile-touch min-h-11 rounded-lg px-3 text-xs font-bold text-gray-600 disabled:opacity-40 dark:text-gray-300">{t('上一题')}</button>}
-      {index < request.questions.length - 1 ? <button type="button" disabled={busy || !answered(question)} onClick={() => saveDraft({ ...draft, index: index + 1 })} className="mobile-touch min-h-11 rounded-lg bg-indigo-600 px-3 text-xs font-bold text-white disabled:opacity-40">{t('下一题')}</button>
-        : <button type="button" disabled={busy || !request.questions.every(answered)} onClick={() => void submit()} className="mobile-touch min-h-11 rounded-lg bg-indigo-600 px-3 text-xs font-bold text-white disabled:opacity-40">{busy ? t('正在提交…') : t('提交回答并继续')}</button>}
+      {index < request.questions.length - 1 ? <button type="button" disabled={busy || !answered(question)} onClick={() => saveDraft({ ...draft, index: index + 1 })} className="mobile-touch min-h-11 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 text-xs font-bold text-white disabled:opacity-40">{t('下一题')}</button>
+        : <button type="button" disabled={busy || !request.questions.every(answered)} onClick={() => void submit()} className="mobile-touch min-h-11 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 text-xs font-bold text-white disabled:opacity-40">{busy ? t('正在提交…') : t('提交回答并继续')}</button>}
     </div>
   </section>;
 };

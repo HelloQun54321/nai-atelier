@@ -97,7 +97,7 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
       <span className={`inline-flex items-center gap-1 whitespace-nowrap tabular-nums ${footerTone}`}><span className="underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current">{t(!info ? '生成额度' : gateway ? '成员额度' : "Opus额度 ")}{(!info || gateway) && ' '}{footerQuota}{warning && <span aria-hidden="true" className="ml-1">!</span>}</span><ChevronUp aria-hidden="true" className="h-3 w-3 shrink-0" /></span>
     </button>
     <ImagePreviewPortal>
-      <MobileBottomSheet open={open} title={t("账户资源")} onClose={() => setOpen(false)} footer={<button type="button" onClick={openSettings} className="mobile-touch w-full rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white">{t("账户设置")}</button>}>
+      <MobileBottomSheet open={open} title={t("账户资源")} onClose={() => setOpen(false)} footer={<button type="button" onClick={openSettings} className="mobile-touch w-full rounded-xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-4 text-sm font-semibold text-white">{t("账户设置")}</button>}>
         <div ref={contentRef} className="mx-auto w-full max-w-sm">
           <p className="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">{!apiKey ? t("未配置 Key") : keyName?.key === apiKey ? keyName.name : t("当前 Key")}</p>
           <div className="space-y-3">

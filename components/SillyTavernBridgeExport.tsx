@@ -243,7 +243,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
         <input type="checkbox" aria-label={t("智慧姬同步")} checked={preferences.enabled} disabled={!preferences.ready || preferences.busy || installing || exporting}
           onChange={event => { void handleToggle(event.target.checked); }} className="mt-1 h-5 w-5 shrink-0 accent-indigo-600 disabled:opacity-40" />
       </label>
-      {preferences.error && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400"><span>{t(preferences.error)}</span><button type="button" onClick={() => { void refreshStChatu8Preferences(); }} disabled={preferences.busy} className="shrink-0 underline">{t("重新读取")}</button></div>}
+      {preferences.error && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400"><span>{t(preferences.error)}</span><button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void refreshStChatu8Preferences(); }} disabled={preferences.busy} className="mobile-touch shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 underline transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t("重新读取")}</button></div>}
 
       {preferences.enabled && <>
         <div className="appearance-group rounded-xl border border-gray-200 bg-gray-50/70 p-3 text-xs dark:border-gray-700/60 dark:bg-gray-800/50">
@@ -308,9 +308,10 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            data-appearance="control" data-tone="primary"
             onClick={() => void handleInstallExtension()}
             disabled={installing}
-            className="mobile-touch flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-50"
+            className="mobile-touch flex items-center gap-1.5 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
             title={t("将扩展直接安装/更新写入到指定的 SillyTavern 插件目录")}
           >
             {installing ? (
@@ -324,8 +325,9 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
           {(installedPath || detectedRoot) && (
             <button
               type="button"
+              data-appearance="control" data-tone="neutral"
               onClick={() => void handleOpenFolder()}
-              className="appearance-group mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              className="appearance-group mobile-touch flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
               title={t("在系统文件管理器中打开安装目录")}
             >
               <ExternalLink className="h-3.5 w-3.5" />
@@ -335,9 +337,10 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
           {supportsDirectoryPicker && (
             <button
               type="button"
+              data-appearance="control" data-tone="neutral"
               onClick={() => void handleExportToDirectory()}
               disabled={exporting}
-              className="appearance-group mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
+              className="appearance-group mobile-touch flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
               title={t("手动选择本地目录导出（选中酒馆根目录亦可自动补全）")}
             >
               <FolderOutput className="h-3.5 w-3.5" />
@@ -347,9 +350,10 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
 
           <button
             type="button"
+            data-appearance="control" data-tone="neutral"
             onClick={() => void handleDownloadZip()}
             disabled={exporting}
-            className="appearance-group mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
+            className="appearance-group mobile-touch flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
             title={t("将完整的扩展文件打包下载为 ZIP 压缩包")}
           >
             <Download className="h-3.5 w-3.5" />

@@ -63,7 +63,7 @@ export const CollectionFolderPicker: React.FC<{
       <DirectoryTreeChecklist nodes={boards} selectedIds={value} mixedIds={mixedIds} onToggle={onToggle} disabled={disabled || loading || Boolean(error)} label={t(label)} />
       {!loading && !error && !boards.length && <p className="py-3 text-sm text-gray-400">{t('暂无收藏夹')}</p>}
     </div>
-    <button type="button" onClick={close} className="mobile-touch w-full rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t('完成')}</button>
+    <button type="button" onClick={close} className="mobile-touch w-full rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 text-sm font-bold text-white">{t('完成')}</button>
   </div>;
   return <><button ref={anchorRef} type="button" aria-label={t(label)} title={t(label)} aria-expanded={open} aria-haspopup="dialog" disabled={disabled} onClick={() => setOpen(value => !value)} className={`inline-flex min-w-0 flex-none items-center justify-center gap-2 disabled:opacity-40 ${className}`}><Folder className="h-4 w-4 flex-none" />{!iconOnly && <><span className="min-w-0 truncate">{value.length ? boards.filter(board => value.includes(board.id)).map(board => getDirectoryPath(boards, board.id).map(parent => parent.name).join(' / ')).join('、') : mixedIds.length ? t('部分选中') : t('未整理')}</span><ChevronDown className="h-3.5 w-3.5 flex-none" /></>}</button>
     {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={t(label)} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={t(label)} width={300} onClose={close}>{content}</AnchoredToolbarPopover>)}

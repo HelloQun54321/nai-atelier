@@ -175,7 +175,7 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
           <span>{t('整理后生成样张')}<span className={`block ${HINT_CLASS}`}>{t('用整理结果接上样张面板里的 main 和角色出一张图，参数按样张面板的选择。')}</span></span></label>}
         <div>
           <button type="button" disabled={disabled || Boolean(busy)} onClick={() => { void run(draft, 'draft').then(done => { if (done) setOpen(false); }); }}
-            className="mobile-touch inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+            className="mobile-touch inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 disabled:cursor-not-allowed disabled:opacity-50">
             {busy === 'draft' ? spinner : <WandSparkles aria-hidden="true" className="h-4 w-4" />}{t('整理并覆盖')}
           </button>
           <p className={HINT_CLASS}>{t('直接覆盖当前提示词，可以点撤销或按 Ctrl+Z 恢复。')}</p>

@@ -351,7 +351,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                   disabled={isBusy || expansionApplied}
                   type="button"
                   onClick={onApplyOutpaint}
-                  className="mt-3 h-9 w-full rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow transition hover:bg-indigo-500 disabled:opacity-40"
+                  className="mt-3 h-9 w-full rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-2 text-xs font-bold text-white shadow transition hover:bg-indigo-600 disabled:opacity-40"
                 >
                   {expansionApplied && Object.values(appliedExpansion).some(Boolean) ? t("画布扩展已应用") : Object.values(appliedExpansion).some(Boolean) ? t("更新画布扩展") : t("应用画布扩展")}
                 </button>

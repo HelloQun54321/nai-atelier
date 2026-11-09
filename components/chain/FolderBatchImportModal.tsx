@@ -996,7 +996,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 <button
                   type="button"
                   onClick={handleSelectFolder}
-                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-indigo-500 transition active:scale-[0.98]"
+                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-indigo-600 transition active:scale-[0.98]"
                 >
                   <FolderOpen className="h-4 w-4" />
                   {t("选择文件夹")}</button>
@@ -1021,7 +1021,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
               </div>
               <div className="w-64 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700 h-1.5">
                 <div
-                  className="h-full bg-indigo-600 transition-all duration-150"
+                  className="h-full bg-indigo-700 transition-all duration-150"
                   style={{ width: `${scanProgress.total > 0 ? (scanProgress.current / scanProgress.total) * 100 : 0}%` }}
                 />
               </div>
@@ -1116,7 +1116,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                         <div
                           className={`flex h-6 w-6 items-center justify-center rounded-md backdrop-blur-md shadow-sm transition ${
                             item.selected
-                              ? 'bg-indigo-600 text-white'
+                              ? 'bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white'
                               : 'bg-black/40 text-gray-300 group-hover:bg-black/60'
                           }`}
                         >
@@ -1240,7 +1240,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
               </div>
               <div className="appearance-group w-64 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700 h-2">
                 <div
-                  className="h-full bg-indigo-600 transition-all duration-150"
+                  className="h-full bg-indigo-700 transition-all duration-150"
                   style={{ width: `${(importProgress.current / Math.max(1, importProgress.total)) * 100}%` }}
                 />
               </div>
@@ -1272,7 +1272,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 type="button"
                 onClick={handleExecuteImport}
                 disabled={isScanning || isImporting || selectedCount === 0}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-indigo-500 disabled:opacity-40 transition active:scale-[0.98]"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-indigo-600 disabled:opacity-40 transition active:scale-[0.98]"
               >
                 {isImporting ? (
                   <>

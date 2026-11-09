@@ -282,7 +282,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
         {tags.length > 0 && <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setTags([]); resetScroll(); }}>{t('清除标签筛选')}</button>}
         {memory.scope === 'saved' ? <fieldset><legend className="text-xs font-semibold text-gray-500">{t('文件夹')}</legend>
           <div className="mt-2 flex max-h-48 flex-wrap gap-1 overflow-y-auto">{combinationTags.map(tag => <button key={tag} type="button" aria-pressed={tags.includes(tag)}
-            title={categoryLabel(tag)} className={tags.includes(tag) ? 'mobile-touch rounded-lg bg-indigo-600 px-2 py-1 text-sm text-white' : 'appearance-group mobile-touch rounded-lg px-2 py-1 text-sm text-gray-600 dark:text-gray-300'}
+            title={categoryLabel(tag)} className={tags.includes(tag) ? 'mobile-touch rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-2 py-1 text-sm text-white' : 'appearance-group mobile-touch rounded-lg px-2 py-1 text-sm text-gray-600 dark:text-gray-300'}
             onClick={() => { setTags(previous => previous.includes(tag) ? previous.filter(value => value !== tag) : [...previous, tag]); resetScroll(); }}>{categoryLabel(tag)}</button>)}</div>
         </fieldset> : <PromptPurposePicker value={tags as PromptPurposeId[]} onChange={next => { setTags(next); resetScroll(); }} />}
       </div>

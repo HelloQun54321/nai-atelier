@@ -160,7 +160,7 @@ export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ child
       aria-label={collapsed ? t('展开顶栏') : t('收起顶栏')}
       title={collapsed ? t('展开顶栏') : t('收起顶栏')}
       onClick={() => toggleTopbarCollapsed()}
-      className={`group ${collapsed ? 'absolute left-0 top-0' : 'self-start'} z-40 flex h-11 min-h-11 w-11 min-w-11 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-[var(--nai-toolbar-surface)] px-2 text-micro font-semibold leading-none text-gray-600 shadow-sm backdrop-blur-[18px] backdrop-saturate-125 transition-all duration-150 max-lg:hidden hover:border-indigo-500 hover:bg-indigo-600 hover:text-white focus-visible:border-indigo-500 focus-visible:bg-indigo-600 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 dark:border-gray-800/80 dark:text-gray-100 dark:hover:border-indigo-400 dark:hover:bg-indigo-500 md:absolute md:left-1/2 md:top-0 md:h-5 md:min-h-0 md:w-auto md:-translate-x-1/2`}
+      className={`group ${collapsed ? 'absolute left-0 top-0' : 'self-start'} z-40 flex h-11 min-h-11 w-11 min-w-11 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-[var(--nai-toolbar-surface)] px-2 text-micro font-semibold leading-none text-gray-600 shadow-sm backdrop-blur-[18px] backdrop-saturate-125 transition-all duration-150 max-lg:hidden hover:border-indigo-500 hover:bg-indigo-600 hover:text-white focus-visible:border-indigo-500 focus-visible:bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 dark:border-gray-800/80 dark:text-gray-100 dark:hover:border-indigo-400 dark:hover:bg-indigo-600 md:absolute md:left-1/2 md:top-0 md:h-5 md:min-h-0 md:w-auto md:-translate-x-1/2`}
     >
       {/* 矢量箭头：顶栏展开时指上（收起），收起后指下（展开）；不用 CSS border 三角以免叠影。 */}
       {collapsed
@@ -279,7 +279,7 @@ export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
 }> = ({ label, tone = 'neutral', className = '', children, ...props }) => {
   useLanguage();
   const toneClass = tone === 'primary'
-    ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500 dark:border-indigo-500/40 dark:bg-indigo-600/90 dark:hover:bg-indigo-500'
+    ? 'border-indigo-700 bg-indigo-700 text-white shadow-md shadow-indigo-500/15 hover:border-indigo-600 hover:bg-indigo-600 dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:shadow-lg dark:shadow-indigo-950/40 dark:hover:from-indigo-500 dark:hover:to-violet-600'
     : tone === 'save'
       ? 'border-emerald-600 bg-emerald-700 text-white hover:bg-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-700/90 dark:hover:bg-emerald-800'
     : tone === 'edit'
@@ -306,7 +306,7 @@ export const ToolbarButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElemen
 }> = ({ tone = 'neutral', active = false, className = '', children, ...props }) => {
   useLanguage();
   const toneClass = tone === 'primary'
-    ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500 dark:border-indigo-500/40 dark:bg-indigo-600/90 dark:hover:bg-indigo-500'
+    ? 'border-indigo-700 bg-indigo-700 text-white shadow-md shadow-indigo-500/15 hover:border-indigo-600 hover:bg-indigo-600 dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:shadow-lg dark:shadow-indigo-950/40 dark:hover:from-indigo-500 dark:hover:to-violet-600'
     : tone === 'save'
       ? 'border-emerald-600 bg-emerald-700 text-white hover:bg-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-700/90 dark:hover:bg-emerald-800'
     : tone === 'favorite'
@@ -341,7 +341,7 @@ export const ToolbarLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement>
 }> = ({ tone = 'neutral', className = '', children, ...props }) => {
   useLanguage();
   const toneClass = tone === 'primary'
-    ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500 dark:border-indigo-500/40 dark:bg-indigo-600/90 dark:hover:bg-indigo-500'
+    ? 'border-indigo-700 bg-indigo-700 text-white shadow-md shadow-indigo-500/15 hover:border-indigo-600 hover:bg-indigo-600 dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:shadow-lg dark:shadow-indigo-950/40 dark:hover:from-indigo-500 dark:hover:to-violet-600'
     : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-white';
   return (
     <a data-appearance="control" data-tone={tone} className={`inline-flex h-10 flex-none items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 ${toneClass} ${className}`} {...props}>
@@ -439,7 +439,7 @@ export const FilterPill: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
     type="button"
     className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
       active
-        ? 'border-indigo-600 bg-indigo-600 text-white font-semibold shadow-sm'
+        ? 'border-indigo-600 bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white font-semibold shadow-sm'
         : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 dark:bg-gray-800/80 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
     } ${className}`}
     {...props}

@@ -151,7 +151,7 @@ export const PromptSampleButton: React.FC<{ value: string; disabled?: boolean; n
         </fieldset>
         <div>
           <button type="button" disabled={disabled} onClick={generate}
-            className="mobile-touch inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+            className="mobile-touch inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 disabled:cursor-not-allowed disabled:opacity-50">
             <ImagePlay aria-hidden="true" className="h-4 w-4" />{t('生成样张')}
           </button>
           <p className={HINT_CLASS}>{t('提示词框里的内容原样接上 main，不会先整理；想先提取画风串，可在整理面板勾选「整理后生成样张」。角色放进角色栏，图片进当前预览和历史，扣费前照常确认。')}</p>

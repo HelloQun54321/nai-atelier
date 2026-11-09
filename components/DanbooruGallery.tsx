@@ -505,7 +505,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
             onClick={() => { void handleApplyFilter({ soloOnly: !soloOnly }); }}
             className={`mobile-touch h-10 w-full rounded-xl border px-3 text-sm font-semibold transition-colors ${
               soloOnly
-                ? 'border-indigo-600 bg-indigo-600 text-white'
+                ? 'border-indigo-600 bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white'
                 : 'appearance-group border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'
             }`}
           >

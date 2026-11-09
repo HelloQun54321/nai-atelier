@@ -1571,14 +1571,14 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             <div className="mt-3 grid grid-cols-3 gap-3">{renderLocalFilterSelects(false)}</div>
             <div className="mt-4 flex items-center gap-3">
               <button type="button" onClick={resetFilters} disabled={!canResetFilters} className="px-1 text-xs font-bold text-indigo-600 disabled:opacity-40 dark:text-indigo-300">{t("重置筛选")}</button>
-              <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="h-10 flex-1 rounded-lg bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500">{t("应用筛选")}</button>
+              <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="h-10 flex-1 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-sm font-bold text-white hover:bg-indigo-600">{t("应用筛选")}</button>
             </div>
             </AnchoredToolbarPopover>}
           </div>
           <div className="ml-auto hidden items-center gap-2 text-xs text-gray-500 xl:flex"><span>{t("已加载 {0} 条", [formatCount(visibleItems.length)])}</span><span>{t("共 {0} 条", [formatCount(total)])}</span></div>
         </div>
       </WorkspaceToolbar>
-      <ImagePreviewPortal><MobileBottomSheet open={showMobileFilters} title={t("AITag 筛选")} onClose={() => setShowMobileFilters(false)} footer={<div className="flex items-center gap-3"><button type="button" onClick={() => { resetFilters(); setShowMobileFilters(false); }} disabled={!canResetFilters} className="mobile-touch px-2 text-sm font-bold text-indigo-600 disabled:opacity-40 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={() => { handleSearch(); setShowMobileFilters(false); }} className="mobile-touch flex-1 rounded-xl bg-indigo-600 font-bold text-white">{t("应用筛选")}</button></div>}>
+      <ImagePreviewPortal><MobileBottomSheet open={showMobileFilters} title={t("AITag 筛选")} onClose={() => setShowMobileFilters(false)} footer={<div className="flex items-center gap-3"><button type="button" onClick={() => { resetFilters(); setShowMobileFilters(false); }} disabled={!canResetFilters} className="mobile-touch px-2 text-sm font-bold text-indigo-600 disabled:opacity-40 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={() => { handleSearch(); setShowMobileFilters(false); }} className="mobile-touch flex-1 rounded-xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 font-bold text-white">{t("应用筛选")}</button></div>}>
         <div className="space-y-4">
           {renderActiveFilters()}
           <label className="block text-sm font-bold dark:text-white">{t("提示词搜索")}<input value={prompt} onChange={event => setPrompt(event.target.value)} placeholder={t("逗号分隔多个条件，- 开头排除")} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 font-normal dark:border-gray-800 dark:bg-gray-800" /></label>

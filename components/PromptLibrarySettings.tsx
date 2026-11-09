@@ -8,8 +8,8 @@ import { PROMPT_LIBRARY_KIND_LABELS, promptAgentService, type PromptLibraryKind 
 const libraryKinds: PromptLibraryKind[] = ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'];
 
 const libraryFieldClass = 'w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-800 outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-100';
-const libraryPrimaryButtonClass = 'mobile-touch rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-40';
-const librarySecondaryButtonClass = 'appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700';
+const libraryPrimaryButtonClass = 'mobile-touch rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50';
+const librarySecondaryButtonClass = 'appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700';
 
 /**
  * 库生成提示词设置：为人物形象 / 服饰 / 姿势 / 场景四个提示词库置顶追加两段自定义内容，
@@ -136,9 +136,9 @@ export const PromptLibrarySettings: React.FC = () => {
         </label>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button type="button" disabled={!loaded || saving || previewing || !dirty} onClick={() => void save()} className={libraryPrimaryButtonClass}>{t("保存")}</button>
-        <button type="button" disabled={saving || (!spec && !extra)} onClick={clear} className={librarySecondaryButtonClass}>{t("清空")}</button>
-        <button type="button" disabled={!loaded || saving || previewing || !!library?.directoriesError || !!library?.reloadDirectories && !library.directories || !!library?.directories && !library.directories.nodes.length} onClick={() => void loadPreview(kind)} className={librarySecondaryButtonClass}>{t("预览最终系统提示词")}</button>
+        <button type="button" data-appearance="control" data-tone="primary" disabled={!loaded || saving || previewing || !dirty} onClick={() => void save()} className={libraryPrimaryButtonClass}>{t("保存")}</button>
+        <button type="button" data-appearance="control" data-tone="danger" disabled={saving || (!spec && !extra)} onClick={clear} className={librarySecondaryButtonClass}>{t("清空")}</button>
+        <button type="button" data-appearance="control" data-tone="neutral" disabled={!loaded || saving || previewing || !!library?.directoriesError || !!library?.reloadDirectories && !library.directories || !!library?.directories && !library.directories.nodes.length} onClick={() => void loadPreview(kind)} className={librarySecondaryButtonClass}>{t("预览最终系统提示词")}</button>
         {dirty && <span className="text-xs font-bold text-amber-600 dark:text-amber-400">{t("有未保存的修改")}</span>}
       </div>
       {notice && <p role="status" className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{notice}</p>}
@@ -152,15 +152,16 @@ export const PromptLibrarySettings: React.FC = () => {
                   type="button"
                   role="tab"
                   aria-selected={kind === item}
+                  data-appearance="control" data-tone={kind === item ? 'primary' : 'neutral'}
                   onClick={() => void loadPreview(item)}
                   className={kind === item
-                    ? 'mobile-touch rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-bold text-white'
+                    ? 'mobile-touch rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-indigo-600'
                     : librarySecondaryButtonClass}
                 >
                   {t(PROMPT_LIBRARY_KIND_LABELS[item])}</button>
               ))}
             </div>
-            <button type="button" disabled={!preview} onClick={() => void copyPreview()} className={librarySecondaryButtonClass}>{t("复制全文")}</button>
+            <button type="button" data-appearance="control" data-tone="neutral" disabled={!preview} onClick={() => void copyPreview()} className={librarySecondaryButtonClass}>{t("复制全文")}</button>
           </div>
           <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("最前面两段是自定义内容（置顶），其后是内置提示词；预览使用输入框当前内容，无需先保存。")}</p>
           <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("当前长度 {0} 个字符", [preview?.length ?? 0])}</p>

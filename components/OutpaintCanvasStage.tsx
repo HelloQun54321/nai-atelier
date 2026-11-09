@@ -270,16 +270,16 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
 
             {/* 四周扩展数值标签 */}
             {expansion.top > 0 && (
-              <div className="pointer-events-none absolute top-1 left-1/2 -translate-x-1/2 rounded bg-indigo-600/90 px-1.5 py-0.5 text-mini font-bold text-white shadow">{t("上 +{0}px", [expansion.top])}</div>
+              <div className="pointer-events-none absolute top-1 left-1/2 -translate-x-1/2 rounded bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600/90 px-1.5 py-0.5 text-mini font-bold text-white shadow">{t("上 +{0}px", [expansion.top])}</div>
             )}
             {expansion.bottom > 0 && (
-              <div className="pointer-events-none absolute bottom-1 left-1/2 -translate-x-1/2 rounded bg-indigo-600/90 px-1.5 py-0.5 text-mini font-bold text-white shadow">{t("下 +{0}px", [expansion.bottom])}</div>
+              <div className="pointer-events-none absolute bottom-1 left-1/2 -translate-x-1/2 rounded bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600/90 px-1.5 py-0.5 text-mini font-bold text-white shadow">{t("下 +{0}px", [expansion.bottom])}</div>
             )}
             {expansion.left > 0 && (
-              <div className="pointer-events-none absolute left-1 top-1/2 -translate-y-1/2 rounded bg-indigo-600/90 px-1.5 py-0.5 text-mini font-bold text-white shadow">{t("左 +{0}px", [expansion.left])}</div>
+              <div className="pointer-events-none absolute left-1 top-1/2 -translate-y-1/2 rounded bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600/90 px-1.5 py-0.5 text-mini font-bold text-white shadow">{t("左 +{0}px", [expansion.left])}</div>
             )}
             {expansion.right > 0 && (
-              <div className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-indigo-600/90 px-1.5 py-0.5 text-mini font-bold text-white shadow">{t("右 +{0}px", [expansion.right])}</div>
+              <div className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600/90 px-1.5 py-0.5 text-mini font-bold text-white shadow">{t("右 +{0}px", [expansion.right])}</div>
             )}
 
             {/* 可拖拽的原图内框 */}

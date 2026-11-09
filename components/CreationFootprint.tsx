@@ -75,8 +75,8 @@ const heatClass = (count: number) => count <= 0
       : count <= 6
         ? 'bg-indigo-400 dark:bg-indigo-700'
         : count <= 12
-          ? 'bg-indigo-500 dark:bg-indigo-600'
-          : 'bg-indigo-600 dark:bg-indigo-500';
+          ? 'bg-indigo-500 dark:bg-indigo-700'
+          : 'bg-indigo-700 dark:bg-indigo-500';
 
 const OPERATION_LABELS: Record<string, string> = {
   'text-to-image': '文生图',
@@ -411,8 +411,8 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
     ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'
     : total <= monthPeak * 0.08 ? 'bg-indigo-300 text-white dark:bg-indigo-800'
       : total <= monthPeak * 0.2 ? 'bg-indigo-400 text-white dark:bg-indigo-700'
-        : total <= monthPeak * 0.45 ? 'bg-indigo-500 text-white dark:bg-indigo-600'
-          : 'bg-indigo-600 text-white dark:bg-indigo-500';
+        : total <= monthPeak * 0.45 ? 'bg-indigo-500 text-white dark:bg-indigo-700'
+          : 'bg-indigo-700 text-white dark:bg-indigo-500';
   const trend = useMemo(() => {
     const counts = new Map((stats?.daily || []).map(point => [point.date, point.images]));
     if (range === '7') {
@@ -629,7 +629,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
                   : (selectedYear ? t('所选年份每天生成的作品数；点击某天查看当天作品') : t('全部年份统计；热力图显示最近一年'))}
               action={<div className="flex flex-wrap items-center gap-2">
                 {periodPicker}
-                <span className="hidden items-center gap-1.5 text-micro text-gray-400 sm:flex">{t('少')}<span className="h-2.5 w-2.5 rounded-sm bg-gray-200 dark:bg-gray-800" /><span className="h-2.5 w-2.5 rounded-sm bg-indigo-300 dark:bg-indigo-800" /><span className="h-2.5 w-2.5 rounded-sm bg-indigo-400 dark:bg-indigo-700" /><span className="h-2.5 w-2.5 rounded-sm bg-indigo-500 dark:bg-indigo-600" /><span className="h-2.5 w-2.5 rounded-sm bg-indigo-600 dark:bg-indigo-500" />{t('多')}</span>
+                <span className="hidden items-center gap-1.5 text-micro text-gray-400 sm:flex">{t('少')}<span className="h-2.5 w-2.5 rounded-sm bg-gray-200 dark:bg-gray-800" /><span className="h-2.5 w-2.5 rounded-sm bg-indigo-300 dark:bg-indigo-800" /><span className="h-2.5 w-2.5 rounded-sm bg-indigo-400 dark:bg-indigo-700" /><span className="h-2.5 w-2.5 rounded-sm bg-indigo-500 dark:bg-indigo-700" /><span className="h-2.5 w-2.5 rounded-sm bg-indigo-700 dark:bg-indigo-500" />{t('多')}</span>
               </div>}
             >
               {compactDays.length > 0 ? <>
@@ -679,7 +679,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
             <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
               <SectionCard title={granularity === 'week' ? t('所选周趋势') : granularity === 'month' ? t('所选月份趋势') : (selectedYear ? t('年度月度趋势') : t('最近一年月度趋势'))} hint={granularity === 'year' ? t('每月生成的作品数') : t('每天生成的作品数')}>
                 <div className="flex h-28 items-end gap-1" role="img" aria-label={granularity === 'year' ? t('每月生成的作品数') : t('每天生成的作品数')}>
-                  {trend.map(day => <button key={day.key} type="button" onClick={() => openTrend(day.key)} title={t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className="mobile-touch flex h-full flex-1 items-end rounded-t focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"><span className={`w-full rounded-t transition-colors ${day.count ? 'bg-indigo-500/85 hover:bg-indigo-500 dark:bg-indigo-400/80' : 'bg-gray-100 dark:bg-gray-800'}`} style={{ height: `${Math.max(3, day.count / maxTrend * 100)}%` }} /></button>)}
+                  {trend.map(day => <button key={day.key} type="button" onClick={() => openTrend(day.key)} title={t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className="mobile-touch flex h-full flex-1 items-end rounded-t focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"><span className={`w-full rounded-t transition-colors ${day.count ? 'bg-indigo-500/85 hover:bg-indigo-600 dark:bg-indigo-400/80' : 'bg-gray-100 dark:bg-gray-800'}`} style={{ height: `${Math.max(3, day.count / maxTrend * 100)}%` }} /></button>)}
                 </div>
                 <div className="mt-2 flex justify-between text-micro text-gray-400"><span>{granularity === 'year' ? formatMonth(new Date(Number(activeYear), 0, 1)) : trend[0] ? formatDay(dayKeyToTime(trend[0].key)) : ''}</span><span>{granularity === 'year' ? formatMonth(new Date(Number(activeYear), 11, 1)) : granularity === 'week' ? formatDay(endOfWeek(weekStart)) : formatDay(monthBounds.end)}</span></div>
               </SectionCard>

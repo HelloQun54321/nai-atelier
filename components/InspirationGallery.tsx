@@ -499,7 +499,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile, () => {
           // 先卸载筛选层并归还焦点，再打开标签管理，避免两层抢焦点和返回操作。
           flushSync(close); setTagManagerOpen(true);
-        })}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); setBoardId(''); setCollection('all'); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t("确认")}</button></div></div>}
+        })}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); setBoardId(''); setCollection('all'); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 text-sm font-bold text-white">{t("确认")}</button></div></div>}
       </ToolbarPopover>
       <ToolbarSelect label="收藏排序" icon={<ArrowDownUp />} value={sort} containerClassName="max-md:hidden" className="w-auto!" onChange={event => setSort(event.target.value as CollectionSort)}>{Object.entries(COLLECTION_SORT_LABELS).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</ToolbarSelect>
       <ToolbarButton aria-label={t('批量选择图片')} title={t('批量选择图片')} disabled={Boolean(busy) || !filtered.some(item => editableIds.has(item.id))} onClick={() => { if (workGroup) closeGroup(); setSelectedIds(new Set()); setSelectionMode(true); }} className="mobile-touch !px-2.5 max-md:hidden md:!px-3"><ListChecks /><span className="hidden sm:inline">{t('多选')}</span></ToolbarButton>
@@ -550,7 +550,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
             icon={<Sparkles className="h-8 w-8" />}
             title={t("这里还没有匹配的收藏")}
             hint={t("点击图片上的爱心收藏，再拖入收藏夹整理。")}
-            action={<button type="button" disabled={currentUser.role === 'guest' || Boolean(busy)} onClick={() => openImport()} className="mobile-touch rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-40">{t("加入第一条收藏")}</button>}
+            action={<button type="button" disabled={currentUser.role === 'guest' || Boolean(busy)} onClick={() => openImport()} className="mobile-touch rounded-xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-40">{t("加入第一条收藏")}</button>}
           />
         )}
         </div>

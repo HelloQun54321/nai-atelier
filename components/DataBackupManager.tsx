@@ -165,7 +165,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
 
   if (!status) return <div className="relative space-y-3">
     <h4 className="font-semibold text-gray-900 dark:text-white">{t("重要数据备份")}</h4>
-    {error && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{t(error)} <button type="button" disabled={loading} onClick={() => void fetchStatus()} className="mobile-touch rounded-lg px-3 font-bold disabled:opacity-40">{t("重试")}</button></p>}
+    {error && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{t(error)} <button type="button" disabled={loading} data-appearance="control" data-tone="neutral" onClick={() => void fetchStatus()} className="mobile-touch rounded-lg px-3 text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t("重试")}</button></p>}
     {loading && <p role="status" className="pointer-events-none absolute right-0 top-0 flex h-6 items-center gap-2 text-xs text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />{t("正在读取…")}</p>}
   </div>;
 
@@ -193,6 +193,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
           <button
             type="button"
             onClick={() => void handleOpenFolder(status?.targetDir)}
+            data-appearance="control" data-tone="neutral"
             className="appearance-group mobile-touch flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
             title={t("在系统文件管理器中打开备份总目录")}
           >
@@ -205,7 +206,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
         <div className="flex items-center gap-2 rounded-xl bg-red-50 p-3 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">
           <AlertCircle className="h-4 w-4 flex-none" />
           <span>{t(error)}</span>
-          <button type="button" disabled={loading} onClick={() => void fetchStatus()} className="mobile-touch flex-none rounded-lg px-3 font-bold disabled:opacity-40">{t("重试")}</button>
+          <button type="button" disabled={loading} data-appearance="control" data-tone="neutral" onClick={() => void fetchStatus()} className="mobile-touch flex-none rounded-lg px-3 text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t("重试")}</button>
         </div>
       )}
 
@@ -239,7 +240,8 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
               <button
                 type="button"
                 onClick={() => setIsEditingTargetDir(true)}
-                className="text-meta font-bold text-indigo-600 hover:underline dark:text-indigo-400"
+                data-appearance="control" data-tone="neutral"
+                className="mobile-touch rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
               >
                 {t("修改路径")}</button>
             )}
@@ -255,12 +257,13 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                 className="min-w-0 w-full rounded-lg border border-indigo-400 bg-white px-2 py-2 text-xs font-mono text-gray-800 outline-none dark:border-indigo-500 dark:bg-gray-900 dark:text-gray-100"
                 placeholder="D:\NaiPromptManager-Backups"
               />
-              {canBrowse && <button type="button" disabled={browsing} onClick={() => void browseTarget()} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-2 text-xs text-gray-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300"><FolderOpen className="h-3.5 w-3.5" />{browsing ? t('选择中…') : t('浏览文件夹')}</button>}
+              {canBrowse && <button type="button" disabled={browsing} data-appearance="control" data-tone="neutral" onClick={() => void browseTarget()} className="mobile-touch inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-2 text-xs text-gray-600 transition disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300"><FolderOpen className="h-3.5 w-3.5" />{browsing ? t('选择中…') : t('浏览文件夹')}</button>}
               <button
                 type="button"
                 disabled={browsing}
                 onClick={handleSaveTargetDir}
-                className="min-h-9 rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
+                data-appearance="control" data-tone="save"
+                className="mobile-touch min-h-9 rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {t("保存")}</button>
               <button
@@ -270,7 +273,8 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                   setIsEditingTargetDir(false);
                   setCustomTargetDir(status?.targetDir || '');
                 }}
-                className="min-h-9 rounded-lg border border-gray-200 px-3 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-400"
+                data-appearance="control" data-tone="neutral"
+                className="mobile-touch min-h-9 rounded-lg border border-gray-200 px-3 text-xs text-gray-500 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-400"
               >
                 {t("取消")}</button>
             </div>
@@ -313,10 +317,11 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
             type="button"
             onClick={handleStartBackup}
             disabled={isRunning}
+            data-appearance="control" data-tone="primary"
             className={`mobile-touch flex flex-none items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold text-white shadow-sm transition ${
               isRunning
                 ? 'cursor-not-allowed bg-indigo-400 dark:bg-indigo-800'
-                : 'bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98]'
+                : 'bg-indigo-700 hover:bg-indigo-600 active:scale-[0.98]'
             }`}
           >
             {isRunning ? (
@@ -347,7 +352,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
             {/* 进度条轨道 */}
             <div className="h-2 w-full overflow-hidden rounded-full bg-indigo-200/60 dark:bg-indigo-900/60">
               <div
-                className="h-full rounded-full bg-indigo-600 transition-all duration-300 ease-out dark:bg-indigo-400"
+                className="h-full rounded-full bg-indigo-700 transition-all duration-300 ease-out dark:bg-indigo-400"
                 style={{ width: `${progress.percent}%` }}
               />
             </div>
@@ -433,6 +438,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                             <button
                               type="button"
                               onClick={() => void handleOpenFolder(backup.path)}
+                              data-appearance="control" data-tone="neutral"
                               className="appearance-group mobile-touch flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-meta font-medium text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"
                               title={t("在文件资源管理器中打开此备份")}
                             >
@@ -442,7 +448,8 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                               type="button"
                               onClick={() => void handleDeleteBackup(backup.name)}
                               disabled={Boolean(deletingName) || isRunning}
-                              className="mobile-touch flex items-center gap-1 rounded-lg border border-transparent px-2.5 py-1 text-meta font-medium text-gray-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:hover:border-rose-900/50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400 disabled:opacity-40"
+                              data-appearance="control" data-tone="danger"
+                              className="mobile-touch flex items-center gap-1 rounded-lg border border-transparent px-2.5 py-1 text-meta font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30"
                               title={t("删除此备份存档（释放 {0}）", [formatBytes(backup.totalBytes)])}
                             >
                               {deletingName === backup.name ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}

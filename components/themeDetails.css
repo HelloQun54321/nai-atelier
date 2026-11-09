@@ -237,7 +237,7 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
 }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .generation-action-button--workbench:not(.generation-action-button--loading) {
   color: var(--nai-on-accent-600);
-  background-color: var(--color-indigo-600);
+  background-color: var(--color-indigo-700);
   border-color: transparent;
 }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .generation-action-button--workbench:not(.generation-action-button--loading) .generation-action-button__cost { color: inherit; background: transparent; }
@@ -291,10 +291,9 @@ html[data-theme-material='glass'] [role='switch'] > span:last-child { box-shadow
 /* 菜单内边距与内外圆角关联，仍保留原有紧凑模式和主题参数。 */
 html[data-theme-material='glass'] .appearance-popover:not([data-compact='true']) { padding: clamp(6px, calc(var(--nai-panel-radius, 16px) - var(--workspace-control-radius)), 12px); }
 html[data-theme-material='glass'] .workspace-page-heading { padding-inline: max(8px, calc(var(--nai-panel-radius, 16px) - var(--workspace-control-radius))); }
-html[data-theme-material='glass'] [data-appearance='control'][data-tone='primary'] {
-  background-image: linear-gradient(rgb(255 255 255 / calc(var(--nai-glass-highlight, .3) * .28)), transparent 75%);
-  box-shadow: var(--nai-glass-edge), 0 1px 3px rgb(0 0 0 / calc(var(--nai-control-shadow, .25) * .3));
-}
+/* 主操作不再叠玻璃高光：那层白色反光会盖掉按钮自身的靛蓝→紫罗兰渐变，
+   使得「新建风格串」这类按钮和侧栏「创作助手」明明是同一套类名却显示成两个样。
+   这里不再输出 background-image，交给按钮类上的 dark:bg-gradient-to-r。 */
 /* 普通工具图标常态透明；在工具层覆盖旧的 !bg 辅助填充，语义主操作保留原义。 */
 @layer utilities {
 html:root[data-theme-material='glass'] [data-appearance='control'][data-control-kind='icon'][data-tone='neutral']:not([data-active='true']):not([aria-pressed='true']) {
@@ -376,7 +375,7 @@ html[data-theme-material='glass'][data-control-style='filled'] :is([role='tablis
 }
 html[data-control-style='filled'] :is(.app-sidebar, .settings-navigation) button[aria-current],
 html[data-control-style='filled'] [data-appearance='control'][data-tone='neutral'][data-active='true'] {
-  color: var(--nai-on-accent-600); background: var(--color-indigo-600);
+  color: var(--nai-on-accent-600); background: var(--color-indigo-700);
   border-color: transparent; box-shadow: none; --tw-ring-shadow: 0 0 #0000;
 }
 html[data-control-style='filled'] :is(.app-sidebar, .settings-navigation) button[aria-current] > .absolute { display: none; }
@@ -412,7 +411,7 @@ html[data-control-style='filled'] [role='switch'] > span:last-child { box-shadow
 @layer theme-state {
 html:root[data-control-style='filled'] :is(.app-sidebar, .settings-navigation) button[aria-current],
 html:root[data-control-style='filled'] [data-appearance='control'][data-tone='neutral'][data-active='true'] {
-  background-color: var(--color-indigo-600) !important;
+  background-color: var(--color-indigo-700) !important;
   color: var(--nai-on-accent-600) !important;
 }
 html[data-control-style='filled'] :is([role='tablist'], .appearance-segmented) > button:is([aria-selected='true'], [aria-pressed='true'], [aria-current]) {
@@ -420,7 +419,7 @@ html[data-control-style='filled'] :is([role='tablist'], .appearance-segmented) >
   color: var(--nai-segment-text) !important;
 }
 html[data-control-style='filled'] .generation-mode-nav > button[aria-current='page'] {
-  background-color: var(--color-indigo-600) !important;
+  background-color: var(--color-indigo-700) !important;
   color: var(--nai-on-accent-600) !important;
 }
 html[data-control-style='filled'] .workspace-mode-tabs > button[aria-selected='true'] {
@@ -543,7 +542,7 @@ html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-them
   html:root[data-design-theme] :is([aria-current='page'], [aria-selected='true'], [aria-pressed='true'], [data-active='true']) { outline: 2px solid currentColor !important; outline-offset: -2px; }
   html:root[data-design-theme] :is(button, a)[aria-current],
   html:root[data-design-theme] [data-appearance='control'][data-tone='neutral'][data-active='true'] { background-color: var(--nai-accessible-surface) !important; color: var(--nai-accessible-text) !important; }
-  html:root[data-design-theme] [data-appearance='control'][data-tone='primary'] { background-color: var(--color-indigo-600) !important; color: var(--nai-on-accent-600) !important; }
+  html:root[data-design-theme] [data-appearance='control'][data-tone='primary'] { background-color: var(--color-indigo-700) !important; color: var(--nai-on-accent-600) !important; }
   .nai-theme-light { display: none !important; }
 }
 @media (forced-colors: active) {

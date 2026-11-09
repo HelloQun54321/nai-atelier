@@ -247,11 +247,11 @@ describe('GlobalSettings', () => {
       initialSection: 'generation',
       onAppearancePreferencesChange,
     }));
-    const toggle = await screen.findByRole('button', { name: /连续生成与排队/ });
-    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    const toggle = await screen.findByRole('switch', { name: /连续生成与排队/ });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
     fireEvent.click(toggle);
     await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0].continuousGenerationEnabled).toBe(false));
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
   });
 
   it('记住上次生图设置默认开启；可独立选择记忆内容，关闭主开关后保留选择', async () => {
@@ -796,8 +796,8 @@ describe('GlobalSettings', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /隐私与分享/ }));
     expect(await screen.findByRole('button', { name: /^安全模式/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /同时隐藏作品名称/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '启动时自动开启安全模式' })).toBeTruthy();
+    expect(screen.getByRole('switch', { name: /同时隐藏作品名称/ })).toBeTruthy();
+    expect(screen.getByRole('switch', { name: '启动时自动开启安全模式' })).toBeTruthy();
     expect((await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement).checked).toBe(false);
 
     // 切换至「数据与维护」

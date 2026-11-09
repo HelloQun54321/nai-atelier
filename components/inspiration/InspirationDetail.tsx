@@ -437,7 +437,7 @@ export const InspirationDetail = React.memo(function InspirationDetail({
           <footer className="appearance-group flex-none border-t border-gray-200 p-3.5 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/60 backdrop-blur-sm">
             <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
               {/* 导入实验室（带底图模式分流，自适应撑开，居于视觉核心） */}
-              <div className="relative flex-1 min-w-[9rem] flex h-10 rounded-xl bg-indigo-600 shadow-sm shadow-indigo-600/20 hover:bg-indigo-500 transition-colors">
+              <div className="relative flex-1 min-w-[9rem] flex h-10 rounded-xl bg-indigo-700 shadow-sm shadow-indigo-600/20 hover:bg-indigo-600 transition-colors">
                 <button
                   type="button"
                   disabled={Boolean(busy)}

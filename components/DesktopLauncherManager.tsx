@@ -108,9 +108,10 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
               {status.desktopExists && status.supported && (
                 <button
                   type="button"
+                  data-appearance="control" data-tone="neutral"
                   onClick={() => void handleOpenDesktop()}
                   disabled={openingFolder}
-                  className="mobile-touch flex items-center gap-1 text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 font-medium"
+                  className="mobile-touch flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
                 >
                   <FolderOpen className="h-3.5 w-3.5" />
                   <span>{t("打开桌面")}</span>
@@ -150,7 +151,8 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
                 type="button"
                 onClick={() => void handleCreate()}
                 disabled={creating}
-                className="mobile-touch flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-indigo-500 disabled:opacity-50 shadow-sm"
+                data-appearance="control" data-tone="primary"
+                className="mobile-touch flex items-center gap-1.5 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                 <span>{status.shortcutExists ? t("修复桌面快捷方式") : t("创建桌面快捷方式")}</span>

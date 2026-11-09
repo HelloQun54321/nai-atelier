@@ -89,7 +89,7 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5h5v5m-1-4L10 14M19 14v4a1 1 0 01-1 1H6a1 1 0 011-1h4" /></svg>
             <span>{t('词库来源')}</span>
           </a>
-          <button type="button" disabled={isRunning} onClick={() => void handleUpdate()} className="mobile-touch flex items-center gap-1.5 rounded bg-indigo-50 px-2 py-1.5 text-sm font-medium text-indigo-600 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50" title={t('检查并更新 Tag 补全词库')}>
+          <button type="button" data-appearance="control" data-tone="neutral" disabled={isRunning} onClick={() => void handleUpdate()} className="mobile-touch flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2 py-1.5 text-sm font-medium text-indigo-600 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50" title={t('检查并更新 Tag 补全词库')}>
             <svg className={`h-4 w-4 ${isRunning ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357 2m15.357 2H15" /></svg>
             <span>{isRunning ? t('更新中…') : t('更新词库')}</span>
           </button>
@@ -99,7 +99,7 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
         <div className="space-y-2">
           <p role={isError ? 'alert' : 'status'} className={`whitespace-pre-line text-xs leading-5 [overflow-wrap:anywhere] ${isError ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-300'}`}>{message}</p>
           <div role="progressbar" aria-label={t('词库更新进度')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-valuetext={message} className="h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-            <div className={`h-full rounded-full transition-all duration-500 ${isError ? 'bg-red-500' : 'bg-indigo-600'} ${isRunning ? 'animate-pulse' : ''}`} style={{ width: `${progress}%` }} />
+            <div className={`h-full rounded-full transition-all duration-500 ${isError ? 'bg-red-500' : 'bg-indigo-700'} ${isRunning ? 'animate-pulse' : ''}`} style={{ width: `${progress}%` }} />
           </div>
         </div>
       )}

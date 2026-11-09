@@ -282,7 +282,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       <div className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         {!settingsLoaded && settingsLoadError && <div role="alert" className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">
           <span>{t(settingsLoadError)}</span>
-          <button type="button" onClick={() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }} className="mobile-touch shrink-0 rounded-lg px-2 py-1 font-bold underline">{t('重试')}</button>
+          <button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }} className="mobile-touch shrink-0 rounded-lg px-2 py-1 text-xs font-bold underline">{t('重试')}</button>
         </div>}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-meta font-bold uppercase tracking-wider text-indigo-500">{t("当前助手模型")}</div>
@@ -292,7 +292,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
               type="button"
               disabled={models.length === 0}
               onClick={() => openView('model')}
-              className="mobile-touch rounded-lg border border-indigo-200 bg-indigo-50/60 px-2.5 py-1 text-xs font-bold text-indigo-600 hover:bg-indigo-100 disabled:opacity-40 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-950/60"
+              className="mobile-touch rounded-lg border border-indigo-200 bg-indigo-50/60 px-2.5 py-1 text-xs font-bold text-indigo-600 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-950/60"
             >
               {t("更换模型")}</button>
           </div>
@@ -309,7 +309,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
           <div>
             <b className="block text-sm text-gray-900 dark:text-white">{t("API 连接")}</b>
           </div>
-          <button type="button" onClick={() => openCustom()} className="mobile-touch inline-flex items-center gap-1 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700"><Plus className="h-3.5 w-3.5" />{t("连接 API")}</button>
+          <button type="button" data-appearance="control" data-tone="primary" onClick={() => openCustom()} className="mobile-touch inline-flex items-center gap-1 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-3.5 w-3.5" />{t("连接 API")}</button>
         </div>
         <div className="mt-3 space-y-2">
           {customProviders.map(provider => (
@@ -325,13 +325,15 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
               <button
                 type="button"
                 onClick={() => openCustom(provider)}
-                className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                data-appearance="control" data-tone="neutral"
+                className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
               >
                 {t("编辑")}</button>
               <button
                 type="button"
                 onClick={() => void deleteCustom(provider)}
-                className="mobile-touch rounded-lg border border-transparent px-2.5 py-1 text-xs font-bold text-gray-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:hover:border-red-900/40 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+                data-appearance="control" data-tone="danger"
+                className="mobile-touch rounded-lg border border-transparent px-2.5 py-1 text-xs font-bold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
               >
                 {t("删除")}</button>
             </div>
@@ -360,8 +362,8 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
             <input type="password" value={searchKeyDraft} onChange={event => setSearchKeyDraft(event.target.value)} placeholder={config?.searchApiKeyCustom ? t('已保存，留空保持不变') : t('可留空，自动使用同地址的已配置连接')} className="mobile-touch mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-normal outline-none focus:border-indigo-400 dark:border-gray-800 dark:bg-gray-950" />
           </label>
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => { void saveSearchApi({ baseUrl: searchBaseUrl, apiKey: searchKeyDraft.trim() ? searchKeyDraft : undefined }); }} disabled={searchSaving} className="mobile-touch rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-40">{t('保存搜索设置')}</button>
-            {config?.searchApiKeyCustom && <button type="button" onClick={() => { void saveSearchApi({ apiKey: '' }); }} disabled={searchSaving} className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('清除已保存 Key')}</button>}
+            <button type="button" data-appearance="control" data-tone="primary" onClick={() => { void saveSearchApi({ baseUrl: searchBaseUrl, apiKey: searchKeyDraft.trim() ? searchKeyDraft : undefined }); }} disabled={searchSaving} className="mobile-touch rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50">{t('保存搜索设置')}</button>
+            {config?.searchApiKeyCustom && <button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void saveSearchApi({ apiKey: '' }); }} disabled={searchSaving} className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('清除已保存 Key')}</button>}
           </div>
         </div>
         <p className="mt-2 text-xs leading-5 text-gray-400 dark:text-gray-500">{config?.searchApiKeyCustom ? t('已保存搜索专用 Key。') : config?.searchApiKeyConfigured ? t('将使用同地址的已配置连接。') : t('未检测到可用 Key，开启后仍使用免费搜索。')}</p>
@@ -407,16 +409,20 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <button type="button" onClick={() => { void (presetId ? saveRulePreset() : saveCreativeDirectRules(rulesDraft)); }}
               disabled={rulesSaving || presetsSaving || !rulesDraft.trim() || (rulesDraft === (config.creativeDirectRules || '') && !presetId)}
-              className="mobile-touch rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-40">{t('保存规则')}</button>
+              data-appearance="control" data-tone="primary"
+              className="mobile-touch rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50">{t('保存规则')}</button>
             <button type="button" onClick={() => { void addRulePreset(); }}
               disabled={rulesSaving || presetsSaving || !rulesDraft.trim() || rulePresets.length >= 16}
-              className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('另存为新规则')}</button>
+              data-appearance="control" data-tone="neutral"
+              className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('另存为新规则')}</button>
             <button type="button" onClick={() => { void deleteRulePreset(); }}
               disabled={rulesSaving || presetsSaving || !presetId}
-              className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('删除规则')}</button>
+              data-appearance="control" data-tone="danger"
+              className="mobile-touch rounded-lg border border-transparent px-3 py-1.5 text-xs font-bold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30">{t('删除规则')}</button>
             <button type="button" onClick={() => { void saveCreativeDirectRules(''); }}
               disabled={rulesSaving || presetsSaving || !config.creativeDirectRulesCustom}
-              className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('恢复内置默认')}</button>
+              data-appearance="control" data-tone="neutral"
+              className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('恢复内置默认')}</button>
           </div>
           <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{config.creativeDirectRulesCustom ? t('当前使用自定义规则') : t('当前使用内置默认规则')}；{t('已保存 {0} 条规则', [rulePresets.length])}；{t('保存后从下一次助手任务生效。')}</p>
         </details>}
@@ -434,17 +440,17 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         className="appearance-panel appearance-overlay agent-theme agent-settings-subview absolute inset-0 z-[1100] flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950"
       >
       <header className="workspace-command-bar flex flex-none items-center gap-3 border-b border-gray-200 bg-white px-3 pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900 md:px-5">
-        <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("返回")}><ArrowLeft className="h-5 w-5" /></button>
+        <button type="button" data-appearance="control" data-tone="neutral" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-lg p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("返回")}><ArrowLeft className="h-5 w-5" /></button>
         <div className="min-w-0 flex-1"><h2 className="font-black text-gray-900 dark:text-white">{view === 'model' ? t("选择助手模型") : (customDraft.id ? t("编辑 API 连接") : t("连接 API"))}</h2></div>
-        {view === 'model' && <button type="button" onClick={() => openCustom()} className="mobile-touch rounded-xl px-3 text-sm text-indigo-600 dark:text-indigo-300">{t("连接 API")}</button>}
+        {view === 'model' && <button type="button" data-appearance="control" data-tone="neutral" onClick={() => openCustom()} className="mobile-touch rounded-lg px-3 text-sm text-indigo-600 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t("连接 API")}</button>}
       </header>
       <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col p-3 md:p-5">
         {view === 'model' && <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder={t("搜索模型名称、ID或连接…")} className={`${TOOLBAR_FIELD_CLASS} !mt-0`} />}
         {view === 'custom' ? <CustomProviderForm value={customDraft} onChange={next => { if (next.baseUrl !== customDraft.baseUrl || next.apiKey !== customDraft.apiKey || next.api !== customDraft.api) setDiscoveredModels([]); setCustomDraft(next); setCustomResult(null); }} result={customResult} discovered={discoveredModels} busy={busy} onTest={() => void testCustom()} onFetch={() => void fetchCustom()} onSave={() => void saveCustom()} presets={AGENT_PROVIDER_PRESETS} onSavePreset={(preset, apiKey) => void savePreset(preset, apiKey)} /> :
           <div className="appearance-group mt-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-            {filteredModels.map(model => <button key={`${model.provider}/${model.id}`} type="button" disabled={busy} onClick={() => void selectModel(model)} className="flex min-h-16 w-full items-center gap-3 border-b border-gray-100 px-4 text-left last:border-0 hover:bg-indigo-50 dark:border-gray-800 dark:hover:bg-indigo-950/20"><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ${model.current ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{model.current ? '✓' : '→'}</span><span className="min-w-0 flex-1"><b className="block truncate text-sm text-gray-900 dark:text-white">{formatModelOptionTitle(model, models)}</b><span className="block truncate text-meta text-gray-500">{model.providerName || model.provider}</span></span><span className="hidden shrink-0 text-right text-micro leading-4 text-gray-500 dark:text-gray-400 sm:block">{t("上下文 ")}{formatContext(model.contextWindow)}<br />{model.reasoning ? t("推理") : model.capabilityDetection?.reasoning === 'unknown' ? t("推理未知") : t("普通")}{model.imageInput ? t(" · 图片") : model.capabilityDetection?.imageInput === 'unknown' ? t(" · 图片未知") : ''}</span></button>)}
+            {filteredModels.map(model => <button key={`${model.provider}/${model.id}`} type="button" disabled={busy} onClick={() => void selectModel(model)} className="flex min-h-16 w-full items-center gap-3 border-b border-gray-100 px-4 text-left last:border-0 hover:bg-indigo-50 dark:border-gray-800 dark:hover:bg-indigo-950/20"><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ${model.current ? 'bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{model.current ? '✓' : '→'}</span><span className="min-w-0 flex-1"><b className="block truncate text-sm text-gray-900 dark:text-white">{formatModelOptionTitle(model, models)}</b><span className="block truncate text-meta text-gray-500">{model.providerName || model.provider}</span></span><span className="hidden shrink-0 text-right text-micro leading-4 text-gray-500 dark:text-gray-400 sm:block">{t("上下文 ")}{formatContext(model.contextWindow)}<br />{model.reasoning ? t("推理") : model.capabilityDetection?.reasoning === 'unknown' ? t("推理未知") : t("普通")}{model.imageInput ? t(" · 图片") : model.capabilityDetection?.imageInput === 'unknown' ? t(" · 图片未知") : ''}</span></button>)}
             {!filteredModels.length && <div className="p-10 text-center text-sm text-gray-500">
-              {!settingsLoaded && settingsLoading ? t('正在读取模型列表…') : !settingsLoaded && settingsLoadError ? <><p>{t(settingsLoadError)}</p><button type="button" onClick={() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }} className="mobile-touch mt-3 rounded-lg px-3 py-2 font-bold text-indigo-600 underline dark:text-indigo-300">{t('重试')}</button></> : query ? t("没有匹配结果") : t("还没有模型，请先连接 API")}
+              {!settingsLoaded && settingsLoading ? t('正在读取模型列表…') : !settingsLoaded && settingsLoadError ? <><p>{t(settingsLoadError)}</p><button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }} className="mobile-touch mt-3 rounded-lg px-3 py-2 text-xs font-bold text-indigo-600 underline dark:text-indigo-300">{t('重试')}</button></> : query ? t("没有匹配结果") : t("还没有模型，请先连接 API")}
             </div>}
           </div>}
       </main>
