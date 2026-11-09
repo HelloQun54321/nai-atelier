@@ -26,6 +26,8 @@ interface ImageTaggerPanelProps {
   /** 图库保留本次勾选结果，复制、关闭或跳转均不丢失。 */
   onResult?: (result: ImageTaggerResult, tags: string) => void;
   onSendToLab?: (tags: string) => void;
+  /** 提示词库等「结果就该留在当前页」的场景隐藏送往实验室，避免中途跳走。 */
+  hideSendToLab?: boolean;
   lockImage?: boolean;
 }
 
@@ -43,12 +45,14 @@ const TAGGER_DEFAULT_PARAMS: PendingImportData['params'] = {
   ucPreset: 4,
 };
 
-export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClose, onInsert, notify, actionLabel, imageUrl, contextual = false, initialResult, initialTags, onResult, onSendToLab, lockImage = false }) => {
+export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClose, onInsert, notify, actionLabel, imageUrl, contextual = false, hideSendToLab = false, initialResult, initialTags, onResult, onSendToLab, lockImage = false }) => {
   useLanguage();
   const inputRef = useRef<HTMLInputElement>(null);
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [file, setFile] = useState<File | null>(null);
+  /** 拖拽悬停态：只影响左侧取图区的高亮，不参与识别流程。 */
+  const [dragOver, setDragOver] = useState(false);
   const [preview, setPreview] = useState('');
   const [result, setResult] = useState<ImageTaggerResult | null>(initialResult || null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialResult?.tags.filter(tag => initialTags === undefined || initialTags.split(',').map(value => value.trim()).includes(tag.name.replaceAll('_', ' '))).map(tag => tag.name)));
@@ -204,10 +208,28 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
         <section className="space-y-4 border-b border-gray-200 p-4 dark:border-gray-800 md:overflow-y-auto md:border-b-0 md:border-r">
           <input aria-label={t("上传反推图片")} ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => chooseFile(event.target.files?.[0])} />
           {modelStatusError && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{modelStatusError}</p>}
-          <button type="button" title={t("也可在此按 Ctrl+V 粘贴")} disabled={busy || !modelReady || lockImage} onClick={() => inputRef.current?.click()} className="appearance-media relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-violet-400 dark:border-gray-800 dark:bg-gray-900">
-            {preview ? <img src={preview} alt={t("待识别图片")} className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 text-xs"><ImagePlus className="h-8 w-8" /><span>{t("选择或粘贴图片")}</span><span className="text-micro text-gray-500">{t("也可在此按 Ctrl+V 粘贴")}</span></span>}
+          <div
+            onDragOver={event => {
+              if (busy || !modelReady || lockImage) return;
+              // 必须先阻止默认行为，否则浏览器会把图片当成导航直接打开。
+              event.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={event => {
+              if (busy || !modelReady || lockImage) return;
+              event.preventDefault();
+              setDragOver(false);
+              const dropped = event.dataTransfer.files?.[0];
+              if (dropped) chooseFile(dropped);
+            }}
+            className={`rounded-2xl transition ${dragOver ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : ''}`}
+          >
+          <button type="button" title={t("也可在此按 Ctrl+V 粘贴，或把图片拖进来")} disabled={busy || !modelReady || lockImage} onClick={() => inputRef.current?.click()} className="appearance-media relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-violet-400 dark:border-gray-800 dark:bg-gray-900">
+            {preview ? <img src={preview} alt={t("待识别图片")} className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 px-4 text-center text-xs"><ImagePlus className="h-8 w-8" /><span>{t("选择图片")}</span><span className="text-micro leading-5 text-gray-500">{t("也可以按 Ctrl+V 粘贴，或把图片拖到这里")}</span></span>}
             {busy && <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-6 text-center text-xs text-white"><LoaderCircle className="h-7 w-7 animate-spin" />{selectedModel && !selectedModel.downloaded ? taggerProgressText(selectedModel) : t("正在本地识别图片…")}{selectedModel && ['downloading', 'verifying'].includes(selectedModel.stage) && <progress aria-label={t("模型下载进度")} max={selectedModel.totalBytes} value={selectedModel.receivedBytes} className="h-1.5 w-full accent-white" />}</span>}
           </button>
+          </div>
           <div className="space-y-3 rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
             <div className="flex items-center gap-2 text-xs font-bold"><SlidersHorizontal className="h-4 w-4" />{t("识别阈值")}</div>
             <div>
@@ -270,7 +292,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
       </div>
       <footer className="appearance-content operation-footer flex flex-none items-center justify-end gap-2 border-t border-gray-200 p-3 dark:border-gray-800">
         <ToolbarButton disabled={!selected.size || busy} onClick={insert} className="mobile-touch">{(actionLabel ?? '追加 {count} 个 Tag 到全局提示词').replace('{count}', String(selected.size))}</ToolbarButton>
-        <ToolbarButton tone="primary" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch">{t("送往实验室")}</ToolbarButton>
+        {!hideSendToLab && <ToolbarButton tone="primary" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch">{t("送往实验室")}</ToolbarButton>}
       </footer>
     </div>
   </div></ImagePreviewPortal>;

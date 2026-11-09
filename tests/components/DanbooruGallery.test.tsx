@@ -167,35 +167,24 @@ it.each(['masonry', 'portrait', 'square', 'history'])('Danbooru %s 卡片沿用 
   cards.forEach(card => expect(card.className).not.toContain('brightness-'));
 });
 
-it('详情主操作是图片反推，原站复制／使用独立，保存实际图片及原站标注', async () => {
+it('详情只提供原站 Tag 的复制与送往实验室，不再提供图片反推', async () => {
   search.mockImplementation(async options => result(options?.query, [post]));
   search.mockImplementation(async options => result(options?.query, [{ ...post, sampleUrl: 'https://cdn.donmai.us/original/synthetic.png' }]));
   vi.mocked(importDanbooruCoverAsDataUrl).mockResolvedValue('data:image/png;base64,c3ludGhldGlj');
   vi.mocked(api.post).mockImplementation(async (_path, body) => ({ item: body }));
   await setup(); fireEvent.click(await screen.findByRole('button', { name: /synthetic artist/ }));
-  await waitFor(() => expect(screen.getByRole('button', { name: '图片反推' }).hasAttribute('disabled')).toBe(false));
-  expect(screen.queryByRole('button', { name: '更多' })).toBeNull();
+  // 反推入口已收敛到实验室与提示词库两处；外部站作品自带标注，这里不再重复跑模型。
+  await waitFor(() => expect(screen.getByRole('button', { name: '原站 Tag 送往实验室' })).toBeTruthy());
+  expect(screen.queryByRole('button', { name: '图片反推' })).toBeNull();
   expect(screen.queryByRole('button', { name: '导入实验室' })).toBeNull();
   const source = screen.getByRole('link', { name: '查看原帖' });
   expect(source.closest('header')).toBeTruthy();
   expect(source.getAttribute('href')).toBe(post.postUrl);
-  expect(screen.getByRole('group', { name: '图片操作' }).contains(source)).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: '原站 Tag 送往实验室' }));
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: 'solo', mode: 'append-prompt' });
   fireEvent.click(screen.getAllByRole('button', { name: '收藏' }).at(-1)!);
   await waitFor(() => expect(toggleCollectionTarget).toHaveBeenCalledWith(expect.objectContaining({ sourceType: 'danbooru', sourceId: String(post.id), prompt: 'solo', analysis: { externalSourceTags: ['synthetic_artist', 'solo'], externalSourcePage: 0 } })));
   expect(screen.queryByRole('button', { name: '加入收藏库' })).toBeNull();
-});
-it('同一作品更新已存反推，不重复下载或创建，保留原分类与备注', async () => {
-  search.mockImplementation(async options => result(options?.query, [post]));
-  const stored = { id: 'saved', userId: 'synthetic', title: 'keep title', imageUrl: '/api/assets/saved', prompt: 'blue hair', notes: 'keep notes', boardId: 'keep board', createdAt: 1, analysis: { extra: 'keep', imageTagger: { prompt: 'blue hair', createdAt: 1, result: { model: 'test', threshold: 0.35, characterThreshold: 0.85, rating: null, tags: [], character: [], general: [] } } } };
-  vi.mocked(db.getInspirationsBySource).mockResolvedValue([stored]);
-  await setup(); fireEvent.click(await screen.findByRole('button', { name: /synthetic artist/ }));
-  await screen.findByRole('textbox', { name: '反推 Tag' });
-  fireEvent.change(screen.getByRole('textbox', { name: '反推 Tag' }), { target: { value: 'edited hair' } });
-  fireEvent.click(screen.getByRole('button', { name: '保存反推 Tag' }));
-  await waitFor(() => expect(db.updateInspiration).toHaveBeenCalledWith('saved', { prompt: 'edited hair', analysis: { extra: 'keep', externalSourcePage: 0, externalSourceTags: ['synthetic_artist', 'solo'], imageTagger: { ...stored.analysis.imageTagger, prompt: 'edited hair' } } }));
-  expect(importDanbooruCoverAsDataUrl).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled();
 });
 it('切换查询中止旧预取，迟到预取不再发起图片预热', async () => {
   const pending = deferred<ReturnType<typeof result>>();

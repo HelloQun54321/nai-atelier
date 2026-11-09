@@ -1144,8 +1144,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                 <span className="flex-none">{t("浏览 {0}", [formatCount(selected.totalViews)])}</span>
                 <button type="button" aria-label={t("查看 {0} 的作者全集", [selected.user.name])} title={t("查看 {0} 的作者全集", [selected.user.name])} onClick={() => openAuthorWorks(selected.user.id, selected.user.name)} className="ml-auto min-h-10 min-w-0 truncate rounded text-right font-semibold text-indigo-600 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-indigo-400 lg:min-h-0">{selected.user.name}</button>
               </div>
-              <ExternalImageTools key={`pixiv:${selected.id}:${selectedPage}`} source="pixiv" sourceId={selected.id} page={selectedPage} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')}
-                sourcePrompt={selected.tags.join(', ')} onImport={importToPlayground} onSave={(reverse, existing) => saveReverseTags(selected, selectedPage, reverse, existing)} notify={notify}
+              <ExternalImageTools key={`pixiv:${selected.id}:${selectedPage}`} source="pixiv"
+                sourcePrompt={selected.tags.join(', ')} onImport={importToPlayground} notify={notify}
                 trailingAction={<IconButton
                   label={bookmarking ? t("正在同步 Pixiv 收藏") : selected.isBookmarked ? t("取消 Pixiv 收藏") : t("收藏到 Pixiv")}
                   aria-pressed={Boolean(selected.isBookmarked)}

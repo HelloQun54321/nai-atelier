@@ -23,6 +23,8 @@ interface ChainEditorPreviewProps {
     handleSavePreview: () => void;
     onSaveArtistSample?: () => void;
     savingArtistSample?: boolean;
+    /** 反推当前预览图，结果追加到全局正面提示词。 */
+    onReverseTag?: () => void;
     handleUploadCover: (e: React.ChangeEvent<HTMLInputElement>) => void;
     getDownloadFilename: () => string;
     generationData?: ImageGenerationData;
@@ -63,6 +65,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     handleSavePreview,
     onSaveArtistSample,
     savingArtistSample,
+    onReverseTag,
     handleUploadCover,
     getDownloadFilename,
     generationData,
@@ -174,6 +177,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                         isUploading={isUploading}
                         onSaveArtistSample={onSaveArtistSample}
                         savingArtistSample={savingArtistSample}
+                        onReverseTag={onReverseTag}
                     />
                 </PressRevealSurface>
 

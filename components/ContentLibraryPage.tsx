@@ -1,11 +1,12 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { Suspense, useEffect, useId, useState } from 'react';
-import { ClipboardPaste, Dice5, Sparkles, X } from 'lucide-react';
+import { ClipboardPaste, Dice5, ImagePlus, Sparkles, X } from 'lucide-react';
 import { IconButton, PageSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { PromptCaptureDialog } from './PromptCaptureDialog';
 import { PromptExtractDialog } from './PromptExtractDialog';
+import { ImageTaggerPanel } from './ImageTaggerPanel';
 import type { ExtractedEntryDraft } from '../services/extractedPromptEntry';
 import type { PromptLibraryTreeState } from '../services/promptLibraryTree.mjs';
 import { useMobileHistoryLayer } from './MobileUI';
@@ -78,6 +79,8 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
   const [rollMounted, setRollMounted] = useState(rollOpen);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [extractOpen, setExtractOpen] = useState(false);
+  // 图片反推：识别结果直接走「粘贴收录」同一条创建通道，落成新条目。
+  const [reverseOpen, setReverseOpen] = useState(false);
   const [captured, setCaptured] = useState<{ id?: string } | null>(null);
   const rollLabel = rollTitle || (browse ? '搭配' : '随机搭配');
   useEffect(() => {
@@ -112,6 +115,7 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
           </button>)}
         </div>}
         <div ref={setToolbarSlot} className={`content-library-tools flex min-w-0 flex-1 items-center gap-2 ${browse ? '!order-none !basis-0 !gap-1' : ''}`} />
+        {onCapture && <ToolbarButton className={browse ? 'mobile-touch !hidden md:!inline-flex !h-11 md:!h-10 !w-11 !gap-0 !px-0 xl:!w-auto xl:!gap-2 xl:!px-3' : ''} onClick={() => setReverseOpen(true)} aria-label={t('图片反推 Tag')} title={t('从图片反推 Tag 并新建条目')} aria-haspopup="dialog"><ImagePlus /><span className={browse ? 'hidden xl:inline' : 'hidden sm:inline'}>{t('图片反推')}</span></ToolbarButton>}
         {onExtractSave && <ToolbarButton className={browse ? 'mobile-touch !hidden md:!inline-flex !h-11 md:!h-10 !w-11 !gap-0 !px-0 xl:!w-auto xl:!gap-2 xl:!px-3' : ''} onClick={() => setExtractOpen(true)} aria-label={t('AI 提取分类')} aria-haspopup="dialog"><Sparkles /><span className={browse ? 'hidden xl:inline' : 'hidden sm:inline'}>{t('AI 提取分类')}</span></ToolbarButton>}
         {onCapture && <ToolbarButton tone={browse ? 'primary' : undefined} className={browse ? 'mobile-touch !h-11 md:!h-10 !w-11 !gap-0 !px-0 xl:!w-auto xl:!gap-2 xl:!px-3' : ''} onClick={() => setCaptureOpen(true)} aria-label={t('粘贴收录')} aria-haspopup="dialog"><ClipboardPaste /><span className={browse ? 'hidden xl:inline' : 'hidden sm:inline'}>{t('粘贴收录')}</span></ToolbarButton>}
         <ToolbarButton tone={browse ? undefined : 'primary'} className={browse ? 'mobile-touch !h-11 md:!h-10 !w-11 !gap-0 !px-0 xl:!w-auto xl:!gap-2 xl:!px-3' : 'content-library-roll-action'} onClick={() => onRollOpenChange(true)} aria-label={t(rollLabel)} aria-haspopup="dialog"><Dice5 /><span className={browse ? 'hidden xl:inline' : ''}>{t(rollLabel)}</span></ToolbarButton>
@@ -125,6 +129,15 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
     {rollMounted && <ImagePreviewPortal><RollDialog title={rollLabel} open={active && rollOpen} onClose={() => onRollOpenChange(false)}>{roll}</RollDialog></ImagePreviewPortal>}
     {onCapture && <ImagePreviewPortal><PromptCaptureDialog directories={directories} open={active && captureOpen} onClose={() => setCaptureOpen(false)} onSave={onCapture} onSaved={id => { setCaptured({ id }); onCaptureSaved?.(id); }} /></ImagePreviewPortal>}
     {onExtractSave && <ImagePreviewPortal><PromptExtractDialog directories={directories} open={active && extractOpen} onClose={() => setExtractOpen(false)} notify={notify ?? (() => {})} onSave={onExtractSave} /></ImagePreviewPortal>}
+    {onCapture && reverseOpen && <ImagePreviewPortal><ImageTaggerPanel
+      contextual
+      open
+      hideSendToLab
+      onClose={() => setReverseOpen(false)}
+      notify={notify ?? (() => {})}
+      actionLabel={t('用 {count} 个 Tag 新建条目')}
+      onInsert={tags => { setReverseOpen(false); void onCapture(tags, t('反推 Tag'), 'general'); }}
+    /></ImagePreviewPortal>}
     {active && captured && <div role="status" className="appearance-panel fixed bottom-20 left-1/2 z-[1250] flex -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-3 shadow-lg"><span className="text-sm">{t('已收录')}</span>{captured.id && onViewCaptured && <button type="button" className="mobile-touch text-sm font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { onViewCaptured(captured.id!); setCaptured(null); }}>{t('查看')}</button>}</div>}
   </div>;
 };

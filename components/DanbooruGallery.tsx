@@ -628,8 +628,8 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
               <ViewableImage src={selected.sampleUrl} alt={`Danbooru #${selected.id}`} filename={`danbooru-${selected.id}.${selected.fileExt}`} favorite={collectionImage(selected)} notify={notify} className="max-h-[62vh] w-full object-contain" />
               {selected.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(selected.sampleUrl)} filename={`danbooru-${selected.id}.${selected.fileExt}`} favorite={collectionImage(selected)} notify={notify} />}
             </DetailImageStage>
-            <ExternalImageTools key={`danbooru:${selected.id}`} source="danbooru" sourceId={String(selected.id)} imageUrl={buildMediaUrl(selected.sampleUrl, 'original')}
-              sourcePrompt={danbooruPromptTags(selected)} sourceCopy={danbooruAllTags(selected).join(', ')} onImport={importToPlayground} onSave={(reverse, existing) => saveReverseTags(selected, reverse, existing)} notify={notify}
+            <ExternalImageTools key={`danbooru:${selected.id}`} source="danbooru"
+              sourcePrompt={danbooruPromptTags(selected)} sourceCopy={danbooruAllTags(selected).join(', ')} onImport={importToPlayground} notify={notify}
               sourceTags={<>
                 {(Object.keys(categoryLabels) as DanbooruTagCategory[]).map(category => selected.tags[category].length > 0 && <section key={category}>
               <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black text-gray-700 dark:text-gray-200">{categoryLabels[category]} · {selected.tags[category].length}</h3><button type="button" onClick={() => void copyText(selected.tags[category].join(', ')).then(() => notify(`已复制${categoryLabels[category]} Tag`))} className="text-micro text-gray-500 hover:text-indigo-500">{t("复制")}</button></div>

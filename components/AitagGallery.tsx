@@ -46,7 +46,6 @@ import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
-import { ImageTaggerAction } from './ImageTaggerPanel';
 import { AnchoredToolbarPopover, ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareOverlay } from './ImageShareActions';
@@ -1783,12 +1782,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
                               <ToolbarPopover key={`${image.work_id}-${image.file_name}`} label="用作底图" title={t('用作底图')} icon={<ImagePlus />} iconOnly iconTone="edit" disabled={!buildAitagImageUrl(image)} width={208}>
                                 {close => <>{([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const).map(([operation, label]) => <button key={operation} type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); sendBaseImage(image, operation); }}><ImagePlus />{t(label)}</button>)}</>}
                               </ToolbarPopover>
-                              {!promptText.trim() && <ImageTaggerAction
-                                notify={notify}
-                                imageUrl={image.local_image_url || buildMediaUrl(buildAitagImageUrl(image), 'original')}
-                                actionLabel={t("复制 {count} 个 Tag")}
-                                className="!w-10 !h-10"
-                              />}
                             </div>
                           </div>
                           <div className="appearance-group text-xs font-mono text-gray-700 dark:text-gray-300 leading-relaxed bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded p-2 max-h-28 overflow-y-auto custom-scrollbar break-words">

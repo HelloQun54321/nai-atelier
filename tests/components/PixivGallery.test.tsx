@@ -319,7 +319,7 @@ it('Pixiv 卡片一键收藏全组，详情爱心只收藏当前页并保留原�
   const group = vi.mocked(toggleCollectionTarget).mock.calls[0][0];
   expect(await group.getGroup!()).toEqual([expect.objectContaining({ imageId: '0', sourceId: '100' }), expect.objectContaining({ imageId: '1', sourceId: '100' })]);
   fireEvent.click(open);
-  await waitFor(() => expect(screen.getByRole('button', { name: '图片反推' }).hasAttribute('disabled')).toBe(false));
+  await waitFor(() => expect(screen.getByRole('button', { name: '复制 Pixiv 标签' })).toBeTruthy());
   const source = screen.getByRole('link', { name: '查看原帖' }); expect(source.closest('header')).toBeTruthy();
   expect(source.getAttribute('href')).toBe('https://www.pixiv.net/artworks/100');
   expect(screen.queryByRole('button', { name: '加入收藏库' })).toBeNull();
@@ -336,7 +336,7 @@ it('作者名直接进入全集，站内心形收藏与本地灵感保存区分�
   const notify = vi.fn();
   render(<PixivGallery active currentUser={{ id: 'owner', username: 'test' } as User} notify={notify} onNavigateToPlayground={vi.fn()} />);
   fireEvent.click(await screen.findByRole('button', { name: /synthetic artwork.*artist/ }));
-  await waitFor(() => expect(screen.getByRole('button', { name: '图片反推' }).hasAttribute('disabled')).toBe(false));
+  await waitFor(() => expect(screen.getByRole('button', { name: '复制 Pixiv 标签' })).toBeTruthy());
   expect(screen.queryByRole('button', { name: '作者全集' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '查看 artist 的作者全集' }));
   await waitFor(() => expect(pixivService.feed).toHaveBeenLastCalledWith('user', expect.objectContaining({ params: { user_id: '10' } })));

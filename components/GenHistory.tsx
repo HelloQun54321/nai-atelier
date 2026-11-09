@@ -24,7 +24,6 @@ import { collectionTargetActive, syncHistoryCollectionFavorites } from '../servi
 import { ImageShareActions } from './ImageShareActions';
 import { ImageCardActions } from './ImageCardActions';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
-import { ImageTaggerAction } from './ImageTaggerPanel';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { type HistoryBrowseOrder, type HistoryBrowseQuery } from '../services/historyBrowse';
 import { HistoryBrowseControls } from './HistoryBrowseControls';
@@ -1266,7 +1265,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                                 </ToolbarButton>
                             </div>
                             <div className="space-y-4">
-                                {!lightbox.prompt?.trim() && <ImageTaggerAction notify={notify} imageUrl={buildMediaUrl(lightbox.imageUrl, 'original')} text label={t("识别图片 Tag")} />}
                                 <details open className="rounded-lg border border-gray-200 p-3 dark:border-gray-700"><summary className="mb-3 cursor-pointer text-xs font-semibold">{t("提示词与生成参数")}</summary><ParamsViewer
                                     params={lightbox.params}
                                     prompt={lightbox.prompt}

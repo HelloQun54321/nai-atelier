@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, Image, ImageMinus, ListX, LoaderCircle, Maximize2, Palette, Upload } from 'lucide-react';
+import { ArrowLeft, Check, Image, ImageMinus, ImagePlus, ListX, LoaderCircle, Maximize2, Palette, Upload } from 'lucide-react';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
 import { useConfirmDialog } from './ConfirmDialog';
 import { NAI_UPSCALE_FACTOR, downloadUpscaledImage, upscaleCostHint, upscaleHistoryImage, upscaleSupported } from '../services/naiUpscale';
@@ -40,6 +40,8 @@ interface Props {
   isUploading?: boolean;
   onSaveArtistSample?: () => void;
   savingArtistSample?: boolean;
+  /** 实验室的反推入口：对当前预览的图跑本地模型，结果追加到全局正面提示词。 */
+  onReverseTag?: () => void;
   onBack?: () => void;
   backButtonRef?: React.Ref<HTMLButtonElement>;
   /** 已入库的历史记录 ID；有值才显示官方放大，未入库的临时图无从取原图。 */
@@ -50,7 +52,7 @@ interface Props {
 /** 小图与大图共用操作位置、紧凑尺寸及权限，仅大图增加返回入口。 */
 export const ImagePreviewActions: React.FC<Props> = ({
   imageUrl, filename, generationData, favorite, notify, canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
-  onSetCover, onUploadCover, isUploading = false, onSaveArtistSample, savingArtistSample = false, onBack, backButtonRef,
+  onSetCover, onUploadCover, isUploading = false, onSaveArtistSample, savingArtistSample = false, onReverseTag, onBack, backButtonRef,
   historyId, historyCreatedAt,
 }) => {
   useLanguage();
@@ -152,6 +154,9 @@ export const ImagePreviewActions: React.FC<Props> = ({
       </button>}
       {onSaveArtistSample && <button type="button" onClick={onSaveArtistSample} disabled={savingArtistSample} aria-busy={savingArtistSample} aria-label={t('保存为画师样张')} title={t('保存为画师样张')} className={`${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS}`}>
         {savingArtistSample ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Palette className="h-4 w-4" />}
+      </button>}
+      {onReverseTag && <button type="button" onClick={onReverseTag} aria-label={t('反推当前图片的 Tag')} title={t('反推当前图片的 Tag 并追加到全局正面提示词')} className={`${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS}`}>
+        <ImagePlus className="h-4 w-4" />
       </button>}
       {onSetCover && <button type="button" onClick={onSetCover} disabled={isUploading} aria-busy={isUploading} aria-label={t("设为封面")} title={isUploading ? t("封面处理中…") : t("设为封面并保存")} className={`${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS} !bg-indigo-700/90 hover:!bg-indigo-700`}>
         {isUploading ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <span className="relative h-4 w-4" aria-hidden="true"><Image className="h-4 w-4" /><Check className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-indigo-700" strokeWidth={3} /></span>}

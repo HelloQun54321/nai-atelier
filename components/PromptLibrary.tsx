@@ -50,7 +50,6 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { HistoryImagePicker } from './HistoryImagePicker';
-import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { PromptLibraryCard, PromptLibraryGallery } from './PromptLibraryCard';
 import { ImageLightbox } from './ImageLightbox';
 import { ImageActivityContext, SmartImage } from './SmartImage';
@@ -73,6 +72,7 @@ import { getPromptLibraryEntryDirectoryIds, getPromptLibraryDirectoryPath, selec
 import { removePromptTag, tagDetails } from '../services/promptTagFilter';
 import { classifyPromptTags, summarizePromptSources } from '../services/promptProvenance';
 import { usePromptLibraryCoverActions } from './usePromptLibraryCoverActions';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { promptLibraryCoverContent } from '../services/promptLibraryCoverTemplate';
 export { PROMPT_LIBRARY_KINDS } from './promptLibraryConfig';
 export type { PromptLibraryFacet, PromptLibraryKindConfig } from './promptLibraryConfig';
@@ -564,8 +564,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     }
   };
 
-  /* ---------------- 原图查看器 ---------------- */
 
+  /* ---------------- 原图查看器 ---------------- */
   const openViewer = useCallback((list: ViewerEntry[], index: number) => {
     const entries = (Array.isArray(list) ? list : []).filter(entry => entry && entry.url);
     if (!entries.length) return;

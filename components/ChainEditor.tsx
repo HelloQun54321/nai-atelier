@@ -59,6 +59,8 @@ import { PromptLibraryWorkspace, PromptLibraryRandomButton } from './PromptLibra
 import { LAB_PICTURE_PURPOSES } from '../services/labPromptLayout';
 import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
 import { PresetSection, PresetSource, PresetSourceBadge, PromptCopyButton, PromptAgentOverlayController } from './chain/PresetSourceBadges';
+import { ImageTaggerPanel } from './ImageTaggerPanel';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 export interface ChainEditorSaveHandle {
     canSave: boolean;
@@ -154,6 +156,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
 
     const [hasChanges, setHasChanges] = useState(false);
     const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+    // 反推入口只挂在当前预览图与放大图的操作条上：结果直接追加到全局正面提示词。
+    const [reverseTagImage, setReverseTagImage] = useState<string | null>(null);
 
     // Sync dirty state with parent.
     useEffect(() => {
@@ -2379,6 +2383,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                     handleSavePreview={handleSavePreview}
                     onSaveArtistSample={canSaveArtistSample(displayedPreviewItem, artistSampleTarget) ? () => { void handleSaveArtistSample(); } : undefined}
                     savingArtistSample={savingArtistSample}
+                    onReverseTag={displayedPreviewImage ? () => setReverseTagImage(displayedPreviewImage) : undefined}
                     handleUploadCover={handleUploadCover}
                     getDownloadFilename={getDownloadFilename}
                     hideCoverActions={chain.id === 'playground'}
@@ -2581,6 +2586,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                         isUploading={isUploading}
                         onSaveArtistSample={canSaveArtistSample(lightboxItem || undefined, artistSampleTarget) ? () => { void handleSaveArtistSample(lightboxItem || undefined); } : undefined}
                         savingArtistSample={savingArtistSample}
+                        onReverseTag={() => setReverseTagImage(lightboxImg)}
                         onBack={() => setLightboxImg(null)}
                         backButtonRef={lightboxCloseBtnRef}
                     />
@@ -2622,6 +2628,20 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
 
                 </ImageLightbox>
             )}
+
+            {reverseTagImage && <ImagePreviewPortal><ImageTaggerPanel
+                contextual
+                open
+                lockImage
+                imageUrl={reverseTagImage}
+                onClose={() => setReverseTagImage(null)}
+                notify={notify}
+                actionLabel={t("追加 {count} 个 Tag 到全局正面提示词")}
+                onInsert={tags => {
+                    setBasePrompt(previous => previous.trim() ? `${previous.trim()}, ${tags}` : tags);
+                    setReverseTagImage(null);
+                }}
+            /></ImagePreviewPortal>}
 
         </div></PromptLibraryWorkspace>
     );

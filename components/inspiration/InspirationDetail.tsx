@@ -26,7 +26,6 @@ import { ImageShareOverlay } from '../ImageShareActions';
 import { PressRevealSurface } from '../PressRevealSurface';
 import { ViewableImage } from '../ImageLightbox';
 import { getMobileOriginalUrl } from '../../services/mobileImageCache';
-import { ImageTaggerPanel } from '../ImageTaggerPanel';
 import { Trash2 } from 'lucide-react';
 import { canEditItem, DEFAULT_PARAMS, formatDate, sourceIcon, splitTags } from './InspirationShared';
 
@@ -67,7 +66,6 @@ export const InspirationDetail = React.memo(function InspirationDetail({
   const labMenuAnchorRef = useRef<HTMLButtonElement>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [busy, setBusy] = useState('');
-  const [taggerOpen, setTaggerOpen] = useState(false);
   const [labMenuOpen, setLabMenuOpen] = useState(false);
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
@@ -93,7 +91,6 @@ export const InspirationDetail = React.memo(function InspirationDetail({
     });
     if (previous.id === item.id) return;
     setEditingTitle(false);
-    setTaggerOpen(false);
     setLabMenuOpen(false);
     setIsAddingTag(false);
     setNewTagInput('');
@@ -354,7 +351,6 @@ export const InspirationDetail = React.memo(function InspirationDetail({
                 await onRefresh();
               }).catch((error: Error) => notify(error.message || '收藏夹更新失败', 'error')).finally(() => setBusy(''));
             }} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400" />}
-            {draft.imageUrl && <button type="button" disabled={Boolean(busy)} onClick={() => setTaggerOpen(true)} aria-label={t("识别图片 Tag")} title={t("识别当前图片，挑选后追加到收藏标签")} className="mobile-touch ml-auto flex flex-none items-center gap-1 whitespace-nowrap rounded-lg px-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><ImagePlus className="h-3.5 w-3.5" />{t("识别图片 Tag")}</button>}
           </header>
 
           {/* 详情随作品组侧栏统一滚动 */}
@@ -503,20 +499,6 @@ export const InspirationDetail = React.memo(function InspirationDetail({
           </footer>
         </section>
 
-      {taggerOpen && (
-        <ImageTaggerPanel
-          contextual
-          open={taggerOpen}
-          onClose={() => setTaggerOpen(false)}
-          imageUrl={draft.imageUrl}
-          notify={notify}
-          actionLabel={t("追加 {count} 个 Tag 到收藏标签")}
-          onInsert={(newTags) => {
-            const combined = getCollectionTags({ ...draft, tags: [...tags, ...splitTags(newTags)] });
-            void updateAndPersist('tags', combined, `已追加 ${splitTags(newTags).length} 个反推 Tag`);
-          }}
-        />
-      )}
     </article>
   );
 });
