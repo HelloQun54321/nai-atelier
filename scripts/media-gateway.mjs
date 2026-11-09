@@ -808,8 +808,35 @@ export const toCachedPreciseReferenceParameters = (parameters, options = {}) => 
   return parameters;
 };
 
-/** 第三方生图网关可能没有 `/user/subscription`：仅把明确的“接口不存在”视为额度未知，鉴权失败、网络错误仍按失败处理。 */
-export const isSubscriptionUnsupported = (gatewayUrl, status) => Boolean(gatewayUrl) && [404, 405, 501].includes(Number(status));
+/** 官方已确认收下的底图缓存键；只有这些键在下次请求里省掉原图数据。 */
+const confirmedNovelAiBaseImageKeys = new Set();
+
+/** 官方网页端对底图、蒙版与单张参考图各带一个缓存键，字段名与 `applyCacheTransformation` 一致。 */
+const BASE_IMAGE_CACHE_FIELDS = [
+  { field: 'image', keyField: 'image_cache_secret_key' },
+  { field: 'mask', keyField: 'mask_cache_secret_key' },
+  { field: 'reference_image', keyField: 'reference_image_cache_secret_key' },
+];
+
+/**
+ * 底图也走官方服务端缓存：首次带原图外加键，确认过的键之后只发键。
+ * 实测没存过的键会回 400 INVALID_CACHE_KEYS，重试时补回原图即可。
+ */
+export const toCachedBaseImageParameters = (parameters, { reuseServerCache = false } = {}) => {
+  const omitted = new Set();
+  for (const { field, keyField } of BASE_IMAGE_CACHE_FIELDS) {
+    const data = parameters?.[field];
+    if (typeof data !== 'string' || !data) continue;
+    const cacheSecretKey = getVibeCacheSecretKey(data);
+    parameters[keyField] = cacheSecretKey;
+    if (!reuseServerCache || !confirmedNovelAiBaseImageKeys.has(cacheSecretKey)) continue;
+    delete parameters[field];
+    omitted.add(cacheSecretKey);
+  }
+  return omitted;
+};
+
+/** 第三方生图网关可能没有 `/user/subscription`：仅把明确的“接口不存在”视为额度未知，鉴权失败、网络错误仍按失败处理。 */export const isSubscriptionUnsupported = (gatewayUrl, status) => Boolean(gatewayUrl) && [404, 405, 501].includes(Number(status));
 
 /** Remove every browser-controlled Precise Reference field before rebuilding it. */
 export const clearPreciseReferenceParameters = parameters => {
@@ -1807,22 +1834,27 @@ export const initNaiRuntimeSync = async (requestRemote = fetch) => {
 export const generateWithCacheRetry = async (
   payload,
   authorization,
-  { vibeEncodings = [], vibeCacheKeysSentWithData = new Set(), preciseImages = null, preciseCacheKeysSentWithData = new Set() } = {},
+  { vibeEncodings = [], vibeCacheKeysSentWithData = new Set(), preciseImages = null, preciseCacheKeysSentWithData = new Set(), baseImageOriginals = null } = {},
   requestGeneration = fetchNovelAiGeneration,
 ) => {
   let response = await requestGeneration(payload, authorization);
   if (response.status === 400) {
     const parsed = await parseInvalidVibeCacheKeys(response);
     if (parsed?.invalidKeys?.size) {
+      // 底图的键由内容哈希得到，同样参与失效判定。
+      const baseImageKeys = BASE_IMAGE_CACHE_FIELDS
+        .map(({ field }) => baseImageOriginals?.[field]).filter(Boolean).map(getVibeCacheSecretKey);
       const knownKeys = new Set([
         ...vibeEncodings.map(getVibeCacheSecretKey),
         ...(preciseImages || []).map(getVibeCacheSecretKey),
+        ...baseImageKeys,
       ]);
       const invalidKeys = new Set([...parsed.invalidKeys].filter(key => knownKeys.has(key)));
       if (invalidKeys.size) {
         for (const key of invalidKeys) {
           confirmedNovelAiVibeCacheKeys.delete(key);
           confirmedNovelAiPreciseReferenceKeys.delete(key);
+          confirmedNovelAiBaseImageKeys.delete(key);
         }
         if (vibeEncodings.length) {
           payload.parameters.reference_image_multiple_cached = buildCachedVibeReferences(
@@ -1834,6 +1866,15 @@ export const generateWithCacheRetry = async (
           payload.parameters.director_reference_images_cached = buildCachedPreciseReferences(
             preciseImages, new Set([...preciseCacheKeysSentWithData, ...invalidKeys]),
           );
+        }
+        // 底图与蒙版省掉的原图在这里补回来，重试仍用同一张图。
+        if (baseImageOriginals) {
+          for (const { field, keyField } of BASE_IMAGE_CACHE_FIELDS) {
+            const cacheSecretKey = payload.parameters?.[keyField];
+            if (cacheSecretKey && !payload.parameters[field] && baseImageOriginals[field]) {
+              payload.parameters[field] = baseImageOriginals[field];
+            }
+          }
         }
         response = await requestGeneration(payload, authorization);
       } else {
@@ -1850,6 +1891,11 @@ export const generateWithCacheRetry = async (
     }
     for (const item of payload.parameters?.director_reference_images_cached || []) {
       if (item.data) confirmedNovelAiPreciseReferenceKeys.add(item.cache_secret_key);
+    }
+    // 官方确认收下原图后才允许下次只发键。
+    for (const { field, keyField } of BASE_IMAGE_CACHE_FIELDS) {
+      const cacheSecretKey = payload.parameters?.[keyField];
+      if (cacheSecretKey && payload.parameters?.[field]) confirmedNovelAiBaseImageKeys.add(cacheSecretKey);
     }
   }
   return response;
@@ -2030,6 +2076,9 @@ const prepareGenerationReferences = async (payload, req, workerPort, { generatio
   // 官方直连才复用参考图缓存；网关与云队列的原始字段各不相同，不能共用一份数据。
   let preciseReferenceImages = null;
   let preciseCacheKeysSentWithData = new Set();
+  // 底图、蒙版与单张参考图的原图留作缓存失效时补发。
+  let baseImageOriginals = null;
+  let baseImageKeysOmitted = new Set();
   if (localVibes?.enabled && Array.isArray(localVibes.slots) && localVibes.slots.length) {
     const slots = localVibes.slots.slice(0, 16);
     if (slots.some(slot => typeof slot.strength !== 'number' || !Number.isFinite(slot.strength))) throw Object.assign(new Error('Vibe 强度必须是有限数值'), { status: 400 });
@@ -2102,8 +2151,18 @@ const prepareGenerationReferences = async (payload, req, workerPort, { generatio
         throw Object.assign(new Error(error?.message || '精准参考参数无效'), { status: 400 });
       }
     }
+    // 底图缓存只用于官方直连：中转站与云队列不认识缓存键，仍每次都带原图。
+    if (!gatewayUrl && !generationProxyUrl) {
+      baseImageOriginals = Object.fromEntries(BASE_IMAGE_CACHE_FIELDS
+        .filter(({ field }) => typeof payload.parameters[field] === 'string' && payload.parameters[field])
+        .map(({ field }) => [field, payload.parameters[field]]));
+      baseImageKeysOmitted = toCachedBaseImageParameters(payload.parameters, { reuseServerCache: true });
+    }
   }
-  return { resolvedVibeEncodings, vibeCacheKeysSentWithData, preciseReferenceImages, preciseCacheKeysSentWithData };
+  return {
+    resolvedVibeEncodings, vibeCacheKeysSentWithData, preciseReferenceImages, preciseCacheKeysSentWithData,
+    baseImageOriginals, baseImageKeysOmitted,
+  };
 };
 
 export const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote, {
@@ -2162,7 +2221,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     let payload;
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
     if (gatewayUrl && payload?.parameters) delete payload.parameters.stream;
-    const { resolvedVibeEncodings, vibeCacheKeysSentWithData, preciseReferenceImages, preciseCacheKeysSentWithData } = await prepareGenerationReferences(
+    const { resolvedVibeEncodings, vibeCacheKeysSentWithData, preciseReferenceImages, preciseCacheKeysSentWithData, baseImageOriginals, baseImageKeysOmitted } = await prepareGenerationReferences(
       payload, req, workerPort, { generationProxyUrl, gatewayUrl },
     );
     const settlementPayload = JSON.parse(JSON.stringify(payload));
@@ -2190,11 +2249,11 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     generationSignal.throwIfAborted();
     generationSubmitted = true;
-    const response = !generationProxyUrl && (resolvedVibeEncodings?.length || preciseReferenceImages?.length)
+    const response = !generationProxyUrl && (resolvedVibeEncodings?.length || preciseReferenceImages?.length || baseImageKeysOmitted?.size)
       ? await generateWithCacheRetry(
         payload,
         authorization,
-        { vibeEncodings: resolvedVibeEncodings || [], vibeCacheKeysSentWithData, preciseImages: preciseReferenceImages, preciseCacheKeysSentWithData },
+        { vibeEncodings: resolvedVibeEncodings || [], vibeCacheKeysSentWithData, preciseImages: preciseReferenceImages, preciseCacheKeysSentWithData, baseImageOriginals },
         (nextPayload, nextAuthorization) => fetchNovelAiGeneration(nextPayload, nextAuthorization, generationSignal, requestRemote),
       )
       : await fetchNovelAiGeneration(payload, authorization, generationSignal, requestRemote, generationProxyUrl || NAI_GENERATE_URL);
@@ -2378,7 +2437,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     if (!payload.parameters || typeof payload.parameters !== 'object') {
       return sendJson(res, 400, { error: '生图请求缺少 parameters' });
     }
-    const { resolvedVibeEncodings, vibeCacheKeysSentWithData, preciseReferenceImages, preciseCacheKeysSentWithData } = await prepareGenerationReferences(
+    const { resolvedVibeEncodings, vibeCacheKeysSentWithData, preciseReferenceImages, preciseCacheKeysSentWithData, baseImageOriginals, baseImageKeysOmitted } = await prepareGenerationReferences(
       payload, req, workerPort, { generationProxyUrl, gatewayUrl },
     );
     const settlementPayload = JSON.parse(JSON.stringify(payload));
@@ -2406,9 +2465,9 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     generationSignal.throwIfAborted();
     generationSubmitted = true;
-    const upstream = !generationProxyUrl && (resolvedVibeEncodings?.length || preciseReferenceImages?.length)
+    const upstream = !generationProxyUrl && (resolvedVibeEncodings?.length || preciseReferenceImages?.length || baseImageKeysOmitted?.size)
       ? await generateWithCacheRetry(payload, authorization,
-        { vibeEncodings: resolvedVibeEncodings || [], vibeCacheKeysSentWithData, preciseImages: preciseReferenceImages, preciseCacheKeysSentWithData },
+        { vibeEncodings: resolvedVibeEncodings || [], vibeCacheKeysSentWithData, preciseImages: preciseReferenceImages, preciseCacheKeysSentWithData, baseImageOriginals },
         (nextPayload, nextAuthorization) => fetchNovelAiGenerationStream(nextPayload, nextAuthorization, generationSignal, requestRemote))
       : await fetchNovelAiGenerationStream(payload, authorization, generationSignal, requestRemote, generationProxyUrl || NAI_GENERATE_STREAM_URL);
     generationSignal.throwIfAborted();

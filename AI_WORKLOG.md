@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-09
+- **DeepSeek Harness (deepseek-v4.1-flash)**：给图生图、局部重绘、扩图补上底图缓存。对照官方 bundle 的 `applyCacheTransformation` 发现官方对 `image`／`mask`／`reference_image` 也各带一个缓存键（我们此前只做了氛围参考与精准参考）。先用真实 Key 验证协议可用：首次发 `{image, image_cache_secret_key}`、第二次只发键，两次都 200 出图且不扣点；再用伪造键确认服务端会回 `400 INVALID_CACHE_KEYS` 加 `details.invalidKeys`，说明它真的按缓存取图而不是忽略未知字段。实现：`media-gateway.mjs` 新增 `BASE_IMAGE_CACHE_FIELDS`、`confirmedNovelAiBaseImageKeys` 与 `toCachedBaseImageParameters`（首次带原图、确认后只发键），`prepareGenerationReferences` 保存原图副本并在官方直连时才启用，`generateWithCacheRetry` 扩展为失效时补回原图重试一次、成功后确认键；中转站与云队列保持每次带图。补 3 项 Node 用例（首次上传、中转站不省略、失效补图）。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：给 Issue #25 的修复补运行时验证，纠正之前两个假阳性。第一版的源码断言只证明字面量被换掉；第二版行为测试用 `http://127.0.0.1:1234/v1` 作 baseUrl，走的是普通 openai-completions 格式（档位为空时根本不发 `thinking`），退回修复前代码也照样通过。真正能复现的是 zai 格式：pi 只在识别到 `api.z.ai` 时启用它，并在档位为空时固定发 `thinking: {type:"disabled"}`。把测试改成 `baseUrl: 'https://api.z.ai/api/coding/paas/v4'` + `thinkingLevels: ['low','high','max']` 后，`git checkout` 回修复前版本该用例失败、恢复修复后通过，对照成立。另加一条反向用例确认支持关闭思考的模型仍然不思考。`prompt-agent` 118 项通过。
 
 ## 2026-11-08
