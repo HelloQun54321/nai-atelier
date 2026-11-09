@@ -243,8 +243,19 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [imageDisplayFollowsGlobal, setImageDisplayFollowsGlobal] = useState(true);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
   const [activeSection, setActiveSection] = useState<SettingsPage>('home');
-  // 四个实验室页面分组默认展开，便于一次看到全部模块的展开／收起状态。
-  const [expandedLabPages, setExpandedLabPages] = useState<Record<LabPageId, boolean>>(() => Object.fromEntries(LAB_PAGE_IDS.map(pageId => [pageId, true])) as Record<LabPageId, boolean>);
+  // 只把「已经改过」的实验室页面分组默认展开：四个分组全展开时这一块接近 2200px，
+  // 占了设置面板三分之二。没动过的分组收起，页头上的「N 个模块」与「已自定义」徽标
+  // 已经足够判断要不要点开。
+  const [expandedLabPages, setExpandedLabPages] = useState<Record<LabPageId, boolean>>(() => Object.fromEntries(
+    LAB_PAGE_IDS.map(pageId => {
+      const stored = appearancePreferences.labPageLayouts?.[pageId];
+      const fallback = DEFAULT_LAB_PAGE_LAYOUTS[pageId];
+      const layout = stored || fallback;
+      const modules = Object.keys(fallback.collapsed) as LabPageModuleId[];
+      const customized = modules.some(moduleId => Boolean(layout.collapsed[moduleId]) !== Boolean(fallback.collapsed[moduleId]));
+      return [pageId, customized];
+    })
+  ) as Record<LabPageId, boolean>);
   const changeImageDisplayScope = (scope: 'global' | ImageDisplayPage) => {
     setImageDisplayScope(scope);
     if (scope === 'global') {
@@ -1226,20 +1237,32 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     }} className="appearance-group group rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
                         <span className="min-w-0"><span className="flex items-center gap-2 text-xs font-bold text-gray-700 dark:text-gray-200"><span>{t(pageMeta.label)}</span>{isCustom && <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-mini font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">{t("已自定义")}</span>}</span><span className="mt-0.5 block truncate text-micro text-gray-400">{t("{0} 个模块", [modules.length])}</span></span>
-                        <ChevronRight className="h-4 w-4 flex-none text-gray-400 transition-transform group-open:rotate-90" />
+                        <span className="flex flex-none items-center gap-1">
+                          {/* 单页恢复只在改过时出现，放在页头省掉展开后那独立一整行。 */}
+                          {isCustom && <button
+                            type="button"
+                            onClick={event => { event.preventDefault(); event.stopPropagation(); resetLabPageLayout(pageId); }}
+                            data-appearance="control" data-tone="neutral"
+                            aria-label={`${t(pageMeta.label)} · ${t("恢复默认")}`}
+                            title={t("恢复默认")}
+                            className="mobile-touch rounded-lg p-1 text-gray-400 transition hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300"
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                          </button>}
+                          <ChevronRight className="h-4 w-4 flex-none text-gray-400 transition-transform group-open:rotate-90" />
+                        </span>
                       </summary>
                       <div className="border-t border-gray-100 p-2.5 dark:border-gray-800">
-                        <div className="mb-2 flex justify-end"><button type="button" onClick={() => resetLabPageLayout(pageId)} data-appearance="control" data-tone="neutral" aria-label={`${t(pageMeta.label)} · ${t("恢复默认")}`} className={`${SETTING_INLINE_CLASS} flex items-center gap-1`}><RotateCcw className="h-3 w-3" />{t("恢复默认")}</button></div>
-                        <div className="space-y-2">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                           {modules.map(moduleId => {
                             const meta = LAB_MODULE_META[moduleId];
                             const collapsed = Boolean(layout.collapsed[moduleId]);
                             return <div
                               key={moduleId}
-                              className="appearance-group flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50/60 p-2 dark:border-gray-700 dark:bg-gray-800/50"
+                              className="appearance-group flex min-w-0 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50/60 p-2 dark:border-gray-700 dark:bg-gray-800/50"
                             >
-                              <div className="min-w-0 flex-1"><div className="truncate text-xs font-bold text-gray-700 dark:text-gray-200">{t(meta.label)}</div></div>
-                              <div className="flex flex-none items-center gap-1"><button type="button" onClick={() => toggleLabModuleCollapsed(pageId, moduleId)} aria-label={`${t(pageMeta.label)} · ${t(meta.label)} · ${collapsed ? t("默认收起") : t("默认展开")}`} aria-pressed={collapsed} className={`mobile-touch rounded-full border px-2 py-1 text-micro font-bold transition ${collapsed ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>{collapsed ? t("默认收起") : t("默认展开")}</button></div>
+                              <div className="min-w-0 flex-1"><div className="truncate text-xs font-bold text-gray-700 dark:text-gray-200" title={t(meta.label)}>{t(meta.label)}</div></div>
+                              <div className="flex flex-none items-center gap-1"><button type="button" onClick={() => toggleLabModuleCollapsed(pageId, moduleId)} aria-label={`${t(pageMeta.label)} · ${t(meta.label)} · ${collapsed ? t("默认收起") : t("默认展开")}`} aria-pressed={collapsed} className={`mobile-touch whitespace-nowrap rounded-full border px-2 py-1 text-micro font-bold transition ${collapsed ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>{collapsed ? t("默认收起") : t("默认展开")}</button></div>
                             </div>;
                           })}
                         </div>
