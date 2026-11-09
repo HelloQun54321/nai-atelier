@@ -68,7 +68,7 @@ import { resolveWorkspaceBackground, type BackgroundMode } from '../services/the
 import { sharedAppearancePresets } from '../services/sharedAppearancePresets';
 import { useSharedAppearancePresets } from './useSharedAppearancePresets';
 import { FLOATING_CONTROL_MAX, FLOATING_CONTROL_MIN, useFloatingControlSize } from '../services/floatingControls';
-import { ArrowLeft, Bot, Check, ChevronRight, Copy, Database, Edit2, ExternalLink, Eye, EyeOff, FileDown, FileUp, FolderInput, FolderOutput, KeyRound, Lock, Monitor, Moon, Palette, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Bot, Check, ChevronRight, Copy, Database, ExternalLink, Eye, EyeOff, FileDown, FileUp, FolderInput, FolderOutput, KeyRound, Lock, Monitor, Moon, Palette, Pencil, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
 type SettingsPage = 'home' | SettingsSection;
@@ -1059,7 +1059,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                   title={t("重命名")}
                                   data-appearance="control" data-tone="neutral" className="mobile-touch rounded-lg p-1 text-gray-400 transition hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
                                 >
-                                  <Edit2 className="h-3.5 w-3.5" />
+                                  <Pencil className="h-3.5 w-3.5" />
                                 </button>
                                 <button
                                   type="button"
@@ -1311,10 +1311,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     )}
                     <div className="flex flex-none flex-wrap items-center justify-end gap-1">
                       {renamingKeyId !== entry.id && <button type="button" aria-pressed={revealed} data-appearance="control" data-tone="neutral" onClick={() => setRevealedKeyId(revealed ? '' : entry.id)} aria-label={revealed ? t("隐藏完整 Key") : t("显示完整 Key")} title={revealed ? t("隐藏完整 Key") : t("显示完整 Key")} className="mobile-touch rounded-lg px-2 py-1 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700">{revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</button>}
-                      {renamingKeyId !== entry.id && <button type="button" data-appearance="control" data-tone="neutral" onClick={() => void copyTagText(entry.key).then(() => notify(`已复制「${entry.name}」的完整 Key`), () => notify('复制失败，请点「显示」后手动选择复制', 'error'))} aria-label={t("复制完整 Key")} title={t("复制完整 Key")} className="mobile-touch rounded-lg px-2 py-1 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"><Copy className="h-3.5 w-3.5" /></button>}
-                      <button type="button" data-appearance="control" data-tone="neutral" onClick={() => { setRenamingKeyId(entry.id); setRenameValue(entry.name); }} className="mobile-touch rounded-lg px-2 py-1 text-xs text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700" title={t("修改备注名")}>{t("备注")}</button>
-                      {renamingKeyId !== entry.id && <button type="button" disabled={active} aria-pressed={active} data-appearance="control" data-tone={active ? 'neutral' : 'primary'} onClick={() => activateKeyEntry(entry)} className={`mobile-touch rounded-lg px-2.5 py-1 text-xs font-bold transition ${active ? 'cursor-default border border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'bg-indigo-700 text-white shadow-md shadow-indigo-500/15 hover:bg-indigo-600 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600'}`}>{active ? t("使用中") : t("使用")}</button>}
-                      {renamingKeyId !== entry.id && <button type="button" data-appearance="control" data-tone="danger" onClick={() => void removeKeyEntry(entry)} className={SETTING_DANGER_CLASS} title={t("删除")}>{t("删除")}</button>}
+                      {renamingKeyId !== entry.id && <button type="button" data-appearance="control" data-tone="neutral" onClick={() => void copyTagText(entry.key).then(() => notify(`已复制「${entry.name}」的完整 Key`), () => notify('复制失败，请点眼睛图标后手动选择复制', 'error'))} aria-label={t("复制完整 Key")} title={t("复制完整 Key")} className="mobile-touch rounded-lg px-2 py-1 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"><Copy className="h-3.5 w-3.5" /></button>}
+                      <button type="button" data-appearance="control" data-tone="neutral" onClick={() => { setRenamingKeyId(entry.id); setRenameValue(entry.name); }} aria-label={t("修改备注名")} className="mobile-touch rounded-lg px-2 py-1 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700" title={t("修改备注名")}><Pencil className="h-3.5 w-3.5" /></button>
+                      {renamingKeyId !== entry.id && <button type="button" disabled={active} aria-pressed={active} data-appearance={active ? undefined : 'control'} data-tone={active ? undefined : 'primary'} onClick={() => activateKeyEntry(entry)} className={`mobile-touch inline-flex min-w-[3.75rem] items-center justify-center rounded-lg bg-indigo-700 px-2.5 py-1 text-xs font-bold text-white shadow-md shadow-indigo-500/15 transition dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 ${active ? 'cursor-default' : 'hover:bg-indigo-600 dark:hover:from-indigo-500 dark:hover:to-violet-600'}`}>{active ? t("使用中") : t("使用")}</button>}
+                      {renamingKeyId !== entry.id && <button type="button" data-appearance="control" data-tone="danger" onClick={() => void removeKeyEntry(entry)} aria-label={t("删除")} className="mobile-touch rounded-lg px-2 py-1 text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30" title={t("删除")}><Trash2 className="h-3.5 w-3.5" /></button>}
                     </div>
                   </div>
                 );
@@ -1353,8 +1353,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                   aria-label={newKeyGateway ? t('成员 API Key') : 'NovelAI API Key'}
                 />
-                <button type="button" data-appearance="control" data-tone="neutral" onClick={() => setShowNewKeyValue(value => !value)} className="mobile-touch rounded-lg border border-gray-300 px-3 text-sm text-gray-600 transition hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
-                  {showNewKeyValue ? t("隐藏") : t("显示")}
+                <button type="button" data-appearance="control" data-tone="neutral" onClick={() => setShowNewKeyValue(value => !value)} aria-label={showNewKeyValue ? t("隐藏密钥明文") : t("显示密钥明文")} title={showNewKeyValue ? t("隐藏密钥明文") : t("显示密钥明文")} className="mobile-touch flex items-center justify-center rounded-lg border border-gray-300 px-2.5 text-gray-600 transition hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+                  {showNewKeyValue ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
                 <button type="button" data-appearance="control" data-tone="primary" onClick={() => void addKeyEntry()} className={SETTING_PRIMARY_CLASS}>{t("添加")}</button>
               </div>
@@ -1363,7 +1363,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   <input type="checkbox" checked={rememberApiKey} title={t("关闭后仅当前标签页使用")} onChange={event => updateRememberApiKey(event.target.checked)} className="shrink-0 rounded border-gray-300 text-indigo-600" />
                   <span>{t("在本机记住当前使用的 API Key")}</span>
                 </label>
-                <p className="text-amber-600 dark:text-amber-400">{t("保存后列表只显示脱敏格式 pst-…XXXX，可点条目旁的「显示」或「复制」取回完整 Key。")}{t("Key 明文保存在本机，局域网访问需密码。")}</p>
+                <p className="text-amber-600 dark:text-amber-400">{t("保存后列表只显示脱敏格式 pst-…XXXX，可点条目旁的眼睛或复制图标取回完整 Key。")}{t("Key 明文保存在本机，局域网访问需密码。")}</p>
               </div>
             </div>
             {!activeGateway && <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">

@@ -18,7 +18,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Edit2,
+  Pencil,
   ExternalLink,
   Folder,
   FolderArchive,
@@ -241,9 +241,10 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                 type="button"
                 onClick={() => setIsEditingTargetDir(true)}
                 data-appearance="control" data-tone="neutral"
-                className="mobile-touch rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+                aria-label={t("修改路径")} title={t("修改路径")}
+                className="mobile-touch rounded-lg px-2 py-1 text-indigo-600 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
               >
-                {t("修改路径")}</button>
+                <Pencil className="h-3.5 w-3.5" /></button>
             )}
           </div>
 

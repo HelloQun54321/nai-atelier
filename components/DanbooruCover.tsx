@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useContext, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Edit2, ImageIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ImageIcon, Pencil } from 'lucide-react';
 import { DanbooruCoverCandidate, DanbooruCoverSet, danbooruService } from '../services/danbooruService';
 import { ImageActivityContext, SmartImage } from './SmartImage';
 import { getMobileOriginalUrl, selectThumbnailVariant } from '../services/mobileImageCache';
@@ -280,7 +280,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
       {displayedSrc && <ImageShareActions variant="card" imageUrl={getMobileOriginalUrl(displayedSrc)} filename={`${kind}-${tag}-${currentCandidate?.id || 'cover'}.png`} notify={notify}
         favorite={characterVariantFavoriteTarget({ imageUrl: getMobileOriginalUrl(displayedSrc), title: alt || tag, sourceType: kind, sourceId: tag, imageId: String(currentCandidate?.id || displayedSrc), ...favoriteRecipe }, favoriteVariants)}
         favoritePending={favoritePending} onFavoriteChange={onFavoriteChange} />}
-      {onEdit && <button type="button" data-card-action="true" title={t('编辑信息')} aria-label={t('编辑信息')} onClick={event => { event.stopPropagation(); onEdit(); }} className={`hover-reveal-md inline-flex shrink-0 items-center justify-center ${IMAGE_CARD_ACTION_CLASS}`}><Edit2 className="h-4 w-4" /></button>}
+      {onEdit && <button type="button" data-card-action="true" title={t('编辑信息')} aria-label={t('编辑信息')} onClick={event => { event.stopPropagation(); onEdit(); }} className={`hover-reveal-md inline-flex shrink-0 items-center justify-center ${IMAGE_CARD_ACTION_CLASS}`}><Pencil className="h-4 w-4" /></button>}
     </ImageCardActions>}
     {displayedSrc ? <>
       <SmartImage key={displayedSrc} src={displayedSrc} alt={alt} className={imageClassName} pin eager={visible} onError={() => { setFailedSources(previous => new Set(previous).add(displayedSrc)); if (displayedSrc === fixedSrc) setBrowseSaved(true); }} onLoad={event => {

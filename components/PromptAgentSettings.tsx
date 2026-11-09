@@ -4,7 +4,7 @@ import './AgentSurface.css';
 import { AgentGenerationOptions } from './AgentChatPreferences';
 import { useAgentRuntimeRecheck } from './useAgentRuntimeRecheck';
 import { AgentConnectionForm } from './AgentConnectionForm';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft, Pencil, Plus, Trash2 } from 'lucide-react';
 import { PromptAgentConfig, PromptAgentCustomProvider, PromptAgentModel, PromptAgentProbeResult, PromptAgentRulePreset, agentRuntimeWarning, displayModelName, formatModelOptionTitle, mergePromptAgentModelCapabilities, promptAgentService } from '../services/promptAgent';
 import { useConfirmDialog } from './ConfirmDialog';
 import { useMobileHistoryLayer } from './MobileUI';
@@ -326,16 +326,18 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
                 type="button"
                 onClick={() => openCustom(provider)}
                 data-appearance="control" data-tone="neutral"
-                className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                aria-label={t("编辑")} title={t("编辑")}
+                className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-2 py-1 text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
               >
-                {t("编辑")}</button>
+                <Pencil className="h-3.5 w-3.5" /></button>
               <button
                 type="button"
                 onClick={() => void deleteCustom(provider)}
                 data-appearance="control" data-tone="danger"
-                className="mobile-touch rounded-lg border border-transparent px-2.5 py-1 text-xs font-bold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                aria-label={t("删除")} title={t("删除")}
+                className="mobile-touch rounded-lg border border-transparent px-2 py-1 text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
               >
-                {t("删除")}</button>
+                <Trash2 className="h-3.5 w-3.5" /></button>
             </div>
           ))}
 
