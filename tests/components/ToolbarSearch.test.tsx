@@ -10,11 +10,24 @@ it('普通资源页搜索保留原样式及输入、键盘与原生属性', () =
   const onChange = vi.fn(), onKeyDown = vi.fn();
   render(<ToolbarSearch aria-label="资源搜索" placeholder="关键词" defaultValue="原词" onChange={onChange} onKeyDown={onKeyDown} className="pr-9" containerClassName="md:max-w-none!" />);
   const input = screen.getByRole('searchbox', { name: '资源搜索' }) as HTMLInputElement;
-  expect(input.parentElement?.tagName).toBe('LABEL');
-  expect(input.classList.contains('pl-9')).toBe(true); expect(input.classList.contains('pr-9')).toBe(true);
+  // 容器统一成 div：外观预设按元素类型区分 .appearance-group，label 与 div 会被套上不同的
+  // 边框和材质，导致带筛选标签的页面与其它页面顶栏不一致。
+  expect(input.parentElement?.tagName).toBe('DIV');
+  expect(input.parentElement?.classList.contains('appearance-group')).toBe(true);
+  expect(input.parentElement?.classList.contains('toolbar-search-field')).toBe(true);
+  expect(input.parentElement?.classList.contains('pl-9')).toBe(true);
+  expect(input.classList.contains('pr-9')).toBe(true);
   expect(input.getAttribute('autocomplete')).toBe('off'); expect(input.getAttribute('data-lpignore')).toBe('true');
   fireEvent.change(input, { target: { value: '新词' } }); fireEvent.keyDown(input, { key: 'Enter' });
   expect(input.value).toBe('新词'); expect(onChange).toHaveBeenCalledOnce(); expect(onKeyDown).toHaveBeenCalledOnce();
+});
+
+it('带筛选标签与不带标签的搜索框用同一种容器元素', () => {
+  const { container: plain } = render(<ToolbarSearch aria-label="无标签" />);
+  const { container: withChildren } = render(<ToolbarSearch aria-label="有标签"><span>标签</span></ToolbarSearch>);
+  expect(plain.firstElementChild?.tagName).toBe('DIV');
+  expect(withChildren.firstElementChild?.tagName).toBe('DIV');
+  cleanup();
 });
 
 it('增删框内标签不重建搜索输入，保留文字、选区和焦点', () => {

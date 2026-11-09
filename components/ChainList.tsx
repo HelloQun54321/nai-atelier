@@ -33,7 +33,7 @@ import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
 import { ChainTagManager } from './chain/ChainTagManager';
 import { getCustomChainTags } from '../services/chainTags';
 import { useConfirmDialog } from './ConfirmDialog';
-import { AnchoredToolbarPopover } from './ToolbarPopover';
+import { AnchoredToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { useChainFolders } from '../services/useChainFolders';
 import { folderContains, getChainFolderIds, updateChainFolderMemberships } from '../services/chainFolders';
@@ -490,7 +490,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     </div>
     <div>
       <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t("自定义标签")}</span><div className="flex items-center gap-1">{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="mobile-touch px-2 text-xs text-gray-500 dark:text-gray-400">{t("清除标签筛选")}</button>}{!isGuest && <button type="button" disabled={syncSelection.busy} onClick={() => void openTagManager()} className="mobile-touch inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"><Tags className="h-3.5 w-3.5" />{t('管理标签')}</button>}</div></div>
-      {customTagOptions.length > 12 && <input aria-label={t("搜索自定义标签")} placeholder={t("搜索标签")} value={tagSearch} onChange={event => setTagSearch(event.target.value)} className="mobile-touch mb-2 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-900 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" />}
+      {customTagOptions.length > 12 && <input aria-label={t("搜索自定义标签")} placeholder={t("搜索标签")} value={tagSearch} onChange={event => setTagSearch(event.target.value)} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !mb-2 text-xs`} />}
       {customTagOptions.length === 0 ? <p className="text-xs text-gray-400">{isLoading ? t('加载中…') : loadError ? t(loadError) : t("暂无自定义标签，可在卡片铅笔中添加")}</p> : <div className="max-h-40 overflow-y-auto"><div className="flex flex-wrap gap-1.5">{visibleTagOptions.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => toggleTag(tag)} className={`mobile-touch max-w-full break-words rounded-full border px-3 py-1.5 text-xs ${selectedTags.has(tag) ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-transparent bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{tag}</button>)}</div>{visibleTagOptions.length === 0 && <p className="py-1 text-xs text-gray-400">{t("没有匹配的标签")}</p>}</div>}
       {selectedTags.size > 1 && <p className="mt-2 text-xs text-gray-400">{t("同时包含所选标签")}</p>}
     </div>

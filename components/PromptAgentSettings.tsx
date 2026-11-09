@@ -11,6 +11,7 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { PromptLibrarySettings } from './PromptLibrarySettings';
 import { AGENT_PROVIDER_PRESETS, type AgentProviderPreset } from '../services/agentProviders';
+import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 
 interface PromptAgentSettingsProps {
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -438,7 +439,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         {view === 'model' && <button type="button" onClick={() => openCustom()} className="mobile-touch rounded-xl px-3 text-sm text-indigo-600 dark:text-indigo-300">{t("连接 API")}</button>}
       </header>
       <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col p-3 md:p-5">
-        {view === 'model' && <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder={t("搜索模型名称、ID或连接…")} className="mobile-touch w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-900" />}
+        {view === 'model' && <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder={t("搜索模型名称、ID或连接…")} className={`${TOOLBAR_FIELD_CLASS} !mt-0`} />}
         {view === 'custom' ? <CustomProviderForm value={customDraft} onChange={next => { if (next.baseUrl !== customDraft.baseUrl || next.apiKey !== customDraft.apiKey || next.api !== customDraft.api) setDiscoveredModels([]); setCustomDraft(next); setCustomResult(null); }} result={customResult} discovered={discoveredModels} busy={busy} onTest={() => void testCustom()} onFetch={() => void fetchCustom()} onSave={() => void saveCustom()} presets={AGENT_PROVIDER_PRESETS} onSavePreset={(preset, apiKey) => void savePreset(preset, apiKey)} /> :
           <div className="appearance-group mt-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
             {filteredModels.map(model => <button key={`${model.provider}/${model.id}`} type="button" disabled={busy} onClick={() => void selectModel(model)} className="flex min-h-16 w-full items-center gap-3 border-b border-gray-100 px-4 text-left last:border-0 hover:bg-indigo-50 dark:border-gray-800 dark:hover:bg-indigo-950/20"><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ${model.current ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{model.current ? '✓' : '→'}</span><span className="min-w-0 flex-1"><b className="block truncate text-sm text-gray-900 dark:text-white">{formatModelOptionTitle(model, models)}</b><span className="block truncate text-meta text-gray-500">{model.providerName || model.provider}</span></span><span className="hidden shrink-0 text-right text-micro leading-4 text-gray-500 dark:text-gray-400 sm:block">{t("上下文 ")}{formatContext(model.contextWindow)}<br />{model.reasoning ? t("推理") : model.capabilityDetection?.reasoning === 'unknown' ? t("推理未知") : t("普通")}{model.imageInput ? t(" · 图片") : model.capabilityDetection?.imageInput === 'unknown' ? t(" · 图片未知") : ''}</span></button>)}

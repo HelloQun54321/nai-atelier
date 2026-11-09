@@ -124,7 +124,7 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
           <p className={HINT_CLASS}>{duplicates ? t('按原文顺序共 {0} 段，其中 {1} 段是重复词。', [dropped.length, duplicates]) : t('按原文顺序共 {0} 段。', [dropped.length])}</p>
         </div>
         <ul aria-label={t('去掉的段')} className="flex flex-wrap gap-1.5">{dropped.map((item, index) => <li key={index}
-          className="max-w-full break-words rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">
+          className="appearance-group max-w-full break-words rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">
           {item.text}{item.duplicate && <span className="ml-1.5 font-sans text-micro text-gray-400">{t('重复')}</span>}
         </li>)}</ul>
         <div className="border-t border-gray-100 pt-3 dark:border-gray-800">

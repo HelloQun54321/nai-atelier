@@ -19,6 +19,7 @@ import { useAssetManagerLayer } from './useAssetManagerLayer';
 import { AssetDefaultsForm } from './AssetDefaultsForm';
 import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
 import { ReferenceSelectionPreview } from './ReferenceSelectionPreview';
+import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 
 interface VibeManagerProps {
   params: NAIParams;
@@ -553,7 +554,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
           <div hidden={Boolean(detail)} data-pane={pane} className="manager-library">
             <div className="appearance-content operation-toolbar flex flex-none flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50/60 p-3 dark:border-gray-800 dark:bg-gray-950/60 md:px-5">
               <SegmentedControl value={archived ? 'archived' : 'active'} onChange={value => setArchived(value === 'archived')} options={[{ value: 'active', label: t("资料库") }, { value: 'archived', label: t("已归档") }]} size="sm" ariaLabel={t("资料库范围")} />
-              <div className="relative min-w-[180px] flex-1"><input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索我的氛围参考…")} className="mobile-touch h-9 w-full rounded-xl border border-gray-200 bg-white px-3 text-xs outline-none focus:border-violet-500 dark:border-gray-800 dark:bg-gray-900" /></div>
+              <div className="relative min-w-[180px] flex-1"><input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索我的氛围参考…")} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !h-9 text-xs`} /></div>
               <input aria-label={t("上传氛围参考图片")} ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => void handleImage(event.target.files?.[0])} />
               <select aria-label={t("氛围参考导入方式")} value={importMode} onChange={event => setImportMode(event.target.value as 'append' | 'replace')} className="mobile-touch h-9 rounded-xl border border-gray-200 bg-transparent px-2 text-xs dark:border-gray-800"><option value="append">{t("追加参考")}</option><option value="replace">{t("替换参考")}</option></select><input aria-label={t("导入氛围参考编码文件")} ref={vibeInputRef} type="file" accept=".naiv4vibe,.naiv4vibeBundle,.png,application/json,image/png" className="hidden" onChange={event => void handleImport(event.target.files?.[0])} />
               <button type="button" disabled={Boolean(busyId)} onClick={() => imageInputRef.current?.click()} className="mobile-touch h-9 rounded-xl bg-violet-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-violet-500 disabled:opacity-50">{busyId === 'upload' ? t("上传中…") : t("上传并编码")}</button>

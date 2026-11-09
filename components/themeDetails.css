@@ -120,6 +120,14 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
   backdrop-filter: none;
 }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .appearance-group:is([aria-pressed='true'], [aria-selected='true']) { background-color: color-mix(in srgb, var(--nai-panel-solid-surface) 35%, transparent) !important; }
+/* 搜索框容器统一成 div 后补回 label 原有的两条表现：薄填充、保留 1px 边框，
+   避免带筛选标签的页面变成实心玻璃加大边框、其它页面是透明细边。 */
+html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .appearance-group.toolbar-search-field {
+  background-color: transparent !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-width: 1px !important;
+}
 /* 作品卡片整层玻璃会从圆角边缘透出亮边；材质只放在文字区。 */
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .gallery-image-card {
   background-color: transparent !important;

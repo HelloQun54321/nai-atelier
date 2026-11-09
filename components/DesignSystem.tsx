@@ -239,14 +239,20 @@ export const WorkspaceToolbar: React.FC<{
 export const ToolbarSearch: React.FC<React.InputHTMLAttributes<HTMLInputElement> & {
   containerClassName?: string;
 }> = ({ containerClassName = '', className = '', type = 'search', children, ...props }) => {
-  // 无论有没有前置内容，搜索框都走同一条路径：容器的 appearance-group 让材质由外观预设接管，
-  // input 一律透明。之前无前置内容时由 input 自己铺 bg-gray-950/70，结果同一主题下
-  // 有的页面是深色实底、有的是半透明玻璃，顶栏看起来不统一。
-  const Container = children !== undefined ? 'div' : 'label';
-  return <Container className={`appearance-group relative flex min-w-0 flex-1 items-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-1 max-[360px]:pl-1 max-[360px]:[&>svg]:hidden transition focus-within:border-indigo-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-950/70 dark:focus-within:border-indigo-500/80 dark:focus-within:bg-gray-900 md:max-w-md ${containerClassName}`}>
+  // 容器一律用 div：外观预设按元素类型区分 .appearance-group（div 去掉边框、label 变透明），
+  // 带筛选标签的页面之前用 div、其它页面用 label，同一主题下边框和材质都对不上。
+  // 点击框内空白仍聚焦输入，替代 label 的隐式聚焦；点筛选标签和按钮时不抢焦点。
+  const inputRef = useRef<HTMLInputElement>(null);
+  return <div
+    className={`appearance-group toolbar-search-field relative flex min-w-0 flex-1 items-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-1 max-[360px]:pl-1 max-[360px]:[&>svg]:hidden transition focus-within:border-indigo-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-950/70 dark:focus-within:border-indigo-500/80 dark:focus-within:bg-gray-900 md:max-w-md ${containerClassName}`}
+    onClick={event => {
+      if (!(event.target as HTMLElement).closest('button, input')) inputRef.current?.focus();
+    }}
+  >
     <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
     {children}
     <input
+      ref={inputRef}
       data-appearance="control" data-tone="neutral"
       type={type}
       autoComplete="off"
@@ -256,7 +262,7 @@ export const ToolbarSearch: React.FC<React.InputHTMLAttributes<HTMLInputElement>
       {...props}
       className={`h-10 min-w-0 flex-1 border-0 bg-transparent px-2 text-sm text-gray-900 outline-none transition dark:bg-transparent dark:text-gray-100 ${className}`}
     />
-  </Container>;
+  </div>;
 };
 
 const ICON_CONTROL_CLASS = 'inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl border outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0';

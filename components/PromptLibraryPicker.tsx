@@ -1,10 +1,10 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BookOpen, LoaderCircle } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import { PROMPT_LIBRARY_KIND_LABELS, type PromptLibraryKind } from '../services/promptAgent';
 import { db } from '../services/dbService';
 import type { PromptChain } from '../types';
-import { ToolbarPopover } from './ToolbarPopover';
+import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { applyPromptText, coveredTagCount, kindConflictOf, PROMPT_APPLY_MODES, type PromptApplyMode } from '../services/promptApply';
 
 export const appendPromptText = (current: string, addition: string): string => {
@@ -68,7 +68,7 @@ const LibraryOptions: React.FC<PromptLibraryPickerProps & { close: () => void }>
         ) : null}
         <input type="search" value={query} onChange={event => setQuery(event.target.value)}
             aria-label={t('搜索库条目')} placeholder={t('搜索名称、标签或提示词…')}
-            className="mobile-touch w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800" />
+            className={TOOLBAR_FIELD_CLASS} />
         {failed ? <div role="alert" className="text-sm text-red-600 dark:text-red-400">
             {t('读取提示词库失败')} <button type="button" className="mobile-touch underline" onClick={() => setRetry(value => value + 1)}>{t('重试')}</button>
         </div> : chains === null ? <div role="status" className="flex items-center gap-2 py-4 text-sm text-gray-500"><LoaderCircle className="h-4 w-4 animate-spin" />{t('正在读取…')}</div>

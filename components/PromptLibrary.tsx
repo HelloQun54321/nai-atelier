@@ -784,7 +784,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
               placeholder={t('搜索标签')}
               value={tagQuery}
               onChange={event => setTagQuery(event.target.value)}
-              className="mobile-touch w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-900 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+              className={`${TOOLBAR_FIELD_CLASS} !mt-0 text-xs`}
             />
           )}
           {tagOptions.length === 0 ? (

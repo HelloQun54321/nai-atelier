@@ -9,6 +9,7 @@ import './AgentModelControl.css';
 import { AgentThinkingParticles } from './AgentThinkingParticles';
 import { AgentContextRing } from './AgentContextRing';
 import type { AgentContextUsage } from '../services/agentContextUsage';
+import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 
 export const agentThinkingLabels = AGENT_THINKING_LABELS;
 interface Props {
@@ -156,7 +157,7 @@ export const AgentModelControl: React.FC<Props> = props => {
           </div>
         </div> : <p className="py-2 text-center text-xs text-gray-500 dark:text-gray-400">{t("当前模型不提供可调思考强度")}</p>}
       </> : <>
-        {props.models.length > 8 && <input aria-label={t("搜索模型")} placeholder={t("搜索模型或服务…")} value={query} onChange={event => setQuery(event.target.value)} className="mb-2 h-9 w-full rounded-lg border border-gray-200 bg-transparent px-2 text-xs text-gray-700 dark:border-gray-700 dark:text-gray-200" />}
+        {props.models.length > 8 && <input aria-label={t("搜索模型")} placeholder={t("搜索模型或服务…")} value={query} onChange={event => setQuery(event.target.value)} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !mb-2 !h-9 text-xs`} />}
         <div className="max-h-64 space-y-1 overflow-y-auto">
           {props.models.filter(model => `${model.id} ${model.name} ${model.providerName || model.provider}`.toLowerCase().includes(query.toLowerCase())).map(model => { const current = model.provider === props.activeModel?.provider && model.id === props.activeModel?.id; return <button key={`${model.provider}/${model.id}`} data-model-choice data-model-current={current} type="button" aria-label={t("选择模型：{0}", [formatModelOptionTitle(model, props.models)])} aria-pressed={current} disabled={busy} onClick={() => current ? close() : void save(() => props.onModelChange(model), true)} className={`appearance-group flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left disabled:opacity-50 ${current ? 'bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
             <span className="min-w-0 flex-1"><span className="block truncate text-sm text-gray-800 dark:text-gray-100">{formatModelOptionTitle(model, props.models)}</span><span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{model.providerName || model.provider}{model.imageInput ? t(" · 支持图片") : ''}</span></span>{current && <Check className="h-4 w-4 shrink-0 text-gray-600 dark:text-gray-300" />}

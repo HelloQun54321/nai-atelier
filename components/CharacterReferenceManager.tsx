@@ -14,6 +14,7 @@ import { AssetDefaultsForm } from './AssetDefaultsForm';
 import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
 import { ReferenceSelectionPreview } from './ReferenceSelectionPreview';
 import { CHARACTER_REFERENCE_TYPES, characterReferenceTypeLabel } from '../services/characterReferenceTypes';
+import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 
 interface Props {
   params: NAIParams;
@@ -257,7 +258,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
               size="sm"
               ariaLabel={t("资料库范围")}
             />
-            <input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索精准参考…")} className="h-9 min-w-40 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-xs outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-900" />
+            <input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索精准参考…")} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !h-9 min-w-40 flex-1 text-xs`} />
             <input aria-label={t("上传精准参考图片")} ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => void handleUpload(event.target.files?.[0])} />
             <button type="button" disabled={Boolean(busyId)} onClick={() => imageInputRef.current?.click()} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50 transition-colors">
               {busyId ? t("保存中…") : t("上传并选用")}
