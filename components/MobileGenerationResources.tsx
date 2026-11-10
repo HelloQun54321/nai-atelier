@@ -56,7 +56,7 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
   const gateway = info?.source === 'gateway';
   const quotaName = gateway ? '成员额度' : 'Opus';
   const percent = usage ? usageRemainingPercent(usage) : 0;
-  const displayPercent = gateway ? percent.toFixed(2) : percent;
+  const displayPercent = gateway ? percent.toFixed(1) : percent;
   const total = officialAnlasBalance(info);
   const runtimeBroken = isNaiRuntimeSyncUnhealthy(runtime);
   const opusText = info?.active === false ? gateway ? '网关权益不可用' : '订阅过期'

@@ -54,7 +54,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
   // 请求明确成功但没有 usage 时不展示 Opus 条；加载/失败保留状态行。
   if (!usage && !loading && !error) return null;
   const percent = usage ? usageRemainingPercent(usage) : 0;
-  const displayPercent = gateway ? percent.toFixed(2) : percent;
+  const displayPercent = gateway ? percent.toFixed(1) : percent;
   // 活动加成可能让真实额度超过 100%；圆环保持满圈，数字和张数保留真实值。
   const ringPercent = Math.min(100, percent);
   const images = usage ? usageRemainingImages(usage, runtime.imagesPerPercent) : 0;
