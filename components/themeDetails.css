@@ -121,12 +121,18 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
 }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .appearance-group:is([aria-pressed='true'], [aria-selected='true']) { background-color: color-mix(in srgb, var(--nai-panel-solid-surface) 35%, transparent) !important; }
 /* 搜索框容器统一成 div 后补回 label 原有的两条表现：薄填充、保留 1px 边框，
-   避免带筛选标签的页面变成实心玻璃加大边框、其它页面是透明细边。 */
+   避免带筛选标签的页面变成实心玻璃加大边框、其它页面是透明细边。
+   底色放在容器上而不是 input 上：input 自带的控件面板色是 12px 圆角矩形，
+   与 17.6px 的胶囊圆角差 5.6px、上下还各内缩 1px，边缘会露出一圈没底色的缝；
+   左侧放大镜占的 36px 也没有 input 覆盖，会形成一条竖直分界。 */
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .appearance-group.toolbar-search-field {
-  background-color: transparent !important;
+  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) 12%, transparent) !important;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   border-width: 1px !important;
+}
+html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .appearance-group.toolbar-search-field > input {
+  background-color: transparent !important;
 }
 /* 作品卡片整层玻璃会从圆角边缘透出亮边；材质只放在文字区。 */
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .gallery-image-card {
