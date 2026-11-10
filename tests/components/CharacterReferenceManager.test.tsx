@@ -1,18 +1,31 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { CharacterReferenceManager } from '../../components/CharacterReferenceManager';
 import type { NAIParams } from '../../types';
 
-const rules = vi.hoisted(() => ({ characterReferenceCost: 7, listOverride: undefined as ((archived: boolean) => Promise<unknown[]>) | undefined }));
+const rules = vi.hoisted(() => ({
+  characterReferenceCost: 7,
+  listOverride: undefined as ((archived: boolean) => Promise<unknown[]>) | undefined,
+  confirm: vi.fn(async (_options?: unknown) => true),
+  remove: vi.fn(async (_id: string) => ({ success: true })),
+  folders: {
+    state: { revision: 1, folders: [{ id: 'role', name: '角色', parentId: null }], assignments: { ref: ['role'] } as Record<string, string[]> },
+    ready: true, busy: false, error: '', save: vi.fn(async (_next?: unknown) => undefined),
+  },
+}));
 vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({ billing: rules }) }));
 vi.mock('../../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => ({ supportsCharacterReferences: true }) }));
-vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn() }));
+vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => rules.confirm }));
+vi.mock('../../services/useReferenceFolders', () => ({ useReferenceFolders: () => rules.folders }));
 vi.mock('../../services/characterReferenceService', () => ({ characterReferenceService: {
   list: async (_query: string, archived: boolean) => rules.listOverride ? rules.listOverride(archived) : archived ? [] : [{ id: 'ref', name: '已有角色参考名字', originalImageUrl: '/synthetic.png', defaultStrength: 0.6, defaultFidelity: 0.6, createdAt: 0 }],
+  rename: async (id: string, name: string) => ({ item: { id, name } }),
+  archive: async () => ({ success: true }),
+  remove: (id: string) => rules.remove(id),
 } }));
-afterEach(() => { cleanup(); rules.listOverride = undefined; window.history.replaceState({}, ""); });
+afterEach(() => { cleanup(); rules.listOverride = undefined; rules.confirm.mockClear(); rules.remove.mockClear(); window.history.replaceState({}, ""); });
 it('参考图所有费用提示跟随动态单价', () => {
   const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral',
     characterReferences: { enabled: true, slots: [{ assetId: 'ref', type: 'character' as const, strength: 1, fidelity: 1 }] } };
@@ -35,7 +48,7 @@ it('精准参考保持官方五种描述类型及原值，已有资产名称不�
   expect(screen.getByRole('heading', { name: '精准参考' })).toBeTruthy();
   expect(screen.getByPlaceholderText('搜索精准参考…')).toBeTruthy();
   expect(screen.getByLabelText('上传精准参考图片')).toBeTruthy();
-  const select = screen.getByRole('combobox');
+  const select = screen.getByRole('combobox', { name: '参考类型' });
   expect(Array.from((select as HTMLSelectElement).options).map(option => [option.value, option.textContent])).toEqual([
     ['character', '角色 · 保留人物身份与外观'], ['style', '画风 · 参考图像的风格表现'], ['costume', '服装 · 服装与配饰'],
     ['character_style', '角色与画风 · 同时参考人物和风格'], ['delta', '变化 · 变化量'],
@@ -117,4 +130,37 @@ it('详情页可以直接把这张参考加入本次使用', async () => {
   fireEvent.click(screen.getByRole('button', { name: /精准参考/ }));
   fireEvent.click(await screen.findByRole('button', { name: '详情' }));
   expect(screen.getByRole('button', { name: '加入本次使用' })).toBeTruthy();
+});
+
+it('资料库可按目录筛选，未归类与具体目录分别命中', async () => {
+  render(<CharacterReferenceManager params={referenceParams([])} setParams={vi.fn()} markChange={vi.fn()} notify={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: /精准参考/ }));
+  const filter = await screen.findByLabelText('按目录筛选');
+  expect(screen.getByRole('button', { name: /已有角色参考名字/ })).toBeTruthy();
+  fireEvent.change(filter, { target: { value: '' } });
+  expect(screen.queryByRole('button', { name: /已有角色参考名字/ })).toBeNull();
+  fireEvent.change(filter, { target: { value: 'role' } });
+  expect(screen.getByRole('button', { name: /已有角色参考名字/ })).toBeTruthy();
+});
+
+it('详情页可以按目录归类，勾选状态来自当前归属', async () => {
+  render(<CharacterReferenceManager params={referenceParams([])} setParams={vi.fn()} markChange={vi.fn()} notify={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: /精准参考/ }));
+  fireEvent.click(await screen.findByRole('button', { name: '详情' }));
+  expect(screen.getByRole('group', { name: '所在目录' })).toBeTruthy();
+  const checked = screen.getByRole('checkbox', { name: /角色/ }) as HTMLInputElement;
+  expect(checked.checked).toBe(true);
+});
+
+it('已归档的参考可以永久删除，删除前给出引用说明', async () => {
+  rules.listOverride = async archived => archived
+    ? [{ id: 'old', name: '旧参考', originalImageUrl: '/synthetic.png', defaultStrength: 1, defaultFidelity: 1, archived: true, createdAt: 0 }]
+    : [];
+  render(<CharacterReferenceManager params={referenceParams([])} setParams={vi.fn()} markChange={vi.fn()} notify={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: /精准参考/ }));
+  fireEvent.click(await screen.findByRole('tab', { name: '已归档' }));
+  fireEvent.click(await screen.findByRole('button', { name: /旧参考/ }));
+  fireEvent.click(screen.getByRole('button', { name: '永久删除这张参考' }));
+  await waitFor(() => expect(rules.confirm).toHaveBeenCalledWith(expect.objectContaining({ rememberKey: 'character-reference.delete' })));
+  await waitFor(() => expect(rules.remove).toHaveBeenCalledWith('old'));
 });

@@ -16,6 +16,11 @@ import { SegmentedControl, BackButton, CloseButton, InlineSpinner, PageSpinner }
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { useAssetManagerLayer } from './useAssetManagerLayer';
+import { getDirectoryDescendantIds } from '../services/directoryTree.mjs';
+import { getReferenceFolderIds } from '../services/referenceFolders';
+import { useReferenceFolders } from '../services/useReferenceFolders';
+import { referenceDisplayName } from '../services/referenceNaming';
+import { ReferenceFolderChecklist, ReferenceFolderDialog, ReferenceFolderFilter, REFERENCE_FOLDER_ALL, REFERENCE_FOLDER_NONE } from './ReferenceFolderControls';
 import { AssetDefaultsForm } from './AssetDefaultsForm';
 import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
 import { ReferenceSelectionPreview } from './ReferenceSelectionPreview';
@@ -113,7 +118,22 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   const imageImportLock = useRef(false);
   const [archived, setArchived] = useState(false);
   const [pane, setPane] = useState<'library' | 'selection'>('library');
-  const assets = allAssets.filter(asset => Boolean(asset.archived) === archived && asset.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
+  const folderStore = useReferenceFolders('vibe', open);
+  const [folderFilter, setFolderFilter] = useState<string>(REFERENCE_FOLDER_ALL);
+  const [folderDialog, setFolderDialog] = useState(false);
+  const folderScope = useMemo(
+    () => folderFilter === REFERENCE_FOLDER_ALL || folderFilter === REFERENCE_FOLDER_NONE
+      ? null : getDirectoryDescendantIds(folderStore.state.folders, folderFilter),
+    [folderFilter, folderStore.state.folders]);
+  const matchesFolder = (assetId: string) => {
+    if (folderFilter === REFERENCE_FOLDER_ALL) return true;
+    const memberships = getReferenceFolderIds(folderStore.state, assetId);
+    if (folderFilter === REFERENCE_FOLDER_NONE) return memberships.length === 0;
+    return Boolean(folderScope && memberships.some(id => folderScope.has(id)));
+  };
+  const assets = allAssets.filter(asset => Boolean(asset.archived) === archived
+    && asset.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())
+    && matchesFolder(asset.id));
   const latestParams = useRef(params);
   const latestApiKey = useRef(apiKey);
   useEffect(() => { latestApiKey.current = apiKey; }, [apiKey]);
@@ -323,7 +343,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
     try {
       const file = typeof source === 'function' ? await source() : source;
       if (!isCurrent() || revision !== selectionRevision.current) return;
-      const name = file.name.replace(/\.[^.]+$/, '').slice(0, 100) || '未命名氛围参考';
+      const name = referenceDisplayName(file.name, t('氛围参考'));
       const result = await vibeService.create(file, name);
       if (!isCurrent()) return;
       setAssets(items => [result.item, ...items.filter(item => item.id !== result.item.id)]);
@@ -473,7 +493,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
 
   const archiveDetail = async () => {
     if (!detail) return;
-    const accepted = await confirmAction({ rememberKey: 'vibe.archive', title: '归档这个氛围参考？', message: '它会从当前资料库隐藏，但编码和文件仍会保留，已有风格串与历史仍可复现。', confirmLabel: '归档', tone: 'danger' });
+    const accepted = await confirmAction({ rememberKey: 'vibe.archive', title: '归档这个氛围参考？', message: '它会从当前资料库隐藏，但编码和文件仍会保留，已有风格串与历史仍可复现。氛围参考被用作创作依据时不能直接删除，所以先归档；确认不再需要后再在归档里永久删除。', confirmLabel: '归档', tone: 'danger' });
     if (!accepted) return;
     try { await vibeService.archive(detail.id); backToList(); await load(); notify('已归档'); }
     catch (error: any) { notify(error.message || '归档失败', 'error'); }
@@ -548,12 +568,15 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
                   <button type="button" disabled={Boolean(deletingId)} onClick={() => archived ? void restoreDetail() : void archiveDetail()} className={`mobile-touch rounded-xl text-sm font-bold disabled:opacity-40 ${archived ? 'bg-emerald-700 text-white' : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400'}`}>{archived ? t("恢复") : t("归档")}</button>
                 </div>
                 {detail.archived && <button type="button" disabled={Boolean(deletingId || exportingId || busyId)} onClick={() => void deleteArchived(detail)} className="mobile-touch w-full rounded-xl border border-red-200 px-3 text-sm font-bold text-red-600 disabled:opacity-40 dark:border-red-900">{deletingId === detail.id ? t("删除中…") : t("永久删除氛围参考")}</button>}
+                <ReferenceFolderChecklist store={folderStore} assetId={detail.id} notify={notify} />
               </div>
             </div>
           </main>}
           <div hidden={Boolean(detail)} data-pane={pane} className="manager-library">
             <div className="appearance-content operation-toolbar flex flex-none flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50/60 p-3 dark:border-gray-800 dark:bg-gray-950/60 md:px-5">
               <SegmentedControl value={archived ? 'archived' : 'active'} onChange={value => setArchived(value === 'archived')} options={[{ value: 'active', label: t("资料库") }, { value: 'archived', label: t("已归档") }]} size="sm" ariaLabel={t("资料库范围")} />
+              <ReferenceFolderFilter store={folderStore} value={folderFilter} onChange={setFolderFilter} disabled={!folderStore.ready} />
+              <button type="button" disabled={!folderStore.ready} onClick={() => setFolderDialog(true)} className="mobile-touch h-9 rounded-xl border border-gray-200 px-3 text-xs font-semibold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300">{t("整理目录")}</button>
               <div className="relative min-w-[180px] flex-1"><input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索我的氛围参考…")} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !h-9 text-xs`} /></div>
               <input aria-label={t("上传氛围参考图片")} ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => void handleImage(event.target.files?.[0])} />
               <select aria-label={t("氛围参考导入方式")} value={importMode} onChange={event => setImportMode(event.target.value as 'append' | 'replace')} className="mobile-touch h-9 rounded-xl border border-gray-200 bg-transparent px-2 text-xs dark:border-gray-800"><option value="append">{t("追加参考")}</option><option value="replace">{t("替换参考")}</option></select><input aria-label={t("导入氛围参考编码文件")} ref={vibeInputRef} type="file" accept=".naiv4vibe,.naiv4vibeBundle,.png,application/json,image/png" className="hidden" onChange={event => void handleImport(event.target.files?.[0])} />
@@ -593,6 +616,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
           <footer className="appearance-content operation-footer flex flex-none items-center justify-between gap-3 border-t border-gray-200 dark:border-gray-800"><button type="button" onClick={closeManager} className="mobile-touch rounded-lg border border-gray-200 px-4 text-sm font-semibold text-gray-600 dark:border-gray-700 dark:text-gray-300" title={t("本次选择即时生效")}>{t("完成")}</button></footer>
         </div>
       </div></ImagePreviewPortal>}
+      <ReferenceFolderDialog store={folderStore} open={folderDialog} onClose={() => setFolderDialog(false)} notify={notify} />
     </>
   );
 };

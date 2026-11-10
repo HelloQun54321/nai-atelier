@@ -393,7 +393,7 @@ for (const handler of handlers) test(`${handler === handleGenerateRequest ? 'ZIP
     [{ _local_vibes: { enabled: true, slots: [{ ...vibe, strength: null }] } }, 'generate', /有限数值/],
     [{ _local_vibes: { enabled: true, slots: [vibe] }, _local_character_references: { enabled: true, slots: [reference] } }, 'generate', /不能同时/],
     [{ _local_vibes: { enabled: true, slots: [vibe] } }, 'infill', /重绘和扩图/],
-    [{ _local_character_references: { enabled: true, slots: Array(5).fill(reference) } }, 'generate', /最多使用 4/],
+    [{ _local_character_references: { enabled: true, slots: Array(17).fill(reference) } }, 'generate', /最多使用 16/],
   ];
   for (const [parameters, action, message] of cases) {
     const body = payload(action); Object.assign(body.parameters, parameters);

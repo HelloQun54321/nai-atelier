@@ -40,4 +40,7 @@ export const characterReferenceService = {
 
   archive: (id: string) => api.post(`/character-references/${encodeURIComponent(id)}/archive`, {}),
   restore: (id: string) => api.post(`/character-references/${encodeURIComponent(id)}/restore`, {}),
+
+  /** 仅对已归档且没有任何创作引用的参考开放；被引用时后台返回 409 与原因。 */
+  remove: (id: string) => api.delete(`/character-references/${encodeURIComponent(id)}`),
 };

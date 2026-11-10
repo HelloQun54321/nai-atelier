@@ -1,5 +1,5 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CharacterReferenceAsset, CharacterReferenceSelection, ImageEditOperation, NAIParams } from '../types';
 import { characterReferenceService } from '../services/characterReferenceService';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
@@ -14,6 +14,11 @@ import { AssetDefaultsForm } from './AssetDefaultsForm';
 import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
 import { ReferenceSelectionPreview } from './ReferenceSelectionPreview';
 import { CHARACTER_REFERENCE_TYPES, MAX_CHARACTER_REFERENCES } from '../services/characterReferenceTypes';
+import { getDirectoryDescendantIds } from '../services/directoryTree.mjs';
+import { getReferenceFolderIds } from '../services/referenceFolders';
+import { useReferenceFolders } from '../services/useReferenceFolders';
+import { referenceDisplayName } from '../services/referenceNaming';
+import { ReferenceFolderChecklist, ReferenceFolderDialog, ReferenceFolderFilter, REFERENCE_FOLDER_ALL, REFERENCE_FOLDER_NONE } from './ReferenceFolderControls';
 import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 
 interface Props {
@@ -52,7 +57,22 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
   const [search, setSearch] = useState('');
   const [archived, setArchived] = useState(false);
   const [pane, setPane] = useState<'library' | 'selection'>('library');
-  const assets = allAssets.filter(asset => Boolean(asset.archived) === archived && asset.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
+  const folderStore = useReferenceFolders('character-reference', open);
+  const [folderFilter, setFolderFilter] = useState<string>(REFERENCE_FOLDER_ALL);
+  const [folderDialog, setFolderDialog] = useState(false);
+  const folderScope = useMemo(
+    () => folderFilter === REFERENCE_FOLDER_ALL || folderFilter === REFERENCE_FOLDER_NONE
+      ? null : getDirectoryDescendantIds(folderStore.state.folders, folderFilter),
+    [folderFilter, folderStore.state.folders]);
+  const matchesFolder = (assetId: string) => {
+    if (folderFilter === REFERENCE_FOLDER_ALL) return true;
+    const memberships = getReferenceFolderIds(folderStore.state, assetId);
+    if (folderFilter === REFERENCE_FOLDER_NONE) return memberships.length === 0;
+    return Boolean(folderScope && memberships.some(id => folderScope.has(id)));
+  };
+  const assets = allAssets.filter(asset => Boolean(asset.archived) === archived
+    && asset.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())
+    && matchesFolder(asset.id));
   const latestParams = useRef(params);
   const selectionRevision = useRef(0);
   useEffect(() => { latestParams.current = params; selectionRevision.current++; }, [params]);
@@ -167,7 +187,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
     try {
       const file = typeof source === 'function' ? await source() : source;
       if (!isCurrent() || revision !== selectionRevision.current) return;
-      const result = await characterReferenceService.create(file, file.name.replace(/\.[^.]+$/, '') || '精准参考');
+      const result = await characterReferenceService.create(file, referenceDisplayName(file.name, t('精准参考')));
       if (!isCurrent()) return;
       notify(result.duplicate ? '已找到相同的精准参考图' : '精准参考图已保存');
       await load();
@@ -190,11 +210,22 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
     if (!detail || !await confirmAction({
       rememberKey: 'character-reference.archive',
       title: '归档这张精准参考图？',
-      message: '它会从默认资料库隐藏；已有风格串和历史仍保留引用，可随时恢复。',
+      message: '它会从资料库隐藏，但原图和已有串、历史的引用都保留，仍可复现、随时恢复。参考图被用作创作依据时不能直接删除，所以先归档；确认不再需要后再在归档里永久删除。',
       confirmLabel: '归档', tone: 'danger',
     })) return;
     try { await characterReferenceService.archive(detail.id); backToList(); await load(); notify('已归档'); }
     catch (error: any) { notify(error.message || '归档失败', 'error'); }
+  };
+
+  const deleteDetail = async () => {
+    if (!detail || !await confirmAction({
+      rememberKey: 'character-reference.delete',
+      title: '永久删除这张精准参考图？',
+      message: '原图和缩略图会被删除且无法恢复。仍被风格串、历史或收藏引用时会拒绝删除，请先移除那些引用。',
+      confirmLabel: '永久删除', tone: 'danger',
+    })) return;
+    try { await characterReferenceService.remove(detail.id); backToList(); await load(); notify('已永久删除精准参考图'); }
+    catch (error: any) { notify(error.message || '永久删除失败', 'error'); }
   };
 
   const restoreDetail = async () => {
@@ -263,8 +294,10 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
                   setDetail(current => current?.id === result.item.id ? result.item : current);
                   await load();
                 }} />
+              <ReferenceFolderChecklist store={folderStore} assetId={detail.id} notify={notify} />
               {!detail.archived && <button type="button" onClick={() => addAsset(detail)} className={`mobile-touch w-full rounded-xl text-sm font-bold ${detailSelected ? 'border border-indigo-300 bg-white text-indigo-700 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300' : 'bg-indigo-700 text-white hover:bg-indigo-600 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90'}`}>{detailSelected ? t("从本次使用移除") : t("加入本次使用")}</button>}
               <button type="button" onClick={() => archived ? void restoreDetail() : void archiveDetail()} className={`mobile-touch w-full rounded-xl text-sm font-bold ${archived ? 'bg-emerald-700 text-white' : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400'}`}>{archived ? t("恢复到资料库") : t("归档")}</button>
+              {archived && <button type="button" onClick={() => void deleteDetail()} className="mobile-touch w-full rounded-xl border border-red-300 text-sm font-bold text-red-600 dark:border-red-900 dark:text-red-400">{t("永久删除这张参考")}</button>}
             </div>
           </div>
         </main>}
@@ -280,6 +313,8 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
               size="sm"
               ariaLabel={t("资料库范围")}
             />
+            <ReferenceFolderFilter store={folderStore} value={folderFilter} onChange={setFolderFilter} disabled={!folderStore.ready} />
+            <button type="button" disabled={!folderStore.ready} onClick={() => setFolderDialog(true)} className="mobile-touch inline-flex h-9 items-center rounded-xl border border-gray-200 px-3 text-xs font-semibold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300">{t("整理目录")}</button>
             <input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索精准参考…")} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !h-9 min-w-40 flex-1 text-xs`} />
             <input aria-label={t("上传精准参考图片")} ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => void handleUpload(event.target.files?.[0])} />
             <button type="button" disabled={Boolean(busyId)} onClick={() => imageInputRef.current?.click()} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-600 disabled:opacity-50 transition-colors">
@@ -319,5 +354,6 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
           <footer className="appearance-content operation-footer flex flex-none items-center justify-between gap-3 border-t border-gray-200 dark:border-gray-800"><button type="button" onClick={closeManager} className="mobile-touch rounded-lg border border-gray-200 px-4 text-sm font-semibold text-gray-600 dark:border-gray-700 dark:text-gray-300" title={t("本次选择即时生效")}>{t("完成")}</button></footer>
       </div>
     </div></ImagePreviewPortal>}
+    <ReferenceFolderDialog store={folderStore} open={folderDialog} onClose={() => setFolderDialog(false)} notify={notify} />
   </>;
 };

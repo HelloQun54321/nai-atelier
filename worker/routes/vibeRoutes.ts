@@ -375,6 +375,7 @@ const vibeReferenceDocuments = `
   UNION ALL SELECT '收藏', analysis, 1 FROM inspirations
   UNION ALL SELECT '组合', slots, 1 FROM vibe_groups
   UNION ALL SELECT '设置或模板', value, substr(ltrim(value), 1, 1) IN ('{', '[') FROM settings
+    WHERE key NOT LIKE 'reference_folders_v1:%'
   UNION ALL SELECT '风格串图片', json_quote(preview_image), 0 FROM chains
   UNION ALL SELECT '收藏图片', json_quote(image_url), 0 FROM inspirations
   UNION ALL SELECT '画师图片', json_quote(image_url), 0 FROM artists
@@ -402,7 +403,7 @@ const vibeReferenceQuery = `
       (substr(n.atom, 1, length(r.url)) = r.url AND substr(n.atom, length(r.url) + 1, 1) IN ('?', '#'))))
   LIMIT 1`;
 
-async function deleteUnreferencedVibeFiles(db: D1Database, env: Env, keys: string[]) {
+async function deleteUnreferencedFiles(db: D1Database, env: Env, keys: string[]) {
   for (const key of new Set(keys.filter(Boolean))) {
     const urls = [...new Set([`/api/assets/${key}`, `/api/assets/${encodeURIComponent(key)}`, `/api/assets/${key.split('/').map(encodeURIComponent).join('/')}`])];
     const reference = await db.prepare(`WITH target AS (SELECT ? AS object_key, ? AS urls),
@@ -449,11 +450,44 @@ async function permanentlyDeleteVibe(db: D1Database, env: Env, vibeId: string, e
     return error(reference ? `这个 Vibe${encodingId ? ' 编码' : ''}仍被${reference.source}引用，不能永久删除` : 'Vibe 状态已变化，请刷新后重试', 409);
   }
   try {
-    await deleteUnreferencedVibeFiles(db, env, [...(encodingId ? [] : [asset.original_key, asset.thumbnail_key]), ...selected.map(row => row.encoding_key)]);
+    await deleteUnreferencedFiles(db, env, [...(encodingId ? [] : [asset.original_key, asset.thumbnail_key]), ...selected.map(row => row.encoding_key)]);
   } catch { return error('Vibe 记录已删除，但部分文件清理失败', 503); }
   if (!encodingId) return json({ success: true, id: vibeId });
   const updated = await db.prepare('SELECT * FROM vibe_assets WHERE id = ?').bind(vibeId).first<any>();
   return json({ success: true, item: await mapVibeAsset(db, updated), encodingId });
+}
+
+/** 精准参考按 `assetId` 与图片地址核对引用；参考目录数据已从 documents 中排除，不阻塞删除。 */
+const characterReferenceReferenceQuery = `
+  WITH target AS (SELECT ? AS asset_id), documents AS (${vibeReferenceDocuments}),
+  reference_urls AS (
+    SELECT '/api/character-references/' || asset_id || '/image' AS url FROM target
+    UNION ALL SELECT '/api/character-references/' || asset_id || '/thumbnail' FROM target
+  )
+  SELECT d.source, 1 AS unreadable FROM documents d WHERE ${malformedVibeReferenceDocument}
+  UNION ALL
+  SELECT d.source, 0 AS unreadable FROM documents d, json_tree(CASE WHEN json_valid(d.document) THEN d.document ELSE '{}' END) n, target t
+  WHERE n.key = 'assetId' AND n.atom = t.asset_id
+  UNION ALL
+  SELECT d.source, 0 AS unreadable FROM documents d, json_tree(CASE WHEN json_valid(d.document) THEN d.document ELSE '{}' END) n, reference_urls r
+  WHERE n.type = 'text' AND (n.atom = r.url
+    OR (substr(n.atom, 1, length(r.url)) = r.url AND substr(n.atom, length(r.url) + 1, 1) IN ('?', '#')))`;
+
+/** 永久删除与氛围参考同一规则：先归档，再确认没有任何创作引用，文件按实际引用清理。 */
+async function permanentlyDeleteCharacterReference(db: D1Database, env: Env, assetId: string) {
+  const asset = await db.prepare('SELECT * FROM character_reference_assets WHERE id = ?').bind(assetId).first<any>();
+  if (!asset) return error('精准参考图不存在', 404);
+  if (asset.archived !== 1) return error('请先归档精准参考图，再永久删除', 409);
+  const deleted = await db.prepare(`DELETE FROM character_reference_assets WHERE id = ? AND archived = 1
+    AND NOT EXISTS(${characterReferenceReferenceQuery})`).bind(assetId, assetId).run();
+  if (Number(deleted.meta.changes) !== 1) {
+    const reference = await db.prepare(characterReferenceReferenceQuery).bind(assetId).first<{ source: string; unreadable: number }>();
+    if (reference?.unreadable) return error(`${reference.source}资料损坏，无法核对精准参考引用，未执行删除`, 409);
+    return error(reference ? `这张精准参考仍被${reference.source}引用，不能永久删除` : '精准参考状态已变化，请刷新后重试', 409);
+  }
+  try { await deleteUnreferencedFiles(db, env, [asset.original_key, asset.thumbnail_key]); }
+  catch { return error('精准参考记录已删除，但部分文件清理失败', 503); }
+  return json({ success: true, id: assetId });
 }
 
 // Precise/Character Reference image library + Permanent Vibe Transfer library.
@@ -605,6 +639,7 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
       const updated = await db.prepare('SELECT * FROM character_reference_assets WHERE id = ?').bind(id).first<any>();
       return json({ item: mapCharacterReferenceAsset(updated) });
     }
+    if (assetMatch && method === 'DELETE') return permanentlyDeleteCharacterReference(db, env, decodeURIComponent(assetMatch[1]));
 
     return error('精准参考图接口不存在', 404);
   }

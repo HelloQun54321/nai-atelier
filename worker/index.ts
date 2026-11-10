@@ -17,6 +17,7 @@ import { handleStyleRollRoute } from './routes/styleRollRoutes';
 import { handlePromptLibraryLinkRoute } from './routes/promptLibraryLinkRoutes';
 import { handleAppearancePresetRoute } from './routes/appearancePresetRoutes';
 import { handleChainFolderRoute } from './routes/chainFolderRoutes';
+import { handleReferenceFolderRoute } from './routes/referenceFolderRoutes';
 import { handleCatalogGroupRoute } from './routes/catalogGroupRoutes';
 import { handlePromptLibraryDirectoryRoute } from './routes/promptLibraryDirectoryRoutes';
 import { handlePromptLibraryCategoryTreeRoute } from './routes/promptLibraryCategoryTreeRoutes';
@@ -195,6 +196,8 @@ export default {
       if (appearanceResult) return appearanceResult;
       const chainFolderResult = await handleChainFolderRoute(routeContext);
       if (chainFolderResult) return chainFolderResult;
+      const referenceFolderResult = await handleReferenceFolderRoute(routeContext);
+      if (referenceFolderResult) return referenceFolderResult;
       const catalogGroupResult = await handleCatalogGroupRoute(routeContext);
       if (catalogGroupResult) return catalogGroupResult;
       const promptLibraryDirectoryResult = await handlePromptLibraryDirectoryRoute(routeContext);

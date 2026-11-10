@@ -443,3 +443,45 @@ describe('官方 Vibe 文件往返', () => {
     expect(missing.status).toBe(400); expect((await f.request('/api/vibe-groups')).body.items).toHaveLength(1);
   });
 });
+
+describe('精准参考永久删除', () => {
+  const seed = (f: ReturnType<typeof fixture>, id: string, archived = 0) => {
+    f.sqlite.prepare(`INSERT INTO character_reference_assets
+      (id, name, source_hash, original_key, original_type, thumbnail_key, thumbnail_type, default_strength, default_fidelity, archived, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?, 1, 1)`)
+      .run(id, '合成参考', hash(id), `${id}.png`, 'image/png', `${id}-thumb.webp`, 'image/webp', archived);
+    f.files.set(`${id}.png`, new Uint8Array([1, 2, 3]).buffer);
+    f.files.set(`${id}-thumb.webp`, new Uint8Array([4, 5]).buffer);
+  };
+
+  it('未归档拒绝删除；归档后连同原图与缩略图一起清理', async () => {
+    const f = fixture(true); seed(f, 'ref-a');
+    expect((await f.request('/api/character-references/ref-a', undefined, 'DELETE')).status).toBe(409);
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM character_reference_assets').get()?.count).toBe(1);
+    f.sqlite.prepare('UPDATE character_reference_assets SET archived = 1 WHERE id = ?').run('ref-a');
+    f.files.set('unrelated-private-image', new Uint8Array([9]).buffer);
+    const deleted = await f.request('/api/character-references/ref-a', undefined, 'DELETE');
+    expect(deleted.status).toBe(200); expect(deleted.body).toEqual({ success: true, id: 'ref-a' });
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM character_reference_assets').get()?.count).toBe(0);
+    expect([...f.files.keys()]).toEqual(['unrelated-private-image']);
+    expect((await f.request('/api/character-references/ref-a', undefined, 'DELETE')).status).toBe(404);
+  });
+
+  it('设置里的持久引用阻止删除，移除引用后可以删除', async () => {
+    const f = fixture(true); seed(f, 'ref-b', 1);
+    f.sqlite.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('draft-with-reference', JSON.stringify({ characterReferences: { enabled: true, slots: [{ assetId: 'ref-b' }] } }));
+    const blocked = await f.request('/api/character-references/ref-b', undefined, 'DELETE');
+    expect(blocked.status).toBe(409); expect(blocked.body.error).toContain('精准参考');
+    expect(blocked.body.error).toContain('设置或模板');
+    expect(f.files.has('ref-b.png')).toBe(true);
+    f.sqlite.prepare('DELETE FROM settings WHERE key = ?').run('draft-with-reference');
+    expect((await f.request('/api/character-references/ref-b', undefined, 'DELETE')).status).toBe(200);
+  });
+
+  it('参考目录里的归属不算创作引用，不阻塞删除', async () => {
+    const f = fixture(true); seed(f, 'ref-c', 1);
+    f.sqlite.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('reference_folders_v1:owner:character-reference',
+      JSON.stringify({ revision: 1, folders: [{ id: 'f1', name: '角色', parentId: null }], assignments: { 'ref-c': ['f1'] } }));
+    expect((await f.request('/api/character-references/ref-c', undefined, 'DELETE')).status).toBe(200);
+  });
+});

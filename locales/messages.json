@@ -40384,5 +40384,107 @@
     "Up to {0} precise references per generation",
     "1 回に有効化できる Precise Reference は最大 {0} 件です",
     "한 번에 최대 {0}개의 Precise Reference를 켤 수 있습니다"
+  ],
+  "按目录筛选": [
+    "按目錄篩選",
+    "Filter by folder",
+    "ディレクトリで絞り込む",
+    "디렉터리로 필터"
+  ],
+  "整理目录": [
+    "整理目錄",
+    "Organize folders",
+    "ディレクトリを整理",
+    "디렉터리 정리"
+  ],
+  "整理参考目录": [
+    "整理參考目錄",
+    "Organize reference folders",
+    "参照ディレクトリを整理",
+    "참조 디렉터리 정리"
+  ],
+  "目录已保存": [
+    "目錄已儲存",
+    "Folder saved",
+    "ディレクトリを保存しました",
+    "디렉터리를 저장했습니다"
+  ],
+  "目录保存失败": [
+    "目錄儲存失敗",
+    "Could not save the folder",
+    "ディレクトリを保存できませんでした",
+    "디렉터리를 저장하지 못했습니다"
+  ],
+  "只删除目录本身，里面的参考图会保留并变成未归类。": [
+    "只刪除目錄本身，裡面的參考圖會保留並變成未分類。",
+    "Only the folder is deleted; its reference images are kept and become uncategorized.",
+    "削除されるのはディレクトリだけで、中の参照画像は未分類として残ります。",
+    "디렉터리만 삭제되며 안의 참조 이미지는 남아 미분류가 됩니다."
+  ],
+  "目录已删除": [
+    "目錄已刪除",
+    "Folder deleted",
+    "ディレクトリを削除しました",
+    "디렉터리를 삭제했습니다"
+  ],
+  "目录删除失败": [
+    "目錄刪除失敗",
+    "Could not delete the folder",
+    "ディレクトリを削除できませんでした",
+    "디렉터리를 삭제하지 못했습니다"
+  ],
+  "还没有目录，先新建一个": [
+    "還沒有目錄，先新建一個",
+    "No folders yet. Create one first.",
+    "ディレクトリがありません。まず新規作成してください",
+    "디렉터리가 없습니다. 먼저 만들어 주세요"
+  ],
+  "所在目录": [
+    "所在目錄",
+    "Folders",
+    "所属ディレクトリ",
+    "소속 디렉터리"
+  ],
+  "永久删除这张参考": [
+    "永久刪除這張參考",
+    "Delete this reference permanently",
+    "この参照を完全に削除",
+    "이 참조를 영구 삭제"
+  ],
+  "永久删除这张精准参考图？": [
+    "永久刪除這張精準參考圖？",
+    "Delete this precise reference permanently?",
+    "この Precise Reference を完全に削除しますか？",
+    "이 Precise Reference를 영구 삭제할까요?"
+  ],
+  "原图和缩略图会被删除且无法恢复。仍被风格串、历史或收藏引用时会拒绝删除，请先移除那些引用。": [
+    "原圖和縮圖會被刪除且無法復原。仍被風格串、歷史或收藏引用時會拒絕刪除，請先移除那些引用。",
+    "The original and thumbnail are deleted and cannot be restored. Deletion is refused while style chains, history, or favorites still reference it, so remove those references first.",
+    "元画像とサムネイルは削除され、復元できません。スタイルチェーン・履歴・お気に入りから参照されている間は削除を拒否します。先に参照を外してください。",
+    "원본과 썸네일이 삭제되어 복구할 수 없습니다. 스타일 체인·기록·즐겨찾기가 참조하는 동안에는 삭제를 거부하므로 먼저 참조를 제거하세요."
+  ],
+  "已永久删除精准参考图": [
+    "已永久刪除精準參考圖",
+    "Precise reference deleted permanently",
+    "Precise Reference を完全に削除しました",
+    "Precise Reference를 영구 삭제했습니다"
+  ],
+  "永久删除失败": [
+    "永久刪除失敗",
+    "Could not delete permanently",
+    "完全削除に失敗しました",
+    "영구 삭제 실패"
+  ],
+  "它会从资料库隐藏，但原图和已有串、历史的引用都保留，仍可复现、随时恢复。参考图被用作创作依据时不能直接删除，所以先归档；确认不再需要后再在归档里永久删除。": [
+    "它會從資料庫隱藏，但原圖和已有串、歷史的引用都保留，仍可重現、隨時恢復。參考圖被用作創作依據時不能直接刪除，所以先歸檔；確認不再需要後再在歸檔裡永久刪除。",
+    "It is hidden from the library, but the original image and existing chain and history references are kept, so it still reproduces and can be restored anytime. A reference used as a creation source cannot be deleted directly, so archive first; permanently delete from the archive once you are sure.",
+    "ライブラリからは隠れますが、元画像と既存のチェーン・履歴の参照は保持され、再現も復元も可能です。作成の根拠に使われている参照は直接削除できないため、まずアーカイブし、不要と確認してからアーカイブ内で完全削除してください。",
+    "라이브러리에서 숨겨지지만 원본 이미지와 기존 체인·기록의 참조는 유지되어 재현과 복원이 가능합니다. 창작 근거로 쓰인 참조는 바로 삭제할 수 없으므로 먼저 보관하고, 필요 없다고 확인된 뒤 보관함에서 영구 삭제하세요."
+  ],
+  "它会从当前资料库隐藏，但编码和文件仍会保留，已有风格串与历史仍可复现。氛围参考被用作创作依据时不能直接删除，所以先归档；确认不再需要后再在归档里永久删除。": [
+    "它會從當前資料庫隱藏，但編碼和檔案仍會保留，已有風格串與歷史仍可重現。氛圍參考被用作創作依據時不能直接刪除，所以先歸檔；確認不再需要後再在歸檔裡永久刪除。",
+    "It is hidden from the current library, but encodings and files are kept and existing chains and history still reproduce. A vibe used as a creation source cannot be deleted directly, so archive first; permanently delete from the archive once you are sure.",
+    "現在のライブラリからは隠れますが、エンコードとファイルは保持され、既存のチェーンと履歴は再現できます。作成の根拠に使われている Vibe は直接削除できないため、まずアーカイブし、不要と確認してからアーカイブ内で完全削除してください。",
+    "현재 라이브러리에서 숨겨지지만 인코딩과 파일은 유지되어 기존 체인과 기록이 재현됩니다. 창작 근거로 쓰인 Vibe는 바로 삭제할 수 없으므로 먼저 보관하고, 필요 없다고 확인된 뒤 보관함에서 영구 삭제하세요."
   ]
 }
