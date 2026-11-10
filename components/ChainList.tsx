@@ -558,7 +558,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           {!isGuest && type === 'style' && <ToolbarButton className="max-md:hidden" aria-label={t('查找相似')} title={t('查找相似')} onClick={() => setSimilarityOpen(true)}>
             <ScanSearch className="h-4 w-4" /><span className="hidden xl:inline">{t('查找相似')}</span>
           </ToolbarButton>}
-          {!isGuest && <div className="flex flex-none items-center gap-1 md:gap-2 md:border-l md:border-gray-200 md:pl-2 dark:md:border-gray-700">
+          {!isGuest && <div className="flex flex-none items-center gap-1 md:gap-2">
             {type === 'style' && <ToolbarButton className="max-md:hidden" onClick={() => setBundleScope('all')} title={t('风格串分享包')} aria-label={t('风格串分享包')}><Package className="h-4 w-4" /><span className="hidden xl:inline">{t('分享包')}</span></ToolbarButton>}
             {type === 'style' && <div className="flex max-md:hidden"><StyleCollectorControl onSaved={onRefresh} notify={notify} /></div>}
             <div className="hidden items-center gap-2 md:flex">
