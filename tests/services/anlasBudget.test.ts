@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { ANLAS_BUDGET_CHANGED_EVENT, applyEstimatorRuntime, estimateImageEditCost, estimateV45GenerationCost, formatGenerationCostLabel, hashNaiApiKey, isOpusUsageLimitedModel, usageForCostEstimate, useAnlasBudget } from '../../services/anlasBudget';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
-import { isActiveOpusSubscription } from '../../services/naiUsage';
+import { isActiveOpusSubscription, NOVELAI_USAGE_REFRESH_EVENT } from '../../services/naiUsage';
 
 const responseFor = (payload: unknown) => ({
   ok: true,
@@ -68,6 +68,20 @@ describe('useAnlasBudget', () => {
       expect(hook.result.current.remaining).toBe(799);
       expect(hook.result.current.personal?.opusImages).toBe(1);
     });
+    hook.unmount();
+  });
+
+  it('生图或编码结算完成后按同一刷新事件重读剩余预算', async () => {
+    const key = 'pst-budget-spend';
+    let remaining = 2749;
+    vi.stubGlobal('fetch', vi.fn(async () => responseFor({ remaining, personal: {} })));
+    sessionStorage.setItem('nai_api_key', key);
+    const hook = renderHook(() => useAnlasBudget());
+    await waitFor(() => expect(hook.result.current.remaining).toBe(2749));
+    // 后端在结算时已把 5 Anlas 从剩余预算里扣掉，界面必须重读而不是停在生成前的值。
+    remaining = 2744;
+    await act(async () => { window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT)); });
+    await waitFor(() => expect(hook.result.current.remaining).toBe(2744));
     hook.unmount();
   });
 });

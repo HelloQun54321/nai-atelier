@@ -7,6 +7,7 @@ import { applyNaiModelSettings, DEFAULT_NAI_MODEL } from './naiModels';
 import { DEFAULT_NAI_RUNTIME, NaiRuntimeConfig } from './naiRuntime';
 import { imageEditRequestDimensions } from './imageEdit';
 import type { NovelaiSubscriptionInfo, NovelaiUsageState } from './naiUsage';
+import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 import { estimateNaiBilling } from '../worker/naiBilling.mjs';
 
 export const DEFAULT_ANLAS_BUDGET = 1666;
@@ -171,13 +172,18 @@ export const useAnlasBudget = () => {
       setLoading(true);
       void refresh();
     };
+    // 生图与编码结算都在后台扣减预算，完成后统一派发这个事件；
+    // 不在这里重读，侧栏就会一直停在生成前的剩余预算上。
+    const refreshAfterSpend = () => void refresh();
     window.addEventListener(ANLAS_BUDGET_CHANGED_EVENT, update);
     window.addEventListener('nai-project-data-changed', refreshProjectChange);
     window.addEventListener('nai-api-key-changed', refreshKeyChange);
+    window.addEventListener(NOVELAI_USAGE_REFRESH_EVENT, refreshAfterSpend);
     return () => {
       window.removeEventListener(ANLAS_BUDGET_CHANGED_EVENT, update);
       window.removeEventListener('nai-project-data-changed', refreshProjectChange);
       window.removeEventListener('nai-api-key-changed', refreshKeyChange);
+      window.removeEventListener(NOVELAI_USAGE_REFRESH_EVENT, refreshAfterSpend);
     };
   }, [refresh]);
 
