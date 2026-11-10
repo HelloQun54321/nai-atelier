@@ -40150,5 +40150,89 @@
     "The prompt box is used as-is, followed by main, without tidying first. To extract a style string first, tick \"Generate a sample after tidying\" in the tidy panel. Characters go into the character slots; the image goes to the current preview and history, and you confirm the cost as usual.",
     "プロンプト欄の内容をそのまま main とつなげます。先に整理はしません。先に画風文字列を抽出したい場合は、整理パネルで「整えた後にサンプルを生成」にチェックしてください。キャラクターはキャラクター欄に入り、画像は現在のプレビューと履歴に入ります。消費前の確認はいつも通りです。",
     "프롬프트 칸의 내용을 정리하지 않고 그대로 main과 이어 붙입니다. 먼저 화풍 문자열을 추출하려면 정리 패널에서 「정리 후 샘플 생성」을 체크하세요. 캐릭터는 캐릭터 칸에 들어가고, 이미지는 현재 미리보기와 기록에 들어가며, 비용 확인은 평소대로 진행됩니다."
+  ],
+  "完全开源免费": [
+    "完全開源免費",
+    "Fully open source and free",
+    "完全オープンソース・無料",
+    "완전 오픈 소스 무료"
+  ],
+  "本项目完全开源、完全免费，没有付费版本、会员或广告，任何人都可以从开源地址免费获取。如果你是从贩子手里买来的，请立即申请退款，并向交易平台举报；软件本身不收取任何费用，不必花钱购买。": [
+    "本專案完全開源、完全免費，沒有付費版本、會員或廣告，任何人都可以從開源位址免費取得。如果你是從販子手裡買來的，請立即申請退款，並向交易平台檢舉；軟體本身不收取任何費用，不必花錢購買。",
+    "This project is fully open source and completely free: no paid edition, membership or ads. Anyone can get it from the source address at no cost. If you bought it from a reseller, ask for a refund immediately and report the seller to the platform; the software itself charges nothing and never needs to be purchased.",
+    "本プロジェクトは完全オープンソース・完全無料です。有料版・会員・広告はなく、誰でも公開リポジトリから無料で入手できます。転売業者から購入した場合は、直ちに返金を申請し、取引プラットフォームへ通報してください。ソフト自体は一切の費用を請求せず、購入する必要はありません。",
+    "이 프로젝트는 완전한 오픈 소스이며 완전 무료입니다. 유료 버전, 회원, 광고가 없고 누구나 공개 주소에서 무료로 받을 수 있습니다. 되팔이에게서 구입했다면 즉시 환불을 요청하고 거래 플랫폼에 신고하세요. 소프트웨어 자체는 어떤 비용도 받지 않으며 구매할 필요가 없습니다."
+  ],
+  "内容创作与作者无关": [
+    "內容創作與作者無關",
+    "Created content is not the author",
+    "制作内容は作者と無関係",
+    "콘텐츠 제작은 작성자와 무관"
+  ],
+  "本工坊只是本地创作工具，生成的图片和内容完全由你自行决定、保存和使用。作者不参与、不审核、不认可任何具体创作，也不承担由此产生的任何责任。请自行遵守所在地法律法规和所用服务的规则。本项目仅用于无偿学习交流。": [
+    "本工坊只是本地創作工具，生成的圖片和內容完全由你自行決定、保存和使用。作者不參與、不審核、不認可任何具體創作，也不承擔由此產生的任何責任。請自行遵守所在地法律法規和所用服務的規則。本專案僅用於無償學習交流。",
+    "This atelier is only a local creation tool; the images and content you generate are entirely your own decision, storage and use. The author does not take part in, review or endorse any specific work, and accepts no responsibility for any consequence it brings. You are responsible for following the laws and regulations of where you are and the rules of the services you use. This project is for free learning and exchange only.",
+    "本工房はローカルの制作ツールにすぎず、生成した画像と内容の決定・保存・利用はすべてあなた自身が行うものです。作者は個々の制作に参加・審査・推奨せず、それによって生じたいかなる責任も負いません。お住まいの地域の法令と利用サービス规約をご自身で守ってください。本プロジェクトは無償の学習・交流のみを目的としています。",
+    "이 작업실은 로컬 제작 도구일 뿐이며, 생성한 이미지와 내용의 결정·보관·사용은 전적으로 사용자 본인에게 있습니다. 작성자는 어떤 구체적인 창작에도 참여·검토·승인하지 않으며, 그로 인해 발생하는 어떤 책임도 지지 않습니다. 거주 지역의 법규와 이용하는 서비스의 규칙을 스스로 지켜 주세요. 이 프로젝트는 무상 학습·교류 목적으로만 사용됩니다."
+  ],
+  "问题反馈与贡献": [
+    "問題回報與貢獻",
+    "Bug reports and contributions",
+    "不具合報告と貢献",
+    "문제 제보와 기여"
+  ],
+  "发现 bug 或有改进建议，可以在 GitHub 提 Issue，也欢迎直接提 PR，但不保证一定采用。较大的新功能请先沟通、酌情考虑，因为作者不再计划大规模更新。": [
+    "發現 bug 或有改進建議，可以在 GitHub 提 Issue，也歡迎直接提 PR，但不保證一定採用。較大的新功能請先溝通、酌情考慮，因為作者不再計劃大規模更新。",
+    "If you find a bug or have a suggestion, open an Issue on GitHub; pull requests are welcome too, though they are not guaranteed to be merged. For larger new features, please discuss first and expect them to be considered case by case, because the author no longer plans large-scale updates.",
+    "不具合や改善案があれば GitHub で Issue を作成してください。PR も歓迎しますが、必ず採用されるとは限りません。大きめの新機能は事前にご相談ください。作者は大規模な更新を行う予定がないため、個別に判断します。",
+    "버그나 개선 제안이 있으면 GitHub에 Issue를 올려 주세요. PR도 환영하지만 반드시 채택되지는 않습니다. 큰 기능은 먼저 상의해 주세요. 작성자는 더 이상 대규모 업데이트를 계획하지 않으므로 개별적으로 검토합니다."
+  ],
+  "支持作者": [
+    "支持作者",
+    "Support the author",
+    "作者を支援",
+    "작성자 후원"
+  ],
+  "如果你愿意支持作者，欢迎把好看的风格串发到作者邮箱，也可以给 GitHub 仓库点个 Star。": [
+    "如果你願意支持作者，歡迎把好看的風格串寄到作者信箱，也可以給 GitHub 儲存庫點個 Star。",
+    "If you would like to support the author, feel free to share style chains you like by email, and a Star on the GitHub repository is welcome too.",
+    "作者を支援したい方は、気に入ったスタイルチェーンをメールで送るか、GitHub リポジトリに Star を付けていただけると嬉しいです。",
+    "작성자를 후원하고 싶다면 마음에 드는 스타일 체인을 이메일로 보내거나 GitHub 저장소에 Star를 눌러 주세요."
+  ],
+  "去 GitHub 点 Star": [
+    "去 GitHub 點 Star",
+    "Star the repository on GitHub",
+    "GitHub で Star を付ける",
+    "GitHub에서 Star 누르기"
+  ],
+  "打开开源地址": [
+    "開啟開源位址",
+    "Open the source address",
+    "公開リポジトリを開く",
+    "공개 주소 열기"
+  ],
+  "打开 Issues": [
+    "開啟 Issues",
+    "Open Issues",
+    "Issues を開く",
+    "Issues 열기"
+  ],
+  "复制作者邮箱": [
+    "複製作者信箱",
+    "Copy the author's email",
+    "作者のメールをコピー",
+    "작성자 이메일 복사"
+  ],
+  "作者邮箱已复制": [
+    "作者信箱已複製",
+    "Author email copied",
+    "作者のメールをコピーしました",
+    "작성자 이메일을 복사했습니다"
+  ],
+  "复制失败，请手动选择邮箱复制": [
+    "複製失敗，請手動選取信箱複製",
+    "Copy failed; select the email and copy it manually",
+    "コピーに失敗しました。メールを手動で選択してコピーしてください",
+    "복사에 실패했습니다. 이메일을 직접 선택해 복사하세요"
   ]
 }

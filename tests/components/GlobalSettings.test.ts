@@ -13,6 +13,11 @@ import { readActiveNaiKey, REMEMBER_NAI_KEY_STORAGE_KEY, setActiveNaiKey } from 
 import { naiKeyVault } from '../../services/naiKeyVault';
 import { getImageDisplayPageOverride, getMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 const themeFixture = vi.hoisted(() => ({ presets: null as import('../../services/appearancePreferences').AppearancePreset[] | null, fail: false }));
+const platformFixture = vi.hoisted(() => ({ android: false }));
+vi.mock('../../services/platform', async importOriginal => ({
+  ...await importOriginal<typeof import('../../services/platform')>(),
+  isAndroidApp: () => platformFixture.android,
+}));
 const historyFixture = vi.hoisted(() => ({ enabled: false }));
 vi.mock('../../services/sharedAppearancePresets', () => ({ sharedAppearancePresets: {
   load: vi.fn(async (legacy: import('../../services/appearancePreferences').AppearancePreset[]) => {
@@ -351,6 +356,7 @@ describe('GlobalSettings', () => {
 
   beforeEach(() => {
     historyFixture.enabled = false;
+    platformFixture.android = false;
     window.history.replaceState({}, '');
     themeFixture.presets = null; themeFixture.fail = false;
     vi.mocked(downloadFile).mockClear();
@@ -773,6 +779,18 @@ describe('GlobalSettings', () => {
     expect(screen.getByText('实验室模块默认展开')).toBeTruthy();
   });
 
+  it('Android 版维护分类同样展示软件内声明，版本与 GitHub 入口只保留一处', async () => {
+    platformFixture.android = true;
+    render(React.createElement(SettingsHarness, { initialSection: 'maintenance' }));
+    expect(await screen.findByText('完全开源免费')).toBeTruthy();
+    expect(screen.getByText('内容创作与作者无关')).toBeTruthy();
+    expect(screen.getByRole('link', { name: '打开开源地址' }).getAttribute('href')).toBe('https://github.com/HelloQun54321/nai-atelier');
+    expect(screen.getByRole('link', { name: 'helloqun54321@qq.com' }).getAttribute('href')).toBe('mailto:helloqun54321@qq.com');
+    // 手机存储管理自带的重复版本 / GitHub 头部已并入声明卡。
+    expect(screen.queryByRole('link', { name: 'GitHub' })).toBeNull();
+    expect(screen.getAllByRole('link', { name: '打开 GitHub' })).toHaveLength(1);
+  });
+
   it('支持 6 分类独立导航且各区专属内容正常展示与切换', async () => {
     render(React.createElement(SettingsHarness));
 
@@ -807,6 +825,13 @@ describe('GlobalSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: /数据与维护/ }));
     expect(await screen.findByText('重要数据备份')).toBeTruthy();
     expect(screen.getByText('局域网访问')).toBeTruthy();
+    // 软件内声明随维护分类出现：开源免费、内容免责、反馈与支持作者。
+    expect(screen.getByText('完全开源免费')).toBeTruthy();
+    expect(screen.getByText('内容创作与作者无关')).toBeTruthy();
+    expect(screen.getByText('问题反馈与贡献')).toBeTruthy();
+    expect(screen.getByText('支持作者')).toBeTruthy();
+    expect(screen.getByRole('link', { name: '打开开源地址' }).getAttribute('href')).toBe('https://github.com/HelloQun54321/nai-atelier');
+    expect(screen.getByRole('link', { name: 'helloqun54321@qq.com' }).getAttribute('href')).toBe('mailto:helloqun54321@qq.com');
   });
 
   it('当前外观修改不会改写已保存卡片，明确标记修改并提供当前外观导出', async () => {

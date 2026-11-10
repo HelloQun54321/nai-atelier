@@ -14,6 +14,7 @@ import { DesktopLauncherManager } from './DesktopLauncherManager';
 import { AndroidStorageManager } from './AndroidStorageManager';
 import { isAndroidApp } from '../services/platform';
 import { AppUpdateManager } from './AppUpdateManager';
+import { ProjectNotice } from './ProjectNotice';
 import { SillyTavernBridgeExport } from './SillyTavernBridgeExport';
 import {
   clearMobileThumbnailCache,
@@ -68,7 +69,7 @@ import { resolveWorkspaceBackground, type BackgroundMode } from '../services/the
 import { sharedAppearancePresets } from '../services/sharedAppearancePresets';
 import { useSharedAppearancePresets } from './useSharedAppearancePresets';
 import { FLOATING_CONTROL_MAX, FLOATING_CONTROL_MIN, useFloatingControlSize } from '../services/floatingControls';
-import { ArrowLeft, Bot, Check, ChevronRight, Copy, Database, ExternalLink, Eye, EyeOff, FileDown, FileUp, FolderInput, FolderOutput, KeyRound, Lock, Monitor, Moon, Palette, Pencil, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Bot, Check, ChevronRight, Copy, Database, Eye, EyeOff, FileDown, FileUp, FolderInput, FolderOutput, KeyRound, Lock, Monitor, Moon, Palette, Pencil, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
 type SettingsPage = 'home' | SettingsSection;
@@ -1528,7 +1529,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           </section>
 
           <section id="settings-maintenance" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'maintenance' ? 'hidden' : ''}`}>
-            {activeSection === 'maintenance' && (isAndroidApp() ? <AndroidStorageManager notify={notify} /> : <div className="space-y-5">
+            {activeSection === 'maintenance' && (isAndroidApp() ? <div className="space-y-5"><AndroidStorageManager notify={notify} /><ProjectNotice notify={notify} /></div> : <div className="space-y-5">
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><StorageLocationManager notify={notify} /></div>
               <ArtistSampleManager />
               {/* 本地数据备份与还原 */}
@@ -1596,8 +1597,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("本地服务状态")}</h4></div></div>{maintenanceStatusError ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">{maintenanceStatusError}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2"><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.gatewayReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'appearance-group bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>{t("媒体网关：{0}", [maintenanceStatus?.gatewayReady ? t("可用") : t("正在检查")])}</div><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.workerReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : maintenanceStatus ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'appearance-group bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>{t("核心页面服务：{0}", [maintenanceStatus?.workerReady ? t("可用") : maintenanceStatus ? t("未就绪") : t("正在检查")])}</div></div>}</div>
 
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><AppUpdateManager /></div>
-              {/* 关于 NAI Atelier */}
-              <div className="flex items-center justify-between gap-4"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("关于 NAI Atelier")}</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t("个人维护版本 · v{0}", [__APP_VERSION__])}</p></div><a href="https://github.com/HelloQun54321/nai-atelier" target="_blank" rel="noreferrer" data-appearance="control" data-tone="primary" className="mobile-touch flex flex-none items-center gap-1.5 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-indigo-600"><ExternalLink className="h-3.5 w-3.5" />{t("打开 GitHub")}</a></div>
+              {/* 关于 NAI Atelier：开源免费、内容免责、反馈与支持作者 */}
+              <ProjectNotice notify={notify} />
             </div>)}
           </section>
           </div>

@@ -1,6 +1,6 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useEffect, useState } from 'react';
-import { Download, Upload, Database, ExternalLink } from 'lucide-react';
+import { Download, Upload, Database } from 'lucide-react';
 import { native } from '../mobile/native';
 import { useConfirmDialog } from './ConfirmDialog';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
@@ -51,6 +51,5 @@ export function AndroidStorageManager({ notify }: { notify: (message: string, ty
     </div>
     <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><h4 className="font-semibold">{t("缩略图缓存")}</h4><p className="mt-2 text-xs text-gray-500">{t("{0} 张 · {1} MB / {2} MB，清理不影响原图。", [cache.count, (cache.bytes/1048576).toFixed(1), cache.limitMb])}</p><div className="appearance-segmented mt-3 flex flex-wrap gap-2">{[0,25,50,100].map(limit=><button key={limit} type="button" data-appearance="control" data-tone="neutral" aria-pressed={cache.limitMb===limit} onClick={()=>{setMobileCacheLimitMb(limit);setCache(getMobileCacheStats());}} className={`mobile-touch rounded-lg border px-3 py-2 text-xs font-bold transition ${cache.limitMb===limit?'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300':'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}>{limit?`${limit} MB`:t("关闭")}</button>)}<button type="button" data-appearance="control" data-tone="danger" className="mobile-touch rounded-lg px-3 py-2 text-xs font-bold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30" onClick={()=>void perform('正在清理缓存…',async()=>{await clearMobileThumbnailCache();notify('缩略图缓存已清理');})}>{t("清理缓存")}</button></div></div>
     <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><TagDictionaryUpdater notify={notify} /></div>
-    <div className="flex items-center justify-between gap-3"><div><h4 className="font-semibold">NAI Atelier</h4><p className="mt-1 text-xs text-gray-500">Android · v{__APP_VERSION__}</p></div><a href="https://github.com/HelloQun54321/nai-atelier" target="_blank" rel="noreferrer" data-appearance="control" data-tone="primary" className="mobile-touch flex items-center gap-2 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-indigo-600"><ExternalLink className="h-4 w-4" />GitHub</a></div>
   </div>;
 }
