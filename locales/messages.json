@@ -40234,5 +40234,65 @@
     "Copy failed; select the email and copy it manually",
     "コピーに失敗しました。メールを手動で選択してコピーしてください",
     "복사에 실패했습니다. 이메일을 직접 선택해 복사하세요"
+  ],
+  "追加 {count} 个 Tag 到全局正面提示词": [
+    "追加 {count} 個 Tag 到全域正面提示詞",
+    "Append {count} tags to the global positive prompt",
+    "{count} 個のタグをグローバルポジティブプロンプトに追加",
+    "{count}개의 태그를 전역 긍정 프롬프트에 추가"
+  ],
+  "从图片反推 Tag 并新建条目": [
+    "從圖片反推 Tag 並新建條目",
+    "Derive tags from an image and create a new entry",
+    "画像からタグを逆算して新規エントリを作成",
+    "이미지에서 태그를 역산해 새 항목 만들기"
+  ],
+  "用 {count} 个 Tag 新建条目": [
+    "用 {count} 個 Tag 新建條目",
+    "Create a new entry with {count} tags",
+    "{count} 個のタグで新規エントリを作成",
+    "{count}개의 태그로 새 항목 만들기"
+  ],
+  "隐藏密钥明文": [
+    "隱藏金鑰明文",
+    "Hide key plaintext",
+    "キーの平文を隠す",
+    "키 평문 숨기기"
+  ],
+  "显示密钥明文": [
+    "顯示金鑰明文",
+    "Show key plaintext",
+    "キーの平文を表示",
+    "키 평문 표시"
+  ],
+  "保存后列表只显示脱敏格式 pst-…XXXX，可点条目旁的眼睛或复制图标取回完整 Key。": [
+    "儲存後清單只顯示脫敏格式 pst-…XXXX，可點條目旁的眼睛或複製圖示取回完整 Key。",
+    "After saving, the list only shows the masked pst-…XXXX; click the eye or copy icon next to the entry to retrieve the full key.",
+    "保存後、一覧にはマスクされた pst-…XXXX のみが表示されます。項目の横の目またはコピーアイコンから完全なキーを取得できます。",
+    "저장 후 목록에는 마스킹된 pst-…XXXX만 표시됩니다. 항목 옆의 눈 또는 복사 아이콘으로 전체 키를 가져올 수 있습니다."
+  ],
+  "反推当前图片的 Tag": [
+    "反推目前圖片的 Tag",
+    "Derive tags for the current image",
+    "現在の画像のタグを逆算",
+    "현재 이미지의 태그 역산"
+  ],
+  "反推当前图片的 Tag 并追加到全局正面提示词": [
+    "反推目前圖片的 Tag 並追加到全域正面提示詞",
+    "Derive tags for the current image and append them to the global positive prompt",
+    "現在の画像のタグを逆算しグローバルポジティブプロンプトに追加",
+    "현재 이미지의 태그를 역산해 전역 긍정 프롬프트에 추가"
+  ],
+  "也可在此按 Ctrl+V 粘贴，或把图片拖进来": [
+    "也可在此按 Ctrl+V 貼上，或把圖片拖進來",
+    "You can also press Ctrl+V here, or drag an image in",
+    "ここで Ctrl+V を押すか、画像をドラッグしてください",
+    "여기서 Ctrl+V를 누르거나 이미지를 끌어다 놓으세요"
+  ],
+  "也可以按 Ctrl+V 粘贴，或把图片拖到这里": [
+    "也可以按 Ctrl+V 貼上，或把圖片拖到這裡",
+    "You can also press Ctrl+V, or drag an image here",
+    "Ctrl+V を押すか、画像をここにドラッグすることもできます",
+    "Ctrl+V를 누르거나 이미지를 여기로 끌어다 놓을 수도 있습니다"
   ]
 }
