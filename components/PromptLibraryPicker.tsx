@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen, LoaderCircle } from 'lucide-react';
+import { BookOpen } from 'lucide-react';
+import { InlineSpinner } from './DesignSystem';
 import { t, useLanguage } from '../services/i18n';
 import { PROMPT_LIBRARY_KIND_LABELS, type PromptLibraryKind } from '../services/promptAgent';
 import { db } from '../services/dbService';
@@ -71,7 +72,7 @@ const LibraryOptions: React.FC<PromptLibraryPickerProps & { close: () => void }>
             className={TOOLBAR_FIELD_CLASS} />
         {failed ? <div role="alert" className="text-sm text-red-600 dark:text-red-400">
             {t('读取提示词库失败')} <button type="button" className="mobile-touch underline" onClick={() => setRetry(value => value + 1)}>{t('重试')}</button>
-        </div> : chains === null ? <div role="status" className="flex items-center gap-2 py-4 text-sm text-gray-500"><LoaderCircle className="h-4 w-4 animate-spin" />{t('正在读取…')}</div>
+        </div> : chains === null ? <InlineSpinner label={t('正在读取…')} className="py-4 text-sm" />
             : shown.length ? <div className="max-h-80 space-y-1 overflow-y-auto">
                 {shown.map(item => {
                     const prompt = item.basePrompt.trim();

@@ -11,7 +11,7 @@ import { PressRevealSurface } from '../PressRevealSurface';
 import { SmartImage } from '../SmartImage';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from '../ImageShareActions';
 import { ImageCardActions } from '../ImageCardActions';
-import { EmptyState } from '../DesignSystem';
+import { EmptyState, InlineSpinner } from '../DesignSystem';
 
 interface Props {
   experiment: RollExperiment; candidates: RollCandidate[]; images: Map<string, LocalGenItem>; selectedId: string; selectionFocusEnabled: boolean;
@@ -73,7 +73,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
               <div className="appearance-group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 dark:bg-gray-900 text-gray-400">
                 <Dice5 className="h-6 w-6 animate-pulse" />
               </div>
-              <span className="text-xs font-medium">{t(historyReady ? (generatingId === candidate.id ? '生成中…' : '待生成') : historyLoading ? '加载中…' : '历史暂不可用')}</span>
+              <div className="text-xs font-medium">{historyReady ? t(generatingId === candidate.id ? '生成中…' : '待生成') : historyLoading ? <InlineSpinner label={t('加载中…')} className="text-xs" /> : t('历史暂不可用')}</div>
             </div>}
 
         {selecting ? (

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, LoaderCircle } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
+import { InlineSpinner } from './DesignSystem';
 import { getActiveKeyHash } from '../services/anlasBudget';
 import { getLanguage, t, useLanguage } from '../services/i18n';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
@@ -86,7 +87,7 @@ export const KeyUsageSection: React.FC<Props> = ({ rows, period, periodPicker, i
       <h2 className="text-sm font-bold text-gray-800 dark:text-gray-100">{t('Key 使用量')}</h2>
       {periodPicker || <span className="text-right text-xs text-gray-500 dark:text-gray-400">{period}</span>}
     </div>
-    {loading ? <div role="status" className="flex items-center justify-center gap-2 py-6 text-sm text-gray-500"><LoaderCircle className="h-4 w-4 animate-spin" />{t('正在读取…')}</div>
+    {loading ? <InlineSpinner label={t('正在读取…')} className="py-6 text-sm" />
       : error ? <div role="alert" className="flex flex-wrap items-center gap-3 py-4 text-sm text-gray-500"><span>{error}</span><button type="button" onClick={onRetry} className="mobile-touch font-semibold text-indigo-600 dark:text-indigo-300">{t('重试')}</button></div>
         : rows.length === 0 ? <p className="py-6 text-center text-sm text-gray-400">{t('暂无 Key 用量记录')}</p>
           : <>

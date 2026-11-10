@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Folder, LoaderCircle, Search, X } from 'lucide-react';
+import { Folder, Search, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { Inspiration, InspirationBoard } from '../types';
 import { getCollectionBoardIds } from '../services/inspirationUtils';
@@ -9,6 +9,7 @@ import { DirectoryTreeNavigation } from './DirectoryTreeNavigation';
 import { SmartImage } from './SmartImage';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { InlineSpinner } from './DesignSystem';
 
 interface InspirationImagePickerProps {
   open: boolean;
@@ -153,11 +154,11 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
           <DirectoryTreeNavigation label={t("收藏夹目录")} title={t("收藏夹")} nodes={boards} selectedId={selectedBoardId} onSelect={setSelectedBoardId} expanded preferenceKey="nai-collection-picker-tree-branches" allLabel={t("全部收藏")} unclassifiedLabel={t("未整理")} />
         {/* 收藏网格 */}
         <div className="appearance-group min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3 dark:bg-gray-950/40 sm:p-4">
-          {pending && filteredItems.length > 0 && <p role="status" className="mb-3 text-sm text-gray-500">{t('正在读取收藏库…')}</p>}
+          {pending && filteredItems.length > 0 && <InlineSpinner label={t('正在读取收藏库…')} className="mb-3 text-sm" />}
           {error && filteredItems.length > 0 && <p role="alert" className="mb-3 text-sm text-red-500">{t(error)} <button type="button" onClick={() => void loadData()} className="underline">{t('重新读取')}</button></p>}
           {pending && filteredItems.length === 0 ? (
-            <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-              <LoaderCircle className="h-5 w-5 animate-spin" />{t("正在读取收藏库…")}</div>
+            <div className="flex min-h-64 items-center justify-center">
+              <InlineSpinner label={t("正在读取收藏库…")} className="text-sm" /></div>
           ) : error && filteredItems.length === 0 ? (
             <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-sm text-red-500">
               <span>{t(error)}</span>

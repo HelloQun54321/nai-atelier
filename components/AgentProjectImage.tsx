@@ -1,6 +1,7 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useState } from 'react';
 import { api } from '../services/api';
+import { InlineSpinner } from './DesignSystem';
 import { promptAgentService } from '../services/promptAgent';
 import { type AgentMedia, isAgentImagePath } from '../services/agentMedia';
 
@@ -32,7 +33,7 @@ export const AgentProjectImage: React.FC<{ image: AgentMedia; onReady?: () => vo
   return <figure className={`my-2 min-w-0 ${safeMode && !expanded ? 'safe-mode' : ''}`}>
     {error ? <p role="alert" className="appearance-media text-xs text-red-600">{t(error)}</p> : url ? <button type="button" aria-label={expanded ? t("收起图片") : t("查看图片：{0}", [image.title])} onClick={() => setExpanded(value => !value)} className="appearance-media block w-full overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-950">
       <img src={url} alt={image.title} data-safe-mode-ignore={expanded ? 'true' : undefined} className={`w-full object-contain ${expanded ? 'max-h-[75dvh]' : 'max-h-64'}`} onLoad={onReady} onError={() => setError('图片无法显示，原文件可能已损坏或移除')} />
-    </button> : <p role="status" className="text-xs text-gray-400">{t("正在读取图片…")}</p>}
+    </button> : <InlineSpinner label={t("正在读取图片…")} className="text-xs" />}
     <figcaption className="mt-1 break-words text-micro text-gray-500">{image.title}</figcaption>
   </figure>;
 };

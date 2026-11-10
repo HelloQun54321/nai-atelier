@@ -1,4 +1,5 @@
 import { t, useLanguage } from '../services/i18n';
+import { InlineSpinner } from './DesignSystem';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import './AgentSurface.css';
 import { AgentGenerationOptions } from './AgentChatPreferences';
@@ -287,7 +288,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-meta font-bold uppercase tracking-wider text-indigo-500">{t("当前助手模型")}</div>
           <div className="relative flex items-center gap-2">
-            {!settingsLoaded && settingsLoading && <p role="status" className="pointer-events-none absolute right-full top-1/2 mr-2 -translate-y-1/2 whitespace-nowrap text-micro text-gray-500">{t('正在读取模型列表…')}</p>}
+            {!settingsLoaded && settingsLoading && <InlineSpinner label={t('正在读取模型列表…')} className="pointer-events-none absolute right-full top-1/2 mr-2 -translate-y-1/2 whitespace-nowrap text-micro" />}
             <button
               type="button"
               disabled={models.length === 0}
@@ -452,7 +453,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
           <div className="appearance-group mt-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
             {filteredModels.map(model => <button key={`${model.provider}/${model.id}`} type="button" disabled={busy} onClick={() => void selectModel(model)} className="flex min-h-16 w-full items-center gap-3 border-b border-gray-100 px-4 text-left last:border-0 hover:bg-indigo-50 dark:border-gray-800 dark:hover:bg-indigo-950/20"><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ${model.current ? 'bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{model.current ? '✓' : '→'}</span><span className="min-w-0 flex-1"><b className="block truncate text-sm text-gray-900 dark:text-white">{formatModelOptionTitle(model, models)}</b><span className="block truncate text-meta text-gray-500">{model.providerName || model.provider}</span></span><span className="hidden shrink-0 text-right text-micro leading-4 text-gray-500 dark:text-gray-400 sm:block">{t("上下文 ")}{formatContext(model.contextWindow)}<br />{model.reasoning ? t("推理") : model.capabilityDetection?.reasoning === 'unknown' ? t("推理未知") : t("普通")}{model.imageInput ? t(" · 图片") : model.capabilityDetection?.imageInput === 'unknown' ? t(" · 图片未知") : ''}</span></button>)}
             {!filteredModels.length && <div className="p-10 text-center text-sm text-gray-500">
-              {!settingsLoaded && settingsLoading ? t('正在读取模型列表…') : !settingsLoaded && settingsLoadError ? <><p>{t(settingsLoadError)}</p><button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }} className="mobile-touch mt-3 rounded-lg px-3 py-2 text-xs font-bold text-indigo-600 underline dark:text-indigo-300">{t('重试')}</button></> : query ? t("没有匹配结果") : t("还没有模型，请先连接 API")}
+              {!settingsLoaded && settingsLoading ? <InlineSpinner label={t('正在读取模型列表…')} className="text-sm" /> : !settingsLoaded && settingsLoadError ? <><p>{t(settingsLoadError)}</p><button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }} className="mobile-touch mt-3 rounded-lg px-3 py-2 text-xs font-bold text-indigo-600 underline dark:text-indigo-300">{t('重试')}</button></> : query ? t("没有匹配结果") : t("还没有模型，请先连接 API")}
             </div>}
           </div>}
       </main>

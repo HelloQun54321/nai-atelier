@@ -14,7 +14,7 @@ import { prepareCollectedPrompt } from '../services/collectedPrompt';
 import type { PromptApplyMode } from '../services/promptApply';
 import { planContentRollApply, type ContentRollTarget, type ContentRollEntryTarget } from '../services/contentRollApply';
 import { readInteractionPick } from '../services/contentRollInteraction';
-import { IconButton, ToolbarButton, ToolbarActionRow, WorkspacePageState, PageSpinner } from './DesignSystem';
+import { IconButton, InlineSpinner, ToolbarButton, ToolbarActionRow, WorkspacePageState, PageSpinner } from './DesignSystem';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageActivityContext } from './SmartImage';
 import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
@@ -72,7 +72,9 @@ export const usePromptLibrary = () => useContext(PromptLibraryContext);
 function DirectoryStatus() {
   const library = usePromptLibrary();
   if (!library?.reloadDirectories || library.directories && !library.directoriesError) return null;
-  return <p role={library.directoriesError ? 'alert' : 'status'} className="text-sm text-gray-500">{library.directoriesError || t('正在读取目录…')}{library.directoriesError && <ToolbarButton onClick={() => void library.reloadDirectories?.().catch(() => {})}>{t('重试')}</ToolbarButton>}</p>;
+  return library.directoriesError
+    ? <p role="alert" className="text-sm text-gray-500">{library.directoriesError}<ToolbarButton onClick={() => void library.reloadDirectories?.().catch(() => {})}>{t('重试')}</ToolbarButton></p>
+    : <InlineSpinner label={t('正在读取目录…')} className="text-sm" />;
 }
 export interface WorkspaceAccess { state: PromptLibraryWorkspaceState; change: (next: PromptLibraryWorkspaceState) => void | Promise<void>; canUndo: boolean; undo: () => void;
   rollReceipt?: RollApplyReceipt; applyRoll?: (picks: Record<string, RollRow>, target: ContentRollTarget) => Promise<string[]>;

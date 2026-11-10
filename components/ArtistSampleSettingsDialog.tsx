@@ -1,6 +1,7 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { InlineSpinner } from './DesignSystem';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { useMobileHistoryLayer } from './MobileUI';
 import { t, useLanguage } from '../services/i18n';
@@ -100,7 +101,7 @@ const ArtistSampleSettingsDialogContent: React.FC<ArtistSampleSettingsDialogProp
     <div className="appearance-panel flex h-[min(800px,90dvh)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
       <header className="flex flex-none items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-700"><div className="min-w-0 flex-1"><h2 className="font-bold dark:text-white">{t('补图生成设置')}</h2><p className="mt-1 break-words text-xs text-gray-500">{tag ? `${tag} · ` : ''}NovelAI {pack === 'v45' ? 'V4.5' : 'V5 Full'}</p></div><button type="button" aria-label={t('关闭')} disabled={busy} onClick={close} className="mobile-touch rounded-lg p-2 text-gray-500"><X className="h-4 w-4" /></button></header>
       <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-        {loading ? <p className="text-sm text-gray-500">{t('正在读取配置…')}</p> : template && <fieldset disabled={saving} className="min-w-0"><GenerationTemplateEditor
+        {loading ? <InlineSpinner label={t('正在读取配置…')} className="text-sm" /> : template && <fieldset disabled={saving} className="min-w-0"><GenerationTemplateEditor
           value={template}
           onChange={value => setTemplate(value)}
           disabled={saving}

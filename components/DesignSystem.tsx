@@ -61,14 +61,17 @@ export const WorkspacePageState: React.FC<React.HTMLAttributes<HTMLDivElement>> 
   </div>;
 };
 
-/** 页面级加载态：锚在 `.app-workspace` 正中，懒加载与资料首读同一落点，顶栏出现不带动上跳；默认「加载中…」。弹层内用 fill={false}。 */
+/** 页面级加载态：锚在当前视图正中，懒加载与资料首读同一落点，顶栏出现不带动上跳；默认「加载中…」。弹层内用 fill={false}。 */
 export const PageSpinner: React.FC<{ label?: string; className?: string; fill?: boolean }> = ({ label = '加载中…', className = '', fill = true }) => {
   useLanguage();
   const anchorRef = useRef<HTMLSpanElement>(null);
   const [host, setHost] = useState<Element | null>(null);
   useLayoutEffect(() => {
     if (!fill) return;
-    const node = anchorRef.current?.closest('.app-workspace') || anchorRef.current?.closest('main') || anchorRef.current?.parentElement || null;
+    // 每个保活视图持有自己的加载圈：圈圈 portal 进所在视图容器，随该视图一起隐藏。
+    // 若直接钉到 `.app-workspace`，后台保活页面的旧圈会穿透 hidden 容器，一直盖在当前页面上。
+    const anchor = anchorRef.current;
+    const node = anchor?.closest('[data-keep-alive-view]') || anchor?.closest('.app-workspace') || anchor?.closest('main') || anchor?.parentElement || null;
     setHost(node);
   }, [fill]);
   const body = (

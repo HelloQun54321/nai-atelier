@@ -3,7 +3,7 @@ import {
   Activity, ArrowRight, BarChart3, Brush, CalendarDays, Download,
   Flame, Footprints, Heart, Image as ImageIcon, LoaderCircle, Palette, RefreshCw, Sparkles,
 } from 'lucide-react';
-import { EmptyState, InlineSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, InlineSpinner, PageSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { MobileOverflowMenu } from './MobileUI';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { collectionRevision, collectionSnapshot, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
@@ -599,7 +599,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
       </WorkspaceChrome>
       <div ref={scrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-scroll overscroll-contain p-4 pb-28 md:p-6 md:pb-10">
         <div className="mx-auto w-full max-w-6xl space-y-4">
-          {loading && !stats && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[0, 1, 2, 3].map(item => <div key={item} className="h-24 animate-pulse rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900" />)}</div>}
+          {loading && !stats && <PageSpinner />}
 
           {error && !loading && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
             <div className="flex flex-wrap items-center gap-3"><span className="min-w-0 flex-1">{error}</span><button type="button" onClick={() => setReload(value => value + 1)} className="mobile-touch rounded-lg border border-current px-3 py-1 text-xs font-semibold">{t('重试')}</button><button type="button" onClick={() => onOpenHistory({ sort: 'newest' })} className="mobile-touch text-xs font-semibold underline">{t('打开历史')}</button></div>
@@ -746,18 +746,18 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                 <div>
                   <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">{t('Roll 实验排行')}</p>
-                  {rollStats.top.length ? <div className="space-y-0.5">{rollStats.top.map(row => <button key={row.id} type="button" onClick={onOpenRoll} className="mobile-touch flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/70"><span className="min-w-0 flex-1 truncate text-sm text-gray-700 dark:text-gray-200">{row.name}</span><span className="flex-none text-micro text-gray-400">{t('{0} 候选 · {1} 保存', [formatNumber(row.candidates), formatNumber(row.saved)])}</span></button>)}</div> : <p className="py-4 text-center text-sm text-gray-400">{assets.roll ? t('暂无') : assetsLoading ? t('加载中…') : '—'}</p>}
+                  {rollStats.top.length ? <div className="space-y-0.5">{rollStats.top.map(row => <button key={row.id} type="button" onClick={onOpenRoll} className="mobile-touch flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/70"><span className="min-w-0 flex-1 truncate text-sm text-gray-700 dark:text-gray-200">{row.name}</span><span className="flex-none text-micro text-gray-400">{t('{0} 候选 · {1} 保存', [formatNumber(row.candidates), formatNumber(row.saved)])}</span></button>)}</div> : assets.roll ? <p className="py-4 text-center text-sm text-gray-400">{t('暂无')}</p> : assetsLoading ? <InlineSpinner label={t('加载中…')} className="py-4" /> : <p className="py-4 text-center text-sm text-gray-400">—</p>}
                 </div>
                 <div>
                   <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">{t('素材与收藏来源')}</p>
-                  {collectionStats.bySource.length ? <div className="space-y-1">{collectionStats.bySource.slice(0, 6).map(([source, count]) => <div key={source} className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm"><span className="min-w-0 truncate text-gray-600 dark:text-gray-300">{sourceLabel(source as InspirationSourceType)}</span><span className="flex-none text-micro tabular-nums text-gray-400">{formatNumber(count)}</span></div>)}</div> : <p className="py-4 text-center text-sm text-gray-400">{collectionReady ? t('暂无') : collectionLoading ? t('加载中…') : '—'}</p>}
+                  {collectionStats.bySource.length ? <div className="space-y-1">{collectionStats.bySource.slice(0, 6).map(([source, count]) => <div key={source} className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm"><span className="min-w-0 truncate text-gray-600 dark:text-gray-300">{sourceLabel(source as InspirationSourceType)}</span><span className="flex-none text-micro tabular-nums text-gray-400">{formatNumber(count)}</span></div>)}</div> : collectionReady ? <p className="py-4 text-center text-sm text-gray-400">{t('暂无')}</p> : collectionLoading ? <InlineSpinner label={t('加载中…')} className="py-4" /> : <p className="py-4 text-center text-sm text-gray-400">—</p>}
                 </div>
               </div>
             </SectionCard>
 
             <div className="grid gap-4 lg:grid-cols-2">
               <SectionCard title={t('创作助手')} hint={t('会话与消息元数据，不读取聊天内容')}>
-                {agentLoading && !assets.agent ? <p className="py-6 text-center text-sm text-gray-400">{t('正在读取…')}</p> : !assets.agent ? <p className="py-6 text-center text-sm text-gray-400">{t('助手服务未连接')}</p> : <div className="grid grid-cols-2 gap-2">
+                {agentLoading && !assets.agent ? <InlineSpinner label={t('正在读取…')} className="py-6" /> : !assets.agent ? <p className="py-6 text-center text-sm text-gray-400">{t('助手服务未连接')}</p> : <div className="grid grid-cols-2 gap-2">
                   <SmallMetric label={t('会话')} value={formatNumber(agentStats.sessions)} />
                   <SmallMetric label={t('消息')} value={formatNumber(agentStats.messages)} />
                 </div>}

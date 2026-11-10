@@ -110,7 +110,7 @@ it('空缓存首次请求完成前显示加载态，只有成功确认空结果�
   let resolveSearch!: (value: { items: AitagWorkSummary[]; total: number; page: number; page_size: number }) => void;
   mocks.search.mockReturnValue(new Promise(resolve => { resolveSearch = resolve; }));
   const view = await setup('portrait', true, undefined, false);
-  expect(screen.getByText('加载 aitag 数据中...')).toBeTruthy();
+  expect(screen.getByText('加载中…')).toBeTruthy();
   expect(screen.queryByText('没有匹配结果')).toBeNull();
 
   await act(async () => resolveSearch({ items: [], total: 0, page: 1, page_size: 60 }));
@@ -126,7 +126,7 @@ it('已有 AITag 作品在新检索等待期间继续显示，首屏请求失败
   fireEvent.change(input, { target: { value: '合成检索' } });
   fireEvent.keyDown(input, { key: 'Enter' });
   expect(screen.getByRole('button', { name: '查看作品 合成作品 1' })).toBeTruthy();
-  expect(screen.queryByText('加载 aitag 数据中...')).toBeNull();
+  expect(screen.queryByText('加载中…')).toBeNull();
   view.unmount();
 
   vi.resetModules();
@@ -338,7 +338,7 @@ it('追加中准确显示进度，失败原位重试且成功后继续自动滚�
   mocks.search.mockImplementation(options => options.page === 1 ? Promise.resolve({ items: works, total: 180, page: 1 }) : new Promise(resolve => { finish = resolve; }));
   mocks.searchCache.mockRejectedValue(new Error('缓存也不可用'));
   const view = await setup('portrait'); await act(async () => reach());
-  expect(screen.getByText('正在加载更多…').getAttribute('role')).toBe('status');
+  expect(screen.getByText('正在加载更多…').closest('[role="status"]')).toBeTruthy();
   await act(async () => finish(null));
   await waitFor(() => expect(mocks.search.mock.calls.length).toBeGreaterThan(2));
   // 预取失败会回退实际请求，实际请求与缓存均失败后进入显式重试。
@@ -449,7 +449,7 @@ it('首屏请求中隐藏再返回不会留下永久前台loading', async () => 
   const draw = (active: boolean) => <AitagGallery active={active} currentUser={{ id: 'synthetic' } as User} notify={vi.fn()} onNavigateToPlayground={mocks.navigate} onCreateArtistChain={mocks.createChain} />;
   const view = render(draw(true)); view.rerender(draw(false));
   await act(async () => finish({ items: works, total: 2, page: 1 })); view.rerender(draw(true));
-  await screen.findByRole('button', { name: '查看作品 合成作品 1' }); expect(screen.queryByText('加载 aitag 数据中...')).toBeNull();
+  await screen.findByRole('button', { name: '查看作品 合成作品 1' }); expect(screen.queryByText('加载中…')).toBeNull();
 });
 
 it('在线大总数回退小缓存后按缓存实际总数停止，不连续扫描旧远端空页', async () => {

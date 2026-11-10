@@ -9,7 +9,7 @@ import { codexCharactersToParams, codexEntryMatches, codexPromptImport, loadCode
 import { collectionRevision, collectionTargetActive, collectionTargetComplete, subscribeCollection, type CollectionImage, type CollectionTarget } from '../services/collectionFavorites';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
-import { ChromeNotice, ChromeNoticeStack, EmptyState, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { ChromeNotice, ChromeNoticeStack, EmptyState, IconButton, InlineSpinner, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { DetailSidePanel } from './DetailPanel';
 import { ImageShareOverlay } from './ImageShareActions';
@@ -340,7 +340,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
             </div>
           </div>
           {metadata && <p className="text-xs text-gray-500">{[metadata.params.model && getNaiModelDisplayLabel(metadata.params.model), metadata.params.width && metadata.params.height && `${metadata.params.width} × ${metadata.params.height}`, metadata.params.steps && `${metadata.params.steps} ${t('步')}`, metadata.params.scale !== undefined && `CFG ${metadata.params.scale}`].filter(Boolean).join(' · ')}</p>}
-          {reading && <p role="status" className="text-xs text-gray-500">{t('读取中…')}</p>}
+          {reading && <InlineSpinner label={t('读取中…')} className="text-xs" />}
           {metadata === null && <p role="status" className="text-xs text-gray-500">{t('无可用原图配置，取用条目内容')}</p>}
           {importValue?.partialMetadata && <p role="status" className="text-xs text-gray-500">{t('部分元数据，缺失参数保留当前设置')}</p>}
           {metadataError && <div className="space-y-2"><p role="alert" className="text-xs text-amber-700 dark:text-amber-300">{metadataError}</p><ToolbarButton onClick={() => void readOriginal()}>{t('重试')}</ToolbarButton></div>}

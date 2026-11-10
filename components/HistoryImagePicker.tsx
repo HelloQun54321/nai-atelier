@@ -1,6 +1,6 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, LoaderCircle, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { PAGINATION_CONFIG } from '../config/pagination';
 import { localHistory } from '../services/localHistory';
 import { LocalGenItem } from '../types';
@@ -8,6 +8,7 @@ import { SmartImage } from './SmartImage';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { InlineSpinner } from './DesignSystem';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
 
 interface HistoryImagePickerProps {
@@ -187,7 +188,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
 
         <div ref={scrollRef} className="appearance-group min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3 dark:bg-gray-950/40 sm:p-4">
           {pending && (!matchingScope || items.length === 0) ? (
-            <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400"><LoaderCircle className="h-5 w-5 animate-spin" />{t("正在读取历史图片…")}</div>
+            <div className="flex min-h-64 items-center justify-center"><InlineSpinner label={t("正在读取历史图片…")} className="text-sm" /></div>
           ) : error && (!matchingScope || items.length === 0) ? (
             <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-sm text-red-500"><span>{t(error)}</span><button type="button" onClick={retry} className="rounded-lg bg-red-50 px-3 py-2 font-semibold hover:bg-red-100 dark:bg-red-950/30">{t("重新读取")}</button></div>
           ) : items.length === 0 ? (
@@ -212,7 +213,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
               ))}
             </div>
           )}
-          {pending && matchingScope && items.length > 0 && <p role="status" className="mt-3 text-sm text-gray-500">{t('正在读取历史图片…')}</p>}
+          {pending && matchingScope && items.length > 0 && <InlineSpinner label={t('正在读取历史图片…')} className="mt-3 text-sm" />}
           {error && matchingScope && items.length > 0 && <p role="alert" className="mt-3 text-sm text-red-500">{t(error)} <button type="button" onClick={retry} className="underline">{t('重新读取')}</button></p>}
           {matchingScope && items.length > 0 && hasMore && <div ref={loadMoreRef} data-history-picker-load-more="true" aria-hidden="true" className="h-4" />}
         </div>

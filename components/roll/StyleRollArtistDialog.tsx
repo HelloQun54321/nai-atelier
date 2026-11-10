@@ -231,7 +231,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
       {(error || sampleError || libraryError || groups.error) && <p role="alert" className="shrink-0 px-4 pb-2 text-xs text-red-500">{t(error || sampleError || libraryError || groups.error)}{(groups.error || sampleError) && <button type="button" className="mobile-touch ml-2 underline" onClick={() => groups.error ? void groups.reload() : setSampleRetry(value => value + 1)}>{t('重试')}</button>}</p>}
       {usageOpen && <AnchoredToolbarPopover anchorRef={usageAnchor} title={t('筛选')} width={280} allowMobile onClose={closeUsage}>
         <div className="space-y-3">
-          {usageStatus === 'loading' && <p role="status" className="text-xs text-gray-500">{t('正在统计画师使用…')}</p>}
+          {usageStatus === 'loading' && <InlineSpinner label={t('正在统计画师使用…')} className="text-xs" />}
           {usageStatus === 'error' && <p role="alert" className="flex items-center justify-between gap-2 text-xs text-red-500">{t('画师使用统计暂不可用')}<button type="button" className="shrink-0 underline" onClick={() => setUsageRetry(value => value + 1)}>{t('重试统计')}</button></p>}
           <div className="space-y-1"><p className="text-xs font-medium">{t('风格串收录')}</p><ToolbarSelect containerClassName="w-full" label={t('风格串收录')} value={chainsFilter} disabled={!usageReady} onChange={event => { setChainsFilter(event.target.value as ArtistUsageFilter); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }}>
             <option value="all">{t('全部')}</option><option value="used">{t('已收录')}</option><option value="unused">{t('未收录')}</option>

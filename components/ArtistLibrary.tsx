@@ -730,7 +730,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 <ToolbarPopover title={t("筛选画师")} count={Number(artistSort !== 'popular') + Number(!onlySamples) + Number(chainUsageFilter !== 'all') + Number(imageUsageFilter !== 'all')}>
                     <div className="space-y-3">
                         <p role="status" className={`text-xs ${currentSampleError || download?.stage === 'error' || currentPackStatus?.phase === 'error' ? 'text-red-500' : 'text-gray-500'}`}>{sampleStatusText}{samplePack === 'v5' && hasLegacyV5Samples && <span className="block">{t('旧 Curated 样张已保留，不计入 Full 浏览')}</span>}</p>
-                        {usageState.status === 'loading' && <p role="status" className="text-xs text-gray-500">{t('正在统计画师使用…')}</p>}
+                        {usageState.status === 'loading' && <InlineSpinner label={t('正在统计画师使用…')} className="text-xs" />}
                         {usageState.status === 'error' && <p role="alert" className="flex items-center justify-between gap-2 text-xs text-red-500">{t('画师使用统计暂不可用')}<button type="button" className="shrink-0 underline" onClick={() => setUsageRetry(current => current + 1)}>{t('重试统计')}</button></p>}
                         <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={onlySamples} onChange={event => { updateOnlySamples(event.target.checked); leaveGacha(); }} />{t('只看有样张')}</label>
                         <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("画师排序")} value={artistSort} onChange={event => { setArtistSort(event.target.value as ArtistLibrarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}>
@@ -846,7 +846,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 {!gachaArtists && statusReady && (!localCatalogBrowse || !sampleLoading && !sampleError) && (
                     <div ref={catalogSentinelRef} className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">
                         {isLoadingMoreCatalog ? (
-                            <span className="flex items-center gap-2"><span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />{t("正在加载更多画师…")}</span>
+                            <InlineSpinner label={t("正在加载更多画师…")} />
                         ) : loadMoreError ? (
                             <span role="alert" className="flex items-center gap-2">{loadMoreError}<button type="button" onClick={loadMore} className="rounded-full border border-gray-300 px-3 py-1 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t('重试')}</button></span>
                         ) : hasMoreVisible ? (

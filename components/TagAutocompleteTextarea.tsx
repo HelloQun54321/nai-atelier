@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef,
 import { createPortal } from 'react-dom';
 import { Eraser, Info, Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
 import type { PromptTagLibraryTarget } from './PromptTagLibraryInfo';
+import { InlineSpinner } from './DesignSystem';
 import { InfoPopover } from './InfoPopover';
 import { PromptHeightHandle } from './PromptHeightHandle';
 import { PromptTidyActions, type PromptTidyOptions } from './PromptTidyActions';
@@ -1166,7 +1167,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
           className={`appearance-panel appearance-overlay touch-pan-y overflow-y-auto rounded-xl border border-gray-200 bg-white select-none shadow-2xl dark:border-gray-800 dark:bg-gray-900 ${dropUp ? 'mb-1' : 'mt-1'}`}
         >
           {isLoading && suggestions.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-gray-400">{t("正在加载 Tag…")}</div>
+            <div className="px-3 py-2"><InlineSpinner label={t("正在加载 Tag…")} className="text-xs" /></div>
           ) : suggestions.map((suggestion, index) => (
             <React.Fragment key={suggestion.libraryEntry ? `library-${suggestion.libraryEntry.id}` : `${suggestion.category}-${suggestion.name}`}>
             {(index === 0 || !!suggestion.libraryEntry !== !!suggestions[index - 1]?.libraryEntry) && <div role="presentation" className="appearance-group sticky top-0 border-b border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-500 dark:border-gray-700 dark:bg-gray-900">{t(suggestion.libraryEntry ? '我的提示词' : 'Tag')}</div>}

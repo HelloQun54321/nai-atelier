@@ -1212,7 +1212,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                             <div className="flex flex-col items-center justify-center py-6">
                                 {appendFailed && <ToolbarButton onClick={() => { setAppendFailed(false); void appendNextPage(); }}>{t("加载更多失败 · 重试")}</ToolbarButton>}
                                 {isLoading ? (
-                                    <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />{t("加载中...")}</div>
+                                    <InlineSpinner label={t('加载中…')} />
                                 ) : (
                                     <div className="text-sm text-gray-500 dark:text-gray-400 text-center">
                                         <p>{t("当前显示第 {0} - {1} 张", [getDisplayedRange().start, getDisplayedRange().end])}</p>

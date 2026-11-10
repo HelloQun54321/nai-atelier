@@ -1,6 +1,7 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import { abortMobileThumbnailRequests } from '../services/mobileImageCache';
+import { InlineSpinner } from './DesignSystem';
 
 interface LanAccessGateProps {
   children: ReactNode;
@@ -81,7 +82,7 @@ export const LanAccessGate: React.FC<LanAccessGateProps> = ({ children }) => {
   if (state === 'checking') {
     return (
       <div className="workspace-canvas flex min-h-[100dvh] items-center justify-center bg-gray-50 text-gray-600 dark:bg-gray-950 dark:text-gray-300">
-        <div className="flex items-center gap-3 text-sm"><span className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />{t("正在连接电脑端…")}</div>
+        <InlineSpinner label={t("正在连接电脑端…")} className="text-sm" />
       </div>
     );
   }

@@ -4,7 +4,7 @@ import { t } from '../../services/i18n';
 import { createUuid } from '../../services/id';
 import { getChainFolderIds, removeChainFolder, type ChainFolder } from '../../services/chainFolders';
 import type { useChainFolders } from '../../services/useChainFolders';
-import { ToolbarButton } from '../DesignSystem';
+import { InlineSpinner, ToolbarButton } from '../DesignSystem';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
 import { ImageActivityContext } from '../SmartImage';
@@ -108,7 +108,7 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, fav
       className="chain-folder-navigation" selectLabel={t('选择文件夹')} createLabel={t('新建文件夹')} renameLabel={t('编辑文件夹')} deleteLabel={t('删除文件夹')} unclassifiedLabel={t('未整理')}
       onCreate={() => open('new')} onRename={id => { const folder = folders.find(item => item.id === id); if (folder) open(folder); }} onDelete={() => void remove()}
       onMove={(id, targetParentId) => void moveFolder(id, targetParentId)}
-      header={<>{!store.ready && !store.error && <p role="status" className="text-xs text-gray-500">{t('正在加载文件夹…')}</p>}{store.error && <div role="alert" className="mb-2 text-xs text-red-500">{t(store.error)}<button type="button" onClick={() => void store.reload()} className="mobile-touch ml-2 underline">{t('重新加载')}</button></div>}</>}
+      header={<>{!store.ready && !store.error && <InlineSpinner label={t('正在加载文件夹…')} className="text-xs" />}{store.error && <div role="alert" className="mb-2 text-xs text-red-500">{t(store.error)}<button type="button" onClick={() => void store.reload()} className="mobile-touch ml-2 underline">{t('重新加载')}</button></div>}</>}
       nodeProps={id => ({
         onDragOver: event => { if (!blocked && folders.some(folder => folder.id === id) && event.dataTransfer.types.includes(CHAIN_FOLDER_DRAG_TYPE)) { event.preventDefault(); event.dataTransfer.dropEffect = 'link'; setDragOver(id); } },
         onDragLeave: () => setDragOver(null), onDrop: event => drop(event, id),

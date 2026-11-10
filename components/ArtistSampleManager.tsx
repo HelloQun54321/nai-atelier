@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MoreHorizontal, ChevronRight, Database, Download, FolderOpen, PackageOpen, Pause, RotateCw, Trash2, X } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import { useConfirmDialog } from './ConfirmDialog';
+import { InlineSpinner } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import {
   broadcastArtistSamplesChanged, controlArtistSamplePack, getArtistSampleStatus,
@@ -155,7 +156,7 @@ export const ArtistSampleManager: React.FC = () => {
       const statusText = !statusReady ? statusError ? '—' : t('加载中…') : item?.source === 'pack' && item.phase === 'ready' ? t('可用 · {0} 个画师 Tag（本地样张包 {1}）', [item.count, formatBytes(item.packFile?.bytes || 0)]) : files && item && sourceMatches && files.some(file => file.active) ? t('可用 · {0} 个画师 Tag', [item.count])
         : downloading || verifying ? (verifying ? t('正在校验图包…') : t('图包下载中：{0}%', [percent])) : item?.phase === 'ready' && !sourceMatches ? t('当前图包未确认为 V5 Full，原文件已保留') : item?.phase === 'ready' ? t('可用 · {0} 个画师 Tag', [item.count]) : item?.phase === 'indexing' ? t('样张索引中：{0}%', [Math.round(item.progress)]) : download?.stage === 'paused' ? t('已暂停') : item?.phase === 'error' ? t('索引失败') : download?.stage === 'ready' ? t('未启用') : t('未下载');
       return <div key={pack} className={`${index === PACKS.length - 1 ? '' : 'border-b border-gray-100 pb-3 dark:border-gray-800'}`}>
-        <div className="flex min-w-0 items-center gap-2"><div className="min-w-0 flex-1"><span className="text-sm font-bold text-gray-800 dark:text-gray-100">NovelAI {pack === 'v45' ? 'V4.5' : 'V5 Full'}</span><p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{statusText}</p></div>
+        <div className="flex min-w-0 items-center gap-2"><div className="min-w-0 flex-1"><span className="text-sm font-bold text-gray-800 dark:text-gray-100">NovelAI {pack === 'v45' ? 'V4.5' : 'V5 Full'}</span>{!statusReady && !statusError ? <InlineSpinner label={t('加载中…')} className="mt-0.5 text-xs" /> : <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{statusText}</p>}</div>
           <button type="button" data-appearance="control" data-tone="primary" className={`mobile-touch flex-none inline-flex items-center rounded-lg px-2.5 py-2 text-xs font-semibold transition ${mainDisabled ? 'appearance-group bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500' : 'bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white hover:bg-indigo-600'}`} onClick={() => mainAction && void act(mainAction, pack)} disabled={mainDisabled} aria-label={mainLabel}>
           {mainAction === 'pause' ? <Pause className="mr-1 h-3.5 w-3.5" /> : <Download className="mr-1 h-3.5 w-3.5" />}{mainLabel}
           </button>
@@ -196,6 +197,6 @@ export const ArtistSampleManager: React.FC = () => {
         </details>}
       </div>;
     })}
-    {!status.available && !statusError && <p className="text-xs text-gray-500 dark:text-gray-400">{t('正在读取样张图库状态…')}</p>}
+    {!status.available && !statusError && <InlineSpinner label={t('正在读取样张图库状态…')} className="text-xs" />}
   </section>;
 };

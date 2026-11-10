@@ -6,6 +6,7 @@ import { TagDictionaryUpdater } from './TagDictionaryUpdater';
 import { ImageTaggerModelManager } from './ImageTaggerModelManager';
 import { setCleanSharedImages, useCleanSharedImages, setSharedImageCustomText, useSharedImageCustomText, setSharedImageCleanContent, useSharedImageCleanContent } from '../services/imageSharing';
 import { copyTagText } from '../services/externalImageTags';
+import { InlineSpinner } from './DesignSystem';
 import { DataBackupManager } from './DataBackupManager';
 import { StorageLocationManager } from './StorageLocationManager';
 import { ArtistSampleManager } from './ArtistSampleManager';
@@ -1557,7 +1558,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       <span className="min-w-0 break-all font-mono select-all">{url}</span>
                       <button type="button" onClick={() => void copyTagText(url).then(() => notify('手机访问地址已复制'), () => notify('复制失败，请手动选择地址复制', 'error'))} aria-label={t("复制手机访问地址 {0}", [url])} title={t("复制手机访问地址")} className="mobile-touch flex flex-none items-center justify-center rounded-lg px-2 text-gray-400 transition hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><Copy className="h-3.5 w-3.5" /></button>
                     </div>
-                  )) : <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("未检测到可用的局域网地址。")}</p> : <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{maintenanceStatusError ? t("手机访问地址读取失败") : maintenanceStatus ? t("重启工坊后显示手机访问地址") : t("正在读取手机访问地址…")}</p>}
+                  )) : <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("未检测到可用的局域网地址。")}</p> : (maintenanceStatusError || maintenanceStatus ? <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{maintenanceStatusError ? t("手机访问地址读取失败") : t("重启工坊后显示手机访问地址")}</p> : <InlineSpinner label={t("正在读取手机访问地址…")} className="mt-1 text-xs" />)}
                 </div>
                 <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-none">
                   <input

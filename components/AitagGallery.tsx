@@ -41,7 +41,7 @@ import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
 import { Check, ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle, X } from 'lucide-react';
-import { IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { IconButton, InlineSpinner, PageSpinner, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
@@ -1611,12 +1611,12 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
 
           <div ref={galleryContentRef} className={isLoading || visibleItems.length === 0 ? 'h-full' : undefined}>
           {isLoading && visibleItems.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-gray-400">
-              <div className="text-sm">{t("加载 aitag 数据中...")}</div>
-            </div>
+            <PageSpinner />
           ) : visibleItems.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400">
-              {!error && <div className="text-sm">{cacheNeedsMoreData ? t("本地没有这一页，且当前无法联网获取") : pendingMetadataItems.length > 0 ? t("正在读取 {0} 个作品的元数据", [pendingMetadataItems.length]) : t("没有匹配结果")}</div>}
+              {!error && (pendingMetadataItems.length > 0
+                ? <InlineSpinner label={t("正在读取 {0} 个作品的元数据", [pendingMetadataItems.length])} />
+                : <div className="text-sm">{cacheNeedsMoreData ? t("本地没有这一页，且当前无法联网获取") : t("没有匹配结果")}</div>)}
               {filterChips.length > 0 && <ToolbarButton onClick={resetFilters} className="mt-3">{t("清除筛选")}</ToolbarButton>}
             </div>
           ) : (
@@ -1641,11 +1641,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           <div className="relative flex flex-col items-center gap-2 py-6">
             <div ref={appendSentinelRef} className="h-1 w-full" aria-hidden="true" />
             {/* 追加提示悬浮在底部留白内，absolute 不参与布局，出现/消失都不挤动下方统计行 */}
-            {isAppending && <span role="status" className="pointer-events-none absolute left-1/2 top-1 flex -translate-x-1/2 items-center gap-1 text-xs text-gray-500"><LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />{t('正在加载更多…')}</span>}
+            {isAppending && <InlineSpinner label={t('正在加载更多…')} className="pointer-events-none absolute left-1/2 top-1 -translate-x-1/2 text-xs" />}
             {appendError && <div role="alert" className="flex items-center gap-2 text-xs text-red-600 dark:text-red-300"><span>{appendError}</span><ToolbarButton onClick={() => void appendNextPage()}>{t('重试加载')}</ToolbarButton></div>}
             <div className="flex justify-center items-center gap-2 text-xs text-gray-500">
               <span>{t("已加载 {0} 条 / 共 {1} 条 · 滚动浏览，可跳转", [formatCount(visibleItems.length), formatCount(total)])}</span>
-              {pendingMetadataItems.length > 0 && <span className="inline-flex items-center gap-1"><LoaderCircle aria-hidden="true" className="h-3 w-3 animate-spin" />{t("正在读取 {0} 个作品的元数据", [pendingMetadataItems.length])}</span>}
+              {pendingMetadataItems.length > 0 && <InlineSpinner label={t("正在读取 {0} 个作品的元数据", [pendingMetadataItems.length])} className="text-xs" />}
               {isPageInputOpen ? (
                 <input
                   type="number"
@@ -1792,8 +1792,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
                     );
                   })}
               {selectedDetail.isPreviewOnly && (
-                <div className="rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30 px-3 py-2 text-xs text-sky-700 dark:text-sky-200">
-                  {t("已显示本地首图，正在加载完整作品组...")}</div>
+                <div className="rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30 px-3 py-2 text-xs">
+                  <InlineSpinner label={t("已显示本地首图，正在加载完整作品组...")} className="text-xs" /></div>
               )}
             </div>
           ) : (

@@ -45,7 +45,7 @@ import { loadPromptLibraryDirectories, removePromptLibraryDirectory, savePromptL
 import { emptyPromptLibraryCategoryTree, listPromptLibraryCustomCharacters, loadPromptLibraryCategoryTree, projectPromptLibraryCategoryTree, type PromptLibraryCategoryTreeState } from './services/promptLibraryCategoryTree';
 import { PromptCaptureDialog } from './components/PromptCaptureDialog';
 import { ImagePreviewPortal } from './components/ImagePreviewPortal';
-import { PageSpinner, ToolbarButton } from './components/DesignSystem';
+import { InlineSpinner, PageSpinner, ToolbarButton } from './components/DesignSystem';
 
 const ChainEditor = lazy(() => import('./components/ChainEditor').then(module => ({ default: module.ChainEditor })));
 const ArtistLibrary = lazy(() => import('./components/ArtistLibrary').then(module => ({ default: module.ArtistLibrary })));
@@ -1395,8 +1395,10 @@ const App = () => {
       <>
         <div className={view === 'edit' ? 'hidden' : 'flex flex-1 min-h-0 flex-col overflow-hidden'}>
           {viewsToRender.map(mountedView => (
+            /* 保活视图的加载圈（PageSpinner）portal 到这个容器，切走后随 hidden 一起隐藏。 */
             <div
               key={mountedView}
+              data-keep-alive-view={mountedView}
               className={view === mountedView ? 'flex flex-1 min-h-0 flex-col overflow-hidden' : 'hidden'}
             >
               <ImageActivityProvider active={view === mountedView}>
@@ -1448,7 +1450,7 @@ const App = () => {
           {renderContent()}
           {libraryUseEntry && (libraryWorkspace ? <PromptLibraryUseDialog entry={libraryUseEntry} state={libraryWorkspace.state}
             onChange={libraryWorkspace.change} onClose={() => setLibraryUseEntry(null)} onApplied={() => { void handleNavigate('playground'); }} />
-            : <LibraryDialog title="使用" historyLayer={false} onClose={() => setLibraryUseEntry(null)}><p>{t('正在读取实验室草稿…')}</p></LibraryDialog>)}
+            : <LibraryDialog title="使用" historyLayer={false} onClose={() => setLibraryUseEntry(null)}><InlineSpinner label={t('正在读取实验室草稿…')} className="text-sm" /></LibraryDialog>)}
           {libraryEditEntry && librarySectionOf(libraryEditEntry) === 'items' && <PromptLibraryEntryEditor entry={libraryEditEntry} chains={chains}
               onCreate={createLibraryChain} onUpdateChain={handleUpdateChain} onDelete={handleDelete} notify={notify}
               requestCloseRef={libraryEditorCloseRef} onClose={() => setLibraryEditEntry(null)} />}

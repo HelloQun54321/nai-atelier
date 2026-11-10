@@ -1,4 +1,5 @@
 import { useConfirmDialog } from './ConfirmDialog';
+import { InlineSpinner } from './DesignSystem';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { getStorageLocationStatus, pickStorageDirectory } from '../services/storageLocations';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
@@ -166,7 +167,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
   if (!status) return <div className="relative space-y-3">
     <h4 className="font-semibold text-gray-900 dark:text-white">{t("重要数据备份")}</h4>
     {error && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{t(error)} <button type="button" disabled={loading} data-appearance="control" data-tone="neutral" onClick={() => void fetchStatus()} className="mobile-touch rounded-lg px-3 text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t("重试")}</button></p>}
-    {loading && <p role="status" className="pointer-events-none absolute right-0 top-0 flex h-6 items-center gap-2 text-xs text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />{t("正在读取…")}</p>}
+    {loading && <InlineSpinner label={t("正在读取…")} className="pointer-events-none absolute right-0 top-0 h-6 text-xs" />}
   </div>;
 
   const isRunning = Boolean(status.running);

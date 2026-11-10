@@ -15,6 +15,7 @@ import { readPromptPurposes } from '../services/promptPurposes.mjs';
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardPaste, Eraser, ImagePlus, LoaderCircle, Sparkles, X } from 'lucide-react';
+import { InlineSpinner } from './DesignSystem';
 import { t, useLanguage } from '../services/i18n';
 import { prepareAgentAttachment } from '../services/agentAttachments';
 import { createUuid } from '../services/id';
@@ -800,7 +801,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
                       <span className="min-w-0 flex-1 truncate font-mono!">{image.name}</span>
                       <IconButton label={t('移除图片')} onClick={clearImage} disabled={analyzing || inputLocked}><X /></IconButton>
                     </div>
-                    {image.state === 'reading' && <p className="mt-1 text-gray-400">{t('正在读取图片内嵌生成信息…')}</p>}
+                    {image.state === 'reading' && <InlineSpinner label={t('正在读取图片内嵌生成信息…')} className="mt-1 text-xs" />}
                     {image.state === 'ready' && (
                       <p className="mt-1 text-emerald-600 dark:text-emerald-400">
                         {stored?.characters.length
