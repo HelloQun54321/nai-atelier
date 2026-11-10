@@ -40318,5 +40318,17 @@
     "Keeps the base image's ratio; fills mismatched areas white, or transparent per the transparency setting.{0}",
     "元画像の比率を保ち、比率が異なる部分は透過設定に応じて白または透明で埋めます。{0}",
     "원본 비율을 유지하며, 비율이 다른 부분은 투명 설정에 따라 흰색 또는 투명으로 채웁니다.{0}"
+  ],
+  "有氛围参考": [
+    "有氛圍參考",
+    "Has vibe reference",
+    "雰囲気参照あり",
+    "분위기 참조 있음"
+  ],
+  "有精准参考": [
+    "有精準參考",
+    "Has precise reference",
+    "精密参照あり",
+    "정밀 참조 있음"
   ]
 }

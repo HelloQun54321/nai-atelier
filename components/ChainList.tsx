@@ -13,7 +13,7 @@ import type { ChainSimilaritySession } from './chain/ChainSimilarityDialog';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, EyeOff, FileOutput, Filter, FlaskConical, FolderUp, Heart, Image, Link2, ListChecks, Package, Pencil, Plus, ScanSearch, Tags, Trash2, User, X } from 'lucide-react';
+import { Check, EyeOff, FileOutput, Filter, FlaskConical, FolderUp, Heart, Image, Link2, ListChecks, Package, Pencil, Plus, ScanSearch, Sparkles, Tags, Trash2, User, X } from 'lucide-react';
 import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
@@ -32,6 +32,7 @@ import { PressRevealSurface } from './PressRevealSurface';
 import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
 import { ChainTagManager } from './chain/ChainTagManager';
 import { getCustomChainTags } from '../services/chainTags';
+import { chainReferenceSummary } from '../services/chainReferenceBadges';
 import { useConfirmDialog } from './ConfirmDialog';
 import { AnchoredToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
@@ -112,6 +113,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [favOnly, setFavOnly] = useState(false);
   const favoritesOnly = type === 'style' && !isGuest ? activeFolder === DIRECTORY_FAVORITES_ID : favOnly;
   const [untestedOnly, setUntestedOnly] = useState(false);
+  // 参考标识只从串参数派生，不写用户标签、也不自动建目录。
+  const [vibesOnly, setVibesOnly] = useState(false);
+  const [characterRefsOnly, setCharacterRefsOnly] = useState(false);
   const [isFolderImportOpen, setIsFolderImportOpen] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [favoritesReady, setFavoritesReady] = useState(false);
@@ -265,6 +269,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       )
       .filter(c => !favoritesOnly || favorites.has(c.id))
       .filter(c => !untestedOnly || isUntestedChain(c))
+      .filter(c => !vibesOnly || chainReferenceSummary(c).vibes > 0)
+      .filter(c => !characterRefsOnly || chainReferenceSummary(c).characterReferences > 0)
       .filter(c => !selectedModel || (c.params?.model?.trim() || DEFAULT_NAI_MODEL) === selectedModel)
       .filter(c => type !== 'style' || isGuest || activeFolder === '*' || activeFolder === DIRECTORY_FAVORITES_ID || (activeFolder === '' ? !getChainFolderIds(folderStore.state, c.id).length : getChainFolderIds(folderStore.state, c.id).some(folder => matchingFolderIds.has(folder))))
       .filter(c => {
@@ -291,7 +297,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             return ub - ua;
         }
       });
-  }, [chains, type, searchTerm, favoritesOnly, untestedOnly, favorites, selectedModel, selectedTags, sortOption, selecting, syncSelection.open, syncSelection.view, syncSelection.recordFilter, syncSelection.entries, activeFolder, matchingFolderIds, folderStore.state, isGuest]);
+  }, [chains, type, searchTerm, favoritesOnly, untestedOnly, vibesOnly, characterRefsOnly, favorites, selectedModel, selectedTags, sortOption, selecting, syncSelection.open, syncSelection.view, syncSelection.recordFilter, syncSelection.entries, activeFolder, matchingFolderIds, folderStore.state, isGuest]);
 
   // 批量删除只针对当前筛选；隐藏项与已消失项不保留选择。
   const selectedChains = filteredChains.filter(chain => selectedIds.has(chain.id));
@@ -375,7 +381,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     [previewRatios, syncSelection.open, syncSelection.entries, frostedCaption],
   );
 
-  const renderChainCard = (chain: PromptChain) => (
+  const renderChainCard = (chain: PromptChain) => {
+    const referenceSummary = chainReferenceSummary(chain);
+    return (
     <PressRevealSurface pressDisabled={syncSelection.open || selecting} key={chain.id} data-safe-mode-work="true" data-return-item-id={chain.id}
       role={selecting || syncSelection.selecting ? 'checkbox' : 'button'}
       data-agent-action={selecting || syncSelection.selecting ? 'select' : 'browse'}
@@ -431,14 +439,30 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       </div>
 
       <div className="gallery-card-caption flex h-12 flex-col justify-center px-3">
-        {/* 待实测状态贴着作品名放在标题栏内，不再压在封面底部。 */}
-        {isUntestedChain(chain) && (
-          <div
-            className="gallery-chain-status mb-0.5 flex w-fit max-w-full items-center gap-1 rounded-full bg-amber-100 px-1.5 py-px text-micro font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
-            title={t("待实测：在此风格串生成后自动去除")}
-          >
-            <EyeOff aria-hidden="true" className="h-3 w-3 shrink-0 text-amber-500 dark:text-amber-400" />
-            <span>{t("待实测")}</span>
+        {/* 待实测与参考标识贴着作品名放在标题栏内，不再压在封面底部。 */}
+        {(isUntestedChain(chain) || referenceSummary.characterReferences > 0 || referenceSummary.vibes > 0) && (
+          <div className="mb-0.5 flex w-fit max-w-full items-center gap-1">
+            {isUntestedChain(chain) && (
+              <div
+                className="gallery-chain-status flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-px text-micro font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+                title={t("待实测：在此风格串生成后自动去除")}
+              >
+                <EyeOff aria-hidden="true" className="h-3 w-3 shrink-0 text-amber-500 dark:text-amber-400" />
+                <span>{t("待实测")}</span>
+              </div>
+            )}
+            {referenceSummary.characterReferences > 0 && (
+              <span className="gallery-card-badge flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-1.5 py-px text-micro font-medium text-cyan-700 dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-300" title={t("精准参考 ({0})", [referenceSummary.characterReferences])}>
+                <ScanSearch aria-hidden="true" className="h-3 w-3 shrink-0" />
+                {referenceSummary.characterReferences}
+              </span>
+            )}
+            {referenceSummary.vibes > 0 && (
+              <span className="gallery-card-badge flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-px text-micro font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title={t("氛围参考 ({0})", [referenceSummary.vibes])}>
+                <Sparkles aria-hidden="true" className="h-3 w-3 shrink-0" />
+                {referenceSummary.vibes}
+              </span>
+            )}
           </div>
         )}
         <div className="flex items-center justify-between">
@@ -461,18 +485,19 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         {syncSelection.view === 'records' && <p className="truncate text-micro text-gray-400">{t("最近核对 {0}", [new Date(syncSelection.entries.get(chain.id)!.lastVerifiedAt).toLocaleString(getLanguage())])}</p>}
       </div>}
     </PressRevealSurface>
-  );
+    );
+  };
 
   const title = type === 'character' ? t('我的自定义角色') : t('我的风格串');
   const createLabel = type === 'character' ? '新建自定义角色' : '新建风格串';
-  const filterCount = Number(Boolean(selectedModel)) + Number((type !== 'style' || isGuest) && favOnly) + Number(untestedOnly) + selectedTags.size;
+  const filterCount = Number(Boolean(selectedModel)) + Number((type !== 'style' || isGuest) && favOnly) + Number(untestedOnly) + Number(vibesOnly) + Number(characterRefsOnly) + selectedTags.size;
   const filtersActive = filterCount > 0 || sortOption !== 'updated_desc';
   const countCaptionFiltered = filterCount > 0 || !!searchTerm || syncSelection.open && syncSelection.view !== 'pick';
   const countCaptionTotal = syncSelection.open && syncSelection.view !== 'pick'
     ? typeChains.filter(chain => syncSelection.accepts(chain.id)).length
     : typeChains.length;
   const resetFilters = () => {
-    setSelectedModel(''); setFavOnly(false); setUntestedOnly(false); setSortOption('updated_desc'); setSelectedTags(new Set()); setTagSearch('');
+    setSelectedModel(''); setFavOnly(false); setUntestedOnly(false); setVibesOnly(false); setCharacterRefsOnly(false); setSortOption('updated_desc'); setSelectedTags(new Set()); setTagSearch('');
     // 重置浏览条件时把文件夹也带回「全部」，避免清完筛选仍被目录限制、看到空列表找不到原因。
     if (type === 'style' && !isGuest) selectFolder('*');
   };
@@ -486,6 +511,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     </div>
     <div className={`grid gap-2 ${type === 'style' && !isGuest ? 'grid-cols-1' : 'grid-cols-2'}`}>
       <button type="button" aria-pressed={untestedOnly} onClick={() => setUntestedOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${untestedOnly ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><EyeOff className="h-4 w-4" />{t("只看待实测")}</button>
+      <button type="button" aria-pressed={vibesOnly} onClick={() => setVibesOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${vibesOnly ? 'bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><Sparkles className="h-4 w-4" />{t("有氛围参考")}</button>
+      <button type="button" aria-pressed={characterRefsOnly} onClick={() => setCharacterRefsOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${characterRefsOnly ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><ScanSearch className="h-4 w-4" />{t("有精准参考")}</button>
       {(type !== 'style' || isGuest) && <button type="button" aria-pressed={favOnly} onClick={() => setFavOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${favOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} />{t("只看收藏")}</button>}
     </div>
     <div>

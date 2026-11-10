@@ -150,12 +150,49 @@ describe('风格串卡片的待实测状态', () => {
     const heading = within(caption as HTMLElement).getByRole('heading', { level: 3 });
     expect(heading.textContent).toBe('待测风格');
     expect(badge.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect((caption as HTMLElement).firstElementChild).toBe(badge);
+    expect((caption as HTMLElement).firstElementChild?.firstElementChild).toBe(badge);
     expect(badge.textContent).toContain('待实测');
   });
 
   it('普通风格串不渲染该状态', () => {
     render(<ChainList {...props([chain('plain', '普通风格', false)])} />);
     expect(screen.queryByTitle('待实测：在此风格串生成后自动去除')).toBeNull();
+  });
+
+  it('按串参数显示精准参考与氛围参考数量，没有参考参数的不显示', () => {
+    const withReferences = (id: string, name: string, vibes: number, references: number): PromptChain => {
+      const base = chain(id, name, false);
+      return { ...base, params: { ...base.params,
+        ...(vibes ? { vibes: { enabled: true, normalizeStrengths: true, slots: Array.from({ length: vibes }, (_, index) => ({ vibeId: `v${index}`, encodingId: `e${index}`, informationExtracted: 1, strength: 0.6 })) } } : {}),
+        ...(references ? { characterReferences: { enabled: true, slots: Array.from({ length: references }, (_, index) => ({ assetId: `a${index}`, type: 'character' as const, strength: 1, fidelity: 1 })) } } : {}),
+      } };
+    };
+    render(<ChainList {...props([withReferences('ref', '带参考', 1, 2), chain('plain', '无参考', false)])} />);
+    const card = screen.getByRole('button', { name: '打开风格串：带参考' });
+    expect(within(card).getByTitle('精准参考 (2)').textContent).toContain('2');
+    expect(within(card).getByTitle('氛围参考 (1)').textContent).toContain('1');
+    const plain = screen.getByRole('button', { name: '打开风格串：无参考' });
+    expect(within(plain).queryByTitle('精准参考 (2)')).toBeNull();
+    expect(within(plain).queryByTitle('氛围参考 (1)')).toBeNull();
+  });
+
+  it('筛选可只看带氛围参考或带精准参考的串', () => {
+    const withReferences = (id: string, name: string, vibes: number, references: number): PromptChain => {
+      const base = chain(id, name, false);
+      return { ...base, params: { ...base.params,
+        ...(vibes ? { vibes: { enabled: true, normalizeStrengths: true, slots: [{ vibeId: 'v', encodingId: 'e', informationExtracted: 1, strength: 0.6 }] } } : {}),
+        ...(references ? { characterReferences: { enabled: true, slots: [{ assetId: 'a', type: 'character' as const, strength: 1, fidelity: 1 }] } } : {}),
+      } };
+    };
+    render(<ChainList {...props([withReferences('v', '氛围串', 1, 0), withReferences('c', '精准串', 0, 1), chain('plain', '普通串', false)])} />);
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    fireEvent.click(screen.getByRole('button', { name: '有氛围参考' }));
+    expect(screen.getByRole('button', { name: '打开风格串：氛围串' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '打开风格串：精准串' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '打开风格串：普通串' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '有氛围参考' }));
+    fireEvent.click(screen.getByRole('button', { name: '有精准参考' }));
+    expect(screen.getByRole('button', { name: '打开风格串：精准串' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '打开风格串：氛围串' })).toBeNull();
   });
 });
