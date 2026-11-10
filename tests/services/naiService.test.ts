@@ -325,8 +325,8 @@ describe('能力校验', () => {
   });
 
   it('精准参考超过数量上限时拒绝提交', async () => {
-    const slots = Array.from({ length: 5 }, (_, index) => ({ assetId: `a${index}`, type: 'character' as const, strength: 0.6, fidelity: 1 }));
+    const slots = Array.from({ length: 17 }, (_, index) => ({ assetId: `a${index}`, type: 'character' as const, strength: 0.6, fidelity: 1 }));
     await expect(textDescriptor({ params: { ...baseParams(), characterReferences: { enabled: true, slots } } }))
-      .rejects.toThrow('一次最多使用 4 个精准参考');
+      .rejects.toThrow('一次最多使用 16 个精准参考');
   });
 });

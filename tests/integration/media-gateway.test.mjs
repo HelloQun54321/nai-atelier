@@ -565,7 +565,7 @@ test('prompt agent Vibe tool accepts only known encodings and at most sixteen sl
   assert.equal(actions.at(-1).action.kind, 'set_vibes');
 });
 
-test('prompt agent Character Reference tool accepts only project assets, limits four and disables Vibe', async () => {
+test('prompt agent Character Reference tool accepts only project assets, keeps beyond the old four and disables Vibe', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   const draft = {
     basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [],
@@ -587,9 +587,8 @@ test('prompt agent Character Reference tool accepts only project assets, limits 
     .find(item => item.name === 'set_character_references');
   await tool.execute('call', { slots: [
     ...Array.from({ length: 5 }, (_, index) => ({ assetId: `ref-${index}`, type: 'character', strength: index === 0 ? -0.5 : 0.6, fidelity: index === 1 ? 1.5 : 0.7 })),
-    { assetId: 'unknown', type: 'style', strength: 1, fidelity: 1 },
   ] });
-  assert.equal(draft.params.characterReferences.slots.length, 4);
+  assert.equal(draft.params.characterReferences.slots.length, 5);
   assert.equal(draft.params.characterReferences.slots[0].strength, -0.5);
   assert.equal(draft.params.characterReferences.slots[1].fidelity, 1.5);
   assert.equal(draft.params.vibes.enabled, false);
@@ -1483,7 +1482,7 @@ test('Precise Reference strips spoofed browser fields and rejects invalid input'
     width: 832,
   });
   assert.deepEqual(parameters, { width: 832 });
-  assert.throws(() => buildPreciseReferenceParameters(Array.from({ length: 5 }, () => ({})), []), /最多使用 4 个/);
+  assert.throws(() => buildPreciseReferenceParameters(Array.from({ length: 17 }, () => ({})), []), /最多使用 16 个/);
   assert.throws(() => buildPreciseReferenceParameters(
     [{ assetId: 'x', type: 'invalid', strength: 1, fidelity: 1 }],
     [{ mimeType: 'image/png', data: Buffer.from('x'.repeat(128)).toString('base64') }],

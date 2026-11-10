@@ -114,7 +114,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
       updateReferences({ enabled: slots.length > 0, slots });
       return;
     }
-    if (current.slots.length >= 4) { notify('一次最多启用 4 个精准参考', 'error'); return; }
+    if (current.slots.length >= 16) { notify('一次最多启用 16 个精准参考', 'error'); return; }
     updateReferences({
       enabled: true,
       slots: [...current.slots, {

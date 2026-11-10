@@ -732,7 +732,7 @@ const sanitizeParams = raw => {
   }));
   if (value.vibes && typeof value.vibes === 'object') params.vibes = value.vibes;
   if (value.characterReferences && typeof value.characterReferences === 'object') {
-    const slots = Array.isArray(value.characterReferences.slots) ? value.characterReferences.slots.slice(0, 4).flatMap(slot => {
+    const slots = Array.isArray(value.characterReferences.slots) ? value.characterReferences.slots.slice(0, 16).flatMap(slot => {
       const type = ['character', 'style', 'costume', 'character_style', 'delta'].includes(slot?.type) ? slot.type : 'character_style';
       const assetId = text(slot?.assetId).slice(0, 200);
       if (!assetId) return [];
@@ -4881,15 +4881,15 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'set_character_references', label: '设置精准参考', description: '从精准参考资料库选择最多4张图片并设置类型、Strength和Fidelity。会自动关闭Vibe Transfer；每张每次生成的附加费以当前官方同步规则估算。',
+        name: 'set_character_references', label: '设置精准参考', description: '从精准参考资料库选择最多16张图片并设置类型、Strength和Fidelity。会自动关闭Vibe Transfer；每张每次生成的附加费以当前官方同步规则估算。',
         parameters: Type.Object({ slots: Type.Array(Type.Object({
           assetId: Type.String(),
           type: Type.Optional(Type.Union([Type.Literal('character'), Type.Literal('style'), Type.Literal('costume'), Type.Literal('character_style'), Type.Literal('delta')])),
           strength: Type.Optional(Type.Number()), fidelity: Type.Optional(Type.Number()),
-        }), { maxItems: 4 }) }),
+        }), { maxItems: 16 }) }),
         execute: async (_id, args) => {
           const slots = [];
-          for (const requested of args.slots.slice(0, 4)) {
+          for (const requested of args.slots.slice(0, 16)) {
             const value = await readProject(`/api/character-references/${encodeURIComponent(text(requested.assetId).slice(0, 200))}`);
             const asset = value.item || value;
             if (!asset?.id || asset.id !== requested.assetId) throw new Error('指定的精准参考不存在，原参考配置已保留');

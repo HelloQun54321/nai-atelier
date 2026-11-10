@@ -750,7 +750,7 @@ const stripImageDataUrl = value => {
 /** Build official NovelAI V4.5 Precise Reference fields from trusted Worker data. */
 export const buildPreciseReferenceParameters = (slots, resolvedAssets) => {
   if (!Array.isArray(slots) || !slots.length) return {};
-  if (slots.length > 4) throw new Error('一次最多使用 4 个精准参考');
+  if (slots.length > 16) throw new Error('一次最多使用 16 个精准参考');
   if (!Array.isArray(resolvedAssets) || resolvedAssets.length !== slots.length) throw new Error('精准参考图片数量不一致');
   const images = resolvedAssets.map((item, index) => {
     const parsed = stripImageDataUrl(item?.imageData ?? item?.data);
@@ -2117,7 +2117,7 @@ const prepareGenerationReferences = async (payload, req, workerPort, { generatio
     clearPreciseReferenceParameters(payload.parameters);
     if (characterSlots.length) {
       if (!allowsCharacterReferences) throw Object.assign(new Error('当前模型或编辑模式不支持精准参考'), { status: 400 });
-      if (characterSlots.length > 4) throw Object.assign(new Error('一次最多使用 4 个精准参考'), { status: 400 });
+      if (characterSlots.length > 16) throw Object.assign(new Error('一次最多使用 16 个精准参考'), { status: 400 });
       if (characterSlots.some(slot => typeof slot?.assetId !== 'string' || !slot.assetId.trim())) {
         throw Object.assign(new Error('精准参考缺少有效的本地资产 ID'), { status: 400 });
       }
