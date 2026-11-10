@@ -40330,5 +40330,59 @@
     "Has precise reference",
     "精密参照あり",
     "정밀 참조 있음"
+  ],
+  "已关闭氛围参考：精准参考和氛围参考不能同时启用": [
+    "已關閉氛圍參考：精準參考和氛圍參考不能同時啟用",
+    "Vibe Transfer was turned off: Precise Reference and Vibe Transfer cannot be enabled together",
+    "Vibe Transfer をオフにしました：Precise Reference と Vibe Transfer は同時に有効にできません",
+    "Vibe Transfer를 껐습니다: Precise Reference와 Vibe Transfer는 동시에 켤 수 없습니다"
+  ],
+  "本次使用 ({0})": [
+    "本次使用 ({0})",
+    "In this generation ({0})",
+    "今回の使用 ({0})",
+    "이번 사용 ({0})"
+  ],
+  "加入本次使用": [
+    "加入本次使用",
+    "Add to this generation",
+    "今回の使用に追加",
+    "이번 사용에 추가"
+  ],
+  "从本次使用移除": [
+    "從本次使用移除",
+    "Remove from this generation",
+    "今回の使用から外す",
+    "이번 사용에서 제거"
+  ],
+  "信息提取量": [
+    "資訊提取量",
+    "Information extraction",
+    "情報抽出量",
+    "정보 추출량"
+  ],
+  "点上方「上传并选用」，或直接在这个窗口按 Ctrl+V 粘贴图片": [
+    "點上方「上傳並選用」，或直接在這個視窗按 Ctrl+V 貼上圖片",
+    "Use “Upload and use” above, or press Ctrl+V in this window to paste an image",
+    "上の「アップロードして使用」を押すか、このウィンドウで Ctrl+V を押して画像を貼り付けてください",
+    "위의 '업로드 후 사용'을 누르거나 이 창에서 Ctrl+V로 이미지를 붙여넣으세요"
+  ],
+  "创建于 {0} · {1} Anlas／张／次": [
+    "建立於 {0} · {1} Anlas／張／次",
+    "Created {0} · {1} Anlas / image / generation",
+    "{0} 作成 · {1} Anlas／枚／生成",
+    "{0} 생성 · 이미지당 생성 1회 {1} Anlas"
+  ],
+  "多个参考在同一次生成里一起生效，费用按张分别计算": [
+    "多個參考在同一次生成裡一起生效，費用按張分別計算",
+    "Multiple references apply together in one generation; the fee is charged per image",
+    "複数の参照は 1 回の生成でまとめて適用され、料金は枚数分かかります",
+    "여러 참조가 한 번의 생성에 함께 적용되며 비용은 장당 따로 계산됩니다"
+  ],
+  "一次最多启用 {0} 个精准参考": [
+    "一次最多啟用 {0} 個精準參考",
+    "Up to {0} precise references per generation",
+    "1 回に有効化できる Precise Reference は最大 {0} 件です",
+    "한 번에 최대 {0}개의 Precise Reference를 켤 수 있습니다"
   ]
 }

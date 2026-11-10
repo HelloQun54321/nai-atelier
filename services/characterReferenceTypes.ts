@@ -1,5 +1,8 @@
 import type { CharacterReferenceSelection } from '../types';
 
+/** 官方 Precise Reference 单次请求的参考图上限（`media-gateway.mjs` 的构造器同源）。 */
+export const MAX_CHARACTER_REFERENCES = 16;
+
 /**
  * 与官方 Precise Reference 的 Description 下拉保持一致（None / Character / Style /
  * Costume / Character & Style / Delta）；None 对应清空，界面不提供。
