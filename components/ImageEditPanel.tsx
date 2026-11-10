@@ -9,7 +9,7 @@ import { agentOperationError } from '../services/agentOperation.mjs';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { ImageEditBaseImageSource, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
 import { LabPageLayout } from '../services/appearancePreferences';
-import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, getImageToImageOutputDimensions, ImageEditNormalizationMode, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, transformCharacterCoordinatesForImageRect, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions } from '../services/imageEdit';
+import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, getImageToImageOutputDimensions, ImageEditNormalizationMode, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, snapImageEditDimensions, transformCharacterCoordinatesForImageRect, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions } from '../services/imageEdit';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { extractMetadata, parseNovelAIMetadata } from '../services/metadataService';
@@ -241,8 +241,6 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const outputSize = operation === 'image-to-image'
     ? getImageToImageOutputDimensions(state.width, state.height, draft.imageToImageSizeMode, draft.params, runtime.freeMaxArea)
     : { width: state.width, height: state.height };
-  const outputDimensionError = operation === 'image-to-image' && state.width > 0
-    ? validateImageEditDimensions(outputSize.width, outputSize.height) : null;
   useEffect(() => {
     setMobileTab('canvas');
   }, [operation]);
@@ -262,8 +260,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     : !baseImage || !state.width || !state.height ? '请先选择底图'
     : pendingOutpaint ? '请先应用画布扩展'
     : !imageCanvasRef.current || (operation !== 'image-to-image' && !maskCanvasRef.current) ? '画布加载中…'
-    : normalization && (operation !== 'image-to-image' || (draft.imageToImageSizeMode || 'original') === 'original') ? '请先处理底图尺寸'
-    : outputDimensionError ? '请调整输出尺寸'
+    : normalization && operation !== 'image-to-image' ? '请先处理底图尺寸'
     : operation === 'inpaint' && focused && (!state.focusedRect || state.focusedRect.width < 2 || state.focusedRect.height < 2) ? '请先框选区域'
     : operation !== 'image-to-image' && !hasMask ? '请先涂画重绘区域'
     : undefined);
@@ -1018,9 +1015,15 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       return stop('请先选择或上传一张底图再生成', 'missing_base_image');
     }
     const requestParams = override?.params || draft.params;
-    const requestSize = operation === 'image-to-image'
+    let requestSize = operation === 'image-to-image'
       ? getImageToImageOutputDimensions(imageCanvas.width, imageCanvas.height, draft.imageToImageSizeMode, requestParams, runtime.freeMaxArea)
       : { width: imageCanvas.width, height: imageCanvas.height };
+    // 图生图不再用报错拦住非法输出尺寸：吸附到最近合法尺寸并明确告知，官方也没有这种卡点。
+    if (operation === 'image-to-image' && validateImageEditDimensions(requestSize.width, requestSize.height)) {
+      const snapped = snapImageEditDimensions(requestSize.width, requestSize.height);
+      notify(t('输出尺寸 {0} × {1} 不是官方合法尺寸，已按最近的 {2} × {3} 生成', [requestSize.width, requestSize.height, snapped.width, snapped.height]));
+      requestSize = snapped;
+    }
     const dimensionError = validateImageEditDimensions(requestSize.width, requestSize.height);
     if (dimensionError) {
       return stop(`请先调整${operation === 'image-to-image' ? '输出' : '底图'}尺寸：${dimensionError}`, 'invalid_dimensions');
@@ -1048,8 +1051,12 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           const context = requestCanvas.getContext('2d');
           if (!context) return stop('无法创建输出图片画布', 'canvas_not_ready');
           const fit = getContainedImageEditRect(imageCanvas.width, imageCanvas.height, requestSize.width, requestSize.height);
-          context.fillStyle = '#ffffff';
-          context.fillRect(0, 0, requestSize.width, requestSize.height);
+          // 与官方一致：透明背景且模型支持透明时留透明，否则按白底补齐。
+          const transparentFill = requestParams.transparent === true && modelInfo.supportsTransparentBackground;
+          if (!transparentFill) {
+            context.fillStyle = '#ffffff';
+            context.fillRect(0, 0, requestSize.width, requestSize.height);
+          }
           context.imageSmoothingEnabled = true;
           context.imageSmoothingQuality = 'high';
           context.drawImage(imageCanvas, fit.x, fit.y, fit.width, fit.height);

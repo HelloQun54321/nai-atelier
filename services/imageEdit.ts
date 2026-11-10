@@ -356,6 +356,21 @@ export const validateImageEditDimensions = (width: number, height: number) => {
   return null;
 };
 
+/**
+ * 把任意尺寸吸附到最近的官方合法尺寸：先按 64 四舍五入并收进单边上限，
+ * 面积仍超限时交给规范化按比例缩小。用于图生图输出，避免只靠报错拦住用户。
+ */
+export const snapImageEditDimensions = (width: number, height: number, maxArea = IMAGE_EDIT_MAX_AREA) => {
+  const align = (value: number) => Math.min(
+    IMAGE_EDIT_MAX_DIMENSION,
+    Math.max(IMAGE_EDIT_MIN_DIMENSION, Math.round((Number(value) || 0) / IMAGE_EDIT_MIN_DIMENSION) * IMAGE_EDIT_MIN_DIMENSION),
+  );
+  const aligned = { width: align(width), height: align(height) };
+  return validateImageEditDimensions(aligned.width, aligned.height)
+    ? getImageEditNormalizationTarget(aligned.width, aligned.height, maxArea)
+    : aligned;
+};
+
 export const resolveImageEditModel = (model: string | undefined, runtimeModels: string[]) => {
   const baseModel = String(model || '').trim() || 'nai-diffusion-4-5-full';
   const candidate = baseModel.endsWith(IMAGE_EDIT_MODEL_SUFFIX) ? baseModel : `${baseModel}${IMAGE_EDIT_MODEL_SUFFIX}`;

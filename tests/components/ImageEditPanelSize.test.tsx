@@ -36,6 +36,7 @@ const onCanvasChange = vi.fn();
 const onGenerateBar = vi.fn();
 const onAgentGenerateReady = vi.fn();
 const drawImage = vi.fn();
+const fillRect = vi.fn();
 const Harness = ({ patch = {}, operation = 'image-to-image', generationUnavailableLabel }: { patch?: Partial<LabImageEditDraft>; operation?: ImageEditOperation; generationUnavailableLabel?: string }) => {
   const [draft, setDraft] = useState(() => createLabImageEditDraft(operation, 'scene', 'negative', params, patch));
   const [bar, setBar] = useState({ costLabel: '', unavailableLabel: '' });
@@ -65,10 +66,10 @@ const expectSize = (size: string) => {
 
 beforeEach(() => {
   state.freeMaxArea = DEFAULT_NAI_RUNTIME.freeMaxArea; state.width = 1664; state.height = 2432;
-  onGenerate.mockClear(); onGenerateBar.mockClear(); onCanvasChange.mockClear(); onAgentGenerateReady.mockClear(); drawImage.mockClear();
+  onGenerate.mockClear(); onGenerateBar.mockClear(); onCanvasChange.mockClear(); onAgentGenerateReady.mockClear(); drawImage.mockClear(); fillRect.mockClear();
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('测试禁止真实网络请求'); }));
   vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: state.width, height: state.height, close: vi.fn() })));
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({ drawImage, clearRect: vi.fn(), fillRect: vi.fn() }) as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({ drawImage, clearRect: vi.fn(), fillRect }) as unknown as CanvasRenderingContext2D);
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(function (this: HTMLCanvasElement) { return `data:image/png;base64,${this.width}x${this.height}`; });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -163,14 +164,17 @@ describe('图生图输出尺寸与提交副本', () => {
     choose('original'); expectSize('1664×2432');
   });
 
-  it('官方免费面积变化即时生效，超接口上限的底图也能通过输出副本生成', async () => {
+  it('官方免费面积变化即时生效，超接口上限的底图通过输出副本吸附生成', async () => {
     state.width = 6000; state.height = 6000;
     const view = render(<Harness />);
-    await waitFor(() => expect(screen.getByTestId('desktop-status').textContent).toBe('请先处理底图尺寸'));
+    // 原尺寸不再是报错卡点：提交时吸附到最近合法尺寸。
+    await ready();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成测试图片' })));
+    expect(onGenerate.mock.calls[0][0]).toMatchObject({ image: 'data:image/png;base64,2048x2048', canvasWidth: 2048, canvasHeight: 2048 });
     choose('free'); await ready(); expectSize('1024×1024');
     state.freeMaxArea = 262144; view.rerender(<Harness />); expectSize('512×512');
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成测试图片' })));
-    expect(onGenerate.mock.calls[0][0]).toMatchObject({ image: 'data:image/png;base64,512x512', canvasWidth: 512, canvasHeight: 512 });
+    expect(onGenerate.mock.calls[1][0]).toMatchObject({ image: 'data:image/png;base64,512x512', canvasWidth: 512, canvasHeight: 512 });
     expect(view.container.querySelector('canvas')).toHaveProperty('width', 6000);
     expect(onCanvasChange).not.toHaveBeenCalled();
   });
@@ -191,12 +195,34 @@ describe('图生图输出尺寸与提交副本', () => {
     expect(view.container.querySelector('canvas')).toHaveProperty('width', 1664);
     expect(onCanvasChange).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole('spinbutton', { name: '图生图输出宽度' }), { target: { value: '833' } });
-    expect(screen.getByTestId('desktop-status').textContent).toBe('请调整输出尺寸');
-    expect(screen.getByTestId('mobile-status').textContent).toBe('请调整输出尺寸');
-    expect(screen.getByRole('button', { name: '生成测试图片' })).toHaveProperty('disabled', true);
-    expect(screen.getByText(/宽高必须是 64/)).toBeTruthy();
+    expect(screen.getByText(/不是官方合法尺寸/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '使用最近合法尺寸 832 × 1024' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '生成测试图片' })).toHaveProperty('disabled', false);
+    // 一键应用把草稿切到自定义并填入最近合法尺寸。
+    fireEvent.click(screen.getByRole('button', { name: '使用最近合法尺寸 832 × 1024' }));
+    await ready(); expectSize('832×1024');
+    // 再次手填非法值时，提交自动吸附，不再被禁用。
+    fireEvent.change(screen.getByRole('spinbutton', { name: '图生图输出宽度' }), { target: { value: '833' } });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成测试图片' })));
+    expect(onGenerate.mock.calls.at(-1)![0]).toMatchObject({ image: 'data:image/png;base64,832x1024', canvasWidth: 832, canvasHeight: 1024 });
     fireEvent.change(screen.getByRole('spinbutton', { name: '图生图输出宽度' }), { target: { value: '768' } });
     await ready(); expectSize('768×1024');
+  });
+
+  it('透明背景开启时输出副本保留透明，关闭时仍铺白底', async () => {
+    const transparent = render(<Harness patch={{ params: { ...params, transparent: true } }} />);
+    await ready(); choose('custom'); await ready();
+    fillRect.mockClear();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成测试图片' })));
+    expect(onGenerate.mock.calls.at(-1)![0].params?.transparent).toBe(true);
+    expect(fillRect).not.toHaveBeenCalled();
+    transparent.unmount();
+
+    render(<Harness patch={{ params: { ...params, transparent: false } }} />);
+    await ready(); choose('custom'); await ready();
+    fillRect.mockClear();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成测试图片' })));
+    expect(fillRect).toHaveBeenCalled();
   });
 
   it('Agent 实际编辑请求按基础、前置模块、主体、后置模块顺序编译且不改模块', async () => {
