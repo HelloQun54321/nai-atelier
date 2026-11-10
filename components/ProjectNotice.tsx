@@ -57,7 +57,7 @@ export const ProjectNotice: React.FC<ProjectNoticeProps> = ({ notify }) => {
         <Scale className="mt-0.5 h-4 w-4 flex-none text-indigo-500" />
         <div className="min-w-0 flex-1">
           <h5 className={NOTICE_TITLE}>{t("内容创作与作者无关")}</h5>
-          <p className={NOTICE_BODY}>{t("本工坊只是本地创作工具，生成的图片和内容完全由你自行决定、保存和使用。作者不参与、不审核、不认可任何具体创作，也不承担由此产生的任何责任。请自行遵守所在地法律法规和所用服务的规则。本项目仅用于无偿学习交流。")}</p>
+          <p className={NOTICE_BODY}>{t("本工坊只是本地创作工具，不提供图片生成服务：图片由你自行获取并接入的 NovelAI（或其它兼容服务）生成，API Key、订阅与费用都由你本人向对应服务申请和承担。工坊不参与、不审核、不认可任何具体创作，也不承担由此产生的任何责任。请自行遵守所在地法律法规和所用服务的规则。本项目仅用于无偿学习交流。")}</p>
         </div>
       </section>
 

@@ -40169,11 +40169,11 @@
     "制作内容は作者と無関係",
     "콘텐츠 제작은 작성자와 무관"
   ],
-  "本工坊只是本地创作工具，生成的图片和内容完全由你自行决定、保存和使用。作者不参与、不审核、不认可任何具体创作，也不承担由此产生的任何责任。请自行遵守所在地法律法规和所用服务的规则。本项目仅用于无偿学习交流。": [
-    "本工坊只是本地創作工具，生成的圖片和內容完全由你自行決定、保存和使用。作者不參與、不審核、不認可任何具體創作，也不承擔由此產生的任何責任。請自行遵守所在地法律法規和所用服務的規則。本專案僅用於無償學習交流。",
-    "This atelier is only a local creation tool; the images and content you generate are entirely your own decision, storage and use. The author does not take part in, review or endorse any specific work, and accepts no responsibility for any consequence it brings. You are responsible for following the laws and regulations of where you are and the rules of the services you use. This project is for free learning and exchange only.",
-    "本工房はローカルの制作ツールにすぎず、生成した画像と内容の決定・保存・利用はすべてあなた自身が行うものです。作者は個々の制作に参加・審査・推奨せず、それによって生じたいかなる責任も負いません。お住まいの地域の法令と利用サービス规約をご自身で守ってください。本プロジェクトは無償の学習・交流のみを目的としています。",
-    "이 작업실은 로컬 제작 도구일 뿐이며, 생성한 이미지와 내용의 결정·보관·사용은 전적으로 사용자 본인에게 있습니다. 작성자는 어떤 구체적인 창작에도 참여·검토·승인하지 않으며, 그로 인해 발생하는 어떤 책임도 지지 않습니다. 거주 지역의 법규와 이용하는 서비스의 규칙을 스스로 지켜 주세요. 이 프로젝트는 무상 학습·교류 목적으로만 사용됩니다."
+  "本工坊只是本地创作工具，不提供图片生成服务：图片由你自行获取并接入的 NovelAI（或其它兼容服务）生成，API Key、订阅与费用都由你本人向对应服务申请和承担。工坊不参与、不审核、不认可任何具体创作，也不承担由此产生的任何责任。请自行遵守所在地法律法规和所用服务的规则。本项目仅用于无偿学习交流。": [
+    "本工坊只是本地創作工具，不提供圖片生成服務：圖片由你自行取得並接入的 NovelAI（或其它相容服務）生成，API Key、訂閱與費用都由你本人向對應服務申請和負擔。工坊不參與、不審核、不認可任何具體創作，也不承擔由此產生的任何責任。請自行遵守所在地法律法規和所用服務的規則。本專案僅用於無償學習交流。",
+    "This atelier is only a local creation tool and does not provide image generation: images come from the NovelAI (or other compatible) service that you obtain and connect yourself, and the API key, subscription and fees are applied for and borne by you with that service. The atelier does not take part in, review or endorse any specific work, and accepts no responsibility for any consequence it brings. You are responsible for following the laws and regulations of where you are and the rules of the services you use. This project is for free learning and exchange only.",
+    "本工房はローカルの制作ツールであり、画像生成サービスを提供するものではありません。画像は、ご自身で取得して接続した NovelAI（または互換サービス）によって生成されます。API キー・購読・費用はすべてご自身で当該サービスに申請し負担するものです。本工房は個々の制作に参加・審査・推奨せず、それによって生じたいかなる責任も負いません。お住まいの地域の法令と利用サービスの規約をご自身で守ってください。本プロジェクトは無償の学習・交流のみを目的としています。",
+    "이 작업실은 로컬 제작 도구일 뿐이며 이미지 생성 서비스를 제공하지 않습니다. 이미지는 사용자가 직접 발급받아 연결한 NovelAI(또는 호환 서비스)가 생성하며, API 키·구독·비용은 모두 사용자가 해당 서비스에 직접 신청하고 부담합니다. 이 작업실은 어떤 구체적인 창작에도 참여·검토·승인하지 않으며, 그로 인해 발생하는 어떤 책임도 지지 않습니다. 거주 지역의 법규와 이용하는 서비스의 규칙을 스스로 지켜 주세요. 이 프로젝트는 무상 학습·교류 목적으로만 사용됩니다."
   ],
   "问题反馈与贡献": [
     "問題回報與貢獻",
