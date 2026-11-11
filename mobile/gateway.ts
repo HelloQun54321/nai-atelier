@@ -1,4 +1,4 @@
-import { GenerationTasks, validateGenerationInterval } from '../worker/generationTasks.mjs';
+import { GenerationTasks, validateGenerationInterval, validateGenerationIntervalJitter } from '../worker/generationTasks.mjs';
 import { native, nativeFetch, bytesToBase64 } from './native';
 import { db } from './storage';
 import { runHandler } from './node-http';
@@ -72,6 +72,7 @@ export async function queuePreferences(authorization: string, next?: any) {
   if (next === undefined) return old;
   if (!hash) throw new Error('请先配置 NovelAI API Key');
   if (next.generationIntervalSeconds !== undefined) validateGenerationInterval(next.generationIntervalSeconds);
+  if (next.generationIntervalJitterPercent !== undefined) validateGenerationIntervalJitter(next.generationIntervalJitterPercent);
   const value = normalizeCloudQueuePreferences({ ...old, ...next });
   if (next.enabled === true && !value.serviceUrl) throw new Error('请先填写公共队列服务地址');
   await writeSetting(key, value); return value;
@@ -103,12 +104,12 @@ export async function mobileGateway(request: Request): Promise<Response | null> 
   if (path === '/api/generation-job') {
     const preferences = await queuePreferences(authorization);
     const keyHash = keyHashFromAuthorization(authorization);
-    if (keyHash) tasks.setInterval(keyHash, preferences.generationIntervalSeconds);
+    if (keyHash) tasks.setInterval(keyHash, preferences.generationIntervalSeconds, preferences.generationIntervalJitterPercent);
     return generationJobs.handle(request);
   }
   if (path === '/api/generation-task') {
     const preferences = await queuePreferences(authorization);
-    return runHandler(request, (req, res) => handleGenerationTaskRequest(req, res, '', tasks, { preferences, jobs: generationJobs.jobs, saveInterval: (seconds: number) => queuePreferences(authorization, { generationIntervalSeconds: seconds }) }));
+    return runHandler(request, (req, res) => handleGenerationTaskRequest(req, res, '', tasks, { preferences, jobs: generationJobs.jobs, saveInterval: (seconds: number, jitterPercent?: number) => queuePreferences(authorization, { generationIntervalSeconds: seconds, ...(jitterPercent === undefined ? {} : { generationIntervalJitterPercent: jitterPercent }) }) }));
   }
   if (path === '/api/generate' || path === '/api/generate-stream') {
     const prefs = await queuePreferences(authorization);

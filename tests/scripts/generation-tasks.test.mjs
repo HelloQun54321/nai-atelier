@@ -4,7 +4,7 @@ import '../support/node-environment.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable, Writable } from 'node:stream';
-import { GenerationTasks, validateGenerationInterval } from '../../worker/generationTasks.mjs';
+import { GenerationTasks, validateGenerationInterval, validateGenerationIntervalJitter } from '../../worker/generationTasks.mjs';
 import { handleGenerationTaskRequest, handleGenerateRequest, handleGenerateStreamRequest, CloudQueueCoordinator, DEFAULT_NAI_RUNTIME, normalizeCloudQueuePreferences } from '../../scripts/media-gateway.mjs';
 
 const owner = 'a'.repeat(32), other = 'b'.repeat(32);
@@ -26,6 +26,41 @@ test('间隔支持一位小数，保存到下一次准入按毫秒计时，旧�
   now = 500; tasks.enter('key', owner)(); tasks.renew('key', owner, 2);
   tasks.setInterval('key', 2.3); assert.equal(tasks.status('key', owner).waitMs, 2300);
   now = 2800; tasks.enter('key', owner)();
+});
+
+test('间隔随机浮动是可选的：0 关闭按固定间隔，开启后每次只掷一次且落在基准 ±幅度内', () => {
+  for (const percent of [0, 10, 30, 100]) assert.equal(validateGenerationIntervalJitter(percent), percent);
+  for (const invalid of [-1, 101, 10.5, NaN, '30']) {
+    assert.throws(() => validateGenerationIntervalJitter(invalid), { code: 'invalid_generation_interval_jitter', status: 400 });
+    assert.equal(normalizeCloudQueuePreferences({ generationIntervalJitterPercent: invalid }).generationIntervalJitterPercent, 0);
+  }
+  assert.equal(normalizeCloudQueuePreferences({ generationIntervalJitterPercent: 30 }).generationIntervalJitterPercent, 30);
+
+  let now = 10_000;
+  const runOne = (random, percent = 50) => {
+    const tasks = new GenerationTasks({ now: () => now, intervalSeconds: 10, random });
+    tasks.setInterval('key', 10, percent);
+    tasks.reserve('key', owner, 2);
+    tasks.enter('key', owner)();
+    return tasks;
+  };
+  // 关闭浮动时与改动前完全一致：固定 10 秒。
+  now = 10_000;
+  const fixed = runOne(() => 0.9, 0);
+  assert.equal(fixed.waitMs('key'), 10_000);
+  // 随机值偏低 → 0.5 × 基准；重复读取不重掷，时间推进后只减少剩余量。
+  now = 10_000;
+  const low = runOne(() => 0);
+  assert.equal(low.waitMs('key'), 5_000);
+  assert.equal(low.waitMs('key'), 5_000);
+  now += 2_000;
+  assert.equal(low.waitMs('key'), 3_000);
+  // 随机值偏高 → 1.5 × 基准。
+  now = 10_000;
+  const high = runOne(() => 1);
+  assert.equal(high.waitMs('key'), 15_000);
+  // 随机结果不会被持久化到别的 Key 或下一次起算之外。
+  assert.equal(low.snapshot('key').intervalJitterPercent, 50);
 });
 
 test('默认间隔 2 秒：第一张立即生成，保存后计时，重复进度和心跳不延长', () => {

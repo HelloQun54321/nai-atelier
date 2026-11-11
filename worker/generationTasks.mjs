@@ -3,18 +3,27 @@ const expiredFailure = () => failure('生成任务已过期或归属已变化，
 const cancelledFailure = () => failure('生成任务已被取消', 'generation_cancelled', 409, 'cancelled');
 export const DEFAULT_GENERATION_INTERVAL_SECONDS = 2;
 export const MAX_GENERATION_INTERVAL_SECONDS = 3600;
+export const DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT = 0;
+export const MAX_GENERATION_INTERVAL_JITTER_PERCENT = 100;
 export const validateGenerationInterval = seconds => {
   if (!Number.isFinite(seconds) || seconds < 0 || seconds > MAX_GENERATION_INTERVAL_SECONDS || Math.round(seconds * 10) / 10 !== seconds) throw failure('生成间隔须为 0～3600 秒，最多一位小数', 'invalid_generation_interval', 400);
   return seconds;
 };
+/** 每次生成在基准间隔上随机浮动的幅度；固定间隔容易被判定为脚本刷图。 */
+export const validateGenerationIntervalJitter = percent => {
+  if (!Number.isFinite(percent) || percent < 0 || percent > MAX_GENERATION_INTERVAL_JITTER_PERCENT || Math.round(percent) !== percent) throw failure('间隔浮动须为 0～100 的整数百分比', 'invalid_generation_interval_jitter', 400);
+  return percent;
+};
 
 /** 由同一工坊后端持有；只记录 Key 指纹，空闲租约过期，在途请求始终占用。 */
 export class GenerationTasks {
-  constructor({ now = Date.now, idleMs = 90_000, intervalSeconds = DEFAULT_GENERATION_INTERVAL_SECONDS, cancelTtlMs = 120_000 } = {}) {
+  constructor({ now = Date.now, idleMs = 90_000, intervalSeconds = DEFAULT_GENERATION_INTERVAL_SECONDS, intervalJitterPercent = DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT, random = Math.random, cancelTtlMs = 120_000 } = {}) {
     this.now = now;
     this.idleMs = idleMs;
     this.cancelTtlMs = cancelTtlMs;
+    this.random = random;
     this.intervalSeconds = validateGenerationInterval(intervalSeconds);
+    this.intervalJitterPercent = validateGenerationIntervalJitter(intervalJitterPercent);
     this.tasks = new Map();
     this.waiting = new Map();
     this.queues = new Map();
@@ -59,22 +68,37 @@ export class GenerationTasks {
   }
   get size() { this.prune(); return this.tasks.size; }
   current(key) { this.prune(); return this.tasks.get(key); }
-  setInterval(key, seconds) {
+  setInterval(key, seconds, jitterPercent) {
     const state = this.queues.get(key) || { completed: 0, paused: false };
     state.intervalSeconds = validateGenerationInterval(seconds);
+    state.intervalJitterPercent = jitterPercent === undefined
+      ? (state.intervalJitterPercent ?? this.intervalJitterPercent)
+      : validateGenerationIntervalJitter(jitterPercent);
+    // 间隔或浮动幅度变了就重新起算，避免下一次仍用旧的随机值。
+    delete state.nextWaitMs;
     this.queues.set(key, state);
     return this.snapshot(key);
   }
+  /** 每次生成只掷一次随机间隔：waitMs 会被反复读取，不能每次重算。 */
+  computeWaitMs(state) {
+    const baseMs = Math.round((state.intervalSeconds ?? this.intervalSeconds) * 1000);
+    const jitter = state.intervalJitterPercent ?? this.intervalJitterPercent;
+    if (!jitter) return baseMs;
+    const factor = 1 + (this.random() * 2 - 1) * (jitter / 100);
+    return Math.max(0, Math.round(baseMs * factor));
+  }
   waitMs(key) {
     const state = this.queues.get(key);
-    return state?.lastFinishedAt === undefined ? 0 : Math.max(0, state.lastFinishedAt + Math.round((state.intervalSeconds ?? this.intervalSeconds) * 1000) - this.now());
+    if (state?.lastFinishedAt === undefined) return 0;
+    const wait = state.nextWaitMs ?? this.computeWaitMs(state);
+    return Math.max(0, state.lastFinishedAt + wait - this.now());
   }
   snapshot(key) {
     this.prune();
     const state = this.queues.get(key) || { completed: 0, paused: false };
     const tasks = [...(this.tasks.has(key) ? [this.tasks.get(key)] : []), ...(this.waiting.get(key) || [])];
     // 只有真正生成或保存中的图片才让前端保持“暂停中”，准备阶段不算，避免恢复按钮被禁用而卡死。
-    return { intervalSeconds: state.intervalSeconds ?? this.intervalSeconds, busy: tasks.length > 0 || state.paused, completed: state.completed, total: state.completed + tasks.reduce((sum, task) => sum + task.count - task.completed, 0), paused: state.paused, pausing: state.paused && tasks.some(task => task.phase === 'generating' || task.phase === 'saving'), waiting: (this.waiting.get(key) || []).map((task, index) => ({ token: task.token, total: task.count, completed: task.completed, position: index + 1 })) };
+    return { intervalSeconds: state.intervalSeconds ?? this.intervalSeconds, intervalJitterPercent: state.intervalJitterPercent ?? this.intervalJitterPercent, busy: tasks.length > 0 || state.paused, completed: state.completed, total: state.completed + tasks.reduce((sum, task) => sum + task.count - task.completed, 0), paused: state.paused, pausing: state.paused && tasks.some(task => task.phase === 'generating' || task.phase === 'saving'), waiting: (this.waiting.get(key) || []).map((task, index) => ({ token: task.token, total: task.count, completed: task.completed, position: index + 1 })) };
   }
   pause(key, paused) {
     const state = this.queues.get(key) || { completed: 0, paused: false };
@@ -186,7 +210,7 @@ export class GenerationTasks {
     if (completed !== undefined) {
       if (status.position !== 0 || !Number.isSafeInteger(completed) || completed < task.completed || completed > task.count) throw failure('生成进度无效', 'invalid_generation_progress', 400);
       const state = this.queues.get(key) || { completed: 0, paused: false };
-      if (completed > task.completed) state.lastFinishedAt = this.now();
+      if (completed > task.completed) { state.lastFinishedAt = this.now(); state.nextWaitMs = this.computeWaitMs(state); }
       state.completed += completed - task.completed;
       task.completed = completed; task.phase = 'idle';
       this.queues.set(key, state);
@@ -227,7 +251,7 @@ export class GenerationTasks {
       task.expiresAt = this.now() + this.idleMs;
       // 保存确认（renew completed）已经为下一张起算间隔时，收尾不能再覆盖该时刻。
       const saveConfirmed = task.completed > confirmedAtEntry;
-      if (!saveConfirmed) state.lastFinishedAt = this.now();
+      if (!saveConfirmed) { state.lastFinishedAt = this.now(); state.nextWaitMs = this.computeWaitMs(state); }
       if (standalone || task.releasing || task.cancelled) { this.tasks.delete(key); this.promote(key); return; }
       // 收图后仍等保存确认才交接；但若保存回执已经先到（后台 runner 先 renew），不能退回 saving 造成虚假暂停。
       if (!saveConfirmed) task.phase = 'saving';

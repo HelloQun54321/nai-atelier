@@ -219,12 +219,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
       } catch (error) { if (latestGenerationStateRef.current.apiKey === apiKey) notify((error as Error).message, 'error'); }
       finally { if (latestGenerationStateRef.current.apiKey === apiKey) setPausePending(false); }
     };
-    const changeGenerationInterval = async (seconds: number) => {
+    const changeGenerationInterval = async (seconds: number, jitterPercent?: number) => {
       if (intervalPending || !apiKey) return;
       const revision = ++intervalRevisionRef.current;
       setIntervalPending(true);
       try {
-        const next = await setGenerationInterval(apiKey, seconds);
+        const next = await setGenerationInterval(apiKey, seconds, jitterPercent);
         if (latestGenerationStateRef.current.apiKey === apiKey && revision === intervalRevisionRef.current) setQueueState(next);
       } catch (error) { if (latestGenerationStateRef.current.apiKey === apiKey) notify((error as Error).message, 'error'); }
       finally { if (latestGenerationStateRef.current.apiKey === apiKey && revision === intervalRevisionRef.current) { intervalRevisionRef.current++; setIntervalPending(false); } }
@@ -380,6 +380,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
     const generationCountControl = { continuousGenerationEnabled, count: effectiveGenerationCount, onCountChange: setGenerationCount, series: generationSeries, onStop: stopGenerationSeries, queueState, onTogglePause: () => { void toggleQueuePause(); }, pausePending,
         generationState,
         intervalSeconds: queueState?.intervalSeconds, onIntervalChange: (seconds: number) => { void changeGenerationInterval(seconds); }, intervalPending: intervalPending || !apiKey,
+        intervalJitterPercent: queueState?.intervalJitterPercent ?? 0,
+        onIntervalJitterChange: (percent: number) => { void changeGenerationInterval(queueState?.intervalSeconds ?? 2, percent); },
         onQueue: continuousGenerationEnabled ? (placement: GenerationPlacement) => { void (activeEditOperation ? imageEditQueueFnRef.current?.(placement) : handleGenerate(placement)); } : undefined,
         queued: queueState ? queueState.waiting.map(task => ({ id: task.token, progress: { current: task.completed, total: task.total, position: task.position, stopping: false }, onCancel: () => { const local = queuedGenerations.find(session => session.token === task.token); if (local) stopGenerationSeriesSession(local); else void cancelGenerationJob(apiKey, task.token).catch(error => notify(error.message, 'error')); } })) : queuedGenerations.map(session => ({ id: session.token, progress: session.progress, onCancel: () => stopGenerationSeriesSession(session) })),
         queueDisabled: !apiKey || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canQueue) };

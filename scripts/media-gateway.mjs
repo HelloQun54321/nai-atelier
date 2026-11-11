@@ -1,5 +1,5 @@
 import { vibeBaseModel, vibeModelKey } from '../services/vibeProtocol.mjs';
-import { GenerationTasks, DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval } from '../worker/generationTasks.mjs';
+import { GenerationTasks, DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval, validateGenerationIntervalJitter } from '../worker/generationTasks.mjs';
 import { createDesktopGenerationJobs, handleGenerationJobRequest } from './generation-gateway.mjs';
 import { readGenerationResponse } from './generation-output.mjs';
 import { parseHttpError } from '../services/httpErrors.mjs';
@@ -165,6 +165,8 @@ export const normalizeCloudQueuePreferences = value => {
     showGreeting: value?.showGreeting !== false,
     serviceUrl,
     generationIntervalSeconds: Number.isFinite(value?.generationIntervalSeconds) && value.generationIntervalSeconds >= 0 && value.generationIntervalSeconds <= MAX_GENERATION_INTERVAL_SECONDS && Math.round(value.generationIntervalSeconds * 10) / 10 === value.generationIntervalSeconds ? value.generationIntervalSeconds : DEFAULT_GENERATION_INTERVAL_SECONDS,
+    // 0 = 关闭随机浮动，按固定间隔等待；>0 时每次在该百分比内随机前后浮动。
+    generationIntervalJitterPercent: Number.isFinite(value?.generationIntervalJitterPercent) && value.generationIntervalJitterPercent >= 0 && value.generationIntervalJitterPercent <= 100 && Math.round(value.generationIntervalJitterPercent) === value.generationIntervalJitterPercent ? value.generationIntervalJitterPercent : 0,
   };
 };
 
@@ -2019,7 +2021,7 @@ export const handleGenerationTaskRequest = async (req, res, lanSecret, tasks = g
   if (!key) return sendJson(res, 401, { error: '缺少 NovelAI API Key', code: 'missing_key' });
   const token = String(req.headers['x-nai-generation-task'] || '');
   try {
-    if (preferences) tasks.setInterval(key, preferences.generationIntervalSeconds);
+    if (preferences) tasks.setInterval(key, preferences.generationIntervalSeconds, preferences.generationIntervalJitterPercent);
     const placement = req.headers['x-nai-generation-placement'];
     const count = req.headers['x-nai-generation-count'] === undefined ? 1 : Number(req.headers['x-nai-generation-count']);
     if (req.method === 'POST' && placement) return sendJson(res, 200, { success: true, ...tasks.enqueue(key, token, placement, count) });
@@ -2044,8 +2046,10 @@ export const handleGenerationTaskRequest = async (req, res, lanSecret, tasks = g
       const action = req.headers['x-nai-generation-action'];
       if (action === 'interval') {
         const seconds = validateGenerationInterval(Number(req.headers['x-nai-generation-interval']));
-        await saveInterval?.(seconds);
-        return sendJson(res, 200, tasks.setInterval(key, seconds));
+        const jitterHeader = req.headers['x-nai-generation-interval-jitter'];
+        const jitterPercent = jitterHeader === undefined ? undefined : validateGenerationIntervalJitter(Number(jitterHeader));
+        await saveInterval?.(seconds, jitterPercent);
+        return sendJson(res, 200, tasks.setInterval(key, seconds, jitterPercent));
       }
       if (!['pause', 'resume'].includes(action)) return sendJson(res, 400, { error: '生成队列操作无效', code: 'invalid_generation_queue' });
       return sendJson(res, 200, tasks.pause(key, action === 'pause'));
@@ -2236,7 +2240,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
   } : {};
 
   try {
-    if (queuePreferences.generationIntervalSeconds !== undefined) tasks.setInterval(keyHash, queuePreferences.generationIntervalSeconds);
+    if (queuePreferences.generationIntervalSeconds !== undefined) tasks.setInterval(keyHash, queuePreferences.generationIntervalSeconds, queuePreferences.generationIntervalJitterPercent);
     finishGeneration = tasks.enter(keyHash, String(req.headers['x-nai-generation-task'] || ''));
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
     let payload;
@@ -2447,7 +2451,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
   };
 
   try {
-    if (queuePreferences.generationIntervalSeconds !== undefined) tasks.setInterval(keyHash, queuePreferences.generationIntervalSeconds);
+    if (queuePreferences.generationIntervalSeconds !== undefined) tasks.setInterval(keyHash, queuePreferences.generationIntervalSeconds, queuePreferences.generationIntervalJitterPercent);
     finishGeneration = tasks.enter(keyHash, String(req.headers['x-nai-generation-task'] || ''));
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
     let payload;
@@ -4409,7 +4413,7 @@ const serveDistFile = async (req, res, url) => {
     if (url.pathname === '/api/generation-job') {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       const scope = await getCloudQueueScope(req);
-      tasks.setInterval(scope.keyHash, scope.preferences.generationIntervalSeconds);
+      tasks.setInterval(scope.keyHash, scope.preferences.generationIntervalSeconds, scope.preferences.generationIntervalJitterPercent);
       return handleGenerationJobRequest(req, res, generationJobs, {
         allowed: request => hasValidLanCookie(request, lanSecret), keyHash: keyHashFromRequest,
         readBody: readRequestBody, sendJson, host: getForwardHost,
@@ -4419,8 +4423,12 @@ const serveDistFile = async (req, res, url) => {
     if (url.pathname === '/api/generation-task') {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       const scope = await getCloudQueueScope(req);
-      return handleGenerationTaskRequest(req, res, lanSecret, tasks, { preferences: scope.preferences, jobs: generationJobs, saveInterval: async seconds => {
-        cloudQueueStore.accounts[scope.keyHash] = { ...resolveCloudQueuePreferences(cloudQueueStore, scope.keyHash).preferences, generationIntervalSeconds: seconds };
+      return handleGenerationTaskRequest(req, res, lanSecret, tasks, { preferences: scope.preferences, jobs: generationJobs, saveInterval: async (seconds, jitterPercent) => {
+        cloudQueueStore.accounts[scope.keyHash] = {
+          ...resolveCloudQueuePreferences(cloudQueueStore, scope.keyHash).preferences,
+          generationIntervalSeconds: seconds,
+          ...(jitterPercent === undefined ? {} : { generationIntervalJitterPercent: jitterPercent }),
+        };
         await saveCloudQueuePreferences(cloudQueueStore);
       } });
     }

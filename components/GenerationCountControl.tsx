@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Image as ImageIcon, Images, ListEnd, ListStart, Minus, Pause, Play, Plus, Timer, X } from 'lucide-react';
+import { ChevronDown, Image as ImageIcon, Images, ListEnd, ListStart, Minus, Pause, Play, Plus, Shuffle, Timer, X } from 'lucide-react';
 import { AnchoredToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ToolbarButton } from './DesignSystem';
 import { CloudQueueButton, useCloudQueueEnabled, useCloudQueueStatus } from './CloudQueueStatus';
@@ -10,7 +10,7 @@ import { t, useLanguage } from '../services/i18n';
 import type { GenerationSeriesProgress } from '../services/generationSeries';
 import type { GenerationPlacement, GenerationQueueSnapshot } from '../services/generationTask';
 import type { GenerationJobState } from '../services/generationJob';
-import { DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval } from '../worker/generationTasks.mjs';
+import { DEFAULT_GENERATION_INTERVAL_SECONDS, DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval, validateGenerationIntervalJitter } from '../worker/generationTasks.mjs';
 
 export interface GenerationCountControlProps {
   count: number; onCountChange: (count: number) => void;
@@ -24,14 +24,17 @@ export interface GenerationCountControlProps {
   queueDisabled?: boolean;
   continuousGenerationEnabled?: boolean;
   intervalSeconds?: number; onIntervalChange?: (seconds: number) => void; intervalPending?: boolean;
+  /** 0 = 固定间隔；>0 时每次在该百分比内随机浮动。 */
+  intervalJitterPercent?: number; onIntervalJitterChange?: (percent: number) => void;
 }
 
-export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ count, onCountChange, series, onStop, disabled, onGenerate, costLabel, unavailableLabel, busy, generationState, generationProgress, showQueueStatus = true, queueState, onTogglePause, pausePending, onQueue, queued = [], queueDisabled, continuousGenerationEnabled = true, intervalSeconds = DEFAULT_GENERATION_INTERVAL_SECONDS, onIntervalChange, intervalPending }) => {
+export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ count, onCountChange, series, onStop, disabled, onGenerate, costLabel, unavailableLabel, busy, generationState, generationProgress, showQueueStatus = true, queueState, onTogglePause, pausePending, onQueue, queued = [], queueDisabled, continuousGenerationEnabled = true, intervalSeconds = DEFAULT_GENERATION_INTERVAL_SECONDS, onIntervalChange, intervalPending, intervalJitterPercent = DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT, onIntervalJitterChange }) => {
   useLanguage();
   const queueStatus = useCloudQueueStatus();
   const cloudQueueEnabled = useCloudQueueEnabled();
   const countId = React.useId();
   const intervalId = React.useId();
+  const jitterId = React.useId();
   const [value, setValue] = useState(String(count));
   const [intervalValue, setIntervalValue] = useState(intervalSeconds.toFixed(1));
   const [open, setOpen] = useState(false);
@@ -135,6 +138,24 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
           onMouseDown={event => event.preventDefault()} onClick={() => adjustInterval(1)}
           className="mobile-touch flex h-8 w-8 flex-none items-center justify-center text-gray-500 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-gray-800"><Plus aria-hidden="true" className="h-3.5 w-3.5" /></button>
       </div>
+    </div>}
+    {continuousGenerationEnabled && onIntervalJitterChange && <div className="flex min-h-10 items-center justify-center gap-2 rounded-lg px-2 py-1 text-sm text-gray-700 dark:text-gray-200" title={t("可选模式：开启后每次生成在间隔基础上随机浮动，避免固定节奏被判定为脚本刷图；关闭时按固定间隔等待。")}>
+      <Shuffle aria-hidden="true" className="h-4 w-4 flex-none text-gray-400 dark:text-gray-500" />
+      <label htmlFor={jitterId} className="w-14 shrink-0">{t("随机浮动")}</label>
+      <select
+        id={jitterId}
+        aria-label={t("间隔随机浮动幅度")}
+        value={intervalJitterPercent}
+        disabled={intervalPending}
+        onChange={event => {
+          const next = validateGenerationIntervalJitter(Number(event.target.value));
+          if (next !== intervalJitterPercent) onIntervalJitterChange(next);
+        }}
+        className="mobile-touch h-8 min-w-0 flex-1 rounded-lg border border-gray-200 bg-gray-50 px-2 text-sm font-semibold outline-none focus:border-indigo-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950"
+      >
+        <option value={0}>{t("关闭（固定间隔）")}</option>
+        {[10, 20, 30, 50].map(percent => <option key={percent} value={percent}>{t("±{0}%", [percent])}</option>)}
+      </select>
     </div>}
     {continuousGenerationEnabled && onQueue && <div className="mt-1 space-y-0.5 border-t border-gray-200 pt-1 dark:border-gray-800">
       <button type="button" disabled={blocked} onClick={() => { close(); onQueue('end'); }} className={TOOLBAR_MENU_CLASS + ' min-h-10 justify-center disabled:cursor-not-allowed disabled:opacity-40'}><ListEnd aria-hidden="true" className="text-gray-400 dark:text-gray-500" />{t("加入队列")}</button>

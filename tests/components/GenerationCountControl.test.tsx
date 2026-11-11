@@ -420,3 +420,17 @@ it.each([1280, 390])('%s 保存末期计数已完成仍显示保存且不能再�
   fireEvent.click(button);
   expect(generate).not.toHaveBeenCalled();
 });
+
+it('间隔随机浮动是可选项：默认关闭，选择幅度后回传并保留原秒数', () => {
+  const interval = vi.fn(), jitter = vi.fn();
+  const view = render(<GenerationCountControl {...props} onIntervalChange={interval} onIntervalJitterChange={jitter} intervalSeconds={4} intervalJitterPercent={0} queueState={state} />);
+  fireEvent.keyDown(screen.getByRole('button', { name: /加入队列.*3 张/ }), { key: 'ArrowDown', altKey: true });
+  const select = screen.getByLabelText('间隔随机浮动幅度') as HTMLSelectElement;
+  expect(select.value).toBe('0');
+  expect(screen.getByText('关闭（固定间隔）')).toBeTruthy();
+  fireEvent.change(select, { target: { value: '30' } });
+  expect(jitter).toHaveBeenCalledWith(30);
+  expect(interval).not.toHaveBeenCalled();
+  view.rerender(<GenerationCountControl {...props} onIntervalChange={interval} onIntervalJitterChange={jitter} intervalSeconds={4} intervalJitterPercent={30} queueState={state} />);
+  expect(select.value).toBe('30');
+});

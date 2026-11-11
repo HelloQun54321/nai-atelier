@@ -1,19 +1,23 @@
 export const DEFAULT_GENERATION_INTERVAL_SECONDS: number;
 export const MAX_GENERATION_INTERVAL_SECONDS: number;
+export const DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT: number;
+export const MAX_GENERATION_INTERVAL_JITTER_PERCENT: number;
 export function validateGenerationInterval(seconds: number): number;
+/** 每次生成在基准间隔上随机浮动的幅度百分比（0 = 关闭）。 */
+export function validateGenerationIntervalJitter(percent: number): number;
 /** 执行位真实阶段：idle 空闲、preparing 请求前准备、generating 上游生成中、saving 已收图等待保存确认。 */
 export type GenerationTaskPhase = 'idle' | 'preparing' | 'generating' | 'saving';
 export interface GenerationTaskLease { token: string; count: number; completed: number; phase: GenerationTaskPhase; inFlight: boolean; releasing: boolean; cancelled: boolean; managed: boolean; expiresAt: number }
-export interface GenerationQueueSnapshot { intervalSeconds?: number; busy: boolean; completed: number; total: number; paused: boolean; pausing: boolean; waiting: { token: string; total: number; completed: number; position: number }[] }
+export interface GenerationQueueSnapshot { intervalSeconds?: number; intervalJitterPercent?: number; busy: boolean; completed: number; total: number; paused: boolean; pausing: boolean; waiting: { token: string; total: number; completed: number; position: number }[] }
 export interface GenerationCancelResult { cancelled: true; position: 0; paused: boolean }
 export class GenerationTasks {
-  constructor(options?: { now?: () => number; idleMs?: number; intervalSeconds?: number; cancelTtlMs?: number });
+  constructor(options?: { now?: () => number; idleMs?: number; intervalSeconds?: number; intervalJitterPercent?: number; random?: () => number; cancelTtlMs?: number });
   readonly size: number;
   current(key: string): GenerationTaskLease | undefined;
   /** 当前执行位的租约令牌；没有当前任务时返回空字符串。 */
   currentToken(key: string): string;
   snapshot(key: string): GenerationQueueSnapshot;
-  setInterval(key: string, seconds: number): GenerationQueueSnapshot;
+  setInterval(key: string, seconds: number, jitterPercent?: number): GenerationQueueSnapshot;
   waitMs(key: string): number;
   pause(key: string, paused: boolean): GenerationQueueSnapshot;
   reserve(key: string, token: string, count?: number, queued?: boolean): GenerationTaskLease;

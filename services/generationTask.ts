@@ -18,4 +18,8 @@ const request = async (key: string, method: string, headers: Record<string, stri
 export const getGenerationQueue = async (key: string) => await request(key, 'GET') as GenerationQueueSnapshot;
 export const cancelGenerationQueue = async (key: string) => await request(key, 'DELETE', { 'X-Nai-Generation-Cancel-All': '1' }) as Partial<GenerationQueueSnapshot> & { cancelled?: number };
 export const setGenerationQueuePaused = async (key: string, paused: boolean) => await request(key, 'PATCH', { 'X-Nai-Generation-Action': paused ? 'pause' : 'resume' }) as GenerationQueueSnapshot;
-export const setGenerationInterval = async (key: string, seconds: number) => await request(key, 'PATCH', { 'X-Nai-Generation-Action': 'interval', 'X-Nai-Generation-Interval': String(seconds) }) as GenerationQueueSnapshot;
+export const setGenerationInterval = async (key: string, seconds: number, jitterPercent?: number) => await request(key, 'PATCH', {
+  'X-Nai-Generation-Action': 'interval',
+  'X-Nai-Generation-Interval': String(seconds),
+  ...(jitterPercent === undefined ? {} : { 'X-Nai-Generation-Interval-Jitter': String(jitterPercent) }),
+}) as GenerationQueueSnapshot;
