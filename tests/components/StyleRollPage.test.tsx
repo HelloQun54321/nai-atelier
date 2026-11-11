@@ -11,7 +11,7 @@ import { executeAgentCommand, getAgentCommands } from '../../services/agentComma
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { setLanguage } from '../../services/i18n';
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, ensureCollection: vi.fn(), favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>(), interrupted: [] as any[], clearInterrupted: vi.fn(), restore: vi.fn(async () => {}) }));
+const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, ensureCollection: vi.fn(), favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>(), interrupted: [] as any[], clearInterrupted: vi.fn(), restore: vi.fn(async () => {}), getQueue: vi.fn(async () => ({ intervalSeconds: 2, intervalJitterPercent: 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })), setIntervalPref: vi.fn(async (_key: string, seconds: number, jitterPercent?: number) => ({ intervalSeconds: seconds, intervalJitterPercent: jitterPercent ?? 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })) }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: async () => ({ available: true, canManage: true, packs: [] }), ARTIST_SAMPLES_CHANGED: 'nai-artist-samples-changed', getArtistSampleLibrary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: async () => [] }));
 const sampleUrls = new Map<string, string>();
@@ -22,7 +22,7 @@ vi.mock('../../services/styleRollApi', async original => ({ ...await original<ty
 vi.mock('../../services/styleRollGeneration', () => ({ beginRollGeneration: mocks.generate, readRollApiKey: () => mocks.key }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { subscribe: () => () => {} } }));
 vi.mock('../../services/generationSeries', () => ({ getGenerationSeriesSession: () => mocks.session, subscribeGenerationSeries: () => () => {}, stopGenerationSeriesSession: mocks.stop, approveGenerationSeries: mocks.approve, restoreGenerationSeriesSessions: mocks.restore, listInterruptedGenerationSeries: () => mocks.interrupted, clearInterruptedGenerationSeries: mocks.clearInterrupted }));
-vi.mock('../../services/generationTask', () => ({ setGenerationQueuePaused: mocks.pause }));
+vi.mock('../../services/generationTask', () => ({ setGenerationQueuePaused: mocks.pause, getGenerationQueue: mocks.getQueue, setGenerationInterval: mocks.setIntervalPref }));
 vi.mock('../../services/naiRuntime', async original => { const actual = await original<typeof import('../../services/naiRuntime')>(); return { ...actual, useNaiRuntime: () => actual.DEFAULT_NAI_RUNTIME }; });
 vi.mock('../../services/naiUsage', () => ({ useNovelaiUsage: () => ({ info: { tier: 3 }, refreshIfStale: vi.fn() }), isActiveOpusSubscription: () => true }));
 vi.mock('../../services/anlasBudget', () => ({ useAnlasBudget: () => ({ remaining: 100 }), applyEstimatorRuntime: () => {}, estimateV45GenerationCost: () => mocks.cost, formatGenerationCostLabel: (cost: number) => cost > 0 ? `${cost} Anlas` : '免费' }));
@@ -385,6 +385,20 @@ it('权重范围随记录切换并在重新进入后恢复，新范围只作用�
   fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '1.7');
   expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '1.9');
+});
+it('本轮设置可调生成间隔与随机浮动，按同一 Key 保存并立即生效', async () => {
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  const dialog = screen.getByRole('dialog', { name: '本轮设置' });
+  await waitFor(() => expect(mocks.getQueue).toHaveBeenCalledWith('synthetic-key'));
+  const interval = within(dialog).getByRole('spinbutton', { name: '生成间隔' }) as HTMLInputElement;
+  expect(interval.value).toBe('2.0');
+  fireEvent.change(interval, { target: { value: '3.5' } });
+  fireEvent.blur(interval);
+  await waitFor(() => expect(mocks.setIntervalPref).toHaveBeenCalledWith('synthetic-key', 3.5, undefined));
+  fireEvent.change(within(dialog).getByRole('combobox', { name: '间隔随机浮动幅度' }), { target: { value: '20' } });
+  await waitFor(() => expect(mocks.setIntervalPref).toHaveBeenCalledWith('synthetic-key', 3.5, 20));
+  expect((within(dialog).getByRole('spinbutton', { name: '生成间隔' }) as HTMLInputElement).value).toBe('3.5');
 });
 it('本轮设置与完整配置双向同步人数和权重范围，保存配置不会自动出图', async () => {
   await setup(); configure('每串总人数', '5'); configure('最低权重', '0.4'); configure('最高权重', '0.6');
