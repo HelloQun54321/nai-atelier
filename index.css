@@ -204,8 +204,10 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
   transition: translate 150ms cubic-bezier(.2, 0, 0, 1), box-shadow 150ms ease, border-color 120ms ease, filter 120ms ease;
 }
 .gallery-image-card .mobile-gallery-frame img {
-  /* 图片放大原来 450ms，划过一排卡片时前一张还在缩放，显得追不上手。 */
-  transition: scale 260ms cubic-bezier(.2, 0, 0, 1), opacity 300ms ease, filter 160ms ease, transform 160ms ease;
+  /* 图片放大原来 450ms，划过一排卡片时前一张还在缩放，显得追不上手。
+     时长与卡片抬起统一成 150ms：此前 scale 260ms 比 translate 慢 110ms，
+     卡片停稳后底部遮罩下的画面仍在放大，观感像「底部多动了一下」。 */
+  transition: scale 150ms cubic-bezier(.2, 0, 0, 1), opacity 300ms ease, filter 160ms ease, transform 160ms ease;
 }
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   html[data-gallery-hover-float='true'][data-gallery-pointer-tilt='false'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover {

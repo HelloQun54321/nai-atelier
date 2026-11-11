@@ -1,4 +1,5 @@
 ## 2026-11-12
+- **DeepSeek Harness (deepseek-flash)**：把卡片悬停的图片放大时长从 260ms 统一到 150ms，与 `.gallery-image-card` 的 `translate` 同曲线同时长（`index.css` 的 `.mobile-gallery-frame img` 一条 transition）。起因是排查「浮动时底部漏出」：实测遮罩（`.gallery-card-caption::before`）底边与卡片底边始终重合（465.984 / 抬起后 462.984）、圆角同为 8px，图片被帧 `overflow: hidden` 裁住，所以不存在覆盖缺口；真正不同的是 `scale` 比 `translate` 晚 110ms 结束，卡片停稳后底部遮罩下的画面仍在放大。改动只动时长，抬起高度、放大比例、曲线与遮罩均不变。版本 1.177.8。
 - **DeepSeek Harness (deepseek-flash)**：修 Roll 候选卡片磨砂底栏里画师标签居中。`index.css` 的 `html[data-gallery-frosted-caption='true'] .gallery-card-caption` 改成纵排时没固定交叉轴，卡片自带的 `items-center` 于是把标签行收成内容宽度并居中；补 `align-items: stretch`，并用 `StyleRollGallery` 标签行的 `w-full` 兜底。新增两条推断断言（磨砂底栏纵排拉伸、标签行撑满）；定向 `AppearanceCoverage`／`StyleRollPage` 177 通过，该文件另有 2 条既有失败（`blur(10px)` 与 `:not([data-safe-mode-title])` 断言落后于 76dd52cf／7ab350dd 的实现，已用 stash 基线复现，非本次引入）。版本 1.177.7。
 - **DeepSeek Harness (deepseek-flash)**：单独恢复遮罩圆角对齐（原 1.177.6 `498171c9` 的 CSS 部分，不夹带同批被回退的其他改动）。`.gallery-card-caption` 与 `::before` 的圆角改 `border-radius: inherit`，消除遮罩（14px）与卡片（17.6px）的圆角差值。版本 1.177.6。
 
