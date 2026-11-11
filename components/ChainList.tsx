@@ -583,9 +583,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         {/* 刷新提示并入已存在的计数行（绝对定位在顶栏下沿），不再往列表上方插一行。 */}
         {!loadError && <ToolbarCountCaption>{isLoading && filteredChains.length > 0
           ? <InlineSpinner label={t('加载中…')} className="text-xs" />
-          : countCaptionFiltered
-            ? t('匹配 {0} 条 · 共 {1} 条', [filteredChains.length, countCaptionTotal])
-            : t('共 {0} 条', [filteredChains.length])}</ToolbarCountCaption>}
+          : `${countCaptionFiltered ? t('匹配 {0} 条', [filteredChains.length]) : t('共 {0} 条', [filteredChains.length])} · ${t('已加载 {0} 条', [Math.min(visibleCount, filteredChains.length)])}`}</ToolbarCountCaption>}
 
         {!selecting && canSync && syncSelection.open && <WisdomSyncToolbar sync={syncSelection} filteredIds={filteredChains.map(chain => chain.id)} />}
 

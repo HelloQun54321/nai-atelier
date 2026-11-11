@@ -426,7 +426,7 @@ it.each(['usage-chains', 'usage-images'].flatMap(sort => [false, true].map(exclu
   setup(); await screen.findByText('收录 999 串 · 生成 999 张');
   disableSampleFilter();
   expect(sampleCards()).toHaveLength(100);
-  for (let page = 0; page < 3; page++) fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
+  for (let page = 0; page < 3; page++) fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
   expect(sampleCards()).toHaveLength(400);
   let random = 0; vi.spyOn(Math, 'random').mockImplementation(() => ((random++ % 410) + 0.1) / 410);
   fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
@@ -750,10 +750,10 @@ it('完整目录分页保留全部词库画师并追加两包独有名称，切�
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: [pack + '_exclusive'] }));
   setup(); await screen.findByTestId('cover-v45_exclusive'); disableSampleFilter();
   expect(sampleCards()).toHaveLength(100);
-  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
   await waitFor(() => expect(sampleCards()).toHaveLength(102));
-  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
-  expect(sampleCards()).toHaveLength(104); expect(screen.getByText('共 104 位')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+  expect(sampleCards()).toHaveLength(104); expect(screen.getByText(/共 104 位/)).toBeTruthy();
   expect(sampleCards().map(card => card.getAttribute('aria-label')).filter(name => name?.includes('dictionary'))).toHaveLength(102);
   fireEvent.click(screen.getByRole('button', { name: '选择画师：v45_exclusive' }));
   fireEvent.click(screen.getByRole('button', { name: '选择画师：v5_exclusive' }));
@@ -780,7 +780,7 @@ it('图包独有画师可在全部目录搜索、收藏和使用统计交集筛�
   expect(within(screen.getByRole('button', { name: '选择画师：pack_only' })).queryByText('作品 0')).toBeNull();
   disableSampleFilter();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'pack only' } });
-  await screen.findByText('匹配 1 位');
+  await screen.findByText(/匹配 1 位/);
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：pack_only']);
   setArtistScope('preferred');
   openArtistFilters();
@@ -1110,7 +1110,7 @@ it('超过100个样张时复用轻量分页，搜索和收藏可命中未展示�
   const full = Array.from({ length: 150 }, (_, index) => ({ name: 'artist-' + index, chinese: '', postCount: 150 - index }));
   mocks.dictionary.mockResolvedValue(full); mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: 'many', tags: full.map(entry => entry.name) }));
   setup(); await waitFor(() => expect(sampleCards()).toHaveLength(100));
-  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' })); expect(sampleCards()).toHaveLength(150);
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' })); expect(sampleCards()).toHaveLength(150);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'artist-149' } }); expect(sampleCards()).toHaveLength(1);
   expect(screen.getByTestId('cover-artist-149')).toBeTruthy();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } }); disableSampleFilter();
@@ -1259,7 +1259,7 @@ it('逗号OR搜索统一匹配当前版本有图池、图包独有名、收藏�
   fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'used' } });
   fireEvent.change(screen.getByRole('combobox', { name: '图片生成' }), { target: { value: 'unused' } });
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：pack_or', '选择画师：alpha artist']);
-  expect(screen.getByText('匹配 2 位')).toBeTruthy();
+  expect(screen.getByText(/匹配 2 位/)).toBeTruthy();
   fireEvent.click(screen.getByRole('checkbox', { name: '只看有样张' }));
   expect(sampleCards()).toHaveLength(2);
   expect(mocks.begin).not.toHaveBeenCalled();
@@ -1270,7 +1270,7 @@ it('逗号OR全词库搜索支持英文和中文中间子串，重复命中去�
   setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
   mocks.dictionary.mockResolvedValue([...entries, entries[0]]);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: ' pha，师乙, pha, unknown,pack_or, , ' } });
-  await waitFor(() => expect(screen.getByText('匹配 3 位')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/匹配 3 位/)).toBeTruthy());
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist', '选择画师：beta artist', '选择画师：pack_or']);
   expect(screen.getByRole('searchbox').getAttribute('placeholder')).toBe('搜索画师，多个词用逗号分隔');
 });
@@ -1280,7 +1280,7 @@ it('样张状态不可用时完整词库缓存仍能独立搜索英文和中文�
   mocks.status.mockRejectedValue(new Error('本地图包仅支持电脑端及局域网访问'));
   setup(); await screen.findByTestId('cover-missing artist');
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'pha，师乙,pha' } });
-  await screen.findByText('匹配 2 位');
+  await screen.findByText(/匹配 2 位/);
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist', '选择画师：beta artist']);
   expect(mocks.catalog).not.toHaveBeenCalled(); expect(mocks.begin).not.toHaveBeenCalled();
 });
@@ -1293,13 +1293,13 @@ it('逗号OR搜索忽略迟到的旧整组响应，只有逗号空项时回普�
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha,beta' } });
   await waitFor(() => expect(resolveOld).toBeTypeOf('function'));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'missing' } });
-  await waitFor(() => expect(screen.getByText('匹配 1 位')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/匹配 1 位/)).toBeTruthy());
   expect(screen.getByTestId('cover-missing artist')).toBeTruthy();
   await act(async () => { resolveOld(entries); });
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：missing artist']);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: ' ， ,   ,，' } });
-  await waitFor(() => expect(screen.getByText('已加载 2 位')).toBeTruthy());
-  expect(sampleCards()).toHaveLength(2); expect(screen.getByRole('button', { name: '继续向下滚动加载更多' })).toBeTruthy();
+  await waitFor(() => expect(screen.getByText(/已加载 2 位/)).toBeTruthy());
+  expect(sampleCards()).toHaveLength(2); expect(screen.getByRole('button', { name: '加载更多' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '清除搜索' })).toBeNull();
 });
 
@@ -1309,9 +1309,9 @@ it('自动连续加载：逗号OR结果去重排序后遍历全部250位', async
   mocks.dictionary.mockResolvedValue([...pool, ...pool.slice(100, 150)]);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'multi，artist,multi,unknown' } });
   await waitFor(() => expect(sampleCards()).toHaveLength(100));
-  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
   expect(sampleCards()).toHaveLength(200);
-  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
   expect(sampleCards()).toHaveLength(250);
   expect(new Set(sampleCards().map(card => card.getAttribute('aria-label'))).size).toBe(250);
   expect(sampleCards()[0].getAttribute('aria-label')).toBe('选择画师：multi artist 249');
@@ -1324,9 +1324,9 @@ it('逗号空项在有图池按普通目录分页，清空和随机后不会残�
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: pool.map(entry => entry.name) }));
   setup(); await waitFor(() => expect(sampleCards()).toHaveLength(100));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: ',， , ' } });
-  expect(screen.getByText('已加载 100 位')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
-  expect(sampleCards()).toHaveLength(150); expect(screen.getByText('共 150 位')).toBeTruthy();
+  expect(screen.getByText(/已加载 100 位/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+  expect(sampleCards()).toHaveLength(150); expect(screen.getByText(/共 150 位/)).toBeTruthy();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'not found,artist 149' } });
   expect(sampleCards()).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
@@ -1376,7 +1376,7 @@ it('加载更多画师失败给出明确提示，重试后继续追加且不重�
   mocks.page.mockResolvedValueOnce(first).mockRejectedValueOnce(new Error('合成分页失败')).mockResolvedValue(second);
   setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
   await waitFor(() => expect(sampleCards()).toHaveLength(2));
-  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
   expect(await screen.findByText('加载更多画师失败，请重试')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '重试' }));
   await waitFor(() => expect(screen.getByTestId('cover-missing artist')).toBeTruthy());
@@ -1395,7 +1395,7 @@ it('自动连续加载：搜索超过200位仍可触底到真实末尾', async (
   mocks.dictionary.mockResolvedValue(Array.from({ length: 201 }, (_, index) => ({ name: 'bulk artist ' + index, chinese: '', postCount: 1 })));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'bulk' } });
   await waitFor(() => expect(sampleCards()).toHaveLength(201), { timeout: 5000 });
-  expect(screen.queryByRole('button', { name: '继续向下滚动加载更多' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
 });
 
 it('当前样张包未配置时默认展示完整目录，用户关闭样张筛选后记住选择', async () => {
@@ -1544,7 +1544,7 @@ it('统计筛选后的样张计数使用匹配数，不沿用未筛选样张池�
   await waitFor(() => expect((screen.getByRole('combobox', { name: '风格串收录' }) as HTMLSelectElement).disabled).toBe(false));
   fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'used' } });
   await waitFor(() => expect(sampleCards()).toHaveLength(2));
-  expect(screen.getByText('匹配 2 位')).toBeTruthy();
+  expect(screen.getByText(/匹配 2 位/)).toBeTruthy();
   expect(screen.queryByText('已加载 2 位')).toBeNull();
 });
 
@@ -1559,11 +1559,11 @@ it('统计筛选切换重置首批分页上限', async () => {
   const chains = screen.getByRole('combobox', { name: '风格串收录' });
   fireEvent.change(chains, { target: { value: 'used' } });
   await waitFor(() => expect(sampleCards()).toHaveLength(100));
-  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
   await waitFor(() => expect(sampleCards()).toHaveLength(200));
   fireEvent.change(chains, { target: { value: 'unused' } });
   await waitFor(() => expect(sampleCards()).toHaveLength(100));
-  expect(screen.getByText('已加载中匹配 100 位')).toBeTruthy();
+  expect(screen.getByText(/已加载 100 位/)).toBeTruthy();
 });
 
 it('统计读取失败保持未知并可重试；重新进入时重新读取，不触发生成', async () => {

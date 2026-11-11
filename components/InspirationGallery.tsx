@@ -510,7 +510,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       ]} />
       </>}
     </WorkspaceToolbar>
-    {inspirationsData !== null && <ToolbarCountCaption>{t(activeFilterCount || debouncedSearch.trim() ? '匹配 {0} 组' : '共 {0} 组', [groups.length])} · {t('当前 {0} 张', [filtered.length])}</ToolbarCountCaption>}
+    {inspirationsData !== null && <ToolbarCountCaption>{`${t(activeFilterCount || debouncedSearch.trim() ? '匹配 {0} 组' : '共 {0} 组', [groups.length])} · ${t('已加载 {0} 组', [Math.min(visibleCount, groups.length)])}`}</ToolbarCountCaption>}
 
     </WorkspaceChrome>
     <div data-workspace-body className="flex min-h-0 flex-1">

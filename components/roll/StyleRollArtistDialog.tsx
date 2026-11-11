@@ -208,7 +208,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
         <ToolbarSearch containerClassName="order-last basis-full !max-w-none sm:order-none sm:basis-0" aria-label={t('搜索画师')} placeholder={t('搜索画师，多个词用逗号分隔')} value={query} onChange={event => { setQuery(event.target.value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} />
         <div ref={settingsAnchor} className="shrink-0"><ToolbarButton aria-label={t('抽取设置')} aria-expanded={settingsOpen} aria-haspopup="dialog" active={settingsOpen} onClick={() => { setUsageOpen(false); setSettingsOpen(value => !value); }}><SlidersHorizontal /><span className="hidden sm:inline">{t('抽取设置')}</span></ToolbarButton></div>
         <ToolbarButton tone="primary" disabled={busy} onClick={close}>{t('完成')}</ToolbarButton>
-        <ToolbarCountCaption>{favoritesPending ? t('匹配 {0} 位', ['—']) : loading ? t('已加载 {0} 位', [artists.length]) : groups.activeGroup !== '*' || filter !== 'all' || chainsFilter !== 'all' || imagesFilter !== 'all' || searchTerms.length > 0 ? t('匹配 {0} 位', [artists.length]) : t('共 {0} 位', [artists.length])}</ToolbarCountCaption>
+        <ToolbarCountCaption>{favoritesPending ? t('匹配 {0} 位', ['—']) : `${t(loading ? '已加载 {0} 位' : groups.activeGroup !== '*' || filter !== 'all' || chainsFilter !== 'all' || imagesFilter !== 'all' || searchTerms.length > 0 ? '匹配 {0} 位' : '共 {0} 位', [artists.length])}${loading ? '' : ` · ${t('已加载 {0} 位', [Math.min(limit, artists.length)])}`}`}</ToolbarCountCaption>
       </header>
       <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2 sm:px-5">
         <div role="group" aria-label={t('画师范围')} className="flex min-w-0 items-center gap-1 overflow-x-auto">

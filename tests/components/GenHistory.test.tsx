@@ -494,7 +494,7 @@ describe('历史连续浏览会话', () => {
         await act(async () => loadMore?.());
         await waitFor(() => expect(container.querySelectorAll('[data-history-id]').length).toBe(60));
         expect(screen.getByText('当前显示第 1 - 60 张')).toBeTruthy();
-        expect(screen.getByText('已加载 60 / 65 张')).toBeTruthy();
+        expect(screen.getByText('共 65 张 · 已加载 60 张')).toBeTruthy();
         expect(localHistory.getBrowseOrder).toHaveBeenCalledOnce();
     });
 

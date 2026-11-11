@@ -767,14 +767,13 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 ]} />
             </WorkspaceToolbar>
             {statusReady && (!localCatalogBrowse || !sampleLoading && !sampleError) && (!groupBrowse || groups.ready && !groups.error) && !isCatalogLoading && !catalogError && !searchError && !(onlySamples && currentSampleError) && ((!onlySamples && !gachaArtists) || !sampleLoading) && <ToolbarCountCaption>{hasSearch
-                ? t(hasMoreVisible ? '已加载中匹配 {0} 位' : '匹配 {0} 位', [filteredArtists.length])
+                ? `${t('匹配 {0} 位', [matchedArtists.length])} · ${t('已加载 {0} 位', [filteredArtists.length])}`
                 : gachaArtists ? t('本次抽取 {0} 位', [filteredArtists.length])
                 : localCatalogBrowse ? groupBrowse || usageFiltersActive || statusBrowse
-                    ? t(hasMoreVisible ? '已加载中匹配 {0} 位' : '匹配 {0} 位', [filteredArtists.length])
-                    : t(hasMoreVisible ? '已加载 {0} 位' : '共 {0} 位', [filteredArtists.length])
-                : onlySamples ? t(hasMoreVisible ? '已加载 {0} 位' : '共 {0} 位', [filteredArtists.length])
-                : hasMoreUnionCatalog ? t('已加载 {0} 位', [visibleCatalogArtists.length])
-                : t('共 {0} 位', [artistCatalogCount + packOnlyArtists.length])}
+                    ? `${t('匹配 {0} 位', [matchedArtists.length])} · ${t('已加载 {0} 位', [filteredArtists.length])}`
+                    : `${t('共 {0} 位', [matchedArtists.length])} · ${t('已加载 {0} 位', [filteredArtists.length])}`
+                : onlySamples ? `${t('共 {0} 位', [matchedArtists.length])} · ${t('已加载 {0} 位', [filteredArtists.length])}`
+                : `${t('共 {0} 位', [hasMoreUnionCatalog ? '—' : artistCatalogCount + packOnlyArtists.length])} · ${t('已加载 {0} 位', [visibleCatalogArtists.length])}`}
             </ToolbarCountCaption>}
 
             {gachaArtists && (
@@ -850,7 +849,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                         ) : loadMoreError ? (
                             <span role="alert" className="flex items-center gap-2">{loadMoreError}<button type="button" onClick={loadMore} className="rounded-full border border-gray-300 px-3 py-1 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t('重试')}</button></span>
                         ) : hasMoreVisible ? (
-                            <button type="button" onClick={loadMore} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t("继续向下滚动加载更多")}</button>
+                            <button type="button" onClick={loadMore} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t("加载更多")}</button>
                         ) : (onlySamples ? sampledArtists.length : artistCatalogCount) > 0 ? (
                             <span>{t("已加载完整画师目录")}</span>
                         ) : null}

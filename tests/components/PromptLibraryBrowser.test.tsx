@@ -638,7 +638,7 @@ it('320手机顶栏保留目录搜索筛选，范围与AI提取收进筛选且�
     fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
     expect(document.querySelector('[data-prompt-library-entry="raw"]')).toBeNull();
     expect(document.querySelector('[data-prompt-library-entry="dress"]')).toBeNull();
-    expect(document.body.textContent).toContain('组合 · 匹配');
+    expect(document.body.textContent).toContain('组合 · 共');
     expect(Array.from((screen.getByRole('combobox', { name: '提示词库范围' }) as HTMLSelectElement).options).map(option => option.value)).toEqual(['items', 'saved']);
     fireEvent.click(screen.getByRole('button', { name: 'AI 提取分类' }));
     expect(screen.queryByRole('dialog', { name: '筛选提示词库' })).toBeNull();

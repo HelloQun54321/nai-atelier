@@ -255,9 +255,7 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
       currentText = (field.negative ? compiled?.negativePrompt : compiled?.prompt) || '';
     }
   }
-  const countCaption = (library?.chains.length || 0) > 0 && (shown.length > 0 || !library?.chainsLoading && !library?.chainsError) ? <ToolbarCountCaption>{captionFiltered
-    ? t('匹配 {0} 条 · 共 {1} 条', [shown.length, captionTotal])
-    : t('共 {0} 条', [captionTotal])}</ToolbarCountCaption> : null;
+  const countCaption = (library?.chains.length || 0) > 0 && (shown.length > 0 || !library?.chainsLoading && !library?.chainsError) ? <ToolbarCountCaption>{`${t(captionFiltered ? '匹配 {0} 条' : '共 {0} 条', [captionTotal])} · ${t('已加载 {0} 条', [shown.length])}`}</ToolbarCountCaption> : null;
   const apply = async () => {
     if (!entry || pending.current) return;
     pending.current = true; setApplying(true);

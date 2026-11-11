@@ -926,7 +926,7 @@ it('连续调整偏好倍率不重新排序画师目录，真实搜索变化仍�
   const readPopularity = vi.fn(() => 1);
   mocks.dictionary.mockResolvedValue(Array.from({ length: 1000 }, (_, index) => ({ name: `perf artist ${index}`, chinese: '', get postCount() { return readPopularity(); } })));
   await setup(); openArtists();
-  await screen.findByText('共 1000 位');
+  await screen.findByText(/共 1000 位/);
   fireEvent.click(screen.getByRole('button', { name: '抽取设置' }));
   await act(async () => {});
   expect(readPopularity).toHaveBeenCalled(); readPopularity.mockClear();

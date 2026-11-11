@@ -341,7 +341,7 @@ it('在取用弹窗标题栏下沿显示当前可选条目数', async () => {
   render(<PromptLibraryContext.Provider value={{ chains: [entry], save: vi.fn() }}>
     <PromptLibraryChooser value="" onText={vi.fn()} onClose={vi.fn()} />
   </PromptLibraryContext.Provider>);
-  const caption = await screen.findByText('共 1 条');
+  const caption = await screen.findByText(/共 1 条/);
   expect(caption.getAttribute('data-toolbar-count-caption')).toBe('true');
   expect(caption.closest('header')).not.toBeNull();
 });

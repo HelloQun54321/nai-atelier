@@ -161,7 +161,7 @@ describe('图片提示词库', () => {
 
   it('在顶栏下沿显示当前分类的条目数', async () => {
     const Component = Hub(); render(<Component {...props()} />);
-    const caption = await screen.findByText('共 2 条');
+    const caption = await screen.findByText(/共 2 条/);
     expect(caption.getAttribute('data-toolbar-count-caption')).toBe('true');
   });
 

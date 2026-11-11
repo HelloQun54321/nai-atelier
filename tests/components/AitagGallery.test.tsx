@@ -1217,7 +1217,7 @@ it.each([1280, 390])('%spx 两项参考排除独立勾选，兼容空参考、�
   fireEvent.click(screen.getByRole('checkbox', { name: '排除精准参考' }));
   expect(visibleIds()).toEqual([1, 6]);
   expect(screen.getByRole('button', { name: width === 390 ? 'AITag 筛选 2' : '筛选 2' })).toBeTruthy();
-  expect(document.querySelector('[data-toolbar-count-caption]')?.textContent).toBe('已加载中匹配 2 条 · 共 6 条');
+  expect(document.querySelector('[data-toolbar-count-caption]')?.textContent).toBe('匹配 6 条 · 已加载 2 条');
   expect(mocks.getWork).not.toHaveBeenCalled();
   view.unmount();
   await setup('portrait');
@@ -1281,17 +1281,17 @@ it('画师串与风格串筛选即时生效，条件标签可单独移除，清�
   mocks.search.mockImplementation(async options => ({ items: options.page === 1 ? items : [], total: 3, page: options.page, page_size: 60 }));
   await setup('portrait', true, [{ id: 'chain', type: 'style', description: 'Imported from aitag #2' } as PromptChain]);
   const caption = document.querySelector('[data-toolbar-count-caption]');
-  expect(caption?.textContent).toBe('已加载 3 条 · 共 3 条');
+  expect(caption?.textContent).toBe('共 3 条 · 已加载 3 条');
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
 
   fireEvent.change(screen.getByLabelText('画师串'), { target: { value: 'with' } });
   await waitFor(() => expect(visibleIds()).toEqual([1, 2]));
-  expect(caption?.textContent).toBe('已加载中匹配 2 条 · 共 3 条');
+  expect(caption?.textContent).toBe('匹配 3 条 · 已加载 2 条');
   expect(screen.getByRole('button', { name: '移除筛选：含画师串' })).toBeTruthy();
 
   fireEvent.change(screen.getByLabelText('风格串'), { target: { value: 'unsaved' } });
   expect(visibleIds()).toEqual([1]);
-  expect(caption?.textContent).toBe('已加载中匹配 1 条 · 共 3 条');
+  expect(caption?.textContent).toBe('匹配 3 条 · 已加载 1 条');
   expect(screen.getByRole('button', { name: '筛选 2' })).toBeTruthy();
 
   fireEvent.click(screen.getByRole('button', { name: '移除筛选：含画师串' }));

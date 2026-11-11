@@ -31,6 +31,7 @@ import { HistoryImageViewer } from './HistoryImageViewer';
 import { NAI_UPSCALE_FACTOR, UPSCALE_MAX_AREA, downloadUpscaledImage, upscaleCostHint, upscaleHistoryImage, upscaleSupported } from '../services/naiUpscale';
 import { beginExportTarget } from '../services/exportLocation';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ListJumpButton } from './ListJumpButton';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -220,8 +221,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     const [isLoading, setIsLoading] = useState(true);
     const [loadFailed, setLoadFailed] = useState(false);
     const loadingRef = useRef(false);
-    const [jumpPage, setJumpPage] = useState('');
-    const [desktopJumpPage, setDesktopJumpPage] = useState('1');
     const [favoriteOnly, setFavoriteOnly] = useState(false);
     const [browseQuery, setBrowseQuery] = useState<HistoryBrowseQuery>({ sort: 'newest' });
     const [browseOptions, setBrowseOptions] = useState<Omit<HistoryBrowseOrder, 'ids'>>({ models: [], sources: [] });
@@ -241,7 +240,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     // 清理相关状态
     const [showCleanMenu, setShowCleanMenu] = useState(false);
     const managementAnchorRef = useRef<HTMLDivElement>(null);
-    const [showPageMenu, setShowPageMenu] = useState(false);
     const [showCleanModal, setShowCleanModal] = useState(false);
     const [cleanMode, setCleanMode] = useState<'days' | 'count'>('days');
     const [cleanDays, setCleanDays] = useState<number>(PAGINATION_CONFIG.CLEANUP.DEFAULT_DAYS);
@@ -672,21 +670,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
         applyBrowseQueryRef.current({ ...initialQuery.query });
     }, [initialQuery?.token]);
 
-    const submitDesktopPageJump = (event: React.FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        const page = Number.parseInt(desktopJumpPage, 10);
-        if (!Number.isInteger(page) || page < 1 || page > totalPages) {
-            notify(`请输入 1 到 ${totalPages} 之间的页码`, 'error');
-            setDesktopJumpPage(String(currentPage));
-            return;
-        }
-        void goToPage(page);
-    };
-
-    useEffect(() => {
-        setDesktopJumpPage(String(currentPage));
-    }, [currentPage]);
-
     // keep-alive 下组件只在首次挂载时加载一次：若当时数据源短暂异常（返回 0 条），
     // 页面会一直停留在空态直到手动刷新。视图重新激活且当前数据为空时自动重载。
     const viewActive = useContext(ImageActivityContext);
@@ -1092,6 +1075,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         </div>
                     </> : <>
                         <HistoryBrowseControls query={browseQuery} options={browseOptions} mobile={isMobileViewport} onApply={applyBrowseQuery} />
+                        <ListJumpButton page={currentPage} totalPages={totalPages} disabled={isLoading} onJump={page => goToPage(page)} />
                         {onOpenFootprint && <ToolbarButton aria-label={t('创作足迹')} title={t('创作足迹')} onClick={onOpenFootprint} className="mobile-touch md:hidden !px-2.5"><Footprints /></ToolbarButton>}
                         <div className="history-toolbar-status">
                             {newImageCount > 0 && <ToolbarButton aria-label={t("新增 {0} 张图片 · 查看最新", [newImageCount])} title={t("新增 {0} 张图片 · 查看最新", [newImageCount])} onClick={showNewImages} className="history-new-image-action !px-2.5"><span className="history-new-image-label">{t("新图")}</span><span className="tabular-nums">+{newImageCount}</span></ToolbarButton>}
@@ -1147,17 +1131,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                 </div>
             </MobileBottomSheet></ImagePreviewPortal>
 
-            <ImagePreviewPortal><MobileBottomSheet open={showPageMenu && isMobileViewport} title={t("跳转页码")} onClose={() => setShowPageMenu(false)}>
-                <div className="space-y-3">
-                    <div className="grid grid-cols-[auto_1fr_auto] gap-2">
-                        <button onClick={() => { void goToPage(1); setShowPageMenu(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">{t("首页")}</button>
-                        <input type="number" min="1" max={totalPages} value={jumpPage} onChange={event => setJumpPage(event.target.value)} placeholder={`${currentPage} / ${totalPages}`} className="min-w-0 rounded-xl border border-gray-300 bg-white px-3 text-center dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
-                        <button onClick={() => { void goToPage(totalPages); setShowPageMenu(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">{t("尾页")}</button>
-                    </div>
-                    <button onClick={() => { const page = Number(jumpPage); if (page >= 1 && page <= totalPages) void goToPage(page); setJumpPage(''); setShowPageMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 font-bold text-white">{t("跳转")}</button>
-                </div>
-            </MobileBottomSheet></ImagePreviewPortal>
-
             </WorkspaceChrome>
             <div ref={historyScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport flex-1 overflow-y-auto p-4 md:p-6 pb-20">
                 {loadFailed && <div role="alert" className="mb-4 flex items-center justify-center gap-3 text-sm text-gray-500"><span>{t("历史加载失败")}</span><ToolbarButton onClick={() => void goToPage(currentPageRef.current, true)}>{t("重试")}</ToolbarButton></div>}
@@ -1196,27 +1169,17 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                           </section>)}
                         </div>
                         {selectionMode && <div className="appearance-panel appearance-overlay mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><div className="mb-1 text-center text-xs font-bold dark:text-white">{t("多选模式 · 已选 {0} 张", [selectedIds.size])}</div><div className="grid grid-cols-3 gap-2"><button onClick={selectCurrentPage} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("全选")}</button><button onClick={invertCurrentPageSelection} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("反选")}</button><button onClick={exitSelectionMode} className="appearance-group mobile-touch rounded-xl bg-gray-100 text-sm font-bold dark:bg-gray-800">{t("退出")}</button><button onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-500 text-sm font-bold text-white disabled:opacity-40">{t("收藏")}</button><button onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-50 text-sm font-bold text-rose-600 disabled:opacity-40 dark:bg-rose-950/40 dark:text-rose-300">{t("取消收藏")}</button><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-40">{t("删除")}</button></div></div>}
-                        {/* 底部分页信息 */}
+                        {/* 底部分页信息：跳页已移到顶栏，这里只报当前范围与加载状态。 */}
                         <div className="mt-12 md:mt-16">
-                            {totalCount > 0 && <>
-                                <div className="mx-auto mb-4 flex max-w-sm items-center justify-center gap-2">
-                                <button onClick={() => setShowPageMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300 md:hidden">{t("已加载 {0} 张 · 跳转页码", [items.length])}</button>
-                                <form onSubmit={submitDesktopPageJump} className="hidden items-center justify-center gap-1.5 md:flex">
-                                    <span className="text-sm text-gray-500">{t("滚动浏览 · 跳到第")}</span>
-                                    <input type="number" min="1" max={totalPages} value={desktopJumpPage} onChange={event => setDesktopJumpPage(event.target.value)} onFocus={event => event.currentTarget.select()} aria-label={t("输入页码跳转")} className="h-10 w-16 rounded-lg border border-indigo-200 bg-white px-2 text-center text-sm font-bold text-indigo-600 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 dark:border-indigo-900/60 dark:bg-gray-800 dark:text-indigo-300" />
-                                    <span className="text-sm font-bold text-indigo-600 dark:text-indigo-300">{t("/ {0} 页", [totalPages])}</span>
-                                </form>
-                            </div>
-                            <div ref={historyPageSentinelRef} data-history-load-more="true" className="h-1 w-full" aria-hidden="true" />
-                            </>}
+                            {totalCount > 0 && <div ref={historyPageSentinelRef} data-history-load-more="true" className="h-1 w-full" aria-hidden="true" />}
                             <div className="flex flex-col items-center justify-center py-6">
                                 {appendFailed && <ToolbarButton onClick={() => { setAppendFailed(false); void appendNextPage(); }}>{t("加载更多失败 · 重试")}</ToolbarButton>}
-                                {isLoading ? (
+                                {isLoading || isAppending ? (
                                     <InlineSpinner label={t('加载中…')} />
                                 ) : (
                                     <div className="text-sm text-gray-500 dark:text-gray-400 text-center">
                                         <p>{t("当前显示第 {0} - {1} 张", [getDisplayedRange().start, getDisplayedRange().end])}</p>
-                                        <p className="mt-1">{t("已加载 {0} / {1} 张{2}{3}", [items.length, totalCount, favoriteOnly ? t("收藏") : '', isAppending ? t(" · 正在加载更多…") : ''])}</p>
+                                        {items.length >= totalCount && <p className="mt-1">{t('已全部加载')}</p>}
                                     </div>
                                 )}
                             </div>

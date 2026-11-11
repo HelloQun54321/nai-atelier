@@ -161,7 +161,7 @@ it('收展保留跨筛选选择，设组使用全部稳定键；切组退出随�
 });
 it('全部仍分页加载，未分组随机只取没有分组的词库和自定义身份', async () => {
   setup(); await screen.findByRole('button', { name: '选择角色：首页' });
-  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
   await waitFor(() => expect(screen.getAllByRole('button', { name: '选择角色：同名' })).toHaveLength(2));
   await select(''); await waitFor(() => expect(screen.queryByRole('button', { name: '选择角色：同名' })).toBeNull());
   fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));

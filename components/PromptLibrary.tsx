@@ -825,9 +825,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           containerClassName="md:max-w-none!"
         />
       </div>
-      {chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountCaption>{query.trim() || selectedTags.size
-        ? t('匹配 {0} 条 · 共 {1} 条', [shown.length, items.length])
-        : t('共 {0} 条', [items.length])}</ToolbarCountCaption>}
+      {chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountCaption>{`${t(query.trim() || selectedTags.size ? '匹配 {0} 条' : '共 {0} 条', [items.length])} · ${t('已加载 {0} 条', [shown.length])}`}</ToolbarCountCaption>}
 
     </>
   );

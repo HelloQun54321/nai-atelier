@@ -300,11 +300,11 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
           <div className="flex justify-between"><ToolbarButton onClick={clearFilters}>{t('重置')}</ToolbarButton><ToolbarButton tone="primary" onClick={close}>{t('确认')}</ToolbarButton></div>
         </div>}
       </ToolbarPopover>
-      <span role="status" aria-label={loading ? t('读取中…') : t('{0} 条结果', [filtered.length])} className="flex-none text-xs tabular-nums text-gray-500">{loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <><span className="sm:hidden">{filtered.length.toLocaleString()}</span><span className="hidden sm:inline">{t('{0} 条结果', [filtered.length])}</span></>}</span>
+      {loading && <span role="status" aria-label={t('读取中…')} className="flex-none text-xs text-gray-500"><LoaderCircle className="h-4 w-4 animate-spin" /></span>}
       <div className="hidden sm:block"><IconButton label={t('刷新')} disabled={loading} onClick={() => setReload(value => value + 1)}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton></div>
     </WorkspaceToolbar>
     {(error || result?.error || boot?.offline || progress) && <ChromeNoticeStack><ChromeNotice tone="warning">{progress || error || result?.error || boot?.error}{(result?.offline || boot?.offline) && ` · ${t('正在使用上次成功的数据')}`}</ChromeNotice></ChromeNoticeStack>}
-    <ToolbarCountCaption>{t('{0} 条结果', [result && !loading ? filtered.length.toLocaleString() : '—'])}</ToolbarCountCaption>
+    <ToolbarCountCaption>{`${t('共 {0} 条', [result && !loading ? filtered.length.toLocaleString() : '—'])} · ${t('已加载 {0} 条', [result && !loading ? Math.min(visibleLimit, filtered.length).toLocaleString() : '—'])}`}</ToolbarCountCaption>
     </WorkspaceChrome>
     <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
       <div ref={scrollRef} onScroll={() => { scrollRestore(); anchor.onScroll(); }} className="workspace-scroll-viewport min-h-0 overflow-y-auto p-3">

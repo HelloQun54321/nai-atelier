@@ -564,10 +564,10 @@ it('逗号多词按OR合并原名，支持中英文逗号与译名并忽略重�
   const names = () => screen.getAllByRole('button', { name: /^锁定画师：/ }).map(card => card.getAttribute('aria-label')!.slice('锁定画师：'.length));
   fireEvent.change(search, { target: { value: ' ALPHA TAG ，红色, alpha_tag, alpha， , ' } });
   expect(names()).toEqual(['alpha_tag', 'beta_tag']);
-  expect(screen.getByText('匹配 2 位')).toBeTruthy();
+  expect(screen.getByText(/匹配 2 位/)).toBeTruthy();
   fireEvent.change(search, { target: { value: '红色' } }); expect(names()).toEqual(['beta_tag']);
   fireEvent.change(search, { target: { value: '， , ， ' } }); expect(names()).toEqual(['alpha_tag', 'beta_tag', 'gamma']);
-  expect(screen.getByText('共 3 位')).toBeTruthy();
+  expect(screen.getByText(/共 3 位/)).toBeTruthy();
   expect(mocks.block).not.toHaveBeenCalled(); expect(mocks.favorite).not.toHaveBeenCalled();
 });
 

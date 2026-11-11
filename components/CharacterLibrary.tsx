@@ -874,7 +874,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             { label: '角色库设置', icon: <Settings2 />, onClick: () => setMobileSettingsOpen(true) },
           ]} />
        </WorkspaceToolbar>
-       {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountCaption>{t('角色 {0} · 显示 {1} 张卡片', [!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length, visibleCards.length])}</ToolbarCountCaption>}
+       {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountCaption>{`${t('共 {0} 张卡片', [!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length])} · ${t('已加载 {0} 张卡片', [visibleCards.length])}`}</ToolbarCountCaption>}
 
        {gachaCards && <GalleryActiveStateBanner count={groupCards.length} entityName={t("角色")} showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => leaveGacha()} isLoading={isGachaLoading} />}
 
@@ -899,7 +899,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
         {!gachaCards && (
           <div ref={sentinelRef} className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">
-            {isLoadingMore ? <InlineSpinner label={t("正在加载更多角色…")} /> : loadMoreError ? <span role="alert">{t(loadMoreError)}<button type="button" onClick={() => void loadMore()}>{t("重试")}</button></span> : hasMoreVisible ? <button onClick={() => void loadMore()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t("继续向下滚动加载更多")}</button> : catalogTotal ? t("已加载完整角色目录") : null}
+            {isLoadingMore ? <InlineSpinner label={t("正在加载更多角色…")} /> : loadMoreError ? <span role="alert">{t(loadMoreError)}<button type="button" onClick={() => void loadMore()}>{t("重试")}</button></span> : hasMoreVisible ? <button onClick={() => void loadMore()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t("加载更多")}</button> : catalogTotal ? t("已加载完整角色目录") : null}
           </div>
         )}
         {showFavOnly && !collectionReady && (variantBackfillError

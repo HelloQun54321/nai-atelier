@@ -271,7 +271,7 @@ it('筛选后的空页仍可继续读取后续页，不因条目数量未变而�
   await act(async () => observers.at(-1)?.([{ isIntersecting: true }]));
   await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({ page: 3 })));
   await act(async () => observers.at(-1)?.([{ isIntersecting: true }]));
-  await screen.findByText('已加载 0 件 · 已全部加载');
+  await screen.findByText('已全部加载');
   expect(search).not.toHaveBeenCalledWith(expect.objectContaining({ page: 4 }));
   expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: 'order:rank', page: 3, limit: 40 }));
 });

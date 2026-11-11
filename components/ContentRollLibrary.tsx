@@ -99,9 +99,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
     </ToolbarPopover>
     <ToolbarSearch value={query} aria-label={t('搜索名称、标签或提示词')} placeholder={t('搜索名称、标签或提示词')}
       onChange={event => { setQuery(event.target.value); resetScroll(); }} containerClassName="md:max-w-none!" />
-    {chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountCaption>{query.trim() || tag
-      ? t('匹配 {0} 条 · 共 {1} 条', [shown.length, records.length])
-      : t('共 {0} 条', [records.length])}</ToolbarCountCaption>}
+    {chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountCaption>{`${t(query.trim() || tag ? '匹配 {0} 条' : '共 {0} 条', [records.length])} · ${t('已加载 {0} 条', [shown.length])}`}</ToolbarCountCaption>}
   </>;
 
   return <div className={embedded ? 'flex min-h-0 flex-1 flex-col' : 'workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950'} data-content-roll-library="true">

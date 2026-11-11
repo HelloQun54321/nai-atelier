@@ -1,5 +1,6 @@
 import { PromptLibraryCaptureButton } from './PromptLibraryAccess';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ListJumpButton } from './ListJumpButton';
 import { SearchFilterChip, SearchFilterChips } from './SearchFilterChips';
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { t, useLanguage } from '../services/i18n';
@@ -361,7 +362,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const galleryContentRef = useRef<HTMLDivElement>(null);
   const detailScrollRef = useRef<HTMLDivElement>(null);
   const hasLoadedRef = useRef(aitagPageCache.hasLoaded);
-  const cancelPageInputRef = useRef(false);
   const cacheStatusRefreshTimerRef = useRef<number | null>(null);
   const [items, setItems] = useState<AitagWorkSummary[]>(() => mergeAitagWorks([], aitagPageCache.items));
   const [details, setDetails] = useState<Record<number, AitagWorkDetail>>(() => aitagPageCache.details);
@@ -404,8 +404,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const [batchProgress, setBatchProgress] = useState<{ workId: number; completed: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(() => aitagPageCache.error);
   const [isOfflineCache, setIsOfflineCache] = useState(() => aitagPageCache.isOfflineCache);
-  const [isPageInputOpen, setIsPageInputOpen] = useState(false);
-  const [pageInputValue, setPageInputValue] = useState(String(aitagPageCache.page));
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showDesktopFilters, setShowDesktopFilters] = useState(false);
   const filterAnchorRef = useRef<HTMLDivElement>(null);
@@ -619,12 +617,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     document.addEventListener('visibilitychange', updateVisibility);
     return () => document.removeEventListener('visibilitychange', updateVisibility);
   }, []);
-
-  useEffect(() => {
-    if (!isPageInputOpen) {
-      setPageInputValue(String(page));
-    }
-  }, [page, isPageInputOpen]);
 
   const resetScrollPositions = () => {
     selectionAnchor.clearAnchor();
@@ -1322,30 +1314,14 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     onRefreshInspiration?.();
   };
 
-  const submitPageInput = () => {
-    if (cancelPageInputRef.current) {
-      cancelPageInputRef.current = false;
-      setIsPageInputOpen(false);
-      setPageInputValue(String(page));
-      return;
-    }
-
-    const targetPage = Number.parseInt(pageInputValue, 10);
-    if (!Number.isFinite(targetPage)) {
-      setIsPageInputOpen(false);
-      setPageInputValue(String(page));
-      return;
-    }
-
-    const nextPage = Math.max(1, Math.min(totalPages, targetPage));
-    setIsPageInputOpen(false);
-    setPageInputValue(String(nextPage));
-    if (nextPage !== page) {
-      selectionAnchor.clearAnchor();
-      aitagPageCache = { ...aitagPageCache, selectedId: null };
-      setSelectedId(null);
-      loadWorks(nextPage, { resetScroll: true });
-    }
+  /** 跳到指定页：清掉选择锚点与详情选中，再按新页整页重载。 */
+  const goToPage = (target: number) => {
+    const nextPage = Math.max(1, Math.min(totalPages, target));
+    if (!Number.isFinite(nextPage) || nextPage === page) return;
+    selectionAnchor.clearAnchor();
+    aitagPageCache = { ...aitagPageCache, selectedId: null };
+    setSelectedId(null);
+    loadWorks(nextPage, { resetScroll: true });
   };
 
   const getDetail = async (work: AitagWorkSummary, requireComplete = false) => {
@@ -1574,7 +1550,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             </div>
             </AnchoredToolbarPopover>}
           </div>
-          <div className="ml-auto hidden items-center gap-2 text-xs text-gray-500 xl:flex"><span>{t("已加载 {0} 条", [formatCount(visibleItems.length)])}</span><span>{t("共 {0} 条", [formatCount(total)])}</span></div>
+          <ListJumpButton page={page} totalPages={totalPages} disabled={isLoading} onJump={goToPage} />
         </div>
       </WorkspaceToolbar>
       <ImagePreviewPortal><MobileBottomSheet open={showMobileFilters} title={t("AITag 筛选")} onClose={() => setShowMobileFilters(false)} footer={<div className="flex items-center gap-3"><button type="button" onClick={() => { resetFilters(); setShowMobileFilters(false); }} disabled={!canResetFilters} className="mobile-touch px-2 text-sm font-bold text-indigo-600 disabled:opacity-40 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={() => { handleSearch(); setShowMobileFilters(false); }} className="mobile-touch flex-1 rounded-xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 font-bold text-white">{t("应用筛选")}</button></div>}>
@@ -1587,10 +1563,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             <label className="text-sm font-bold dark:text-white">{t("月份")}<select value={sort === 'monthly' ? rankMonth : ''} disabled={sort !== 'monthly'} onChange={event => handleRankMonthChange(event.target.value)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-800 dark:bg-gray-800"><option value="current">{t("当前月份")}</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">{t("更早")}</option></select></label>
           </div>
           <div className="grid grid-cols-2 gap-3">{renderLocalFilterSelects(true)}</div>
-          <div className="appearance-group rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">{t("已加载 {0} 条 · 共 {1} 条", [formatCount(visibleItems.length), formatCount(total)])}</div>
+          <div className="appearance-group rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">{t('共 {0} 条', [formatCount(total)])}{' · '}{t('已加载 {0} 条', [formatCount(visibleItems.length)])}</div>
         </div>
       </MobileBottomSheet></ImagePreviewPortal>
-      <ToolbarCountCaption>{t(hasLocalFilter ? '已加载中匹配 {0} 条' : '已加载 {0} 条', [hasLoadedRef.current ? formatCount(visibleItems.length) : '—'])}{' · '}{t('共 {0} 条', [hasLoadedRef.current && !isOfflineCache ? formatCount(total) : '—'])}</ToolbarCountCaption>
+      <ToolbarCountCaption>{t(hasLocalFilter ? '匹配 {0} 条' : '共 {0} 条', [hasLoadedRef.current && !isOfflineCache ? formatCount(total) : '—'])}{' · '}{t('已加载 {0} 条', [hasLoadedRef.current ? formatCount(visibleItems.length) : '—'])}</ToolbarCountCaption>
       </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selectedWork ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main
@@ -1644,46 +1620,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             {isAppending && <InlineSpinner label={t('正在加载更多…')} className="pointer-events-none absolute left-1/2 top-1 -translate-x-1/2 text-xs" />}
             {appendError && <div role="alert" className="flex items-center gap-2 text-xs text-red-600 dark:text-red-300"><span>{appendError}</span><ToolbarButton onClick={() => void appendNextPage()}>{t('重试加载')}</ToolbarButton></div>}
             <div className="flex justify-center items-center gap-2 text-xs text-gray-500">
-              <span>{t("已加载 {0} 条 / 共 {1} 条 · 滚动浏览，可跳转", [formatCount(visibleItems.length), formatCount(total)])}</span>
+              {hasNextPage
+                ? <ToolbarButton onClick={() => void appendNextPage()} disabled={isAppending || isLoading}>{t("加载更多")}</ToolbarButton>
+                : <span>{t("已全部加载")}</span>}
               {pendingMetadataItems.length > 0 && <InlineSpinner label={t("正在读取 {0} 个作品的元数据", [pendingMetadataItems.length])} className="text-xs" />}
-              {isPageInputOpen ? (
-                <input
-                  type="number"
-                  min={1}
-                  max={totalPages}
-                  value={pageInputValue}
-                  autoFocus
-                  onFocus={e => e.currentTarget.select()}
-                  onChange={e => setPageInputValue(e.target.value)}
-                  onBlur={submitPageInput}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    }
-                    if (e.key === 'Escape') {
-                      e.preventDefault();
-                      cancelPageInputRef.current = true;
-                      e.currentTarget.blur();
-                    }
-                  }}
-                  disabled={isLoading}
-                  aria-label={t("输入页码跳转")}
-                  className="w-20 px-2 py-2 rounded border border-indigo-400 dark:border-indigo-500 bg-white dark:bg-gray-900 text-center text-sm text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    cancelPageInputRef.current = false;
-                    setPageInputValue(String(page));
-                    setIsPageInputOpen(true);
-                  }}
-                  disabled={isLoading}
-                  title={t("点击输入页码跳转")}
-                  className="appearance-group mobile-touch min-w-24 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm text-gray-500 dark:text-gray-400 hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-50"
-                >{t("跳到第 {0} 页", [page])}</button>
-              )}
             </div>
           </div>
           <div className="flex justify-center pb-6 -mt-3">

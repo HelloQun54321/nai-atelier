@@ -19,6 +19,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { useStaleGuard } from './useStaleGuard';
 import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ListJumpButton } from './ListJumpButton';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { ExternalImageTools } from './ExternalImageTools';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
@@ -101,7 +102,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
   const [loading, setLoading] = useState(active);
   const [error, setError] = useState('');
   const [appendError, setAppendError] = useState('');
-  const [pageInput, setPageInput] = useState('');
   const loadedRef = useRef(false);
   // 追加模式状态：当前查询/页码的同步镜像（防并发与跳页竞态）。
   const queryRef = useRef(query);
@@ -439,16 +439,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
     onRefreshInspiration?.(); notify('已更新收藏库，原站与反推 Tag 分别保留');
     return { ...existing, ...updates };
   };
-  const submitPageJump = (event?: FormEvent) => {
-    event?.preventDefault();
-    const value = Number(pageInput);
-    if (!Number.isFinite(value) || value < 1) {
-      notify('请输入有效页码', 'error');
-      return;
-    }
-    setPageInput('');
-    void load(query, Math.floor(value));
-  };
 
   const submitSearch = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -513,10 +503,13 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
           </button>
         </div>
         </ToolbarPopover>
+        <ListJumpButton page={page} disabled={loading} onJump={target => { void load(queryRef.current, target); }} />
         <ToolbarButton aria-label={t("浏览足迹")} onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : 'neutral'} className="mobile-touch border-l"><Clock /><span className="hidden sm:inline">{t("足迹")}</span></ToolbarButton>
       </WorkspaceToolbar>
 
-      <ToolbarCountCaption>{showHistory ? t('共 {0} 条', [historyItems.length.toLocaleString()]) : rating !== 'all' || ratio !== 'all' || soloOnly ? t('已加载中匹配 {0} 件', [loadedRef.current ? formatCount(displayedItems.length) : '—']) : t('已加载 {0} 件{1}', [loadedRef.current ? formatCount(displayedItems.length) : '—', ''])}</ToolbarCountCaption>
+      <ToolbarCountCaption>{showHistory ? t('共 {0} 条', [historyItems.length.toLocaleString()]) : rating !== 'all' || ratio !== 'all' || soloOnly
+        ? `${t('已加载 {0} 件', [loadedRef.current ? formatCount(items.length) : '—'])} · ${t('匹配 {0} 件', [loadedRef.current ? formatCount(displayedItems.length) : '—'])}`
+        : t('已加载 {0} 件', [loadedRef.current ? formatCount(items.length) : '—'])}</ToolbarCountCaption>
       </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className={`${selected ? 'hidden lg:block' : 'block'} workspace-scroll-viewport min-h-0 overflow-y-auto p-3 md:p-5`}>
@@ -545,7 +538,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
                   ? t("收藏榜 · 本周精选")
                   : t("检索：{0}", [query.replaceAll('_', ' ')])}
               </span>
-              <span>{t("已加载 {0} 件{1}", [displayedItems.length, hasMore ? t(" · 滚动继续加载") : t(" · 已全部加载")])}</span>
             </div>
           )}
 
@@ -595,20 +587,9 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
             <div className="mt-5 flex flex-col items-center gap-3 pb-4">
               <div ref={appendSentinelRef} className="h-1 w-full" aria-hidden="true" />
               {appendError && <div role="alert" className="flex items-center gap-2 text-xs text-red-600 dark:text-red-300"><span>{appendError}</span><ToolbarButton onClick={() => void appendNextPage()}>{t('重试加载')}</ToolbarButton></div>}
-              <form onSubmit={submitPageJump} className="flex items-center gap-2 text-xs text-gray-500">
-                <span>{t("滚动浏览 · 跳到第")}</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={pageInput}
-                  onChange={event => setPageInput(event.target.value)}
-                  onFocus={event => event.currentTarget.select()}
-                  aria-label={t("输入页码跳转")}
-                  className="h-9 w-16 rounded-lg border border-indigo-200 bg-white px-2 text-center text-sm font-bold text-indigo-600 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 dark:border-indigo-900/60 dark:bg-gray-800 dark:text-indigo-300"
-                />
-                <span>{t("页")}</span>
-                <ToolbarButton type="submit" disabled={loading}>{t("跳转")}</ToolbarButton>
-              </form>
+              {hasMore
+                ? <ToolbarButton onClick={() => void appendNextPage()} disabled={loading}>{t('加载更多')}</ToolbarButton>
+                : <span className="text-xs text-gray-500">{t('已全部加载')}</span>}
             </div>
           )}
           </div>

@@ -158,8 +158,8 @@ it.each([1280, 390])('宽度 %s 时普通列表按跨页完整目录折叠胡滕
   expect(representative.getAttribute('aria-pressed')).toBe('true');
 
   fireEvent.click(representative);
-  await screen.findByRole('button', { name: '继续向下滚动加载更多' });
-  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
+  await screen.findByRole('button', { name: '加载更多' });
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
   await screen.findByRole('button', { name: '选择角色：独立角色' });
   expect(screen.getAllByRole('group', { name: /角色变体/ })).toHaveLength(1);
   expect(itemKeys(family)).toEqual([`catalog:${baseTag}`]);
@@ -234,12 +234,12 @@ it('目录分页按族而非变体张数决定继续加载，展开不膨胀真�
   const family = await screen.findByRole('group', { name: '角色变体：胡滕' });
   expect(within(family).getByText('62 种形态')).toBeTruthy();
   expect(itemKeys(family)).toHaveLength(1);
-  expect(screen.queryByRole('button', { name: '继续向下滚动加载更多' })).toBeNull();
-  expect(screen.getByText('角色 62 · 显示 1 张卡片')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
+  expect(screen.getByText(/共 62 张卡片/)).toBeTruthy();
   fireEvent.click(within(family).getByRole('button', { name: '展开角色变体：胡滕' }));
   expect(itemKeys(family)).toHaveLength(62);
-  expect(screen.getByText('角色 62 · 显示 62 张卡片')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: '继续向下滚动加载更多' })).toBeNull();
+  expect(screen.getByText(/共 62 张卡片/)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
 });
 
 
@@ -251,7 +251,7 @@ it('自动连续加载：全局完整目录搜索按60组触底显示第61个匹
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'common' } });
   await waitFor(() => expect(screen.getAllByRole('button', { name: /^选择角色：共同角色/ })).toHaveLength(61));
   expect(screen.getByRole('button', { name: '选择角色：共同角色60' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: '继续向下滚动加载更多' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
 });
 
 it('拖动折叠代表入组会加入完整族（含未加载变体）并保留每个成员原有目录', async () => {
