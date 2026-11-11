@@ -133,6 +133,15 @@ test('部署查询参数新页面完成全部提取，部分失败保持完整�
     assert.ok(getNaiRuntime().health.missed.includes('imagesPerPercent'));
     assert.equal(getNaiRuntime().imagesPerPercent, 21.4);
     assert.equal(await readFile(path, 'utf8'), saved);
+    // JS 包下载失败必须与「官方改版」区分开，且不覆盖上次完整快照。
+    assert.equal(await syncNaiRuntime(async url => {
+      if (url.endsWith('/image')) return new Response('<script src="/_next/static/chunks/synthetic.js?dpl=synthetic"></script>');
+      throw new Error('simulated chunk outage');
+    }), false);
+    assert.equal(getNaiRuntime().health.reason, 'chunk');
+    assert.equal(getNaiRuntime().health.ok, false);
+    assert.equal(getNaiRuntime().imagesPerPercent, 21.4);
+    assert.equal(await readFile(path, 'utf8'), saved);
   } finally { await writeFile(path, backup); }
 });
 test('同步失效告警写清原因与排查入口，非 TTY 输出不带颜色', () => {

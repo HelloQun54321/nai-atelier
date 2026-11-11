@@ -1743,11 +1743,32 @@ const runNaiRuntimeSync = async (requestRemote = fetch) => {
     ]);
     return false;
   }
-  const chunks = await Promise.all(paths.map(path =>
-    fetchNaiRuntimeText(`https://novelai.net${path}`, requestRemote).catch(() => '')));
+  const failedChunks = [];
+  const chunks = await Promise.all(paths.map(async path => {
+    try {
+      return await fetchNaiRuntimeText(`https://novelai.net${path}`, requestRemote);
+    } catch (error) {
+      // 单个 chunk 抖动仍按空串继续，但必须记住它没下载成功：
+      // 否则网络中断会被 computeNaiRuntimeSync 当成「官方改版」误报。
+      failedChunks.push(error?.message || String(error));
+      return '';
+    }
+  }));
   const { runtime, health } = computeNaiRuntimeSync(chunks.join('\n'));
   if (health.missed.length) {
     // 部分提取不能替换上一次完整快照，否则一次 chunk 网络抖动会把默认值持久化一天。
+    if (failedChunks.length) {
+      naiRuntimeState = {
+        ...naiRuntimeState,
+        health: { ...health, ok: false, reason: 'chunk', error: `${failedChunks.length}/${paths.length} 个官方 JS 包下载失败`, attemptedAt: Date.now() },
+      };
+      alertNaiRuntimeFailure(`⚠ NovelAI 官方常量同步被中断：${failedChunks.length}/${paths.length} 个 JS 包下载失败`, [
+        '原因：下载官方 JS 包时网络或代理中断，不是官方页面改版',
+        '影响：Opus 张数换算与费用估算沿用上次完整快照，服务不受影响',
+        '排查：检查网络或代理后运行 npm run test:live-sync，稍后会自动重试',
+      ]);
+      return false;
+    }
     naiRuntimeState = {
       ...naiRuntimeState,
       health: { ...health, ok: false, reason: 'partial', attemptedAt: Date.now() },
