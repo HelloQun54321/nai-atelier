@@ -149,13 +149,25 @@ const installAppendObserver = () => {
   return () => { const current = observers.filter(item => item.targets.length).at(-1); current?.callback(current.targets.map(target => ({ target, isIntersecting: true } as IntersectionObserverEntry)), {} as IntersectionObserver); };
 };
 
+it('点未收录圆钮直接把首图收进风格串，不打开编辑器也不跳转', async () => {
+  const view = await setup('square', true, []);
+  fireEvent.click(within(card(2)).getByRole('button', { name: '未收录到风格串' }));
+  await waitFor(() => expect(mocks.createChain).toHaveBeenCalledTimes(1));
+  const [chain, options] = mocks.createChain.mock.calls[0];
+  expect(options).toEqual({ openEditor: false });
+  expect(chain.description).toBe('Imported from aitag #2');
+  expect(chain.name).toContain('P1');
+  expect(view.notify).toHaveBeenCalledWith('已收录首图到风格串');
+  expect(mocks.navigate).not.toHaveBeenCalled();
+});
+
 it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(glass => [layout, glass] as const)))('%s／磨砂 %s：左上常驻收录状态替代 NAI，按风格串来源实时切换且保留原图片', async (layout, glass) => {
   document.documentElement.dataset.galleryFrostedCaption = String(glass);
   const source = (id: number) => ({ id: `saved-${id}`, type: 'style', description: `Imported from aitag #${id}` } as PromptChain);
   const view = await setup(layout, true, [source(1)]);
   const firstImage = card(1).querySelector('img');
   const saved = within(card(1)).getByRole('img', { name: '已收录到风格串' });
-  const unsaved = within(card(2)).getByRole('img', { name: '未收录到风格串' });
+  const unsaved = within(card(2)).getByRole('button', { name: '未收录到风格串' });
   expect(saved.className).toContain('!bg-emerald-600');
   expect(saved.querySelector('.lucide-check')).toBeTruthy();
   expect(saved.querySelector('.lucide-layers')).toBeNull();
@@ -168,7 +180,7 @@ it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(gl
   view.rerender(view.draw(true, [source(1), source(2)]));
   expect(within(card(2)).getByRole('img', { name: '已收录到风格串' })).toBeTruthy();
   view.rerender(view.draw(true, [source(2)]));
-  expect(within(card(1)).getByRole('img', { name: '未收录到风格串' })).toBeTruthy();
+  expect(within(card(1)).getByRole('button', { name: '未收录到风格串' })).toBeTruthy();
   expect(card(1).querySelector('img')).toBe(firstImage);
 });
 

@@ -407,6 +407,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const savingImageRef = useRef<string | null>(null);
   const [savingImage, setSavingImage] = useState<string | null>(null);
   const savedBatchImages = useRef(new Set<string>());
+  /** 卡片左上角「收录首图」的进行中作品 id，避免连点重复建串。 */
+  const [savingWorkId, setSavingWorkId] = useState<number | null>(null);
   const batchDetailWork = useRef<number | null>(null);
   const [navigateAfterSave, setNavigateAfterSave] = useState(() => {
     try { return localStorage.getItem('nai_aitag_navigate_after_save') !== 'false'; } catch { return true; }
@@ -589,14 +591,25 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
               }
             }}
           />
-          {/* 保存状态用单个圆钮表达：已收录是翠绿实底 + 对勾，未收录沿用磨砂底 + 图层图标。
-              原先图层图标右下角再叠一枚「✓/×」小徽章，两层图形挤在 36px 的圆里，远看只像一团噪点。 */}
-          <span role="img" aria-label={savedLabel} title={savedLabel} data-aitag-chain-status={isSaved ? 'saved' : 'unsaved'}
-            className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} ${isSaved ? '!border-emerald-300/70 !bg-emerald-600 !text-white' : ''}`}>
-            {isSaved
-              ? <Check aria-hidden="true" className="h-4 w-4" strokeWidth={3} />
-              : <Layers aria-hidden="true" className="h-4 w-4" />}
-          </span>
+          {/* 保存状态用单个圆钮表达：已收录是翠绿实底 + 对勾（只作状态）；未收录是磨砂底 + 图层图标，
+              点一下直接把首图收进风格串，不必先点开作品。 */}
+          {isSaved ? (
+            <span role="img" aria-label={savedLabel} title={savedLabel} data-aitag-chain-status="saved"
+              className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} !border-emerald-300/70 !bg-emerald-600 !text-white`}>
+              <Check aria-hidden="true" className="h-4 w-4" strokeWidth={3} />
+            </span>
+          ) : (
+            <button type="button" data-card-action="true" aria-label={savedLabel} data-aitag-chain-status="unsaved"
+              title={firstImage ? t('收录首图到风格串') : t('首图元数据准备中…')}
+              disabled={!firstImage || savingWorkId !== null}
+              onClick={event => { event.stopPropagation(); void saveFirstImageToChain(work, firstImage); }}
+              onPointerDown={event => event.stopPropagation()}
+              className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} disabled:opacity-45`}>
+              {savingWorkId === Number(work.id)
+                ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />
+                : <Layers aria-hidden="true" className="h-4 w-4" />}
+            </button>
+          )}
           {!frostedCaption && <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/70 text-white text-micro">
             {t('{0}页', [imageCount])}
           </div>}
@@ -1441,6 +1454,20 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       basePrompt: importData.prompt, negativePrompt: importData.negativePrompt, modules: [], params: importData.params,
       variableValues: { subject: '' }, createdAt: now, updatedAt: now,
     };
+  };
+
+  /** 卡片左上角的快捷收录：只取首图建一条风格串，不打开编辑器、不跳转。 */
+  const saveFirstImageToChain = async (work: AitagWorkSummary, image?: AitagImage) => {
+    if (!image || savingWorkId !== null) return;
+    setSavingWorkId(Number(work.id));
+    try {
+      await onCreateArtistChain(buildImageChain(image, 0, work), { openEditor: false });
+      notify(t('已收录首图到风格串'));
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t('保存失败'), 'error');
+    } finally {
+      setSavingWorkId(null);
+    }
   };
 
   const saveAsArtistChain = async (image: AitagImage, index: number) => {
