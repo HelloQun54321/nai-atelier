@@ -78,7 +78,13 @@ test('电脑实际 HTTP 入口连接成员 Key、生图、余额与 Vibe；无�
   member.intercept({ path: '/v1/ai/generate-image', method: 'POST' }).reply(200, options => {
     const body = JSON.parse(options.body); assert.equal(body.model, 'nai-diffusion-5-full-medium');
     assert.equal(body.parameters.stream, undefined); calls.push(options.path); return 'synthetic-zip';
-  }, { headers: { 'content-type': 'application/zip' } }).times(2);
+  }, { headers: { 'content-type': 'application/zip' } });
+  // 成员网关同样提供流式端点：预览入口走它自己的 /ai/generate-image-stream。
+  member.intercept({ path: '/v1/ai/generate-image-stream', method: 'POST' }).reply(200, options => {
+    const body = JSON.parse(options.body); assert.equal(body.model, 'nai-diffusion-5-full-medium');
+    assert.equal(body.parameters.stream, 'sse'); calls.push(options.path);
+    return 'event: final\ndata: {"image":"test"}\n\n';
+  }, { headers: { 'content-type': 'text/event-stream' } });
   member.intercept({ path: '/v1/ai/encode-vibe', method: 'POST' }).reply(200, Buffer.alloc(128, 2));
   const worker = createServer(async (req, res) => {
     if (req.url === '/api/nai-key-vault/connection') {
@@ -111,14 +117,15 @@ test('电脑实际 HTTP 入口连接成员 Key、生图、余额与 Vibe；无�
     const officialBalance = await request('/api/novelai-subscription', 'pst-http');
     assert.equal(officialBalance.status, 200); assert.equal((await officialBalance.json()).source, undefined);
     await fetch(base + '/api/generation-queue/preferences', { method: 'PUT', headers: { Authorization: 'Bearer STA1N-http', 'Content-Type': 'application/json' }, body: '{"generationIntervalSeconds":0}' });
-    for (const path of ['/api/generate', '/api/generate-stream']) {
-      const response = await request(path, 'STA1N-http', { model: 'nai-diffusion-5-full-medium', action: 'generate', parameters: { width: 832, height: 1216, steps: 14, stream: true } });
-      assert.equal(response.status, 200, await response.clone().text()); assert.equal(await response.text(), 'synthetic-zip');
-    }
+    const generateBody = { model: 'nai-diffusion-5-full-medium', action: 'generate', parameters: { width: 832, height: 1216, steps: 14, stream: true } };
+    const zipResponse = await request('/api/generate', 'STA1N-http', generateBody);
+    assert.equal(zipResponse.status, 200, await zipResponse.clone().text()); assert.equal(await zipResponse.text(), 'synthetic-zip');
+    const streamResponse = await request('/api/generate-stream', 'STA1N-http', generateBody);
+    assert.equal(streamResponse.status, 200, await streamResponse.clone().text()); assert.match(await streamResponse.text(), /event: final/);
     const encoded = await request('/api/vibes/http-vibe/encodings', 'STA1N-http', { informationExtracted: 1 });
     assert.equal(encoded.status, 200, await encoded.clone().text()); assert.equal((await encoded.json()).item.id, 'http-vibe');
     const rejected = await request('/api/generate', 'STA1N-missing', { model: 'nai-diffusion-5-full-medium', parameters: {} });
-    assert.equal(rejected.status, 400); assert.equal(calls.filter(path => path.endsWith('/ai/generate-image')).length, 2);
+    assert.equal(rejected.status, 400); assert.equal(calls.filter(path => path.includes('/ai/generate-image')).length, 2);
     mock.assertNoPendingInterceptors();
   } finally {
     server?.closeAllConnections(); worker.closeAllConnections();

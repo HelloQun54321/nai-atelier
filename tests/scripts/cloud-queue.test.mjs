@@ -66,8 +66,8 @@ for (const member of [false, true]) test(`后台 ZIP 提前 final，记账与清
   req.headers['x-nai-generation-task'] = token; req.headers['x-nai-generation-response'] = 'events';
   const res = new TestResponse();
   const pending = (member ? handleGenerateStreamRequest : handleGenerateRequest)(req, res, '', 0, q, preferences, async url => {
-    requests++; assert.equal(url, member ? 'https://member.example/ai/generate-image' : 'https://image.novelai.net/ai/generate-image');
-    return new Response(zipped);
+    requests++; assert.equal(url, member ? 'https://member.example/ai/generate-image-stream' : 'https://image.novelai.net/ai/generate-image');
+    return member ? new Response(finalFrame, { headers: { 'Content-Type': 'text/event-stream' } }) : new Response(zipped);
   }, { ...generationOptions, tasks, gatewayUrl: member ? 'https://member.example' : '', settleGeneration: async () => { settleStarted = true; await settlement; return { estimatedCost: 3, accountingFailed: true, accountingError: 'synthetic accounting' }; } });
   await waitUntil(() => settleStarted);
   assert.match(res.body(), /event: final/); assert.doesNotMatch(res.body(), /nai_usage/);
@@ -79,9 +79,13 @@ for (const member of [false, true]) test(`后台 ZIP 提前 final，记账与清
     assert.equal(tasks.current(testKeyHash).inFlight, true);
   }
   finishCleanup(); await pending;
-  const output = await readGenerationResponse(new Response(res.body(), { headers: { 'Content-Type': 'text/event-stream' } }));
-  assert.equal(output.seed, 42); assert.equal(output.bytes.toString(), 'synthetic-image');
-  assert.equal(output.accountingError, 'synthetic accounting'); assert.equal(requests, 1);
+  // 成员网关走流式帧，没有 ZIP metadata 可核对；官方 ZIP 仍验证 seed 与原始字节。
+  if (!member) {
+    const output = await readGenerationResponse(new Response(res.body(), { headers: { 'Content-Type': 'text/event-stream' } }));
+    assert.equal(output.seed, 42); assert.equal(output.bytes.toString(), 'synthetic-image');
+    assert.equal(output.accountingError, 'synthetic accounting');
+  }
+  assert.equal(requests, 1);
   assert.equal(tasks.current(testKeyHash).inFlight, false);
 });
 
@@ -151,34 +155,39 @@ for (const wrapped of [false, true]) test(`流式上游502错误网页（JSON包
 
 for (const handler of handlers) {
   for (const action of modes) {
-    test(`成员网关 ${handler === handleGenerateRequest ? 'ZIP' : '预览入口'} ${action}：Medium 参数原样透传，一次请求普通 ZIP`, async () => {
+    test(`成员网关 ${handler === handleGenerateRequest ? 'ZIP' : '预览入口'} ${action}：Medium 参数原样透传，流式入口请求自己的流式端点`, async () => {
+      const streaming = handler === handleGenerateStreamRequest;
       const body = payload(action);
       body.model = `nai-diffusion-5-full-medium${action === 'infill' || action === 'outpaint' ? '-inpainting' : ''}`;
       Object.assign(body.parameters, { stream: true, width: 832, height: 1216, steps: 14, sampler: 'k_euler_ancestral', seed: 123,
         image: action === 'generate' ? undefined : 'synthetic-image', mask: action === 'infill' || action === 'outpaint' ? 'synthetic-mask' : undefined,
         reference_image_multiple: ['synthetic-vibe'], reference_information_extracted_multiple: [1], reference_strength_multiple: [0.6] });
       const expected = structuredClone(body);
-      delete expected.parameters.stream; delete expected.parameters._local_edit_operation;
+      if (streaming) expected.parameters.stream = 'sse'; else delete expected.parameters.stream;
+      delete expected.parameters._local_edit_operation;
       const req = requestFor(`member-${action}`, action, body);
       req.headers.authorization = 'Bearer STA1N-synthetic';
       const res = new TestResponse(); let calls = 0, settled = 0;
       await handler(req, res, '', 0, setup(() => assert.fail('成员网关不能调用旧队列')), proxyPreferences, async (url, options) => {
-        calls++; assert.equal(url, 'https://gateway.example/v1/ai/generate-image');
+        calls++; assert.equal(url, 'https://gateway.example/v1/ai/generate-image' + (streaming ? '-stream' : ''));
         assert.equal(options.headers.Authorization, 'Bearer STA1N-synthetic');
         assert.equal(options.redirect, 'error');
         assert.deepEqual(JSON.parse(options.body), JSON.parse(JSON.stringify(expected)));
-        return new Response('synthetic-zip', { headers: { 'Content-Type': 'application/zip' } });
+        return streaming
+          ? new Response(finalFrame, { headers: { 'Content-Type': 'text/event-stream' } })
+          : new Response('synthetic-zip', { headers: { 'Content-Type': 'application/zip' } });
       }, { ...generationOptions, gatewayUrl: 'https://gateway.example/v1', settleGeneration: async () => { settled++; return { estimatedCost: 0 }; } });
       assert.equal(res.statusCode, 200, res.body());
-      assert.equal(res.headers['content-type'], 'application/zip');
-      assert.equal(res.body(), 'synthetic-zip'); assert.equal(calls, 1); assert.equal(settled, 1);
+      if (streaming) { assert.match(res.headers['content-type'], /text\/event-stream/); assert.match(res.body(), /event: final/); }
+      else { assert.equal(res.headers['content-type'], 'application/zip'); assert.equal(res.body(), 'synthetic-zip'); }
+      assert.equal(calls, 1); assert.equal(settled, 1);
     });
   }
   for (const status of [401, 402, 403, 429, 500]) {
     test(`成员网关拒绝 ${status} 不重试、不回退、不结算`, async () => {
       const res = new TestResponse(); let calls = 0;
       await handler(requestFor(`member-denied-${status}`), res, '', 0, setup(() => assert.fail('不可进入旧队列')), { enabled: false },
-        async url => { calls++; assert.equal(url, 'https://gateway.example/ai/generate-image'); return new Response('member denied', { status }); },
+        async url => { calls++; assert.equal(url, 'https://gateway.example/ai/generate-image' + (handler === handleGenerateStreamRequest ? '-stream' : '')); return new Response('member denied', { status }); },
         { ...generationOptions, gatewayUrl: 'https://gateway.example', settleGeneration: () => assert.fail('失败不能结算') });
       assert.equal(res.statusCode, status); assert.equal(calls, 1);
     });

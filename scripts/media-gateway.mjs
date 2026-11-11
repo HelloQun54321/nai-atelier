@@ -2374,9 +2374,8 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
   generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration,
   prepareBilling = prepareNovelAiBilling, tasks = generationTasks, gatewayUrl = '',
 } = {}) => {
-  // 成员网关一次提交普通 ZIP；后台任务按响应类型解包，不先尝试不支持的流式接口。
-  if (gatewayUrl) return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote,
-    { generationTimeoutMs, settleGeneration, prepareBilling, tasks, gatewayUrl });
+  // 成员网关也提供 /ai/generate-image-stream（实测 event: intermediate + base64 帧与官方一致），
+  // 流式与普通 ZIP 共用同一套参考图缓存改写，不再一律降级成 ZIP。
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
   const authorization = String(req.headers.authorization || '');
@@ -2384,6 +2383,8 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
 
   const queueEnabled = queuePreferences.enabled === true && Boolean(queuePreferences.serviceUrl);
   const generationProxyUrl = queueEnabled ? getCloudQueueGenerationUrl(queuePreferences.serviceUrl, true) : null;
+  /** 成员网关走它自己的流式端点；否则沿用云队列或官方地址。 */
+  const streamUrl = gatewayUrl ? `${gatewayUrl}/ai/generate-image-stream` : generationProxyUrl || NAI_GENERATE_STREAM_URL;
   const keyHash = keyHashFromAuthorization(authorization);
   const requestedTaskId = String(req.headers['x-nai-queue-task-id'] || '');
   const queueTaskId = /^[a-zA-Z0-9-]{8,80}$/.test(requestedTaskId) ? requestedTaskId : randomUUID();
@@ -2468,8 +2469,8 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     const upstream = !generationProxyUrl && (resolvedVibeEncodings?.length || preciseReferenceImages?.length || baseImageKeysOmitted?.size)
       ? await generateWithCacheRetry(payload, authorization,
         { vibeEncodings: resolvedVibeEncodings || [], vibeCacheKeysSentWithData, preciseImages: preciseReferenceImages, preciseCacheKeysSentWithData, baseImageOriginals },
-        (nextPayload, nextAuthorization) => fetchNovelAiGenerationStream(nextPayload, nextAuthorization, generationSignal, requestRemote))
-      : await fetchNovelAiGenerationStream(payload, authorization, generationSignal, requestRemote, generationProxyUrl || NAI_GENERATE_STREAM_URL);
+        (nextPayload, nextAuthorization) => fetchNovelAiGenerationStream(nextPayload, nextAuthorization, generationSignal, requestRemote, streamUrl))
+      : await fetchNovelAiGenerationStream(payload, authorization, generationSignal, requestRemote, streamUrl);
     generationSignal.throwIfAborted();
     if (generationProxyUrl) cloudQueue.update(keyHash, queueTaskId, { phase: 'generating', cancelable: false });
     if (!upstream.ok) {
