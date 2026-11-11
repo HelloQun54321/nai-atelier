@@ -1,5 +1,5 @@
 ## 2026-11-12
-- **DeepSeek Harness (deepseek-flash)**：按用户反馈继续调 `.gallery-card-caption`。一是柔化渐变：`::before` 从两段式 `transparent → .42@45% → .74` 改为 5 段色标（0 / .13@26% / .36@54% / .60@80% / .76@100%），并删除 `mask-image`（渐变自身已足够柔和，mask 又与渐变重复叠加导致顶部过渡区间被双重压暗、边界反而更明显），向上扩展 12px 作为过渡区。二是标题居中：给 caption 加 `display:flex; flex-direction:column; justify-content:center`，`min-height` 3rem→3.5rem，padding 从 `.875/.75` 非对称改为 `.625/.75` 对称。验证：AITag 截图遮罩贴合圆角且过渡平滑；风格串页 60 个可见 caption 均为 56px、标题 offsetTop 18px、中心 28px 恰为高度一半，无溢出。版本 1.177.4。
+- **DeepSeek Harness (deepseek-flash)**：按用户反馈调卡片悬停跟手度。`.gallery-image-card` 的 `translate` 过渡 260ms + `cubic-bezier(.22, 1, .36, 1)`（前 60ms 走完 60%、尾部磨 200ms），图片 `scale` 过渡 450ms；划过一排卡片时前一张仍在缩放，观感是"拖"。改为 `translate 150ms cubic-bezier(.2, 0, 0, 1)`、`box-shadow 150ms ease`、`border-color/filter 120ms`，图片 `scale 260ms cubic-bezier(.2, 0, 0, 1)`。验证：已确认构建产物 `dist/assets/index-*.css` 含 `translate .15s` 与 `cubic-bezier(.2,0,0,1)`；浏览器端因本地服务卡死未能实测渲染。版本 1.177.5。
 
 # AI 工作日志
 
