@@ -135,6 +135,8 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
     align-self: end;
     isolation: isolate;
     z-index: 2;
+    /* 直接继承卡片圆角：两边各自读变量时密度/主题不同步会出现 1~3px 误差。 */
+    border-radius: inherit;
     /* 名称与元信息整组垂直居中在遮罩里，而不是贴着顶部堆。 */
     display: flex;
     flex-direction: column;
@@ -163,7 +165,7 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
       rgb(12 16 24 / .60) 80%,
       rgb(12 16 24 / .76) 100%);
     /* 跟随卡片圆角，避免直角压在圆角图片上留下硬边。 */
-    border-radius: 0 0 var(--workspace-card-radius, 1rem) var(--workspace-card-radius, 1rem);
+    border-radius: inherit;
   }
   html[data-gallery-frosted-caption='true'] .gallery-card-caption :where(p, h2, h3, div, span, button):not([data-safe-mode-title='true']) {
     color: inherit !important;

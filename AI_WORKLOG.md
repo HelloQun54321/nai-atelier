@@ -1,5 +1,5 @@
 ## 2026-11-12
-- **DeepSeek Harness (deepseek-flash)**：按用户反馈调卡片悬停跟手度。`.gallery-image-card` 的 `translate` 过渡 260ms + `cubic-bezier(.22, 1, .36, 1)`（前 60ms 走完 60%、尾部磨 200ms），图片 `scale` 过渡 450ms；划过一排卡片时前一张仍在缩放，观感是"拖"。改为 `translate 150ms cubic-bezier(.2, 0, 0, 1)`、`box-shadow 150ms ease`、`border-color/filter 120ms`，图片 `scale 260ms cubic-bezier(.2, 0, 0, 1)`。验证：已确认构建产物 `dist/assets/index-*.css` 含 `translate .15s` 与 `cubic-bezier(.2,0,0,1)`；浏览器端因本地服务卡死未能实测渲染。版本 1.177.5。
+- **DeepSeek Harness (deepseek-flash)**：单独恢复遮罩圆角对齐（原 1.177.6 `498171c9` 的 CSS 部分，不夹带同批被回退的其他改动）。`.gallery-card-caption` 与 `::before` 的圆角改 `border-radius: inherit`，消除遮罩（14px）与卡片（17.6px）的圆角差值。版本 1.177.6。
 
 # AI 工作日志
 
