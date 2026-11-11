@@ -799,6 +799,8 @@ it('卡片画师标签最多三个并显示剩余数量，编号只保留在左�
   expect(chip).toBeTruthy();
   expect(chip!.className).toContain('text-micro');
   expect(chip!.className).toContain('min-w-0');
+  // 画师标签行必须撑满底栏：磨砂底栏是纵轴布局，若只靠父级对齐会缩成内容宽度并居中。
+  expect(chip!.parentElement!.className).toContain('w-full');
   const card = screen.getByRole('button', { name: '查看候选 1' });
   expect(card.querySelectorAll('.gallery-card-badge').length).toBeLessThanOrEqual(4);
   expect(card.querySelectorAll('.gallery-card-meta')).toHaveLength(0);

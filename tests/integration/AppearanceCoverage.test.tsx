@@ -889,6 +889,8 @@ describe('全局外观覆盖审计', () => {
     expect(frost['mask-image']).toContain('transparent');
     expect(frost['pointer-events']).toBe('none');
     expect(declarations(`${enabled} .gallery-card-caption`, undefined, css)['text-shadow']).toBe('none');
+    // 纵轴布局不能继承卡片自带的 items-*，否则内部行收成内容宽度后水平居中（Roll 候选卡的画师标签）。
+    expect(declarations(`${enabled} .gallery-card-caption`, undefined, css)['align-items']).toBe('stretch');
     const hover = "html[data-gallery-hover-float='true'][data-gallery-pointer-tilt='false'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover";
     const media = '(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)';
     expect(declarations(hover, media, css).translate).toBe('0 -3px');
@@ -914,6 +916,13 @@ describe('全局外观覆盖审计', () => {
       expect(style['justify-content'], selector).toBe('center');
       expect(declarations(selector + ' > svg', undefined, css).width, selector).toBe('calc(var(--nai-float-control, 32px) * .5)');
     }
+  });
+
+  it('磨砂底栏按纵轴排布时不继承卡片的横向对齐，内容从左侧开始', () => {
+    // 卡片自带的 items-center 在纵轴布局下变成横向居中：Roll 候选卡画师标签会缩成内容宽度后居中。
+    const caption = declarations("html[data-gallery-frosted-caption='true'] .gallery-card-caption", undefined, css);
+    expect(caption['flex-direction']).toBe('column');
+    expect(caption['align-items']).toBe('stretch');
   });
 
   it('磨砂标题优先于主题白底和文字映射，保留图标语义色及关闭后的普通底栏', () => {

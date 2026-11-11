@@ -117,7 +117,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
       {/* 卡片底栏：只露画师名与剩余数量，权重留到详情——挑图时不关心 0.7 还是 1.3。 */}
       <div className="gallery-card-caption flex items-center justify-between px-3 py-2 gap-2 bg-white/95 dark:bg-gray-850/95 border-t border-gray-100 dark:border-gray-800" style={frosted ? { paddingBottom: '1.75rem' } : undefined}>
-        <div className="flex flex-nowrap items-center gap-1 overflow-hidden min-w-0 flex-1" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
+        <div className="flex w-full flex-nowrap items-center gap-1 overflow-hidden min-w-0 flex-1" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
           {candidate.tags.slice(0, 3).map((entry, entryIndex) => (
             <span key={entry.tag} className="gallery-card-badge inline-flex min-w-0 shrink items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-1 py-0.5 text-micro font-medium text-gray-700 dark:text-gray-200 border border-gray-200/50 dark:border-gray-700/50">
               <span className="inline-block h-1 w-1 shrink-0 rounded-full" style={{ backgroundColor: rollChipColor(entryIndex) }} />

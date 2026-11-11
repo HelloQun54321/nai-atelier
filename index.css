@@ -140,6 +140,9 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
     /* 名称与元信息整组垂直居中在遮罩里，而不是贴着顶部堆。 */
     display: flex;
     flex-direction: column;
+    /* 改成纵轴后，卡片自带的 items-center 会变成横向对齐：内部行按内容宽度收缩并居中，
+       Roll 候选卡的画师标签因此从左边跑到卡片中间。统一拉满宽度，标题与标签始终靠左。 */
+    align-items: stretch;
     justify-content: center;
     height: auto;
     min-height: 3.5rem;
