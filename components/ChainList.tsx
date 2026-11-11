@@ -563,7 +563,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             <ListChecks className="h-4 w-4" /><span className="hidden xl:inline">{t('多选')}</span>
           </ToolbarButton>}
           {!isGuest && <div className="flex flex-none items-center gap-1 md:gap-2">
-            <ToolbarOverflowMenu className="max-md:hidden" items={desktopOverflowItems} />
             {type === 'style' && <div className="flex max-md:hidden"><StyleCollectorControl onSaved={onRefresh} notify={notify} /></div>}
             <div className="hidden items-center gap-2 md:flex">
               <ToolbarButton tone="primary" onClick={() => setIsModalOpen(true)} aria-label={t(createLabel)} title={t(createLabel)}><Plus className="h-4 w-4" /><span className="hidden xl:inline">{t(createLabel)}</span></ToolbarButton>
@@ -572,6 +571,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               {type === 'style' && <MobileIconButton label={t("批量导入")} onClick={() => setIsFolderImportOpen(true)} className="max-md:hidden border border-gray-200 bg-white text-indigo-600 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-400"><FolderUp className="h-5 w-5" /></MobileIconButton>}
               <MobileIconButton label={t(createLabel)} onClick={() => setIsModalOpen(true)} className="bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white"><Plus className="h-5 w-5" /></MobileIconButton>
             </div>
+            <ToolbarOverflowMenu className="max-md:hidden" items={desktopOverflowItems} />
           </div>}
           {/* 手机顶栏只留文件夹、搜索、筛选、新建；其余低频操作收进「更多」，不再挤出屏幕。 */}
           <MobileOverflowMenu items={[

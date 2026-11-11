@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreVertical } from 'lucide-react';
 import { t } from '../services/i18n';
 import { ToolbarButton } from './DesignSystem';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
@@ -27,7 +27,7 @@ export const ToolbarOverflowMenu: React.FC<{
       active={open}
       onClick={() => setOpen(value => !value)}
     >
-      <MoreHorizontal className="h-4 w-4" />
+      <MoreVertical className="h-4 w-4" />
     </ToolbarButton>
     {open && <AnchoredToolbarPopover anchorRef={anchor} title={t(label)} width={260} allowMobile compact onClose={() => setOpen(false)}>
       <div className="space-y-1">

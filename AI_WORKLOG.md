@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-11
+- **DeepSeek Harness (deepseek-flash)**：按用户要求把风格串「更多操作」入口换成竖排三点并移到最右。`ToolbarOverflowMenu` 图标 `MoreHorizontal` → `MoreVertical`，`ChainList` 里该按钮从收集模式之前移到新建之后。实测桌面顺序为 `展开文件夹 / 筛选 / 多选 / 收集模式 / 新建风格串 / ⋮`，按钮内 SVG 圆点为 (12,5)(12,12)(12,19) 竖排。`ChainList.sync` 44、`ChainList.cardStatus` 10 通过，顺序断言同步更新。版本 1.175.4。
 - **DeepSeek Harness (deepseek-flash)**：按用户确认的方案给风格串桌面顶栏做优先级分层。新增 `components/ToolbarOverflowMenu.tsx`（桌面版「更多操作」：`ToolbarButton` + `AnchoredToolbarPopover`，复用 `MobileUI` 的 `ToolbarOverflowItem` 条目模型）；`ChainList` 把查找相似、分享包、批量导入、智慧姬同步从桌面常驻移到 `desktopOverflowItems`，常驻保留文件夹、搜索、筛选、多选、收集模式与新建（收集模式是 `role="switch"` 状态开关，收起会看不到「收集中」）。手机端 `MobileOverflowMenu` 不变。实测桌面按钮从 9 个降到 6 个、搜索框宽 639px。回归：`ChainList.sync` 44、`ChainList.cardStatus` 10 通过，新增 `openOverflowMenu`／`clickOverflowItem` 测试辅助，顺序断言更新为 `['展开文件夹','筛选','更多操作','收集模式','新建风格串']`。版本 1.175.3。
 - **DeepSeek Harness (deepseek-flash)**：按用户反馈修正历史页跳页按钮位置。实测工具栏：筛选组占 `11–714px`，跳页按钮原接在其后落在 `722–848px`，而 `.history-toolbar-status` 靠 `margin-left: auto` 顶在最右（`1006–1166px`），中间空一段，视觉上像居中。把 `ListJumpButton` 从 `HistoryBrowseControls` 之后移进 `.history-toolbar-status` 首位，实测变为 `867–994px`，与「N 张」「管理」同组靠右；AITag 与法典的跳页按钮本就在工具栏末尾组，位置不变。`GenHistory.test.tsx` 46 项通过。版本 1.175.2。
 - **DeepSeek Harness (deepseek-flash)**：按用户要求调整提交协作偏好。`AGENTS.md` 提交规则第 1 条由「提交由用户明确通知触发」改为「自动提交、不自动推送」：修改完成且定向验证通过后直接 `git commit`，仍保持一个提交只装一个完整批次、不混入无关改动；`git push` 继续等用户明确要求。版本 1.175.1。

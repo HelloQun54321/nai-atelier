@@ -524,7 +524,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     const p = props(); const view = render(React.createElement(ChainList, p));
     const header = view.container.querySelector('header')!;
     const desktop = [...header.querySelectorAll('button')].filter(button => !button.closest('.md\\:hidden'));
-    expect(desktop.map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['展开文件夹', '筛选', '更多操作', '收集模式', '新建风格串']);
+    expect(desktop.map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['展开文件夹', '筛选', '收集模式', '新建风格串', '更多操作']);
     const folderToggle = screen.getByRole('button', { name: '展开文件夹' });
     // 手机横滑内层包住整排控件（电脑端为 contents），顺序检查落在实际控件这一层。
     const toolbarRow = header.querySelector('.workspace-toolbar-scroll') || header;
