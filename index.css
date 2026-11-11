@@ -156,8 +156,10 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
   html[data-gallery-frosted-caption='true'] .gallery-card-caption::before {
     content: '';
     position: absolute;
-    /* 只盖住标题上沿一点；向上这一段同时是渐变的过渡区。 */
-    inset: -0.75rem 0 0;
+    /* 只盖住标题上沿一点；向上这一段同时是渐变的过渡区。
+       底边再向下延 1px：超出的部分由卡片的 overflow: hidden 裁掉，
+       但渐变的硬边界因此挪到可视区之外，底部那一行不会再留下半透明的接缝。 */
+    inset: -0.75rem 0 -1px;
     z-index: -1;
     pointer-events: none;
     /* 多段色标把透明到深色的变化摊开，避免两段式渐变出现一道硬边。 */
