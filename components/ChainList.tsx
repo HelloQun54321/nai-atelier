@@ -5,7 +5,8 @@ import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { PromptChain, ChainType } from '../types';
-import { MobileBottomSheet, MobileIconButton, MobileOverflowMenu } from './MobileUI';
+import { MobileBottomSheet, MobileIconButton, MobileOverflowMenu, type ToolbarOverflowItem } from './MobileUI';
+import { ToolbarOverflowMenu } from './ToolbarOverflowMenu';
 import { SmartImage } from './SmartImage';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
 import { ImageCardActions } from './ImageCardActions';
@@ -502,6 +503,13 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     if (type === 'style' && !isGuest) selectFolder('*');
   };
   const emptyFiltersActive = filterCount > 0 || Boolean(searchTerm) || (type === 'style' && !isGuest && activeFolder !== '*');
+  /** 桌面低频操作：与手机「更多」同一套条目，只是换成锚定浮层而不是底部弹层。 */
+  const desktopOverflowItems: ToolbarOverflowItem[] = [
+    ...(!isGuest && type === 'style' ? [{ label: '查找相似', icon: <ScanSearch />, onClick: () => setSimilarityOpen(true) }] : []),
+    ...(!isGuest && type === 'style' ? [{ label: '风格串分享包', icon: <Package />, onClick: () => setBundleScope('all') }] : []),
+    ...(!isGuest && type === 'style' ? [{ label: '批量导入', icon: <FolderUp />, onClick: () => setIsFolderImportOpen(true) }] : []),
+    ...(canSync ? [{ label: '智慧姬同步', hint: syncSelection.savedCount > 0 ? `待同步 ${syncSelection.savedCount}` : '', icon: <Link2 />, onClick: syncSelection.open ? syncSelection.cancel : syncSelection.begin, disabled: syncSelection.busy && !syncSelection.open }] : []),
+  ];
   // 桌面弹层与手机抽屉共享筛选内容，切换视图也保持同一份筛选状态。
   const filterContent = <div className="space-y-4">
     <div className="flex items-center justify-between"><span className="text-xs text-gray-500 dark:text-gray-400">{filterCount > 0 ? t("{0} 项筛选已启用", [filterCount]) : t("全部资料")}</span>{filtersActive && <button type="button" onClick={resetFilters} className="mobile-touch px-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>}</div>
@@ -547,7 +555,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               <ToolbarButton active={filtersActive} onClick={() => setShowDesktopFilters(value => !value)} title={t("筛选与排序")} aria-label={t("筛选{0}", [filterCount > 0 ? ` ${filterCount}` : ''])} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" /><span className="hidden xl:inline">{t("筛选{0}", [filterCount > 0 ? ` ${filterCount}` : ''])}</span></ToolbarButton>
               {showDesktopFilters && <AnchoredToolbarPopover anchorRef={filterAnchorRef} title={t("筛选与排序")} onClose={() => setShowDesktopFilters(false)}>{filterContent}</AnchoredToolbarPopover>}
             </div>
-            {canSync && <div className="border-l border-gray-200 pl-2 dark:border-gray-700"><ToolbarButton onClick={syncSelection.open ? syncSelection.cancel : syncSelection.begin} disabled={syncSelection.busy && !syncSelection.open} title={t("挑选风格串、待同步与同步记录")} aria-label={t("智慧姬同步{0}", [syncSelection.savedCount > 0 ? ` ${syncSelection.savedCount}` : ''])} aria-expanded={syncSelection.open}><Link2 className="h-4 w-4" /><span className="hidden xl:inline">{t("智慧姬同步{0}", [syncSelection.savedCount > 0 ? ` ${syncSelection.savedCount}` : ''])}</span></ToolbarButton></div>}
           </div>
           <div className="flex flex-none gap-1 md:hidden">
               <MobileIconButton label={t("筛选与排序")} onClick={event => { mobileFilterTriggerRef.current = event.currentTarget; setShowMobileFilters(true); }} className={`border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${filtersActive ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-600 dark:text-gray-300'}`}><Filter className="h-5 w-5" /></MobileIconButton>
@@ -555,14 +562,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           {!isGuest && type === 'style' && onBulkDelete && <ToolbarButton className="max-md:hidden" aria-label={t('批量选择风格串')} title={t('批量选择风格串')} disabled={syncSelection.busy} onClick={beginSelection}>
             <ListChecks className="h-4 w-4" /><span className="hidden xl:inline">{t('多选')}</span>
           </ToolbarButton>}
-          {!isGuest && type === 'style' && <ToolbarButton className="max-md:hidden" aria-label={t('查找相似')} title={t('查找相似')} onClick={() => setSimilarityOpen(true)}>
-            <ScanSearch className="h-4 w-4" /><span className="hidden xl:inline">{t('查找相似')}</span>
-          </ToolbarButton>}
           {!isGuest && <div className="flex flex-none items-center gap-1 md:gap-2">
-            {type === 'style' && <ToolbarButton className="max-md:hidden" onClick={() => setBundleScope('all')} title={t('风格串分享包')} aria-label={t('风格串分享包')}><Package className="h-4 w-4" /><span className="hidden xl:inline">{t('分享包')}</span></ToolbarButton>}
+            <ToolbarOverflowMenu className="max-md:hidden" items={desktopOverflowItems} />
             {type === 'style' && <div className="flex max-md:hidden"><StyleCollectorControl onSaved={onRefresh} notify={notify} /></div>}
             <div className="hidden items-center gap-2 md:flex">
-              {type === 'style' && <ToolbarButton onClick={() => setIsFolderImportOpen(true)} title={t("从本地文件夹批量读取 NovelAI 原图为风格串")} aria-label={t("批量导入")}><FolderUp className="h-4 w-4" /><span className="hidden xl:inline">{t("批量导入")}</span></ToolbarButton>}
               <ToolbarButton tone="primary" onClick={() => setIsModalOpen(true)} aria-label={t(createLabel)} title={t(createLabel)}><Plus className="h-4 w-4" /><span className="hidden xl:inline">{t(createLabel)}</span></ToolbarButton>
             </div>
             <div className="flex gap-1 md:hidden">

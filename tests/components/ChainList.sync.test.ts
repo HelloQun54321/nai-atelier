@@ -287,7 +287,7 @@ it('批删取消只保留选择；处理中锁定选择/退出/重复删除，�
 it('智慧姬正在读取时直达多选按钮锁定，进入多选退出智慧姬筛选且能选择 V4，退出恢复原搜索', async () => {
   const p = bulkProps(); render(React.createElement(ChainList, p));
   await waitFor(() => expect((screen.getByRole('button', { name: '批量选择风格串' }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(screen.getByRole('button', { name: '智慧姬同步' }));
+  fireEvent.click(await clickOverflowItem(/智慧姬同步/));
   await screen.findByRole('checkbox', { name: '智慧姬同步：风格 A' });
   expect(screen.getByRole('checkbox', { name: '智慧姬同步：风格 V4' }).getAttribute('aria-disabled')).toBe('true');
   await beginBulkSelection();
@@ -343,6 +343,21 @@ it.each(['style', 'character'] as const)('%s 无封面也可删除：取消不�
   expect(p.onSelect).not.toHaveBeenCalled();
   expect(within(card).getByRole('button', { name: '删除：风格 A' })).toBeTruthy();
 });
+
+
+const openOverflowMenu = (scope: 'desktop' | 'mobile' = 'desktop') => {
+  const buttons = screen.getAllByRole('button', { name: '更多操作' });
+  const target = scope === 'desktop'
+    ? buttons.find(button => !button.closest('.md\\:hidden'))
+    : buttons.find(button => button.closest('.md\\:hidden'));
+  if (!target) throw new Error('未找到更多操作入口');
+  fireEvent.click(target);
+};
+const clickOverflowItem = async (name: RegExp, scope: 'desktop' | 'mobile' = 'desktop') => {
+  openOverflowMenu(scope);
+  const dialog = await screen.findByRole('dialog', { name: '更多操作' });
+  return within(dialog).findByRole('button', { name });
+};
 
 describe('风格串列表的酒馆筛选交互', () => {
   it.each(['desktop', 'mobile'])('Agent 在 %s 从大量卡片打开真实筛选浮层，读取选项并选中 V5 后实际过滤列表', async surface => {
@@ -457,8 +472,9 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(screen.queryByRole('button', { name: '删除：风格 A' })).toBeNull();
     expect(screen.getByRole('button', { name: '复制图片' })).toBeTruthy();
     view.rerender(React.createElement(ChainList, p));
-    await waitFor(() => expect(screen.getByRole('button', { name: '智慧姬同步' }).hasAttribute('disabled')).toBe(false));
-    fireEvent.click(screen.getByRole('button', { name: '智慧姬同步' }));
+    const syncEntry = await clickOverflowItem(/智慧姬同步/);
+    await waitFor(() => expect(syncEntry.hasAttribute('disabled')).toBe(false));
+    fireEvent.click(syncEntry);
     expect(screen.queryByRole('button', { name: '删除：风格 A' })).toBeNull();
     expect(screen.queryByRole('button', { name: /编辑风格串信息/ })).toBeNull();
     expect(screen.queryByRole('button', { name: '下载图片' })).toBeNull();
@@ -508,7 +524,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     const p = props(); const view = render(React.createElement(ChainList, p));
     const header = view.container.querySelector('header')!;
     const desktop = [...header.querySelectorAll('button')].filter(button => !button.closest('.md\\:hidden'));
-    expect(desktop.map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['展开文件夹', '筛选', '智慧姬同步', '查找相似', '风格串分享包', '收集模式', '批量导入', '新建风格串']);
+    expect(desktop.map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['展开文件夹', '筛选', '更多操作', '收集模式', '新建风格串']);
     const folderToggle = screen.getByRole('button', { name: '展开文件夹' });
     // 手机横滑内层包住整排控件（电脑端为 contents），顺序检查落在实际控件这一层。
     const toolbarRow = header.querySelector('.workspace-toolbar-scroll') || header;
@@ -516,7 +532,9 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(folderToggle.nextElementSibling?.contains(screen.getByPlaceholderText('搜索我的风格串'))).toBe(true);
     expect(header.querySelectorAll('[role="switch"]')).toHaveLength(1);
     expect(screen.queryByRole('button', { name: /刷新|反推/ })).toBeNull();
-    fireEvent.click(desktop.find(button => button.getAttribute('aria-label') === '批量导入')!);
+    fireEvent.click(desktop.find(button => button.getAttribute('aria-label') === '更多操作')!);
+    const importDialog = await screen.findByRole('dialog', { name: '更多操作' });
+    fireEvent.click(within(importDialog).getByRole('button', { name: '批量导入' }));
     expect(p.onRefresh).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '完成测试导入' }));
     expect(p.onRefresh).toHaveBeenCalledOnce();
@@ -617,7 +635,7 @@ describe('风格串列表的酒馆筛选交互', () => {
 
   it('卡片勾选取代打开编辑；跨搜索保持选择，V5 可选、V4 禁用，保存所选 V4.5 与 V5', async () => {
     const p = props(); render(React.createElement(ChainList, p));
-    const trigger = screen.getByRole('button', { name: '智慧姬同步' }); await waitFor(() => expect(trigger.hasAttribute('disabled')).toBe(false));
+    const trigger = await clickOverflowItem(/智慧姬同步/); await waitFor(() => expect(trigger.hasAttribute('disabled')).toBe(false));
     fireEvent.click(trigger);
     const a = await screen.findByRole('checkbox', { name: '智慧姬同步：风格 A' });
     await waitFor(() => expect(a.getAttribute('aria-disabled')).toBe('false'));
@@ -645,7 +663,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     render(React.createElement(ChainList, props()));
     await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
     // 手机顶栏只留搜索、筛选与新建，同步入口收进「更多」。
-    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    openOverflowMenu('mobile');
     const sheet = await screen.findByRole('dialog', { name: '更多操作' });
     const entry = within(sheet).getByRole('button', { name: /智慧姬同步/ });
     await waitFor(() => expect(entry.hasAttribute('disabled')).toBe(false)); fireEvent.click(entry);
@@ -664,7 +682,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     const current = { entries: [entry('a', 'pending'), entry('b', 'synced'), entry('v5', 'removed')], lastSnapshotAt: 2 };
     get.mockResolvedValue(current);
     const p = props(); render(React.createElement(ChainList, p));
-    const trigger = await screen.findByRole('button', { name: '智慧姬同步 1' });
+    const trigger = await clickOverflowItem(/智慧姬同步/);
     await waitFor(() => expect(trigger.hasAttribute('disabled')).toBe(false)); fireEvent.click(trigger);
     await waitFor(() => expect(screen.getByRole('tab', { name: '待同步 1' }).getAttribute('aria-selected')).toBe('true'));
     expect(screen.getByText('风格 A')).toBeTruthy(); expect(screen.queryByText('风格 B')).toBeNull();
@@ -686,11 +704,11 @@ describe('风格串列表的酒馆筛选交互', () => {
     preferences.enabled = false;
     const p = props(); const view = render(React.createElement(ChainList, p));
     expect(screen.queryByRole('button', { name: '智慧姬同步' })).toBeNull(); expect(get).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    openOverflowMenu('mobile');
     expect(within(await screen.findByRole('dialog', { name: '更多操作' })).queryByRole('button', { name: /智慧姬同步/ })).toBeNull();
     fireEvent.keyDown(document, { key: 'Escape' });
     preferences.enabled = true; view.rerender(React.createElement(ChainList, p));
-    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    openOverflowMenu('mobile');
     const sheet = await screen.findByRole('dialog', { name: '更多操作' });
     const mobileEntry = within(sheet).getByRole('button', { name: /智慧姬同步/ });
     expect(mobileEntry).toBeTruthy();

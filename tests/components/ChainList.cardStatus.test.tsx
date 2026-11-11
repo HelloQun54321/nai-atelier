@@ -133,7 +133,9 @@ describe('风格串卡片的待实测状态', () => {
   it('分享包优先使用专用回读回调，不改变其他导入入口的旧刷新语义', async () => {
     const callbacks = props([chain('plain', '普通风格', false)]), onBundleImported = vi.fn(async () => {});
     render(<ChainList {...callbacks} onBundleImported={onBundleImported} />);
-    fireEvent.click(screen.getByRole('button', { name: '风格串分享包' }));
+    fireEvent.click(screen.getAllByRole('button', { name: '更多操作' }).find(button => !button.closest('.md\\:hidden'))!);
+    const overflow = await screen.findByRole('dialog', { name: '更多操作' });
+    fireEvent.click(within(overflow).getByRole('button', { name: '风格串分享包' }));
     fireEvent.click(await screen.findByRole('button', { name: '合成分享包回读' }));
     expect(onBundleImported).toHaveBeenCalledOnce();
     expect(callbacks.onRefresh).not.toHaveBeenCalled();
