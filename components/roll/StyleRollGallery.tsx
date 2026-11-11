@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Dice5, Heart, Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, Check, Dice5, Heart, LoaderCircle, Pause, Save, Trash2 } from 'lucide-react';
 import type { LocalGenItem } from '../../types';
 import { t } from '../../services/i18n';
 import { type RollCandidate, type RollExperiment } from '../../services/styleRoll';
@@ -22,15 +22,34 @@ interface Props {
   preview?: { id: string; image: string } | null;
   /** 每个候选所属轮次，用于在编号旁标出 R2/R3。 */
   roundNumbers?: Map<string, number>;
-  /** 正在等待生成的候选；没有流式预览时也显示进行中。 */
-  generatingId?: string;
+  /** 本批排序：未出图卡片显示「本批第 n/总数 张」。 */
+  positions?: Map<string, { index: number; total: number }>;
+  /** 生成状态与操作：直接落在候选卡占位区，不再使用底部悬浮小框。 */
+  generationState?: {
+    generatingId?: string;
+    /** 本轮下一张待生成候选：错误与费用确认显示在这一张。 */
+    nextId?: string;
+    running: boolean;
+    paused: boolean;
+    awaiting: boolean;
+    saving: boolean;
+    error?: { message: string; tone: 'error' | 'warning' } | null;
+  } | null;
+  onGenerate?: (id: string) => void;
+  onPause?: () => void;
+  onResume?: () => void;
+  onCancel?: () => void;
+  onApprove?: () => void;
   /** 已收藏图片的候选；多选时卡片上的爱心被勾选框替换，靠它标出收藏状态。 */
   favoriteIds?: ReadonlySet<string>;
   scrollRef: React.RefObject<HTMLDivElement | null>; onScroll: () => void;
   notify: (message: string, type?: 'success' | 'error') => void;
 }
 
-export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, roundNumbers, generatingId, favoriteIds, scrollRef, onScroll, notify }) => {
+const GEN_PRIMARY = 'mobile-touch inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:opacity-40';
+const GEN_SECONDARY = 'mobile-touch inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white/90 px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-200 dark:hover:bg-gray-800';
+
+export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, roundNumbers, positions, generationState, onGenerate, onPause, onResume, onCancel, onApprove, favoriteIds, scrollRef, onScroll, notify }) => {
   const display = useMobileImageDisplayPreferences('roll');
   const requestedColumns = useMasonryColumnCount(display, undefined, scrollRef, 220);
   const columns = display.desktopColumns === 'auto' ? Math.min(4, requestedColumns) : requestedColumns;
@@ -68,12 +87,56 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
       <div className="appearance-media mobile-gallery-frame relative w-full overflow-hidden border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-950" style={{ '--mobile-image-ratio': String(ratio(candidate)) } as React.CSSProperties}>
         {item ? <SmartImage src={item.imageUrl} alt={t('候选 {0}', [index])} className="h-full w-full object-contain" onLoad={event => { const image = event.currentTarget, next = image.naturalWidth / Math.max(1, image.naturalHeight); if (next > 0 && next !== ratios[candidate.id]) setRatios(current => ({ ...current, [candidate.id]: next })); }} />
-          : preview?.id === candidate.id ? <img src={preview.image} alt={t('生成预览')} className="h-full w-full object-contain" />
-            : <div className="flex h-full min-h-48 flex-col items-center justify-center gap-3 px-4 text-gray-400 dark:text-gray-500">
-              <div className="appearance-group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 dark:bg-gray-900 text-gray-400">
-                <Dice5 className="h-6 w-6 animate-pulse" />
-              </div>
-              <div className="text-xs font-medium">{historyReady ? t(generatingId === candidate.id ? '生成中…' : '待生成') : historyLoading ? <InlineSpinner label={t('加载中…')} className="text-xs" /> : t('历史暂不可用')}</div>
+          : preview?.id === candidate.id ? <div className="relative h-full w-full">
+            <img src={preview.image} alt={t('生成预览')} className="h-full w-full object-contain" />
+            <span className="pointer-events-none absolute inset-x-0 bottom-2 mx-auto w-fit rounded-full bg-black/55 px-2 py-0.5 text-micro text-white">{generationState?.saving ? t('正在保存…') : t('生成中…')}</span>
+          </div>
+            : <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2.5 px-4 text-center">
+              {!historyReady ? (historyLoading ? <InlineSpinner label={t('加载中…')} className="text-xs" /> : <div className="text-xs font-medium">{t('历史暂不可用')}</div>) : (() => {
+                const state = generationState, position = positions?.get(candidate.id);
+                const isNext = state?.nextId === candidate.id;
+                const isGenerating = state?.generatingId === candidate.id;
+                const error = isNext ? state?.error : null;
+                const positionLabel = position ? t('本批第 {0}/{1} 张', [position.index, position.total]) : '';
+                const fire = (action?: () => void) => (event: React.MouseEvent) => { event.stopPropagation(); action?.(); };
+                if (error) return <>
+                  <AlertTriangle className={`h-6 w-6 ${error.tone === 'warning' ? 'text-amber-500' : 'text-red-500'}`} />
+                  <p className={`line-clamp-3 max-w-full break-words text-xs font-medium ${error.tone === 'warning' ? 'text-amber-700 dark:text-amber-300' : 'text-red-600 dark:text-red-300'}`} title={error.message}>{error.message}</p>
+                  {onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={GEN_PRIMARY}><Dice5 className="h-3.5 w-3.5" />{t('重试')}</button>}
+                  {positionLabel && <span className="text-mini">{positionLabel}</span>}
+                </>;
+                if (state?.running) {
+                  if (state.awaiting && isNext) return <>
+                    <LoaderCircle className="h-5 w-5 animate-spin" />
+                    <span className="text-xs font-medium">{t('等待费用确认')}</span>
+                    {onApprove && <button type="button" disabled={busy} onClick={fire(onApprove)} className={GEN_PRIMARY}>{t('确认费用')}</button>}
+                    {onCancel && <button type="button" onClick={fire(onCancel)} className={GEN_SECONDARY}>{t('取消')}</button>}
+                  </>;
+                  if (isGenerating) return <>
+                    <LoaderCircle className="h-5 w-5 animate-spin" />
+                    <span className="text-xs font-medium">{state.saving ? t('正在保存…') : t('生成中…')}</span>
+                    {state.paused
+                      ? onResume && isNext && <button type="button" disabled={busy} onClick={fire(onResume)} className={GEN_SECONDARY}>{t('继续')}</button>
+                      : onPause && <button type="button" disabled={busy} onClick={fire(onPause)} className={GEN_SECONDARY}><Pause className="h-3 w-3" />{t('暂停')}</button>}
+                    {onCancel && <button type="button" onClick={fire(onCancel)} className={GEN_SECONDARY}>{t('取消')}</button>}
+                  </>;
+                  return <>
+                    <div className="appearance-group flex h-10 w-10 items-center justify-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-gray-900">
+                      <Dice5 className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs font-medium">{state.paused && isNext ? t('任务已暂停') : t('排队中 · 第 {0} 位', [position?.index ?? 1])}</span>
+                    {state.paused && isNext && onResume && <button type="button" disabled={busy} onClick={fire(onResume)} className={GEN_SECONDARY}>{t('继续')}</button>}
+                    {positionLabel && <span className="text-mini">{positionLabel}</span>}
+                  </>;
+                }
+                return <>
+                  <div className="appearance-group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-gray-900">
+                    <Dice5 className="h-6 w-6" />
+                  </div>
+                  {onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={GEN_PRIMARY}>{t('生成')}</button>}
+                  {positionLabel && <span className="text-mini">{positionLabel}</span>}
+                </>;
+              })()}
             </div>}
 
         {selecting ? (

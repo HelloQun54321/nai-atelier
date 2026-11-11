@@ -1,7 +1,7 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { flushSync } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, CopyPlus, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, CopyPlus, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { MobileOverflowMenu } from './MobileUI';
 import { t, useLanguage } from '../services/i18n';
@@ -21,7 +21,7 @@ import { applyEstimatorRuntime, estimateV45GenerationCost, formatGenerationCostL
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
-import { approveGenerationSeries, clearInterruptedGenerationSeries, getGenerationSeriesSession, listInterruptedGenerationSeries, restoreGenerationSeriesSessions, stopGenerationSeriesSession, subscribeGenerationSeries, type GenerationSeriesSession, type InterruptedGenerationSeries } from '../services/generationSeries';
+import { approveGenerationSeries, getGenerationSeriesSession, restoreGenerationSeriesSessions, stopGenerationSeriesSession, subscribeGenerationSeries, type GenerationSeriesSession } from '../services/generationSeries';
 import { getGenerationQueue, setGenerationInterval, setGenerationQueuePaused } from '../services/generationTask';
 import { DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT, DEFAULT_GENERATION_INTERVAL_SECONDS, validateGenerationInterval, validateGenerationIntervalJitter } from '../worker/generationTasks.mjs';
 import { localHistory } from '../services/localHistory';
@@ -98,8 +98,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const subscription = useNovelaiUsage(), budget = useAnlasBudget();
   const [experiments, setExperiments] = useState<RollExperiment[]>([]), [experimentId, setExperimentId] = useState('');
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setErrorState] = useState('');
-  const [errorSource, setErrorSource] = useState<'request' | 'generation'>('request');
-  const setError = useCallback((message: string, source: 'request' | 'generation' = 'request') => { setErrorState(message ? parseHttpError(message).message : ''); setErrorSource(source); }, []);
+  // 生成失败不占用顶部横幅：Roll 常驻小框承担出图过程、结果与失败回执。
+  const [generationError, setGenerationError] = useState<{ experimentId: string; message: string; tone: 'error' | 'warning' } | null>(null);
+  const setError = useCallback((message: string, source: 'request' | 'generation' = 'request') => {
+    const text = message ? parseHttpError(message).message : '';
+    if (source === 'generation') setGenerationError(text ? { experimentId, message: text, tone: 'error' } : null);
+    else setErrorState(text);
+  }, [experimentId]);
   const [library, setLibrary] = useState<string[]>([]), [libraryLoading, setLibraryLoading] = useState(true), [libraryError, setLibraryError] = useState('');
   const [libraryEntries, setLibraryEntries] = useState<ArtistDictionaryEntry[]>([]);
   const [sampleUrls, setSampleUrls] = useState<Map<string, string>>(new Map());
@@ -123,7 +128,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const [setup, setSetup] = useState<RollExperiment | null>(null), [lightbox, setLightbox] = useState<LocalGenItem | null>(null);
   useEffect(() => { if (setup) setChainTarget(null); }, [setup]);
   const [session, setSession] = useState<GenerationSeriesSession | null>(null), [preparing, setPreparing] = useState(false);
-  const [interrupted, setInterrupted] = useState<InterruptedGenerationSeries[]>([]);
   // 生成间隔与随机浮动画按 Key 保存，和实验室生成条共用同一份队列偏好。
   const [queueInterval, setQueueInterval] = useState<{ seconds: number; jitterPercent: number } | null>(null);
   const [intervalPending, setIntervalPending] = useState(false);
@@ -180,16 +184,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   useEffect(() => { if (active) void loadFavorites(); }, [active, loadFavorites]);
   const favoriteIds = useMemo(() => new Set([...images].filter(([, item]) => collectionTargetActive({ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id })).map(([id]) => id)), [images, collectionVersion]);
   const round = experiment && currentRollRound(experiment);
-  // 刷新或重启后后端任务已结束：按中断记录找回轮次，只把还没出图的候选留给「继续生成」。
-  const interruptedSeries = experiment ? interrupted.find(item => item.scope === rollSourceId(experiment.id)) : undefined;
-  const interruptedPending = useMemo(() => {
-    if (!interruptedSeries || !experiment) return [];
-    const interruptedRound = interruptedSeries.meta?.roundId ? experiment.rounds.find(item => item.id === interruptedSeries.meta?.roundId) : undefined;
-    // 记录指向的轮次已被删除时无法界定范围，不擅自把其它轮次算成剩余。
-    if (interruptedSeries.meta?.roundId && !interruptedRound) return [];
-    const scope = new Set(interruptedRound ? interruptedRound.candidateIds : experiment.candidates.map(candidate => candidate.id));
-    return experiment.candidates.filter(candidate => scope.has(candidate.id) && !candidate.archived && !images.has(candidate.id));
-  }, [interruptedSeries, experiment, images]);
+  // 本批排序：未出图卡片在自己的按钮/状态里标出「本批第 n/总数 张」。
+  const roundPositions = useMemo(() => {
+    const map = new Map<string, { index: number; total: number }>();
+    if (!round) return map;
+    round.candidateIds.forEach((id, index) => map.set(id, { index: index + 1, total: round.candidateIds.length }));
+    return map;
+  }, [round]);
   const selectedImage = selected && images.get(selected.id);
   const historyReady = Boolean(experiment && historyReadyId === experiment.id);
   const filterReady = filter === 'favorited' ? historyReady && collectionSettled : filter === 'pending' || filter === 'unsaved' ? historyReady : true;
@@ -268,11 +269,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     const update = () => {
       const found = experiments.map(item => getGenerationSeriesSession(rollSourceId(item.id))).find(Boolean);
       setSession(found ? { ...found } : null);
-      // 每次状态推送都会走到这里：内容没变时保留原数组，避免无意义重渲染。
-      setInterrupted(current => {
-        const next = listInterruptedGenerationSeries();
-        return current.length === next.length && current.every((item, index) => item.token === next[index].token) ? current : next;
-      });
     };
     update(); return subscribeGenerationSeries(update);
   }, [experiments]);
@@ -284,11 +280,20 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (mounted.current) setExperiments(current => [saved, ...current.filter(item => item.id !== saved.id)]);
     return saved;
   };
-  const perform = async (action: () => Promise<void>) => {
+  // 生成失败回执进候选卡占位区，不再占用顶部横幅。
+  const reportGeneration = useCallback((message: string, tone: 'error' | 'warning' = 'error') => {
+    if (!mounted.current) return;
+    setGenerationError({ experimentId: selectedExperimentRef.current, message: t(parseHttpError(message).message), tone });
+  }, []);
+  const perform = async (action: () => Promise<void>, source: 'request' | 'generation' = 'request') => {
     if (busyRef.current || loadingRef.current) return;
-    busyRef.current = true; setBusy(true); setError('');
+    busyRef.current = true; setBusy(true);
+    if (source === 'generation') setGenerationError(null); else setErrorState('');
     try { await action(); }
-    catch (cause) { if (mounted.current) setError((cause as Error).message); }
+    catch (cause) {
+      if (!mounted.current) return;
+      if (source === 'generation') reportGeneration((cause as Error).message); else setError((cause as Error).message);
+    }
     finally { busyRef.current = false; if (mounted.current) setBusy(false); }
   };
   const updateBlocklist = async (tags: string[]) => { setBlocklist(await saveRollBlocklist(tags)); };
@@ -347,13 +352,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   }, [initialPinned?.token]);
   const generate = async (candidates: RollCandidate[] = selected ? [selected] : [], target = experiment, options: { skipConfirmation?: boolean } = {}) => {
     if (!target || target.archived || !candidates.length || candidates.some(candidate => candidate.archived || images.has(candidate.id)) || loadingRef.current || generatingRef.current || session || (target.id === experiment?.id && (historyLoading || !historyReady))) return;
-    if (!continuousGenerationEnabled && candidates.length > 1) { setError(t('连续生成已关闭，请开启后生成本轮')); return; }
+    if (!continuousGenerationEnabled && candidates.length > 1) { reportGeneration(t('连续生成已关闭，请开启后生成本轮')); return; }
     const key = readRollApiKey();
-    if (!key) { setError(t('请先在“全局设置”中配置 NovelAI API Key')); return; }
-    generatingRef.current = true; setPreparing(true); setError('');
-    const reportError = (message: string) => {
+    if (!key) { reportGeneration(t('请先在“全局设置”中配置 NovelAI API Key')); return; }
+    generatingRef.current = true; setPreparing(true); setGenerationError(null);
+    const reportError = (message: string, tone: 'error' | 'warning' = 'error') => {
       if (!mounted.current) return;
-      if (selectedExperimentRef.current === target.id) setError(message, 'generation');
+      if (selectedExperimentRef.current === target.id) setGenerationError({ experimentId: target.id, message: t(parseHttpError(message).message), tone });
       else notify(t('画风记录 {0}：{1}', [target.name, t(parseHttpError(message).message)]), 'error');
     };
     try {
@@ -368,7 +373,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         const warnings: string[] = [];
         if (started.session.accountingFailed) warnings.push(t('图片已保存，但本地记账异常，请核对额度后再继续') + (started.session.accountingError ? `：${started.session.accountingError}` : ''));
         if (started.session.cleanupError) warnings.push(t('后台任务清理异常：{0}', [started.session.cleanupError]));
-        if (warnings.length) reportError(warnings.join('；'));
+        if (warnings.length) reportError(warnings.join('；'), 'warning');
         else if (!receipt.success && receipt.outcome !== 'cancelled') reportError(receipt.error || t('生成失败'));
         if (selectedExperimentRef.current === target.id) {
           const saved = started.session.lastSavedItem;
@@ -387,7 +392,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (!await confirm({ rememberKey: 'roll.cost-increase', rememberScope: confirmationCostScope(current.key, nextCost, remaining, budget.remaining), title: '后台任务费用已变化', message: t('本轮剩余 {0} 张，当前每张预计 {1} Anlas，共 {2} Anlas。本地剩余预算：{3}。', [remaining, nextCost, nextCost * remaining, budget.remaining]), confirmLabel: t('消耗 {0} 点并生成', [nextCost * remaining]), tone: 'danger' })) { stopGenerationSeriesSession(current); return; }
     if (readRollApiKey() !== current.key) throw new Error('NovelAI Key 已变化，请重新发起生成');
     await approveGenerationSeries(current, nextCost);
-  });
+  }, 'generation');
   const runRound = () => void perform(async () => {
     if (session || generatingRef.current) return;
     if (experiment && (!historyReady || historyLoading)) throw new Error('历史暂不可用，请重新加载后再生成。');
@@ -402,7 +407,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     const saved = await store(next), created = currentRollRound(saved)!;
     selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
     void generate(saved.candidates.filter(candidate => created.candidateIds.includes(candidate.id)), saved);
-  });
+  }, 'generation');
   const generatePending = (ids?: string[]) => void perform(async () => {
     if (!experiment || !historyReady || historyLoading || session || generatingRef.current) return;
     let source = experiment;
@@ -410,24 +415,18 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (!pending.length) return;
     if (ids || !round || round.closedAt) source = await store({ ...experiment, rounds: [...experiment.rounds.map(item => item.id === round?.id && !item.closedAt ? { ...item, closedAt: Date.now() } : item), { id: createUuid(), candidateIds: pending.map(candidate => candidate.id), createdAt: Date.now() }] });
     setSelectedId(''); setSelecting(false); setSelectedIds(new Set()); setRoundId(''); setFilter('all'); void generate(pending, source);
-  });
+  }, 'generation');
   const resume = () => void perform(async () => {
     if (!session || session.state !== 'paused') return;
     if (readRollApiKey() !== session.key) throw new Error('NovelAI Key 已变化，请重新发起生成');
     await setGenerationQueuePaused(session.key, false);
-  });
-  // 后端任务随服务重启结束：保留中断小框，只对没出图的候选重新发起，已出图的不重复。
-  const continueInterrupted = () => void perform(async () => {
-    if (!interruptedSeries || !experiment) return;
-    const key = readRollApiKey();
-    if (!key) throw new Error(t('请先在“全局设置”中配置 NovelAI API Key'));
-    const pending = interruptedPending;
-    clearInterruptedGenerationSeries(interruptedSeries.token);
-    // 关页时留下的队列暂停要在这里解除，否则剩余的重新提交会被后端拒绝。
-    try { await setGenerationQueuePaused(key, false); } catch { /* 解除失败时仍提交，具体错误由生成链路给出 */ }
-    if (pending.length) void generate(pending, experiment);
-  });
-  const dismissInterrupted = () => { if (interruptedSeries) clearInterruptedGenerationSeries(interruptedSeries.token); };
+  }, 'generation');
+  const pause = () => void perform(async () => {
+    if (!session) return;
+    if (readRollApiKey() !== session.key) throw new Error('NovelAI Key 已变化，请重新发起生成');
+    await setGenerationQueuePaused(session.key, true);
+  }, 'generation');
+  const cancelSession = () => { if (!session) return; const current = getGenerationSeriesSession(session.scope); if (current) stopGenerationSeriesSession(current); };
   const intervalSeconds = queueInterval?.seconds ?? DEFAULT_GENERATION_INTERVAL_SECONDS;
   const intervalJitter = queueInterval?.jitterPercent ?? DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT;
   // 打开「本轮设置」时读当前 Key 的队列偏好；读取失败保留默认值，不阻塞本轮设置。
@@ -724,6 +723,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const roundPending = experiment ? rollPendingCandidates(experiment, images) : [];
   // 流式预览跟随本轮第一张还没出图的候选；保存后自然移到下一张。
   const previewCandidateId = round && !round.closedAt ? round.candidateIds.find(id => !images.has(id)) : undefined;
+  // 没有进行中的轮次时，错误与生成按钮仍要落在某张待生成候选上；都没有则退回计数行提示。
+  const nextPendingId = previewCandidateId ?? experiment?.candidates.find(candidate => !candidate.archived && !images.has(candidate.id))?.id;
   const livePreview = (generationStreamPreview || session?.state === 'saving') && experiment && session && session.scope === rollSourceId(experiment.id) && session.preview?.image && previewCandidateId
     ? { id: previewCandidateId, image: session.preview.image }
     : null;
@@ -858,12 +859,16 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       : t('共 {0} 个候选', [visible.length])}{round && roundPending.length > 0
       ? ` · ${t('本轮已出图 {0}/{1}', [round.candidateIds.filter(id => images.has(id)).length, round.candidateIds.length])}`
       : ''}</ToolbarCountCaption>}
+    {experiment && generationError?.experimentId === experiment.id && !nextPendingId && <div role="status" className={`flex items-center gap-2 px-3 py-1 text-xs ${generationError.tone === 'warning' ? 'text-amber-700 dark:text-amber-300' : 'text-red-600 dark:text-red-300'}`}>
+      <AlertTriangle className="h-3.5 w-3.5 flex-none" />
+      <span className="min-w-0 flex-1 truncate" title={generationError.message}>{generationError.message}</span>
+    </div>}
     {/* 临时状态统一浮在顶栏下沿：出现和消失都不再推动候选区。 */}
     {(error || libraryError || (saveFailures?.experimentId === experimentId && saveFailures.ids.length > 0)) && <ChromeNoticeStack>
       {error && <ChromeNotice tone="error" closeLabel={t('关闭错误提示')} onClose={() => setError('')}>
         <span>{t(error)}</span>
         {saveFailures?.experimentId === experimentId && saveFailures.messages.length > 0 && <details open><summary>{t('失败详情')}</summary><ul className="max-h-32 overflow-y-auto">{saveFailures.messages.map((message, index) => <li key={index}>{message}</li>)}</ul></details>}
-        {errorSource !== 'generation' && <button type="button" className="mobile-touch ml-2 underline" onClick={() => { void reload(); if (experimentId) void refreshHistory(experimentId); }}>{t('重新加载')}</button>}
+        <button type="button" className="mobile-touch ml-2 underline" onClick={() => { void reload(); if (experimentId) void refreshHistory(experimentId); }}>{t('重新加载')}</button>
       </ChromeNotice>}
       {libraryError && <ChromeNotice tone="warning">
         <span>{t(libraryError)}</span>
@@ -878,24 +883,9 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       </ChromeNotice>}
     </ChromeNoticeStack>}
     </WorkspaceChrome>
-    {/* 出图进度悬浮在底部，不再占用顶栏高度。 */}
-    {working && <div role="status" className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 z-[60] flex w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 flex-wrap items-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50/95 px-3 py-2 text-xs text-indigo-700 shadow-xl backdrop-blur md:bottom-5 dark:border-indigo-800 dark:bg-indigo-950/95 dark:text-indigo-200">
-      <LoaderCircle className="h-4 w-4 flex-none animate-spin" />
-      <span className="min-w-0 flex-1">{t(session?.connectionError || (session?.awaiting ? '等待费用确认' : session?.state === 'paused' ? '任务已暂停' : session?.state === 'saving' ? '正在保存…' : '正在逐张出图…'))}{session ? ` ${session.progress.current}/${session.progress.total}` : ''}</span>
-      {session?.awaiting && <ToolbarButton data-agent-action="business" disabled={busy} onClick={approve}>{t('确认费用')}</ToolbarButton>}
-      {session?.state === 'paused' ? <ToolbarButton data-agent-action="business" disabled={busy} onClick={resume}>{t('继续')}</ToolbarButton> : session && continuousGenerationEnabled && <ToolbarButton disabled={busy} onClick={() => void perform(async () => { if (readRollApiKey() !== session.key) throw new Error('NovelAI Key 已变化，请重新发起生成'); await setGenerationQueuePaused(session.key, true); })}><Pause />{t('暂停')}</ToolbarButton>}
-      {session && <button type="button" disabled={session.stopped} className="mobile-touch px-2 underline" onClick={() => { const current = getGenerationSeriesSession(session.scope); if (current) stopGenerationSeriesSession(current); }}>{t(session.stopped ? '取消中…' : '取消')}</button>}
-    </div>}
-    {/* 刷新或重启后找回不了后端任务：小框保留，只对没出图的候选提供续跑，已出图不重复。 */}
-    {!working && interruptedSeries && <div role="status" className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 z-[60] flex w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50/95 px-3 py-2 text-xs text-amber-800 shadow-xl backdrop-blur md:bottom-5 dark:border-amber-800 dark:bg-amber-950/95 dark:text-amber-200">
-      <AlertTriangle className="h-4 w-4 flex-none" />
-      <span className="min-w-0 flex-1">{interruptedPending.length ? t('上次生成已中断，还剩 {0} 张未出图', [interruptedPending.length]) : t('上次生成已中断，候选都已出图')}</span>
-      {interruptedPending.length > 0 && <ToolbarButton data-agent-action="business" disabled={busy || !historyReady} onClick={continueInterrupted}>{t('继续生成剩余')}</ToolbarButton>}
-      <button type="button" disabled={busy} className="mobile-touch px-2 underline" onClick={dismissInterrupted}>{t('忽略')}</button>
-    </div>}
     {loading && !experiment ? <PageSpinner className="workspace-scroll-viewport overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
       : <div className="relative flex min-h-0 flex-1">
-        {ROLL_TRIAGE_FILTERS.includes(filter) && !filterReady ? (filter === 'favorited' && collectionFailed ? <div role="alert" className="flex flex-1 items-center justify-center gap-2 p-6 text-sm text-gray-500"><span>{t('收藏状态读取失败')}</span><ToolbarButton onClick={() => void loadFavorites()}>{t('重新加载')}</ToolbarButton></div> : historyReady || historyLoading ? <PageSpinner /> : <div role="status" className="flex flex-1 items-center justify-center p-6 text-sm text-gray-500">{t('历史暂不可用')}</div>) : <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} roundNumbers={roundNumbers} generatingId={generatingCandidateId} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => deleteCandidates([id])} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />}
+        {ROLL_TRIAGE_FILTERS.includes(filter) && !filterReady ? (filter === 'favorited' && collectionFailed ? <div role="alert" className="flex flex-1 items-center justify-center gap-2 p-6 text-sm text-gray-500"><span>{t('收藏状态读取失败')}</span><ToolbarButton onClick={() => void loadFavorites()}>{t('重新加载')}</ToolbarButton></div> : historyReady || historyLoading ? <PageSpinner /> : <div role="status" className="flex flex-1 items-center justify-center p-6 text-sm text-gray-500">{t('历史暂不可用')}</div>) : <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} roundNumbers={roundNumbers} positions={roundPositions} generationState={{ generatingId: generatingCandidateId, nextId: nextPendingId, running: working, paused: session?.state === 'paused', awaiting: Boolean(session?.awaiting), saving: session?.state === 'saving', error: generationError && generationError.experimentId === experiment.id ? generationError : null }} onGenerate={id => { const candidate = experiment.candidates.find(item => item.id === id); if (candidate) void generate([candidate], experiment); }} onPause={pause} onResume={resume} onCancel={cancelSession} onApprove={approve} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => deleteCandidates([id])} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />}
         {!isMobile && selected && <aside className="workspace-fixed-pane appearance-surface flex w-84 max-w-[40%] flex-none flex-col border-l border-gray-200/80 bg-white/95 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/95 xl:w-92 shadow-sm"><div className="appearance-surface flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="appearance-surface text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><div className="flex items-center gap-1">{detailActions}<IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div></div><div className="appearance-surface min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}
       </div>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')} actions={detailActions}>{detail}</MobileDetailView></ImagePreviewPortal>}
