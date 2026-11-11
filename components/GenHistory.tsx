@@ -1075,9 +1075,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         </div>
                     </> : <>
                         <HistoryBrowseControls query={browseQuery} options={browseOptions} mobile={isMobileViewport} onApply={applyBrowseQuery} />
-                        <ListJumpButton page={currentPage} totalPages={totalPages} disabled={isLoading} onJump={page => goToPage(page)} />
                         {onOpenFootprint && <ToolbarButton aria-label={t('创作足迹')} title={t('创作足迹')} onClick={onOpenFootprint} className="mobile-touch md:hidden !px-2.5"><Footprints /></ToolbarButton>}
                         <div className="history-toolbar-status">
+                            <ListJumpButton page={currentPage} totalPages={totalPages} disabled={isLoading} onJump={page => goToPage(page)} />
                             {newImageCount > 0 && <ToolbarButton aria-label={t("新增 {0} 张图片 · 查看最新", [newImageCount])} title={t("新增 {0} 张图片 · 查看最新", [newImageCount])} onClick={showNewImages} className="history-new-image-action !px-2.5"><span className="history-new-image-label">{t("新图")}</span><span className="tabular-nums">+{newImageCount}</span></ToolbarButton>}
                             <span className="history-result-count">{t("{0} 张", [totalCount])}</span>
                             <div ref={managementAnchorRef} className="relative">
