@@ -1,3 +1,6 @@
+## 2026-11-12
+- 修复安全模式下作品名没有被遮挡的问题：磨砂标题那组样式写在 `@layer utilities` 里，用 `color: inherit !important` 强制卡片标题区所有子元素继承颜色，而安全模式的 `color: transparent !important` 在层外——层内的 `!important` 优先，所以标题完整显示、下方的灰条在空转。现在磨砂规则排除 `data-safe-mode-title` 元素，并给遮挡补上 `-webkit-text-fill-color: transparent` 兜底；点击标题临时揭示、再次点击隐藏都正常。
+
 # 更新日志
 
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。

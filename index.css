@@ -155,7 +155,7 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
     -webkit-backdrop-filter: blur(10px);
     mask-image: linear-gradient(to bottom, transparent, black 42%);
   }
-  html[data-gallery-frosted-caption='true'] .gallery-card-caption :where(p, h2, h3, div, span, button) {
+  html[data-gallery-frosted-caption='true'] .gallery-card-caption :where(p, h2, h3, div, span, button):not([data-safe-mode-title='true']) {
     color: inherit !important;
   }
   html[data-gallery-frosted-caption='true'] .gallery-card-caption .gallery-card-meta {
@@ -1547,6 +1547,7 @@ html[data-motion='full'] .queue-status-spinner {
 /* 作品名称默认遮挡；可单独点击名称，或随所属作品图片一起临时显示。 */
 .safe-mode.safe-mode-hide-titles [data-safe-mode-title="true"]:not(input) {
   color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
   background-image: linear-gradient(90deg, rgb(156 163 175 / .34), rgb(156 163 175 / .18));
   background-position: left center;
   background-repeat: no-repeat;
@@ -1558,6 +1559,7 @@ html[data-motion='full'] .queue-status-spinner {
 .safe-mode.safe-mode-hide-titles [data-safe-mode-title="true"][data-safe-title-revealed="true"]:not(input),
 .safe-mode.safe-mode-hide-titles [data-safe-mode-work="true"][data-safe-work-revealed="true"] [data-safe-mode-title="true"]:not(input) {
   color: revert-layer !important;
+  -webkit-text-fill-color: revert-layer !important;
   background-image: none;
   user-select: auto;
 }
