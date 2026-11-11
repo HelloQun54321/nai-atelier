@@ -1,3 +1,6 @@
+## 2026-11-12
+- **DeepSeek Harness (deepseek-flash)**：按用户要求去掉图库卡片悬浮控件的透光磨砂。先实测定位：AITag 滚动 2.5s 仅 31 帧、均值 81ms、最长单帧 1191ms；全站 1264 个 `backdrop-filter` 元素中 1256 个是卡片上的悬浮按钮/角标（598 个 `hover-reveal-md`、299 个 `inline-flex`、239 个角标、120 个 `nai-float-btn`），598 个还是 `opacity:0` 却仍在占合成层。改用 PowerShell `AttachThreadInput`+`SetForegroundWindow` 把浏览器切到前台后拿到有效数据：只关按钮模糊 24.8ms→6.7ms、0 掉帧。落地：`IMAGE_CARD_ACTION_CLASS` 与 `DanbooruCover`、`ArtistSampleCover`、`ArtistPreferenceActions`、`ChainEditor`、`roll/StyleRollGallery`、`chain/FolderBatchImportModal` 共 7 个文件 15 行删除 `backdrop-blur`，全屏弹窗遮罩保留。构建后复测：`backdrop-filter` 层数 1264 → 8；同刻 A/B（注入 CSS 复刻原状态，1858 层 vs 8 层）15.8ms → 12.2ms、帧数 +33%。`ImagePreviewActions.test.ts` 的 8 个失败经 `git stash` 验证为改动前既有问题（`useConfirmDialog` Provider 缺失）。版本 1.177.1。
+
 # AI 工作日志
 
 记录每次由 AI 工具执行的项目修改：模型名、日期与所做工作，规则见 `AGENTS.md`。日期节按时间倒序排列，最新记录在最上方；同一天内新条目排上方。

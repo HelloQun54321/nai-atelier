@@ -12,7 +12,7 @@ export const ArtistPreferenceActions: React.FC<{
   children?: React.ReactNode;
 }> = ({ tag, blocked, preferred, disabled, onBlock, onFavorite, pack, onPackChange, children }) => {
   useLanguage();
-  const corner = 'mobile-touch flex h-11 w-11 items-center justify-center rounded-full border border-white/30 bg-black/45 text-white backdrop-blur transition-colors hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-40 md:h-8 md:w-8';
+  const corner = 'mobile-touch flex h-11 w-11 items-center justify-center rounded-full border border-white/30 bg-black/45 text-white transition-colors hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-40 md:h-8 md:w-8';
   const nextPack = pack === 'v45' ? 'v5' : 'v45';
   const switchLabel = t('样张版本 {0}，切换为 {1}', [pack === 'v45' ? 'V4.5' : 'V5 Full', nextPack === 'v45' ? 'V4.5' : 'V5 Full']);
   const stop = (event: React.SyntheticEvent) => event.stopPropagation();

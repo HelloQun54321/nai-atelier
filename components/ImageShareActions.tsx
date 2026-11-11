@@ -7,7 +7,7 @@ import { ImageCardActions } from './ImageCardActions';
 import { collectionRevision, collectionTargetActive, ensureCollection, loadCollection, subscribeCollection, toggleCollectionTarget, type CollectionTarget } from '../services/collectionFavorites';
 
 // 尺寸统一走 --nai-float-control（设置里可调），缺省 36px；mobile-size-locked 让全局 44px 触控下限不把它撑成竖条。
-export const IMAGE_CARD_ACTION_CLASS = 'nai-float-btn mobile-touch mobile-size-locked rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white dark:text-white/90';
+export const IMAGE_CARD_ACTION_CLASS = 'nai-float-btn mobile-touch mobile-size-locked rounded-full border border-white/60 bg-black/45 text-white shadow hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white dark:text-white/90';
 
 interface Props {
   imageUrl: string;

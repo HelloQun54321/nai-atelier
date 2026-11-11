@@ -2594,7 +2594,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                     />
                     {previewHistory.length > 1 && (
                         <button data-card-action="true" data-image-preview-navigation
-                            className="appearance-media hover-reveal-touch absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
+                            className="appearance-media hover-reveal-touch absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 showPreviousHistory();
@@ -2609,7 +2609,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                     )}
                     {previewHistory.length > 1 && (
                         <button data-card-action="true" data-image-preview-navigation
-                            className="appearance-media hover-reveal-touch absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
+                            className="appearance-media hover-reveal-touch absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 showNextHistory();

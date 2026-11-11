@@ -1134,7 +1134,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                         {item.params.width}×{item.params.height}
                       </span>
                       <button type="button" onClick={event => { event.stopPropagation(); removeItem(item.id); }}
-                        data-card-action="true" className="hover-reveal-md mobile-touch absolute left-1.5 bottom-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:bg-red-950/50"
+                        data-card-action="true" className="hover-reveal-md mobile-touch absolute left-1.5 bottom-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:bg-red-950/50"
                         title={t("从本次导入列表移除，不删除原文件")} aria-label={t("移除导入候选：{0}", [item.name])}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>

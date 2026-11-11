@@ -55,12 +55,12 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
       <div data-image-action-left className="absolute left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5">
         {/* 左上角：编号（参与搜索与详情标题）与删除按钮上下排列。 */}
-                <span className="pointer-events-none flex flex-col items-start rounded-md bg-black/35 px-1.5 py-1 font-mono text-micro leading-tight text-white/90 backdrop-blur-sm">
+                <span className="pointer-events-none flex flex-col items-start rounded-md bg-black/35 px-1.5 py-1 font-mono text-micro leading-tight text-white/90">
           <span>#{index}</span>
           {roundNo ? <span className="text-mini opacity-60">R{roundNo}</span> : null}
         </span>
         {!selecting && <div data-card-action="true" className="hover-reveal-md">
-          <button type="button" aria-label={t('删除候选 {0}', [index])} title={t('删除')} disabled={busy} onClick={event => { event.stopPropagation(); onArchive(candidate.id); }} className="nai-float-btn mobile-size-locked flex items-center justify-center rounded-full bg-black/50 text-white shadow-md backdrop-blur-md transition-all hover:scale-110 hover:bg-red-600 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+          <button type="button" aria-label={t('删除候选 {0}', [index])} title={t('删除')} disabled={busy} onClick={event => { event.stopPropagation(); onArchive(candidate.id); }} className="nai-float-btn mobile-size-locked flex items-center justify-center rounded-full bg-black/50 text-white shadow-md transition-all hover:scale-110 hover:bg-red-600 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>}
@@ -78,8 +78,8 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
         {selecting ? (
           <>
-            {favoriteIds?.has(candidate.id) && <span role="img" aria-label={t('已收藏')} title={t('已收藏')} className="pointer-events-none absolute right-10 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border border-rose-400 bg-rose-500 text-white shadow backdrop-blur"><Heart className="h-3.5 w-3.5 fill-current" /></span>}
-            <span aria-hidden="true" className={`absolute right-2 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border shadow backdrop-blur transition-all ${selected ? 'border-indigo-500 bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white scale-105' : 'border-white/80 bg-black/35 text-transparent hover:scale-105'}`}><Check className="h-4 w-4" /></span>
+            {favoriteIds?.has(candidate.id) && <span role="img" aria-label={t('已收藏')} title={t('已收藏')} className="pointer-events-none absolute right-10 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border border-rose-400 bg-rose-500 text-white shadow"><Heart className="h-3.5 w-3.5 fill-current" /></span>}
+            <span aria-hidden="true" className={`absolute right-2 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border shadow transition-all ${selected ? 'border-indigo-500 bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white scale-105' : 'border-white/80 bg-black/35 text-transparent hover:scale-105'}`}><Check className="h-4 w-4" /></span>
           </>
         ) : (
           <>
@@ -94,7 +94,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
                   title={t('存为风格串')}
                   disabled={busy}
                   onClick={event => { event.stopPropagation(); onSave(candidate.id); }}
-                  className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex items-center justify-center rounded-full bg-emerald-700 text-white shadow-lg backdrop-blur-md transition-all hover:bg-emerald-800 hover:scale-110 active:scale-95 disabled:opacity-40`}
+                  className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex items-center justify-center rounded-full bg-emerald-700 text-white shadow-lg transition-all hover:bg-emerald-800 hover:scale-110 active:scale-95 disabled:opacity-40`}
                 >
                   <Save className="h-4 w-4" />
                 </button>

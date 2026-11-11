@@ -137,7 +137,7 @@ export const ArtistSampleCover: React.FC<{
     {preview && <img src={preview} alt={t('样张生成预览')} className="pointer-events-none absolute inset-0 h-full w-full object-contain" />}
     {total > 1 && !preview && <div data-card-action="true" className={`gallery-cover-navigation hover-reveal-md absolute left-2 ${reserveStatusSpace ? 'right-14' : 'right-2'} bottom-2 z-20 flex items-center justify-between gap-1`} onClick={stopCardAction} onPointerDown={stopCardAction} onKeyDown={stopCardAction}>
       <button type="button" aria-label={t('上一张')} title={t('上一张')} disabled={currentIndex === 0 || deleting} onClick={() => move(-1)} className={`${IMAGE_CARD_ACTION_CLASS} flex items-center justify-center disabled:opacity-35`}><ChevronLeft className="h-4 w-4" /></button>
-      <span className="rounded-full bg-black/45 px-2 py-1 text-micro tabular-nums text-white backdrop-blur">{currentIndex + 1} / {total}</span>
+      <span className="rounded-full bg-black/45 px-2 py-1 text-micro tabular-nums text-white">{currentIndex + 1} / {total}</span>
       <button type="button" aria-label={t('下一张')} title={t('下一张')} disabled={currentIndex >= total - 1 || deleting} onClick={() => move(1)} className={`${IMAGE_CARD_ACTION_CLASS} flex items-center justify-center disabled:opacity-35`}><ChevronRight className="h-4 w-4" /></button>
     </div>}
   </div>;
