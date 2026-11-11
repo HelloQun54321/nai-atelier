@@ -14,6 +14,7 @@ import {
   getAitagPositivePromptText,
   getAitagSavedChainWorkIds,
   getAitagWorkPromptTexts,
+  getAitagModelBadgeLabel,
   getAitagWorkReferenceUsage,
   matchesAitagPromptQuery,
   mergeAitagWorks,
@@ -245,6 +246,14 @@ describe('AITag 本地筛选辅助', () => {
       expect(getAitagWorkReferenceUsage({ id: 7, firstImage: { ...image({}), ai_json } }).unknown).toBe(true);
     }
     expect(getAitagWorkReferenceUsage({ id: 7 }).unknown).toBe(true);
+  });
+
+  it('卡片徽章把模型名压成注册表短标签，映射不到时去掉长前缀', () => {
+    expect(getAitagModelBadgeLabel(image({ model: 'NovelAI Diffusion V5 657484A5' }))).toBe('V5 Full');
+    expect(getAitagModelBadgeLabel(image({ model: 'NovelAI Diffusion V4.5 1229B44F' }))).toBe('V4.5 Full');
+    expect(getAitagModelBadgeLabel(image({ model: 'NovelAI Diffusion V4.5 C02D4F98' }))).toBe('V4.5 Curated');
+    expect(getAitagModelBadgeLabel(image({ model: 'NovelAI Diffusion V7 9F1C2D3E' }))).toBe('V7');
+    expect(getAitagModelBadgeLabel({ ...image({}), model: undefined })).toBe('');
   });
 
   it('提示词检索：逗号分隔多条件，最长包含条件交给服务端，其余与排除条件本地判定', () => {

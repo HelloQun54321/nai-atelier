@@ -1,5 +1,6 @@
 import { api } from './api';
 import { promptHasArtistTags } from './styleRollSeed';
+import { getNaiModelDisplayLabel, resolveNaiMetadataModel } from './naiModels';
 import type { PromptChain } from '../types';
 
 const AITAG_IMAGE_BASE_URL = 'https://ai-img.10118899.xyz/';
@@ -325,8 +326,31 @@ export const getAitagModelLabel = (image: AitagImage) => {
   ));
 };
 
-export const getAitagGenerationLabels = (image: AitagImage) => {
+/**
+ * 卡片徽章用的短模型名：先按 NovelAI 的模型名 + 哈希映射成注册表标签（V4.5 Full / V5 Curated 这类），
+ * 映射不到再退回去掉「NovelAI Diffusion」前缀的原始名，避免把整串长名塞进卡片角落。
+ */
+export const getAitagModelBadgeLabel = (image: AitagImage) => {
   const parsed = parseAitagAiJson(image.ai_json);
+  const comment = getAitagCommentObject(parsed);
+  const parameters = parsed?.parameters;
+  const raw = pickString(
+    image.model,
+    parsed?.model,
+    parsed?.Model,
+    parameters?.model,
+    comment?.model,
+    comment?.Model
+  );
+  const modelId = raw ? resolveNaiMetadataModel({ model_name: raw }) : undefined;
+  if (modelId) return getNaiModelDisplayLabel(modelId);
+  const fallback = getAitagModelLabel(image);
+  // getAitagModelLabel 会拿 image_type 兜底（如 "nai"），那不是模型名，卡片上不该出现。
+  if (!fallback || fallback.toLowerCase() === String(image.image_type || '').toLowerCase()) return '';
+  return fallback.replace(/^NovelAI Diffusion\s+/i, '').trim();
+};
+
+export const getAitagGenerationLabels = (image: AitagImage) => {  const parsed = parseAitagAiJson(image.ai_json);
   const comment = getAitagCommentObject(parsed);
   const parameters = parsed?.parameters;
   const rawType = pickString(

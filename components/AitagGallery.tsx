@@ -20,6 +20,7 @@ import {
   extractAitagPrompt,
   getAitagGenerationLabels,
   getAitagMetadataText,
+  getAitagModelBadgeLabel,
   getAitagModelLabel,
   getAitagSavedChainWorkIds,
   getAitagType,
@@ -42,7 +43,7 @@ import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './Mo
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { Check, ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle, ScanSearch, Sparkles, X } from 'lucide-react';
+import { Check, ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle, X } from 'lucide-react';
 import { IconButton, InlineSpinner, PageSpinner, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -162,6 +163,14 @@ const getWorkModelLabel = (work: AitagWorkSummary) => {
   if (!image) return '';
   if (!aitagModelLabels.has(image)) aitagModelLabels.set(image, getAitagModelLabel(image));
   return aitagModelLabels.get(image)!;
+};
+/** 卡片角落只放短名（V4.5 Full / V5 Curated），筛选项仍用完整标签。 */
+const aitagModelBadgeLabels = new WeakMap<AitagImage, string>();
+const getWorkModelBadgeLabel = (work: AitagWorkSummary) => {
+  const image = work.firstImage || work.first_image;
+  if (!image) return '';
+  if (!aitagModelBadgeLabels.has(image)) aitagModelBadgeLabels.set(image, getAitagModelBadgeLabel(image));
+  return aitagModelBadgeLabels.get(image)!;
 };
 
 const isAitagFavorite = (work: AitagWorkSummary) => {
@@ -537,7 +546,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     const cacheLevel = getAitagCardCacheLevel(work, detail);
     const cacheMarker = cacheLevel === 'full' ? 'bg-emerald-500' : 'bg-sky-500';
     const firstImage = work.firstImage || work.first_image || detail?.images[0];
-    const modelLabel = getWorkModelLabel(work);
+    const modelLabel = getWorkModelBadgeLabel(work);
     const referenceUsage = getAitagWorkReferenceUsage(work);
     const measuredRatio = aitagRatios[work.id] || aitagRatioCache[work.id] || getAitagImageRatio(firstImage);
     const ratioStyle = measuredRatio ? `${Math.round(measuredRatio * 1000)} / 1000` : '1';
@@ -595,14 +604,12 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           {/* 参考类型贴作品名放在信息栏第一行，模型徽章在最后一行右端，均与风格串页面对齐。 */}
           {(referenceUsage.precise || referenceUsage.vibe) && <div className="flex w-fit max-w-full items-center gap-1">
             {referenceUsage.precise && (
-              <span className="gallery-card-badge flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-1.5 py-px text-micro font-medium text-cyan-700 dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-300" title={t("精准参考")}>
-                <ScanSearch aria-hidden="true" className="h-3 w-3 shrink-0" />
+              <span className="gallery-card-badge rounded-full border border-cyan-200 bg-cyan-50 px-1.5 py-px text-micro font-medium text-cyan-700 dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-300" title={t("精准参考")}>
                 {t("精准参考")}
               </span>
             )}
             {referenceUsage.vibe && (
-              <span className="gallery-card-badge flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-px text-micro font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title={t("氛围参考")}>
-                <Sparkles aria-hidden="true" className="h-3 w-3 shrink-0" />
+              <span className="gallery-card-badge rounded-full border border-violet-200 bg-violet-50 px-1.5 py-px text-micro font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title={t("氛围参考")}>
                 {t("氛围参考")}
               </span>
             )}
@@ -612,7 +619,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             <h3 data-safe-mode-title="true" className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
               {work.title || `#${work.id}`}
             </h3>
-            <GalleryModelBadge model={modelLabel} className="ml-1" />
+            {modelLabel && <GalleryModelBadge model={modelLabel} className="ml-1" />}
           </div>
         </div>
       </PressRevealSurface>
