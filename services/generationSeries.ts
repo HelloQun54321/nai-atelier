@@ -9,10 +9,14 @@ import type { GenerationPlacement } from './generationTask';
 import { localHistory } from './localHistory';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 import { emitCloudQueueStatus, getCurrentCloudQueueStatus, isCloudQueueTaskActive } from './cloudQueue';
+import { setGenerationQueuePaused } from './generationTask';
 import { recordUsageEvent } from './usageEvents';
 import { createUuid } from './id';
 
 export interface GenerationSeriesProgress { current: number; total: number; stopping: boolean; position?: number }
+
+/** 可恢复会话的来源标记：Roll 串用它定位中断后剩余的候选。 */
+export interface GenerationSeriesMeta { experimentId?: string; roundId?: string }
 
 /** 已确认的有限后台任务的本地归属：只用于界面通知与归属，执行与保存由后端完成。 */
 export interface GenerationSeriesSession {
@@ -40,6 +44,26 @@ export interface GenerationSeriesSession {
     cloudQueueTaskId?: string;
     /** 观察链路暂时不可用时的就地说明；恢复后清除，不代表任务失败。 */
     connectionError?: string;
+    /** 刷新/重开页面后仍要保留的小框：关闭页面只暂停，恢复后继续或取消。 */
+    resumable?: boolean;
+    /** 可恢复会话的页面归属，供 Roll 串找回中断的轮次。 */
+    meta?: GenerationSeriesMeta;
+}
+
+/** 后端任务已随服务重启结束、但本地还留着记录的中断会话。 */
+export interface InterruptedGenerationSeries { token: string; scope: string; count: number; meta?: GenerationSeriesMeta }
+
+interface PersistedSeries {
+    scope: string;
+    token: string;
+    count: number;
+    steps: number;
+    model?: string;
+    operation?: string;
+    agent: boolean;
+    meta?: GenerationSeriesMeta;
+    state: 'running' | 'interrupted';
+    startedAt: number;
 }
 
 interface SupervisedSeries { session: GenerationSeriesSession; wake: (() => void) | null }
@@ -50,10 +74,55 @@ const groups = new Map<string, SupervisedSeries[]>();
 const listeners = new Set<() => void>();
 const publish = () => { for (const listener of listeners) listener(); };
 
-const cancelAllWithKeepalive = () => {
+// 可恢复会话落本地：刷新/重开页面用它找回同一个后端任务；后端进程重启后则变成「中断」记录。
+const RESUME_STORAGE_KEY = 'nai_generation_series_pending';
+const RESUME_LIMIT = 24;
+const storage = (): Storage | null => { try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; } };
+const readPersisted = (): PersistedSeries[] => {
+    try {
+        const parsed = JSON.parse(storage()?.getItem(RESUME_STORAGE_KEY) || '[]');
+        if (!Array.isArray(parsed)) return [];
+        return parsed.filter((item): item is PersistedSeries => Boolean(item && typeof item === 'object'
+            && typeof (item as PersistedSeries).scope === 'string' && typeof (item as PersistedSeries).token === 'string'
+            && (item as PersistedSeries).token.length > 0 && ((item as PersistedSeries).state === 'running' || (item as PersistedSeries).state === 'interrupted')));
+    } catch { return []; }
+};
+const writePersisted = (records: PersistedSeries[]) => {
+    // 配额满或隐私模式写不进去时不能影响生成，只是失去下次恢复的能力。
+    try { storage()?.setItem(RESUME_STORAGE_KEY, JSON.stringify(records.slice(-RESUME_LIMIT))); } catch { /* 忽略写入失败 */ }
+};
+const removePersisted = (token: string) => {
+    const records = readPersisted(), next = records.filter(item => item.token !== token);
+    if (next.length !== records.length) writePersisted(next);
+};
+const rememberPersisted = (session: GenerationSeriesSession) => {
+    if (!session.resumable) return;
+    writePersisted([...readPersisted().filter(item => item.token !== session.token), {
+        scope: session.scope, token: session.token, count: session.count, steps: session.steps,
+        ...(session.model ? { model: session.model } : {}), ...(session.operation ? { operation: session.operation } : {}),
+        agent: session.agent, ...(session.meta ? { meta: session.meta } : {}), state: 'running', startedAt: Date.now(),
+    }]);
+};
+const markPersistedInterrupted = (token: string) => {
+    const records = readPersisted(), next = records.map(item => item.token === token ? { ...item, state: 'interrupted' as const } : item);
+    if (records.some(item => item.token === token)) { writePersisted(next); publish(); }
+};
+/** 后端任务已不存在、但本地仍留着记录的中断会话；页面据此提供「继续生成剩余」。 */
+export const listInterruptedGenerationSeries = (): InterruptedGenerationSeries[] => readPersisted()
+    .filter(item => item.state === 'interrupted')
+    .map(({ token, scope, count, meta }) => ({ token, scope, count, ...(meta ? { meta } : {}) }));
+export const clearInterruptedGenerationSeries = (token: string) => { removePersisted(token); publish(); };
+
+const handlePageHide = () => {
     for (const list of groups.values()) for (const { session } of list) {
         if (isGenerationJobTerminal(session.state)) continue;
-        // 关闭/刷新时 keepalive 让取消请求在卸载后仍能送达；不做页面冻结即取消。
+        if (session.resumable) {
+            // Roll 串这类可恢复会话：保留任务并把队列暂停，关页后不再继续扣费；重开页面恢复小框后由用户继续。
+            rememberPersisted(session);
+            void setGenerationQueuePaused(session.key, true, { keepalive: true }).catch(() => { /* 暂停未送达时后端仍会续跑完本轮，图片照样保存。 */ });
+            continue;
+        }
+        // 其它一次性后台生成沿用原行为：关闭/刷新时 keepalive 取消，不做页面冻结即取消。
         void cancelGenerationJob(session.key, session.token, { keepalive: true }).catch(() => { /* 卸载后无 UI 可提示，后端任务自行收敛到终态。 */ });
     }
 };
@@ -67,14 +136,14 @@ let watchersInstalled = false;
 const installWatchers = () => {
     if (watchersInstalled || typeof window === 'undefined') return;
     watchersInstalled = true;
-    window.addEventListener('nai-api-key-changed', checkKeys);
+    window.addEventListener('nai-api-key-changed', () => { checkKeys(); void restoreGenerationSeriesSessions(); });
     window.addEventListener('storage', checkKeys);
     // 回到前台立即查询一次，不等被节流的长定时器；隐藏不等于取消。
     window.addEventListener('visibilitychange', () => {
         if (document.visibilityState !== 'visible') return;
         for (const list of groups.values()) for (const entry of list) entry.wake?.();
     });
-    window.addEventListener('pagehide', cancelAllWithKeepalive);
+    window.addEventListener('pagehide', handlePageHide);
 };
 
 export const getGenerationSeriesSession = (scope: string) => (groups.get(scope) || []).find(entry => !entry.session.queued)?.session || null;
@@ -192,27 +261,31 @@ const settleSeries = (entry: SupervisedSeries, result: PromptAgentGenerationResu
             cancelable: false, error: result.success ? undefined : result.error }, entry.session.key);
     }
     finishGenerationSeries(entry.session);
+    removePersisted(entry.session.token);
     return result;
 };
 
 /**
  * 只读观察直到终态：等待费用确认时放慢节奏，页面冻结也不会替用户确认。
  * 临时观察失败不结束归属（返回前台立即补查），只有后端明确回答任务不存在才终结。
+ * 恢复模式从既有快照继续观察，绝不重新 POST 生图。
  */
-const supervise = async (entry: SupervisedSeries, descriptor: GenerationJobDescriptor): Promise<PromptAgentGenerationResult> => {
+const supervise = async (entry: SupervisedSeries, descriptor: GenerationJobDescriptor | undefined, restored?: GenerationJobSnapshot): Promise<PromptAgentGenerationResult> => {
     const { session } = entry;
-    let snapshot: GenerationJobSnapshot | null = null;
-    try {
-        snapshot = await startGenerationJob(session.key, session.token, descriptor, session.count, session.placement);
-    } catch (error) {
-        // 后端明确拒绝（忙碌／参数／鉴权）说明任务没有建立，直接按该回执收尾。
-        if (isDefinitiveSubmitFailure(error)) return settleSeries(entry, failureReceipt(session, error));
-        // POST 超时或响应丢失时任务可能已经建立：用同一 token 核实，绝不另发新任务。
-        try { snapshot = await getGenerationJob(session.key, session.token); }
-        catch (confirmError) {
-            if (isJobGone(confirmError)) return settleSeries(entry, failureReceipt(session, error));
-            session.connectionError = `暂时无法确认后台任务状态：${describeError(confirmError, '连接失败')}`;
-            publish();
+    let snapshot: GenerationJobSnapshot | null = restored || null;
+    if (!snapshot) {
+        try {
+            snapshot = await startGenerationJob(session.key, session.token, descriptor!, session.count, session.placement);
+        } catch (error) {
+            // 后端明确拒绝（忙碌／参数／鉴权）说明任务没有建立，直接按该回执收尾。
+            if (isDefinitiveSubmitFailure(error)) return settleSeries(entry, failureReceipt(session, error));
+            // POST 超时或响应丢失时任务可能已经建立：用同一 token 核实，绝不另发新任务。
+            try { snapshot = await getGenerationJob(session.key, session.token); }
+            catch (confirmError) {
+                if (isJobGone(confirmError)) return settleSeries(entry, failureReceipt(session, error));
+                session.connectionError = `暂时无法确认后台任务状态：${describeError(confirmError, '连接失败')}`;
+                publish();
+            }
         }
     }
     for (;;) {
@@ -274,6 +347,9 @@ export const beginGenerationSeries = (options: {
     agent: boolean;
     placement?: GenerationPlacement;
     descriptor: GenerationJobDescriptor;
+    /** 刷新/重开页面后仍保留小框（Roll 串）；关闭页面只会暂停，不会取消。 */
+    resumable?: boolean;
+    meta?: GenerationSeriesMeta;
 }): { session: GenerationSeriesSession; settle: Promise<PromptAgentGenerationResult> } => {
     validateGenerationCount(options.count);
     const key = options.key.trim();
@@ -284,11 +360,14 @@ export const beginGenerationSeries = (options: {
         model: options.descriptor.history.params.model, operation: options.descriptor.history.edit?.operation || 'text-to-image',
         agent: options.agent,
         ...(options.placement ? { placement: options.placement } : {}),
+        ...(options.resumable ? { resumable: true } : {}),
+        ...(options.meta ? { meta: options.meta } : {}),
         progress: { current: 0, total: options.count, stopping: false }, stopped: false,
         queued: Boolean(options.placement), state: options.placement ? 'waiting' : 'preparing', historyIds: [],
     };
     const entry: SupervisedSeries = { session, wake: null };
     groups.set(options.scope, [...(groups.get(options.scope) || []), entry]);
+    rememberPersisted(session);
     installWatchers();
     publish();
     return { session, settle: supervise(entry, options.descriptor) };
@@ -299,6 +378,8 @@ export const stopGenerationSeriesSession = (session: GenerationSeriesSession) =>
     if (session.stopped) return;
     session.stopped = true;
     session.progress = { ...session.progress, stopping: true };
+    // 用户明确取消就不再是「可恢复」：记录先清掉，避免下次打开页面又出现小框。
+    removePersisted(session.token);
     publish();
     if (isGenerationJobTerminal(session.state)) return;
     void cancelGenerationJob(session.key, session.token).catch(error => {
@@ -309,6 +390,44 @@ export const stopGenerationSeriesSession = (session: GenerationSeriesSession) =>
         session.connectionError = `取消请求未送达：${describeError(error, '连接失败')}`;
         publish();
     });
+};
+
+/**
+ * 重新打开页面时接回可恢复会话：只 GET 既有任务，不重新提交、不重复计费。
+ * 任务仍在（服务未重启）→ 重建归属继续观察；后端回答 404 → 记为中断，由页面提供「继续生成剩余」。
+ */
+let restoreTask: Promise<void> | null = null;
+export const restoreGenerationSeriesSessions = (): Promise<void> => {
+    if (restoreTask) return restoreTask;
+    restoreTask = (async () => {
+        const records = readPersisted().filter(item => item.state === 'running');
+        if (!records.length) return;
+        const key = (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim();
+        if (!key) return;
+        for (const record of records) {
+            if ((groups.get(record.scope) || []).some(entry => entry.session.token === record.token)) continue;
+            let snapshot: GenerationJobSnapshot;
+            try { snapshot = await getGenerationJob(key, record.token); }
+            catch (error) {
+                // 404 是后端明确回答任务已不存在（服务重启或已过期），转成中断记录；其它错误保留，下次再试。
+                if (isJobGone(error)) markPersistedInterrupted(record.token);
+                continue;
+            }
+            const session: GenerationSeriesSession = {
+                scope: record.scope, key, token: record.token, count: record.count, steps: record.steps,
+                ...(record.model ? { model: record.model } : {}), ...(record.operation ? { operation: record.operation } : {}),
+                agent: record.agent, progress: { current: 0, total: record.count, stopping: false }, stopped: false, queued: false,
+                state: isGenerationJobState(snapshot.state) ? snapshot.state : 'waiting', historyIds: [],
+                resumable: true, ...(record.meta ? { meta: record.meta } : {}),
+            };
+            const entry: SupervisedSeries = { session, wake: null };
+            groups.set(record.scope, [...(groups.get(record.scope) || []), entry]);
+            applySnapshot(session, snapshot);
+            publish();
+            void supervise(entry, undefined, snapshot);
+        }
+    })().finally(() => { restoreTask = null; });
+    return restoreTask;
 };
 
 /** 费用上涨后由用户显式补充授权；未确认的后端任务保持停止。 */

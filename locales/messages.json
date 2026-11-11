@@ -40576,5 +40576,29 @@
     "Optional: each generation waits a randomly jittered interval so a fixed rhythm is not mistaken for scripted scraping; off keeps the fixed interval.",
     "任意モード：オンにすると毎回の待機時間が基準間隔からランダムに変動し、一定のリズムをスクリプト連投と判定されにくくします。オフでは固定間隔で待機します。",
     "선택 모드: 켜면 매번 기준 간격에서 무작위로 변동해 일정한 주기가 스크립트 연사로 판정되지 않게 합니다. 끄면 고정 간격으로 대기합니다."
+  ],
+  "上次生成已中断，还剩 {0} 张未出图": [
+    "上次生成已中斷，還剩 {0} 張未出圖",
+    "Last generation was interrupted; {0} image(s) still pending",
+    "前回の生成が中断されました。未生成は残り {0} 枚です",
+    "이전 생성이 중단되었습니다. 아직 {0}장 남았습니다"
+  ],
+  "上次生成已中断，候选都已出图": [
+    "上次生成已中斷，候選都已出圖",
+    "Last generation was interrupted; all candidates already have images",
+    "前回の生成は中断されましたが、候補はすべて生成済みです",
+    "이전 생성이 중단되었지만 모든 후보가 이미 생성되었습니다"
+  ],
+  "继续生成剩余": [
+    "繼續生成剩餘",
+    "Generate remaining",
+    "残りを生成",
+    "남은 이미지 생성"
+  ],
+  "忽略": [
+    "忽略",
+    "Dismiss",
+    "無視",
+    "무시"
   ]
 }

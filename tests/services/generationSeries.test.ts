@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { LocalGenItem } from '../../types';
 import {
     approveGenerationSeries, beginGenerationSeries, getGenerationSeriesSession, getQueuedGenerationSeries,
-    stopGenerationSeriesSession, subscribeGenerationSeries,
+    listInterruptedGenerationSeries, restoreGenerationSeriesSessions, stopGenerationSeriesSession, subscribeGenerationSeries,
 } from '../../services/generationSeries';
 import type { GenerationJobDescriptor, GenerationJobSnapshot } from '../../services/generationJob';
 import { createElement } from 'react';
@@ -16,6 +16,8 @@ const job = vi.hoisted(() => ({ start: vi.fn(), get: vi.fn(), cancel: vi.fn(), a
 vi.mock('../../services/generationJob', async importOriginal => Object.assign({}, await importOriginal(), {
     startGenerationJob: job.start, getGenerationJob: job.get, cancelGenerationJob: job.cancel, updateGenerationJobApproval: job.approve, observeGenerationJob: job.observe,
 }));
+const queue = vi.hoisted(() => ({ pause: vi.fn() }));
+vi.mock('../../services/generationTask', () => ({ setGenerationQueuePaused: queue.pause }));
 
 const MODEL = 'nai-diffusion-4-5-full';
 const params = { model: MODEL, width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler' };
@@ -35,7 +37,9 @@ const nextScope = () => `synthetic-series-${++scopeSeq}`;
 beforeEach(() => {
     vi.useFakeTimers();
     sessionStorage.clear();
+    localStorage.clear();
     emitCloudQueueStatus(null);
+    queue.pause.mockReset().mockResolvedValue({ intervalSeconds: 3, intervalJitterPercent: 0, busy: false, completed: 0, total: 0, paused: true, pausing: false, waiting: [] });
     job.start.mockReset().mockResolvedValue(snapshot({ state: 'preparing' }));
     job.get.mockReset().mockResolvedValue(snapshot({ state: 'succeeded', completedCount: 3, historyIds: ['h1', 'h2', 'h3'] }));
     job.cancel.mockReset().mockResolvedValue(undefined);
@@ -493,4 +497,54 @@ it('取消失败不静默当作已取消，保留取消中并就地说明', asyn
 it.each([0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])('拒绝无效张数 %s', count => {
     expect(() => beginGenerationSeries({ scope: nextScope(), key: 'synthetic-key', count, agent: false, descriptor: descriptor() })).toThrow('生成张数');
     expect(job.start).not.toHaveBeenCalled();
+});
+
+it('可恢复会话关闭页面只暂停队列并保留记录，不取消后端任务', async () => {
+    const scope = nextScope();
+    const { session } = beginGenerationSeries({ scope, key: 'synthetic-key', count: 2, agent: false, resumable: true, meta: { experimentId: 'synthetic-experiment', roundId: 'round-1' }, descriptor: descriptor() });
+    await vi.advanceTimersByTimeAsync(0);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(queue.pause).toHaveBeenCalledWith('synthetic-key', true, { keepalive: true });
+    expect(job.cancel).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem('nai_generation_series_pending')!)).toEqual([
+        expect.objectContaining({ scope, token: session.token, state: 'running', meta: { experimentId: 'synthetic-experiment', roundId: 'round-1' } }),
+    ]);
+});
+
+it('重开页面接回可恢复任务：只查询既有 token，不重复提交生图', async () => {
+    const scope = nextScope();
+    sessionStorage.setItem('nai_api_key', 'synthetic-key');
+    localStorage.setItem('nai_generation_series_pending', JSON.stringify([{
+        scope, token: 'restored-token', count: 2, steps: 28, agent: false, state: 'running', startedAt: 1, meta: { experimentId: 'synthetic-experiment' },
+    }]));
+    job.get.mockResolvedValueOnce(snapshot({ token: 'restored-token', state: 'paused', completedCount: 1, requestedCount: 2, historyIds: ['h1'] }));
+    await restoreGenerationSeriesSessions();
+    const restored = getGenerationSeriesSession(scope);
+    expect(restored).toMatchObject({ token: 'restored-token', state: 'paused', resumable: true, progress: { current: 1, total: 2 } });
+    expect(job.start).not.toHaveBeenCalled();
+    expect(job.get).toHaveBeenCalledWith('synthetic-key', 'restored-token');
+    expect(listInterruptedGenerationSeries()).toEqual([]);
+});
+
+it('后端任务已随服务重启结束：记录转成中断，供页面继续生成剩余', async () => {
+    const scope = nextScope();
+    sessionStorage.setItem('nai_api_key', 'synthetic-key');
+    localStorage.setItem('nai_generation_series_pending', JSON.stringify([{
+        scope, token: 'gone-token', count: 3, steps: 28, agent: false, state: 'running', startedAt: 1, meta: { experimentId: 'synthetic-experiment', roundId: 'round-1' },
+    }]));
+    job.get.mockRejectedValueOnce(Object.assign(new Error('生成任务不存在或已结束'), { status: 404, code: 'generation_job_not_found' }));
+    await restoreGenerationSeriesSessions();
+    expect(getGenerationSeriesSession(scope)).toBeNull();
+    expect(listInterruptedGenerationSeries()).toEqual([{ token: 'gone-token', scope, count: 3, meta: { experimentId: 'synthetic-experiment', roundId: 'round-1' } }]);
+});
+
+it('可恢复会话正常结束后删除本地记录，重开页面不再出现中断小框', async () => {
+    const scope = nextScope();
+    const { settle } = beginGenerationSeries({ scope, key: 'synthetic-key', count: 1, agent: false, resumable: true, descriptor: descriptor() });
+    await vi.advanceTimersByTimeAsync(0);
+    job.get.mockResolvedValue(snapshot({ state: 'succeeded', completedCount: 1, requestedCount: 1, historyIds: ['h1'] }));
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(settle).resolves.toMatchObject({ success: true, outcome: 'succeeded' });
+    expect(JSON.parse(localStorage.getItem('nai_generation_series_pending')!)).toEqual([]);
+    expect(listInterruptedGenerationSeries()).toEqual([]);
 });

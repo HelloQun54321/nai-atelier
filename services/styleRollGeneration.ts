@@ -5,7 +5,7 @@ import { formatRollStyle, rollCandidateModuleId, rollGenerationParams, rollPromp
 export const readRollApiKey = () => (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim();
 
 /** 一轮有限配方一次提交，逐张保存与费用补充授权由既有后台任务负责。 */
-export async function beginRollGeneration(experiment: RollExperiment, candidate: RollCandidate | RollCandidate[], key: string, approvedCost: number, stream: boolean) {
+export async function beginRollGeneration(experiment: RollExperiment, candidate: RollCandidate | RollCandidate[], key: string, approvedCost: number, stream: boolean, roundId?: string) {
   validateRollTemplate(experiment.template);
   if (!key || readRollApiKey() !== key) throw new Error('NovelAI Key 已变化，请重新发起生成');
   const candidates = Array.isArray(candidate) ? candidate : [candidate];
@@ -24,5 +24,7 @@ export async function beginRollGeneration(experiment: RollExperiment, candidate:
   }
   if (readRollApiKey() !== key) throw new Error('NovelAI Key 已变化，请重新发起生成');
   return beginGenerationSeries({ scope: rollSourceId(experiment.id), key, count: candidates.length, agent: false,
+    // 可恢复：刷新/重开页面后找回本轮任务，仍可暂停、继续或取消；服务重启后页面提供「继续生成剩余」。
+    resumable: true, meta: { experimentId: experiment.id, ...(roundId ? { roundId } : {}) },
     descriptor: descriptors.length === 1 ? descriptors[0] : { ...descriptors[0], sequence: descriptors } });
 }

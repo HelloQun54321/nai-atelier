@@ -11,7 +11,7 @@ import { executeAgentCommand, getAgentCommands } from '../../services/agentComma
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { setLanguage } from '../../services/i18n';
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, ensureCollection: vi.fn(), favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>() }));
+const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, ensureCollection: vi.fn(), favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>(), interrupted: [] as any[], clearInterrupted: vi.fn(), restore: vi.fn(async () => {}) }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: async () => ({ available: true, canManage: true, packs: [] }), ARTIST_SAMPLES_CHANGED: 'nai-artist-samples-changed', getArtistSampleLibrary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: async () => [] }));
 const sampleUrls = new Map<string, string>();
@@ -21,7 +21,7 @@ vi.mock('../../services/artistSampleDrafts', async original => ({ ...await origi
 vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollExperiments: mocks.load, saveRollExperiment: mocks.save, loadRollHistory: mocks.history, loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
 vi.mock('../../services/styleRollGeneration', () => ({ beginRollGeneration: mocks.generate, readRollApiKey: () => mocks.key }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { subscribe: () => () => {} } }));
-vi.mock('../../services/generationSeries', () => ({ getGenerationSeriesSession: () => mocks.session, subscribeGenerationSeries: () => () => {}, stopGenerationSeriesSession: mocks.stop, approveGenerationSeries: mocks.approve }));
+vi.mock('../../services/generationSeries', () => ({ getGenerationSeriesSession: () => mocks.session, subscribeGenerationSeries: () => () => {}, stopGenerationSeriesSession: mocks.stop, approveGenerationSeries: mocks.approve, restoreGenerationSeriesSessions: mocks.restore, listInterruptedGenerationSeries: () => mocks.interrupted, clearInterruptedGenerationSeries: mocks.clearInterrupted }));
 vi.mock('../../services/generationTask', () => ({ setGenerationQueuePaused: mocks.pause }));
 vi.mock('../../services/naiRuntime', async original => { const actual = await original<typeof import('../../services/naiRuntime')>(); return { ...actual, useNaiRuntime: () => actual.DEFAULT_NAI_RUNTIME }; });
 vi.mock('../../services/naiUsage', () => ({ useNovelaiUsage: () => ({ info: { tier: 3 }, refreshIfStale: vi.fn() }), isActiveOpusSubscription: () => true }));
@@ -39,6 +39,7 @@ const rows = (e: RollExperiment) => e.candidates.map(candidate => rollImageFixtu
 beforeEach(() => {
   sampleUrls.clear(); mocks.sampled.mockResolvedValue(new Set(['alpha']));
   preferredItems.length = 0; vi.clearAllMocks(); mocks.ensureCollection.mockReset().mockResolvedValue(undefined); mocks.favorites = new Set(); mocks.collectionRevision = 0; mocks.collectionListeners.clear(); mocks.cost = 0; mocks.mobile = false; mocks.setupHistory = false; mocks.session = null; mocks.setupRules = null; mocks.key = 'synthetic-key'; localStorage.clear(); sessionStorage.clear();
+  mocks.interrupted = []; mocks.clearInterrupted.mockReset(); mocks.restore.mockClear();
   experiment = rollFixture(); experiment.candidates = [candidateFixture('a', 'alpha'), candidateFixture('b', 'beta')];
   mocks.dictionary.mockResolvedValue(experiment.artists.map(artist => ({ name: artist.tag, chinese: '', postCount: 1 })));
   mocks.load.mockImplementation(async () => [structuredClone(experiment)]);
@@ -851,6 +852,28 @@ it('流式预览显示在本轮第一张未出图的封面，关闭预览设置�
   view.unmount();
   await setup({ generationStreamPreview: false });
   expect(screen.queryByAltText('生成预览')).toBeNull();
+});
+
+it('刷新后后端任务已结束：小框保留中断记录，继续只生成未出图候选', async () => {
+  experiment.rounds = [{ id: 'interrupted-round', candidateIds: ['a', 'b'], createdAt: 1 }];
+  mocks.history.mockResolvedValue([rollImageFixture(experiment, experiment.candidates[0])]);
+  mocks.interrupted = [{ token: 'interrupted-token', scope: 'style-roll:synthetic-experiment', count: 2, meta: { experimentId: 'synthetic-experiment', roundId: 'interrupted-round' } }];
+  await setup();
+  expect(await screen.findByText('上次生成已中断，还剩 1 张未出图')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '继续生成剩余' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
+  expect(mocks.clearInterrupted).toHaveBeenCalledWith('interrupted-token');
+  const [source, candidate] = mocks.generate.mock.calls[0];
+  expect(source.id).toBe('synthetic-experiment');
+  expect(candidate.id).toBe('b');
+});
+
+it('中断小框可以忽略并清除本地记录，不触发重新生成', async () => {
+  mocks.interrupted = [{ token: 'dismissed-token', scope: 'style-roll:synthetic-experiment', count: 2 }];
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: '忽略' }));
+  expect(mocks.clearInterrupted).toHaveBeenCalledWith('dismissed-token');
+  expect(mocks.generate).not.toHaveBeenCalled();
 });
 
 it('已有图片的候选详情不再提供生成入口，查看保存不重复提交图片', async () => {
