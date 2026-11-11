@@ -36,12 +36,13 @@ import { normalizeRollArtistKey } from '../services/styleRollSeed';
 import { IMPORT_SESSION_KEY, parseNovelAIMetadata, type BaseImageImport } from '../services/metadataService';
 import { NAIParams, PromptChain, User, type ImageEditOperation } from '../types';
 import { SmartImage } from './SmartImage';
+import { GalleryModelBadge } from './GalleryModelBadge';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './MobileUI';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { Check, ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle, X } from 'lucide-react';
+import { Check, ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle, ScanSearch, Sparkles, X } from 'lucide-react';
 import { IconButton, InlineSpinner, PageSpinner, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -536,6 +537,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     const cacheLevel = getAitagCardCacheLevel(work, detail);
     const cacheMarker = cacheLevel === 'full' ? 'bg-emerald-500' : 'bg-sky-500';
     const firstImage = work.firstImage || work.first_image || detail?.images[0];
+    const modelLabel = getWorkModelLabel(work);
+    const referenceUsage = getAitagWorkReferenceUsage(work);
     const measuredRatio = aitagRatios[work.id] || aitagRatioCache[work.id] || getAitagImageRatio(firstImage);
     const ratioStyle = measuredRatio ? `${Math.round(measuredRatio * 1000)} / 1000` : '1';
     return (
@@ -588,18 +591,28 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             {t('{0}页', [imageCount])}
           </div>}
         </div>
-        <div className="gallery-card-caption p-3 flex-1">
-          <div className="flex items-center gap-2">
+        <div className="gallery-card-caption flex flex-1 flex-col justify-center gap-0.5 px-3 py-2">
+          {/* 参考类型贴作品名放在信息栏第一行，模型徽章在最后一行右端，均与风格串页面对齐。 */}
+          {(referenceUsage.precise || referenceUsage.vibe) && <div className="flex w-fit max-w-full items-center gap-1">
+            {referenceUsage.precise && (
+              <span className="gallery-card-badge flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-1.5 py-px text-micro font-medium text-cyan-700 dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-300" title={t("精准参考")}>
+                <ScanSearch aria-hidden="true" className="h-3 w-3 shrink-0" />
+                {t("精准参考")}
+              </span>
+            )}
+            {referenceUsage.vibe && (
+              <span className="gallery-card-badge flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-px text-micro font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title={t("氛围参考")}>
+                <Sparkles aria-hidden="true" className="h-3 w-3 shrink-0" />
+                {t("氛围参考")}
+              </span>
+            )}
+          </div>}
+          <div className="flex min-w-0 items-center gap-2">
             {cacheLevel !== 'none' && <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${cacheMarker}`} />}
-            <div data-safe-mode-title="true" className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate min-w-0 flex-1">
+            <h3 data-safe-mode-title="true" className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
               {work.title || `#${work.id}`}
-            </div>
-          </div>
-          <div className="gallery-card-meta mt-1 flex min-w-0 items-center gap-2 text-meta text-gray-500 dark:text-gray-400 overflow-hidden">
-            <span className="truncate">#{work.id}</span>
-            <span className="whitespace-nowrap">{t("阅 {0}", [formatCount(work.total_view)])}</span>
-            <span className="whitespace-nowrap">{t("藏 {0}", [formatCount(work.total_bookmarks)])}</span>
-            {frostedCaption && <span className="ml-auto whitespace-nowrap">{t('{0}页', [imageCount])}</span>}
+            </h3>
+            <GalleryModelBadge model={modelLabel} className="ml-1" />
           </div>
         </div>
       </PressRevealSurface>

@@ -22,7 +22,8 @@ import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage'
 import { useNaiRuntime } from '../services/naiRuntime';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { approveGenerationSeries, clearInterruptedGenerationSeries, getGenerationSeriesSession, listInterruptedGenerationSeries, restoreGenerationSeriesSessions, stopGenerationSeriesSession, subscribeGenerationSeries, type GenerationSeriesSession, type InterruptedGenerationSeries } from '../services/generationSeries';
-import { setGenerationQueuePaused } from '../services/generationTask';
+import { getGenerationQueue, setGenerationInterval, setGenerationQueuePaused } from '../services/generationTask';
+import { DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT, DEFAULT_GENERATION_INTERVAL_SECONDS, validateGenerationInterval, validateGenerationIntervalJitter } from '../worker/generationTasks.mjs';
 import { localHistory } from '../services/localHistory';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { createUuid } from '../services/id';
@@ -123,6 +124,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   useEffect(() => { if (setup) setChainTarget(null); }, [setup]);
   const [session, setSession] = useState<GenerationSeriesSession | null>(null), [preparing, setPreparing] = useState(false);
   const [interrupted, setInterrupted] = useState<InterruptedGenerationSeries[]>([]);
+  // 生成间隔与随机浮动画按 Key 保存，和实验室生成条共用同一份队列偏好。
+  const [queueInterval, setQueueInterval] = useState<{ seconds: number; jitterPercent: number } | null>(null);
+  const [intervalPending, setIntervalPending] = useState(false);
+  const [intervalDraft, setIntervalDraft] = useState(DEFAULT_GENERATION_INTERVAL_SECONDS.toFixed(1));
   const [pinnedArtists, setPinnedArtists] = useState<string[]>([]);
   const [chainArtistSource, setChainArtistSource] = useState<RollChainArtistSource | undefined>();
   const [blocklist, setBlocklist] = useState<string[]>([]);
@@ -423,6 +428,44 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (pending.length) void generate(pending, experiment);
   });
   const dismissInterrupted = () => { if (interruptedSeries) clearInterruptedGenerationSeries(interruptedSeries.token); };
+  const intervalSeconds = queueInterval?.seconds ?? DEFAULT_GENERATION_INTERVAL_SECONDS;
+  const intervalJitter = queueInterval?.jitterPercent ?? DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT;
+  // 打开「本轮设置」时读当前 Key 的队列偏好；读取失败保留默认值，不阻塞本轮设置。
+  const loadQueueInterval = useCallback(async () => {
+    const key = readRollApiKey();
+    if (!key) { if (mounted.current) setQueueInterval(null); return; }
+    try {
+      const next = await getGenerationQueue(key);
+      if (!mounted.current) return;
+      const seconds = typeof next.intervalSeconds === 'number' ? next.intervalSeconds : DEFAULT_GENERATION_INTERVAL_SECONDS;
+      const jitterPercent = typeof next.intervalJitterPercent === 'number' ? next.intervalJitterPercent : DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT;
+      setQueueInterval({ seconds, jitterPercent });
+      setIntervalDraft(seconds.toFixed(1));
+    } catch { /* 保留上次已知值；生成仍按后端现有偏好执行。 */ }
+  }, []);
+  const changeInterval = async (seconds: number, jitterPercent?: number) => {
+    const key = readRollApiKey();
+    if (!key || intervalPending) { if (!key) notify(t('请先在“全局设置”中配置 NovelAI API Key'), 'error'); return; }
+    setIntervalPending(true);
+    try {
+      const next = await setGenerationInterval(key, seconds, jitterPercent);
+      if (!mounted.current) return;
+      const nextSeconds = typeof next.intervalSeconds === 'number' ? next.intervalSeconds : seconds;
+      const nextJitter = typeof next.intervalJitterPercent === 'number' ? next.intervalJitterPercent : (jitterPercent ?? intervalJitter);
+      setQueueInterval({ seconds: nextSeconds, jitterPercent: nextJitter });
+      setIntervalDraft(nextSeconds.toFixed(1));
+    } catch (cause) { if (mounted.current) notify((cause as Error).message, 'error'); }
+    finally { if (mounted.current) setIntervalPending(false); }
+  };
+  const commitInterval = () => {
+    const text = intervalDraft.trim();
+    if (!text) { setIntervalDraft(intervalSeconds.toFixed(1)); return; }
+    try {
+      const next = validateGenerationInterval(Number(text));
+      setIntervalDraft(next.toFixed(1));
+      if (next !== intervalSeconds) void changeInterval(next);
+    } catch { setIntervalDraft(intervalSeconds.toFixed(1)); }
+  };
   const persistCandidate = async (target: RollExperiment, id: string) => {
     const candidate = target.candidates.find(item => item.id === id); if (!candidate) return target;
     const image = images.get(id);
@@ -764,9 +807,30 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         {!working && roundPending.length > 0 && <ToolbarButton className="max-md:hidden" aria-label={t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])} title={t('本轮还有 {0} 张没出，点击后确认费用', [roundPending.length])} data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus /><span className="hidden xl:inline">{t(continuousGenerationEnabled ? '补齐剩余 {0} 张' : '生成本轮 1 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])}</span><span className="xl:hidden tabular-nums">{continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1}</span></ToolbarButton>}
         <div className="flex shrink-0 items-center">
           <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} title={remaining <= 0 ? t('本记录候选已满，请删除部分候选后再 Roll') : t('本轮将生成 {0} 张，点击后确认费用', [count])} data-agent-action="business" tone="primary" disabled={!canStart} className="!rounded-r-none !border-r-0 font-bold shadow-sm transition-transform active:scale-95" onClick={() => runRound()}><Dice5 className="h-4 w-4" /><span className="sm:hidden">Roll</span><span className="hidden sm:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
-          <ToolbarPopover label={t('本轮设置')} title={t('本轮设置')} icon={<ChevronDown />} disabled={frozen || working} width={360} className="[&_button[aria-haspopup]]:rounded-l-none">
+          <ToolbarPopover label={t('本轮设置')} title={t('本轮设置')} icon={<ChevronDown />} disabled={frozen || working} width={360} className="[&_button[aria-haspopup]]:rounded-l-none" onOpenChange={open => { if (open) void loadQueueInterval(); }}>
             {close => <div className="space-y-3">
               <label className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300"><span>{t('本轮张数')}</span><input type="number" aria-label={t('本轮生成张数')} className={`${TOOLBAR_FIELD_CLASS} text-center tabular-nums`} min={1} max={24} value={count} onChange={event => setCount(Math.min(24, Math.max(1, Number(event.target.value) || 1)))} /></label>
+              {continuousGenerationEnabled && <>
+                <label className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300" title={t('每张图片保存后等待；0 秒不额外等待')}>
+                  <span>{t('生成间隔')}</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <input type="number" aria-label={t('生成间隔')} min={0} max={3600} step={0.1} inputMode="decimal" value={intervalDraft} disabled={intervalPending}
+                      onChange={event => setIntervalDraft(event.target.value)} onBlur={commitInterval}
+                      onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }}
+                      className={`${TOOLBAR_FIELD_CLASS} min-w-0 flex-1 text-center tabular-nums`} />
+                    <span className="shrink-0 text-xs font-normal text-gray-400">{t('秒')}</span>
+                  </span>
+                </label>
+                <label className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                  <span>{t('随机浮动')}</span>
+                  <select aria-label={t('间隔随机浮动幅度')} value={intervalJitter} disabled={intervalPending}
+                    onChange={event => { const next = validateGenerationIntervalJitter(Number(event.target.value)); if (next !== intervalJitter) void changeInterval(intervalSeconds, next); }}
+                    className={TOOLBAR_FIELD_CLASS}>
+                    <option value={0}>{t('关闭（固定间隔）')}</option>
+                    {[10, 20, 30, 50].map(percent => <option key={percent} value={percent}>{t('±{0}%', [percent])}</option>)}
+                  </select>
+                </label>
+              </>}
               <div className="border-t border-gray-200 pt-3 dark:border-gray-800"><StyleRollRuleFields rules={roundRules} onChange={setRoundRules} disabled={frozen} /></div>
               <div className="space-y-1 border-t border-gray-200 pt-2 dark:border-gray-800">
                 <ToolbarButton className="w-full !justify-between !px-2" onClick={() => openFromSettings(close, () => setChainTarget(experimentId))}><span className="flex items-center gap-2"><Layers />{t('从风格串提取')}</span><span className="ml-auto text-xs font-normal text-gray-500">{chainArtistSource ? t('已选 {0} 串', [chainArtistSource.chainIds.length]) : t('画师库')}</span><ChevronRight /></ToolbarButton>

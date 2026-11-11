@@ -3,8 +3,8 @@ import { Check, Image as ImageIcon } from 'lucide-react';
 import { getStyleBundleEntryPreview, type StyleBundlePreview as BundlePreview } from '../../services/styleBundle';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { t } from '../../services/i18n';
-import { getNaiModelDisplayLabel } from '../../services/naiModels';
 import { MediaCardShell } from '../DesignSystem';
+import { GalleryModelBadge } from '../GalleryModelBadge';
 import { ImageLightbox } from '../ImageLightbox';
 import { ShortestColumnMasonry, useMasonryColumnCount } from '../ShortestColumnMasonry';
 
@@ -44,7 +44,7 @@ function BundleEntryCard({ preview, id, selected, imported, disabled, failure, o
       </div>
       <div className="gallery-card-caption flex h-12 flex-col justify-center px-3">
         {imported && <span className="gallery-card-meta text-xs text-gray-500">{t('已导入')}</span>}
-        <div className="flex items-center justify-between"><h3 data-safe-mode-title="true" className="w-full truncate pr-1 text-sm font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={entry.name}>{entry.name}</h3><span className="gallery-card-badge ml-1 flex-shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-micro font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title={t('生成模型')}>{getNaiModelDisplayLabel(entry.params.model)}</span></div>
+        <div className="flex items-center justify-between"><h3 data-safe-mode-title="true" className="w-full truncate pr-1 text-sm font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={entry.name}>{entry.name}</h3><GalleryModelBadge model={entry.params.model} className="ml-1" /></div>
       </div>
     </MediaCardShell>
     <details open={expanded} onToggle={event => { setExpandedPreview(event.currentTarget.open ? preview : undefined); if (!event.currentTarget.open) setDescriptionPreview(undefined); }} className="text-xs text-gray-600 dark:text-gray-300">
