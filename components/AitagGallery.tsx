@@ -43,7 +43,7 @@ import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './Mo
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { Check, ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle, X } from 'lucide-react';
+import { Check, ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle } from 'lucide-react';
 import { IconButton, InlineSpinner, PageSpinner, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -589,12 +589,13 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
               }
             }}
           />
+          {/* 保存状态用单个圆钮表达：已收录是翠绿实底 + 对勾，未收录沿用磨砂底 + 图层图标。
+              原先图层图标右下角再叠一枚「✓/×」小徽章，两层图形挤在 36px 的圆里，远看只像一团噪点。 */}
           <span role="img" aria-label={savedLabel} title={savedLabel} data-aitag-chain-status={isSaved ? 'saved' : 'unsaved'}
-            className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} ${isSaved ? '!text-emerald-400' : ''}`}>
-            <Layers aria-hidden="true" className="h-4 w-4" />
-            <span aria-hidden="true" className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-black/85">
-              {isSaved ? <Check className="h-3 w-3" strokeWidth={3} /> : <X className="h-3 w-3" strokeWidth={3} />}
-            </span>
+            className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} ${isSaved ? '!border-emerald-300/70 !bg-emerald-600 !text-white' : ''}`}>
+            {isSaved
+              ? <Check aria-hidden="true" className="h-4 w-4" strokeWidth={3} />
+              : <Layers aria-hidden="true" className="h-4 w-4" />}
           </span>
           {!frostedCaption && <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/70 text-white text-micro">
             {t('{0}页', [imageCount])}

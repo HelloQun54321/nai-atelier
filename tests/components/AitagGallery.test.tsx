@@ -156,10 +156,11 @@ it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(gl
   const firstImage = card(1).querySelector('img');
   const saved = within(card(1)).getByRole('img', { name: '已收录到风格串' });
   const unsaved = within(card(2)).getByRole('img', { name: '未收录到风格串' });
-  expect(saved.className).toContain('text-emerald-400');
-  expect(saved.querySelector('.lucide-layers')).toBeTruthy();
+  expect(saved.className).toContain('!bg-emerald-600');
   expect(saved.querySelector('.lucide-check')).toBeTruthy();
-  expect(unsaved.querySelector('.lucide-x')).toBeTruthy();
+  expect(saved.querySelector('.lucide-layers')).toBeNull();
+  expect(unsaved.className).not.toContain('!bg-emerald-600');
+  expect(unsaved.querySelector('.lucide-layers')).toBeTruthy();
   expect(saved.className).toContain('rounded-full');
   expect(saved.className).not.toContain('hover-reveal');
   expect(saved.parentElement).toBe(card(1).querySelector('.mobile-gallery-frame'));
