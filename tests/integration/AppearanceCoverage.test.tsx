@@ -886,14 +886,13 @@ describe('全局外观覆盖审计', () => {
     expect(declarations(`${enabled} .gallery-card-visual > .gallery-card-caption`, undefined, css)['grid-area']).toBe('1 / 1');
     // 遮罩挂在卡片层，底边严格等于卡片底边；文字栏压在遮罩之上。
     const frost = declarations(`${enabled} .gallery-card-visual::before`, undefined, css);
-    expect(frost.inset).toBe('0');
+    // 底边再向下 1px：遮罩边缘落在卡片裁剪之外，卡片内最后一行才是完整覆盖。
+    expect(frost.inset).toBe('0 0 -1px');
     expect(frost['z-index']).toBe('2');
     expect(frost['pointer-events']).toBe('none');
     expect(frost['background-image']).toContain('linear-gradient');
     expect(frost['border-radius']).toBe('inherit');
     expect(declarations(`${enabled} .gallery-card-caption`, undefined, css)['z-index']).toBe('3');
-    // 图片底边与帧底边之间留 1px，图片边缘的抗锯齿才不会压在遮罩最后一行上。
-    expect(declarations(`${enabled} .gallery-card-visual > .mobile-gallery-frame`, undefined, css)['padding-bottom']).toBe('1px');
     expect(declarations(`${enabled} .gallery-card-caption`, undefined, css)['text-shadow']).toBe('none');
     // 纵轴布局不能继承卡片自带的 items-*，否则内部行收成内容宽度后水平居中（Roll 候选卡的画师标签）。
     expect(declarations(`${enabled} .gallery-card-caption`, undefined, css)['align-items']).toBe('stretch');
