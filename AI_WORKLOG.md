@@ -1,5 +1,5 @@
 ## 2026-11-12
-- **DeepSeek Harness (deepseek-flash)**：按用户反馈收紧 `.gallery-card-caption::before` 标题遮罩。原来 `inset: -1.75rem 0 0` 向上扩 28px、`border-radius: 0`、并带一条恒为 `none` 的 `backdrop-filter`。改为 `inset: -0.375rem 0 0`（向上 6px）、`border-radius: 0 0 var(--workspace-card-radius) var(--workspace-card-radius)`、删掉 `backdrop-filter` 与 `-webkit-backdrop-filter`（`mask-image` 存在时 Chromium 不执行背景模糊，保留只是空占一个合成层），渐变透明度同步从 `.48/.76` 调到 `.42/.74`、mask 断点 42%→45%。实测 `inset -6px`、`radius 0 0 14px 14px`、`blur none`，截图确认遮罩贴合卡片圆角且面积减半。版本 1.177.3。
+- **DeepSeek Harness (deepseek-flash)**：按用户反馈继续调 `.gallery-card-caption`。一是柔化渐变：`::before` 从两段式 `transparent → .42@45% → .74` 改为 5 段色标（0 / .13@26% / .36@54% / .60@80% / .76@100%），并删除 `mask-image`（渐变自身已足够柔和，mask 又与渐变重复叠加导致顶部过渡区间被双重压暗、边界反而更明显），向上扩展 12px 作为过渡区。二是标题居中：给 caption 加 `display:flex; flex-direction:column; justify-content:center`，`min-height` 3rem→3.5rem，padding 从 `.875/.75` 非对称改为 `.625/.75` 对称。验证：AITag 截图遮罩贴合圆角且过渡平滑；风格串页 60 个可见 caption 均为 56px、标题 offsetTop 18px、中心 28px 恰为高度一半，无溢出。版本 1.177.4。
 
 # AI 工作日志
 

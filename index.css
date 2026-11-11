@@ -135,9 +135,13 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
     align-self: end;
     isolation: isolate;
     z-index: 2;
+    /* 名称与元信息整组垂直居中在遮罩里，而不是贴着顶部堆。 */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     height: auto;
-    min-height: 3rem;
-    padding: .875rem .75rem .75rem;
+    min-height: 3.5rem;
+    padding: .625rem .75rem;
     border: 0;
     /* 叠图状态优先于主题的白底映射，避免透明渐变下露出整块浅色底板。 */
     background: transparent !important;
@@ -147,16 +151,19 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
   html[data-gallery-frosted-caption='true'] .gallery-card-caption::before {
     content: '';
     position: absolute;
-    /* 只盖住标题上沿一点：内侧留白 14px 已足够，这里再向上 6px。 */
-    inset: -0.375rem 0 0;
+    /* 只盖住标题上沿一点；向上这一段同时是渐变的过渡区。 */
+    inset: -0.75rem 0 0;
     z-index: -1;
     pointer-events: none;
-    background: linear-gradient(to bottom, transparent, rgb(12 16 24 / .42) 45%, rgb(12 16 24 / .74));
+    /* 多段色标把透明到深色的变化摊开，避免两段式渐变出现一道硬边。 */
+    background: linear-gradient(to bottom,
+      rgb(12 16 24 / 0) 0%,
+      rgb(12 16 24 / .13) 26%,
+      rgb(12 16 24 / .36) 54%,
+      rgb(12 16 24 / .60) 80%,
+      rgb(12 16 24 / .76) 100%);
     /* 跟随卡片圆角，避免直角压在圆角图片上留下硬边。 */
     border-radius: 0 0 var(--workspace-card-radius, 1rem) var(--workspace-card-radius, 1rem);
-    /* mask-image 与 backdrop-filter 同时存在时 Chromium 不执行背景模糊，这里只保留渐变，
-       既去掉一个无效的合成层，也让顶部过渡保持柔和。 */
-    mask-image: linear-gradient(to bottom, transparent, black 45%);
   }
   html[data-gallery-frosted-caption='true'] .gallery-card-caption :where(p, h2, h3, div, span, button):not([data-safe-mode-title='true']) {
     color: inherit !important;
