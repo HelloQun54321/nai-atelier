@@ -1,5 +1,5 @@
 ## 2026-11-12
-- 修复安全模式下作品名没有被遮挡的问题：磨砂标题那组样式写在 `@layer utilities` 里，用 `color: inherit !important` 强制卡片标题区所有子元素继承颜色，而安全模式的 `color: transparent !important` 在层外——层内的 `!important` 优先，所以标题完整显示、下方的灰条在空转。现在磨砂规则排除 `data-safe-mode-title` 元素，并给遮挡补上 `-webkit-text-fill-color: transparent` 兜底；点击标题临时揭示、再次点击隐藏都正常。
+- 收紧卡片底部的标题遮罩：向上扩展从 28px 缩到 6px，只盖住标题上沿一点点；底部补上跟随卡片的圆角，不再在卡片圆角处露出直角硬边。顺便删掉一直没生效的 `backdrop-filter`（与 `mask-image` 同时存在时 Chromium 不执行背景模糊），只留渐变——视觉更干净，也少一个无效合成层。改动作用于全部图库页。
 
 # 更新日志
 

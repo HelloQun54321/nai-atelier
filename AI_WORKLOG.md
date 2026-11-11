@@ -1,5 +1,5 @@
 ## 2026-11-12
-- **DeepSeek Harness (deepseek-flash)**：修安全模式作品名未遮挡。现象：AITag 卡片在安全模式下图片已模糊，但标题「天童爱丽丝」完整可读、遮罩灰条空转。诊断：标题元素带 `data-safe-mode-title`，遮挡规则 `index.css:1548` 给了 `color: transparent !important`，实测 computed 仍是白色；注入同选择器与更高特异性都无效，改成 `@layer utilities { ... }` 注入后立即变 `rgba(0,0,0,0)`——根因是 `index.css:123` 的 `@layer utilities` 内 `html[data-gallery-frosted-caption='true'] .gallery-card-caption :where(...) { color: inherit !important }` 按层内 `!important` 优于层外的规则压过了遮挡。修复：给该 `:where()` 加 `:not([data-safe-mode-title='true'])`，并给遮挡补 `-webkit-text-fill-color: transparent !important`（揭示态 `revert-layer`）作为双保险。验证：标题 computed color/fill 均为透明，点击后恢复 `rgb(237,246,255)` 且 `data-safe-title-revealed=true`，再点回到透明。版本 1.177.2。
+- **DeepSeek Harness (deepseek-flash)**：按用户反馈收紧 `.gallery-card-caption::before` 标题遮罩。原来 `inset: -1.75rem 0 0` 向上扩 28px、`border-radius: 0`、并带一条恒为 `none` 的 `backdrop-filter`。改为 `inset: -0.375rem 0 0`（向上 6px）、`border-radius: 0 0 var(--workspace-card-radius) var(--workspace-card-radius)`、删掉 `backdrop-filter` 与 `-webkit-backdrop-filter`（`mask-image` 存在时 Chromium 不执行背景模糊，保留只是空占一个合成层），渐变透明度同步从 `.48/.76` 调到 `.42/.74`、mask 断点 42%→45%。实测 `inset -6px`、`radius 0 0 14px 14px`、`blur none`，截图确认遮罩贴合卡片圆角且面积减半。版本 1.177.3。
 
 # AI 工作日志
 
