@@ -884,10 +884,16 @@ describe('全局外观覆盖审计', () => {
     const enabled = "html[data-gallery-frosted-caption='true']";
     expect(declarations(`${enabled} .gallery-card-visual`, undefined, css).display).toBe('grid');
     expect(declarations(`${enabled} .gallery-card-visual > .gallery-card-caption`, undefined, css)['grid-area']).toBe('1 / 1');
-    const frost = declarations(`${enabled} .gallery-card-caption::before`, undefined, css);
-    expect(frost['backdrop-filter']).toBe('blur(10px)');
-    expect(frost['mask-image']).toContain('transparent');
+    // 遮罩挂在卡片层，底边严格等于卡片底边；文字栏压在遮罩之上。
+    const frost = declarations(`${enabled} .gallery-card-visual::before`, undefined, css);
+    expect(frost.inset).toBe('0');
+    expect(frost['z-index']).toBe('2');
     expect(frost['pointer-events']).toBe('none');
+    expect(frost['background-image']).toContain('linear-gradient');
+    expect(frost['border-radius']).toBe('inherit');
+    expect(declarations(`${enabled} .gallery-card-caption`, undefined, css)['z-index']).toBe('3');
+    // 图片底边与帧底边之间留 1px，图片边缘的抗锯齿才不会压在遮罩最后一行上。
+    expect(declarations(`${enabled} .gallery-card-visual > .mobile-gallery-frame`, undefined, css)['padding-bottom']).toBe('1px');
     expect(declarations(`${enabled} .gallery-card-caption`, undefined, css)['text-shadow']).toBe('none');
     // 纵轴布局不能继承卡片自带的 items-*，否则内部行收成内容宽度后水平居中（Roll 候选卡的画师标签）。
     expect(declarations(`${enabled} .gallery-card-caption`, undefined, css)['align-items']).toBe('stretch');
@@ -929,7 +935,7 @@ describe('全局外观覆盖审计', () => {
     const root = "html[data-gallery-frosted-caption='true'] .gallery-card-caption";
     const expected = new Map([
       [root, { background: 'transparent', color: 'white' }],
-      [`${root} :where(p, h2, h3, div, span, button)`, { color: 'inherit' }],
+      [`${root} :where(p, h2, h3, div, span, button):not([data-safe-mode-title='true'])`, { color: 'inherit' }],
       [`${root} .gallery-card-meta`, { color: 'rgb(255 255 255 / .78)' }],
       [`${root} .gallery-card-badge`, { color: 'rgb(255 255 255 / .94)' }],
       [`${root} .gallery-chain-status`, { color: '#fcd34d' }],
@@ -948,7 +954,8 @@ describe('全局外观覆盖审计', () => {
       expect(declarations(selector, undefined, css)).toMatchObject(props);
     }
     expect(declarations(`${root} :where(p, h2, h3, div, span, button, svg)`, undefined, css)).toEqual({});
-    expect(declarations(`${root}::before`, undefined, css).background).toContain('rgb(12 16 24');
+    expect(declarations(`${root}::before`, undefined, css)).toEqual({});
+    expect(declarations("html[data-gallery-frosted-caption='true'] .gallery-card-visual::before", undefined, css)['background-image']).toContain('rgb(12 16 24');
     expect(declarations("html[data-custom-palette='true']:not(.dark) :where(.bg-white, [class~='hover:bg-white']:hover, [class~='focus:bg-white']:focus, [class~='focus-within:bg-white']:focus-within)", undefined, css)['background-color']).toBe('var(--nai-white-surface)');
   });
   it('所有页面与组件的 JSX 类名没有固定像素字号或任意值圆角旁路', () => {

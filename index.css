@@ -134,7 +134,8 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
     position: relative;
     align-self: end;
     isolation: isolate;
-    z-index: 2;
+    /* 遮罩挂在卡片层（z-index 2），文字仍要压在它之上。 */
+    z-index: 3;
     /* 直接继承卡片圆角：两边各自读变量时密度/主题不同步会出现 1~3px 误差。 */
     border-radius: inherit;
     /* 名称与元信息整组垂直居中在遮罩里，而不是贴着顶部堆。 */
@@ -153,24 +154,33 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
     color: white !important;
     text-shadow: none;
   }
-  html[data-gallery-frosted-caption='true'] .gallery-card-caption::before {
+  /* 磨砂文字遮罩挂在卡片层，而不是 caption 层：caption 是叠图用的 grid item，
+     它的盒子底边与卡片底边在亚像素上对不齐，遮罩画在 caption 里就会差最后一行盖不到，
+     下面那行图片从底边透出来。挂在卡片上后底边严格等于卡片底边，
+     用 calc(100% - …) 的色标控制往上覆盖多高，不受 caption 高度影响。 */
+  html[data-gallery-frosted-caption='true'] .gallery-card-visual::before {
     content: '';
     position: absolute;
-    /* 只盖住标题上沿一点；向上这一段同时是渐变的过渡区。
-       底边再向下延 1px：超出的部分由卡片的 overflow: hidden 裁掉，
-       但渐变的硬边界因此挪到可视区之外，底部那一行不会再留下半透明的接缝。 */
-    inset: -0.75rem 0 -1px;
-    z-index: -1;
+    inset: 0;
+    z-index: 2;
     pointer-events: none;
-    /* 多段色标把透明到深色的变化摊开，避免两段式渐变出现一道硬边。 */
-    background: linear-gradient(to bottom,
-      rgb(12 16 24 / 0) 0%,
-      rgb(12 16 24 / .13) 26%,
-      rgb(12 16 24 / .36) 54%,
-      rgb(12 16 24 / .60) 80%,
-      rgb(12 16 24 / .76) 100%);
+    /* 多段色标把透明到深色的变化摊开；最下面 6px 收到全不透明，
+       最后一行不会只是半透明叠在图片上。 */
+    background-image: linear-gradient(to bottom,
+      rgb(12 16 24 / 0) calc(100% - 6rem),
+      rgb(12 16 24 / .13) calc(100% - 4.44rem),
+      rgb(12 16 24 / .36) calc(100% - 2.76rem),
+      rgb(12 16 24 / .60) calc(100% - 1.2rem),
+      rgb(12 16 24 / .76) calc(100% - 0.375rem),
+      rgb(12 16 24) 100%);
     /* 跟随卡片圆角，避免直角压在圆角图片上留下硬边。 */
     border-radius: inherit;
+  }
+  /* 图片底边正好压在帧底边时，图片边缘的抗锯齿会和卡片底边的抗锯齿叠在一起，
+     在遮罩最下面留下一行比遮罩亮的像素（图片色透出）。
+     给帧底部留 1px 内边距，图片底边上移 1px，这一行就只剩纯遮罩色。 */
+  html[data-gallery-frosted-caption='true'] .gallery-card-visual > .mobile-gallery-frame {
+    padding-bottom: 1px;
   }
   html[data-gallery-frosted-caption='true'] .gallery-card-caption :where(p, h2, h3, div, span, button):not([data-safe-mode-title='true']) {
     color: inherit !important;
