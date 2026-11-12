@@ -9,7 +9,8 @@ import { createInterface } from 'node:readline';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PACKAGED = process.env.NAI_PACKAGED === '1';
 const WORKSPACE = PACKAGED ? process.cwd() : ROOT;
-const MANIFEST_FILE = path.join(process.env.NAI_TAG_DATA_DIR || path.join(WORKSPACE, 'public', 'tag-data'), 'manifest.json');
+const TAG_DATA_DIR = process.env.NAI_TAG_DATA_DIR || path.join(WORKSPACE, 'public', 'tag-data');
+const MANIFEST_FILE = path.join(TAG_DATA_DIR, 'manifest.json');
 const UPDATE_SCRIPT = path.join(ROOT, 'scripts', 'update-tag-dictionary.mjs');
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.NAI_TAG_UPDATE_PORT || 3002);
@@ -245,6 +246,37 @@ export function startTagUpdateServer({ port = PORT, updateScript = UPDATE_SCRIPT
         available: true,
         ...updateState,
         manifest: await readManifestSummary()
+      }, allowedOrigin);
+    }
+    if (url.pathname === '/tag-dictionary/delete') {
+      if (request.method !== 'POST') {
+        request.resume();
+        return writeJson(response, 405, { error: '仅支持 POST 请求' }, allowedOrigin);
+      }
+      if (appUpdating) {
+        request.resume();
+        return writeJson(response, 503, { error: '工坊正在安装更新，请稍后重试' }, allowedOrigin);
+      }
+      if (updateState.running) {
+        request.resume();
+        return writeJson(response, 409, { error: 'Tag 词库正在更新，请完成后再删除' }, allowedOrigin);
+      }
+      request.resume();
+      try {
+        // 只删除生成目录与它的暂存目录；正式目录整体移除后界面按「尚未下载词库」处理。
+        await rm(TAG_DATA_DIR, { recursive: true, force: true });
+        await rm(`${TAG_DATA_DIR}.staging`, { recursive: true, force: true });
+      } catch (error) {
+        return writeJson(response, Number(error.status) || 500, { error: error.message || '删除词库失败' }, allowedOrigin);
+      }
+      updateState.phase = 'idle';
+      updateState.message = '词库已删除';
+      updateState.startedAt = null;
+      updateState.finishedAt = new Date().toISOString();
+      return writeJson(response, 200, {
+        available: true,
+        ...updateState,
+        manifest: { count: 0, generatedAt: null, sourceLastModified: null }
       }, allowedOrigin);
     }
     if (url.pathname !== '/tag-dictionary') {

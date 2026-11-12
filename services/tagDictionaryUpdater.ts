@@ -16,6 +16,7 @@ export interface TagUpdateStatus {
 
 const CONTROL_URL = '/api/tag-dictionary';
 const IMPORT_URL = '/api/tag-dictionary/import';
+const DELETE_URL = '/api/tag-dictionary/delete';
 /** 手动导入上限；与服务端和生成脚本一致，避免大文件在本地服务间反复缓冲。 */
 export const TAG_IMPORT_MAX_BYTES = 256 * 1024 * 1024;
 
@@ -31,6 +32,14 @@ const request = async (method: 'GET' | 'POST'): Promise<TagUpdateStatus> => {
 
 export const getTagUpdateStatus = () => request('GET');
 export const startTagUpdate = () => request('POST');
+
+/** 删除本机已生成的词库；服务端只移除词库目录，之后按「尚未下载词库」处理。 */
+export const deleteTagDictionary = async (): Promise<TagUpdateStatus> => {
+  const response = await fetch(DELETE_URL, { method: 'POST', cache: 'no-store' });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || `删除词库失败：${response.status}`);
+  return body as TagUpdateStatus;
+};
 
 /**
  * 手动导入词库文件：内置下载线路不可用时，把用户自备的上游 tag.sqlite 交给本地服务生成。

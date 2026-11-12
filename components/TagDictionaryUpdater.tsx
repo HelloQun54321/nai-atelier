@@ -1,8 +1,9 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
-import { Download, Import as ImportIcon } from 'lucide-react';
+import { Download, Import as ImportIcon, Trash2 } from 'lucide-react';
 import { resetTagDictionaryCache } from '../services/tagDictionary';
-import { getTagUpdateStatus, importTagDictionaryFile, startTagUpdate, TAG_IMPORT_MAX_BYTES, TagUpdatePhase, TagUpdateStatus } from '../services/tagDictionaryUpdater';
+import { deleteTagDictionary, getTagUpdateStatus, importTagDictionaryFile, startTagUpdate, TAG_IMPORT_MAX_BYTES, TagUpdatePhase, TagUpdateStatus } from '../services/tagDictionaryUpdater';
+import { useConfirmDialog } from './ConfirmDialog';
 
 interface TagDictionaryUpdaterProps {
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -16,6 +17,7 @@ const TAG_DICTIONARY_APPROX_SIZE_MB = 24;
 const TAG_ACTION_CLASS = 'appearance-group mobile-touch flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors';
 const TAG_ACTION_NEUTRAL_CLASS = `${TAG_ACTION_CLASS} bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700`;
 const TAG_ACTION_PRIMARY_CLASS = `${TAG_ACTION_CLASS} bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50`;
+const TAG_ACTION_DANGER_CLASS = `${TAG_ACTION_CLASS} bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50`;
 
 const PHASE_PROGRESS: Record<TagUpdatePhase, number> = {
   idle: 0,
@@ -36,6 +38,7 @@ const formatDate = (value: string | null | undefined) => {
 
 export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ notify }) => {
   useLanguage();
+  const confirmAction = useConfirmDialog();
   const [status, setStatus] = useState<TagUpdateStatus | null>(null);
   const [connectionError, setConnectionError] = useState('');
   const [isStarting, setIsStarting] = useState(false);
@@ -114,6 +117,28 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
     }
   };
 
+  const handleDelete = async () => {
+    if (isStarting || importing || status?.running) return;
+    if (!await confirmAction({
+      title: '删除 Tag 词库？',
+      message: '将删除本机已生成的 Tag 补全词库，删除后补全与搜索暂不可用；可重新「更新词库」或「导入词库」恢复。不会删除其他本地资料。',
+      confirmLabel: '删除词库',
+      tone: 'danger',
+    })) return;
+    try {
+      const next = await deleteTagDictionary();
+      appliedResultRef.current = null;
+      resetTagDictionaryCache();
+      setStatus(next);
+      setConnectionError('');
+      notify('Tag 词库已删除', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '删除词库失败';
+      setConnectionError(message);
+      notify(message, 'error');
+    }
+  };
+
   const isRunning = isStarting || importing || Boolean(status?.running);
   const isError = !isStarting && !importing && (status?.phase === 'error' || Boolean(connectionError));
   const progress = importing
@@ -152,6 +177,10 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
           <button type="button" data-appearance="control" data-tone="neutral" disabled={isRunning} onClick={() => void handleUpdate()} className={`${TAG_ACTION_PRIMARY_CLASS} disabled:cursor-not-allowed disabled:opacity-50`} title={t('检查并更新 Tag 补全词库')}>
             <svg className={`h-4 w-4 ${isRunning ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357 2m15.357 2H15" /></svg>
             <span>{isRunning ? t('更新中…') : t('更新词库')}</span>
+          </button>
+          <button type="button" data-appearance="control" data-tone="danger" disabled={isRunning || !(status?.manifest?.count)} onClick={() => void handleDelete()} className={`${TAG_ACTION_DANGER_CLASS} disabled:cursor-not-allowed disabled:opacity-50`} title={t('删除本机已生成的 Tag 补全词库')}>
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+            <span>{t('删除词库')}</span>
           </button>
         </div>
       </div>

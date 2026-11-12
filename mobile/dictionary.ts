@@ -37,9 +37,26 @@ async function commitBuild(base: string, rows: any[], sourceMetadata: any) {
 
 export async function mobileDictionary(request: Request): Promise<Response | null> {
   const pathname = new URL(request.url).pathname;
-  if (pathname !== '/api/tag-dictionary' && pathname !== '/api/tag-dictionary/import') return null;
+  if (pathname !== '/api/tag-dictionary' && pathname !== '/api/tag-dictionary/import' && pathname !== '/api/tag-dictionary/delete') return null;
   if (!state.manifest) {
     try { state.manifest = await (await fetch('/tag-data/manifest.json')).json(); } catch { /* 第一次使用尚未下载词库。 */ }
+  }
+  if (pathname === '/api/tag-dictionary/delete') {
+    if (request.method !== 'POST') return json({ error: '仅支持 POST 请求' }, 405);
+    if (state.running) return json({ error: 'Tag 词库正在更新，请完成后再删除' }, 409);
+    const pointer = await db.prepare("SELECT value FROM settings WHERE key='mobile_dictionary_path'").first<{value:string}>();
+    try {
+      // 只删除词库构建目录；原图、历史与其他本地资料不在该目录。
+      if (pointer?.value) {
+        const build = pointer.value.split('/tag-data')[0];
+        if (/^dictionary\/builds\/[0-9a-f-]+$/.test(build)) await native.file({ action: 'deleteTree', path: build, cache: true });
+      }
+      await db.prepare("DELETE FROM settings WHERE key='mobile_dictionary_path'").run();
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : '删除词库失败' }, 500);
+    }
+    state = { ...state, running: false, phase: 'idle', message: '词库已删除', startedAt: null, finishedAt: new Date().toISOString(), manifest: { count: 0, generatedAt: null } };
+    return json(state);
   }
   if (pathname === '/api/tag-dictionary/import') {
     if (request.method !== 'POST') return json({ error: '仅支持 POST 请求' }, 405);

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { dirname, join } from 'node:path';
-import { writeFile, readFile, stat } from 'node:fs/promises';
+import { writeFile, readFile, stat, mkdir } from 'node:fs/promises';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
 import '../support/node-environment.mjs';
 
@@ -135,6 +135,53 @@ test('更新子进程获得现有网关代理，多行主备错误原样返回�
     assert.equal(status.phase, 'error');
     assert.equal(status.message, detail);
     assert.equal(status.running, false);
+  } finally {
+    server.stopUpdates();
+    await new Promise(done => { server.close(done); server.closeAllConnections(); });
+    removeWorkspace(root);
+  }
+});
+
+test('删除词库只移除生成目录并清零摘要', async () => {
+  const root = createWorkspace('tag-delete-');
+  const dataDir = join(process.cwd(), 'public', 'tag-data');
+  await mkdir(dataDir, { recursive: true });
+  await writeFile(join(dataDir, 'manifest.json'), JSON.stringify({ count: 42, generatedAt: '2026-11-12T00:00:00Z' }));
+  const script = join(root, 'synthetic-updater.mjs');
+  await writeFile(script, "console.log('TAG_UPDATE_RESULT=updated');");
+  const server = startTagUpdateServer({ port: 0, updateScript: script });
+  try {
+    await once(server, 'listening');
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const headers = { Origin: 'http://127.0.0.1:3000', 'X-Nai-Local-Control': 'true' };
+    const before = await (await fetch(`${base}/tag-dictionary`, { headers })).json();
+    assert.equal(before.manifest.count, 42);
+    const response = await fetch(`${base}/tag-dictionary/delete`, { method: 'POST', headers });
+    assert.equal(response.status, 200);
+    const after = await response.json();
+    assert.equal(after.manifest.count, 0);
+    assert.equal(after.phase, 'idle');
+    assert.equal(await stat(join(dataDir, 'manifest.json')).then(() => true, () => false), false);
+  } finally {
+    server.stopUpdates();
+    await new Promise(done => { server.close(done); server.closeAllConnections(); });
+    removeWorkspace(root);
+  }
+});
+
+test('更新进行中拒绝删除词库', async () => {
+  const root = createWorkspace('tag-delete-busy-');
+  const script = join(root, 'synthetic-updater.mjs');
+  await writeFile(script, "await new Promise(resolve => setTimeout(resolve, 400)); console.log('TAG_UPDATE_RESULT=updated');");
+  const server = startTagUpdateServer({ port: 0, updateScript: script });
+  try {
+    await once(server, 'listening');
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const headers = { Origin: 'http://127.0.0.1:3000', 'X-Nai-Local-Control': 'true' };
+    assert.equal((await fetch(`${base}/tag-dictionary`, { method: 'POST', headers })).status, 202);
+    const blocked = await fetch(`${base}/tag-dictionary/delete`, { method: 'POST', headers });
+    assert.equal(blocked.status, 409);
+    assert.match((await blocked.json()).error, /正在更新/);
   } finally {
     server.stopUpdates();
     await new Promise(done => { server.close(done); server.closeAllConnections(); });

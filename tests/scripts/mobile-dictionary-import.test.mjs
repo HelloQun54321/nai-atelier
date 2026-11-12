@@ -16,7 +16,7 @@ const loadMobileDictionary = async () => {
     const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
   `);
   const transformed = await transform(source, { loader: 'ts', format: 'esm' });
-  return import('data:text/javascript;base64,' + Buffer.from(transformed.code).toString('base64'));
+  return import('data:text/javascript;base64,' + Buffer.from(transformed.code).toString('base64') + '#' + crypto.randomUUID());
 };
 
 const importRequest = body => new Request('https://localhost/api/tag-dictionary/import', { method: 'POST', body });
@@ -87,4 +87,29 @@ test('手机端拒绝空文件与非 POST 导入，不影响现有状态', async
   assert.equal(empty.status, 400);
   assert.match((await empty.json()).error, /没有收到词库文件/);
 });
-
+test('手机端删除词库移除构建目录并清空当前路径', async () => {
+  const calls = [];
+  globalThis.__native = {
+    async sql() { return { results: [] }; },
+    async file(options) { calls.push(options); return {}; },
+  };
+  globalThis.__writeBlob = async () => 'unused';
+  globalThis.__generate = async () => ({ count: 0 });
+  globalThis.__db = {
+    prepare(sql) {
+      return {
+        first: async () => ({ value: 'dictionary/builds/11111111-1111-1111-1111-111111111111/tag-data' }),
+        bind: () => ({ run: async () => ({ success: true }) }),
+        run: async () => { calls.push({ sql }); return { success: true }; },
+      };
+    }
+  };
+  globalThis.__naiConfig = { tags: [] };
+  const module = await loadMobileDictionary();
+  const response = await module.mobileDictionary(new Request('https://localhost/api/tag-dictionary/delete', { method: 'POST' }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.manifest.count, 0);
+  assert.equal(calls.some(item => item.action === 'deleteTree' && item.path === 'dictionary/builds/11111111-1111-1111-1111-111111111111'), true);
+  assert.equal(calls.some(item => item.sql && item.sql.includes('DELETE FROM settings')), true);
+});

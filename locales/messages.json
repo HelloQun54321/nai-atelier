@@ -39377,6 +39377,42 @@
     "現在は従量課金チャネルのため、工房はポイントや割当を見積もりません。費用はチャネル独自の規則で計算されます。",
     "현재 회차별 채널이므로 공방은 포인트나 할당량을 추정하지 않습니다. 비용은 해당 채널의 규칙으로 계산됩니다."
   ],
+  "删除词库": [
+    "刪除詞庫",
+    "Delete dictionary",
+    "辞書を削除",
+    "사전 삭제"
+  ],
+  "删除本机已生成的 Tag 补全词库": [
+    "刪除本機已生成的 Tag 補全詞庫",
+    "Delete the tag dictionary generated on this device",
+    "この端末で生成した Tag 補完辞書を削除",
+    "이 기기에서 생성한 Tag 자동 완성 사전을 삭제"
+  ],
+  "删除 Tag 词库？": [
+    "刪除 Tag 詞庫？",
+    "Delete the tag dictionary?",
+    "Tag 辞書を削除しますか？",
+    "Tag 사전을 삭제할까요?"
+  ],
+  "将删除本机已生成的 Tag 补全词库，删除后补全与搜索暂不可用；可重新「更新词库」或「导入词库」恢复。不会删除其他本地资料。": [
+    "將刪除本機已生成的 Tag 補全詞庫，刪除後補全與搜尋暫不可用；可重新「更新詞庫」或「匯入詞庫」恢復。不會刪除其他本機資料。",
+    "The tag dictionary generated on this device will be deleted; completion and search will be unavailable until you run \"Update dictionary\" or \"Import dictionary\" again. No other local data is removed.",
+    "この端末で生成した Tag 補完辞書を削除します。削除後は補完と検索が使えなくなります。「辞書を更新」または「辞書をインポート」で復元できます。他のローカルデータは削除されません。",
+    "이 기기에서 생성한 Tag 자동 완성 사전을 삭제합니다. 삭제 후에는 자동 완성과 검색을 사용할 수 없으며, \"사전 업데이트\" 또는 \"사전 가져오기\"로 복구할 수 있습니다. 다른 로컬 데이터는 삭제되지 않습니다."
+  ],
+  "Tag 词库已删除": [
+    "Tag 詞庫已刪除",
+    "Tag dictionary deleted",
+    "Tag 辞書を削除しました",
+    "Tag 사전을 삭제했습니다"
+  ],
+  "删除词库失败": [
+    "刪除詞庫失敗",
+    "Failed to delete the dictionary",
+    "辞書の削除に失敗しました",
+    "사전 삭제 실패"
+  ],
   "Tag 补全词库": [
     "Tag 補全詞庫",
     "Tag completion dictionary",

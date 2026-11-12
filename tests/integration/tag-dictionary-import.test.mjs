@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { join } from 'node:path';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
 import '../support/node-environment.mjs';
 
@@ -10,7 +10,7 @@ import '../support/node-environment.mjs';
 const previousPackaged = process.env.NAI_PACKAGED;
 process.env.NAI_PACKAGED = '1';
 const { startTagUpdateServer } = await import('../../scripts/tag-update-server.mjs');
-const { requestTagDictionaryImport } = await import('../../scripts/media-gateway.mjs');
+const { requestTagDictionaryDelete, requestTagDictionaryImport } = await import('../../scripts/media-gateway.mjs');
 if (previousPackaged === undefined) delete process.env.NAI_PACKAGED;
 else process.env.NAI_PACKAGED = previousPackaged;
 
@@ -36,6 +36,30 @@ test('网关把手动导入的词库字节原样转交本地 Tag 服务', async 
       await new Promise(done => setTimeout(done, 25));
     }
     assert.equal(received, payload.toString('utf8'));
+  } finally {
+    if (previousPort === undefined) delete process.env.NAI_TAG_UPDATE_PORT;
+    else process.env.NAI_TAG_UPDATE_PORT = previousPort;
+    server.stopUpdates();
+    await new Promise(done => { server.close(done); server.closeAllConnections(); });
+    removeWorkspace(root);
+  }
+});
+
+test('网关转发删除词库并返回清零摘要', async () => {
+  const root = createWorkspace('gateway-tag-delete-');
+  const dataDir = join(process.cwd(), 'public', 'tag-data');
+  await mkdir(dataDir, { recursive: true });
+  await writeFile(join(dataDir, 'manifest.json'), JSON.stringify({ count: 7 }));
+  const script = join(root, 'synthetic-updater.mjs');
+  await writeFile(script, "console.log('TAG_UPDATE_RESULT=updated');");
+  const previousPort = process.env.NAI_TAG_UPDATE_PORT;
+  const server = startTagUpdateServer({ port: 0, updateScript: script });
+  try {
+    await once(server, 'listening');
+    process.env.NAI_TAG_UPDATE_PORT = String(server.address().port);
+    const result = await requestTagDictionaryDelete();
+    assert.equal(result.manifest.count, 0);
+    assert.equal(await stat(join(dataDir, 'manifest.json')).then(() => true, () => false), false);
   } finally {
     if (previousPort === undefined) delete process.env.NAI_TAG_UPDATE_PORT;
     else process.env.NAI_TAG_UPDATE_PORT = previousPort;

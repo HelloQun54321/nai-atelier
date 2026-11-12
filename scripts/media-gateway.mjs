@@ -680,6 +680,7 @@ const requestTagDictionaryControl = method => requestTagDictionaryService({ path
 // 手动导入把用户自备的 tag.sqlite 原样转给本地 Tag 更新服务，由它校验并生成词库。
 const TAG_DICTIONARY_IMPORT_LIMIT = 256 * 1024 * 1024;
 export const requestTagDictionaryImport = body => requestTagDictionaryService({ path: '/tag-dictionary/import', method: 'POST', body, timeoutMs: 30_000 });
+export const requestTagDictionaryDelete = () => requestTagDictionaryService({ path: '/tag-dictionary/delete', method: 'POST' });
 
 export const normalizeVibeStrengths = slots => {
   const values = slots.map(slot => Number.isFinite(slot.strength) ? slot.strength : 0);
@@ -4379,6 +4380,15 @@ const serveDistFile = async (req, res, url) => {
         return sendJson(res, 200, await requestTagDictionaryControl(req.method));
       } catch (error) {
         return sendJson(res, Number(error.status) || 503, { error: error.message || 'Tag 词库服务不可用' });
+      }
+    }
+    if (url.pathname === '/api/tag-dictionary/delete') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: '仅支持 POST 请求' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        return sendJson(res, 200, await requestTagDictionaryDelete());
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 503, { error: error.message || 'Tag 词库删除失败' });
       }
     }
     if (url.pathname === '/api/tag-dictionary/import') {

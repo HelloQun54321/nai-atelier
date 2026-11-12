@@ -6,16 +6,18 @@ import { TagDictionaryUpdater } from '../../components/TagDictionaryUpdater';
 import { TagUpdateStatus } from '../../services/tagDictionaryUpdater';
 import { setLanguage } from '../../services/i18n';
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), get: vi.fn(), reset: vi.fn(), importFile: vi.fn() }));
+const mocks = vi.hoisted(() => ({ start: vi.fn(), get: vi.fn(), reset: vi.fn(), importFile: vi.fn(), remove: vi.fn(), confirm: vi.fn() }));
 vi.mock('../../services/tagDictionaryUpdater', () => ({
   getTagUpdateStatus: mocks.get,
   startTagUpdate: mocks.start,
   importTagDictionaryFile: mocks.importFile,
+  deleteTagDictionary: mocks.remove,
   TAG_IMPORT_MAX_BYTES: 256 * 1024 * 1024
 }));
 vi.mock('../../services/tagDictionary', () => ({ resetTagDictionaryCache: mocks.reset }));
+vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
 const idle: TagUpdateStatus = { available: true, running: false, phase: 'idle', message: '可以检查更新', startedAt: null, finishedAt: null, manifest: { count: 123, generatedAt: null, sourceLastModified: null } };
-beforeEach(() => { vi.resetAllMocks(); mocks.get.mockResolvedValue(idle); });
+beforeEach(() => { vi.resetAllMocks(); mocks.get.mockResolvedValue(idle); mocks.confirm.mockResolvedValue(true); });
 afterEach(() => { cleanup(); vi.useRealTimers(); setLanguage('zh-CN'); });
 
 it('设置行直接更新，进度与词库摘要留在原位，不创建弹窗', async () => {
@@ -114,8 +116,7 @@ it('三个操作共用同一形状，导入使用进入本地的向下图标', a
   expect(screen.getByRole('button', { name: '导入词库' }).querySelector('svg')?.getAttribute('class')).toContain('lucide-import');
 });
 
-it('设置行说明指明仓库根目录的 tag.sqlite，并提供下载直链', async () => {
-  render(<TagDictionaryUpdater notify={vi.fn()} />);
+it('设置行说明指明仓库根目录的 tag.sqlite，并提供下载直链', async () => {  render(<TagDictionaryUpdater notify={vi.fn()} />);
   await screen.findByText('123');
   expect(screen.getByText(/在仓库根目录下载 tag\.sqlite（约 24 MB）/)).toBeTruthy();
   const link = screen.getByRole('link', { name: '下载直链' });
@@ -196,4 +197,29 @@ it('请求尚未返回时禁用更新；连接失败在设置行内提示并恢�
   expect(screen.getByRole('alert').textContent).toBe('更新服务不可用');
   expect((screen.getByRole('button', { name: '更新词库' }) as HTMLButtonElement).disabled).toBe(false);
   expect(notify).toHaveBeenCalledWith('更新服务不可用', 'error');
+});
+
+it('确认后删除本机词库并清空摘要与补全缓存；无词库时按钮禁用', async () => {
+  const notify = vi.fn();
+  const removed: TagUpdateStatus = { available: true, running: false, phase: 'idle', message: '词库已删除', startedAt: null, finishedAt: '2026-11-13T00:00:00Z', manifest: { count: 0, generatedAt: null, sourceLastModified: null } };
+  mocks.remove.mockResolvedValue(removed);
+  render(<TagDictionaryUpdater notify={notify} />);
+  await screen.findByText('123');
+  const button = screen.getByRole('button', { name: '删除词库' }) as HTMLButtonElement;
+  expect(button.disabled).toBe(false);
+  fireEvent.click(button);
+  await waitFor(() => expect(mocks.remove).toHaveBeenCalledTimes(1));
+  expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: '删除 Tag 词库？', tone: 'danger' }));
+  expect(mocks.reset).toHaveBeenCalledTimes(1);
+  expect(notify).toHaveBeenCalledWith('Tag 词库已删除', 'success');
+  await waitFor(() => expect((screen.getByRole('button', { name: '删除词库' }) as HTMLButtonElement).disabled).toBe(true));
+});
+
+it('取消删除确认时不调用服务', async () => {
+  mocks.confirm.mockResolvedValue(false);
+  render(<TagDictionaryUpdater notify={vi.fn()} />);
+  await screen.findByText('123');
+  fireEvent.click(screen.getByRole('button', { name: '删除词库' }));
+  await act(async () => {});
+  expect(mocks.remove).not.toHaveBeenCalled();
 });
