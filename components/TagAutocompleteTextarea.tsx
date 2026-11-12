@@ -45,6 +45,7 @@ interface MutedPromptTag {
   raw: string;
   label: string;
   chinese?: string;
+  tags?: string[];
   beforeTag?: string;
   afterTag?: string;
 }
@@ -512,6 +513,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         raw: value.slice(start, end),
         label: members.map(member => member.displayTag).join(', '),
         chinese: chinese || undefined,
+        tags: members.map(member => member.lookupTag),
         beforeTag: before?.lookupTag,
         afterTag: after?.lookupTag,
       };
@@ -1083,14 +1085,16 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 if (index < 0 || index >= currentTranslations.length) mutedEnd.push(item);
                 else mutedBefore.set(index, [...(mutedBefore.get(index) || []), item]);
               });
-              const mutedUnit = (item: MutedPromptTag) => (
-                <button type="button" key={item.id} disabled={!editable || deleteMode} onClick={() => unmuteTag(item.id)}
+              const mutedUnit = (item: MutedPromptTag) => {
+                // 不额外加图标：只靠虚线、删除线与琥珀色标记，避免胶囊变宽挤动后面的 Tag。
+                const hasInfo = Boolean(item.tags?.some(tag => catalogEntries.has(tag)));
+                return <button type="button" key={item.id} disabled={!editable || deleteMode} onClick={() => unmuteTag(item.id)}
                   aria-label={t("恢复屏蔽的 Tag：{0}", [item.label])} title={t("点击恢复原文：{0}", [item.raw])}
-                  className="mobile-touch inline-flex min-w-0 max-w-full flex-col rounded-md border border-dashed border-amber-300 bg-amber-50/60 px-2 py-1 text-left leading-tight text-amber-700 transition-colors hover:border-amber-400 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:border-amber-700 dark:hover:bg-amber-950/50">
-                  <span className="inline-flex min-w-0 items-center gap-1 whitespace-pre-wrap font-mono text-micro line-through [overflow-wrap:anywhere]"><EyeOff aria-hidden="true" className="h-3 w-3 shrink-0" />{item.label}</span>
-                  {item.chinese && <span className="min-w-0 whitespace-pre-wrap text-xs font-medium line-through opacity-70 [overflow-wrap:anywhere]">{item.chinese}</span>}
-                </button>
-              );
+                  className={`mobile-touch inline-flex min-w-0 max-w-full flex-col rounded-md border border-dashed border-amber-300 bg-amber-50/60 px-2 py-1 text-left leading-tight text-amber-700 transition-colors hover:border-amber-400 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:border-amber-700 dark:hover:bg-amber-950/50 ${hasInfo ? 'pr-7' : ''}`}>
+                  <span className="min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro line-through [overflow-wrap:anywhere]">{item.label}</span>
+                  {item.chinese && <span className="min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium line-through opacity-70 [overflow-wrap:anywhere]">{item.chinese}</span>}
+                </button>;
+              };
               while (cursor < currentTranslations.length) {
                 const mutedHere = mutedBefore.get(cursor);
                 const item = currentTranslations[cursor];

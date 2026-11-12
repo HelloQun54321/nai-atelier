@@ -1807,6 +1807,8 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     const zone = screen.getByLabelText('提示词中文翻译');
     const muted = screen.getByRole('button', { name: '恢复屏蔽的 Tag：masterpiece' });
     expect(zone.contains(muted)).toBe(true);
+    expect(muted.querySelector('svg')).toBeNull();
+    expect(muted.className).not.toContain('gap-1');
     expect(zone.textContent!.indexOf('masterpiece')).toBeLessThan(zone.textContent!.indexOf('1girl'));
     expect(screen.getByRole('button', { name: '屏蔽模式' })).toBeTruthy();
     fireEvent.click(muted);
