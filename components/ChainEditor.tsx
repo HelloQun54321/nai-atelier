@@ -269,12 +269,14 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     const [imageEditPreviewImage, setImageEditPreviewImage] = useState<string | null>(null);
     const lastSeriesPreviewRef = useRef<string | undefined>(undefined);
     const workspaceKey = getLabWorkspaceSessionKey(chain.id);
+    // 「记住上次生图设置」只作用于实验室：从风格串等入口打开时只保留本次页面会话草稿，不跨重启恢复。
+    const rememberWorkspaceAcrossRestarts = chain.id === 'playground' && rememberGenerationSettings;
     const workspaceFallback = createLabWorkspaceSession(chain.basePrompt || '', String(chain.variableValues?.subject || ''), chain.negativePrompt || '', normalizeParams(chain.params), Object.fromEntries((chain.modules || []).map(module => [module.id, module.isActive])));
     // 首次进入编辑模式也带上完整风格模块；之后各模式沿用自己的独立草稿。
     for (const draft of Object.values(workspaceFallback.edits)) {
         draft.prompt = compilePrompt(chain, String(chain.variableValues?.subject || ''));
     }
-    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => openLabWorkspaceSession(workspaceKey, workspaceFallback, rememberGenerationSettings, generationMemory));
+    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => openLabWorkspaceSession(workspaceKey, workspaceFallback, rememberWorkspaceAcrossRestarts, generationMemory));
     const [imageEditMaskData, setImageEditMaskData] = useState<string | undefined>();
   const imageEditGenerateFnRef = useRef<(() => void) | null>(null);
   const imageEditQueueFnRef = useRef<((placement: GenerationPlacement) => void) | null>(null);
@@ -539,7 +541,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         setGeneratedImage(null);
         clearPresetSources();
 
-        const storedWorkspace = openLabWorkspaceSession(workspaceKey, workspaceFallback, rememberGenerationSettings, generationMemory);
+        const storedWorkspace = openLabWorkspaceSession(workspaceKey, workspaceFallback, rememberWorkspaceAcrossRestarts, generationMemory);
         workspaceInitializedKeyRef.current = workspaceKey;
         workspaceSyncBlockedRef.current = true;
         setWorkspaceSession(storedWorkspace);
@@ -719,10 +721,10 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     const workspaceMemoryFailedRef = useRef(false);
     useEffect(() => {
         if (workspaceInitializedKeyRef.current !== workspaceKey) return;
-        const saved = saveLabWorkspaceSession(workspaceKey, workspaceSession, rememberGenerationSettings, generationMemory);
+        const saved = saveLabWorkspaceSession(workspaceKey, workspaceSession, rememberWorkspaceAcrossRestarts, generationMemory);
         if (!saved && !workspaceMemoryFailedRef.current) notify('无法记住生图设置，本次草稿仍保留，请检查浏览器存储空间。', 'error');
         workspaceMemoryFailedRef.current = !saved;
-    }, [workspaceKey, workspaceSession, rememberGenerationSettings, generationMemory, notify]);
+    }, [workspaceKey, workspaceSession, rememberWorkspaceAcrossRestarts, generationMemory, notify]);
 
     useEffect(() => {
         const references = Object.values(workspaceSession.edits).flatMap(edit => [edit.baseImageRef, edit.maskRef].filter((value): value is string => Boolean(value)));

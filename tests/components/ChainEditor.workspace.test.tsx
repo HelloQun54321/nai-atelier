@@ -695,7 +695,8 @@ it('空闲暂停队列在四模式提供明确不可用原因，文生图执行�
   expect(state.startJob).not.toHaveBeenCalled();
 });
 
-it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('退出后 %s 按记忆恢复当前模式和内容，不自动写回预设', async mode => {
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('实验室退出后 %s 按记忆恢复当前模式和内容，不自动写回预设', async mode => {
+  const lab = { ...chain, id: 'playground', name: '自由实验室' };
   const session = fallback(); session.activeMode = mode;
   session.textToImage.basePrompt = '重启后的文生图草稿';
   for (const operation of ['image-to-image', 'inpaint', 'outpaint'] as const) {
@@ -703,23 +704,38 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('�
     session.edits[operation].strength = 0.42;
     session.edits[operation].baseImageRef = 'old-base';
   }
-  saveLabWorkspaceSession(chain.id, session); sessionStorage.clear();
-  const view = setup();
+  saveLabWorkspaceSession(lab.id, session); sessionStorage.clear();
+  setup(lab);
   if (mode === 'text-to-image') expect(textPrompt().value).toBe('重启后的文生图草稿, subject');
   else {
     expect((await screen.findByLabelText('编辑提示词') as HTMLInputElement).value).toBe(`${mode} 重启草稿`);
     expect(screen.getByLabelText('编辑强度').textContent).toBe('0.42');
     expect(screen.getByLabelText('编辑底图').textContent).toBe('');
   }
-  expect(loadLabWorkspaceSession(chain.id, fallback()).activeMode).toBe(mode);
-  expect(view.props.onUpdateChain).not.toHaveBeenCalled();
+  expect(loadLabWorkspaceSession(lab.id, fallback()).activeMode).toBe(mode);
 });
 
-it('关闭记忆的新启动使用预设，但本会话编辑、模式切换和切页继续保留；再开启立即记住当前内容', async () => {
+it('风格串不跨重启恢复未保存草稿，只在本次页面会话内保留，也不覆盖旧持久副本', async () => {
+  const entry = { ...chain, id: 'synthetic-restart-style' };
   const remembered = fallback(); remembered.textToImage.basePrompt = '旧持久草稿';
-  saveLabWorkspaceSession(chain.id, remembered); sessionStorage.clear();
-  const oldMemory = localStorage.getItem(`nai-lab-workspace-v1:${chain.id}`);
-  const view = setup(chain, false);
+  saveLabWorkspaceSession(entry.id, remembered); sessionStorage.clear();
+  const oldMemory = localStorage.getItem(`nai-lab-workspace-v1:${entry.id}`);
+  const view = setup(entry);
+  expect(textPrompt().value).toBe('saved style, subject');
+  fireEvent.change(textPrompt(), { target: { value: '本次会话草稿' } });
+  expect(localStorage.getItem(`nai-lab-workspace-v1:${entry.id}`)).toBe(oldMemory);
+  view.unmount();
+  setup(entry);
+  expect(textPrompt().value).toBe('本次会话草稿');
+  expect(JSON.parse(localStorage.getItem(`nai-lab-workspace-v1:${entry.id}`)!).textToImage.basePrompt).toBe('旧持久草稿');
+});
+
+it('实验室关闭记忆的新启动使用预设，但本会话编辑、模式切换和切页继续保留；再开启立即记住当前内容', async () => {
+  const lab = { ...chain, id: 'playground', name: '自由实验室' };
+  const remembered = fallback(); remembered.textToImage.basePrompt = '旧持久草稿';
+  saveLabWorkspaceSession(lab.id, remembered); sessionStorage.clear();
+  const oldMemory = localStorage.getItem(`nai-lab-workspace-v1:${lab.id}`);
+  const view = setup(lab, false);
   expect(textPrompt().value).toBe('saved style, subject');
   fireEvent.change(textPrompt(), { target: { value: '本次新输入' } });
   await switchTo('局部重绘');
@@ -727,13 +743,13 @@ it('关闭记忆的新启动使用预设，但本会话编辑、模式切换和�
   fireEvent.click(screen.getByRole('button', { name: '调整强度' }));
   await switchTo('文生图');
   expect(textPrompt().value).toBe('本次新输入');
-  expect(localStorage.getItem(`nai-lab-workspace-v1:${chain.id}`)).toBe(oldMemory);
+  expect(localStorage.getItem(`nai-lab-workspace-v1:${lab.id}`)).toBe(oldMemory);
   view.unmount();
-  const reopened = setup(chain, false);
+  const reopened = setup(lab, false);
   expect(textPrompt().value).toBe('本次新输入');
   reopened.rerender(<ChainEditor {...reopened.props} rememberGenerationSettings />);
   expect(textPrompt().value).toBe('本次新输入');
-  const latest = JSON.parse(localStorage.getItem(`nai-lab-workspace-v1:${chain.id}`)!);
+  const latest = JSON.parse(localStorage.getItem(`nai-lab-workspace-v1:${lab.id}`)!);
   expect(latest.textToImage.basePrompt).toBe('本次新输入');
   expect(latest.edits.inpaint).toMatchObject({ prompt: '本次编辑输入', strength: 0.42 });
   reopened.rerender(<ChainEditor {...reopened.props} rememberGenerationSettings={false} />);
@@ -754,7 +770,8 @@ it('切换记忆偏好不取消已提交生成任务', async () => {
   expect(state.cancelJob).not.toHaveBeenCalled();
 });
 
-it('跨重启记忆写入失败仅提醒一次，成功后再失败可提醒且当前输入仍可编辑', () => {
+it('实验室跨重启记忆写入失败仅提醒一次，成功后再失败可提醒且当前输入仍可编辑', () => {
+  const lab = { ...chain, id: 'playground', name: '自由实验室' };
   const setItem = Storage.prototype.setItem;
   let failed = true;
   const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
@@ -762,17 +779,17 @@ it('跨重启记忆写入失败仅提醒一次，成功后再失败可提醒且�
     setItem.call(this, key, value);
   });
   try {
-    const view = setup();
+    const view = setup(lab);
     const message = '无法记住生图设置，本次草稿仍保留，请检查浏览器存储空间。';
     expect(view.props.notify).toHaveBeenCalledWith(message, 'error');
     const notices = () => view.props.notify.mock.calls.filter(([text]) => text === message).length;
     fireEvent.change(textPrompt(), { target: { value: '失败期间第一份草稿' } });
     fireEvent.change(textPrompt(), { target: { value: '失败期间第二份草稿' } });
     expect(notices()).toBe(1);
-    expect(loadLabWorkspaceSession(chain.id, fallback(), false).textToImage.basePrompt).toBe('失败期间第二份草稿');
+    expect(loadLabWorkspaceSession(lab.id, fallback(), false).textToImage.basePrompt).toBe('失败期间第二份草稿');
     failed = false;
     fireEvent.change(textPrompt(), { target: { value: '已恢复记忆' } });
-    expect(JSON.parse(localStorage.getItem(`nai-lab-workspace-v1:${chain.id}`)!).textToImage.basePrompt).toBe('已恢复记忆');
+    expect(JSON.parse(localStorage.getItem(`nai-lab-workspace-v1:${lab.id}`)!).textToImage.basePrompt).toBe('已恢复记忆');
     failed = true;
     fireEvent.change(textPrompt(), { target: { value: '后来仍可编辑' } });
     expect(notices()).toBe(2);
@@ -780,7 +797,8 @@ it('跨重启记忆写入失败仅提醒一次，成功后再失败可提醒且�
   } finally { storage.mockRestore(); }
 });
 
-it('改变记忆范围立即收窄持久副本，四模式当前输入、参数和会话仍完整保留', async () => {
+it('改变记忆范围立即收窄实验室持久副本，四模式当前输入、参数和会话仍完整保留', async () => {
+  const lab = { ...chain, id: 'playground', name: '自由实验室' };
   const session = fallback(); session.textToImage.basePrompt = 'private-current-global'; session.textToImage.subjectPrompt = 'private-current-subject';
   session.textToImage.negativePrompt = 'private-current-negative';
   for (const [index, draft] of [session.textToImage, ...Object.values(session.edits)].entries()) {
@@ -789,14 +807,14 @@ it('改变记忆范围立即收窄持久副本，四模式当前输入、参数�
   for (const [index, draft] of Object.values(session.edits).entries()) {
     draft.prompt = `private-edit-${index}`; draft.negativePrompt = `private-edit-negative-${index}`; draft.strength = 0.42;
   }
-  saveLabWorkspaceSession(chain.id, session);
-  const view = setup();
-  const current = loadLabWorkspaceSession(chain.id, fallback());
+  saveLabWorkspaceSession(lab.id, session);
+  const view = setup(lab);
+  const current = loadLabWorkspaceSession(lab.id, fallback());
   const onlyParams: GenerationMemoryPreferences = { parameters: true, globalPrompt: false, negativePrompt: false, characterPrompt: false, characterNegativePrompt: false };
   view.rerender(<ChainEditor {...view.props} generationMemory={onlyParams} />);
   expect(textPrompt().value).toBe('private-current-global, private-current-subject');
-  expect(localStorage.getItem(`nai-lab-workspace-v1:${chain.id}`)).not.toContain('private-');
-  expect(loadLabWorkspaceSession(chain.id, fallback()).textToImage).toEqual(current.textToImage);
+  expect(localStorage.getItem(`nai-lab-workspace-v1:${lab.id}`)).not.toContain('private-');
+  expect(loadLabWorkspaceSession(lab.id, fallback()).textToImage).toEqual(current.textToImage);
   for (const [index, label] of ['图生图', '局部重绘', '扩图'].entries()) {
     await switchTo(label);
     expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe(`private-edit-${index}`);
@@ -805,20 +823,18 @@ it('改变记忆范围立即收窄持久副本，四模式当前输入、参数�
   }
   const onlyRoles = { ...onlyParams, parameters: false, characterPrompt: true };
   view.rerender(<ChainEditor {...view.props} generationMemory={onlyRoles} />);
-  const memory = JSON.parse(localStorage.getItem(`nai-lab-workspace-v1:${chain.id}`)!);
+  const memory = JSON.parse(localStorage.getItem(`nai-lab-workspace-v1:${lab.id}`)!);
   expect(memory.activeMode).toBeUndefined(); expect(memory.edits.outpaint.strength).toBeUndefined();
   expect(memory.edits.outpaint.params.characters[0]).toEqual({ id: 'current-role', prompt: 'private-role-3' });
   expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe('private-edit-2');
   expect(screen.getByLabelText('编辑强度').textContent).toBe('0.42');
   view.rerender(<ChainEditor {...view.props} rememberGenerationSettings={false} generationMemory={onlyParams} />);
-  expect(JSON.parse(localStorage.getItem(`nai-lab-workspace-v1:${chain.id}`)!)).toEqual(memory);
+  expect(JSON.parse(localStorage.getItem(`nai-lab-workspace-v1:${lab.id}`)!)).toEqual(memory);
   expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe('private-edit-2');
-  expect(view.props.onUpdateChain).not.toHaveBeenCalled();
 });
 
-it.each(['playground', 'style', 'character'] as const)('%s 重启仅带回角色正向词，未勾选内容和参数回到当前工作台原配置', type => {
-  const entry = type === 'playground' ? { ...chain, id: 'playground', basePrompt: '', negativePrompt: '', modules: [], variableValues: {} }
-    : { ...chain, id: `memory-${type}`, type, params: { ...chain.params, characters: [{ id: 'shared', prompt: 'preset role', negativePrompt: 'preset role negative', x: 0.7, y: 0.8 }] } };
+it('实验室重启仅带回角色正向词，未勾选内容和参数回到当前工作台原配置', () => {
+  const entry = { ...chain, id: 'playground', basePrompt: '', negativePrompt: '', modules: [], variableValues: {} };
   const session = fallback(); session.activeMode = 'outpaint'; session.textToImage.basePrompt = 'private old global';
   for (const draft of [session.textToImage, ...Object.values(session.edits)]) draft.params.characters = [
     { id: 'shared', prompt: 'remembered role', negativePrompt: 'private role negative', x: 0.1, y: 0.2 },
@@ -829,12 +845,9 @@ it.each(['playground', 'style', 'character'] as const)('%s 重启仅带回角色
   expect(state.agent!.draft.basePrompt).toBe(entry.basePrompt);
   const restored = loadLabWorkspaceSession(entry.id, fallback());
   expect(restored.activeMode).toBe('text-to-image');
-  expect(restored.textToImage.params.characters![0]).toMatchObject({ id: 'shared', prompt: 'remembered role',
-    x: type === 'playground' ? 0.5 : 0.7, y: type === 'playground' ? 0.5 : 0.8 });
-  expect(restored.textToImage.params.characters![0].negativePrompt).toBe(type === 'playground' ? undefined : 'preset role negative');
-  if (type === 'playground') {
-    expect(view.props.onUpdateChain).toHaveBeenLastCalledWith('playground', expect.objectContaining({ params: restored.textToImage.params }));
-  } else expect(view.props.onUpdateChain).not.toHaveBeenCalled();
+  expect(restored.textToImage.params.characters![0]).toMatchObject({ id: 'shared', prompt: 'remembered role', x: 0.5, y: 0.5 });
+  expect(restored.textToImage.params.characters![0].negativePrompt).toBeUndefined();
+  expect(view.props.onUpdateChain).toHaveBeenLastCalledWith('playground', expect.objectContaining({ params: restored.textToImage.params }));
 });
 
 it('Medium 全局负面词禁用，生成的描述符用有效参数，保存的工作台仍保留 High 草稿', async () => {

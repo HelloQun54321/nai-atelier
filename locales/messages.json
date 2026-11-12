@@ -36287,12 +36287,6 @@
     "再起動後、各モードのプロンプトとパラメーターを復元します。",
     "다시 시작한 뒤 각 모드의 프롬프트와 매개변수를 복원합니다."
   ],
-  "重启后仅恢复勾选的内容。不影响当前输入或已保存的预设。": [
-    "重新啟動後僅還原勾選的內容。不影響目前輸入或已儲存的預設。",
-    "After restarting, only checked items are restored. Current input and saved presets are unaffected.",
-    "再起動後はチェックした項目のみ復元します。現在の入力内容や保存済みプリセットには影響しません。",
-    "다시 시작한 뒤 선택한 항목만 복원합니다. 현재 입력이나 저장된 프리셋에는 영향을 주지 않습니다."
-  ],
   "重试": [
     "重試",
     "Retry",
@@ -40906,5 +40900,17 @@
     "Mute {0} Tags",
     "Tag {0} 個を無効化",
     "Tag {0}개 숨기기"
+  ],
+  "只作用于实验室；从风格串等入口打开时只保留本次页面会话的草稿，不跨重启恢复。": [
+    "只作用於實驗室；從風格串等入口打開時只保留本次頁面會話的草稿，不跨重啟恢復。",
+    "Applies to the lab only. Workspaces opened from style chains keep only the current page session draft and are not restored after a restart.",
+    "ラボでのみ有効です。スタイルチェーンなどから開いた画面は現在のページセッションの下書きだけを保持し、再起動後は復元しません。",
+    "실험실에만 적용됩니다. 스타일 체인 등에서 연 화면은 현재 페이지 세션의 임시 저장만 유지하며 재시작 후에는 복원하지 않습니다."
+  ],
+  "重启后仅恢复实验室勾选的内容；风格串等编辑页不跨重启恢复。不影响当前输入或已保存的预设。": [
+    "重新啟動後僅還原實驗室勾選的內容；風格串等編輯頁不跨重啟恢復。不影響目前輸入或已儲存的預設。",
+    "After restarting, only checked items in the lab are restored; edit pages opened from style chains are not restored across restarts. Current input and saved presets are unaffected.",
+    "再起動後はラボでチェックした項目のみ復元します。スタイルチェーンなどから開いた編集画面は再起動後に復元しません。現在の入力内容や保存済みプリセットには影響しません。",
+    "다시 시작한 뒤에는 실험실에서 선택한 항목만 복원합니다. 스타일 체인 등에서 연 편집 화면은 재시작 후 복원하지 않습니다. 현재 입력이나 저장된 프리셋에는 영향을 주지 않습니다."
   ]
 }

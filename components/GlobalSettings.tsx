@@ -1192,6 +1192,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   checked={appearancePreferences.rememberGenerationSettings}
                   onChange={next => updateAppearance({ rememberGenerationSettings: next })}
                   label="记住上次生图设置"
+                  description="只作用于实验室；从风格串等入口打开时只保留本次页面会话的草稿，不跨重启恢复。"
                   bordered={false}
                 />
                 {appearancePreferences.rememberGenerationSettings && <div className="border-t border-gray-100 px-3 py-3 dark:border-gray-800">
@@ -1207,7 +1208,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     <span className="whitespace-nowrap">{t(label)}</span>
                   </label>)}
                   </div>
-                  <p className="mt-2 text-micro leading-4 text-gray-500 dark:text-gray-400">{t("重启后仅恢复勾选的内容。不影响当前输入或已保存的预设。")}</p>
+                  <p className="mt-2 text-micro leading-4 text-gray-500 dark:text-gray-400">{t("重启后仅恢复实验室勾选的内容；风格串等编辑页不跨重启恢复。不影响当前输入或已保存的预设。")}</p>
                 </div>}
               </div>
               <SettingSwitchRow checked={appearancePreferences.generationStreamPreview} onChange={next => updateAppearance({ generationStreamPreview: next })} label="生成过程预览" />
