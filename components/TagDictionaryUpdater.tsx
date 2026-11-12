@@ -1,6 +1,6 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
-import { Download, Upload } from 'lucide-react';
+import { Download, Import as ImportIcon } from 'lucide-react';
 import { resetTagDictionaryCache } from '../services/tagDictionary';
 import { getTagUpdateStatus, importTagDictionaryFile, startTagUpdate, TAG_IMPORT_MAX_BYTES, TagUpdatePhase, TagUpdateStatus } from '../services/tagDictionaryUpdater';
 
@@ -12,6 +12,10 @@ const TAG_DICTIONARY_REPOSITORY_URL = 'https://github.com/ffdkj/ffdkj-Danbooru_T
 // 与 scripts/update-tag-dictionary.mjs 的 TRANSLATION_DATABASE_URL 同源：手动导入选的就是这个文件。
 const TAG_DICTIONARY_DOWNLOAD_URL = 'https://raw.githubusercontent.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table/main/tag.sqlite';
 const TAG_DICTIONARY_APPROX_SIZE_MB = 24;
+// 三个操作共用同一尺寸、圆角与间距；只有主动作「更新词库」用强调色，其余保持中性。
+const TAG_ACTION_CLASS = 'appearance-group mobile-touch flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors';
+const TAG_ACTION_NEUTRAL_CLASS = `${TAG_ACTION_CLASS} bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700`;
+const TAG_ACTION_PRIMARY_CLASS = `${TAG_ACTION_CLASS} bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50`;
 
 const PHASE_PROGRESS: Record<TagUpdatePhase, number> = {
   idle: 0,
@@ -125,7 +129,7 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h4 className="font-semibold text-gray-900 dark:text-white">{t('Tag 补全词库')}</h4>
         <div className="flex flex-wrap flex-none gap-2">
-          <a href={TAG_DICTIONARY_REPOSITORY_URL} target="_blank" rel="noreferrer" className="appearance-group mobile-touch flex items-center gap-1.5 rounded bg-gray-100 px-2 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" title={t('打开词库 GitHub 原址（仓库根目录的 tag.sqlite 可手动下载）')}>
+          <a href={TAG_DICTIONARY_REPOSITORY_URL} target="_blank" rel="noreferrer" className={TAG_ACTION_NEUTRAL_CLASS} title={t('打开词库 GitHub 原址（仓库根目录的 tag.sqlite 可手动下载）')}>
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5h5v5m-1-4L10 14M19 14v4a1 1 0 01-1 1H6a1 1 0 011-1h4" /></svg>
             <span>{t('词库来源')}</span>
           </a>
@@ -141,11 +145,11 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
               if (file) void handleImport(file);
             }}
           />
-          <button type="button" data-appearance="control" data-tone="neutral" disabled={isRunning} onClick={() => importInputRef.current?.click()} className="appearance-group mobile-touch flex items-center gap-1.5 rounded bg-gray-100 px-2 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" title={t('内置下载失败时，从词库来源手动下载 tag.sqlite 后在这里导入')}>
-            <Upload className="h-4 w-4" aria-hidden="true" />
+          <button type="button" data-appearance="control" data-tone="neutral" disabled={isRunning} onClick={() => importInputRef.current?.click()} className={`${TAG_ACTION_NEUTRAL_CLASS} disabled:cursor-not-allowed disabled:opacity-50`} title={t('内置下载失败时，从词库来源手动下载 tag.sqlite 后在这里导入')}>
+            <ImportIcon className="h-4 w-4" aria-hidden="true" />
             <span>{importing ? t('上传中…') : t('导入词库')}</span>
           </button>
-          <button type="button" data-appearance="control" data-tone="neutral" disabled={isRunning} onClick={() => void handleUpdate()} className="mobile-touch flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2 py-1.5 text-sm font-medium text-indigo-600 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50" title={t('检查并更新 Tag 补全词库')}>
+          <button type="button" data-appearance="control" data-tone="neutral" disabled={isRunning} onClick={() => void handleUpdate()} className={`${TAG_ACTION_PRIMARY_CLASS} disabled:cursor-not-allowed disabled:opacity-50`} title={t('检查并更新 Tag 补全词库')}>
             <svg className={`h-4 w-4 ${isRunning ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357 2m15.357 2H15" /></svg>
             <span>{isRunning ? t('更新中…') : t('更新词库')}</span>
           </button>
