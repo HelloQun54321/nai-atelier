@@ -127,6 +127,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
     const [params, setParams] = useState<NAIParams>(() => normalizeParams(chain.params));
     // Opus 限额透支后，受限额模型（V5）的小图不再免费，费用估算需同步。
     const novelaiStatus = useNovelaiUsage();
+// 按次渠道不估算官方点数与额度，也不做费用确认。
+const perUseChannel = useNaiChannelMode() === 'per-use';
     const { info: novelaiSubscription, usage: novelaiUsage, loading: novelaiSubscriptionLoading, refreshIfStale: refreshUsageIfStale } = novelaiStatus;
     // 本地 Anlas 预算（账号整体，手动校准）：用尽后扣费生成需要红色警告。
     const anlasBudget = useAnlasBudget();
@@ -149,7 +151,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
     continuousGenerationEnabledRef.current = continuousGenerationEnabled;
     useEffect(() => { if (!continuousGenerationEnabled) setGenerationCount(1); }, [continuousGenerationEnabled]);
     const estimatedAnlasCost = estimateV45GenerationCost(params, opusSubscriptionActive, opusUsageExhausted);
-    const costStatusLabel = !novelaiSubscription ? novelaiSubscriptionLoading ? '费用确认中…' : '费用未知' : undefined;
+    const costStatusLabel = perUseChannel ? undefined : !novelaiSubscription ? novelaiSubscriptionLoading ? '费用确认中…' : '费用未知' : undefined;
     const generationCostLabel = costStatusLabel || formatGenerationCostLabel(estimatedAnlasCost * effectiveGenerationCount, params.model);
 
     // --- New: Subject/Variable Prompt State ---
@@ -171,8 +173,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
 
     // --- Generation State ---
     const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
-    // 按次渠道不估算官方点数与额度，也不做预算耗尽确认。
-    const perUseChannel = useNaiChannelMode() === 'per-use';    const [isImageGenerating, setIsGenerating] = useState(false);
+    const [isImageGenerating, setIsGenerating] = useState(false);
 
     const [generationSeries, setGenerationSeries] = useState(() => getGenerationSeriesSession(chain.id)?.progress || null);
     const [queuedGenerations, setQueuedGenerations] = useState(() => getQueuedGenerationSeries(chain.id));
