@@ -1096,7 +1096,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 const item = currentTranslations[cursor];
                 nodes.push(insertionAt(cursor));
                 if (mutedHere) nodes.push(...mutedHere.map(mutedUnit));
-                if (deleteMode || !item.groupId) {
+                if (!item.groupId) {
                   const selected = selectedTagIds.has(item.id);
                   nodes.push(
                     <div
@@ -1142,42 +1142,59 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                   : last.groupKind === 'brace' ? '}'.repeat(last.groupLevel || 1)
                     : last.groupKind === 'bracket' ? ']'.repeat(last.groupLevel || 1) : '';
                 const groupSelected = members.every(member => selectedTagIds.has(member.id));
-                // 未选中时权重组与散 Tag 同为中性灰白，强调色只留给选中态；屏蔽模式改用琥珀色与删除的红色区分。
-                const groupTextTone = groupSelected
+                // 普通模式与屏蔽模式以整组为单位选择；删除模式逐词选择。三种模式共用同一套组容器与权重语法。
+                const memberMode = deleteMode || muteMode;
+                const toggleGroupSelection = () => setSelectedTagIds(current => {
+                  const groupIds = members.map(member => member.id);
+                  const allSelected = groupIds.every(id => current.has(id));
+                  const next = new Set(current);
+                  groupIds.forEach(id => (allSelected ? next.delete(id) : next.add(id)));
+                  return next;
+                });
+                const selectedTone = (selected: boolean) => selected
                   ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]'
                   : 'text-gray-500 dark:text-gray-400';
-                const groupSelectedTone = deleteMode
-                  ? 'border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
-                  : muteMode ? 'border-amber-400 bg-amber-50 dark:border-amber-500 dark:bg-amber-950/40'
-                    : 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]';
+                const groupTextTone = selectedTone(groupSelected);
+                const syntaxTone = memberMode ? 'text-gray-500 dark:text-gray-400' : groupTextTone;
                 nodes.push(
                   <div
-                    role="button" tabIndex={0} onKeyDown={selectUnitWithKeyboard}
-                    onClick={() => setSelectedTagIds(current => {
-                      const groupIds = members.map(member => member.id);
-                      const allSelected = groupIds.every(id => current.has(id));
-                      const next = new Set(current);
-                      groupIds.forEach(id => (allSelected ? next.delete(id) : next.add(id)));
-                      return next;
-                    })}
+                    role={deleteMode ? undefined : 'button'} tabIndex={deleteMode ? undefined : 0} onKeyDown={deleteMode ? undefined : selectUnitWithKeyboard}
+                    onClick={deleteMode ? undefined : toggleGroupSelection}
                     key={item.groupId}
-                    className={`inline-flex max-w-full flex-wrap items-start overflow-hidden rounded-md border text-left leading-tight transition-colors ${deleteMode ? 'hover:border-red-400' : muteMode ? 'hover:border-amber-400' : 'hover:border-[var(--nai-accent)]'} ${groupSelected
-                      ? groupSelectedTone
+                    className={`inline-flex max-w-full flex-wrap items-start overflow-hidden rounded-md border text-left leading-tight transition-colors ${deleteMode ? 'hover:border-red-400' : muteMode ? 'hover:border-amber-400' : 'hover:border-[var(--nai-accent)]'} ${!deleteMode && groupSelected
+                      ? 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
                       : 'appearance-group border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
-                    aria-pressed={groupSelected}
+                    aria-pressed={deleteMode ? undefined : groupSelected}
                   >
-                    {openSyntax && <span title={openWeight ? t("原文缺少结尾 ::，补全后权重才会生效") : undefined} className={`shrink-0 py-1 pl-2 font-mono text-micro font-bold ${groupTextTone}`}>{openSyntax}</span>}
-                    {members.map((member, memberIndex) => <React.Fragment key={member.id}>
-                      {memberIndex > 0 && insertionAt(groupIndex + memberIndex)}
-                      <span data-agent-interaction="double_click" aria-label={member.displayTag} onDoubleClick={event => { event.stopPropagation(); editTag(member); }} className={`relative flex min-w-0 max-w-full flex-col px-2 py-1 ${catalogEntries.has(member.lookupTag) ? 'pr-7' : ''} ${memberIndex > 0 ? (groupSelected ? deleteMode ? 'border-l border-red-300 dark:border-red-700' : muteMode ? 'border-l border-amber-300 dark:border-amber-700' : 'border-l border-[color-mix(in_srgb,var(--nai-accent)_25%,transparent)]' : 'border-l border-gray-200 dark:border-gray-700') : ''}`}>
-                        <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${groupTextTone}`} title={member.displayTag}>
-                          {editingTag?.id === member.id ? tagInputField : member.displayTag}
+                    {openSyntax && <span title={openWeight ? t("原文缺少结尾 ::，补全后权重才会生效") : undefined} className={`shrink-0 py-1 pl-2 font-mono text-micro font-bold ${syntaxTone}`}>{openSyntax}</span>}
+                    {members.map((member, memberIndex) => {
+                      const memberSelected = memberMode ? (muteMode ? groupSelected : selectedTagIds.has(member.id)) : groupSelected;
+                      return <React.Fragment key={member.id}>
+                        {memberIndex > 0 && insertionAt(groupIndex + memberIndex)}
+                        <span
+                          role={memberMode ? 'button' : undefined} tabIndex={memberMode ? 0 : undefined}
+                          aria-pressed={memberMode ? memberSelected : undefined}
+                          onKeyDown={memberMode ? selectUnitWithKeyboard : undefined}
+                          onClick={memberMode ? event => {
+                            event.stopPropagation();
+                            if (muteMode) { toggleGroupSelection(); return; }
+                            setSelectedTagIds(current => {
+                              const next = new Set(current);
+                              if (next.has(member.id)) next.delete(member.id); else next.add(member.id);
+                              return next;
+                            });
+                          } : undefined}
+                          data-agent-interaction="double_click" aria-label={member.displayTag} onDoubleClick={event => { event.stopPropagation(); editTag(member); }}
+                          className={`relative flex min-w-0 max-w-full flex-col px-2 py-1 ${catalogEntries.has(member.lookupTag) ? 'pr-7' : ''} ${memberIndex > 0 ? 'border-l border-gray-200 dark:border-gray-700' : ''} ${memberMode && memberSelected ? (deleteMode ? 'bg-red-50 dark:bg-red-950/40' : 'bg-amber-50 dark:bg-amber-950/40') : ''}`}>
+                          <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${selectedTone(memberSelected)}`} title={member.displayTag}>
+                            {editingTag?.id === member.id ? tagInputField : member.displayTag}
+                          </span>
+                          <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${selectedTone(memberSelected)}`} title={editingTag?.id === member.id ? draftChinese : member.chinese || t("词库暂无翻译")}>{editingTag?.id === member.id ? draftChinese : member.chinese || t("待翻译")}</span>
+                          {infoButton(member)}
                         </span>
-                        <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${groupTextTone}`} title={editingTag?.id === member.id ? draftChinese : member.chinese || t("词库暂无翻译")}>{editingTag?.id === member.id ? draftChinese : member.chinese || t("待翻译")}</span>
-                        {infoButton(member)}
-                      </span>
-                    </React.Fragment>)}
-                    {closeSyntax && <span className={`shrink-0 py-1 pr-2 font-mono text-micro font-bold ${groupTextTone}`}>{closeSyntax}</span>}
+                      </React.Fragment>;
+                    })}
+                    {closeSyntax && <span className={`shrink-0 py-1 pr-2 font-mono text-micro font-bold ${syntaxTone}`}>{closeSyntax}</span>}
                   </div>,
                 );
               }

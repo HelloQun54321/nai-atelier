@@ -934,7 +934,7 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     expect(highlights()).toEqual(['beta', 'alpha', '2::gamma, delta::']);
     expect(textarea.value).toBe(initial);
     fireEvent.click(screen.getByRole('button', { name: '删除模式' }));
-    fireEvent.click(screen.getByRole('button', { name: /^gamma\s/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^gamma$/ }));
     expect(highlights()).toEqual(['gamma']);
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
     expect(highlights()).toEqual([]);
@@ -1626,20 +1626,19 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     expect(textarea.value).toBe('1.25::alpha::');
   });
 
-  it('删除模式隐藏权重，组内逐词多选标红，确认前不改原文，删除后支持撤回和重做', () => {
+  it('删除模式保留权重语法与组布局，组内逐词多选标红，确认前不改原文，删除后支持撤回和重做', () => {
     const initial = '2::alpha, beta::, gamma, alpha';
     render(React.createElement(Harness, { initial, showTranslations: true }));
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
     const zone = screen.getByLabelText('提示词中文翻译');
-    fireEvent.click(within(zone).getByRole('button', { name: /^2::/ }));
     fireEvent.click(screen.getByRole('button', { name: '删除模式' }));
-    expect(zone.textContent).not.toContain('2::');
+    expect(zone.textContent).toContain('2::');
     expect(screen.queryByRole('button', { name: '添加权重' })).toBeNull();
     expect(screen.queryByRole('button', { name: '移除权重' })).toBeNull();
     expect((screen.getByRole('button', { name: '删除 0 个 Tag' }) as HTMLButtonElement).disabled).toBe(true);
-    const beta = within(zone).getByRole('button', { name: /^beta\s/ });
-    fireEvent.click(beta); fireEvent.click(within(zone).getByRole('button', { name: /^gamma\s/ }));
-    fireEvent.click(within(zone).getAllByRole('button', { name: /^alpha\s/ })[1]);
+    const beta = within(zone).getByRole('button', { name: /^beta$/ });
+    fireEvent.click(beta); fireEvent.click(within(zone).getByRole('button', { name: /^gamma/ }));
+    fireEvent.click(within(zone).getAllByRole('button', { name: /^alpha/ })[1]);
     expect(beta.getAttribute('aria-pressed')).toBe('true');
     expect(beta.classList.contains('bg-red-50')).toBe(true);
     expect(beta.className).not.toContain('bg-[color-mix');
@@ -1658,7 +1657,7 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
     const zone = screen.getByLabelText('提示词中文翻译');
     fireEvent.click(screen.getByRole('button', { name: '删除模式' }));
-    const alpha = within(zone).getByRole('button', { name: /^alpha\s/ });
+    const alpha = within(zone).getByRole('button', { name: /^alpha$/ });
     fireEvent.click(alpha); fireEvent.click(alpha);
     expect(alpha.getAttribute('aria-pressed')).toBe('false');
     fireEvent.keyDown(zone, { key: 'a', ctrlKey: true });
@@ -1666,7 +1665,7 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
     expect(textarea.value).toBe('{{alpha, beta}}, gamma');
     fireEvent.click(screen.getByRole('button', { name: '删除模式' }));
-    fireEvent.click(within(zone).getByRole('button', { name: /^beta\s/ }));
+    fireEvent.click(within(zone).getByRole('button', { name: /^beta$/ }));
     expect(fireEvent.keyDown(zone, { key: 'Escape' })).toBe(false);
     expect(textarea.value).toBe('{{alpha, beta}}, gamma');
     expect(screen.getByRole('button', { name: '删除模式' })).toBeTruthy();
@@ -1678,8 +1677,8 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     const zone = screen.getByLabelText('提示词中文翻译');
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
     fireEvent.click(screen.getByRole('button', { name: '删除模式' }));
-    fireEvent.click(within(zone).getByRole('button', { name: /^beta\s/ }));
-    fireEvent.click(within(zone).getByRole('button', { name: /^gamma\s/ }));
+    fireEvent.click(within(zone).getByRole('button', { name: /^beta$/ }));
+    fireEvent.click(within(zone).getByRole('button', { name: /^gamma/ }));
     const setData = vi.fn();
     expect(fireEvent.copy(zone, { clipboardData: { setData } })).toBe(false);
     expect(setData).toHaveBeenLastCalledWith('text/plain', '2::beta::, gamma');
@@ -1819,7 +1818,7 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     render(React.createElement(Harness, { initial: '1.2::masterpiece, 1girl::, alpha', showTranslations: true }));
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
     fireEvent.click(screen.getByRole('button', { name: '屏蔽模式' }));
-    fireEvent.click(await screen.findByRole('button', { name: /^1\.2::/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /^masterpiece$/ }));
     fireEvent.click(screen.getByRole('button', { name: '屏蔽 2 个 Tag' }));
     expect(textarea.value).toBe('alpha');
     expect(screen.getByLabelText('提示词中文翻译').textContent!.indexOf('masterpiece')).toBeLessThan(screen.getByLabelText('提示词中文翻译').textContent!.indexOf('alpha'));
