@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
@@ -26,6 +27,10 @@ const updateState = {
   finishedAt: null
 };
 const updateChildren = new Set();
+// 手动导入只在本地把用户自备的 tag.sqlite 交给生成脚本，最多接收 256 MB；
+// 上游词库目前约 30 MB，上限留给后续增长，同时避免异常文件占满内存。
+const IMPORT_LIMIT_BYTES = 256 * 1024 * 1024;
+const SQLITE_HEADER = 'SQLite format 3\u0000';
 
 function stopTagUpdates() {
   for (const child of updateChildren) {
@@ -78,10 +83,52 @@ function runCommand(command, args, onLine, env = process.env) {
   });
 }
 
-async function runTagUpdate(updateScript, outboundProxyUrl) {
+function readUploadedDictionary(request) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    let settled = false;
+    const fail = error => {
+      if (settled) return;
+      settled = true;
+      request.destroy();
+      reject(error);
+    };
+    request.on('data', chunk => {
+      size += chunk.length;
+      if (size > IMPORT_LIMIT_BYTES) {
+        fail(Object.assign(new Error(`词库文件超过 ${IMPORT_LIMIT_BYTES / 1024 / 1024} MB 上限，请确认选择的是 tag.sqlite`), { status: 413 }));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on('end', () => {
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks, size));
+    });
+    request.on('error', fail);
+  });
+}
+
+/** 接收手动导入的 tag.sqlite：校验 SQLite 头后落到独立临时目录，交给生成脚本使用。 */
+async function receiveImportedDictionary(request) {
+  const bytes = await readUploadedDictionary(request);
+  if (!bytes.length) throw Object.assign(new Error('没有收到词库文件，请重新选择'), { status: 400 });
+  if (bytes.length < 16 || bytes.toString('latin1', 0, 16) !== SQLITE_HEADER) {
+    throw Object.assign(new Error('导入的文件不是有效的 SQLite 词库，请在词库来源下载 tag.sqlite 后重试'), { status: 400 });
+  }
+  const directory = await mkdtemp(path.join(tmpdir(), 'nai-tag-import-'));
+  const sourceFile = path.join(directory, 'source.sqlite');
+  await writeFile(sourceFile, bytes);
+  return { directory, sourceFile };
+}
+
+async function runTagUpdate(updateScript, outboundProxyUrl, { sourceFile = '', importDirectory = '' } = {}) {
+  const importing = Boolean(sourceFile);
   updateState.running = true;
-  updateState.phase = 'checking';
-  updateState.message = '正在检查上游数据库…';
+  updateState.phase = importing ? 'generating' : 'checking';
+  updateState.message = importing ? '正在生成中英文 Tag 分片…' : '正在检查上游数据库…';
   updateState.startedAt = new Date().toISOString();
   updateState.finishedAt = null;
   let updateResult = '';
@@ -109,7 +156,7 @@ async function runTagUpdate(updateScript, outboundProxyUrl) {
 
       const errorMessage = line.match(/^TAG_UPDATE_ERROR=(.+)$/)?.[1];
       if (errorMessage) detailedError = decodeURIComponent(errorMessage);
-    }, { ...process.env, NAI_TAG_PROXY_URL: outboundProxyUrl });
+    }, { ...process.env, NAI_TAG_PROXY_URL: outboundProxyUrl, ...(importing ? { NAI_TAG_LOCAL_SOURCE: sourceFile } : {}) });
 
     if (updateResult === 'unchanged') {
       updateState.phase = 'unchanged';
@@ -141,6 +188,8 @@ async function runTagUpdate(updateScript, outboundProxyUrl) {
   } finally {
     updateState.running = false;
     updateState.finishedAt = new Date().toISOString();
+    // 导入文件的临时副本只在本次生成期间需要，失败也一并清理，不留下大文件。
+    if (importDirectory) await rm(importDirectory, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -171,6 +220,32 @@ export function startTagUpdateServer({ port = PORT, updateScript = UPDATE_SCRIPT
     }
     if (!allowedOrigin || request.headers['x-nai-local-control'] !== 'true') {
       return writeJson(response, 403, { error: '仅允许本地 NAI Atelier 页面访问' });
+    }
+    if (url.pathname === '/tag-dictionary/import') {
+      if (request.method !== 'POST') {
+        request.resume();
+        return writeJson(response, 405, { error: '仅支持 POST 请求' }, allowedOrigin);
+      }
+      if (appUpdating) {
+        request.resume();
+        return writeJson(response, 503, { error: '工坊正在安装更新，请稍后重试' }, allowedOrigin);
+      }
+      if (updateState.running) {
+        request.resume();
+        return writeJson(response, 409, { error: 'Tag 词库正在更新，请完成后再导入' }, allowedOrigin);
+      }
+      let imported;
+      try {
+        imported = await receiveImportedDictionary(request);
+      } catch (error) {
+        return writeJson(response, Number(error.status) || 400, { error: error.message || '词库文件接收失败' }, allowedOrigin);
+      }
+      void runTagUpdate(updateScript, outboundProxyUrl, { sourceFile: imported.sourceFile, importDirectory: imported.directory });
+      return writeJson(response, 202, {
+        available: true,
+        ...updateState,
+        manifest: await readManifestSummary()
+      }, allowedOrigin);
     }
     if (url.pathname !== '/tag-dictionary') {
       return writeJson(response, 404, { error: 'Not Found' }, allowedOrigin);

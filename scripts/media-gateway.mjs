@@ -651,11 +651,13 @@ const requestWorkerJson = (path, req, workerPort, { method = 'GET', body, header
   upstream.end();
 });
 
-const requestTagDictionaryControl = method => new Promise((resolve, reject) => {
+const requestTagDictionaryService = ({ path: servicePath, method = 'POST', body, timeoutMs = 10_000 }) => new Promise((resolve, reject) => {
+  const payload = body ? Buffer.from(body) : null;
   const upstream = httpRequest({
-    hostname: '127.0.0.1', port: Number(process.env.NAI_TAG_UPDATE_PORT || 3002), path: '/tag-dictionary', method,
+    hostname: '127.0.0.1', port: Number(process.env.NAI_TAG_UPDATE_PORT || 3002), path: servicePath, method,
     headers: {
       accept: 'application/json',
+      ...(payload ? { 'content-type': 'application/octet-stream', 'content-length': payload.length } : {}),
       origin: `http://localhost:${Number(process.env.NAI_GATEWAY_PORT || 3000)}`,
       'x-nai-local-control': 'true',
     },
@@ -668,10 +670,16 @@ const requestTagDictionaryControl = method => new Promise((resolve, reject) => {
     if ((upstreamRes.statusCode || 500) >= 400) reject(Object.assign(new Error(parsed.error || 'Tag更新服务请求失败'), { status: upstreamRes.statusCode || 500 }));
     else resolve(parsed);
   });
-  upstream.setTimeout(10_000, () => upstream.destroy(new Error('Tag更新服务超时')));
+  upstream.setTimeout(timeoutMs, () => upstream.destroy(new Error('Tag更新服务超时')));
   upstream.on('error', error => reject(Object.assign(new Error(`Tag更新服务不可用：${error.message}`), { status: 503 })));
+  if (payload) upstream.write(payload);
   upstream.end();
 });
+
+const requestTagDictionaryControl = method => requestTagDictionaryService({ path: '/tag-dictionary', method });
+// 手动导入把用户自备的 tag.sqlite 原样转给本地 Tag 更新服务，由它校验并生成词库。
+const TAG_DICTIONARY_IMPORT_LIMIT = 256 * 1024 * 1024;
+export const requestTagDictionaryImport = body => requestTagDictionaryService({ path: '/tag-dictionary/import', method: 'POST', body, timeoutMs: 30_000 });
 
 export const normalizeVibeStrengths = slots => {
   const values = slots.map(slot => Number.isFinite(slot.strength) ? slot.strength : 0);
@@ -4371,6 +4379,22 @@ const serveDistFile = async (req, res, url) => {
         return sendJson(res, 200, await requestTagDictionaryControl(req.method));
       } catch (error) {
         return sendJson(res, Number(error.status) || 503, { error: error.message || 'Tag 词库服务不可用' });
+      }
+    }
+    if (url.pathname === '/api/tag-dictionary/import') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: '仅支持 POST 请求' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      let uploaded;
+      try {
+        uploaded = await readRequestBody(req, TAG_DICTIONARY_IMPORT_LIMIT);
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 400, { error: error.status === 413 ? `词库文件超过 ${TAG_DICTIONARY_IMPORT_LIMIT / 1024 / 1024} MB 上限，请确认选择的是 tag.sqlite` : (error.message || '词库文件上传中断') });
+      }
+      if (!uploaded.length) return sendJson(res, 400, { error: '没有收到词库文件，请重新选择' });
+      try {
+        return sendJson(res, 200, await requestTagDictionaryImport(uploaded));
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 503, { error: error.message || 'Tag 词库导入失败' });
       }
     }
     if (url.pathname === '/pixiv-login-complete') {

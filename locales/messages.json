@@ -39173,6 +39173,126 @@
     "Tag + カスタム",
     "Tag + 사용자 지정"
   ],
+  "导入词库": [
+    "匯入詞庫",
+    "Import dictionary",
+    "辞書をインポート",
+    "사전 가져오기"
+  ],
+  "选择 tag.sqlite 词库文件": [
+    "選擇 tag.sqlite 詞庫檔案",
+    "Choose a tag.sqlite dictionary file",
+    "tag.sqlite 辞書ファイルを選択",
+    "tag.sqlite 사전 파일 선택"
+  ],
+  "内置下载失败时，从词库来源手动下载 tag.sqlite 后在这里导入": [
+    "內建下載失敗時，請從詞庫來源手動下載 tag.sqlite 後在這裡匯入",
+    "If the built-in download fails, download tag.sqlite from the dictionary source and import it here.",
+    "内蔵ダウンロードに失敗した場合は、辞書の参照元から tag.sqlite を手動でダウンロードしてここにインポートしてください。",
+    "내장 다운로드가 실패하면 사전 출처에서 tag.sqlite를 직접 내려받아 여기에서 가져오세요."
+  ],
+  "内置下载失败时，可打开「词库来源」手动下载 tag.sqlite 文件，再点「导入词库」。": [
+    "內建下載失敗時，可開啟「詞庫來源」手動下載 tag.sqlite 檔案，再點「匯入詞庫」。",
+    "If the built-in download fails, open \"Dictionary source\" to download tag.sqlite manually, then click \"Import dictionary\".",
+    "内蔵ダウンロードに失敗した場合は、「辞書の参照元」を開いて tag.sqlite を手動でダウンロードし、「辞書をインポート」を押してください。",
+    "내장 다운로드가 실패하면 \"사전 출처\"를 열어 tag.sqlite를 직접 내려받은 뒤 \"사전 가져오기\"를 누르세요."
+  ],
+  "正在上传词库文件… {0}%": [
+    "正在上傳詞庫檔案… {0}%",
+    "Uploading the dictionary file… {0}%",
+    "辞書ファイルをアップロード中… {0}%",
+    "사전 파일을 업로드하는 중… {0}%"
+  ],
+  "选择的词库文件是空的，请重新下载 tag.sqlite": [
+    "選擇的詞庫檔案是空的，請重新下載 tag.sqlite",
+    "The selected dictionary file is empty. Please download tag.sqlite again.",
+    "選択した辞書ファイルは空です。tag.sqlite をダウンロードし直してください。",
+    "선택한 사전 파일이 비어 있습니다. tag.sqlite를 다시 내려받으세요."
+  ],
+  "词库文件不能超过 {0} MB，请确认选择的是 tag.sqlite": [
+    "詞庫檔案不能超過 {0} MB，請確認選擇的是 tag.sqlite",
+    "The dictionary file cannot be larger than {0} MB. Make sure you selected tag.sqlite.",
+    "辞書ファイルは {0} MB を超えられません。tag.sqlite を選択しているか確認してください。",
+    "사전 파일은 {0} MB를 넘을 수 없습니다. tag.sqlite를 선택했는지 확인하세요."
+  ],
+  "词库文件超过 {0} MB 上限，请确认选择的是 tag.sqlite": [
+    "詞庫檔案超過 {0} MB 上限，請確認選擇的是 tag.sqlite",
+    "The dictionary file exceeds the {0} MB limit. Make sure you selected tag.sqlite.",
+    "辞書ファイルが {0} MB の上限を超えています。tag.sqlite を選択しているか確認してください。",
+    "사전 파일이 {0} MB 한도를 초과했습니다. tag.sqlite를 선택했는지 확인하세요."
+  ],
+  "词库文件导入失败": [
+    "詞庫檔案匯入失敗",
+    "Failed to import the dictionary file",
+    "辞書ファイルのインポートに失敗しました",
+    "사전 파일을 가져오지 못했습니다"
+  ],
+  "词库文件上传失败：{0}": [
+    "詞庫檔案上傳失敗：{0}",
+    "Dictionary file upload failed: {0}",
+    "辞書ファイルのアップロードに失敗しました：{0}",
+    "사전 파일 업로드 실패: {0}"
+  ],
+  "词库文件上传失败，请检查本地服务是否在运行": [
+    "詞庫檔案上傳失敗，請檢查本機服務是否正在執行",
+    "Dictionary file upload failed. Check that the local service is running.",
+    "辞書ファイルのアップロードに失敗しました。ローカルサービスが動作しているか確認してください。",
+    "사전 파일 업로드에 실패했습니다. 로컬 서비스가 실행 중인지 확인하세요."
+  ],
+  "已取消导入词库文件": [
+    "已取消匯入詞庫檔案",
+    "Dictionary file import cancelled",
+    "辞書ファイルのインポートをキャンセルしました",
+    "사전 파일 가져오기를 취소했습니다"
+  ],
+  "词库文件上传超时，请重试": [
+    "詞庫檔案上傳逾時，請重試",
+    "The dictionary file upload timed out. Please try again.",
+    "辞書ファイルのアップロードがタイムアウトしました。再試行してください。",
+    "사전 파일 업로드 시간이 초과되었습니다. 다시 시도하세요."
+  ],
+  "没有收到词库文件，请重新选择": [
+    "沒有收到詞庫檔案，請重新選擇",
+    "No dictionary file was received. Please choose it again.",
+    "辞書ファイルを受信できませんでした。もう一度選択してください。",
+    "사전 파일을 받지 못했습니다. 다시 선택하세요."
+  ],
+  "仅支持 POST 请求": [
+    "僅支援 POST 請求",
+    "Only POST requests are supported",
+    "POST リクエストのみ対応しています",
+    "POST 요청만 지원합니다"
+  ],
+  "词库文件接收失败": [
+    "詞庫檔案接收失敗",
+    "Failed to receive the dictionary file",
+    "辞書ファイルの受信に失敗しました",
+    "사전 파일을 받지 못했습니다"
+  ],
+  "Tag 词库正在更新，请完成后再导入": [
+    "Tag 詞庫正在更新，請完成後再匯入",
+    "The tag dictionary is being updated. Import after it finishes.",
+    "Tag 辞書を更新中です。完了後にインポートしてください。",
+    "Tag 사전을 업데이트 중입니다. 완료 후 가져오세요."
+  ],
+  "导入的词库文件读取失败，请重新选择后再试": [
+    "匯入的詞庫檔案讀取失敗，請重新選擇後再試",
+    "Failed to read the imported dictionary file. Please choose it again.",
+    "インポートした辞書ファイルを読み込めませんでした。もう一度選択してください。",
+    "가져온 사전 파일을 읽지 못했습니다. 다시 선택하세요."
+  ],
+  "导入的文件不是有效的 SQLite 词库，请在词库来源下载 tag.sqlite 后重试": [
+    "匯入的檔案不是有效的 SQLite 詞庫，請從詞庫來源下載 tag.sqlite 後重試",
+    "The imported file is not a valid SQLite dictionary. Download tag.sqlite from the dictionary source and try again.",
+    "インポートしたファイルは有効な SQLite 辞書ではありません。辞書の参照元から tag.sqlite をダウンロードして再試行してください。",
+    "가져온 파일이 올바른 SQLite 사전이 아닙니다. 사전 출처에서 tag.sqlite를 내려받은 뒤 다시 시도하세요."
+  ],
+  "导入的词库文件是空的，请重新下载后再试": [
+    "匯入的詞庫檔案是空的，請重新下載後再試",
+    "The imported dictionary file is empty. Download it again and retry.",
+    "インポートした辞書ファイルは空です。ダウンロードし直して再試行してください。",
+    "가져온 사전 파일이 비어 있습니다. 다시 내려받은 뒤 시도하세요."
+  ],
   "Tag 补全词库": [
     "Tag 補全詞庫",
     "Tag completion dictionary",

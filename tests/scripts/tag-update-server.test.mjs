@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { join } from 'node:path';
-import { writeFile, readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { writeFile, readFile, stat } from 'node:fs/promises';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
 import '../support/node-environment.mjs';
 
@@ -40,6 +40,70 @@ test('停服会终止本次启动的词库子进程，不留下继续写入的�
       await new Promise(done => setTimeout(done, 25));
     }
     assert.throws(() => process.kill(pid, 0));
+  } finally {
+    server.stopUpdates();
+    await new Promise(done => { server.close(done); server.closeAllConnections(); });
+    removeWorkspace(root);
+  }
+});
+
+test('手动导入把上传的 tag.sqlite 交给生成脚本，结束后清理临时副本', async () => {
+  const root = createWorkspace('tag-import-');
+  const script = join(root, 'synthetic-updater.mjs'), marker = join(root, 'import.json');
+  await writeFile(script, "import fs from 'node:fs'; const file = process.env.NAI_TAG_LOCAL_SOURCE || ''; fs.writeFileSync(new URL('./import.json', import.meta.url), JSON.stringify({ file, text: file ? fs.readFileSync(file, 'utf8') : '' })); console.log('TAG_UPDATE_RESULT=updated');");
+  const server = startTagUpdateServer({ port: 0, updateScript: script });
+  try {
+    await once(server, 'listening');
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const headers = { Origin: 'http://127.0.0.1:3000', 'X-Nai-Local-Control': 'true' };
+    const payload = `SQLite format 3\u0000${'synthetic-tags'.repeat(64)}`;
+    const response = await fetch(`${base}/tag-dictionary/import`, { method: 'POST', headers, body: payload });
+    assert.equal(response.status, 202);
+    assert.equal((await response.json()).running, true);
+    let record;
+    for (let attempt = 0; attempt < 80; attempt++) {
+      record = await readFile(marker, 'utf8').then(JSON.parse).catch(() => null);
+      if (record) break;
+      await new Promise(done => setTimeout(done, 25));
+    }
+    assert.ok(record, '生成脚本没有收到导入文件');
+    assert.equal(record.text, payload);
+    let status;
+    for (let attempt = 0; attempt < 120; attempt++) {
+      status = await (await fetch(`${base}/tag-dictionary`, { headers })).json();
+      if (!status.running) break;
+      await new Promise(done => setTimeout(done, 25));
+    }
+    assert.equal(status.phase, 'completed');
+    let remaining = true;
+    for (let attempt = 0; attempt < 40 && remaining; attempt++) {
+      remaining = await stat(dirname(record.file)).then(() => true, () => false);
+      if (remaining) await new Promise(done => setTimeout(done, 25));
+    }
+    assert.equal(remaining, false, '导入文件的临时副本没有清理');
+  } finally {
+    server.stopUpdates();
+    await new Promise(done => { server.close(done); server.closeAllConnections(); });
+    removeWorkspace(root);
+  }
+});
+
+test('导入非 SQLite 文件在原位拒绝，不启动更新也不覆盖现有词库', async () => {
+  const root = createWorkspace('tag-import-invalid-');
+  const marker = join(root, 'started.txt');
+  const script = join(root, 'synthetic-updater.mjs');
+  await writeFile(script, "import fs from 'node:fs'; fs.writeFileSync(new URL('./started.txt', import.meta.url), 'started');");
+  const server = startTagUpdateServer({ port: 0, updateScript: script });
+  try {
+    await once(server, 'listening');
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const headers = { Origin: 'http://127.0.0.1:3000', 'X-Nai-Local-Control': 'true' };
+    const response = await fetch(`${base}/tag-dictionary/import`, { method: 'POST', headers, body: 'not-a-dictionary' });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /不是有效的 SQLite 词库/);
+    const status = await (await fetch(`${base}/tag-dictionary`, { headers })).json();
+    assert.equal(status.running, false);
+    assert.equal(await stat(marker).then(() => true, () => false), false);
   } finally {
     server.stopUpdates();
     await new Promise(done => { server.close(done); server.closeAllConnections(); });

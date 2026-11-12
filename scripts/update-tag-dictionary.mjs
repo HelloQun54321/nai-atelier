@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -191,6 +191,30 @@ async function downloadTranslationDatabase(targetPath) {
   }
 }
 
+/**
+ * 手动导入：内置下载线路不可用时，用户把词库原址的 tag.sqlite 交给工坊。
+ * 文件先复制成本次临时库，后续生成流程与在线更新完全一致；来源校验值留空，
+ * 下次检查更新按无条件下载处理，避免把导入文件的上游缓存标记当成最新版本。
+ */
+async function useImportedDatabase(targetPath) {
+  console.log('TAG_UPDATE_PHASE=generating');
+  const sourceFile = process.env.NAI_TAG_LOCAL_SOURCE || '';
+  const handle = await open(sourceFile, 'r').catch(() => null);
+  if (!handle) throw new Error('导入的词库文件读取失败，请重新选择后再试');
+  const header = Buffer.alloc(16);
+  try {
+    await handle.read(header, 0, 16, 0);
+  } finally {
+    await handle.close();
+  }
+  if (header.toString('latin1') !== 'SQLite format 3\u0000') {
+    throw new Error('导入的文件不是有效的 SQLite 词库，请在词库来源下载 tag.sqlite 后重试');
+  }
+  if ((await stat(sourceFile)).size === 0) throw new Error('导入的词库文件是空的，请重新下载后再试');
+  await copyFile(sourceFile, targetPath);
+  return { downloadUrl: 'manual-import', validators: {} };
+}
+
 async function writeShards(shards, directoryName) {
   const directory = path.join(OUTPUT_DIR, directoryName);
   await mkdir(directory, { recursive: true });
@@ -254,7 +278,9 @@ async function main() {
   let database;
 
   try {
-    const sourceMetadata = await downloadTranslationDatabase(temporaryDatabase);
+    const sourceMetadata = process.env.NAI_TAG_LOCAL_SOURCE
+      ? await useImportedDatabase(temporaryDatabase)
+      : await downloadTranslationDatabase(temporaryDatabase);
     if (!sourceMetadata) return;
     console.log('TAG_UPDATE_PHASE=generating');
     database = new DatabaseSync(temporaryDatabase, { readOnly: true });

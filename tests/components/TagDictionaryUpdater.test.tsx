@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { TagDictionaryUpdater } from '../../components/TagDictionaryUpdater';
 import { TagUpdateStatus } from '../../services/tagDictionaryUpdater';
 import { setLanguage } from '../../services/i18n';
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), get: vi.fn(), reset: vi.fn() }));
-vi.mock('../../services/tagDictionaryUpdater', () => ({ getTagUpdateStatus: mocks.get, startTagUpdate: mocks.start }));
+const mocks = vi.hoisted(() => ({ start: vi.fn(), get: vi.fn(), reset: vi.fn(), importFile: vi.fn() }));
+vi.mock('../../services/tagDictionaryUpdater', () => ({
+  getTagUpdateStatus: mocks.get,
+  startTagUpdate: mocks.start,
+  importTagDictionaryFile: mocks.importFile,
+  TAG_IMPORT_MAX_BYTES: 256 * 1024 * 1024
+}));
 vi.mock('../../services/tagDictionary', () => ({ resetTagDictionaryCache: mocks.reset }));
 const idle: TagUpdateStatus = { available: true, running: false, phase: 'idle', message: '可以检查更新', startedAt: null, finishedAt: null, manifest: { count: 123, generatedAt: null, sourceLastModified: null } };
 beforeEach(() => { vi.resetAllMocks(); mocks.get.mockResolvedValue(idle); });
@@ -92,6 +97,66 @@ it('首次手机安装没有词库清单时正常显示零条与未知时间', a
   render(<TagDictionaryUpdater notify={vi.fn()} />);
   await screen.findByText('0');
   expect(screen.getByText('词库生成时间：未知')).toBeTruthy();
+});
+
+it('内置下载失败时可选择本地 tag.sqlite 导入，上传进度与生成状态留在设置行', async () => {
+  let resolveImport!: (value: TagUpdateStatus) => void;
+  const generating: TagUpdateStatus = { ...idle, running: true, phase: 'generating', message: '正在生成中英文 Tag 分片…' };
+  mocks.importFile.mockImplementation((_file: File, onProgress?: (percent: number) => void) => {
+    onProgress?.(60);
+    return new Promise<TagUpdateStatus>(resolve => { resolveImport = resolve; });
+  });
+  const notify = vi.fn();
+  const view = render(<TagDictionaryUpdater notify={notify} />);
+  await screen.findByText('123');
+  const input = view.container.querySelector('input[type="file"]') as HTMLInputElement;
+  expect(input.accept).toBe('.sqlite,.db,.sqlite3,application/octet-stream,application/x-sqlite3,application/vnd.sqlite3');
+  expect(screen.getByRole('button', { name: '导入词库' })).toBeTruthy();
+  const file = new File(['SQLite format 3\u0000synthetic'], 'tag.sqlite', { type: 'application/octet-stream' });
+  fireEvent.change(input, { target: { files: [file] } });
+  await screen.findByRole('button', { name: '上传中…' });
+  expect(mocks.importFile).toHaveBeenCalledTimes(1);
+  expect((mocks.importFile.mock.calls[0] as unknown[])[0]).toBe(file);
+  expect(screen.getByRole('status').textContent).toBe('正在上传词库文件… 60%');
+  expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('24');
+  expect((screen.getByRole('button', { name: '更新中…' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: '上传中…' }) as HTMLButtonElement).disabled).toBe(true);
+  // running 状态变化会重跑 effect 刷新服务端状态；模拟真实服务端已进入生成阶段。
+  mocks.get.mockResolvedValue(generating);
+  await act(async () => { resolveImport(generating); });
+  expect(screen.getByRole('status').textContent).toBe('正在生成中英文 Tag 分片…');
+  expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('65');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(notify).not.toHaveBeenCalled();
+});
+
+it('导入失败在原位显示原因并恢复操作，不丢现有词库摘要', async () => {
+  const reason = '导入的文件不是有效的 SQLite 词库，请在词库来源下载 tag.sqlite 后重试';
+  mocks.importFile.mockRejectedValue(new Error(reason));
+  const notify = vi.fn();
+  const view = render(<TagDictionaryUpdater notify={notify} />);
+  await screen.findByText('123');
+  const input = view.container.querySelector('input[type="file"]') as HTMLInputElement;
+  fireEvent.change(input, { target: { files: [new File(['not-a-dictionary'], 'tag.sqlite')] } });
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toBe(reason));
+  expect(notify).toHaveBeenCalledWith(reason, 'error');
+  expect((screen.getByRole('button', { name: '导入词库' }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByText('123')).toBeTruthy();
+  expect(screen.getByRole('progressbar').firstElementChild?.classList.contains('bg-red-500')).toBe(true);
+});
+
+it('空文件与超过上限的文件直接提示，不发起上传', async () => {
+  const notify = vi.fn();
+  const view = render(<TagDictionaryUpdater notify={notify} />);
+  await screen.findByText('123');
+  const input = view.container.querySelector('input[type="file"]') as HTMLInputElement;
+  fireEvent.change(input, { target: { files: [new File([], 'tag.sqlite')] } });
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('选择的词库文件是空的，请重新下载 tag.sqlite', 'error'));
+  const oversized = new File(['x'], 'tag.sqlite');
+  Object.defineProperty(oversized, 'size', { value: 300 * 1024 * 1024 });
+  fireEvent.change(input, { target: { files: [oversized] } });
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('词库文件不能超过 256 MB，请确认选择的是 tag.sqlite', 'error'));
+  expect(mocks.importFile).not.toHaveBeenCalled();
 });
 
 it('请求尚未返回时禁用更新；连接失败在设置行内提示并恢复操作', async () => {

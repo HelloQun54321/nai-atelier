@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.180.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.181.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -133,7 +133,7 @@ npm run dev:local
 ### 🎨 生成第一张图（5 步直达心流）
 
 1. **添加 Key**：打开「全局设置 → NovelAI 与 Anlas」，添加自己的 `pst-` 密钥，设置该 Key 的 **Anlas 本地预算**；
-2. **下载词库**：在「全局设置 → 数据与维护 → Tag 补全词库」点击「更新词库」，在该设置行下方查看下载、生成进度及词库数量／时间；电脑下载复用工坊检测到的出站代理，失败显示具体线路原因并保留现有词库；
+2. **下载词库**：在「全局设置 → 数据与维护 → Tag 补全词库」点击「更新词库」，在该设置行下方查看下载、生成进度及词库数量／时间；电脑下载复用工坊检测到的出站代理，失败显示具体线路原因并保留现有词库；内置下载连不上时，可打开「词库来源」手动下载 `tag.sqlite`，再点同一行的「导入词库」选择该文件，工坊在本地校验并生成同一套词库（局域网手机与独立 Android 共用这个入口）；
 3. **文生图测试**：进入「实验室 → 文生图」，输入提示词，选择模型、尺寸与步数，查看当前费用提示；免费资格取决于实际参数、订阅、Opus 额度和参考配置；
 4. **生成与观察**：点击生成，实时观察渲染成图，确认无误后可一键将满意配置「保存为风格串」；
 5. **开启局域网（可选）**：手机连接同一 Wi-Fi，在「全局设置 → 数据与维护 → 局域网访问」复制手机访问地址，输入 4 位密码继续创作；独立 Android 工坊直接使用手机网络。
