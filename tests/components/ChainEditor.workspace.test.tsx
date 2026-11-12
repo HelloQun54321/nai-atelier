@@ -2319,7 +2319,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     setupSeries(); countInput();
     const input = screen.getByLabelText('生成间隔') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '4' } }); fireEvent.blur(input);
-    await waitFor(() => expect(setGenerationInterval).toHaveBeenCalledWith('synthetic-key', 4));
+    await waitFor(() => expect(setGenerationInterval).toHaveBeenCalledWith('synthetic-key', 4, undefined));
     expect(input.disabled).toBe(true);
     act(() => { sessionStorage.setItem('nai_api_key', 'next-key'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: 'next-key' })); });
     await waitFor(() => expect(Number(input.value)).toBe(6));
