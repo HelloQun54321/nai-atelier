@@ -1292,6 +1292,8 @@ const App = () => {
           continuousGenerationEnabled={appearancePreferences.continuousGenerationEnabled}
           selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
+          forceEmptySeed={appearancePreferences.forceEmptySeed}
+          onForceEmptySeedChange={enabled => setAppearancePreferences(current => ({ ...current, forceEmptySeed: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
           onOpenArtistLibrary={openArtistLibrary}

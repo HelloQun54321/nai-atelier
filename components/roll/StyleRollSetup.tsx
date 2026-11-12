@@ -20,11 +20,11 @@ import { useMobileHistoryLayer } from '../MobileUI';
 
 const field = 'mobile-touch min-w-0 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950';
 
-interface Props { initial: RollExperiment; libraryCount?: number; libraryLoading?: boolean; libraryError?: string; blockedTags?: string[]; library?: ArtistDictionaryEntry[]; onBlockedChange: (tags: string[]) => Promise<void>; enforceFreeStepLimit: boolean; onSave: (value: RollExperiment) => Promise<void>; onClose: () => void }
+interface Props { initial: RollExperiment; libraryCount?: number; libraryLoading?: boolean; libraryError?: string; blockedTags?: string[]; library?: ArtistDictionaryEntry[]; onBlockedChange: (tags: string[]) => Promise<void>; enforceFreeStepLimit: boolean; forceEmptySeed?: boolean; onForceEmptySeedChange?: (enabled: boolean) => void; onSave: (value: RollExperiment) => Promise<void>; onClose: () => void }
 
 export const StyleRollSetup: React.FC<Props> = props => <ImagePreviewPortal><SetupForm {...props} /></ImagePreviewPortal>;
 
-const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading = false, libraryError, blockedTags = [], library = [], onBlockedChange, enforceFreeStepLimit, onSave, onClose }) => {
+const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading = false, libraryError, blockedTags = [], library = [], onBlockedChange, enforceFreeStepLimit, forceEmptySeed = false, onForceEmptySeedChange, onSave, onClose }) => {
   useLanguage();
   const [draft, setDraft] = useState(() => structuredClone({ ...initial, drawPlan: undefined, pinnedArtists: getRollPinnedArtists(initial), rules: { ...initial.rules, ...getRollArtistRange(initial) } }));
   const excludedArtistTags = useMemo(() => draft.artists.filter(artist => artist.excluded).map(artist => artist.tag), [draft.artists]);
@@ -72,7 +72,7 @@ const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading 
         </div>}
         <div className={section === 'template' ? 'space-y-4' : 'hidden'}>
           {started && <p className="flex items-center gap-2 text-xs text-gray-500"><LockKeyhole className="h-4 w-4" />{t('这一记录已经出过图：修改提示词、模型或 Seed 只影响接下来生成的图片，已有的图保持不变。')}</p>}
-          <GenerationTemplateEditor value={draft.template} onChange={template => setDraft(current => ({ ...current, template }))} disabled={busy} enforceFreeStepLimit={enforceFreeStepLimit} onBusyChange={setPresetBusy}
+          <GenerationTemplateEditor value={draft.template} onChange={template => setDraft(current => ({ ...current, template }))} disabled={busy} enforceFreeStepLimit={enforceFreeStepLimit} forceEmptySeed={forceEmptySeed} onForceEmptySeedChange={onForceEmptySeedChange} onBusyChange={setPresetBusy}
             characterSlot={<RollCharacterComposer template={draft.template} disabled={editingBusy} onChange={template => setDraft(current => ({ ...current, template }))} />} />
         </div>
       </div>

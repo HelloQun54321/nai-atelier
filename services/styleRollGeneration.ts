@@ -5,7 +5,7 @@ import { formatRollStyle, rollCandidateModuleId, rollGenerationParams, rollPromp
 export const readRollApiKey = () => (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim();
 
 /** 一轮有限配方一次提交，逐张保存与费用补充授权由既有后台任务负责。 */
-export async function beginRollGeneration(experiment: RollExperiment, candidate: RollCandidate | RollCandidate[], key: string, approvedCost: number, stream: boolean, roundId?: string) {
+export async function beginRollGeneration(experiment: RollExperiment, candidate: RollCandidate | RollCandidate[], key: string, approvedCost: number, stream: boolean, roundId?: string, forceEmptySeed = false) {
   validateRollTemplate(experiment.template);
   if (!key || readRollApiKey() !== key) throw new Error('NovelAI Key 已变化，请重新发起生成');
   const candidates = Array.isArray(candidate) ? candidate : [candidate];
@@ -15,7 +15,7 @@ export async function beginRollGeneration(experiment: RollExperiment, candidate:
     const prompt = rollPrompt(experiment.template, item.tags);
     const descriptor = await buildGenerationJobDescriptor({
       operation: 'text-to-image', prompt, negative: experiment.template.negativePrompt,
-      params: rollGenerationParams(experiment.template), forceEmptySeed: false, stream, approvedCost,
+      params: rollGenerationParams(experiment.template), forceEmptySeed, stream, approvedCost,
       history: { basePrompt: prompt, subjectPrompt: '',
         modules: [{ id: rollCandidateModuleId(item.id), name: 'Roll 串', content: formatRollStyle(item.tags), isActive: false }],
         sourceChainId: rollSourceId(experiment.id), sourceChainName: experiment.name, sourceChainType: 'style' },

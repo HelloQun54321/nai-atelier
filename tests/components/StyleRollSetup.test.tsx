@@ -15,12 +15,12 @@ vi.mock('../../services/artistSampleDrafts', async original => ({ ...await origi
 vi.mock('../../components/ShortestColumnMasonry', async original => ({ ...await original<typeof import('../../components/ShortestColumnMasonry')>(), ShortestColumnMasonry: ({ items, renderItem }: any) => <div>{items.map(renderItem)}</div> }));
 vi.mock('../../services/artistSampleUrls', () => ({ loadArtistSampleUrls: async () => new Map() }));
 vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => collection, subscribeCollection: () => () => {}, ensureCollection: async () => {}, toggleArtistPreference: vi.fn() }));
-const mocks = vi.hoisted(() => ({ search: vi.fn(), confirm: vi.fn() }));
+const mocks = vi.hoisted(() => ({ search: vi.fn(), confirm: vi.fn(), params: null as any }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
 vi.mock('../../services/styleRollApi', () => ({ loadRollPresets: vi.fn(), saveRollPreset: vi.fn(), deleteRollPreset: vi.fn() }));
 vi.mock('../../services/naiRuntime', async original => ({ ...await original<typeof import('../../services/naiRuntime')>(), useNaiRuntime: () => DEFAULT_NAI_RUNTIME }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: mocks.search }));
-vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: () => null }));
+vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: (props: any) => { mocks.params = props; return null; } }));
 
 /** Roll 的角色栏与实验室普通模式共用多角色编辑器：正文用 placeholder 定位，数据落在 template.characters。 */
 const roleFields = (placeholder = '角色提示词') => screen.queryAllByPlaceholderText(placeholder) as HTMLTextAreaElement[];
@@ -48,6 +48,14 @@ beforeEach(() => { vi.resetAllMocks(); mocks.search.mockResolvedValue([]); mocks
   vi.mocked(deleteRollPreset).mockResolvedValue();
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} })); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it('Roll 生成配置沿用全局强制清空种子开关，可原位切换', async () => {
+  const onForceEmptySeedChange = vi.fn();
+  render(<StyleRollSetup initial={rollFixture()} forceEmptySeed onForceEmptySeedChange={onForceEmptySeedChange} enforceFreeStepLimit onBlockedChange={async () => {}} onSave={async () => {}} onClose={() => {}} />);
+  expect(mocks.params.forceEmptySeed).toBe(true);
+  mocks.params.onForceEmptySeedChange(false);
+  expect(onForceEmptySeedChange).toHaveBeenCalledWith(false);
+});
 
 it('不提供已有风格串导入；可套用推荐词后自定义并完整保存配置', async () => {
   const initial = rollFixture(); initial.revision = 0; initial.artists = [];

@@ -23,3 +23,10 @@ it('一轮多配方一次提交，各张保留自己的画师、历史来源和�
   expect(mocks.build).toHaveBeenNthCalledWith(2, expect.objectContaining({ prompt: expect.stringContaining('artist:beta'), params: expect.objectContaining({ seed: 0 }) }));
   expect(mocks.begin).toHaveBeenCalledOnce(); expect(mocks.begin.mock.calls[0][0]).toEqual(expect.objectContaining({ count: 2, descriptor: expect.objectContaining({ sequence: [expect.objectContaining({ history: expect.objectContaining({ modules: [expect.objectContaining({ id: 'style-roll:a' })] }) }), expect.objectContaining({ history: expect.objectContaining({ modules: [expect.objectContaining({ id: 'style-roll:b' })] }) })] }) }));
 });
+
+it('强制置空种子时按随机 Seed 提交，不改写模板与记录', async () => {
+  const e = rollFixture(), candidate = candidateFixture('c');
+  await beginRollGeneration(e, candidate, 'synthetic-key', 3, false, undefined, true);
+  expect(mocks.build).toHaveBeenCalledWith(expect.objectContaining({ forceEmptySeed: true, params: expect.objectContaining({ seed: 0 }) }));
+  expect(e.template.params.seed).toBe(0);
+});

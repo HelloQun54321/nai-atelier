@@ -52,6 +52,9 @@ import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 
 interface Props {
   active: boolean; chains: PromptChain[]; enforceFreeStepLimit: boolean; generationStreamPreview: boolean; selectionFocusEnabled?: boolean;
+  /** 与实验室共用的全局「强制清空种子」：打开后 Roll 的生成配置也按随机种子提交。 */
+  forceEmptySeed?: boolean;
+  onForceEmptySeedChange?: (enabled: boolean) => void;
   continuousGenerationEnabled?: boolean;
   notify: (message: string, type?: 'success' | 'error') => void;
   onSaveChain: (chain: PromptChain) => Promise<PromptChain>;
@@ -91,7 +94,7 @@ const ArtistFavoriteButton: React.FC<{ tag: string; sampleUrl?: string }> = ({ t
   </button>;
 };
 
-export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStepLimit, generationStreamPreview, selectionFocusEnabled = true, continuousGenerationEnabled = true, notify, onSaveChain, onOpenChain, onNavigateToPlayground, onOpenArtistLibrary, initialPinned }) => {
+export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStepLimit, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, selectionFocusEnabled = true, continuousGenerationEnabled = true, notify, onSaveChain, onOpenChain, onNavigateToPlayground, onOpenArtistLibrary, initialPinned }) => {
   useLanguage();
   const confirm = useConfirmDialog();
   const runtime = useNaiRuntime(); applyEstimatorRuntime(runtime);
@@ -367,7 +370,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       if (totalCost > 0 && !options.skipConfirmation && !await confirm({ rememberKey: 'roll.generate', rememberScope: confirmationCostScope(key, eachCost, candidates.length, budget.remaining, target.template.params.model), title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片',
         message: t('本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。', [candidates.length, totalCost, budget.remaining]),
         confirmLabel: t('消耗 {0} 点并生成', [totalCost]), ...(totalCost > budget.remaining ? { tone: 'danger' as const } : {}) })) return;
-      const started = await beginRollGeneration(target, candidates.length === 1 ? candidates[0] : candidates, key, eachCost, generationStreamPreview && getRuntimeNaiModelInfo(target.template.params.model, runtime).supportsStreamedResponses, currentRollRound(target)?.id);
+      const started = await beginRollGeneration(target, candidates.length === 1 ? candidates[0] : candidates, key, eachCost, generationStreamPreview && getRuntimeNaiModelInfo(target.template.params.model, runtime).supportsStreamedResponses, currentRollRound(target)?.id, forceEmptySeed);
       const receipt = await started.settle;
       if (mounted.current) {
         const warnings: string[] = [];
@@ -890,7 +893,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       </div>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')} actions={detailActions}>{detail}</MobileDetailView></ImagePreviewPortal>}
     {active && chainTarget !== null && chainTarget === experimentId && !setup && <StyleRollChainArtistDialog knownArtists={knownArtists} source={chainArtistSource} blocked={[...blocklist, ...excludedArtistTags]} onConfirm={source => { if (active && !frozen && !working && chainTarget === experimentId) setChainArtistSource(source); }} onClose={() => setChainTarget(null)} />}
-    {setup && <StyleRollSetup key={setup.id} initial={setup} libraryCount={library.length} libraryLoading={libraryLoading} libraryError={libraryError} blockedTags={blocklist} library={libraryEntries} onBlockedChange={updateBlocklist} enforceFreeStepLimit={enforceFreeStepLimit} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
+    {setup && <StyleRollSetup key={setup.id} initial={setup} libraryCount={library.length} libraryLoading={libraryLoading} libraryError={libraryError} blockedTags={blocklist} library={libraryEntries} onBlockedChange={updateBlocklist} enforceFreeStepLimit={enforceFreeStepLimit} forceEmptySeed={forceEmptySeed} onForceEmptySeedChange={onForceEmptySeedChange} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
     {artistDialogOpen && <StyleRollArtistDialog enforceFreeStepLimit={enforceFreeStepLimit} library={libraryEntries} loading={libraryLoading} libraryError={libraryError} pinned={pinnedArtists} onPinnedChange={setPinnedArtists} blocked={blocklist} onBlockedChange={updateBlocklist} excluded={excludedArtistTags} onExcludedChange={tags => setArtistOverrides(current => current.map(artist => ({ ...artist, excluded: tags.includes(artist.tag) })))} sampledOnly={sampledOnly} onSampledOnlyChange={setSampledOnly} rules={roundRules} onRulesChange={setRoundRules} onClose={() => setArtistDialogOpen(false)} />}
     {lightbox && <ImageLightbox src={lightbox.imageUrl} generationData={lightbox} favorite={{ imageUrl: lightbox.imageUrl, sourceType: 'history', sourceId: lightbox.id }} notify={notify} onClose={() => setLightbox(null)} />}
   </div>;

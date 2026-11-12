@@ -14,6 +14,9 @@ import { createUuid } from '../services/id';
 interface Props {
   value: RollTemplate; onChange: (value: RollTemplate) => void; disabled?: boolean; readOnly?: boolean;
   enforceFreeStepLimit?: boolean; recommendedTemplate?: RollTemplate; modelFilter?: (id: string) => boolean;
+  /** 与实验室共用的全局「强制清空种子」；不传时参数面板里的开关保持禁用。 */
+  forceEmptySeed?: boolean;
+  onForceEmptySeedChange?: (enabled: boolean) => void;
   onBusyChange?: (busy: boolean) => void;
   /** 覆盖公共提示词标签；封面生成等场景改为说明 `{content}`。 */
   promptLabel?: string;
@@ -24,7 +27,7 @@ interface Props {
 }
 const field = 'mobile-touch min-w-0 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950';
 
-export default function GenerationTemplateEditor({ value, onChange, disabled = false, readOnly = false, enforceFreeStepLimit = true, recommendedTemplate, modelFilter, onBusyChange, promptLabel, characterHint, characterSlot }: Props) {
+export default function GenerationTemplateEditor({ value, onChange, disabled = false, readOnly = false, enforceFreeStepLimit = true, forceEmptySeed = false, onForceEmptySeedChange, recommendedTemplate, modelFilter, onBusyChange, promptLabel, characterHint, characterSlot }: Props) {
   useLanguage();
   const runtime = useNaiRuntime();
   const confirm = useConfirmDialog();
@@ -96,7 +99,7 @@ export default function GenerationTemplateEditor({ value, onChange, disabled = f
           <label className="block text-xs font-semibold">{t(promptLabel || '公共提示词（{style} 为画风位置）')}<TagAutocompleteTextarea aria-label={t('公共提示词')} showTranslations={false} className={`${field} mt-1 min-h-28 font-mono`} value={value.prompt} disabled={editingBusy || readOnly} onValueChange={prompt => onChange({ ...value, prompt })} /></label>
           {characterSlot ?? <label className="block text-xs font-semibold">{t('角色提示词（可选）')}<TagAutocompleteTextarea libraryField={{ textOnly: true }} showTranslations={false} aria-label={t('角色提示词（可选）')} className={`${field} mt-1 min-h-20 font-mono`} value={value.characterPrompt || ''} disabled={editingBusy || readOnly} onValueChange={characterPrompt => onChange({ ...value, characterPrompt })} /><span className="mt-1 block text-micro font-normal text-gray-400">{t(characterHint || '自动接在画师串之后；也可在公共提示词里用 {character} 指定位置')}</span></label>}
           <label className="block text-xs font-semibold">{t('负面提示词')}<TagAutocompleteTextarea libraryField={{ negative: true }} showTranslations={false} aria-label={t('负面提示词')} className={`${field} mt-1 min-h-20 font-mono`} value={value.negativePrompt} disabled={editingBusy || readOnly} onValueChange={negativePrompt => onChange({ ...value, negativePrompt })} /></label>
-          <ChainEditorParams params={value.params} prompt={value.prompt} setParams={params => onChange({ ...value, params })} modelFilter={modelFilter} canEdit={!editingBusy && !readOnly} markChange={() => {}} enforceFreeStepLimit={enforceFreeStepLimit} />
+          <ChainEditorParams params={value.params} prompt={value.prompt} setParams={params => onChange({ ...value, params })} modelFilter={modelFilter} canEdit={!editingBusy && !readOnly} markChange={() => {}} enforceFreeStepLimit={enforceFreeStepLimit} forceEmptySeed={forceEmptySeed} onForceEmptySeedChange={onForceEmptySeedChange} />
           {/* 角色由外部插槽编辑时（Roll），参数里的旧角色只是历史快照，不该再提示"保留"。 */}
           {!characterSlot && !!value.params.characters?.length && <p className="text-xs text-gray-500">{t('保留 {0} 个角色的完整提示词与位置', [value.params.characters.length])}</p>}
   </div></PromptLibraryWorkspace>;

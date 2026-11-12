@@ -31,7 +31,7 @@ vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks
 vi.mock('../../components/ImageShareActions', () => ({ ImageShareActions: () => null, IMAGE_CARD_ACTION_CLASS: 'image-action' }));
 vi.mock('../../components/ImageLightbox', () => ({ ImageLightbox: () => null }));
 vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className, previewTransform, containerClassName }: any) => <img src={src} alt={alt} className={className} data-preview-transform={previewTransform} data-container-class={containerClassName} />, OriginalImage: (props: any) => <img {...props} /> }));
-vi.mock('../../components/roll/StyleRollSetup', () => ({ StyleRollSetup: ({ initial, onSave, onClose }: any) => { const close = useMobileHistoryLayer(mocks.setupHistory, onClose, 'roll-setup'); return <div role="dialog" aria-label="Roll 串配置" data-pinned={(initial.pinnedArtists ?? []).join(',')}><button onClick={async () => { await onSave({ ...initial, rules: mocks.setupRules || initial.rules }); onClose(); }}>保存合成实验</button><button onClick={close}>取消草稿</button></div>; } }));
+vi.mock('../../components/roll/StyleRollSetup', () => ({ StyleRollSetup: ({ initial, forceEmptySeed, onSave, onClose }: any) => { const close = useMobileHistoryLayer(mocks.setupHistory, onClose, 'roll-setup'); return <div role="dialog" aria-label="Roll 串配置" data-pinned={(initial.pinnedArtists ?? []).join(',')} data-force-empty={String(Boolean(forceEmptySeed))}><button onClick={async () => { await onSave({ ...initial, rules: mocks.setupRules || initial.rules }); onClose(); }}>保存合成实验</button><button onClick={close}>取消草稿</button></div>; } }));
 
 const preferredItems: any[] = [];
 let experiment: RollExperiment;
@@ -415,6 +415,17 @@ it('本轮设置与完整配置双向同步人数和权重范围，保存配置�
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '0.2');
   expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '0.3');
   expect(mocks.generate).not.toHaveBeenCalled();
+});
+it('强制清空种子对 Roll 生效：配置窗口同步状态，生成按随机种子提交', async () => {
+  await setup({ forceEmptySeed: true });
+  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '提示词与生成设置' }));
+  expect(screen.getByRole('dialog', { name: 'Roll 串配置' }).getAttribute('data-force-empty')).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: '取消草稿' }));
+  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
+  expect(mocks.generate.mock.calls[0]).toHaveLength(7);
+  expect(mocks.generate.mock.calls[0][6]).toBe(true);
 });
 it.each([['', '1.4'], ['1.5', '1.4'], ['0.7', '3.1'], ['0.75', '1.4']])('无效权重范围 %s～%s 不保存、不提交出图', async (min, max) => {
   await setup(); configure('最低权重', min); configure('最高权重', max);
