@@ -1594,7 +1594,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
     /** 费用上涨后由用户补充授权；没有确认就不恢复后端任务。 */
     const promptJobApproval = async (session: GenerationSeriesSession, awaiting: { cost: number; completedCount: number; requestedCount: number }) => {
         const remaining = Math.max(0, awaiting.requestedCount - awaiting.completedCount);
-        const approved = await confirmAction({ rememberKey: 'generation.cost-increase', rememberScope: confirmationCostScope(session.key, awaiting.cost, remaining, anlasBudget.remaining),
+        const approved = perUseChannel || await confirmAction({ rememberKey: 'generation.cost-increase', rememberScope: confirmationCostScope(session.key, awaiting.cost, remaining, anlasBudget.remaining),
             title: '后台任务费用已变化',
             message: `当前每张预计 ${awaiting.cost} Anlas，剩余 ${remaining} 张预计 ${awaiting.cost * remaining} Anlas。确认后继续生成；取消将停止后续请求，已经提交的图片仍会保存。`,
             confirmLabel: `消耗约 ${awaiting.cost * remaining} 点并继续`,
@@ -1723,20 +1723,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
         void refreshUsageIfStale();
         const cost = perUseChannel ? 0 : estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
         const totalCost = cost * count;
-        if (perUseChannel) {
-            if (!await confirmAction({ rememberKey: 'generation.per-use', rememberScope: [apiKey, draft.params.model],
-                title: '确认生成图片',
-                message: `当前为按次渠道，工坊不估算点数与额度。\n本次生成 ${count} 张，费用按该渠道自己的规则计算。`,
-                confirmLabel: `生成 ${count} 张`,
-            })) return false;
-        } else if (count > 1 || placement) {
+        if (!perUseChannel && (count > 1 || placement)) {
             if (!await confirmAction({ rememberKey: 'generation.text-series', rememberScope: confirmationCostScope(apiKey, cost, count, anlasBudget.remaining, [draft.params.model, placement]),
                 title: placement ? placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
                 message: `使用本轮固定的提示词与参数，逐张生成并保存 ${count} 张图片。${cost > 0 ? `\n每张预计 ${cost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
                 confirmLabel: cost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
                 ...(totalCost > anlasBudget.remaining || runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}),
             })) return false;
-        } else if (cost > 0 && anlasBudget.remaining <= 0) {
+        } else if (!perUseChannel && cost > 0 && anlasBudget.remaining <= 0) {
             // 本地 Anlas 预算已用尽但仍需扣费：红色警告，由用户确认后才继续。
             if (!await confirmAction({ rememberKey: 'generation.text-budget', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, draft.params.model),
                 title: 'Anlas 预算已用尽',
@@ -1744,7 +1738,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                 confirmLabel: `仍要消耗 ${cost} 点生成`,
                 tone: 'danger',
             })) return false;
-        } else if (cost > 0 && !await confirmAction({ rememberKey: 'generation.text', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, draft.params.model),
+        } else if (!perUseChannel && cost > 0 && !await confirmAction({ rememberKey: 'generation.text', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, draft.params.model),
             title: '确认生成图片',
             message: `当前参数预计消耗 ${cost} Anlas${draft.params.characterReferences?.enabled && draft.params.characterReferences.slots.length ? `\n其中精准参考：${draft.params.characterReferences.slots.length} × ${(naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} = ${draft.params.characterReferences.slots.length * (naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} Anlas` : ''}${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
             confirmLabel: `消耗 ${cost} 点并生成`,
@@ -1823,16 +1817,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
         const syncWarning = runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : '';
         const totalCost = editCost * count;
         // 标准权限只确认一次，完全访问沿用授权；提交后由后端费用状态机继续裁决。
-        if (!fullAccess && (count > 1 || options?.placement)) {
+        if (!perUseChannel && !fullAccess && (count > 1 || options?.placement)) {
             if (!await confirmAction({ rememberKey: 'generation.edit-series', rememberScope: confirmationCostScope(apiKey, editCost, count, anlasBudget.remaining, [request.operation, options?.placement]),
                 title: options?.placement ? options.placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
                 message: `使用本轮固定的提示词、参数与底图，逐张生成并保存 ${count} 张图片。${editCost > 0 ? `\n每张预计 ${editCost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${syncWarning}`,
                 confirmLabel: editCost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
                 ...(totalCost > anlasBudget.remaining || runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}),
             })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
-        } else if (!fullAccess && editCost > 0 && anlasBudget.remaining <= 0) {
+        } else if (!perUseChannel && !fullAccess && editCost > 0 && anlasBudget.remaining <= 0) {
             if (!await confirmAction({ rememberKey: 'generation.edit-budget', rememberScope: confirmationCostScope(apiKey, editCost, 1, anlasBudget.remaining, request.operation), title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。${syncWarning}`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
-        } else if (!fullAccess && (editCost > 0 || options?.agent || perUseChannel) && !await confirmAction({ rememberKey: 'generation.edit', rememberScope: confirmationCostScope(apiKey, editCost, 1, anlasBudget.remaining, request.operation), title: '确认图片编辑', message: perUseChannel ? `当前为按次渠道，工坊不估算点数与额度；费用按该渠道自己的规则计算。${syncWarning}` : `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。${editCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${syncWarning}`, confirmLabel: editCost > 0 ? `消耗 ${editCost} 点并生成` : '仍要生成', ...(runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}) })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
+        } else if (!perUseChannel && !fullAccess && (editCost > 0 || options?.agent) && !await confirmAction({ rememberKey: 'generation.edit', rememberScope: confirmationCostScope(apiKey, editCost, 1, anlasBudget.remaining, request.operation), title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。${editCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${syncWarning}`, confirmLabel: editCost > 0 ? `消耗 ${editCost} 点并生成` : '仍要生成', ...(runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}) })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
         generationInFlightRef.current = true;
         if (mountedRef.current) {
             setIsGenerating(true);
@@ -2005,7 +1999,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                     confirmLabel: `仍要消耗 ${cost} 点生成`,
                     tone: 'danger',
                 })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
-            } else if (!fullAccess && (count > 1 || placement)) {
+            } else if (!perUseChannel && !fullAccess && (count > 1 || placement)) {
                 if (!await confirmAction({ rememberKey: 'agent.generation-series', rememberScope: confirmationCostScope(apiKey, cost, count, anlasBudget.remaining, [draft.params.model, placement]),
                     title: placement ? placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
                     message: `${reason ? `${reason}\n\n` : ''}使用本轮固定的提示词与参数，逐张生成并保存 ${count} 张图片。${cost > 0 ? `\n每张预计 ${cost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
