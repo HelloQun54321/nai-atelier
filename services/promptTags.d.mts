@@ -10,6 +10,8 @@ export interface PromptTagToken {
   groupWeight?: string;
   groupKind?: 'numeric' | 'brace' | 'bracket';
   groupLevel?: number;
+  /** 数值权重是否已有结尾 ::；仅 numeric 组设置，false 表示原文尚未闭合。 */
+  groupClosed?: boolean;
   groupEdge?: 'open' | 'close' | 'both';
 }
 

@@ -1739,10 +1739,97 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     expect(screen.queryByRole('combobox', { name: '添加提示词' })).toBeNull();
     expect((screen.getByRole('button', { name: '删除模式' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: /^alpha\s/ }));
+    expect((screen.getByRole('button', { name: '屏蔽所选 Tag' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: '括号' }));
     fireEvent.click(screen.getByRole('button', { name: '添加权重' }));
     fireEvent.paste(screen.getByLabelText('提示词中文翻译'), { clipboardData: { getData: () => 'beta' } });
     expect(onValueChange).not.toHaveBeenCalled();
+  });
+
+  it('翻译区显示带负号的数值权重；原文未补结尾时只显示开头，不伪造闭合', async () => {
+    const resolve = vi.spyOn(tagTranslations, 'resolvePromptTranslations').mockImplementation(async tokens => tokens.map(token => ({ ...token, source: 'missing' as const })));
+    try {
+      const closed = render(React.createElement(Harness, { initial: '-0.34::low complexity::', showTranslations: true }));
+      const closedTag = await screen.findByRole('button', { name: /low complexity/ });
+      expect(closedTag.textContent).toBe('-0.34::low complexity待翻译::');
+      closed.unmount();
+      render(React.createElement(Harness, { initial: 'detailed background, -0.34::low complexity', showTranslations: true }));
+      const openTag = await screen.findByRole('button', { name: /low complexity/ });
+      expect(openTag.textContent).toBe('-0.34::low complexity待翻译');
+      expect(screen.getByTitle('原文缺少结尾 ::，补全后权重才会生效')).toBeTruthy();
+    } finally { resolve.mockRestore(); }
+  });
+
+  it('数值权重可以继续减到 0 和负数，数值框回车接受负号', async () => {
+    render(React.createElement(Harness, { initial: '0.1::alpha::', showTranslations: true }));
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    fireEvent.click(await screen.findByRole('button', { name: /^0\.1::/ }));
+    const minus = screen.getByRole('button', { name: '−' });
+    fireEvent.click(minus);
+    expect(textarea.value).toBe('0::alpha::');
+    fireEvent.click(minus);
+    expect(textarea.value).toBe('-0.1::alpha::');
+    const input = screen.getByRole('textbox', { name: '数值权重' }) as HTMLInputElement;
+    expect(input.value).toBe('-0.1');
+    fireEvent.change(input, { target: { value: '-1.25' } });
+    expect(input.value).toBe('-1.25');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(textarea.value).toBe('-1.25::alpha::');
+    fireEvent.click(screen.getByRole('button', { name: '+' }));
+    expect(textarea.value).toBe('-1.15::alpha::');
+  });
+
+  it('屏蔽选中的散词后从翻译区恢复回原位置，不进入删除模式', async () => {
+    render(React.createElement(Harness, { initial: 'masterpiece, 1girl', showTranslations: true }));
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    fireEvent.click(await screen.findByRole('button', { name: /^masterpiece/ }));
+    expect((screen.getByRole('button', { name: '屏蔽所选 Tag' }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '屏蔽所选 Tag' }));
+    expect(textarea.value).toBe('1girl');
+    expect(screen.getByRole('group', { name: '已屏蔽的 Tag' }).textContent).toContain('已屏蔽 1 个 Tag');
+    fireEvent.click(screen.getByRole('button', { name: '恢复屏蔽的 Tag：masterpiece' }));
+    expect(textarea.value).toBe('masterpiece, 1girl');
+    expect(screen.queryByRole('group', { name: '已屏蔽的 Tag' })).toBeNull();
+    expect(screen.getByRole('button', { name: '删除模式' })).toBeTruthy();
+  });
+
+  it('屏蔽整组数值权重后恢复原权重包装，选中态之外的词保持不动', async () => {
+    render(React.createElement(Harness, { initial: '1.2::masterpiece, 1girl::, alpha', showTranslations: true }));
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    fireEvent.click(await screen.findByRole('button', { name: /^1\.2::/ }));
+    fireEvent.click(screen.getByRole('button', { name: '屏蔽所选 Tag' }));
+    expect(textarea.value).toBe('alpha');
+    fireEvent.click(screen.getByRole('button', { name: '恢复屏蔽的 Tag：masterpiece, 1girl' }));
+    expect(textarea.value).toBe('1.2::masterpiece, 1girl::, alpha');
+  });
+
+  it('恢复后撤销会回到屏蔽状态，恢复入口重新出现', async () => {
+    render(React.createElement(Harness, { initial: 'masterpiece, 1girl', showTranslations: true }));
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    fireEvent.click(await screen.findByRole('button', { name: /^masterpiece/ }));
+    fireEvent.click(screen.getByRole('button', { name: '屏蔽所选 Tag' }));
+    fireEvent.click(screen.getByRole('button', { name: '恢复屏蔽的 Tag：masterpiece' }));
+    expect(textarea.value).toBe('masterpiece, 1girl');
+    expect(screen.queryByRole('group', { name: '已屏蔽的 Tag' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '撤销' }));
+    expect(textarea.value).toBe('1girl');
+    expect(screen.getByRole('group', { name: '已屏蔽的 Tag' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '恢复屏蔽的 Tag：masterpiece' }));
+    expect(textarea.value).toBe('masterpiece, 1girl');
+  });
+
+  it('撤销带回屏蔽原文时移除重复的恢复项，删除模式不显示屏蔽入口', async () => {
+    render(React.createElement(Harness, { initial: 'masterpiece, 1girl', showTranslations: true }));
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    fireEvent.click(await screen.findByRole('button', { name: /^masterpiece/ }));
+    fireEvent.click(screen.getByRole('button', { name: '屏蔽所选 Tag' }));
+    expect(screen.getByRole('group', { name: '已屏蔽的 Tag' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '撤销' }));
+    expect(textarea.value).toBe('masterpiece, 1girl');
+    await waitFor(() => expect(screen.queryByRole('group', { name: '已屏蔽的 Tag' })).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: '删除模式' }));
+    expect(screen.queryByRole('button', { name: '屏蔽所选 Tag' })).toBeNull();
+    expect(screen.queryByRole('group', { name: '已屏蔽的 Tag' })).toBeNull();
   });
 
   it('原文本身就是中文的片段留在翻译区但不需要翻译，也不显示待翻译', async () => {

@@ -45,10 +45,11 @@ export const removePromptTagTokens = (prompt: string, selectedTokens: PromptTagT
     if (!chosen.every(Boolean) && first.groupKind) {
       const raw = prompt.slice(start, end);
       const opening = first.groupKind === 'numeric' ? raw.indexOf('::') + 2 : first.groupLevel || 1;
-      const closing = first.groupKind === 'numeric' ? 2 : first.groupLevel || 1;
-      const inner = raw.slice(opening, -closing);
+      // 末尾未补上结尾 :: 的数值组没有闭合段可保留，按 0 处理，避免 slice(-0) 吞掉整段。
+      const closing = first.groupKind === 'numeric' ? (first.groupClosed === false ? 0 : 2) : first.groupLevel || 1;
+      const inner = raw.slice(opening, closing ? -closing : raw.length);
       const remaining = removePromptTagTokens(inner, parsePromptTags(inner).filter((_, index) => chosen[index]));
-      if (remaining.trim()) replacement = raw.slice(0, opening) + remaining + raw.slice(-closing);
+      if (remaining.trim()) replacement = raw.slice(0, opening) + remaining + (closing ? raw.slice(-closing) : '');
     }
     return [{ start, end, replacement }];
   }).sort((a, b) => b.start - a.start);
@@ -63,7 +64,19 @@ export const removePromptTagTokens = (prompt: string, selectedTokens: PromptTagT
 export type PromptWeightAction = 'up' | 'down' | 'remove' | 'numeric';
 export type PromptWeightKind = 'brace' | 'bracket' | 'numeric';
 
-export const formatNumericWeight = (value: number) => String(Number(Math.max(0.1, value).toFixed(12)));
+/** 在指定偏移插入一段 Tag：沿用翻译区插入规则补齐前后分隔符，供屏蔽后恢复原位使用。 */
+export const insertPromptText = (prompt: string, offset: number, addition: string): { value: string; start: number } => {
+  const text = addition.trim();
+  const position = Math.max(0, Math.min(prompt.length, offset));
+  if (!text) return { value: prompt, start: position };
+  const before = prompt.slice(0, position), after = prompt.slice(position);
+  const prefix = !before.trim() ? before : /[,，|\n]\s*$/.test(before) ? before + (/\s$/.test(before) ? '' : ' ') : `${before.trimEnd()}, `;
+  const suffix = after ? /[,，|\n]$/.test(text) ? ' ' : ', ' : '';
+  return { value: prefix + text + suffix + after, start: prefix.length };
+};
+
+/** 数值权重保留最多十二位小数消除浮点尾差；NovelAI 支持负向权重，不设 0.1 下限。 */
+export const formatNumericWeight = (value: number) => String(Number((Number.isFinite(value) ? value : 1).toFixed(12)));
 
 export const cleanTagContent = (raw: string): string => {
   let val = raw.trim();

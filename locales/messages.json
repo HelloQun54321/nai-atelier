@@ -40870,5 +40870,47 @@
     "Cover saved to style chain",
     "カバーをスタイルチェーンに保存しました",
     "커버를 스타일 체인에 저장했습니다"
+  ],
+  "屏蔽所选 Tag": [
+    "遮蔽所選 Tag",
+    "Mute selected Tags",
+    "選択した Tag を一時的に無効化",
+    "선택한 Tag 임시 숨기기"
+  ],
+  "暂时屏蔽选中的 Tag（不删除，可从翻译区恢复）": [
+    "暫時遮蔽選取的 Tag（不刪除，可從翻譯區恢復）",
+    "Temporarily mute the selected Tags (they are not deleted and can be restored from the translation area)",
+    "選択した Tag を一時的に無効化します（削除せず、翻訳エリアから復元できます）",
+    "선택한 Tag를 임시로 숨깁니다(삭제되지 않으며 번역 영역에서 복원할 수 있습니다)"
+  ],
+  "已屏蔽的 Tag": [
+    "已遮蔽的 Tag",
+    "Muted Tags",
+    "無効化中の Tag",
+    "숨긴 Tag"
+  ],
+  "已屏蔽 {0} 个 Tag": [
+    "已遮蔽 {0} 個 Tag",
+    "Muted {0} Tags",
+    "無効化中の Tag {0} 個",
+    "숨긴 Tag {0}개"
+  ],
+  "恢复屏蔽的 Tag：{0}": [
+    "還原遮蔽的 Tag：{0}",
+    "Restore muted Tag: {0}",
+    "無効化した Tag を復元：{0}",
+    "숨긴 Tag 복원: {0}"
+  ],
+  "点击恢复原文：{0}": [
+    "點擊還原原文：{0}",
+    "Click to restore the original text: {0}",
+    "クリックして原文を復元：{0}",
+    "클릭하여 원문 복원: {0}"
+  ],
+  "原文缺少结尾 ::，补全后权重才会生效": [
+    "原文缺少結尾 ::，補全後權重才會生效",
+    "The prompt is missing the closing ::; the weight takes effect only after it is completed",
+    "原文に終わりの :: がありません。補完すると重みが有効になります",
+    "원문에 끝 ::가 없습니다. 마저 입력해야 가중치가 적용됩니다"
   ]
 }

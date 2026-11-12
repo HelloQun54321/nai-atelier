@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { parsePromptTags, removePromptTagTokens, resolvePromptTranslations, translateMissingPromptTags, transformPromptWeight, wrapPromptTag, wrapPromptTagTokens } from '../../services/tagTranslations';
+import { formatNumericWeight, insertPromptText, parsePromptTags, removePromptTagTokens, resolvePromptTranslations, translateMissingPromptTags, transformPromptWeight, wrapPromptTag, wrapPromptTagTokens } from '../../services/tagTranslations';
 
 describe('removePromptTagTokens', () => {
   it.each([
@@ -180,6 +180,53 @@ describe('parsePromptTags', () => {
       expect(wrapPromptTagTokens(prompt, selected, 'brace')).toBe('{A}, {B}, C');
       expect(wrapPromptTagTokens(prompt, selected, 'bracket')).toBe('[A], [B], C');
     });
+  });
+});
+
+describe('末尾未闭合的数值权重', () => {
+  it('缺少结尾 :: 时仍标记为数值组，负号与正数都不当作普通词', () => {
+    const negative = parsePromptTags('a, -0.34::low complexity');
+    expect(negative[1]).toMatchObject({ displayTag: 'low complexity', groupKind: 'numeric', groupWeight: '-0.34', groupClosed: false, groupStart: 3, groupEnd: 24 });
+    expect(negative[1].start).toBe(10);
+    const positive = parsePromptTags('0.1::tag');
+    expect(positive[0]).toMatchObject({ groupKind: 'numeric', groupWeight: '0.1', groupClosed: false });
+  });
+
+  it('已闭合的负号权重保持闭合组，行为不变', () => {
+    expect(parsePromptTags('-0.34::low complexity::')[0]).toMatchObject({ groupKind: 'numeric', groupWeight: '-0.34', groupClosed: true });
+    expect(parsePromptTags('0.3::nsfw::')[0]).toMatchObject({ groupKind: 'numeric', groupWeight: '0.3', groupClosed: true });
+  });
+
+  it('删除未闭合组内的个别词时保留开头权重，不吞掉结尾内容', () => {
+    const prompt = '-0.34::low complexity, extra';
+    const tokens = parsePromptTags(prompt);
+    expect(removePromptTagTokens(prompt, [tokens[0]])).toBe('-0.34::extra');
+  });
+
+  it('未闭合组的移除与加减保留正文', () => {
+    const prompt = '-0.34::low complexity';
+    const token = parsePromptTags(prompt)[0];
+    expect(transformPromptWeight(prompt, token, 'remove')).toBe('low complexity');
+    expect(transformPromptWeight(prompt, token, 'up')).toBe('-0.24::low complexity');
+    expect(transformPromptWeight(prompt, token, 'down')).toBe('-0.44::low complexity');
+  });
+});
+
+describe('formatNumericWeight', () => {
+  it('允许 0 与负向权重，不再被 0.1 下限截断', () => {
+    expect(formatNumericWeight(0)).toBe('0');
+    expect(formatNumericWeight(-0.1)).toBe('-0.1');
+    expect(formatNumericWeight(-0.44)).toBe('-0.44');
+    expect(formatNumericWeight(1.05 ** 2)).toBe('1.1025');
+  });
+});
+
+describe('insertPromptText', () => {
+  it('按插入位置补齐前后分隔符，可原位恢复屏蔽片段', () => {
+    expect(insertPromptText('a, c', 3, 'b')).toEqual({ value: 'a, b, c', start: 3 });
+    expect(insertPromptText('a', 1, 'b')).toEqual({ value: 'a, b', start: 3 });
+    expect(insertPromptText('a,', 2, 'b')).toEqual({ value: 'a, b', start: 3 });
+    expect(insertPromptText('', 0, '-0.34::low complexity::')).toEqual({ value: '-0.34::low complexity::', start: 0 });
   });
 });
 

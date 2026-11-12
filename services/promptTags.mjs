@@ -47,12 +47,15 @@ export const parsePromptTags = prompt => {
     let groupKind;
     let groupWeight;
     let groupLevel;
+    let groupClosed;
 
-    if (numericStart >= 0 && raw.endsWith('::')) {
+    if (numericStart >= 0) {
+      // 末尾只写了开头、还没补上结尾 :: 的数值权重也按组显示；否则翻译区会把它当成不带权重的普通词。
       groupKind = 'numeric';
       groupWeight = prompt.slice(groupStart, numericStart).trim();
       start = numericStart + 2;
-      finalEnd = groupEnd - 2;
+      groupClosed = raw.endsWith('::') && groupEnd - 2 >= start;
+      finalEnd = groupClosed ? groupEnd - 2 : groupEnd;
     } else {
       // 只计算确实包住整段的层级，不能把首尾两个不同子组的括号算成共同权重。
       if (raw[0] === '{' || raw[0] === '[') {
@@ -77,7 +80,7 @@ export const parsePromptTags = prompt => {
       }
     }
 
-    const group = groupKind ? { groupId: `${groupStart}:${groupEnd}`, groupStart, groupEnd, groupWeight, groupKind, groupLevel } : undefined;
+    const group = groupKind ? { groupId: `${groupStart}:${groupEnd}`, groupStart, groupEnd, groupWeight, groupKind, groupLevel, groupClosed } : undefined;
     tokens.push(...parseSegment(prompt, start, finalEnd, group));
   };
   for (let i = 0; i < prompt.length; i += 1) {
