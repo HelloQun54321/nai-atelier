@@ -15,13 +15,16 @@ it('提取池只限定随机补位，保留原固定项且不从全库补足', (
   expect(() => beginRollRound(e, ['whole-library', 'another'], 1)).toThrow('可用画师不足');
 });
 
-it('提取集合可以超过单图人数上限，快照与JSON往返保留来源且不随后续选择变化', () => {
+it('提取集合可以超过单图人数上限，快照只记来源串 ID 且不随后续选择变化', () => {
   const e = rollFixture(); e.artists = []; e.pinnedArtists = [];
   e.rules = { ...e.rules, minArtists: 1, maxArtists: 1 };
   e.chainArtistSource = { chainIds: ['source'], artists: Array.from({ length: 1100 }, (_, index) => ({ tag: `source-${index}`, count: 1 })) };
   const next = beginRollRound(e, ['not-source'], 1);
   expect(next.candidates[0].tags).toHaveLength(1);
-  expect(next.rounds[0].snapshot?.chainArtistSource?.artists).toHaveLength(1100);
+  // 每轮不再复制整份画师清单：轮次体积与来源画师数量无关。
+  expect(next.rounds[0].snapshot?.sourceChainIds).toEqual(['source']);
+  expect(next.rounds[0].snapshot).not.toHaveProperty('chainArtistSource');
+  expect(JSON.stringify(next.rounds[0].snapshot).length).toBeLessThan(200);
   const snapshot = structuredClone(next.rounds[0].snapshot);
   e.chainArtistSource.artists[0].tag = 'changed'; e.chainArtistSource.chainIds.push('second');
   expect(next.rounds[0].snapshot).toEqual(snapshot);
@@ -96,8 +99,9 @@ it('来源计数与快照在保存边界校验，旧无来源记录继续合法'
   expect(() => validateRollExperiment({ ...e, chainArtistSource: { chainIds: ['source', 'source'], artists: [] } })).toThrow('风格串画师抽取来源无效');
   expect(() => validateRollExperiment({ ...e, chainArtistSource: { chainIds: ['source'], artists: [{ tag: 'Ａlpha_Name(style)', count: 1 }, { tag: 'alpha name (style)', count: 1 }] } })).toThrow('风格串画师抽取来源无效');
   const valid = beginRollRound({ ...e, chainArtistSource: { chainIds: ['source'], artists: [{ tag: 'alpha', count: 1 }] }, pinnedArtists: [], rules: { ...e.rules, minArtists: 1, maxArtists: 1 } }, ['alpha'], 1);
-  valid.rounds[0].snapshot!.chainArtistSource!.artists[0].count = 0;
-  expect(() => validateRollExperiment(valid)).toThrow('风格串画师抽取来源无效');
+  expect(valid.rounds[0].snapshot!.sourceChainIds).toEqual(['source']);
+  valid.rounds[0].snapshot!.sourceChainIds!.push('source');
+  expect(() => validateRollExperiment(valid)).toThrow('画风轮次资料无效');
 });
 
 it('提取模式用统一画师身份匹配旧覆盖、固定、样张、屏蔽和偏好，不重复抽别名', () => {

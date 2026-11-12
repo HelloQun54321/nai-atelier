@@ -35,7 +35,14 @@ interface LegacyRollDrawPlan {
 }
 export interface RollRoundSnapshot {
   rules: RollRules;
+  /** 旧格式：完整内联当时的来源画师清单，保留读取兼容，不再写入。 */
   chainArtistSource?: RollChainArtistSource;
+  /**
+   * 新格式：只记当时的来源串 ID。
+   * 每轮内联整份来源清单会让记录随轮次线性膨胀（约 2000 条来源串 ≈ 155 KB/轮），
+   * 「沿用这轮条件」时再按 ID 从风格串重新提取画师。
+   */
+  sourceChainIds?: string[];
   mode?: LegacyRollDrawPlan['mode'];
   pinnedArtists?: string[];
   sampledOnly?: boolean;
@@ -76,6 +83,35 @@ export interface RollExperiment {
   rounds: RollRound[];
   archived?: boolean;
 }
+
+/** 只含身份与计数的列表摘要：一条记录可以很大，列表不搬运完整候选与轮次。 */
+export interface RollExperimentSummary {
+  id: string;
+  name: string;
+  revision: number;
+  archived: boolean;
+  createdAt: number;
+  updatedAt: number;
+  rounds: number;
+  candidates: number;
+}
+
+/** 摘要只用于列表选择，不参与保存；任何一项损坏都停止读取，避免用空列表覆盖。 */
+export function validateRollExperimentSummary(value: unknown): asserts value is RollExperimentSummary {
+  const summary = value as RollExperimentSummary;
+  if (!summary || typeof summary.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(summary.id) ||
+    typeof summary.name !== 'string' || !summary.name.trim() || summary.name.length > 120 ||
+    !Number.isSafeInteger(summary.revision) || summary.revision < 0 || typeof summary.archived !== 'boolean' ||
+    ![summary.createdAt, summary.updatedAt].every(Number.isFinite) ||
+    !Number.isSafeInteger(summary.rounds) || summary.rounds < 0 ||
+    !Number.isSafeInteger(summary.candidates) || summary.candidates < 0) throw new Error('Roll 串画风记录资料无效');
+}
+
+export const rollExperimentSummary = (experiment: RollExperiment): RollExperimentSummary => ({
+  id: experiment.id, name: experiment.name, revision: experiment.revision, archived: experiment.archived === true,
+  createdAt: experiment.createdAt, updatedAt: experiment.updatedAt,
+  rounds: experiment.rounds.length, candidates: experiment.candidates.length,
+});
 
 export const DEFAULT_ROLL_RULES: RollRules = { minArtists: 4, maxArtists: 4, minWeight: 0.7, maxWeight: 1.4 };
 /** 推荐的通用质量、渲染和背景归公共栏，人物与姿态独立编辑。 */
@@ -221,6 +257,11 @@ export function validateRollChainArtistSource(value: unknown): asserts value is 
     new Set(source.artists.map(artist => sourceTagKey(artist.tag))).size !== source.artists.length) throw new Error('风格串画师抽取来源无效');
 }
 
+/** 快照里的来源串 ID 只做身份校验；画师清单在沿用条件时按 ID 重新提取。 */
+export function validateRollSourceChainIds(value: unknown): asserts value is string[] {
+  if (!Array.isArray(value) || value.some(id => typeof id !== 'string' || !id || id.length > 100) || new Set(value).size !== value.length) throw new Error('画风轮次资料无效');
+}
+
 /** 显式空列表可清除旧记录的锁定；旧权重与旧候选保持原样。 */
 export function getRollPinnedArtists(experiment: Pick<RollExperiment, 'artists' | 'drawPlan' | 'pinnedArtists'>): string[] {
   if (experiment.pinnedArtists !== undefined) return experiment.pinnedArtists;
@@ -292,6 +333,7 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
       if (!snapshot || typeof snapshot !== 'object') throw new Error('画风轮次资料无效');
       validateRuleRanges(snapshot.rules);
       if (snapshot.chainArtistSource !== undefined) validateRollChainArtistSource(snapshot.chainArtistSource);
+      if (snapshot.sourceChainIds !== undefined) validateRollSourceChainIds(snapshot.sourceChainIds);
       if (snapshot.mode !== undefined) validateLegacyRollPlan({ mode: snapshot.mode, pinnedArtists: snapshot.pinnedArtists }, snapshot.rules);
       else {
         validateRollPinnedArtists(snapshot.pinnedArtists ?? []);

@@ -5,14 +5,15 @@ import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, CopyPlus, Heart,
 import type { LocalGenItem, PromptChain } from '../types';
 import { MobileOverflowMenu } from './MobileUI';
 import { t, useLanguage } from '../services/i18n';
-import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateCapacity, rollCandidateToChain, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollRules, type RollExperiment } from '../services/styleRoll';
+import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateCapacity, rollCandidateToChain, rollExperimentSummary, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
+import { buildRollChainArtistSource } from '../services/styleRollChainArtists';
 import { rollFavoriteMatches, rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
 import { ARTIST_SAMPLES_CHANGED, getArtistSampleLibrary, normalizeArtistSampleTag } from '../services/artistSamples';
 import { loadArtistSampleUrls } from '../services/artistSampleUrls';
 import { getSampledArtistTags } from '../services/artistSampleDrafts';
 import type { ArtistDictionaryEntry } from '../services/tagDictionary';
-import { loadRollBlocklist, loadRollExperiments, loadRollHistory, ROLL_BLOCKLIST_CHANGED, rollCandidateImages, saveRollBlocklist, saveRollExperiment } from '../services/styleRollApi';
+import { loadRollBlocklist, loadRollExperiment, loadRollExperiments, loadRollHistory, ROLL_BLOCKLIST_CHANGED, rollCandidateImages, saveRollBlocklist, saveRollExperiment } from '../services/styleRollApi';
 import { normalizeRollArtistKey } from '../services/styleRollSeed';
 import { beginRollGeneration, readRollApiKey } from '../services/styleRollGeneration';
 import { api, notifyLanAccessRequired, parseErrorResponse } from '../services/api';
@@ -99,7 +100,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const confirm = useConfirmDialog();
   const runtime = useNaiRuntime(); applyEstimatorRuntime(runtime);
   const subscription = useNovelaiUsage(), budget = useAnlasBudget();
-  const [experiments, setExperiments] = useState<RollExperiment[]>([]), [experimentId, setExperimentId] = useState('');
+  // 列表只保存摘要；当前记录完整加载后放进 experiment，避免每次进页面搬运全部候选与轮次。
+  const [experiments, setExperiments] = useState<RollExperimentSummary[]>([]), [experimentId, setExperimentId] = useState('');
+  const [experiment, setExperiment] = useState<RollExperiment | undefined>(), [detailId, setDetailId] = useState('');
+  const [detailLoading, setDetailLoading] = useState(false);
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setErrorState] = useState('');
   // 生成失败不占用顶部横幅：Roll 常驻小框承担出图过程、结果与失败回执。
   const [generationError, setGenerationError] = useState<{ experimentId: string; message: string; tone: 'error' | 'warning' } | null>(null);
@@ -142,7 +146,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const [sampledTags, setSampledTags] = useState<Set<string> | null>(null);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
   const busyRef = useRef(false), generatingRef = useRef(false), selectedExperimentRef = useRef(experimentId), historySequence = useRef(0);
-  const loadingRef = useRef(true), loadSequence = useRef(0);
+  const loadingRef = useRef(true), loadSequence = useRef(0), detailSequence = useRef(0);
   const librarySequence = useRef(0);
   const savedChains = useRef(new Map<string, PromptChain>()), mounted = useRef(true);
   const savedCovers = useRef(new Map<string, string>());
@@ -158,7 +162,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     onReset: selectionAnchor.clearAnchor,
   });
   selectedExperimentRef.current = experimentId;
-  const experiment = experiments.find(item => item.id === experimentId && !item.archived);
   const excludedArtistTags = useMemo(() => artistOverrides.filter(artist => artist.excluded).map(artist => artist.tag), [artistOverrides]);
   const effectiveLibrary = useMemo(() => {
     const source = chainArtistSource?.artists.map(artist => artist.tag) ?? library;
@@ -220,11 +223,25 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const reload = useCallback(async () => {
     const sequence = ++loadSequence.current; loadingRef.current = true;
     setLoading(true); setError('');
-    try { const values = await loadRollExperiments(); if (!mounted.current || sequence !== loadSequence.current) return; setExperiments(values); setExperimentId(current => values.some(value => value.id === current && !value.archived) ? current : values.find(value => !value.archived)?.id || ''); }
+    try { const values = await loadRollExperiments(); if (!mounted.current || sequence !== loadSequence.current) return; setExperiments(values); setDetailId(''); setExperimentId(current => values.some(value => value.id === current && !value.archived) ? current : values.find(value => !value.archived)?.id || ''); }
     catch (cause) { if (mounted.current && sequence === loadSequence.current) setError((cause as Error).message); }
     finally { if (mounted.current && sequence === loadSequence.current) { loadingRef.current = false; setLoading(false); } }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
+  // 摘要选中后再读完整记录：列表不再搬运模板、候选与轮次，切记录只有这一条请求。
+  useEffect(() => {
+    if (!active) return;
+    if (!experimentId) { setExperiment(undefined); setDetailId(''); setDetailLoading(false); return; }
+    if (detailId === experimentId) return;
+    const sequence = ++detailSequence.current;
+    let stale = false;
+    setDetailLoading(true); setExperiment(undefined);
+    void loadRollExperiment(experimentId)
+      .then(full => { if (!stale && mounted.current && sequence === detailSequence.current) { setExperiment(full); setDetailId(full.id); } })
+      .catch(cause => { if (!stale && mounted.current && sequence === detailSequence.current) setError((cause as Error).message); })
+      .finally(() => { if (!stale && mounted.current && sequence === detailSequence.current) setDetailLoading(false); });
+    return () => { stale = true; };
+  }, [active, experimentId, detailId, setError]);
   const reloadLibrary = useCallback(async () => {
     const sequence = ++librarySequence.current;
     setLibraryLoading(true); setLibraryError('');
@@ -278,9 +295,12 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   // 重新打开页面先接回可恢复会话：任务还在就恢复小框，服务已重启则留下中断记录。
   useEffect(() => { if (active) void restoreGenerationSeriesSessions(); }, [active]);
 
-  const store = async (next: RollExperiment) => {
+  const store = async (next: RollExperiment, options: { updateDetail?: boolean } = {}) => {
     const saved = await saveRollExperiment({ ...next, rules: { ...next.rules, ...getRollArtistRange(next) }, drawPlan: undefined, pinnedArtists: getRollPinnedArtists(next) });
-    if (mounted.current) setExperiments(current => [saved, ...current.filter(item => item.id !== saved.id)]);
+    if (mounted.current) {
+      if (options.updateDetail !== false) { setExperiment(saved); setDetailId(saved.id); setDetailLoading(false); }
+      setExperiments(current => [rollExperimentSummary(saved), ...current.filter(item => item.id !== saved.id)].sort((a, b) => b.updatedAt - a.updatedAt));
+    }
     return saved;
   };
   // 生成失败回执进候选卡占位区，不再占用顶部横幅。
@@ -509,10 +529,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     let next = experiment;
     if (retry && saveFailures?.needsReload) {
       try {
-        const records = await loadRollExperiments(), refreshed = records.find(record => record.id === experiment.id && !record.archived);
-        if (!refreshed) throw new Error(t('画风记录暂不可用'));
+        const refreshed = await loadRollExperiment(experiment.id);
+        if (refreshed.archived) throw new Error(t('画风记录暂不可用'));
         next = refreshed;
-        if (mounted.current) setExperiments(current => [refreshed, ...current.filter(record => record.id !== refreshed.id)]);
+        if (mounted.current) { setExperiment(refreshed); setDetailId(refreshed.id); setExperiments(current => [rollExperimentSummary(refreshed), ...current.filter(record => record.id !== refreshed.id)]); }
       } catch { if (currentRecord()) setError(t('暂时无法确认保存结果，已暂停后续项目')); return; }
     }
     const failed: string[] = [], unprocessed: string[] = [], messages: string[] = [];
@@ -532,10 +552,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           if (savedChains.current.has(`${next.id}:${candidate.id}`)) {
             // 关联失败后先核对服务端修订，再处理下一项，不能拿旧版本覆盖其他已保存关联。
             try {
-              const records = await loadRollExperiments(), refreshed = records.find(record => record.id === next.id && !record.archived);
-              if (!refreshed) throw new Error(t('画风记录暂不可用'));
+              const refreshed = await loadRollExperiment(next.id);
+              if (refreshed.archived) throw new Error(t('画风记录暂不可用'));
               next = refreshed;
-              if (mounted.current) setExperiments(current => [refreshed, ...current.filter(record => record.id !== refreshed.id)]);
+              if (mounted.current) { setExperiment(refreshed); setDetailId(refreshed.id); setExperiments(current => [rollExperimentSummary(refreshed), ...current.filter(record => record.id !== refreshed.id)]); }
               saved = Boolean(refreshed.candidates.find(item => item.id === candidate.id)?.savedChainId);
             } catch {
               failed.push(candidate.id); unprocessed.push(...items.slice(index + 1).map(item => item.id));
@@ -582,11 +602,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     setSelectedIds(new Set()); setSelectedId('');
     notify(t('已永久清理 {0} 个候选', [archivedIds.length]), 'success');
   });
-  const archiveRecord = (record: RollExperiment, archived: boolean) => void perform(async () => {
-    if (getGenerationSeriesSession(rollSourceId(record.id)) || generatingRef.current) return;
-    await store({ ...record, archived });
-    if (archived && record.id === experimentId) setExperimentId(experiments.find(item => item.id !== record.id && !item.archived)?.id || '');
-    if (!archived) setExperimentId(record.id);
+  // 归档／恢复改按记录 ID 处理：不在当前选中的记录可能只有摘要，先补读完整内容再保存。
+  const archiveRecord = (id: string, archived: boolean) => void perform(async () => {
+    if (getGenerationSeriesSession(rollSourceId(id)) || generatingRef.current) return;
+    const target = experiment?.id === id ? experiment : await loadRollExperiment(id);
+    await store({ ...target, archived }, { updateDetail: false });
+    if (archived && id === experimentId) setExperimentId(experiments.find(item => item.id !== id && !item.archived)?.id || '');
+    if (!archived) setExperimentId(id);
   });
   const sendToLab = () => {
     if (!experiment || !selected) return;
@@ -735,7 +757,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const generatingCandidateId = preparing || (session && ['preparing', 'generating', 'saving'].includes(session.state)) ? previewCandidateId : undefined;
   const selectedPending = experiment ? rollPendingCandidates(experiment, images, chosen.map(candidate => candidate.id)) : [];
   const saveable = chosen.filter(candidate => images.has(candidate.id) && !candidate.archived && !candidate.savedChainId);
-  const working = Boolean(session || preparing), frozen = busy || loading;
+  const working = Boolean(session || preparing), frozen = busy || loading || detailLoading;
   const canStart = !frozen && !working && remaining > 0 && (chainArtistSource !== undefined || (!libraryLoading && !libraryError && library.length > 0)) && (!experiment || historyReady) && (!sampledOnly || (sampledTags !== null && (effectiveLibrary.length > 0 || pinnedArtists.length >= roundRules.maxArtists)));
   const roundConditionLabel = (item: RollExperiment['rounds'][number]) => {
     const snapshot = item.snapshot;
@@ -775,9 +797,9 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               <div className="space-y-1">
                 <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => openFromSettings(close, () => setSetup(makeExperiment()))}><Plus />{t('新建记录')}</button>
                 <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); close(); }}><RefreshCw />{t('重新加载画风记录')}</button>
-                {experiment && <button type="button" className={`${TOOLBAR_MENU_CLASS} !text-red-500`} onClick={() => { archiveRecord(experiment, true); close(); }}><Trash2 />{t('将记录移入回收站')}</button>}
+                {experiment && <button type="button" className={`${TOOLBAR_MENU_CLASS} !text-red-500`} onClick={() => { archiveRecord(experiment.id, true); close(); }}><Trash2 />{t('将记录移入回收站')}</button>}
               </div>
-              {experiments.some(item => item.archived) && <div className="space-y-1 border-t border-gray-200 pt-3 dark:border-gray-800"><p className="mb-2 text-xs text-gray-400">{t('记录回收站')}</p>{experiments.filter(item => item.archived).map(item => <div key={item.id} className="flex items-center gap-2 text-sm"><span className="min-w-0 flex-1 truncate">{item.name}</span><button type="button" className="mobile-touch shrink-0 px-2 text-xs text-indigo-500" aria-label={t('恢复记录：{0}', [item.name])} onClick={() => { archiveRecord(item, false); close(); }}>{t('恢复')}</button></div>)}</div>}
+              {experiments.some(item => item.archived) && <div className="space-y-1 border-t border-gray-200 pt-3 dark:border-gray-800"><p className="mb-2 text-xs text-gray-400">{t('记录回收站')}</p>{experiments.filter(item => item.archived).map(item => <div key={item.id} className="flex items-center gap-2 text-sm"><span className="min-w-0 flex-1 truncate">{item.name}</span><button type="button" className="mobile-touch shrink-0 px-2 text-xs text-indigo-500" aria-label={t('恢复记录：{0}', [item.name])} onClick={() => { archiveRecord(item.id, false); close(); }}>{t('恢复')}</button></div>)}</div>}
             </div>}
           </ToolbarPopover>
         </div>
@@ -794,7 +816,23 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
                 {(['all', 'unsaved', 'pending', 'favorited'] as const).map(value => <ToolbarButton key={value} aria-label={t(ROLL_FILTER_LABELS[value])} active={filter === value} onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}>{t(ROLL_FILTER_LABELS[value])}<span className="ml-auto text-xs opacity-60">{value === 'favorited' && (!collectionSettled || !historyReady) ? '—' : experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }, undefined, favoriteIds).length : 0}</span></ToolbarButton>)}
               </div>
               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{`${t('第 {0} 轮', [(experiment?.rounds.indexOf(item) ?? 0) + 1])}${roundConditionLabel(item) ? ` · ${roundConditionLabel(item)}` : ` · ${item.candidateIds.length}`}`}</option>)}</select></label>
-              {scopedRound?.snapshot && <ToolbarButton className="w-full" onClick={() => { const snapshot = scopedRound.snapshot!; setRoundRules({ ...snapshot.rules, maxArtists: Math.max(snapshot.rules.maxArtists, snapshot.pinnedArtists?.length ?? 0) }); setPinnedArtists(snapshot.pinnedArtists ?? []); setChainArtistSource(snapshot.chainArtistSource); setSampledOnly(Boolean(snapshot.sampledOnly)); close(); }}><RotateCcw />{t('沿用这轮条件')}</ToolbarButton>}
+              {scopedRound?.snapshot && <ToolbarButton className="w-full" onClick={() => {
+                const snapshot = scopedRound.snapshot!;
+                setRoundRules({ ...snapshot.rules, maxArtists: Math.max(snapshot.rules.maxArtists, snapshot.pinnedArtists?.length ?? 0) });
+                setPinnedArtists(snapshot.pinnedArtists ?? []);
+                // 旧快照内联了当时的画师清单；新快照只存来源串 ID，按现有风格串重新提取。
+                if (snapshot.chainArtistSource) setChainArtistSource(snapshot.chainArtistSource);
+                else if (snapshot.sourceChainIds) {
+                  if (!snapshot.sourceChainIds.length) setChainArtistSource({ chainIds: [], artists: [] });
+                  else {
+                    const restored = buildRollChainArtistSource(chains.filter(chain => snapshot.sourceChainIds!.includes(chain.id)), knownArtists);
+                    setChainArtistSource(restored.artists.length ? restored : undefined);
+                    if (!restored.artists.length) notify(t('这轮使用的来源风格串已删除'), 'error');
+                  }
+                } else setChainArtistSource(undefined);
+                setSampledOnly(Boolean(snapshot.sampledOnly));
+                close();
+              }}><RotateCcw />{t('沿用这轮条件')}</ToolbarButton>}
               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('候选排序')} value={sort} onChange={event => setSort(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="new">{t('最新生成')}</option><option value="old">{t('最早优先')}</option></select></label>
               <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setFilter('all'); setRoundId(''); setSort('new'); setQuery(''); close(); }}>{t('重置筛选')}</button>
             </div>}
@@ -886,7 +924,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       </ChromeNotice>}
     </ChromeNoticeStack>}
     </WorkspaceChrome>
-    {loading && !experiment ? <PageSpinner className="workspace-scroll-viewport overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
+    {(loading || detailLoading) && !experiment ? <PageSpinner className="workspace-scroll-viewport overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
       : <div className="relative flex min-h-0 flex-1">
         {ROLL_TRIAGE_FILTERS.includes(filter) && !filterReady ? (filter === 'favorited' && collectionFailed ? <div role="alert" className="flex flex-1 items-center justify-center gap-2 p-6 text-sm text-gray-500"><span>{t('收藏状态读取失败')}</span><ToolbarButton onClick={() => void loadFavorites()}>{t('重新加载')}</ToolbarButton></div> : historyReady || historyLoading ? <PageSpinner /> : <div role="status" className="flex flex-1 items-center justify-center p-6 text-sm text-gray-500">{t('历史暂不可用')}</div>) : <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} roundNumbers={roundNumbers} positions={roundPositions} generationState={{ generatingId: generatingCandidateId, nextId: nextPendingId, running: working, paused: session?.state === 'paused', awaiting: Boolean(session?.awaiting), saving: session?.state === 'saving', error: generationError && generationError.experimentId === experiment.id ? generationError : null }} onGenerate={id => { const candidate = experiment.candidates.find(item => item.id === id); if (candidate) void generate([candidate], experiment); }} onPause={pause} onResume={resume} onCancel={cancelSession} onApprove={approve} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => deleteCandidates([id])} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />}
         {!isMobile && selected && <aside className="workspace-fixed-pane appearance-surface flex w-84 max-w-[40%] flex-none flex-col border-l border-gray-200/80 bg-white/95 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/95 xl:w-92 shadow-sm"><div className="appearance-surface flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="appearance-surface text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><div className="flex items-center gap-1">{detailActions}<IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div></div><div className="appearance-surface min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}

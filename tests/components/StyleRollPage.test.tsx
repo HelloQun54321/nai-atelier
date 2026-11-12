@@ -11,14 +11,14 @@ import { executeAgentCommand, getAgentCommands } from '../../services/agentComma
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { setLanguage } from '../../services/i18n';
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, ensureCollection: vi.fn(), favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>(), interrupted: [] as any[], clearInterrupted: vi.fn(), restore: vi.fn(async () => {}), getQueue: vi.fn(async () => ({ intervalSeconds: 2, intervalJitterPercent: 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })), setIntervalPref: vi.fn(async (_key: string, seconds: number, jitterPercent?: number) => ({ intervalSeconds: seconds, intervalJitterPercent: jitterPercent ?? 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })) }));
+const mocks = vi.hoisted(() => ({ load: vi.fn(), loadOne: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, ensureCollection: vi.fn(), favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>(), interrupted: [] as any[], clearInterrupted: vi.fn(), restore: vi.fn(async () => {}), getQueue: vi.fn(async () => ({ intervalSeconds: 2, intervalJitterPercent: 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })), setIntervalPref: vi.fn(async (_key: string, seconds: number, jitterPercent?: number) => ({ intervalSeconds: seconds, intervalJitterPercent: jitterPercent ?? 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })) }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: async () => ({ available: true, canManage: true, packs: [] }), ARTIST_SAMPLES_CHANGED: 'nai-artist-samples-changed', getArtistSampleLibrary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: async () => [] }));
 const sampleUrls = new Map<string, string>();
 vi.mock('../../services/artistSampleUrls', () => ({ loadArtistSampleUrls: async () => sampleUrls }));
 vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => preferredItems, subscribeCollection: (listener: () => void) => { mocks.collectionListeners.add(listener); return () => { mocks.collectionListeners.delete(listener); }; }, collectionRevision: () => mocks.collectionRevision, ensureCollection: mocks.ensureCollection, toggleArtistPreference: vi.fn(), collectionTargetActive: (target: { sourceId?: string }) => mocks.favorites.has(target.sourceId || '') }));
 vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), getArtistSampleData: async () => ({ templates: {}, samples: [] }), getSampledArtistTags: mocks.sampled }));
-vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollExperiments: mocks.load, saveRollExperiment: mocks.save, loadRollHistory: mocks.history, loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
+vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollExperiments: mocks.load, loadRollExperiment: mocks.loadOne, saveRollExperiment: mocks.save, loadRollHistory: mocks.history, loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
 vi.mock('../../services/styleRollGeneration', () => ({ beginRollGeneration: mocks.generate, readRollApiKey: () => mocks.key }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { subscribe: () => () => {} } }));
 vi.mock('../../services/generationSeries', () => ({ getGenerationSeriesSession: () => mocks.session, subscribeGenerationSeries: () => () => {}, stopGenerationSeriesSession: mocks.stop, approveGenerationSeries: mocks.approve, restoreGenerationSeriesSessions: mocks.restore, listInterruptedGenerationSeries: () => mocks.interrupted, clearInterruptedGenerationSeries: mocks.clearInterrupted }));
@@ -43,6 +43,12 @@ beforeEach(() => {
   experiment = rollFixture(); experiment.candidates = [candidateFixture('a', 'alpha'), candidateFixture('b', 'beta')];
   mocks.dictionary.mockResolvedValue(experiment.artists.map(artist => ({ name: artist.tag, chinese: '', postCount: 1 })));
   mocks.load.mockImplementation(async () => [structuredClone(experiment)]);
+  // 列表只回摘要；完整记录在选中后按 ID 读取，测试沿用同一份合成记录。
+  mocks.loadOne.mockImplementation(async (id: string) => {
+    const list = await mocks.load() as RollExperiment[];
+    const found = list.find(item => item.id === id) ?? list[0] ?? experiment;
+    return structuredClone(found);
+  });
   mocks.save.mockImplementation(async value => ({ ...structuredClone(value), revision: value.revision + 1 }));
   mocks.history.mockResolvedValue(rows(experiment)); mocks.confirm.mockResolvedValue(true);
   mocks.generate.mockResolvedValue({ session: {}, settle: Promise.resolve({ success: true }) });
@@ -57,6 +63,8 @@ const setup = async (options = {}) => {
   const props = { active: true, chains: [], enforceFreeStepLimit: true, generationStreamPreview: true, notify: vi.fn(), onSaveChain, onNavigateToPlayground, onOpenChain: vi.fn(), ...options };
   const view = render(<StyleRollPage {...props} />);
   await waitFor(() => expect(mocks.load).toHaveBeenCalled());
+  // 列表只回摘要，完整记录是随后按 ID 拉取的；等这次读取落地再让用例操作页面。
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
   await waitFor(() => expect(screen.queryByRole('combobox', { name: '切换画风记录' })?.getAttribute('disabled')).toBeNull());
   if (experiment.candidates.length) await waitFor(() => expect(mocks.history).toHaveBeenCalled());
   return { ...view, props };
@@ -370,6 +378,7 @@ it('权重范围随记录切换并在重新进入后恢复，新范围只作用�
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '0.2');
   fireEvent.keyDown(window, { key: 'Escape' });
   fireEvent.change(screen.getByRole('combobox', { name: '切换画风记录' }), { target: { value: other.id } });
+  await waitFor(() => expect(screen.getByRole('button', { name: '本轮设置' }).hasAttribute('disabled')).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '2');
   expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '2.4');
@@ -1193,13 +1202,19 @@ it('本轮设置里直接提取抽样来源，不打开管理、不生成或保�
   view.rerender(<StyleRollPage {...view.props} />); await waitFor(() => expect(screen.getByRole('button', { name: '再 Roll 一轮' }).hasAttribute('disabled')).toBe(false)); open();
   fireEvent.change(screen.getByRole('combobox', { name: '切换画风记录' }), { target: { value: second.id } });
   expect(screen.queryByRole('dialog', { name: '提取接线' })).toBeNull();
+  await waitFor(() => expect(screen.getByRole('button', { name: '本轮设置' }).hasAttribute('disabled')).toBe(false));
   open(); expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).not.toContain('beta');
   expect(mocks.generate).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
 });
 
 it.each([false, true])('提取来源经页面/Agent保存到记录与轮次，可清除恢复全库，Agent=%s', async agent => {
   experiment.candidates = []; experiment.rules = { ...experiment.rules, minArtists: 2, maxArtists: 2 };
-  const view = await setup();
+  // 轮次快照只留来源串 ID；「沿用这轮条件」按 ID 从这些风格串重新提取画师。
+  const sourceChains = [
+    { id: 'source-chain', type: 'style', name: '来源一', description: '', tags: [], basePrompt: 'beta, gamma', negativePrompt: '', modules: [], params: experiment.template.params, variableValues: { subject: '' }, createdAt: 1, updatedAt: 1 },
+    { id: 'source-two', type: 'style', name: '来源二', description: '', tags: [], basePrompt: 'delta, epsilon', negativePrompt: '', modules: [], params: experiment.template.params, variableValues: { subject: '' }, createdAt: 1, updatedAt: 1 },
+  ] as unknown as PromptChain[];
+  const view = await setup({ chains: sourceChains });
   const chainButton = () => screen.getByRole('button', { name: /从风格串提取/ });
   const openSettings = () => fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
   const closeSettings = () => fireEvent.keyDown(window, { key: 'Escape' });
@@ -1212,7 +1227,7 @@ it.each([false, true])('提取来源经页面/Agent保存到记录与轮次，�
   else { fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' })); await waitFor(() => expect(mocks.save).toHaveBeenCalled()); }
   const saved = mocks.save.mock.calls.at(-1)![0] as RollExperiment;
   expect(saved.chainArtistSource?.artists).toHaveLength(4);
-  expect(saved.rounds.at(-1)?.snapshot?.chainArtistSource).toEqual(saved.chainArtistSource);
+  expect(saved.rounds.at(-1)?.snapshot?.sourceChainIds).toEqual(saved.chainArtistSource?.chainIds);
   expect(saved.pinnedArtists).toEqual([]);
   expect(saved.template).toEqual(experiment.template);
   expect(saved.candidates.every(candidate => candidate.tags.length === 2 && candidate.tags.every(tag => ['beta', 'gamma', 'delta', 'epsilon'].includes(tag.tag)))).toBe(true);
@@ -1227,7 +1242,9 @@ it.each([false, true])('提取来源经页面/Agent保存到记录与轮次，�
   fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
   fireEvent.change(screen.getByRole('combobox', { name: '查看轮次' }), { target: { value: saved.rounds.at(-1)!.id } });
   fireEvent.click(screen.getByRole('button', { name: '沿用这轮条件' }));
-  expect((await executeAgentCommand(view.container, 'get_roll_state', {}, true) as any).chainArtistSource).toEqual(saved.chainArtistSource);
+  const restoredSource = (await executeAgentCommand(view.container, 'get_roll_state', {}, true) as any).chainArtistSource;
+  expect(restoredSource?.chainIds).toEqual(saved.chainArtistSource?.chainIds);
+  expect(restoredSource?.artists.map((artist: any) => artist.tag).sort()).toEqual(['beta', 'delta', 'epsilon', 'gamma']);
 });
 
 it.each([false, true])('已有提取来源不依赖全词库成功，仍显示词库错误且UI/Agent可抽取，Agent=%s', async agent => {

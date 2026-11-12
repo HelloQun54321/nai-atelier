@@ -1,4 +1,4 @@
-import { rollPrompt, rollSourceId, rollCandidateModuleId, validateRollBlocklist, validateRollExperiment, validateRollPreset, type RollExperiment, type RollPreset } from '../../services/styleRoll';
+import { rollExperimentSummary, rollPrompt, rollSourceId, rollCandidateModuleId, validateRollBlocklist, validateRollExperiment, validateRollPreset, type RollExperiment, type RollPreset } from '../../services/styleRoll';
 import { error, json, type RouteContext } from './types';
 
 const blocklistKey = (userId: string) => `style_roll_blocklist_v1:${userId}`;
@@ -7,7 +7,8 @@ const blocklistKey = (userId: string) => `style_roll_blocklist_v1:${userId}`;
 export async function handleStyleRollRoute({ path, method, request, db, currentUser }: RouteContext): Promise<Response | null> {
   const presetCollection = path === '/api/style-roll/presets';
   const presetItem = path.match(/^\/api\/style-roll\/presets\/([^/]+)$/);
-  if (path !== '/api/style-roll' && path !== '/api/style-roll/blocklist' && !presetCollection && !presetItem) return null;
+  const experimentItem = path.match(/^\/api\/style-roll\/([^/]+)$/);
+  if (path !== '/api/style-roll' && path !== '/api/style-roll/blocklist' && !presetCollection && !presetItem && !experimentItem) return null;
   if (currentUser.role === 'guest') return error('访客无法访问 Roll 串实验', 403);
 
   if (presetCollection || presetItem) {
@@ -75,6 +76,18 @@ export async function handleStyleRollRoute({ path, method, request, db, currentU
   }
 
   const prefix = `style_roll_v1:${currentUser.id}:`;
+  // 单条记录按需读取：列表只返回摘要，完整候选与轮次在选中记录时才搬运。
+  if (experimentItem) {
+    if (method !== 'GET') return error('Method not allowed', 405);
+    const id = experimentItem[1];
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id)) return error('Roll 记录 ID 无效', 400);
+    const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(prefix + id).first<{ value: string }>();
+    if (!row) return error('Roll 记录不存在', 404);
+    try {
+      const value: unknown = JSON.parse(row.value); validateRollExperiment(value);
+      return json({ experiment: value });
+    } catch { return error('Roll 串资料读取失败，请保留资料并检查备份', 500); }
+  }
   if (method === 'GET' && new URL(request.url).searchParams.get('agentRead') === '1') {
     const query = new URL(request.url).searchParams;
     const experimentId = query.get('experimentId');
@@ -103,13 +116,13 @@ export async function handleStyleRollRoute({ path, method, request, db, currentU
   if (method === 'GET') {
     const rows = await db.prepare('SELECT value FROM settings WHERE key >= ? AND key < ?').bind(prefix, prefix + '\uffff').all<{ value: string }>();
     try {
-      const experiments = rows.results.map(row => { const value: unknown = JSON.parse(row.value); validateRollExperiment(value); return value; });
+      const experiments = rows.results.map(row => { const value: unknown = JSON.parse(row.value); validateRollExperiment(value); return rollExperimentSummary(value); });
       return json({ experiments: experiments.sort((a, b) => b.updatedAt - a.updatedAt) });
     } catch { return error('Roll 串资料读取失败，请保留资料并检查备份', 500); }
   }
   if (method !== 'PUT') return error('Method not allowed', 405);
+  // 不再限制记录体积：候选与轮次数量上限已经约束了单条记录能装多少内容，体积不应成为 Roll 的门槛。
   const raw = await request.text();
-  if (raw.length > 1_000_000) return error('Roll 串实验过大，请新建实验', 413);
   let experiment: RollExperiment;
   try { const value: unknown = JSON.parse(raw); validateRollExperiment(value); experiment = value; }
   catch (cause) { return error(cause instanceof Error ? cause.message : 'Roll 串资料无效', 400); }

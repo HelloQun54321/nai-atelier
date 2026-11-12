@@ -1,7 +1,7 @@
 import type { LocalGenItem } from '../types';
 import { api } from './api';
 import { localHistory } from './localHistory';
-import { rollCandidateModuleId, rollPrompt, rollTemplateSignature, rollSourceId, validateRollBlocklist, validateRollExperiment, validateRollPreset, type RollExperiment, type RollPreset } from './styleRoll';
+import { rollCandidateModuleId, rollPrompt, rollTemplateSignature, rollSourceId, validateRollBlocklist, validateRollExperiment, validateRollExperimentSummary, validateRollPreset, type RollExperiment, type RollExperimentSummary, type RollPreset } from './styleRoll';
 
 export async function loadRollPresets(): Promise<RollPreset[]> {
   const result = await api.get('/style-roll/presets', { cache: 'no-store' });
@@ -23,11 +23,21 @@ export async function deleteRollPreset(preset: RollPreset): Promise<void> {
   if (result?.deleted !== preset.id) throw new Error('Roll 预设删除回执无效');
 }
 
-export async function loadRollExperiments(): Promise<RollExperiment[]> {
+/**
+ * 记录列表只取摘要：一条记录可以攒到几十万字符，把全部候选与轮次搬到列表里会拖慢每次进入 Roll 页。
+ * 完整内容在选中记录后由 `loadRollExperiment` 单独读取。
+ */
+export async function loadRollExperiments(): Promise<RollExperimentSummary[]> {
   const result = await api.get('/style-roll', { cache: 'no-store' });
   if (!Array.isArray(result.experiments)) throw new Error('Roll 串资料读取失败');
-  for (const experiment of result.experiments) validateRollExperiment(experiment);
+  for (const summary of result.experiments) validateRollExperimentSummary(summary);
   return result.experiments;
+}
+
+export async function loadRollExperiment(id: string): Promise<RollExperiment> {
+  const result = await api.get(`/style-roll/${encodeURIComponent(id)}`, { cache: 'no-store' });
+  validateRollExperiment(result?.experiment);
+  return result.experiment;
 }
 
 export async function saveRollExperiment(experiment: RollExperiment): Promise<RollExperiment> {

@@ -26,7 +26,8 @@ export function beginRollRound(e: RollExperiment, library: string[], count: numb
     id: createUuid(), candidateIds: added.map(candidate => candidate.id), createdAt: Date.now(),
     snapshot: {
       rules: { ...source.rules }, pinnedArtists: [...pinnedArtists],
-      ...(source.chainArtistSource === undefined ? {} : { chainArtistSource: { chainIds: [...source.chainArtistSource.chainIds], artists: source.chainArtistSource.artists.map(artist => ({ ...artist })) } }),
+      // 快照只记来源串 ID：每轮内联整份画师清单会让记录随轮次线性膨胀。
+      ...(source.chainArtistSource === undefined ? {} : { sourceChainIds: [...source.chainArtistSource.chainIds] }),
       ...(options.sampledOnly ? { sampledOnly: true } : {}),
     },
   };

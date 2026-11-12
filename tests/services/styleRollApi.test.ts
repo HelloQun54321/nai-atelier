@@ -4,7 +4,7 @@ import { candidateFixture, rollFixture, rollImageFixture } from '../fixtures/sty
 const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), delete: vi.fn(), getBrowseOrder: vi.fn(), getPage: vi.fn() }));
 vi.mock('../../services/api', () => ({ api: { get: mocks.get, put: mocks.put, delete: mocks.delete } }));
 vi.mock('../../services/localHistory', () => ({ localHistory: mocks }));
-import { deleteRollPreset, loadRollPresets, saveRollPreset, loadRollExperiments, loadRollHistory, rollCandidateImages, saveRollExperiment, saveRollBlocklist, ROLL_BLOCKLIST_CHANGED } from '../../services/styleRollApi';
+import { deleteRollPreset, loadRollPresets, saveRollPreset, loadRollExperiment, loadRollExperiments, loadRollHistory, rollCandidateImages, saveRollExperiment, saveRollBlocklist, ROLL_BLOCKLIST_CHANGED } from '../../services/styleRollApi';
 beforeEach(() => vi.clearAllMocks());
 
 it('预设列表不缓存、完整模板保存并带版本独立删除', async () => {
@@ -62,11 +62,15 @@ it('坏响应不转为空实验，保存失败直接交给页面保留原状态'
   mocks.put.mockRejectedValue(new Error('冲突')); await expect(saveRollExperiment(rollFixture())).rejects.toThrow('冲突');
 });
 
-it('普通记录完整读取保存，风格串关联与轮次不丢失', async () => {
+it('普通记录列表只回摘要，选中后按 ID 读取完整内容，保存不丢风格串关联与轮次', async () => {
   const e = rollFixture(); e.candidates = [{ ...candidateFixture('a'), savedChainId: 'kept-chain' }];
   e.rounds = [{ id: 'batch', candidateIds: ['a'], createdAt: 1 }];
-  mocks.get.mockResolvedValue({ experiments: [e] });
-  expect(await loadRollExperiments()).toEqual([e]);
+  mocks.get.mockResolvedValue({ experiments: [{ id: e.id, name: e.name, revision: e.revision, archived: false, createdAt: e.createdAt, updatedAt: e.updatedAt, rounds: 1, candidates: 1 }] });
+  const [summary] = await loadRollExperiments();
+  expect(summary).toEqual({ id: e.id, name: e.name, revision: e.revision, archived: false, createdAt: e.createdAt, updatedAt: e.updatedAt, rounds: 1, candidates: 1 });
+  mocks.get.mockResolvedValue({ experiment: e });
+  expect(await loadRollExperiment(e.id)).toEqual(e);
+  expect(mocks.get).toHaveBeenLastCalledWith(`/style-roll/${e.id}`, { cache: 'no-store' });
   mocks.put.mockResolvedValue({ experiment: { ...e, revision: e.revision + 1 } });
   const saved = await saveRollExperiment(e);
   expect(mocks.put).toHaveBeenCalledWith('/style-roll', e);
@@ -82,8 +86,8 @@ it('提取来源与频次快照完整往返，清除当前来源不改旧轮次'
   const saved = await saveRollExperiment(e);
   expect(saved.chainArtistSource).toEqual(e.chainArtistSource);
   expect(mocks.put).toHaveBeenCalledWith('/style-roll', e);
-  mocks.get.mockResolvedValue({ experiments: [saved] });
-  expect((await loadRollExperiments())[0].rounds[0].snapshot?.chainArtistSource).toEqual(e.chainArtistSource);
+  mocks.get.mockResolvedValue({ experiment: saved });
+  expect((await loadRollExperiment(saved.id)).rounds[0].snapshot?.chainArtistSource).toEqual(e.chainArtistSource);
   const cleared = { ...saved, chainArtistSource: undefined };
   mocks.put.mockResolvedValue({ experiment: JSON.parse(JSON.stringify({ ...cleared, revision: 3 })) });
   const updated = await saveRollExperiment(cleared);

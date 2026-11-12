@@ -4,7 +4,7 @@ import { handleStyleRollRoute } from '../../worker/routes/styleRollRoutes';
 import { INIT_SQL, type D1Database, type RouteContext } from '../../worker/routes/types';
 import { candidateFixture, rollFixture } from '../fixtures/styleRoll';
 import { beginRollRound } from '../../services/styleRollWorkflow';
-import { ROLL_MAX_ARTISTS, type RollPreset } from '../../services/styleRoll';
+import { ROLL_CANDIDATE_LIMIT, ROLL_MAX_ARTISTS, type RollPreset } from '../../services/styleRoll';
 
 const databases: DatabaseSync[] = [];
 afterEach(() => { databases.splice(0).forEach(db => db.close()); });
@@ -17,7 +17,8 @@ const fixture = () => {
     const request = new Request('http://localhost' + path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return handleStyleRollRoute({ path: new URL(request.url).pathname, method, request, db, currentUser: { id, role } } as RouteContext);
   };
-  return { sqlite, invoke };
+  const readExperiment = async (id: string) => (await (await invoke(undefined, 'owner', 'admin', 'GET', `/api/style-roll/${id}`))!.json() as any).experiment;
+  return { sqlite, invoke, readExperiment };
 };
 
 const presetFixture = (id = 'one'): RollPreset => ({ id, name: `质量词 ${id}`, template: { ...rollFixture().template, characterPrompt: '独立角色提示词',
@@ -35,14 +36,15 @@ it('超过单图人数的提取来源完整保存，清除当前来源不改历�
   const second = await f.invoke(next); expect(second!.status).toBe(200);
   const { experiment: withRound } = await second!.json() as any;
   expect(withRound.chainArtistSource).toEqual(e.chainArtistSource);
-  expect(withRound.rounds[0].snapshot.chainArtistSource).toEqual(e.chainArtistSource);
-  const changed = structuredClone(withRound); changed.rounds[0].snapshot.chainArtistSource.artists[0].count = 1;
+  // 轮次快照只记来源串 ID，不再每轮复制整份画师清单。
+  expect(withRound.rounds[0].snapshot.sourceChainIds).toEqual(e.chainArtistSource.chainIds);
+  const changed = structuredClone(withRound); changed.rounds[0].snapshot.sourceChainIds.push('source-c');
   expect((await f.invoke(changed))!.status).toBe(400);
   const { experiment: cleared } = await (await f.invoke({ ...withRound, chainArtistSource: undefined }))!.json() as any;
   expect(cleared.chainArtistSource).toBeUndefined();
-  expect(cleared.rounds[0].snapshot.chainArtistSource).toEqual(e.chainArtistSource);
+  expect(cleared.rounds[0].snapshot.sourceChainIds).toEqual(e.chainArtistSource.chainIds);
   expect((await f.invoke({ ...cleared, chainArtistSource: { chainIds: [], artists: [] } }))!.status).toBe(200);
-  const { experiments: [restored] } = await (await f.invoke())!.json() as any;
+  const restored = await f.readExperiment(e.id);
   expect(restored.chainArtistSource).toEqual({ chainIds: [], artists: [] });
   expect(() => beginRollRound(restored, e.artists.map(artist => artist.tag), 1)).toThrow('可用画师不足');
 });
@@ -110,7 +112,7 @@ it('人数范围与偏好条件持久保存，无效保底和倍率被拒绝', a
   const saved = await (await f.invoke(experiment))!.json() as any;
   expect(saved.experiment.rules).toEqual(experiment.rules);
   expect(saved.experiment.rounds[0].snapshot.rules.preferredOnly).toBe(true);
-  const { experiments: [restored] } = await (await f.invoke())!.json() as any;
+  const restored = await f.readExperiment(experiment.id);
   expect(restored.rules.preferredOnly).toBe(true);
   expect(restored.rounds[0].snapshot.rules.preferredOnly).toBe(true);
   expect((await f.invoke({ ...restored, rules: { ...restored.rules, preferredOnly: 'true' } }))!.status).toBe(400);
@@ -173,7 +175,7 @@ it('普通出图批次沿用原私人存储，可保存偏好并完整回读', a
   const f = fixture(), e = { ...rollFixture(), revision: 0, candidates: [candidateFixture('a')], rounds: [{ id: 'batch', candidateIds: ['a'], createdAt: 1 }] };
   const { experiment: saved } = await (await f.invoke(e))!.json() as any;
   expect((await f.invoke({ ...saved, candidates: [{ ...saved.candidates[0], savedChainId: 'kept-chain' }] }))!.status).toBe(200);
-  const { experiments } = await (await f.invoke())!.json() as any; expect(experiments[0].candidates[0].savedChainId).toBe('kept-chain'); expect(experiments[0].rounds[0].candidateIds).toEqual(['a']);
+  const detail = await f.readExperiment(e.id); expect(detail.candidates[0].savedChainId).toBe('kept-chain'); expect(detail.rounds[0].candidateIds).toEqual(['a']);
 });
 
 it('当前记录可继续追加普通批次，原配方和轮次保留', async () => {
@@ -182,7 +184,7 @@ it('当前记录可继续追加普通批次，原配方和轮次保留', async (
   const { experiment: saved } = await (await f.invoke(e))!.json() as any;
   const next = beginRollRound(saved, e.artists.map(artist => artist.tag), 4);
   expect((await f.invoke(next))!.status).toBe(200);
-  const { experiments } = await (await f.invoke())!.json() as any, restored = experiments[0];
+  const restored = await f.readExperiment(e.id);
   expect(restored.candidates.slice(0, e.candidates.length)).toEqual(e.candidates);
   expect(restored.rounds.slice(0, e.rounds.length)).toEqual(e.rounds); expect(restored.rounds.at(-1).candidateIds).toHaveLength(4);
 });
@@ -225,7 +227,7 @@ it('旧模式记录可追加统一 Roll，历史快照及原配方不变，新�
   const { experiment: saved } = await (await f.invoke(e))!.json() as any;
   const next = beginRollRound(saved, e.artists.map(artist => artist.tag), 3);
   expect((await f.invoke(next))!.status).toBe(200);
-  const { experiments: [restored] } = await (await f.invoke())!.json() as any;
+  const restored = await f.readExperiment(e.id);
   expect(restored.rounds[0]).toEqual(e.rounds[0]); expect(restored.candidates[0]).toEqual(e.candidates[0]);
   expect(restored.pinnedArtists).toEqual(['alpha', 'beta']); expect(restored.drawPlan).toBeUndefined();
   expect(restored.candidates.slice(1).every((candidate: any) => candidate.tags.length === 4 && candidate.tags[0].weight <= 1.4)).toBe(true);
@@ -251,6 +253,36 @@ it('助手直接读取分页记录、轮次和候选精确历史条件，原接�
   expect(rounds.items[0].candidateIds).toEqual(['first', 'second']);
   expect((await read('experimentId=' + experiment.id, 'other')).status).toBe(404);
   expect((await read('limit=31')).status).toBe(400); expect((await read('offset=-1')).status).toBe(400);
-  const original = await (await f.invoke())!.json() as any;
-  expect(original.experiments[0].candidates[0]).toEqual(experiment.candidates[0]);
+  const original = await f.readExperiment(experiment.id);
+  expect(original.candidates[0]).toEqual(experiment.candidates[0]);
+  // 列表本身只回摘要：候选与轮次在选中记录后按 ID 读取。
+  const summaries = await (await f.invoke())!.json() as any;
+  expect(summaries.experiments[0]).toMatchObject({ id: experiment.id, candidates: 2, rounds: 1 });
+  expect(summaries.experiments[0].candidates).toBe(2);
+  expect(summaries.experiments[0]).not.toHaveProperty('template');
+});
+
+it('记录体积不设上限：候选与人数都到合法上限的记录超过 1MB 仍能保存并读回', async () => {
+  const f = fixture(), e = { ...rollFixture(), revision: 0 };
+  const tag = (index: number, slot: number) => `artist ${index} slot ${slot} ${'x'.repeat(40)}`;
+  e.candidates = Array.from({ length: ROLL_CANDIDATE_LIMIT }, (_, index) => ({
+    id: `candidate-${index}`, createdAt: index, archived: false,
+    tags: Array.from({ length: ROLL_MAX_ARTISTS }, (_, slot) => ({ tag: tag(index, slot), weight: 1 })),
+  }));
+  const raw = JSON.stringify(e);
+  expect(raw.length).toBeGreaterThan(1_000_000);
+  expect((await f.invoke(e))!.status).toBe(200);
+  const restored = await f.readExperiment(e.id);
+  expect(restored.candidates).toHaveLength(ROLL_CANDIDATE_LIMIT);
+  expect(JSON.stringify(restored).length).toBeGreaterThan(1_000_000);
+});
+
+it('旧记录的轮次快照继续读取内联来源清单，新快照只记来源串 ID', async () => {
+  const f = fixture(), e = { ...rollFixture(), revision: 0 };
+  e.candidates = [candidateFixture('one')];
+  e.chainArtistSource = { chainIds: ['source-a'], artists: [{ tag: 'alpha', count: 1 }] };
+  e.rounds = [{ id: 'legacy', candidateIds: ['one'], createdAt: 1, snapshot: { rules: e.rules, pinnedArtists: [], chainArtistSource: structuredClone(e.chainArtistSource) } }];
+  expect((await f.invoke(e))!.status).toBe(200);
+  const restored = await f.readExperiment(e.id);
+  expect(restored.rounds[0].snapshot.chainArtistSource).toEqual(e.chainArtistSource);
 });
