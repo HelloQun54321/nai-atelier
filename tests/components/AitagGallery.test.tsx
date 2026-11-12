@@ -48,6 +48,7 @@ vi.mock('../../components/ImagePreviewPortal', () => ({ ImagePreviewPortal: ({ c
 
 const works: AitagWorkSummary[] = [1, 2].map(id => ({
   id, title: `合成作品 ${id}`, AI_type: 'NAI', image_count: 2, hasFullyCachedImages: true, hasCachedDetail: true,
+  tags: id === 1 ? ['aitag', '东方Project', '同人'] : undefined,
   localFirstImageUrl: `/synthetic/${id}.png`,
   firstImage: { id, work_id: id, author_id: 1, image_type: 'nai', file_name: `${id}.png`, local_image_url: `/api/assets/aitag/${id}.png`, model: id === 1 ? 'NovelAI Diffusion V4.5' : 'NovelAI Diffusion V5', prompt_text: 'synthetic prompt', ai_json: { prompt: `synthetic prompt ${id}`, uc: 'synthetic negative', width: 832, height: 1216, steps: 23, seed: 123, model: id === 1 ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full' } },
 }));
@@ -1056,7 +1057,7 @@ it('用已显示的 JSON 和本地图片保存，立即显示忙碌并阻止连�
   expect(notify).not.toHaveBeenCalledWith('已保存到风格串');
   expect(mocks.createChain.mock.calls[0][0]).toMatchObject({
     name: '合成作品 1 P1', basePrompt: 'synthetic prompt 1', negativePrompt: 'synthetic negative',
-    previewImage: '/api/assets/aitag/1.png', tags: [], params: { seed: 123, steps: 23 },
+    previewImage: '/api/assets/aitag/1.png', tags: ['东方Project', '同人'], params: { seed: 123, steps: 23 },
   });
   expect(mocks.getWork).toHaveBeenCalledTimes(1);
   await act(async () => resolve());

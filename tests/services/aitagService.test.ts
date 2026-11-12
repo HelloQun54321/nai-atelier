@@ -16,6 +16,7 @@ import {
   getAitagWorkPromptTexts,
   getAitagModelBadgeLabel,
   getAitagWorkReferenceUsage,
+  getAitagWorkTags,
   matchesAitagPromptQuery,
   mergeAitagWorks,
   parseAitagPromptQuery,
@@ -288,6 +289,15 @@ describe('AITag 本地筛选辅助', () => {
     expect(aitagPromptHasArtistTags('1girl, artistic, solo')).toBe(false);
     expect(aitagPromptHasArtistTags('1girl, synthetic_painter, solo')).toBe(false);
     expect(aitagPromptHasArtistTags('1girl, synthetic_painter, solo', new Set(['synthetic painter']))).toBe(true);
+  });
+
+  it('作品标签支持数组、JSON 文本和逗号分隔，去重并保留原顺序', () => {
+    expect(getAitagWorkTags(['东方Project', ' 东方Project ', '同人'])).toEqual(['东方Project', '同人']);
+    expect(getAitagWorkTags('["aitag","东方Project"]')).toEqual(['aitag', '东方Project']);
+    expect(getAitagWorkTags('东方Project，同人、角色')).toEqual(['东方Project', '同人', '角色']);
+    expect(getAitagWorkTags(['aitag', 3 as unknown as string, ''])).toEqual(['aitag']);
+    expect(getAitagWorkTags(undefined)).toEqual([]);
+    expect(getAitagWorkTags('')).toEqual([]);
   });
 
   it('只按保存时写入的 AITag 来源说明识别已保存风格串，角色条目不计入', () => {

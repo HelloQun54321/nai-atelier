@@ -493,6 +493,25 @@ export const getAitagWorkReferenceUsage = (work: AitagWorkSummary) => {
   };
 };
 
+/** 作品标签可能是数组、JSON 数组字符串或逗号分隔文本；归一化为去重后的字符串列表。 */
+export const getAitagWorkTags = (tags?: string | string[] | null): string[] => {
+  let values: unknown[] = [];
+  if (Array.isArray(tags)) values = tags;
+  else if (typeof tags === 'string' && tags.trim()) {
+    const text = tags.trim();
+    try {
+      const parsed = JSON.parse(text);
+      values = Array.isArray(parsed) ? parsed : text.split(/[,，、\n]+/);
+    } catch {
+      values = text.split(/[,，、\n]+/);
+    }
+  }
+  return [...new Set(values
+    .filter((tag): tag is string => typeof tag === 'string')
+    .map(tag => tag.trim())
+    .filter(Boolean))];
+};
+
 const artistDetectionCache = new WeakMap<ReadonlySet<string>, Map<string, boolean>>();
 const prefixedArtistDetectionCache = new Map<string, boolean>();
 /** 画师识别按提示词与词库缓存结果，滚动重渲染时不重复解析整段提示词。 */
