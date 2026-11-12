@@ -5651,12 +5651,6 @@
     "創作アシスタントを開く",
     "창작 도우미 열기"
   ],
-  "打开词库 GitHub 原址": [
-    "開啟詞庫 GitHub 原址",
-    "Open dictionary source on GitHub",
-    "辞書の GitHub 参照元を開く",
-    "사전 GitHub 원본 열기"
-  ],
   "打开词条": [
     "開啟詞條",
     "Open entry",
@@ -39191,12 +39185,6 @@
     "内蔵ダウンロードに失敗した場合は、辞書の参照元から tag.sqlite を手動でダウンロードしてここにインポートしてください。",
     "내장 다운로드가 실패하면 사전 출처에서 tag.sqlite를 직접 내려받아 여기에서 가져오세요."
   ],
-  "内置下载失败时，可打开「词库来源」手动下载 tag.sqlite 文件，再点「导入词库」。": [
-    "內建下載失敗時，可開啟「詞庫來源」手動下載 tag.sqlite 檔案，再點「匯入詞庫」。",
-    "If the built-in download fails, open \"Dictionary source\" to download tag.sqlite manually, then click \"Import dictionary\".",
-    "内蔵ダウンロードに失敗した場合は、「辞書の参照元」を開いて tag.sqlite を手動でダウンロードし、「辞書をインポート」を押してください。",
-    "내장 다운로드가 실패하면 \"사전 출처\"를 열어 tag.sqlite를 직접 내려받은 뒤 \"사전 가져오기\"를 누르세요."
-  ],
   "正在上传词库文件… {0}%": [
     "正在上傳詞庫檔案… {0}%",
     "Uploading the dictionary file… {0}%",
@@ -39292,6 +39280,30 @@
     "The imported dictionary file is empty. Download it again and retry.",
     "インポートした辞書ファイルは空です。ダウンロードし直して再試行してください。",
     "가져온 사전 파일이 비어 있습니다. 다시 내려받은 뒤 시도하세요."
+  ],
+  "内置下载失败时，打开「词库来源」，在仓库根目录下载 tag.sqlite（约 {0} MB）后点「导入词库」。": [
+    "內建下載失敗時，開啟「詞庫來源」，在儲存庫根目錄下載 tag.sqlite（約 {0} MB）後點「匯入詞庫」。",
+    "If the built-in download fails, open \"Dictionary source\", download tag.sqlite (about {0} MB) from the repository root, then click \"Import dictionary\".",
+    "内蔵ダウンロードに失敗した場合は、「辞書の参照元」を開き、リポジトリ直下の tag.sqlite（約 {0} MB）をダウンロードしてから「辞書をインポート」を押してください。",
+    "내장 다운로드가 실패하면 \"사전 출처\"를 열고 저장소 최상위의 tag.sqlite(약 {0} MB)를 내려받은 뒤 \"사전 가져오기\"를 누르세요."
+  ],
+  "打开词库 GitHub 原址（仓库根目录的 tag.sqlite 可手动下载）": [
+    "開啟詞庫 GitHub 原址（儲存庫根目錄的 tag.sqlite 可手動下載）",
+    "Open the dictionary source on GitHub (tag.sqlite in the repository root can be downloaded manually)",
+    "辞書の GitHub 参照元を開く（リポジトリ直下の tag.sqlite を手動でダウンロードできます）",
+    "사전 GitHub 원본 열기(저장소 최상위의 tag.sqlite를 직접 내려받을 수 있습니다)"
+  ],
+  "下载直链": [
+    "下載直連",
+    "Direct download link",
+    "ダウンロード直リンク",
+    "직접 다운로드 링크"
+  ],
+  "打开 tag.sqlite 下载直链": [
+    "開啟 tag.sqlite 下載直連",
+    "Open the direct download link for tag.sqlite",
+    "tag.sqlite のダウンロード直リンクを開く",
+    "tag.sqlite 직접 다운로드 링크 열기"
   ],
   "Tag 补全词库": [
     "Tag 補全詞庫",

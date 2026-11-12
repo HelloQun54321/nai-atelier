@@ -99,6 +99,16 @@ it('首次手机安装没有词库清单时正常显示零条与未知时间', a
   expect(screen.getByText('词库生成时间：未知')).toBeTruthy();
 });
 
+it('设置行说明指明仓库根目录的 tag.sqlite，并提供下载直链', async () => {
+  render(<TagDictionaryUpdater notify={vi.fn()} />);
+  await screen.findByText('123');
+  expect(screen.getByText(/在仓库根目录下载 tag\.sqlite（约 24 MB）/)).toBeTruthy();
+  const link = screen.getByRole('link', { name: '下载直链' });
+  expect(link.getAttribute('href')).toBe('https://raw.githubusercontent.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table/main/tag.sqlite');
+  expect(link.getAttribute('target')).toBe('_blank');
+  expect(screen.getByTitle('打开词库 GitHub 原址（仓库根目录的 tag.sqlite 可手动下载）')).toBeTruthy();
+});
+
 it('内置下载失败时可选择本地 tag.sqlite 导入，上传进度与生成状态留在设置行', async () => {
   let resolveImport!: (value: TagUpdateStatus) => void;
   const generating: TagUpdateStatus = { ...idle, running: true, phase: 'generating', message: '正在生成中英文 Tag 分片…' };

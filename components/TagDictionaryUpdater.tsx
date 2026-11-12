@@ -1,12 +1,17 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
-import { Upload } from 'lucide-react';
+import { Download, Upload } from 'lucide-react';
 import { resetTagDictionaryCache } from '../services/tagDictionary';
 import { getTagUpdateStatus, importTagDictionaryFile, startTagUpdate, TAG_IMPORT_MAX_BYTES, TagUpdatePhase, TagUpdateStatus } from '../services/tagDictionaryUpdater';
 
 interface TagDictionaryUpdaterProps {
   notify: (message: string, type?: 'success' | 'error') => void;
 }
+
+const TAG_DICTIONARY_REPOSITORY_URL = 'https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table';
+// 与 scripts/update-tag-dictionary.mjs 的 TRANSLATION_DATABASE_URL 同源：手动导入选的就是这个文件。
+const TAG_DICTIONARY_DOWNLOAD_URL = 'https://raw.githubusercontent.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table/main/tag.sqlite';
+const TAG_DICTIONARY_APPROX_SIZE_MB = 24;
 
 const PHASE_PROGRESS: Record<TagUpdatePhase, number> = {
   idle: 0,
@@ -120,7 +125,7 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h4 className="font-semibold text-gray-900 dark:text-white">{t('Tag 补全词库')}</h4>
         <div className="flex flex-wrap flex-none gap-2">
-          <a href="https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table" target="_blank" rel="noreferrer" className="appearance-group mobile-touch flex items-center gap-1.5 rounded bg-gray-100 px-2 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" title={t('打开词库 GitHub 原址')}>
+          <a href={TAG_DICTIONARY_REPOSITORY_URL} target="_blank" rel="noreferrer" className="appearance-group mobile-touch flex items-center gap-1.5 rounded bg-gray-100 px-2 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" title={t('打开词库 GitHub 原址（仓库根目录的 tag.sqlite 可手动下载）')}>
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5h5v5m-1-4L10 14M19 14v4a1 1 0 01-1 1H6a1 1 0 011-1h4" /></svg>
             <span>{t('词库来源')}</span>
           </a>
@@ -158,7 +163,13 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
         <span>{t('当前 Tag 数量')}：<span className="font-medium tabular-nums text-gray-600 dark:text-gray-300">{status ? (status.manifest?.count ?? 0).toLocaleString(getLanguage()) : '—'}</span></span>
         <span>{t('词库生成时间')}：{formatDate(status?.manifest?.generatedAt)}</span>
       </div>
-      <p className="text-micro leading-5 text-gray-400 dark:text-gray-500">{t('内置下载失败时，可打开「词库来源」手动下载 tag.sqlite 文件，再点「导入词库」。')}</p>
+      <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-micro leading-5 text-gray-400 dark:text-gray-500">
+        <span>{t('内置下载失败时，打开「词库来源」，在仓库根目录下载 tag.sqlite（约 {0} MB）后点「导入词库」。', [TAG_DICTIONARY_APPROX_SIZE_MB])}</span>
+        <a href={TAG_DICTIONARY_DOWNLOAD_URL} target="_blank" rel="noreferrer" title={t('打开 tag.sqlite 下载直链')} className="inline-flex items-center gap-0.5 font-medium text-indigo-600 underline decoration-indigo-300 underline-offset-2 transition-colors hover:text-indigo-500 dark:text-indigo-300 dark:decoration-indigo-500/50 dark:hover:text-indigo-200">
+          <Download className="h-3 w-3" aria-hidden="true" />
+          {t('下载直链')}
+        </a>
+      </p>
     </div>
   );
 };
