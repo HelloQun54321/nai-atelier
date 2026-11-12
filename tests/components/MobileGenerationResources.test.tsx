@@ -12,7 +12,9 @@ const fixture = vi.hoisted(() => ({
   subscription: null as Subscription | null,
   runtime: null as NaiRuntimeConfig | null,
   list: vi.fn(),
+  channel: 'official' as 'official' | 'gateway' | 'per-use',
 }));
+vi.mock('../../services/naiChannel', () => ({ useNaiChannelMode: () => fixture.channel }));
 vi.mock('../../services/naiUsage', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/naiUsage')>(),
   useNovelaiUsage: () => fixture.subscription,
@@ -27,6 +29,7 @@ const props = (apiKey = 'mobile-resources-synthetic-key') => ({
 });
 const openPanel = () => fireEvent.click(screen.getByRole('button', { name: /^查看账户资源/ }));
 beforeEach(() => {
+  fixture.channel = 'official';
   fixture.subscription = {
     info: { active: true, tier: 3, trainingStepsLeft: { fixedTrainingStepsLeft: 100, purchasedTrainingSteps: 68320 } },
     usage: { percent: 196, isNegative: false, timeUntilNextPercent: 0 },
@@ -41,6 +44,11 @@ beforeEach(() => {
 afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
 
 describe('手机实验室账户资源', () => {
+  it('按次渠道不显示手机底部账户资源入口', () => {
+    fixture.channel = 'per-use';
+    render(<MobileGenerationResources {...props()} />);
+    expect(screen.queryByRole('button')).toBeNull();
+  });
   it.each(['正常', '旧值', '耗尽'])('成员摘要%s时五语完整翻译，数字保持原值', state => {
     fixture.subscription!.info!.source = 'gateway';
     if (state === '旧值') fixture.subscription!.error = '网关余额查询失败';

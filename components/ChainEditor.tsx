@@ -41,6 +41,7 @@ import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { applyNaiModelSettings, getRuntimeNaiModelInfo, getSelectableNaiModels, isNaiMediumModel } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
+import { useNaiChannelMode } from '../services/naiChannel';
 import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createBlankLabCharacter, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, mergePromptSections, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
@@ -170,7 +171,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
 
     // --- Generation State ---
     const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
-    const [isImageGenerating, setIsGenerating] = useState(false);
+    // 按次渠道不估算官方点数与额度，也不做预算耗尽确认。
+    const perUseChannel = useNaiChannelMode() === 'per-use';    const [isImageGenerating, setIsGenerating] = useState(false);
 
     const [generationSeries, setGenerationSeries] = useState(() => getGenerationSeriesSession(chain.id)?.progress || null);
     const [queuedGenerations, setQueuedGenerations] = useState(() => getQueuedGenerationSeries(chain.id));
@@ -1719,9 +1721,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
         const count = sampleDraft ? 1 : validateGenerationCount(effectiveGenerationCount);
         const freshSubscription = novelaiSubscription;
         void refreshUsageIfStale();
-        const cost = estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
+        const cost = perUseChannel ? 0 : estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
         const totalCost = cost * count;
-        if (count > 1 || placement) {
+        if (perUseChannel) {
+            if (!await confirmAction({ rememberKey: 'generation.per-use', rememberScope: [apiKey, draft.params.model],
+                title: '确认生成图片',
+                message: `当前为按次渠道，工坊不估算点数与额度。\n本次生成 ${count} 张，费用按该渠道自己的规则计算。`,
+                confirmLabel: `生成 ${count} 张`,
+            })) return false;
+        } else if (count > 1 || placement) {
             if (!await confirmAction({ rememberKey: 'generation.text-series', rememberScope: confirmationCostScope(apiKey, cost, count, anlasBudget.remaining, [draft.params.model, placement]),
                 title: placement ? placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
                 message: `使用本轮固定的提示词与参数，逐张生成并保存 ${count} 张图片。${cost > 0 ? `\n每张预计 ${cost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
@@ -1806,7 +1814,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
             return stop(message, 'invalid_base_image');
         }
         const { sourceWidth, sourceHeight } = preparedEdit;
-        const editCost = estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), isActiveOpusSubscription(freshSubscription) ? freshSubscription!.tier : 0, freshSubscription?.usage?.isNegative ?? true, {
+        const editCost = perUseChannel ? 0 : estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), isActiveOpusSubscription(freshSubscription) ? freshSubscription!.tier : 0, freshSubscription?.usage?.isNegative ?? true, {
             width: sourceWidth,
             height: sourceHeight,
             focusedRect: request.focusedRect,
@@ -1824,7 +1832,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
             })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
         } else if (!fullAccess && editCost > 0 && anlasBudget.remaining <= 0) {
             if (!await confirmAction({ rememberKey: 'generation.edit-budget', rememberScope: confirmationCostScope(apiKey, editCost, 1, anlasBudget.remaining, request.operation), title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。${syncWarning}`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
-        } else if (!fullAccess && (editCost > 0 || options?.agent) && !await confirmAction({ rememberKey: 'generation.edit', rememberScope: confirmationCostScope(apiKey, editCost, 1, anlasBudget.remaining, request.operation), title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。${editCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${syncWarning}`, confirmLabel: editCost > 0 ? `消耗 ${editCost} 点并生成` : '仍要生成', ...(runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}) })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
+        } else if (!fullAccess && (editCost > 0 || options?.agent || perUseChannel) && !await confirmAction({ rememberKey: 'generation.edit', rememberScope: confirmationCostScope(apiKey, editCost, 1, anlasBudget.remaining, request.operation), title: '确认图片编辑', message: perUseChannel ? `当前为按次渠道，工坊不估算点数与额度；费用按该渠道自己的规则计算。${syncWarning}` : `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。${editCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${syncWarning}`, confirmLabel: editCost > 0 ? `消耗 ${editCost} 点并生成` : '仍要生成', ...(runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}) })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
         generationInFlightRef.current = true;
         if (mountedRef.current) {
             setIsGenerating(true);
@@ -1984,7 +1992,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
             }
             const freshSubscription = novelaiSubscription;
             void refreshUsageIfStale();
-            const cost = estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
+            const cost = perUseChannel ? 0 : estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
             const totalCost = cost * count;
             const permissionMode = (await promptAgentService.getConfig()).permissionMode;
             if (permissionMode === 'read_only') throw agentOperationError('当前为只读权限，不能生成图片', 'agent_read_only');

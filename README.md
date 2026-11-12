@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.182.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.183.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -488,6 +488,7 @@ AITag 与法典详情的蓝色「导入实验室」会切到文生图，默认�
 
 - 支持录入多组 NovelAI Key 并标注别名（如「Opus 主号」、「拼车号」），在实验室顶栏一键秒切；
 - **成员网关 Key**：在「设置 → NovelAI 与 Anlas → 添加密钥」选择「生图网关」，填写运营者提供的根地址（如 `https://gateway.example`，带 `/v1` 或其他部署前缀也可）与成员 Key（如 `STA1N-…`），添加后选中使用。也接受完整 `/ai/generate-image` 地址。网关地址随该 Key 保存，生成、成员余额和 Vibe 编码统一走网关；切回官方 `pst-…` Key 即恢复其原有官方／公共队列配置。旧官方条目无需修改。
+- **按次渠道 Key**：同一位置选择「按次渠道」，填写中转的根地址或完整 `/ai/generate-image` 地址，再填它发给你的 Key。这类服务按调用计费且不提供官方点数／额度：工坊不查询额度、不扣本地预算、不弹预算耗尽确认，也不显示 Anlas 费用估算（生成按钮显示「按渠道计费」）；侧栏与手机底部的 Anlas／额度两行会隐藏，生成照常发往该地址。费用以该服务自己的规则为准，工坊不做换算。
 - 网关兼容 NovelAI 原生 `/ai/generate-image` ZIP、`/user/subscription` JSON 与 `/ai/encode-vibe` 二进制接口，四种生图模式及 Medium 模型 ID／有效参数原样提交；Medium 是否可用取决于所部署网关的支持情况，Atelier 不替换模型档位。成员网关使用普通 ZIP，即使开启实时预览也只提交一次普通生图请求；不探测流式、不在失败后重试或回退官方。参考内容会随本次请求交给所选网关。
 - 第三方网关的精准参考改发附原图的 `director_reference_images_cached`，官方直连保留原始字段；强度、保真等参数和估算费用继续按实际参考张数计算。仅当成员网关的额度接口明确返回 404／405／501 时，连续生成清除旧订阅快照，按无 Opus 免费权益的保守价估算；超过已确认费用时先等待确认。鉴权失败、限流、网络和其他服务错误仍停止，桌面、局域网与独立 Android 共用这一规则。
 - 「网关余额／成员额度」显示成员分配值，不代表上游账号总钱包，不覆盖本地预算；张数和费用仍按官方规则估算，实际权限与扣费由网关决定。缺少订阅快照时保留成功生成张数，费用与 Opus 用量标为未知，不把保守估价冒充实际扣费。未绑定地址的成员 Key 会在本地拒绝，不发往官方。

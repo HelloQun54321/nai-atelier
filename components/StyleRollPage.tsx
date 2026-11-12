@@ -29,6 +29,7 @@ import { localHistory } from '../services/localHistory';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { createUuid } from '../services/id';
 import { useConfirmDialog } from './ConfirmDialog';
+import { useNaiChannelMode } from '../services/naiChannel';
 import { useAgentCommand } from '../services/agentCommands';
 import { ChromeNotice, ChromeNoticeStack, EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
@@ -98,6 +99,7 @@ const ArtistFavoriteButton: React.FC<{ tag: string; sampleUrl?: string }> = ({ t
 export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStepLimit, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, selectionFocusEnabled = true, continuousGenerationEnabled = true, notify, onSaveChain, onOpenChain, onNavigateToPlayground, onOpenArtistLibrary, initialPinned }) => {
   useLanguage();
   const confirm = useConfirmDialog();
+  const perUseNaiChannel = useNaiChannelMode() === 'per-use';
   const runtime = useNaiRuntime(); applyEstimatorRuntime(runtime);
   const subscription = useNovelaiUsage(), budget = useAnlasBudget();
   // 列表只保存摘要；当前记录完整加载后放进 experiment，避免每次进页面搬运全部候选与轮次。
@@ -386,7 +388,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     };
     try {
       void subscription.refreshIfStale();
-      const eachCost = estimateV45GenerationCost(target.template.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true), totalCost = eachCost * candidates.length;
+      const eachCost = perUseNaiChannel ? 0 : estimateV45GenerationCost(target.template.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true), totalCost = eachCost * candidates.length;
       if (totalCost > 0 && !options.skipConfirmation && !await confirm({ rememberKey: 'roll.generate', rememberScope: confirmationCostScope(key, eachCost, candidates.length, budget.remaining, target.template.params.model), title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片',
         message: t('本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。', [candidates.length, totalCost, budget.remaining]),
         confirmLabel: t('消耗 {0} 点并生成', [totalCost]), ...(totalCost > budget.remaining ? { tone: 'danger' as const } : {}) })) return;

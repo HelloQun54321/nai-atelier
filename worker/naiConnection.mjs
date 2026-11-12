@@ -12,6 +12,14 @@ export const normalizeNaiGatewayUrl = value => {
   return url.href.replace(/\/+$/, '');
 };
 
+/**
+ * 按次渠道：用户自填 URL 的按调用计费中转，不提供官方点数/额度。
+ * 生成请求仍按网关地址发送，只在前端跳过订阅查询、预算与额度显示。
+ */
+export const NAI_BILLING_PER_USE = 'per-use';
+export const normalizeNaiBillingMode = value => value === NAI_BILLING_PER_USE ? NAI_BILLING_PER_USE : '';
+
+
 export const validateNaiApiKey = (value, gatewayUrl = '') => {
   const key = typeof value === 'string' ? value.trim() : '';
   if (!key) throw new Error('密钥不能为空');

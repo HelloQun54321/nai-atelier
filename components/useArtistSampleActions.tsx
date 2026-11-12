@@ -9,6 +9,7 @@ import { applyEstimatorRuntime, estimateV45GenerationCost, useAnlasBudget } from
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { confirmationCostScope } from '../services/dailyConfirmation';
+import { useNaiChannelMode } from '../services/naiChannel';
 import { approveGenerationSeries, stopGenerationSeriesSession } from '../services/generationSeries';
 import { setGenerationQueuePaused } from '../services/generationTask';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -27,6 +28,7 @@ export function useArtistSampleActions({ active, data, setData, notify, enforceF
 }) {
   const confirm = useConfirmDialog();
   const budget = useAnlasBudget(), subscription = useNovelaiUsage();
+  const perUseNaiChannel = useNaiChannelMode() === 'per-use';
   const runtime = useNaiRuntime(); applyEstimatorRuntime(runtime);
   const activeRef = useRef(active); activeRef.current = active;
   useEffect(() => { activeRef.current = active; return () => { activeRef.current = false; }; }, [active]);
@@ -54,7 +56,7 @@ export function useArtistSampleActions({ active, data, setData, notify, enforceF
     try {
       validateArtistSampleTemplate(pack, snapshot);
       void subscription.refreshIfStale();
-      const cost = estimateV45GenerationCost(snapshot.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true);
+      const cost = perUseNaiChannel ? 0 : estimateV45GenerationCost(snapshot.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true);
       if (cost > 0 && !options.skipConfirmation && !await confirm({ rememberKey: 'artist-sample.generate', rememberScope: confirmationCostScope(key, cost, 1, budget.remaining, snapshot.params.model), title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片', message: t('本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。', [1, cost, budget.remaining]), confirmLabel: t('消耗 {0} 点并生成', [cost]), ...(cost > budget.remaining ? { tone: 'danger' as const } : {}) })) return;
       if (!activeRef.current) return;
       if (readArtistSampleApiKey() !== key) throw new Error('NovelAI Key 已变化，请重新发起生成');

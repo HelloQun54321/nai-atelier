@@ -24,6 +24,8 @@ export interface NaiKeyEntry {
   key: string;
   createdAt: number;
   gatewayUrl?: string;
+  /** 'per-use' = 按次渠道：生成照走 gatewayUrl，但不查询点数/额度。 */
+  billingMode?: string;
 }
 
 export type AddKeyResult =
@@ -31,9 +33,18 @@ export type AddKeyResult =
   | { status: 'empty' }
   | { status: 'duplicate' }
   | { status: 'invalid-gateway' }
-  | { status: 'invalid' };
+  | { status: 'invalid' }
+  | { status: 'missing-gateway' };
 
 const VAULT_STORAGE_KEY = 'nai_api_key_vault';
+export const NAI_KEY_VAULT_CHANGED = 'nai-key-vault-changed';
+/** 最近一次 list() 结果：渠道解析与设置页共用，避免每次读数都打 D1。 */
+let vaultSnapshot: NaiKeyEntry[] | null = null;
+let vaultSnapshotAt = 0;
+const VAULT_SNAPSHOT_TTL = 5000;
+export const readCachedNaiKeyVault = () => vaultSnapshot;
+const rememberVault = (entries: NaiKeyEntry[]) => { vaultSnapshot = entries; vaultSnapshotAt = Date.now(); };
+export const notifyNaiKeyVaultChanged = () => { if (typeof window !== 'undefined') window.dispatchEvent(new Event(NAI_KEY_VAULT_CHANGED)); };
 /** 模块级标记：服务端不可达的 console.warn 只输出一次，避免每次操作刷屏。 */
 let warnedFallback = false;
 
@@ -59,6 +70,7 @@ const readLocalVault = (): NaiKeyEntry[] => {
         key: item.key as string,
         createdAt: typeof item.createdAt === 'number' ? (item.createdAt as number) : Date.now(),
         ...(item.gatewayUrl != null ? { gatewayUrl: item.gatewayUrl as string } : {}),
+        ...(item.billingMode === 'per-use' ? { billingMode: 'per-use' as const } : {}),
       }));
   } catch {
     return [];
@@ -106,12 +118,14 @@ export const naiKeyVault = {
    */
   async list(): Promise<NaiKeyEntry[]> {
     if (!isBrowser()) return [];
+    if (vaultSnapshot && Date.now() - vaultSnapshotAt < VAULT_SNAPSHOT_TTL) return vaultSnapshot;
     try {
       const res = await api.get('/nai-key-vault');
       const entries = Array.isArray(res?.entries) ? res.entries as NaiKeyEntry[] : [];
       // 浏览器里残留旧 localStorage 库时一次性迁移合流，成功后直接用合流结果刷新整箱。
       const migrated = await migrateLegacyVault(entries);
       rememberConfirmationConnections(migrated ?? entries);
+      rememberVault(migrated ?? entries);
       return migrated ?? entries;
     } catch {
       // 服务端不可达：整体回退本地保管箱逻辑。
@@ -122,9 +136,11 @@ export const naiKeyVault = {
         const migrated = [...local, { id: createUuid(), name: local.length ? '未命名密钥' : '默认密钥', key: active, createdAt: Date.now() }];
         writeLocalVault(migrated);
         rememberConfirmationConnections(migrated);
+        rememberVault(migrated);
         return migrated;
       }
       rememberConfirmationConnections(local);
+      rememberVault(local);
       return local;
     }
   },
@@ -132,16 +148,20 @@ export const naiKeyVault = {
   /**
    * 官方密钥检查 pst- 前缀；成员 Key 必须明确绑定网关，校验与服务端／本地兜底一致。
    */
-  async add(name: string, key: string, gatewayAddress = ''): Promise<AddKeyResult> {
+  async add(name: string, key: string, gatewayAddress = '', billingMode = ''): Promise<AddKeyResult> {
     const trimmedKey = key.trim();
     if (!trimmedKey) return { status: 'empty' };
+    const mode = billingMode === 'per-use' ? 'per-use' : '';
     let gatewayUrl;
     try { gatewayUrl = normalizeNaiGatewayUrl(gatewayAddress); } catch { return { status: 'invalid-gateway' }; }
+    if (mode === 'per-use' && !gatewayUrl) return { status: 'missing-gateway' };
     try { validateNaiApiKey(trimmedKey, gatewayUrl); } catch { return { status: 'invalid' }; }
     if (!isBrowser()) return { status: 'invalid' };
     try {
-      const res = await api.post('/nai-key-vault', { name, key, ...(gatewayUrl ? { gatewayUrl } : {}) });
+      const res = await api.post('/nai-key-vault', { name, key, ...(gatewayUrl ? { gatewayUrl } : {}), ...(mode ? { billingMode: mode } : {}) });
       rememberConfirmationConnections([res.entry]);
+      vaultSnapshot = null;
+      notifyNaiKeyVaultChanged();
       return { status: 'added', entry: res.entry as NaiKeyEntry };
     } catch (err) {
       // 服务端把校验失败以 400 返回：err 为 ApiError，剥离回局部判定结果；
@@ -150,6 +170,7 @@ export const naiKeyVault = {
         const message = err.message || '';
         if (message.includes('不能为空')) return { status: 'empty' };
         if (message.includes('已经在保管箱')) return { status: 'duplicate' };
+        if (message.includes('按次渠道需要填写生成地址')) return { status: 'missing-gateway' };
         return { status: 'invalid' };
       }
       warnFallback();
@@ -161,9 +182,12 @@ export const naiKeyVault = {
         key: trimmedKey,
         createdAt: Date.now(),
         ...(gatewayUrl ? { gatewayUrl } : {}),
+        ...(mode ? { billingMode: mode } : {}),
       };
       writeLocalVault([...local, entry]);
       rememberConfirmationConnections([entry]);
+      vaultSnapshot = null;
+      notifyNaiKeyVaultChanged();
       return { status: 'added', entry };
     }
   },
@@ -174,11 +198,16 @@ export const naiKeyVault = {
     if (!isBrowser()) return [];
     try {
       const res = await api.put(`/nai-key-vault/${encodeURIComponent(id)}`, { name });
-      return Array.isArray(res?.entries) ? res.entries as NaiKeyEntry[] : [];
+      const entries = Array.isArray(res?.entries) ? res.entries as NaiKeyEntry[] : [];
+      rememberVault(entries);
+      notifyNaiKeyVaultChanged();
+      return entries;
     } catch {
       warnFallback();
       const next = readLocalVault().map(entry => entry.id === id ? { ...entry, name: trimmed || entry.name } : entry);
       writeLocalVault(next);
+      rememberVault(next);
+      notifyNaiKeyVaultChanged();
       return next;
     }
   },
@@ -188,11 +217,16 @@ export const naiKeyVault = {
     if (!isBrowser()) return [];
     try {
       const res = await api.delete(`/nai-key-vault/${encodeURIComponent(id)}`);
-      return Array.isArray(res?.entries) ? res.entries as NaiKeyEntry[] : [];
+      const entries = Array.isArray(res?.entries) ? res.entries as NaiKeyEntry[] : [];
+      rememberVault(entries);
+      notifyNaiKeyVaultChanged();
+      return entries;
     } catch {
       warnFallback();
       const next = readLocalVault().filter(entry => entry.id !== id);
       writeLocalVault(next);
+      rememberVault(next);
+      notifyNaiKeyVaultChanged();
       return next;
     }
   },

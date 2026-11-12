@@ -39305,6 +39305,78 @@
     "tag.sqlite のダウンロード直リンクを開く",
     "tag.sqlite 직접 다운로드 링크 열기"
   ],
+  "按次渠道": [
+    "按次渠道",
+    "Per-use channel",
+    "従量課金チャネル",
+    "회차별 채널"
+  ],
+  "按次": [
+    "按次",
+    "Per-use",
+    "従量",
+    "회차별"
+  ],
+  "渠道 API Key": [
+    "渠道 API Key",
+    "Channel API key",
+    "チャネル API キー",
+    "채널 API 키"
+  ],
+  "按次渠道地址": [
+    "按次渠道位址",
+    "Per-use channel URL",
+    "従量課金チャネルの URL",
+    "회차별 채널 주소"
+  ],
+  "按渠道计费": [
+    "依渠道計費",
+    "Billed by the channel",
+    "チャネルごとの課金",
+    "채널 규칙으로 과금"
+  ],
+  "生成 {0} 张": [
+    "生成 {0} 張",
+    "Generate {0}",
+    "{0} 枚を生成",
+    "{0}장 생성"
+  ],
+  "请填写按次渠道的生成地址。": [
+    "請填寫按次渠道的生成位址。",
+    "Enter the generation URL for the per-use channel.",
+    "従量課金チャネルの生成 URL を入力してください。",
+    "회차별 채널의 생성 주소를 입력하세요."
+  ],
+  "按次渠道需要填写生成地址。": [
+    "按次渠道需要填寫生成位址。",
+    "The per-use channel needs a generation URL.",
+    "従量課金チャネルには生成 URL が必要です。",
+    "회차별 채널에는 생성 주소가 필요합니다."
+  ],
+  "当前为按次渠道：工坊不查询点数与额度，也不估算费用；费用按该渠道自己的规则计算。": [
+    "目前為按次渠道：工坊不查詢點數與額度，也不估算費用；費用依該渠道自己的規則計算。",
+    "This is a per-use channel: the workshop does not query points or quota, and does not estimate cost; billing follows the channel's own rules.",
+    "現在は従量課金チャネルです。工房はポイントや割当を問い合わせず、費用も見積もりません。費用はチャネル独自の規則で計算されます。",
+    "현재 회차별 채널입니다. 공방은 포인트나 할당량을 조회하지 않으며 비용도 추정하지 않습니다. 비용은 해당 채널의 규칙으로 계산됩니다."
+  ],
+  "按次渠道按调用次数自行计费，工坊不查询点数与额度，也不显示费用估算；生成照常发往该地址。": [
+    "按次渠道依呼叫次數自行計費，工坊不查詢點數與額度，也不顯示費用估算；生成照常送往該位址。",
+    "A per-use channel bills per call. The workshop does not query points or quota and does not show cost estimates; generation is still sent to this URL.",
+    "従量課金チャネルは呼び出し回数で課金されます。工房はポイントや割当を問い合わせず、費用見積もりも表示しません。生成はこの URL に送信されます。",
+    "회차별 채널은 호출 횟수로 과금합니다. 공방은 포인트나 할당량을 조회하지 않고 비용 추정도 표시하지 않습니다. 생성은 이 주소로 전송됩니다."
+  ],
+  "当前为按次渠道，工坊不估算点数与额度。\n本次生成 {0} 张，费用按该渠道自己的规则计算。": [
+    "目前為按次渠道，工坊不估算點數與額度。\n本次生成 {0} 張，費用依該渠道自己的規則計算。",
+    "This is a per-use channel, so the workshop does not estimate points or quota.\nThis run generates {0} image(s); billing follows the channel's own rules.",
+    "現在は従量課金チャネルのため、工房はポイントや割当を見積もりません。\n今回 {0} 枚を生成します。費用はチャネル独自の規則で計算されます。",
+    "현재 회차별 채널이므로 공방은 포인트나 할당량을 추정하지 않습니다.\n이번에 {0}장을 생성하며, 비용은 해당 채널의 규칙으로 계산됩니다."
+  ],
+  "当前为按次渠道，工坊不估算点数与额度；费用按该渠道自己的规则计算。": [
+    "目前為按次渠道，工坊不估算點數與額度；費用依該渠道自己的規則計算。",
+    "This is a per-use channel, so the workshop does not estimate points or quota; billing follows the channel's own rules.",
+    "現在は従量課金チャネルのため、工房はポイントや割当を見積もりません。費用はチャネル独自の規則で計算されます。",
+    "현재 회차별 채널이므로 공방은 포인트나 할당량을 추정하지 않습니다. 비용은 해당 채널의 규칙으로 계산됩니다."
+  ],
   "Tag 补全词库": [
     "Tag 補全詞庫",
     "Tag completion dictionary",

@@ -31,6 +31,7 @@ import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, getActiveKeyHash, useAnlasBud
 import { getNaiRuntimeConfig } from '../services/naiRuntime';
 import { isNovelaiSubscriptionActive, isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { AnlasBalanceBar } from './AnlasBalanceBar';
+import { useNaiChannelMode } from '../services/naiChannel';
 import { OpusUsageBar } from './OpusUsageBar';
 import { getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
@@ -446,6 +447,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     };
   }, []);
 
+  const naiChannelMode = useNaiChannelMode();
   // ---- 多密钥保管箱 ----
   const [keyVault, setKeyVault] = useState<NaiKeyEntry[]>([]);
   const [keyVaultLoaded, setKeyVaultLoaded] = useState(false);
@@ -455,7 +457,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const activeGateway = keyVault.find(entry => entry.key === apiKey)?.gatewayUrl;
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyValue, setNewKeyValue] = useState('');
-  const [newKeyGateway, setNewKeyGateway] = useState(false);
+  const [newKeyMode, setNewKeyMode] = useState<'official' | 'gateway' | 'per-use'>('official');
   const [newKeyGatewayUrl, setNewKeyGatewayUrl] = useState('');
   const [renamingKeyId, setRenamingKeyId] = useState('');
   const [renameValue, setRenameValue] = useState('');
@@ -503,20 +505,30 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   };
 
   const addKeyEntry = async () => {
-    if (newKeyGateway && !newKeyGatewayUrl.trim()) { notify('请填写生图网关地址。', 'error'); return; }
-    const result = newKeyGateway
-      ? await naiKeyVault.add(newKeyName, newKeyValue, newKeyGatewayUrl)
-      : await naiKeyVault.add(newKeyName, newKeyValue);
+    if (newKeyMode !== 'official' && !newKeyGatewayUrl.trim()) {
+      notify(newKeyMode === 'per-use' ? '请填写按次渠道的生成地址。' : '请填写生图网关地址。', 'error');
+      return;
+    }
+    const result = await naiKeyVault.add(
+      newKeyName,
+      newKeyValue,
+      newKeyMode === 'official' ? '' : newKeyGatewayUrl,
+      newKeyMode === 'per-use' ? 'per-use' : ''
+    );
     if (result.status === 'empty') {
       notify('密钥不能为空', 'error');
       return;
     }
+    if (result.status === 'missing-gateway') {
+      notify('按次渠道需要填写生成地址。', 'error');
+      return;
+    }
     if (result.status === 'invalid') {
-      notify(newKeyGateway ? '成员 Key 包含无效字符，请检查粘贴内容。' : 'NovelAI Key 应以 pst- 开头，请检查粘贴内容。', 'error');
+      notify(newKeyMode === 'official' ? 'NovelAI Key 应以 pst- 开头，请检查粘贴内容。' : 'Key 包含无效字符，请检查粘贴内容。', 'error');
       return;
     }
     if (result.status === 'invalid-gateway') {
-      notify('生图网关地址须为完整 HTTP(S) 地址，不能包含凭据、查询参数或片段。', 'error');
+      notify('生成地址须为完整 HTTP(S) 地址，不能包含凭据、查询参数或片段。', 'error');
       return;
     }
     if (result.status === 'duplicate') {
@@ -1326,7 +1338,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="truncate text-sm font-bold text-gray-800 dark:text-gray-100" title={entry.name}>{entry.name}</span>
-                          {entry.gatewayUrl && <span className="flex-none rounded-full bg-indigo-100 px-1.5 py-0.5 text-micro font-bold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300" title={entry.gatewayUrl}>{t("网关")}</span>}
+                          {entry.billingMode === 'per-use'
+                            ? <span className="flex-none rounded-full bg-emerald-100 px-1.5 py-0.5 text-micro font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" title={entry.gatewayUrl}>{t("按次")}</span>
+                            : entry.gatewayUrl && <span className="flex-none rounded-full bg-indigo-100 px-1.5 py-0.5 text-micro font-bold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300" title={entry.gatewayUrl}>{t("网关")}</span>}
                           {!entry.gatewayUrl && !entry.key.startsWith('pst-') && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title={t("NovelAI Key 应以 pst- 开头")}>{t("格式可疑")}</span>}
                           {keyExpired && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title={t(entry.gatewayUrl ? '成员分配额度与实际扣费以网关为准；点击刷新' : "免费权益已过期；Paid Anlas 可付费生成。")}>{t(entry.gatewayUrl ? '网关权益不可用' : "订阅过期")}</span>}
                           {keyNonOpus && !entry.gatewayUrl && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title={t("当前订阅不是 Opus 档，无免费生成额度，按 Anlas 扣费生成")}>{t("非 Opus")}</span>}
@@ -1348,13 +1362,15 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             <div data-agent-private="true" className="mt-3 space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{t("添加密钥")}</span>
-                <select aria-label={t("密钥接入方式")} value={newKeyGateway ? 'gateway' : 'official'} onChange={event => setNewKeyGateway(event.target.value === 'gateway')} className="rounded-lg border border-gray-300 bg-gray-50 px-2 py-1 text-xs text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200">
-                  <option value="official">{t("NovelAI 官方")}</option><option value="gateway">{t("生图网关")}</option>
+                <select aria-label={t("密钥接入方式")} value={newKeyMode} onChange={event => setNewKeyMode(event.target.value as 'official' | 'gateway' | 'per-use')} className="rounded-lg border border-gray-300 bg-gray-50 px-2 py-1 text-xs text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200">
+                  <option value="official">{t("NovelAI 官方")}</option><option value="gateway">{t("生图网关")}</option><option value="per-use">{t("按次渠道")}</option>
                 </select>
               </div>
-              {newKeyGateway && <>
-                <input type="url" aria-label={t("生图网关地址")} value={newKeyGatewayUrl} onChange={event => setNewKeyGatewayUrl(event.target.value)} placeholder="https://gateway.example/v1" autoComplete="off" className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
-                <p className="text-xs leading-5 text-amber-600 dark:text-amber-400">{t("网关接收成员 Key、提示词及本次参考图；余额与扣费以网关为准，生图不提供实时预览。")}</p>
+              {newKeyMode !== 'official' && <>
+                <input type="url" aria-label={newKeyMode === 'per-use' ? t("按次渠道地址") : t("生图网关地址")} value={newKeyGatewayUrl} onChange={event => setNewKeyGatewayUrl(event.target.value)} placeholder={newKeyMode === 'per-use' ? 'https://example.com/ai/generate-image' : 'https://gateway.example/v1'} autoComplete="off" className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-400">{newKeyMode === 'per-use'
+                  ? t("按次渠道按调用次数自行计费，工坊不查询点数与额度，也不显示费用估算；生成照常发往该地址。")
+                  : t("网关接收成员 Key、提示词及本次参考图；余额与扣费以网关为准，生图不提供实时预览。")}</p>
               </>}
               <input
                 value={newKeyName}
@@ -1371,12 +1387,12 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   type={showNewKeyValue ? 'text' : 'password'}
                   value={newKeyValue}
                   onChange={event => setNewKeyValue(event.target.value.trim())}
-                  placeholder={newKeyGateway ? t("成员 API Key") : 'NovelAI API Key（pst-…）'}
+                  placeholder={newKeyMode !== 'official' ? t("渠道 API Key") : 'NovelAI API Key（pst-…）'}
                   autoComplete="new-password"
                   name="nai-vault-key-secret"
                   readOnly={false}
                   className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-                  aria-label={newKeyGateway ? t('成员 API Key') : 'NovelAI API Key'}
+                  aria-label={newKeyMode !== 'official' ? t('渠道 API Key') : 'NovelAI API Key'}
                 />
                 <button type="button" data-appearance="control" data-tone="neutral" onClick={() => setShowNewKeyValue(value => !value)} aria-label={showNewKeyValue ? t("隐藏密钥明文") : t("显示密钥明文")} title={showNewKeyValue ? t("隐藏密钥明文") : t("显示密钥明文")} className="mobile-touch flex items-center justify-center rounded-lg border border-gray-300 px-2.5 text-gray-600 transition hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
                   {showNewKeyValue ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -1414,7 +1430,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 </div>}
               </div>
             </div>}
-            <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
+            {naiChannelMode === 'per-use' && (
+              <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
+                <h4 className="font-semibold text-gray-900 dark:text-white">{t("Anlas 点数预算")}</h4>
+                <p className="mt-2 text-sm leading-6 text-gray-500 dark:text-gray-400">{t("当前为按次渠道：工坊不查询点数与额度，也不估算费用；费用按该渠道自己的规则计算。")}</p>
+              </div>
+            )}
+            <div className={naiChannelMode === 'per-use' ? 'hidden' : 'mt-4 border-t border-gray-200 pt-4 dark:border-gray-700'}>
               <h4 className="font-semibold text-gray-900 dark:text-white">{t("Anlas 点数预算")}</h4>
               <div className="mt-3 space-y-3">
                 <AnlasBalanceBar variant="details" budget={anlasBudget} subscription={novelaiSubscription} />

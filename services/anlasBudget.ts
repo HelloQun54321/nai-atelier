@@ -8,6 +8,7 @@ import { DEFAULT_NAI_RUNTIME, NaiRuntimeConfig } from './naiRuntime';
 import { imageEditRequestDimensions } from './imageEdit';
 import type { NovelaiSubscriptionInfo, NovelaiUsageState } from './naiUsage';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
+import { getNaiChannelMode, resolveNaiChannelMode } from './naiChannel';
 import { estimateNaiBilling } from '../worker/naiBilling.mjs';
 
 export const DEFAULT_ANLAS_BUDGET = 1666;
@@ -63,8 +64,9 @@ export const usageForCostEstimate = async (
   return fresh?.usage?.isNegative === true;
 };
 
-/** 生成按钮的费用提示：V5 等受限模型的免费档也会消耗 Opus 额度。 */
+/** 生成按钮的费用提示：V5 等受限模型的免费档也会消耗 Opus 额度。按次渠道不显示官方估算。 */
 export const formatGenerationCostLabel = (cost: number, model?: string): string => {
+  if (getNaiChannelMode() === 'per-use') return '按渠道计费';
   const usesOpusAllowance = isOpusUsageLimitedModel(model);
   if (cost > 0) return `${cost} Anlas`;
   return usesOpusAllowance ? '消耗 Opus 额度' : '免费';
@@ -135,6 +137,11 @@ export const useAnlasBudget = () => {
   const [loading, setLoading] = useState(true);
   const refresh = useCallback(async () => {
     const requestedKeyHash = await getActiveKeyHash();
+    // 按次渠道没有本地预算概念：不读取、不刷新，也不触发预算耗尽确认。
+    if (getNaiChannelMode() === 'per-use' || (await resolveNaiChannelMode()) === 'per-use') {
+      setLoading(false);
+      return;
+    }
     try {
       const next = await anlasBudgetService.get();
       const currentKeyHash = await getActiveKeyHash();

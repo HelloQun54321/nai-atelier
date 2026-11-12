@@ -10,6 +10,12 @@ import {
   useNovelaiUsage,
 } from '../../services/naiUsage';
 
+const channelState = vi.hoisted(() => ({ mode: 'official' as 'official' | 'gateway' | 'per-use' }));
+vi.mock('../../services/naiChannel', () => ({
+  getNaiChannelMode: () => channelState.mode,
+  resolveNaiChannelMode: async () => channelState.mode,
+}));
+
 const responseFor = (payload: unknown) => ({
   ok: true,
   json: async () => payload,
@@ -52,10 +58,24 @@ describe('useNovelaiUsage', () => {
   beforeEach(() => {
     sessionStorage.clear();
     localStorage.clear();
+    channelState.mode = 'official';
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    channelState.mode = 'official';
+  });
+
+  it('按次渠道不请求官方订阅接口，也不显示同步失败', async () => {
+    channelState.mode = 'per-use';
+    sessionStorage.setItem('nai_api_key', 'STA1N-per-use');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const hook = renderHook(() => useNovelaiUsage());
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(hook.result.current.info).toBeNull();
+    expect(hook.result.current.error).toBeNull();
   });
 
   it('后台直接刷新不依赖已卸载界面，合并在途请求且失败不返回旧额度', async () => {

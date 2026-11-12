@@ -386,18 +386,18 @@ describe('GlobalSettings', () => {
     vi.mocked(naiKeyVault.add).mockResolvedValue({ status: 'added', entry: { id: 'added', name: '合成', key: 'STA1N-test', createdAt: 0 } });
     render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
     fireEvent.change(await screen.findByLabelText('密钥接入方式'), { target: { value: 'gateway' } });
-    fireEvent.change(screen.getByLabelText('成员 API Key'), { target: { value: 'STA1N-test' } });
+    fireEvent.change(screen.getByLabelText('渠道 API Key'), { target: { value: 'STA1N-test' } });
     fireEvent.click(screen.getByRole('button', { name: '添加' }));
     expect(naiKeyVault.add).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('生图网关地址'), { target: { value: 'https://gateway.example/v1' } });
     fireEvent.click(screen.getByRole('button', { name: '添加' }));
-    await waitFor(() => expect(naiKeyVault.add).toHaveBeenCalledWith('', 'STA1N-test', 'https://gateway.example/v1'));
-    await waitFor(() => expect((screen.getByLabelText('成员 API Key') as HTMLInputElement).value).toBe(''));
+    await waitFor(() => expect(naiKeyVault.add).toHaveBeenCalledWith('', 'STA1N-test', 'https://gateway.example/v1', ''));
+    await waitFor(() => expect((screen.getByLabelText('渠道 API Key') as HTMLInputElement).value).toBe(''));
     fireEvent.change(screen.getByLabelText('密钥接入方式'), { target: { value: 'official' } });
     expect(screen.queryByLabelText('生图网关地址')).toBeNull();
     fireEvent.change(screen.getByLabelText('NovelAI API Key'), { target: { value: 'pst-official' } });
     fireEvent.click(screen.getByRole('button', { name: '添加' }));
-    await waitFor(() => expect(naiKeyVault.add).toHaveBeenLastCalledWith('', 'pst-official'));
+    await waitFor(() => expect(naiKeyVault.add).toHaveBeenLastCalledWith('', 'pst-official', '', ''));
   });
 
   it('添加密钥后自动设为当前使用，避免“填了却没生效”', async () => {
@@ -486,7 +486,7 @@ describe('GlobalSettings', () => {
       act(() => setLanguage(language.code));
       expect(screen.getByLabelText(t('生图网关地址'))).toBe(address);
       expect(address.value).toBe('https://gateway.example/v1');
-      expect(screen.getByLabelText(t('成员 API Key'))).toBeTruthy();
+      expect(screen.getByLabelText(t('渠道 API Key'))).toBeTruthy();
       expect(screen.getByText(t('网关接收成员 Key、提示词及本次参考图；余额与扣费以网关为准，生图不提供实时预览。'))).toBeTruthy();
     }
   });

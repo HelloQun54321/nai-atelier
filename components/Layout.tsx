@@ -27,6 +27,7 @@ import {
 import { useAnlasBudget } from '../services/anlasBudget';
 import { useNovelaiUsage } from '../services/naiUsage';
 import { AnlasBalanceBar } from './AnlasBalanceBar';
+import { useNaiChannelMode } from '../services/naiChannel';
 import { AppearancePreferences, ThemeMode } from '../services/appearancePreferences';
 import { CloudQueueStatus } from './CloudQueueStatus';
 import { OpusUsageBar } from './OpusUsageBar';
@@ -118,6 +119,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   useLanguage();
   const anlasBudget = useAnlasBudget();
   const novelaiSubscription = useNovelaiUsage();
+  // 按次渠道不提供点数与额度：侧栏不渲染这两行，底部容器变矮后助手按钮随之下移。
+  const naiChannelMode = useNaiChannelMode();
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('home');
   const [showResources, setShowResources] = useState(false);
@@ -476,8 +479,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         <div className={`app-sidebar-nav flex flex-none flex-col gap-2 border-t border-gray-200 py-2 dark:border-gray-800 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
           <button type="button" onClick={onOpenAgent} title={sidebarCollapsed ? t("创作助手") : undefined} aria-label={t("创作助手")} className={`app-sidebar-nav-item flex h-11 w-full items-center rounded-xl bg-indigo-700 text-white shadow-md shadow-indigo-500/15 outline-none transition hover:bg-indigo-600 focus-visible:ring-2 focus-visible:ring-indigo-400 dark:border dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:shadow-lg dark:shadow-indigo-950/40 dark:hover:from-indigo-500 dark:hover:to-violet-600 ${sidebarCollapsed ? 'px-4' : 'px-3'}`}><Sparkles className="h-5 w-5 flex-none" /><span aria-hidden={sidebarCollapsed} className="app-sidebar-label ml-2 truncate text-sm font-bold">{t("创作助手")}</span></button>
           <div className="appearance-group overflow-hidden rounded-xl border border-gray-200 bg-gray-50/70 dark:border-gray-800/80 dark:bg-gray-900/80">
-            <AnlasBalanceBar collapsed={sidebarCollapsed} budget={anlasBudget} subscription={novelaiSubscription} />
-            <OpusUsageBar collapsed={sidebarCollapsed} />
+            {naiChannelMode !== 'per-use' && <>
+              <AnlasBalanceBar collapsed={sidebarCollapsed} budget={anlasBudget} subscription={novelaiSubscription} />
+              <OpusUsageBar collapsed={sidebarCollapsed} />
+            </>}
             <button type="button" onClick={toggleSafeMode} title={sidebarCollapsed ? t("安全模式：{0}", [safeMode ? t('开') : t('关')]) : undefined} aria-label={t("安全模式：{0}", [safeMode ? t('开') : t('关')])} aria-pressed={safeMode} className={`app-sidebar-nav-item relative flex h-11 w-full items-center justify-between border-b border-gray-200 text-gray-500 outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:border-gray-800/80 dark:text-gray-300 dark:hover:bg-gray-800/70 ${sidebarCollapsed ? 'px-4' : 'px-3'}`}><span className="flex min-w-0 items-center"><span className="relative flex-none"><ShieldCheck className={`h-5 w-5 ${safeMode ? 'text-emerald-700 dark:text-emerald-400' : ''}`} />{sidebarCollapsed && safeMode && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full border border-white bg-emerald-500 dark:border-gray-900" />}</span><span aria-hidden={sidebarCollapsed} className="app-sidebar-label ml-2 truncate text-xs font-medium">{t("安全模式")}</span></span>{!sidebarCollapsed && <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeMode ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeMode ? 'translate-x-5' : 'translate-x-0'}`} /></span>}</button>
             <button type="button" onClick={() => { setSettingsSection('home'); setShowSettings(true); }} title={sidebarCollapsed ? t("全局设置") : undefined} aria-label={t("全局设置")} className={`app-sidebar-nav-item flex h-11 w-full items-center text-gray-500 outline-none transition hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 dark:text-gray-300 dark:hover:bg-gray-800/70 dark:hover:text-white ${sidebarCollapsed ? 'px-4' : 'px-3'}`}><Settings className="h-5 w-5 flex-none" /><span aria-hidden={sidebarCollapsed} className="app-sidebar-label ml-2 truncate text-xs font-medium">{t("全局设置")}</span></button>
           </div>

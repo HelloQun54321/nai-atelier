@@ -17,6 +17,7 @@ import { applyEstimatorRuntime, estimateV45GenerationCost, useAnlasBudget } from
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { confirmationCostScope } from '../services/dailyConfirmation';
+import { useNaiChannelMode } from '../services/naiChannel';
 import { approveGenerationSeries, stopGenerationSeriesSession } from '../services/generationSeries';
 import { setGenerationQueuePaused } from '../services/generationTask';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -35,6 +36,7 @@ export function usePromptLibraryCoverActions({ active, notify }: {
 }) {
   const confirm = useConfirmDialog();
   const budget = useAnlasBudget();
+  const perUseNaiChannel = useNaiChannelMode() === 'per-use';
   const subscription = useNovelaiUsage();
   const runtime = useNaiRuntime();
   applyEstimatorRuntime(runtime);
@@ -66,7 +68,7 @@ export function usePromptLibraryCoverActions({ active, notify }: {
     try {
       validatePromptLibraryCoverTemplate(snapshot);
       void subscription.refreshIfStale();
-      const cost = estimateV45GenerationCost(snapshot.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true);
+      const cost = perUseNaiChannel ? 0 : estimateV45GenerationCost(snapshot.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true);
       if (cost > 0 && !options.skipConfirmation && !await confirm({
         rememberKey: 'prompt-library-cover.generate',
         rememberScope: confirmationCostScope(key, cost, 1, budget.remaining, snapshot.params.model),

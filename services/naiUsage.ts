@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { parseErrorResponse } from './api';
+import { getNaiChannelMode, resolveNaiChannelMode } from './naiChannel';
 
 /**
  * NovelAI Opus 免费生成限额（2026-08-21 随 V5 引入）。
@@ -179,6 +180,16 @@ export const useNovelaiUsage = () => {
       setError(null);
     }
     if (!apiKey) {
+      infoRef.current = null;
+      fetchedAtRef.current = 0;
+      setInfo(null);
+      setFetchedAt(0);
+      setError(null);
+      setLoading(false);
+      return null;
+    }
+    // 按次渠道不提供官方订阅/点数数据：不请求、不重试，界面也不显示额度行。
+    if (getNaiChannelMode() === 'per-use' || (await resolveNaiChannelMode()) === 'per-use') {
       infoRef.current = null;
       fetchedAtRef.current = 0;
       setInfo(null);

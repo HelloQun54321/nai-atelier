@@ -10,7 +10,7 @@
 //   - name trim 后空则生成「密钥 N」序号名，超过 30 字截断；
 //   - 新增返回 { status, entry }，改名 / 删除返回 { entries }，便于调用方刷新整箱。
 import { json, error, parseStoredJson, type D1Database, type RouteContext } from './types';
-import { normalizeNaiGatewayUrl, validateNaiApiKey, resolveNaiGatewayUrl } from '../naiConnection.mjs';
+import { NAI_BILLING_PER_USE, normalizeNaiBillingMode, normalizeNaiGatewayUrl, validateNaiApiKey, resolveNaiGatewayUrl } from '../naiConnection.mjs';
 
 export interface NaiKeyEntry {
   id: string;
@@ -18,6 +18,8 @@ export interface NaiKeyEntry {
   key: string;
   createdAt: number;
   gatewayUrl?: string;
+  /** 'per-use' = 按次渠道：生成照走 gatewayUrl，但不查询点数/额度。 */
+  billingMode?: string;
 }
 
 const VAULT_SETTINGS_KEY = 'nai_key_vault';
@@ -57,6 +59,7 @@ export const readVault = async (db: D1Database): Promise<NaiKeyEntry[]> => {
       createdAt: typeof rec.createdAt === 'number' ? rec.createdAt : Date.now(),
       // 损坏地址保留到请求校验，不能丢掉绑定后回退官方。
       ...(rec.gatewayUrl != null ? { gatewayUrl: rec.gatewayUrl as string } : {}),
+      ...(normalizeNaiBillingMode(rec.billingMode) ? { billingMode: normalizeNaiBillingMode(rec.billingMode) } : {}),
     });
   }
   return entries;
@@ -87,8 +90,12 @@ export async function handleNaiKeyVaultRoute(ctx: RouteContext): Promise<Respons
     const body = await readJsonBody(request);
     const trimmedKey = typeof body.key === 'string' ? body.key.trim() : '';
     if (!trimmedKey) return error('密钥不能为空', 400);
+    const billingMode = normalizeNaiBillingMode(body.billingMode);
     let gatewayUrl;
-    try { gatewayUrl = normalizeNaiGatewayUrl(body.gatewayUrl); validateNaiApiKey(trimmedKey, gatewayUrl); }
+    try { gatewayUrl = normalizeNaiGatewayUrl(body.gatewayUrl); }
+    catch (cause) { return error(cause instanceof Error ? cause.message : '密钥接入配置无效', 400); }
+    if (billingMode === NAI_BILLING_PER_USE && !gatewayUrl) return error('按次渠道需要填写生成地址', 400);
+    try { validateNaiApiKey(trimmedKey, gatewayUrl); }
     catch (cause) { return error(cause instanceof Error ? cause.message : '密钥接入配置无效', 400); }
     const vault = await readVault(db);
     if (vault.some(entry => entry.key === trimmedKey)) return error('这把密钥已经在保管箱里了', 400);
@@ -99,6 +106,7 @@ export async function handleNaiKeyVaultRoute(ctx: RouteContext): Promise<Respons
       key: trimmedKey,
       createdAt: Date.now(),
       ...(gatewayUrl ? { gatewayUrl } : {}),
+      ...(billingMode ? { billingMode } : {}),
     };
     await writeVault(db, [...vault, entry]);
     return json({ status: 'added', entry });
@@ -116,8 +124,12 @@ export async function handleNaiKeyVaultRoute(ctx: RouteContext): Promise<Respons
       if (!raw || typeof raw !== 'object') return error('迁移数据包含无效条目', 400);
       const rec = raw as Record<string, unknown>;
       const key = typeof rec.key === 'string' ? rec.key.trim() : '';
+      const billingMode = normalizeNaiBillingMode(rec.billingMode);
       let gatewayUrl;
-      try { gatewayUrl = normalizeNaiGatewayUrl(rec.gatewayUrl); validateNaiApiKey(key, gatewayUrl); }
+      try { gatewayUrl = normalizeNaiGatewayUrl(rec.gatewayUrl); }
+      catch { return error('迁移数据包含无效接入配置（官方 Key 应以 pst- 开头，成员 Key 需网关地址），已中止，本地数据未删除', 400); }
+      if (billingMode === NAI_BILLING_PER_USE && !gatewayUrl) return error('迁移数据中的按次渠道缺少生成地址，已中止，本地数据未删除', 400);
+      try { validateNaiApiKey(key, gatewayUrl); }
       catch { return error('迁移数据包含无效接入配置（官方 Key 应以 pst- 开头，成员 Key 需网关地址），已中止，本地数据未删除', 400); }
       const rawName = typeof rec.name === 'string' ? rec.name.trim() : '';
       cleaned.push({
@@ -126,6 +138,7 @@ export async function handleNaiKeyVaultRoute(ctx: RouteContext): Promise<Respons
         key,
         createdAt: typeof rec.createdAt === 'number' ? rec.createdAt : Date.now(),
         ...(gatewayUrl ? { gatewayUrl } : {}),
+        ...(billingMode ? { billingMode } : {}),
       });
     }
     const existing = await readVault(db);

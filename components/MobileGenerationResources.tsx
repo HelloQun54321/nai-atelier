@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChevronUp } from 'lucide-react';
 import type { useAnlasBudget } from '../services/anlasBudget';
 import { isActiveOpusSubscription, usageRemainingPercent, type useNovelaiUsage } from '../services/naiUsage';
+import { useNaiChannelMode } from '../services/naiChannel';
 import { describeNaiRuntimeSyncProblem, isNaiRuntimeSyncUnhealthy, type NaiRuntimeConfig } from '../services/naiRuntime';
 import { naiKeyVault } from '../services/naiKeyVault';
 import { AnlasBalanceBar, compactPoints, officialAnlasBalance } from './AnlasBalanceBar';
@@ -22,6 +23,7 @@ interface MobileGenerationResourcesProps {
 /** 四模式共用手机资源入口；复用工作台状态，不另建预算、订阅轮询或费用规则。 */
 export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps> = ({ apiKey, budget, subscription, runtime, keyboardOffset = 0 }) => {
   useLanguage();
+  const naiChannelMode = useNaiChannelMode();
   const [open, setOpen] = useState(false);
   const [keyName, setKeyName] = useState<{ key: string; name: string } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -89,6 +91,8 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
       window.history.back();
     } else navigate();
   };
+  // 按次渠道没有点数与额度可看，手机底部只保留生成相关操作。
+  if (naiChannelMode === 'per-use') return null;
   return <>
     <button type="button" aria-label={t("查看账户资源：{0}", [summary])} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}
       style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + env(safe-area-inset-bottom))` } : undefined}
