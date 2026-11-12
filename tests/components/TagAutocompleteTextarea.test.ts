@@ -1739,7 +1739,7 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     expect(screen.queryByRole('combobox', { name: '添加提示词' })).toBeNull();
     expect((screen.getByRole('button', { name: '删除模式' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: /^alpha\s/ }));
-    expect((screen.getByRole('button', { name: '屏蔽所选 Tag' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '屏蔽模式' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: '括号' }));
     fireEvent.click(screen.getByRole('button', { name: '添加权重' }));
     fireEvent.paste(screen.getByLabelText('提示词中文翻译'), { clipboardData: { getData: () => 'beta' } });
@@ -1779,57 +1779,66 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     expect(textarea.value).toBe('-1.15::alpha::');
   });
 
-  it('屏蔽选中的散词后从翻译区恢复回原位置，不进入删除模式', async () => {
+  it('屏蔽散词后 Tag 留在翻译区原位并显示可恢复样式，操作与删除模式同为先进入模式再选词', async () => {
     render(React.createElement(Harness, { initial: 'masterpiece, 1girl', showTranslations: true }));
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
     fireEvent.click(await screen.findByRole('button', { name: /^masterpiece/ }));
-    expect((screen.getByRole('button', { name: '屏蔽所选 Tag' }) as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(screen.getByRole('button', { name: '屏蔽所选 Tag' }));
+    fireEvent.click(screen.getByRole('button', { name: '屏蔽模式' }));
+    expect(screen.queryByRole('button', { name: '删除模式' })).toBeNull();
+    expect((screen.getByRole('button', { name: '屏蔽 0 个 Tag' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(screen.getByLabelText('提示词中文翻译')).getByRole('button', { name: /^masterpiece/ }));
+    fireEvent.click(screen.getByRole('button', { name: '屏蔽 1 个 Tag' }));
     expect(textarea.value).toBe('1girl');
-    expect(screen.getByRole('group', { name: '已屏蔽的 Tag' }).textContent).toContain('已屏蔽 1 个 Tag');
-    fireEvent.click(screen.getByRole('button', { name: '恢复屏蔽的 Tag：masterpiece' }));
+    const zone = screen.getByLabelText('提示词中文翻译');
+    const muted = screen.getByRole('button', { name: '恢复屏蔽的 Tag：masterpiece' });
+    expect(zone.contains(muted)).toBe(true);
+    expect(zone.textContent!.indexOf('masterpiece')).toBeLessThan(zone.textContent!.indexOf('1girl'));
+    expect(screen.getByRole('button', { name: '屏蔽模式' })).toBeTruthy();
+    fireEvent.click(muted);
     expect(textarea.value).toBe('masterpiece, 1girl');
-    expect(screen.queryByRole('group', { name: '已屏蔽的 Tag' })).toBeNull();
-    expect(screen.getByRole('button', { name: '删除模式' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '恢复屏蔽的 Tag：masterpiece' })).toBeNull();
   });
 
-  it('屏蔽整组数值权重后恢复原权重包装，选中态之外的词保持不动', async () => {
+  it('屏蔽整组数值权重后在原位恢复原权重包装，选中态之外的词保持不动', async () => {
     render(React.createElement(Harness, { initial: '1.2::masterpiece, 1girl::, alpha', showTranslations: true }));
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole('button', { name: '屏蔽模式' }));
     fireEvent.click(await screen.findByRole('button', { name: /^1\.2::/ }));
-    fireEvent.click(screen.getByRole('button', { name: '屏蔽所选 Tag' }));
+    fireEvent.click(screen.getByRole('button', { name: '屏蔽 2 个 Tag' }));
     expect(textarea.value).toBe('alpha');
+    expect(screen.getByLabelText('提示词中文翻译').textContent!.indexOf('masterpiece')).toBeLessThan(screen.getByLabelText('提示词中文翻译').textContent!.indexOf('alpha'));
     fireEvent.click(screen.getByRole('button', { name: '恢复屏蔽的 Tag：masterpiece, 1girl' }));
     expect(textarea.value).toBe('1.2::masterpiece, 1girl::, alpha');
   });
 
-  it('恢复后撤销会回到屏蔽状态，恢复入口重新出现', async () => {
+  it('恢复后撤销会回到屏蔽状态，原位的恢复入口重新出现', async () => {
     render(React.createElement(Harness, { initial: 'masterpiece, 1girl', showTranslations: true }));
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole('button', { name: '屏蔽模式' }));
     fireEvent.click(await screen.findByRole('button', { name: /^masterpiece/ }));
-    fireEvent.click(screen.getByRole('button', { name: '屏蔽所选 Tag' }));
+    fireEvent.click(screen.getByRole('button', { name: '屏蔽 1 个 Tag' }));
     fireEvent.click(screen.getByRole('button', { name: '恢复屏蔽的 Tag：masterpiece' }));
     expect(textarea.value).toBe('masterpiece, 1girl');
-    expect(screen.queryByRole('group', { name: '已屏蔽的 Tag' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '恢复屏蔽的 Tag：masterpiece' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '撤销' }));
     expect(textarea.value).toBe('1girl');
-    expect(screen.getByRole('group', { name: '已屏蔽的 Tag' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '恢复屏蔽的 Tag：masterpiece' }));
     expect(textarea.value).toBe('masterpiece, 1girl');
   });
 
-  it('撤销带回屏蔽原文时移除重复的恢复项，删除模式不显示屏蔽入口', async () => {
+  it('撤销带回屏蔽原文时原位不重复显示恢复入口，取消与 Esc 退出屏蔽模式', async () => {
     render(React.createElement(Harness, { initial: 'masterpiece, 1girl', showTranslations: true }));
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole('button', { name: '屏蔽模式' }));
     fireEvent.click(await screen.findByRole('button', { name: /^masterpiece/ }));
-    fireEvent.click(screen.getByRole('button', { name: '屏蔽所选 Tag' }));
-    expect(screen.getByRole('group', { name: '已屏蔽的 Tag' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '屏蔽 1 个 Tag' }));
     fireEvent.click(screen.getByRole('button', { name: '撤销' }));
     expect(textarea.value).toBe('masterpiece, 1girl');
-    await waitFor(() => expect(screen.queryByRole('group', { name: '已屏蔽的 Tag' })).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: '删除模式' }));
-    expect(screen.queryByRole('button', { name: '屏蔽所选 Tag' })).toBeNull();
-    expect(screen.queryByRole('group', { name: '已屏蔽的 Tag' })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('button', { name: '恢复屏蔽的 Tag：masterpiece' })).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: '屏蔽模式' }));
+    fireEvent.keyDown(screen.getByLabelText('提示词中文翻译'), { key: 'Escape' });
+    expect(screen.getByRole('button', { name: '屏蔽模式' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '屏蔽 0 个 Tag' })).toBeNull();
   });
 
   it('原文本身就是中文的片段留在翻译区但不需要翻译，也不显示待翻译', async () => {
