@@ -251,4 +251,4 @@ Desktop builds require a Windows build environment; Android also needs JDK 21 an
 - Style Roll workflow and gallery inspiration: [@sdnwls](https://github.com/sdnwls) / [nai-style-lab](https://github.com/sdnwls/nai-style-lab). Independently implemented for Atelier without copying its code or assets.
 - Local tagging model: [SmilingWolf WD ViT Tagger V3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3), Apache-2.0.
 
-This README provides the localized usage guide. The [complete Chinese introduction](./README.md), [product decisions](./docs/PRODUCT_DECISIONS.md), [technical documents](./docs/WINDOWS_DESKTOP.md), [change history](./CHANGELOG.md) and [author's personal note](./README.md#一点个人吐槽) are currently maintained in Simplified Chinese.
+This README provides the localized usage guide. The [complete Chinese introduction](./README.md), [product decisions](./docs/PRODUCT_DECISIONS.md), [technical documents](./docs/WINDOWS_DESKTOP.md) and [change history](./CHANGELOG.md) are currently maintained in Simplified Chinese.

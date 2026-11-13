@@ -250,4 +250,4 @@ PC 패키지는 Windows 빌드 환경이 필요하고 Android는 추가로 JDK 2
 - 화풍 롤 흐름과 갤러리 경험 참고: [@sdnwls](https://github.com/sdnwls) / [nai-style-lab](https://github.com/sdnwls/nai-style-lab). Atelier에 맞게 독립 구현했으며 코드나 자료를 복사하지 않았습니다.
 - 로컬 태깅 모델: [SmilingWolf WD ViT Tagger V3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3), Apache-2.0.
 
-이 README는 한국어 사용 안내입니다. [중국어 상세 소개](./README.md), [제품 결정 기록](./docs/PRODUCT_DECISIONS.md), [기술 문서](./docs/WINDOWS_DESKTOP.md), [변경 이력](./CHANGELOG.md)과 [작성자의 개인 의견 원문](./README.md#一点个人吐槽)은 현재 중국어 간체로 유지보수합니다.
+이 README는 한국어 사용 안내입니다. [중국어 상세 소개](./README.md), [제품 결정 기록](./docs/PRODUCT_DECISIONS.md), [기술 문서](./docs/WINDOWS_DESKTOP.md), [변경 이력](./CHANGELOG.md)은 현재 중국어 간체로 유지보수합니다.

@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.186.5-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.186.6-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -581,19 +581,6 @@ flowchart TD
 - 感谢 [@sdnwls](https://github.com/sdnwls) 的项目 [nai-style-lab](https://github.com/sdnwls/nai-style-lab)：Roll 串的一轮出图和画风库体验参考了该项目，结合工坊既有功能独立实现，未复制其代码或素材；
 - 感谢 [@clanso](https://github.com/clanso)：画师参与统计的负权重排除与逐段解析、画师收藏的目标状态写入，以及无样张画师封面缺失的修正，来自其在 [#21](https://github.com/HelloQun54321/nai-atelier/pull/21) 中的实现；
 - 本地反推模型：[SmilingWolf WD ViT Tagger V3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3) (Apache-2.0)。
-
-### 一点个人吐槽
-
-以下保留作者个人观点原文；当前免费资格和收费以应用同步结果及 NovelAI 实际结算为准。
-
-novelai直到4.5系列的模型都还是opus档会员可以无限生小图（28步，1216*832这个像素尺寸内的）<br>
-但8月下旬更新的5系列模型却一改之前的政策，搞了个及其傻逼的电池机制，限额<br>
-novelai我给你老冯飞了<br>
-去你discord讨论就禁言，去你推特下面反映就拉黑<br>
-真是纯野狗公司吧<br>
-一个破小说模型训练大半年搞炸炉端出来一坨屎<br>
-生图模型也是一直装死不更新，一更新就加限额机制<br>
-你和你的孝子贤孙全家飞天
 
 ---
 

@@ -250,4 +250,4 @@ PC パッケージには Windows のビルド環境、Android には追加で JD
 - 画風ロールのフローとギャラリーの参考：[@sdnwls](https://github.com/sdnwls) / [nai-style-lab](https://github.com/sdnwls/nai-style-lab)。Atelier向けに独自実装し、コードや素材はコピーしていません。
 - ローカル Tag 推定モデル：[SmilingWolf WD ViT Tagger V3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3)、Apache-2.0。
 
-この README は日本語の利用ガイドです。[中国語の詳しい紹介](./README.md)、[製品の決定事項](./docs/PRODUCT_DECISIONS.md)、[技術文書](./docs/WINDOWS_DESKTOP.md)、[変更履歴](./CHANGELOG.md)、[作者の個人的な所感](./README.md#一点个人吐槽)は現在、簡体字中国語で保守しています。
+この README は日本語の利用ガイドです。[中国語の詳しい紹介](./README.md)、[製品の決定事項](./docs/PRODUCT_DECISIONS.md)、[技術文書](./docs/WINDOWS_DESKTOP.md)、[変更履歴](./CHANGELOG.md)は現在、簡体字中国語で保守しています。

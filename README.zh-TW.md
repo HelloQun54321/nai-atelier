@@ -250,4 +250,4 @@ SillyTavern 連接器與 st-chatu8 互通選定的風格串、Vibe 編碼與歷�
 - Roll 串流程與畫風庫體驗參考：[@sdnwls](https://github.com/sdnwls) / [nai-style-lab](https://github.com/sdnwls/nai-style-lab)，配合工坊獨立實作，未複製其程式碼或素材。
 - 本地反推模型：[SmilingWolf WD ViT Tagger V3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3)，Apache-2.0。
 
-本 README 提供繁中使用說明。[簡中完整介紹](./README.md)、[產品決策](./docs/PRODUCT_DECISIONS.md)、[技術文檔](./docs/WINDOWS_DESKTOP.md)、[變更歷史](./CHANGELOG.md) 與 [作者個人吐槽原文](./README.md#一点个人吐槽) 目前以簡中維護。
+本 README 提供繁中使用說明。[簡中完整介紹](./README.md)、[產品決策](./docs/PRODUCT_DECISIONS.md)、[技術文檔](./docs/WINDOWS_DESKTOP.md)、[變更歷史](./CHANGELOG.md) 目前以簡中維護。

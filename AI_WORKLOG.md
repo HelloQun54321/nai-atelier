@@ -1,3 +1,6 @@
+## 2026-11-14
+- **DeepSeek Harness (deepseek-v4.1-flash)**：按用户要求删除 README 文末「一点个人吐槽」整节（含情绪化言辞的正文与导语），并清理 `README.en.md`／`README.ja.md`／`README.ko.md`／`README.zh-TW.md` 中指向 `README.md#一点个人吐槽` 的失效锚点链接；CHANGELOG 记录本次删除。版本 1.186.6。
+
 ## 2026-11-13
 - **DeepSeek Harness (deepseek-v4.1-flash)**：按用户反馈修复 AITag 保存到风格串丢失作品标签。`components/AitagGallery.tsx` 的 `buildImageChain` 由固定 `tags: []` 改为 `normalizeChainTags(getAitagWorkTags(work.tags))`，覆盖单项、快捷收录与批量保存；`services/aitagService.ts` 新增 `getAitagWorkTags`，支持数组、JSON 文本与逗号分隔并去重；`docs/PRODUCT_DECISIONS.md` 补充保存规则。测试：AITag 组件 141 项（保存 payload 带 `['东方Project','同人']`、过滤 `aitag`）与服务归一化用例通过；`tsc` 与 ESLint 定向通过。版本 1.186.5。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：按用户反馈移除被屏蔽 Tag 胶囊内的 EyeOff 图标，避免图标占宽挤动后面的 Tag。`components/TagAutocompleteTextarea.tsx` 的 `mutedUnit` 改为纯文本双行结构（虚线、删除线、琥珀色保留），并按原词是否有目录资料补 `pr-7`，宽度与原单元一致；`MutedPromptTag` 增加 `tags` 记录供该判断。测试新增胶囊无 svg、无 `gap-1` 的断言，`TagAutocompleteTextarea` 131 项通过；`tsc` 与 ESLint 定向通过。版本 1.186.4。
