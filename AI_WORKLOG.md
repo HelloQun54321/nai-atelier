@@ -1,4 +1,5 @@
 ## 2026-11-14
+- **DeepSeek Harness (deepseek-v4.1-flash)**：按用户要求把图片反推接到编辑三模式的顶栏工具排最左。`components/chain/ChainEditorHeader.tsx` 新增可选 `onReverseTag`：桌面端在 `renderPromptTools()` 之前插入 `ImagePlus` 图标按钮，窄屏在「更多操作」底部面板首行提供同一入口；`components/ChainEditor.tsx` 新增 `editReverseTagImage`（优先 `imageEditPreviewImage`，否则 `imageEditBaseImage`）并传给顶栏，反推面板 `onInsert` 按模式分流——编辑模式写入 `updateEditDraft(operation, { prompt, promptSource: 'custom' })`，文生图仍走 `setBasePrompt`，`actionLabel` 同步改为「追加到当前正面提示词」；`locales/messages.json` 新增 3 条四语词条。新增 `tests/components/ChainEditorHeader.test.tsx` 3 项（最左顺序、无回调不渲染、窄屏收进更多操作）；`ChainEditor.workspace` + `ChainEditorPreview` 310 项、i18n 39 项通过。版本 1.187.0。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：按用户要求删除 README 文末「一点个人吐槽」整节（含情绪化言辞的正文与导语），并清理 `README.en.md`／`README.ja.md`／`README.ko.md`／`README.zh-TW.md` 中指向 `README.md#一点个人吐槽` 的失效锚点链接；CHANGELOG 记录本次删除。版本 1.186.6。
 
 ## 2026-11-13

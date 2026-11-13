@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../../services/i18n';
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { Copy, FileDown, Languages, ListTree, LoaderCircle, MoreHorizontal, RotateCcw, Save, Tags } from 'lucide-react';
+import { Copy, FileDown, ImagePlus, Languages, ListTree, LoaderCircle, MoreHorizontal, RotateCcw, Save, Tags } from 'lucide-react';
 import { GenerationMode } from '../../types';
 import { ChainEditorModeHeader } from '../ChainEditorModeHeader';
 import { IconButton, ToolbarActionRow as ActionRow } from '../DesignSystem';
@@ -32,6 +32,8 @@ export interface ChainEditorHeaderProps {
     handleFork: () => void;
     handleSaveAll: () => void;
     handleImportImage: (event: React.ChangeEvent<HTMLInputElement>) => void;
+    /** 编辑三模式的反推入口：对当前底图或结果图跑本地模型，结果追加到当前模式正面提示词。 */
+    onReverseTag?: () => void;
     onTranslateMissingPrompts: () => void;
     translationPending?: boolean;
     notify: (msg: string, type?: 'success' | 'error') => void;
@@ -61,6 +63,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     handleFork,
     handleSaveAll,
     handleImportImage,
+    onReverseTag,
     onTranslateMissingPrompts,
     translationPending = false,
     notify,
@@ -147,6 +150,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             </div>
 
             {!compact && <div className="chain-editor-actions flex flex-none items-center justify-end gap-2 ml-auto">
+                {canEdit && onReverseTag && <IconButton label={t('反推当前图片的 Tag')} title={t('反推当前底图或结果图的 Tag，并追加到当前模式正面提示词')} onClick={onReverseTag}><ImagePlus /></IconButton>}
                 {renderPromptTools()}
                 {canEdit && <>
                     <IconButton label={t("导入图片或 JSON 配置")} onClick={() => importInputRef.current?.click()}><FileDown /></IconButton>
@@ -187,6 +191,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     function renderActions() {
         return <div className="flex flex-col gap-1">
                 {renderPromptTools()}
+                {canEdit && onReverseTag && <ActionRow icon={<ImagePlus className="h-4 w-4" />} label={t("反推当前图片的 Tag")} detail={t("追加到当前提示词")} onClick={() => { closeActions(); onReverseTag(); }} />}
                 {canEdit && <ActionRow icon={<FileDown className="h-4 w-4" />} label={t("导入图片或 JSON 配置")} onClick={() => { closeActions(); importInputRef.current?.click(); }} />}
                 {canEdit && <ActionRow icon={translationPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />} label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} detail={translationPending ? t("翻译中") : undefined} disabled={translationPending} onClick={() => { closeActions(); onTranslateMissingPrompts(); }} />}
                 {onSectionedPromptChange && <ActionRow icon={<ListTree className="h-4 w-4" />} label={t(sectionedPrompt ? '切换为整段编辑' : '切换为分类编辑')} detail={t(sectionedPrompt ? '分类' : '整段')} onClick={() => { onSectionedPromptChange(!sectionedPrompt); closeActions(); }} />}

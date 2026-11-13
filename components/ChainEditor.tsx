@@ -402,6 +402,8 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         ? imageEditPreviewImage
         : (displayedPreviewImage || chain.previewImage);
     const imageEditPreviewHistoryIndex = imageEditPreviewImage ? previewHistory.findIndex(item => item.imageUrl === imageEditPreviewImage) : -1;
+    // 编辑三模式的顶栏反推入口：有结果反推结果图，还没出结果就反推当前底图。
+    const editReverseTagImage = activeEditOperation ? imageEditPreviewImage || imageEditBaseImage : null;
     const imageEditPreviewItem = imageEditPreviewHistoryIndex >= 0 ? previewHistory[imageEditPreviewHistoryIndex] : null;
     const imageEditPreviewHistoryLabel = imageEditPreviewHistoryIndex >= 0 ? `${imageEditPreviewHistoryIndex + 1} / ${previewHistory.length}` : undefined;
     const currentPreviewCover = decideCurrentPreviewCover(displayedPreviewImage, chain.previewImage);
@@ -2180,6 +2182,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 handleFork={handleFork}
                 handleSaveAll={handleSaveAll}
                 handleImportImage={handleImportImage}
+                onReverseTag={editReverseTagImage ? () => setReverseTagImage(editReverseTagImage) : undefined}
                 onTranslateMissingPrompts={() => { void translateAllMissingPromptTags(); }}
                 translationPending={translationPending}
                 notify={notify}
@@ -2643,9 +2646,15 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 imageUrl={reverseTagImage}
                 onClose={() => setReverseTagImage(null)}
                 notify={notify}
-                actionLabel={t("追加 {count} 个 Tag 到全局正面提示词")}
+                actionLabel={activeEditDraft ? t("追加 {count} 个 Tag 到当前正面提示词") : t("追加 {count} 个 Tag 到全局正面提示词")}
                 onInsert={tags => {
-                    setBasePrompt(previous => previous.trim() ? `${previous.trim()}, ${tags}` : tags);
+                    // 编辑模式的提示词是独立草稿，反推结果写入当前模式，不改文生图内容。
+                    if (activeEditOperation && activeEditDraft) {
+                        const current = activeEditDraft.prompt.trim();
+                        updateEditDraft(activeEditOperation, { prompt: current ? `${current}, ${tags}` : tags, promptSource: 'custom' });
+                    } else {
+                        setBasePrompt(previous => previous.trim() ? `${previous.trim()}, ${tags}` : tags);
+                    }
                     setReverseTagImage(null);
                 }}
             /></ImagePreviewPortal>}

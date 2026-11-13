@@ -40517,6 +40517,24 @@
     "現在の画像のタグを逆算しグローバルポジティブプロンプトに追加",
     "현재 이미지의 태그를 역산해 전역 긍정 프롬프트에 추가"
   ],
+  "反推当前底图或结果图的 Tag，并追加到当前模式正面提示词": [
+    "反推目前底圖或結果圖的 Tag，並追加到目前模式的正面提示詞",
+    "Derive tags from the current base or result image and append them to this mode's positive prompt",
+    "現在のベース画像または結果画像のタグを逆算し、このモードのポジティブプロンプトに追加",
+    "현재 베이스 또는 결과 이미지의 태그를 역산해 이 모드의 긍정 프롬프트에 추가"
+  ],
+  "追加 {count} 个 Tag 到当前正面提示词": [
+    "追加 {count} 個 Tag 到目前正面提示詞",
+    "Append {count} tags to the current positive prompt",
+    "{count} 個のタグを現在のポジティブプロンプトに追加",
+    "{count}개의 태그를 현재 긍정 프롬프트에 추가"
+  ],
+  "追加到当前提示词": [
+    "追加到目前提示詞",
+    "Append to the current prompt",
+    "現在のプロンプトに追加",
+    "현재 프롬프트에 추가"
+  ],
   "也可在此按 Ctrl+V 粘贴，或把图片拖进来": [
     "也可在此按 Ctrl+V 貼上，或把圖片拖進來",
     "You can also press Ctrl+V here, or drag an image in",
