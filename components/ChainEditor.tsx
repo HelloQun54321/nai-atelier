@@ -159,8 +159,9 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
 
     const [hasChanges, setHasChanges] = useState(false);
     const [lightboxImg, setLightboxImg] = useState<string | null>(null);
-    // 反推入口只挂在当前预览图与放大图的操作条上：结果直接追加到全局正面提示词。
+    // 反推入口：预览图与放大图的操作条带图打开；文生图、图生图的顶栏入口打开空面板，由用户自行上传图片。
     const [reverseTagImage, setReverseTagImage] = useState<string | null>(null);
+    const [reverseTagOpen, setReverseTagOpen] = useState(false);
 
     // Sync dirty state with parent.
     useEffect(() => {
@@ -402,12 +403,11 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         ? imageEditPreviewImage
         : (displayedPreviewImage || chain.previewImage);
     const imageEditPreviewHistoryIndex = imageEditPreviewImage ? previewHistory.findIndex(item => item.imageUrl === imageEditPreviewImage) : -1;
-    // 编辑三模式的顶栏反推入口：有结果反推结果图，还没出结果就反推当前底图。
-    // 入口常驻显示：没有图时按钮也在原位，点了给出明确提示，避免入口被藏起来。
-    const editReverseTagImage = activeEditOperation ? imageEditPreviewImage || imageEditBaseImage : null;
-    const requestEditReverseTag = () => {
-        if (editReverseTagImage) { setReverseTagImage(editReverseTagImage); return; }
-        notify('先放入底图或生成一张结果，再反推 Tag', 'error');
+    // 顶栏反推入口只在文生图与图生图常驻：打开空面板让用户上传图片，不自动拿底图或结果去反推。
+    const reverseTagEntryEnabled = activeGenerationMode === 'text-to-image' || activeGenerationMode === 'image-to-image';
+    const openReverseTagPanel = () => {
+        setReverseTagImage(null);
+        setReverseTagOpen(true);
     };
     const imageEditPreviewItem = imageEditPreviewHistoryIndex >= 0 ? previewHistory[imageEditPreviewHistoryIndex] : null;
     const imageEditPreviewHistoryLabel = imageEditPreviewHistoryIndex >= 0 ? `${imageEditPreviewHistoryIndex + 1} / ${previewHistory.length}` : undefined;
@@ -2187,7 +2187,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 handleFork={handleFork}
                 handleSaveAll={handleSaveAll}
                 handleImportImage={handleImportImage}
-                onReverseTag={activeEditOperation ? requestEditReverseTag : undefined}
+                onReverseTag={reverseTagEntryEnabled ? openReverseTagPanel : undefined}
                 onTranslateMissingPrompts={() => { void translateAllMissingPromptTags(); }}
                 translationPending={translationPending}
                 notify={notify}
@@ -2398,7 +2398,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                     handleSavePreview={handleSavePreview}
                     onSaveArtistSample={canSaveArtistSample(displayedPreviewItem, artistSampleTarget) ? () => { void handleSaveArtistSample(); } : undefined}
                     savingArtistSample={savingArtistSample}
-                    onReverseTag={displayedPreviewImage ? () => setReverseTagImage(displayedPreviewImage) : undefined}
+                    onReverseTag={displayedPreviewImage ? () => { setReverseTagImage(displayedPreviewImage); setReverseTagOpen(true); } : undefined}
                     handleUploadCover={handleUploadCover}
                     getDownloadFilename={getDownloadFilename}
                     hideCoverActions={chain.id === 'playground'}
@@ -2601,7 +2601,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                         isUploading={isUploading}
                         onSaveArtistSample={canSaveArtistSample(lightboxItem || undefined, artistSampleTarget) ? () => { void handleSaveArtistSample(lightboxItem || undefined); } : undefined}
                         savingArtistSample={savingArtistSample}
-                        onReverseTag={() => setReverseTagImage(lightboxImg)}
+                        onReverseTag={() => { setReverseTagImage(lightboxImg); setReverseTagOpen(true); }}
                         onBack={() => setLightboxImg(null)}
                         backButtonRef={lightboxCloseBtnRef}
                     />
@@ -2644,12 +2644,12 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 </ImageLightbox>
             )}
 
-            {reverseTagImage && <ImagePreviewPortal><ImageTaggerPanel
+            {reverseTagOpen && <ImagePreviewPortal><ImageTaggerPanel
                 contextual
                 open
-                lockImage
-                imageUrl={reverseTagImage}
-                onClose={() => setReverseTagImage(null)}
+                lockImage={Boolean(reverseTagImage)}
+                imageUrl={reverseTagImage || undefined}
+                onClose={() => { setReverseTagOpen(false); setReverseTagImage(null); }}
                 notify={notify}
                 actionLabel={activeEditDraft ? t("追加 {count} 个 Tag 到当前正面提示词") : t("追加 {count} 个 Tag 到全局正面提示词")}
                 onInsert={tags => {
@@ -2660,6 +2660,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                     } else {
                         setBasePrompt(previous => previous.trim() ? `${previous.trim()}, ${tags}` : tags);
                     }
+                    setReverseTagOpen(false);
                     setReverseTagImage(null);
                 }}
             /></ImagePreviewPortal>}

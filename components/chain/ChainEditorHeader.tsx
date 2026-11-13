@@ -150,7 +150,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             </div>
 
             {!compact && <div className="chain-editor-actions flex flex-none items-center justify-end gap-2 ml-auto">
-                {canEdit && onReverseTag && <IconButton label={t('反推当前图片的 Tag')} title={t('反推当前底图或结果图的 Tag，并追加到当前模式正面提示词')} onClick={onReverseTag}><ImagePlus /></IconButton>}
+                {canEdit && onReverseTag && <IconButton label={t('从图片反推 Tag')} title={t('上传或粘贴图片，识别后追加到当前模式的正面提示词')} onClick={onReverseTag}><ImagePlus /></IconButton>}
                 {renderPromptTools()}
                 {canEdit && <>
                     <IconButton label={t("导入图片或 JSON 配置")} onClick={() => importInputRef.current?.click()}><FileDown /></IconButton>
@@ -191,7 +191,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     function renderActions() {
         return <div className="flex flex-col gap-1">
                 {renderPromptTools()}
-                {canEdit && onReverseTag && <ActionRow icon={<ImagePlus className="h-4 w-4" />} label={t("反推当前图片的 Tag")} detail={t("追加到当前提示词")} onClick={() => { closeActions(); onReverseTag(); }} />}
+                {canEdit && onReverseTag && <ActionRow icon={<ImagePlus className="h-4 w-4" />} label={t("从图片反推 Tag")} detail={t("上传图片后识别")} onClick={() => { closeActions(); onReverseTag(); }} />}
                 {canEdit && <ActionRow icon={<FileDown className="h-4 w-4" />} label={t("导入图片或 JSON 配置")} onClick={() => { closeActions(); importInputRef.current?.click(); }} />}
                 {canEdit && <ActionRow icon={translationPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />} label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} detail={translationPending ? t("翻译中") : undefined} disabled={translationPending} onClick={() => { closeActions(); onTranslateMissingPrompts(); }} />}
                 {onSectionedPromptChange && <ActionRow icon={<ListTree className="h-4 w-4" />} label={t(sectionedPrompt ? '切换为整段编辑' : '切换为分类编辑')} detail={t(sectionedPrompt ? '分类' : '整段')} onClick={() => { onSectionedPromptChange(!sectionedPrompt); closeActions(); }} />}

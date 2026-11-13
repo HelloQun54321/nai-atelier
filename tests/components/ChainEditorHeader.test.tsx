@@ -40,7 +40,7 @@ describe('实验室顶栏的反推入口', () => {
   it('编辑模式传回调时在工具排最左渲染反推按钮并交给上层处理', () => {
     const onReverseTag = vi.fn();
     render(<ChainEditorHeader {...baseProps({ onReverseTag })} />);
-    const button = screen.getByRole('button', { name: '反推当前图片的 Tag' });
+    const button = screen.getByRole('button', { name: '从图片反推 Tag' });
     const row = button.closest('.chain-editor-actions');
     // 反推位于这一排工具的最左，先于导入、翻译与 Tag 辅助。
     expect(row?.querySelector('button')).toBe(button);
@@ -50,7 +50,7 @@ describe('实验室顶栏的反推入口', () => {
 
   it('没有回调时不渲染反推按钮，文生图保持原有工具排', () => {
     render(<ChainEditorHeader {...baseProps()} />);
-    expect(screen.queryByRole('button', { name: '反推当前图片的 Tag' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '从图片反推 Tag' })).toBeNull();
     expect(screen.getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
   });
 
@@ -58,9 +58,9 @@ describe('实验室顶栏的反推入口', () => {
     setViewport(900);
     const onReverseTag = vi.fn();
     render(<ChainEditorHeader {...baseProps({ onReverseTag })} />);
-    expect(screen.queryByRole('button', { name: '反推当前图片的 Tag' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '从图片反推 Tag' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
-    fireEvent.click(screen.getByRole('button', { name: /反推当前图片的 Tag/ }));
+    fireEvent.click(screen.getByRole('button', { name: /从图片反推 Tag/ }));
     expect(onReverseTag).toHaveBeenCalledOnce();
   });
 });
