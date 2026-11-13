@@ -40523,6 +40523,12 @@
     "現在のベース画像または結果画像のタグを逆算し、このモードのポジティブプロンプトに追加",
     "현재 베이스 또는 결과 이미지의 태그를 역산해 이 모드의 긍정 프롬프트에 추가"
   ],
+  "先放入底图或生成一张结果，再反推 Tag": [
+    "先放入底圖或產生一張結果，再反推 Tag",
+    "Add a base image or generate a result first, then derive tags",
+    "先にベース画像を入れるか結果を生成してからタグを逆算してください",
+    "먼저 베이스 이미지를 넣거나 결과를 생성한 뒤 태그를 역산하세요"
+  ],
   "追加 {count} 个 Tag 到当前正面提示词": [
     "追加 {count} 個 Tag 到目前正面提示詞",
     "Append {count} tags to the current positive prompt",

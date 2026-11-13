@@ -403,7 +403,12 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         : (displayedPreviewImage || chain.previewImage);
     const imageEditPreviewHistoryIndex = imageEditPreviewImage ? previewHistory.findIndex(item => item.imageUrl === imageEditPreviewImage) : -1;
     // 编辑三模式的顶栏反推入口：有结果反推结果图，还没出结果就反推当前底图。
+    // 入口常驻显示：没有图时按钮也在原位，点了给出明确提示，避免入口被藏起来。
     const editReverseTagImage = activeEditOperation ? imageEditPreviewImage || imageEditBaseImage : null;
+    const requestEditReverseTag = () => {
+        if (editReverseTagImage) { setReverseTagImage(editReverseTagImage); return; }
+        notify('先放入底图或生成一张结果，再反推 Tag', 'error');
+    };
     const imageEditPreviewItem = imageEditPreviewHistoryIndex >= 0 ? previewHistory[imageEditPreviewHistoryIndex] : null;
     const imageEditPreviewHistoryLabel = imageEditPreviewHistoryIndex >= 0 ? `${imageEditPreviewHistoryIndex + 1} / ${previewHistory.length}` : undefined;
     const currentPreviewCover = decideCurrentPreviewCover(displayedPreviewImage, chain.previewImage);
@@ -2182,7 +2187,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 handleFork={handleFork}
                 handleSaveAll={handleSaveAll}
                 handleImportImage={handleImportImage}
-                onReverseTag={editReverseTagImage ? () => setReverseTagImage(editReverseTagImage) : undefined}
+                onReverseTag={activeEditOperation ? requestEditReverseTag : undefined}
                 onTranslateMissingPrompts={() => { void translateAllMissingPromptTags(); }}
                 translationPending={translationPending}
                 notify={notify}
