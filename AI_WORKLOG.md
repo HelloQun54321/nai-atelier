@@ -1,3 +1,6 @@
+## 2026-11-15
+- **DeepSeek Harness (deepseek-v4.1-flash)**：合并 PR #29（zhenyumi：允许可信 HTTPS 来源管理反推模型，对应 issue #27）。在本地 `main` 合并时解决版本与文档冲突：`package.json`／`package-lock.json`／`npm-bridge/manifest.json`／README 版本徽章保留合并前 1.187.4，随后统一递增到 1.188.0；CHANGELOG 与 AI_WORKLOG 按「同日新条目排上方」合并两条线。适配检查：设置面板挂载在「数据与维护」局域网密码下方，`media-gateway.mjs` 依赖的 `readJsonBody`／`hasValidLanCookie`／`LAN_ACCESS_COOKIE` 均存在，五语 README 新增章节与语言包键完整（base 6819 + 本地 5 + PR 30 = 6854）。修复 PR 测试在 Windows 上 `chmod 0o000` 无法模拟 EACCES 的平台问题，改为 win32 跳过该权限用例。验证：`tagger-remote-access.test.mjs` 7 通过 1 跳过、`TaggerRemoteAccessSettings` 5 项、i18n 39 项、`npm run test:gateway` 通过。版本 1.188.0。
+
 ## 2026-11-14
 - **DeepSeek Harness (gpt-6.1-sol)**：新增可显式开启的反推 HTTPS 精确来源设置，保留局域网认证与跨站保护；配置读取异常禁止覆盖，页面支持加载、重读和失败保留草稿，并补充五语首次配置帮助。版本 1.187.0。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：按用户要求收窄 AITag 同步标签范围：只同步「精准参考」「氛围参考」，不再带入作品自带的其它标签。`components/AitagGallery.tsx` 的 `buildImageChain` 改为 `tags: normalizeChainTags(referenceTags)`；删除不再使用的 `getAitagWorkTags` 及其服务测试；组件测试断言保存 payload 只含两个参考标签。AITag 组件与 ChainList 测试通过；`tsc` 与 ESLint 定向通过。版本 1.187.4。

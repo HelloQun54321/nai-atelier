@@ -113,7 +113,11 @@ test('损坏 JSON 与非法来源配置报读取错误，不覆盖已有字节',
   }
 });
 
-test('权限错误拒绝管理读取和写入，保留有效配置', { skip: process.getuid?.() === 0 ? 'root 无法可靠验证文件读取权限' : false }, async t => {
+test('权限错误拒绝管理读取和写入，保留有效配置', {
+  skip: process.platform === 'win32'
+    ? 'Windows 的 chmod 不能模拟读取权限错误'
+    : process.getuid?.() === 0 ? 'root 无法可靠验证文件读取权限' : false,
+}, async t => {
   const file = await fixture(t);
   const content = JSON.stringify({ pin: '1234', secret, taggerRemoteAccess: { enabled: true, origins: ['https://example.com'] } });
   await writeFile(file, content);
