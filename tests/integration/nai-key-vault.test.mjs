@@ -19,7 +19,10 @@ import { projectRoot } from '../support/workspace.mjs';
 
 const require = createRequire(import.meta.url);
 
-/** 用 esbuild bundle 指定入口后经 data: URL 导入（format esm / platform browser）。 */
+let moduleInstance = 0;
+/** 用 esbuild bundle 指定入口后经 data: URL 导入（format esm / platform browser）。
+ *  相同 bundle 的 data: URL 会命中 ESM 模块缓存，模块级状态（快照、警告标记）跨测试泄漏；
+ *  因此在源码末尾追加唯一注释，保证每次导入都是独立模块实例。 */
 const loadModule = async (entryPoint) => {
   const esbuild = require('esbuild');
   const result = await esbuild.build({
@@ -30,7 +33,7 @@ const loadModule = async (entryPoint) => {
     write: false,
     logLevel: 'silent',
   });
-  const source = result.outputFiles[0].text;
+  const source = result.outputFiles[0].text + `\n// test-instance-${++moduleInstance}`;
   return import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 };
 

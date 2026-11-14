@@ -44,6 +44,8 @@ let vaultSnapshotAt = 0;
 const VAULT_SNAPSHOT_TTL = 5000;
 export const readCachedNaiKeyVault = () => vaultSnapshot;
 const rememberVault = (entries: NaiKeyEntry[]) => { vaultSnapshot = entries; vaultSnapshotAt = Date.now(); };
+/** 回退或迁移失败时的快照：同步读取可立即用，但下一轮 list() 必须重新探测服务端。 */
+const rememberFallbackVault = (entries: NaiKeyEntry[]) => { vaultSnapshot = entries; vaultSnapshotAt = 0; };
 export const notifyNaiKeyVaultChanged = () => { if (typeof window !== 'undefined') window.dispatchEvent(new Event(NAI_KEY_VAULT_CHANGED)); };
 /** 模块级标记：服务端不可达的 console.warn 只输出一次，避免每次操作刷屏。 */
 let warnedFallback = false;
@@ -125,10 +127,18 @@ export const naiKeyVault = {
       // 浏览器里残留旧 localStorage 库时一次性迁移合流，成功后直接用合流结果刷新整箱。
       const migrated = await migrateLegacyVault(entries);
       rememberConfirmationConnections(migrated ?? entries);
-      rememberVault(migrated ?? entries);
-      return migrated ?? entries;
+      if (migrated) {
+        rememberVault(migrated);
+        return migrated;
+      }
+      // 迁移失败但本地旧库仍在：本轮返回服务端整箱，同时让下一轮 list() 继续重试迁移，
+      // 不能被 5 秒快照吞掉（与「恢复后下一次 list() 合流」的约定一致）。
+      if (readLocalVault().length) rememberFallbackVault(entries);
+      else rememberVault(entries);
+      return entries;
     } catch {
-      // 服务端不可达：整体回退本地保管箱逻辑。
+      // 服务端不可达：整体回退本地保管箱逻辑。本轮结果供同步读取，
+      // 但下一轮 list() 仍要重新探测服务端，服务端恢复后立即合流。
       warnFallback();
       const local = readLocalVault();
       const active = readActiveKey();
@@ -136,11 +146,11 @@ export const naiKeyVault = {
         const migrated = [...local, { id: createUuid(), name: local.length ? '未命名密钥' : '默认密钥', key: active, createdAt: Date.now() }];
         writeLocalVault(migrated);
         rememberConfirmationConnections(migrated);
-        rememberVault(migrated);
+        rememberFallbackVault(migrated);
         return migrated;
       }
       rememberConfirmationConnections(local);
-      rememberVault(local);
+      rememberFallbackVault(local);
       return local;
     }
   },
@@ -206,7 +216,7 @@ export const naiKeyVault = {
       warnFallback();
       const next = readLocalVault().map(entry => entry.id === id ? { ...entry, name: trimmed || entry.name } : entry);
       writeLocalVault(next);
-      rememberVault(next);
+      rememberFallbackVault(next);
       notifyNaiKeyVaultChanged();
       return next;
     }
@@ -225,7 +235,7 @@ export const naiKeyVault = {
       warnFallback();
       const next = readLocalVault().filter(entry => entry.id !== id);
       writeLocalVault(next);
-      rememberVault(next);
+      rememberFallbackVault(next);
       notifyNaiKeyVaultChanged();
       return next;
     }

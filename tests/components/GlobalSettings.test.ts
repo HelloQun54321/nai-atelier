@@ -268,7 +268,7 @@ describe('GlobalSettings', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true');
     const fields = ['参数设置', '全局正向提示词', '全局负面提示词', '角色正向提示词', '角色负面提示词'];
     for (const field of fields) expect((screen.getByRole('checkbox', { name: field }) as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByText('重启后仅恢复勾选的内容。不影响当前输入或已保存的预设。')).toBeTruthy();
+    expect(screen.getByText('只作用于实验室；从风格串等入口打开时只保留本次页面会话的草稿，不跨重启恢复。')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('checkbox', { name: '全局正向提示词' }));
     fireEvent.click(screen.getByRole('checkbox', { name: '全局负面提示词' }));
