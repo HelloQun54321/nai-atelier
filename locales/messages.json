@@ -2537,6 +2537,186 @@
     "Wisdom 同期設定の保存に失敗",
     "Wisdom 동기화 설정을 저장하지 못했습니다"
   ],
+  "反推 HTTPS 入口": [
+    "反推 HTTPS 入口",
+    "HTTPS image tagger entry",
+    "HTTPS 画像タグ付け入口",
+    "HTTPS 이미지 태거 진입점"
+  ],
+  "仅兼容反推接口的来源校验，不代替登录或代理认证。首次配置方法见下方。": [
+    "僅相容於反推介面的來源驗證，不代替登入或代理認證。首次設定方法見下方。",
+    "This only adapts image-tagger origin checks; it does not replace login or proxy authentication. See the initial setup methods below.",
+    "画像タグ付け API のオリジン検証のみを調整し、ログインやプロキシ認証の代わりにはなりません。初回設定の方法は以下をご覧ください。",
+    "이미지 태거의 출처 검사만 조정하며 로그인이나 프록시 인증을 대신하지 않습니다. 최초 설정 방법은 아래를 확인하세요."
+  ],
+  "首次配置方法（本机页面 / 命令行）": [
+    "首次設定方法（本機頁面 / 命令列）",
+    "Initial setup (local page / command line)",
+    "初回設定（ローカルページ / コマンドライン）",
+    "최초 설정 방법 (로컬 페이지 / 명령줄)"
+  ],
+  "通过页面配置": [
+    "透過頁面設定",
+    "Configure from the page",
+    "ページから設定",
+    "페이지에서 설정"
+  ],
+  "在运行工坊的设备打开 http://127.0.0.1:3000，进入「全局设置 → 数据与维护 → 反推 HTTPS 入口」，开启并保存正式来源。远程部署可在自己的电脑执行下列 SSH 转发，再打开 http://127.0.0.1:13000。": [
+    "在執行工坊的裝置開啟 http://127.0.0.1:3000，前往「全域設定 → 資料與維護 → 反推 HTTPS 入口」，啟用並儲存正式來源。遠端部署可在自己的電腦執行下列 SSH 轉發，再開啟 http://127.0.0.1:13000。",
+    "On the device running Atelier, open http://127.0.0.1:3000 and go to Global Settings → Data & Maintenance → HTTPS image tagger entry, enable it, and save your actual origin. For a remote deployment, run the SSH forward below on your own computer, then open http://127.0.0.1:13000.",
+    "Atelier を実行している端末で http://127.0.0.1:3000 を開き、「全体設定 → データとメンテナンス → HTTPS 画像タグ付け入口」で有効にして、実際のオリジンを保存します。リモート環境では手元のパソコンで以下の SSH 転送を実行し、http://127.0.0.1:13000 を開きます。",
+    "Atelier를 실행하는 기기에서 http://127.0.0.1:3000 을 열고 전체 설정 → 데이터 및 유지관리 → HTTPS 이미지 태거 진입점에서 활성화한 뒤 실제 출처를 저장하세요. 원격 배포라면 자신의 컴퓨터에서 아래 SSH 포워딩을 실행한 다음 http://127.0.0.1:13000 을 여세요."
+  ],
+  "将 user@server 替换为 SSH 登录地址；3000 为服务器网关端口，13000 为本机转发端口，请按实际情况调整。": [
+    "將 user@server 替換為 SSH 登入位址；3000 為伺服器閘道連接埠，13000 為本機轉發連接埠，請依實際情況調整。",
+    "Replace user@server with your SSH login address. Port 3000 is the server gateway port; 13000 is the local forwarding port. Adjust both as needed.",
+    "user@server を SSH の接続先に置き換えてください。3000 はサーバーのゲートウェイポート、13000 は手元の転送ポートです。環境に合わせて変更してください。",
+    "user@server를 SSH 로그인 주소로 바꾸세요. 3000은 서버 게이트웨이 포트이고 13000은 로컬 포워딩 포트입니다. 실제 환경에 맞게 조정하세요."
+  ],
+  "通过命令行配置": [
+    "透過命令列設定",
+    "Configure from the command line",
+    "コマンドラインから設定",
+    "명령줄에서 설정"
+  ],
+  "在运行工坊的服务器上执行；远程部署请先 SSH 登录。容器部署须在能通过 127.0.0.1 访问网关的容器或主机环境执行。示例使用默认网关端口 3000，请按实际端口同时调整请求地址与 Origin。": [
+    "在執行工坊的伺服器上執行；遠端部署請先 SSH 登入。容器部署須在能透過 127.0.0.1 存取閘道的容器或主機環境執行。範例使用預設閘道連接埠 3000，請依實際連接埠同時調整請求位址與 Origin。",
+    "Run these commands on the server running Atelier; SSH in first for remote deployments. With containers, use a container or host environment where 127.0.0.1 reaches the gateway. The examples use gateway port 3000; update both the request URL and Origin for your actual port.",
+    "Atelier を実行しているサーバー上で実行します。リモート環境には先に SSH でログインしてください。コンテナー環境では 127.0.0.1 でゲートウェイに接続できるコンテナーまたはホストで実行します。例は既定のポート 3000 を使います。実際のポートに合わせてリクエスト URL と Origin の両方を変更してください。",
+    "Atelier를 실행하는 서버에서 실행하세요. 원격 배포라면 먼저 SSH로 로그인하세요. 컨테이너 배포에서는 127.0.0.1로 게이트웨이에 접근할 수 있는 컨테이너나 호스트 환경을 사용하세요. 예제는 기본 포트 3000을 사용하므로 실제 포트에 맞게 요청 URL과 Origin을 함께 바꾸세요."
+  ],
+  "保存前先查看配置。将 https://atelier.example.com 替换为正式来源，不含页面路径；非默认端口需写明。保存会替换整个允许列表，需保留的来源必须一起填写。": [
+    "儲存前先查看設定。將 https://atelier.example.com 替換為正式來源，不含頁面路徑；非預設連接埠須註明。儲存會替換整份允許清單，需要保留的來源必須一併填寫。",
+    "Read the current settings before saving. Replace https://atelier.example.com with your actual origin, without a page path; include any non-default port. Saving replaces the entire allowlist, so include every origin you want to keep.",
+    "保存前に現在の設定を確認してください。https://atelier.example.com を実際のオリジンに置き換え、ページのパスは含めず、既定以外のポートは明記します。保存すると許可リスト全体が置き換わるため、残したいオリジンをすべて含めてください。",
+    "저장 전에 현재 설정을 확인하세요. https://atelier.example.com을 페이지 경로가 없는 실제 출처로 바꾸고 기본값이 아닌 포트는 명시하세요. 저장 시 허용 목록 전체가 교체되므로 유지할 출처를 모두 포함하세요."
+  ],
+  "查看当前配置": [
+    "查看目前設定",
+    "Read current settings",
+    "現在の設定を確認",
+    "현재 설정 확인"
+  ],
+  "保存允许的来源": [
+    "儲存允許的來源",
+    "Save allowed origins",
+    "許可するオリジンを保存",
+    "허용할 출처 저장"
+  ],
+  "返回 HTTP 200 后回到 HTTPS 页面重试，无需重启。若返回 HTTP 503，请先排查配置读取错误，不要删除或覆盖原配置。": [
+    "傳回 HTTP 200 後回到 HTTPS 頁面重試，無須重新啟動。若傳回 HTTP 503，請先排查設定讀取錯誤，不要刪除或覆寫原設定。",
+    "After HTTP 200, return to the HTTPS page and retry; no restart is needed. For HTTP 503, investigate the settings read error first. Do not delete or overwrite the original settings.",
+    "HTTP 200 が返ったら HTTPS ページで再試行してください。再起動は不要です。HTTP 503 の場合は設定の読み取りエラーを先に調べ、元の設定を削除・上書きしないでください。",
+    "HTTP 200이 반환되면 HTTPS 페이지로 돌아가 다시 시도하세요. 재시작은 필요 없습니다. HTTP 503이면 설정 읽기 오류부터 확인하고 기존 설정을 삭제하거나 덮어쓰지 마세요."
+  ],
+  "反代须保留原始 Host，并设置独立认证、隔离源站直连；此设置不提供公网认证。": [
+    "反向代理須保留原始 Host，並設定獨立認證、隔離來源站台的直接連線；此設定不提供公網認證。",
+    "The reverse proxy must preserve the original Host, provide independent authentication, and block direct access to the origin server. This setting does not provide public-internet authentication.",
+    "リバースプロキシは元の Host を保持し、独立した認証を設け、オリジンサーバーへの直接接続を遮断してください。この設定は公開インターネット向けの認証を提供しません。",
+    "리버스 프록시는 원래 Host를 보존하고 별도 인증을 제공하며 원본 서버 직접 접속을 차단해야 합니다. 이 설정은 공용 인터넷 인증을 제공하지 않습니다."
+  ],
+  "允许指定来源管理反推模型": [
+    "允許指定來源管理反推模型",
+    "Allow specified origins to manage tagger models",
+    "指定したオリジンからタグ付けモデルを管理",
+    "지정한 출처에서 태거 모델 관리 허용"
+  ],
+  "允许的来源（每行一个，最多 32 条）": [
+    "允許的來源（每行一個，最多 32 條）",
+    "Allowed origins (one per line, up to 32)",
+    "許可するオリジン（1行に1つ、最大32件）",
+    "허용된 출처 (한 줄에 하나, 최대 32개)"
+  ],
+  "填写协议、主机和端口，不含路径或通配符。反代需保留 Host；关闭后保留列表。": [
+    "填寫協議、主機和端口，不含路徑或通配符。反代需保留 Host；關閉後保留列表。",
+    "Enter the scheme, host, and port without a path or wildcard. The proxy must preserve Host; disabling this keeps the list.",
+    "スキーム、ホスト、ポートをパスやワイルドカードなしで入力します。プロキシは Host を保持してください。無効にしても一覧は保持されます。",
+    "경로 또는 와일드카드 없이 프로토콜, 호스트, 포트를 입력하세요. 프록시는 Host를 보존해야 하며, 끄더라도 목록은 유지됩니다."
+  ],
+  "保存来源配置": [
+    "保存來源配置",
+    "Save origin settings",
+    "オリジン設定を保存",
+    "출처 설정 저장"
+  ],
+  "来源配置已保存，立即生效": [
+    "來源配置已保存，立即生效",
+    "Origin settings saved and active immediately",
+    "オリジン設定を保存しました。すぐに反映されます",
+    "출처 설정을 저장했으며 즉시 적용됩니다"
+  ],
+  "来源尚未允许": [
+    "來源尚未允許",
+    "The origin has not been allowed",
+    "オリジンがまだ許可されていません",
+    "출처가 아직 허용되지 않았습니다"
+  ],
+  "无法读取来源配置": [
+    "無法讀取來源配置",
+    "Unable to read origin settings",
+    "オリジン設定を読み取れません",
+    "출처 설정을 읽을 수 없습니다"
+  ],
+  "来源配置无效（最多 32 条）": [
+    "來源配置無效（最多 32 條）",
+    "Invalid origin settings (up to 32 entries)",
+    "オリジン設定が無効です（最大32件）",
+    "출처 설정이 올바르지 않습니다 (최대 32개)"
+  ],
+  "请填写完整的 http(s) 来源，不含路径、账号、查询或通配符": [
+    "請填寫完整的 http(s) 來源，不含路徑、帳號、查詢或萬用字元",
+    "Enter a complete HTTP(S) origin without a path, credentials, query, or wildcard",
+    "パス、認証情報、クエリ、ワイルドカードを含まない完全な HTTP(S) オリジンを入力してください",
+    "경로, 계정 정보, 쿼리 또는 와일드카드가 없는 완전한 HTTP(S) 출처를 입력하세요"
+  ],
+  "请从本机页面或已允许的来源修改配置；首次配置可使用 SSH 端口转发": [
+    "請從本機頁面或已允許的來源修改配置；首次配置可使用 SSH 連接埠轉發",
+    "Change settings from the local page or an allowed origin; use SSH port forwarding for initial setup",
+    "ローカルページまたは許可済みのオリジンから設定を変更してください。初回設定には SSH ポート転送を利用できます",
+    "로컬 페이지 또는 허용된 출처에서 설정을 변경하세요. 최초 설정에는 SSH 포트 포워딩을 사용할 수 있습니다"
+  ],
+  "仅允许当前页面管理反推模型；HTTPS 入口需先配置允许的来源": [
+    "僅允許目前頁面管理反推模型；HTTPS 入口須先設定允許的來源",
+    "Only the current page may manage tagger models; allow the HTTPS origin first",
+    "現在のページのみが画像タグ付けモデルを管理できます。HTTPS 入口は先にオリジンを許可してください",
+    "현재 페이지에서만 태거 모델을 관리할 수 있습니다. HTTPS 진입점의 출처를 먼저 허용하세요"
+  ],
+  "需要局域网访问密码": [
+    "需要區域網路存取密碼",
+    "LAN access password required",
+    "LAN アクセス用パスワードが必要です",
+    "LAN 액세스 비밀번호가 필요합니다"
+  ],
+  "保存来源配置失败": [
+    "儲存來源配置失敗",
+    "Unable to save origin settings",
+    "オリジン設定を保存できません",
+    "출처 설정을 저장할 수 없습니다"
+  ],
+  "Method not allowed": [
+    "不允許此請求方法",
+    "Method not allowed",
+    "このリクエストメソッドは許可されていません",
+    "요청 메서드가 허용되지 않습니다"
+  ],
+  "Request body is too large": [
+    "請求內容過大",
+    "Request body is too large",
+    "リクエスト本文が大きすぎます",
+    "요청 본문이 너무 큽니다"
+  ],
+  "Request body timed out": [
+    "請求內容讀取逾時",
+    "Request body timed out",
+    "リクエスト本文の読み取りがタイムアウトしました",
+    "요청 본문 읽기 시간이 초과되었습니다"
+  ],
+  "局域网配置格式无效": [
+    "區域網路設定格式無效",
+    "Invalid LAN settings format",
+    "LAN 設定の形式が無効です",
+    "LAN 설정 형식이 올바르지 않습니다"
+  ],
   "保存中…": [
     "保存中…",
     "Saving…",

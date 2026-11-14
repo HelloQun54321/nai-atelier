@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.186.6-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.187.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -442,7 +442,42 @@ AITag 与法典详情的蓝色「导入实验室」会切到文生图，默认�
 
 在运行工坊的设备上以 CPU 反推 Danbooru Tag，**无需上传第三方云端推理，零 Anlas 消耗**；局域网模式由电脑处理，独立 Android 由手机处理。支持 WD ViT V3、WD SwinV2 V3、WD EVA02-Large V3 模型，首次按需下载后可离线执行反推，获取外站图片仍需网络：
 - **模型管理**：在「全局设置 → 生图偏好与实验室」底部下载、选择或删除模型；删除只清理对应模型缓存，再次使用时重新下载。
+- **自用 HTTPS 反代入口**：在「全局设置 → 数据与维护 → 反推 HTTPS 入口」显式开启并逐行填写精确来源（如 `https://atelier.example.com`，非默认端口需写明）。首次配置可通过下方的本机页面或服务器命令行完成，设置页也有默认折叠的操作示例。反代须保留原始 `Host`；不接受路径、通配符或任意转发头。关闭后保留列表，重新启用前远程页面不能自行授权。此项只兼容反推接口，不提供公网认证或扩大其他本机权限；自用反代仍需独立认证，并隔离源站直连。
 - **角色框粘贴反推（Paste-to-Tag）**：在目标角色中按 `Ctrl+V` 或点击「粘贴反推」，识别结果追加到该角色的提示词；处理耗时取决于模型和设备性能。
+
+#### HTTPS 入口首次配置
+
+以下命令适用于带有 SSH / curl 的终端（如 Linux、macOS 或 WSL）；不会替你执行。示例网关端口为 `3000`，请按实际情况调整。
+
+**方法一：通过页面配置**
+
+在运行工坊的设备打开 `http://127.0.0.1:3000`，进入「全局设置 → 数据与维护 → 反推 HTTPS 入口」，开启并保存正式来源。远程部署可在自己的电脑执行：
+
+```sh
+ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:13000:127.0.0.1:3000 user@server
+```
+
+将 `user@server` 换成 SSH 登录地址，`3000` 为服务器网关端口，`13000` 为本机可用端口。保持终端打开，在自己的浏览器访问 `http://127.0.0.1:13000`，完成上述设置；结束后可用 `Ctrl+C` 关闭转发。
+
+**方法二：通过服务器命令行配置**
+
+在运行工坊的服务器上执行；远程部署请先 SSH 登录。容器部署须在能通过 `127.0.0.1` 访问网关的容器或主机环境执行，不要把回环地址换成公网地址。若修改端口，须同时修改请求 URL 与 `Origin`。
+
+先查看当前配置，确认 HTTP 状态及需保留的来源：
+
+```sh
+curl --noproxy '*' -sS -i 'http://127.0.0.1:3000/api/lan/tagger-remote-access'
+```
+
+再保存。将 `https://atelier.example.com` 替换为正式来源（仅协议、主机和端口，不含页面路径、账号、查询或通配符）。**保存会替换整个允许列表，需保留的来源必须一起填写**；多个来源写为 JSON 数组，最多 32 条。
+
+```sh
+curl --noproxy '*' -sS -i -X PUT 'http://127.0.0.1:3000/api/lan/tagger-remote-access' -H 'Origin: http://127.0.0.1:3000' -H 'Content-Type: application/json' --data-raw '{"enabled":true,"origins":["https://atelier.example.com"]}'
+```
+
+- 保存返回 **HTTP 200** 后，回到 HTTPS 页面重试，立即生效，无需重启。`curl -sS` 的退出码本身不代表 HTTP 成功，请检查 `-i` 显示的状态行。
+- **HTTP 503** 表示现有配置读取失败：先排查读取错误，不要删除或覆盖原配置。其他非 200 响应也不要视作成功。
+- 此设置不提供公网认证；反代仍须保留原始 `Host`、设置独立认证并隔离源站直连。无需直接编辑存放访问密码等信息的配置文件。
 
 ---
 

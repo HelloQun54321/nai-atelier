@@ -161,6 +161,42 @@ On desktop, **Browse resources** groups AITag, Codex, Danbooru and Pixiv. Expand
 - Edit tags directly in the translation area: click the blank space between tags to insert at the start, between tags inside or outside weight groups, or at the end. Insertion points have no icons or placeholder fields; the input appears on click and closes on blur or Enter. Input and paste share Tag and `@name` library completion with the original text field, including snippets and combinations. Combinations open a preview; canceling keeps the entered name, and confirmation applies the positive and negative content to the chosen targets. Press Enter or leave the field to apply ordinary edits. Double-click either a tag’s English text or Chinese translation to edit that tag; Enter or blur saves, Esc cancels, and an empty edit is canceled. Editing uses a clear rounded highlight in the theme color and keeps the original font size. The editor width follows the tag length within the available space, wrapping and growing taller as needed; text is never truncated during editing or normal display. The corresponding original word stays highlighted throughout editing. Unsaved input also shows exact dictionary or saved translations as you type, clearing the old translation immediately when the tag changes. Unmatched tags show “Pending translation”; no model is called automatically. Weight wrappers, repeated-tag positions and all other prompt text are preserved. Selecting a translation highlights the matching original text in the theme accent color, with repeated tags matched by position. Drag the tag area’s bottom-right corner to adjust its height. The red trash button enters deletion mode, hides weight controls and markers, and lets you select individual tags for confirmed batch deletion while preserving the remaining weights. The circular arrow undoes edits; Ctrl/Cmd+Z undoes, Ctrl+Y or Ctrl/Cmd+Shift+Z redoes. Selected tags support copy/cut of their original prompt text and paste at the current insertion point (the end by default); text fields keep native shortcuts.
 - WD ViT V3, WD SwinV2 V3 and WD EVA02-Large V3 run local CPU tagging after an explicit model download. Manage them in **Global settings → Generation preferences and lab**. Tagging does not consume Anlas or require a cloud inference upload; speed and memory usage depend on the model and device.
 
+### Initial setup for a private HTTPS tagger entry
+
+This opt-in setting only adapts tagger origin checks; it does not provide public-internet authentication or grant other local permissions. The reverse proxy must preserve the original `Host`, provide independent authentication, and block direct access to the origin server. Turning the setting off keeps the allowlist; an unapproved HTTPS page cannot authorize itself. The settings page includes collapsed examples of both methods below.
+
+The commands are for a terminal with SSH / curl (such as Linux, macOS, or WSL). Port `3000` is the default gateway port; adjust it for your deployment.
+
+**Method 1: Use the page**
+
+On the device running Atelier, open `http://127.0.0.1:3000` and go to **Global Settings → Data & Maintenance → HTTPS image tagger entry**. Enable it and save your actual origin. For a remote deployment, run this on your own computer:
+
+```sh
+ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:13000:127.0.0.1:3000 user@server
+```
+
+Replace `user@server` with your SSH login address. `3000` is the server gateway port and `13000` is an available local port. Keep the terminal open, visit `http://127.0.0.1:13000` in your browser, and save the settings above. Use `Ctrl+C` to close the tunnel afterward.
+
+**Method 2: Use the server command line**
+
+Run these commands on the server running Atelier; SSH in first for remote deployments. With containers, use a container or host environment where `127.0.0.1` reaches the gateway. Do not replace the loopback address with a public address. If changing ports, update both the request URL and `Origin`.
+
+Read the current settings first, checking the HTTP status and any origins you need to keep:
+
+```sh
+curl --noproxy '*' -sS -i 'http://127.0.0.1:3000/api/lan/tagger-remote-access'
+```
+
+Then save. Replace `https://atelier.example.com` with your actual origin: scheme, host, and port only, without a page path, credentials, query, or wildcard. **Saving replaces the entire allowlist: include every origin you want to keep.** Use a JSON array for multiple origins (up to 32).
+
+```sh
+curl --noproxy '*' -sS -i -X PUT 'http://127.0.0.1:3000/api/lan/tagger-remote-access' -H 'Origin: http://127.0.0.1:3000' -H 'Content-Type: application/json' --data-raw '{"enabled":true,"origins":["https://atelier.example.com"]}'
+```
+
+- After saving returns **HTTP 200**, retry from your HTTPS page. Changes apply immediately; no restart is needed. The exit code of `curl -sS` alone does not indicate HTTP success; check the status line shown by `-i`.
+- **HTTP 503** means existing settings could not be read. Investigate the read error first; do not delete or overwrite the original settings. Do not treat other non-200 responses as success either.
+- This does not replace proxy authentication or source-server isolation. You do not need to edit the configuration file containing access credentials directly.
+
 ### Prompt library
 
 Fixed purpose tags filter automatic combinations. The assistant can also use names, folder paths, full positive and negative prompts, notes and custom tags to choose compatible content across snippets, original text and saved combinations. Long records can be read in full without silent write truncation. Roll explains why entries are excluded from a single-purpose pool, and combinations preserve separate global and character content for the same purpose. AI results missing the purpose field are rejected as incomplete; explicitly untagged content remains available for review.

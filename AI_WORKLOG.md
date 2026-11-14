@@ -1,4 +1,5 @@
 ## 2026-11-14
+- **DeepSeek Harness (gpt-6.1-sol)**：新增可显式开启的反推 HTTPS 精确来源设置，保留局域网认证与跨站保护；配置读取异常禁止覆盖，页面支持加载、重读和失败保留草稿，并补充五语首次配置帮助。版本 1.187.0。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：按用户要求删除 README 文末「一点个人吐槽」整节（含情绪化言辞的正文与导语），并清理 `README.en.md`／`README.ja.md`／`README.ko.md`／`README.zh-TW.md` 中指向 `README.md#一点个人吐槽` 的失效锚点链接；CHANGELOG 记录本次删除。版本 1.186.6。
 
 ## 2026-11-13
