@@ -1057,7 +1057,7 @@ it('用已显示的 JSON 和本地图片保存，立即显示忙碌并阻止连�
   expect(notify).not.toHaveBeenCalledWith('已保存到风格串');
   expect(mocks.createChain.mock.calls[0][0]).toMatchObject({
     name: '合成作品 1 P1', basePrompt: 'synthetic prompt 1', negativePrompt: 'synthetic negative',
-    previewImage: '/api/assets/aitag/1.png', tags: ['东方Project', '同人'], params: { seed: 123, steps: 23 },
+    previewImage: '/api/assets/aitag/1.png', tags: [], params: { seed: 123, steps: 23 },
   });
   expect(mocks.getWork).toHaveBeenCalledTimes(1);
   await act(async () => resolve());
@@ -1086,7 +1086,7 @@ it('带精准参考或氛围参考的作品保存时把参考类型写入风格�
   fireEvent.click(card(1));
   fireEvent.click(await screen.findByRole('button', { name: '保存到风格串' }));
   await waitFor(() => expect(notify).toHaveBeenCalledWith('已保存到风格串'));
-  expect(mocks.createChain.mock.calls[0][0].tags).toEqual(['东方Project', '精准参考', '氛围参考']);
+  expect(mocks.createChain.mock.calls[0][0].tags).toEqual(['精准参考', '氛围参考']);
 });
 
 it('蓝色导入直接使用已有配置，取图失败或完整详情仍在等待也立即进入文生图', async () => {

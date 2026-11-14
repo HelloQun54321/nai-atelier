@@ -26,7 +26,6 @@ import {
   getAitagType,
   getAitagWorkPromptTexts,
   getAitagWorkReferenceUsage,
-  getAitagWorkTags,
   hasAitagLocalPromptTerms,
   matchesAitagPromptQuery,
   mergeAitagWorks,
@@ -1458,7 +1457,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     return {
       id: `aitag-${image.work_id}-${image.file_name}`, userId: currentUser.id, username: currentUser.username, type: 'style',
       name: `${work.title?.trim() || `aitag-${image.work_id}`} P${index + 1}`,
-      description: buildAitagChainDescription(image.work_id), tags: normalizeChainTags([...getAitagWorkTags(work.tags), ...referenceTags]), previewImage: buildAitagImageUrl(image),
+      description: buildAitagChainDescription(image.work_id), tags: normalizeChainTags(referenceTags), previewImage: buildAitagImageUrl(image),
       basePrompt: importData.prompt, negativePrompt: importData.negativePrompt, modules: [], params: importData.params,
       variableValues: { subject: '' }, createdAt: now, updatedAt: now,
     };
