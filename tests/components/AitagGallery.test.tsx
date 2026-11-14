@@ -1067,6 +1067,28 @@ it('用已显示的 JSON 和本地图片保存，立即显示忙碌并阻止连�
   expect([...callbacks]).toEqual(observersBeforeSaving);
 });
 
+it('带精准参考或氛围参考的作品保存时把参考类型写入风格串标签', async () => {
+  const tagged: AitagWorkSummary = {
+    ...works[0],
+    tags: ['aitag', '东方Project'],
+    firstImage: {
+      ...works[0].firstImage!,
+      ai_json: {
+        ...(works[0].firstImage!.ai_json as Record<string, unknown>),
+        character_reference: { type: 'character' },
+        vibe_transfer: { strength: 0.6 },
+      },
+    },
+  };
+  mocks.search.mockResolvedValue({ items: [tagged], total: 1, page: 1, page_size: 60 });
+  mocks.getWork.mockResolvedValue({ work: tagged, images: [tagged.firstImage] });
+  const { notify } = await setup();
+  fireEvent.click(card(1));
+  fireEvent.click(await screen.findByRole('button', { name: '保存到风格串' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('已保存到风格串'));
+  expect(mocks.createChain.mock.calls[0][0].tags).toEqual(['东方Project', '精准参考', '氛围参考']);
+});
+
 it('蓝色导入直接使用已有配置，取图失败或完整详情仍在等待也立即进入文生图', async () => {
   const fetchImage = vi.fn(() => { throw new Error('不允许重新取图'); });
   vi.stubGlobal('fetch', fetchImage);

@@ -178,6 +178,17 @@ describe('风格串卡片的待实测状态', () => {
     expect(within(plain).queryByTitle('氛围参考 (1)')).toBeNull();
   });
 
+  it('标签带参考类型但没有参考参数时显示文字徽标', () => {
+    const tagged = { ...chain('tagged', '标签参考', false), tags: ['精准参考', '氛围参考'] };
+    render(<ChainList {...props([tagged, chain('plain2', '空白参考', false)])} />);
+    const card = screen.getByRole('button', { name: '打开风格串：标签参考' });
+    expect(within(card).getByTitle('精准参考').textContent).toBe('精准参考');
+    expect(within(card).getByTitle('氛围参考').textContent).toBe('氛围参考');
+    const plain = screen.getByRole('button', { name: '打开风格串：空白参考' });
+    expect(within(plain).queryByTitle('精准参考')).toBeNull();
+    expect(within(plain).queryByTitle('氛围参考')).toBeNull();
+  });
+
   it('筛选可只看带氛围参考或带精准参考的串', () => {
     const withReferences = (id: string, name: string, vibes: number, references: number): PromptChain => {
       const base = chain(id, name, false);

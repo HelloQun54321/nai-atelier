@@ -385,6 +385,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
   const renderChainCard = (chain: PromptChain) => {
     const referenceSummary = chainReferenceSummary(chain);
+    // AITag 保存的串没有真实参考槽，参考类型以标签形式保留；此时用文字徽标显示，参数里有参考数量时仍显示数量。
+    const referenceTags = new Set(getCustomChainTags(chain.tags));
+    const showPreciseTag = referenceSummary.characterReferences <= 0 && referenceTags.has('精准参考');
+    const showVibeTag = referenceSummary.vibes <= 0 && referenceTags.has('氛围参考');
     return (
     <PressRevealSurface pressDisabled={syncSelection.open || selecting} key={chain.id} data-safe-mode-work="true" data-return-item-id={chain.id}
       role={selecting || syncSelection.selecting ? 'checkbox' : 'button'}
@@ -442,7 +446,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
       <div className="gallery-card-caption flex h-12 flex-col justify-center px-3">
         {/* 待实测与参考标识贴着作品名放在标题栏内，不再压在封面底部。 */}
-        {(isUntestedChain(chain) || referenceSummary.characterReferences > 0 || referenceSummary.vibes > 0) && (
+        {(isUntestedChain(chain) || referenceSummary.characterReferences > 0 || referenceSummary.vibes > 0 || showPreciseTag || showVibeTag) && (
           <div className="mb-0.5 flex w-fit max-w-full items-center gap-1">
             {isUntestedChain(chain) && (
               <div
@@ -453,18 +457,22 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                 <span>{t("待实测")}</span>
               </div>
             )}
-            {referenceSummary.characterReferences > 0 && (
+            {referenceSummary.characterReferences > 0 ? (
               <span className="gallery-card-badge flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-1.5 py-px text-micro font-medium text-cyan-700 dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-300" title={t("精准参考 ({0})", [referenceSummary.characterReferences])}>
                 <ScanSearch aria-hidden="true" className="h-3 w-3 shrink-0" />
                 {referenceSummary.characterReferences}
               </span>
-            )}
-            {referenceSummary.vibes > 0 && (
+            ) : showPreciseTag ? (
+              <span className="gallery-card-badge rounded-full border border-cyan-200 bg-cyan-50 px-1.5 py-px text-micro font-medium text-cyan-700 dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-300" title={t("精准参考")}>{t("精准参考")}</span>
+            ) : null}
+            {referenceSummary.vibes > 0 ? (
               <span className="gallery-card-badge flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-px text-micro font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title={t("氛围参考 ({0})", [referenceSummary.vibes])}>
                 <Sparkles aria-hidden="true" className="h-3 w-3 shrink-0" />
                 {referenceSummary.vibes}
               </span>
-            )}
+            ) : showVibeTag ? (
+              <span className="gallery-card-badge rounded-full border border-violet-200 bg-violet-50 px-1.5 py-px text-micro font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title={t("氛围参考")}>{t("氛围参考")}</span>
+            ) : null}
           </div>
         )}
         <div className="flex items-center justify-between">

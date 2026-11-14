@@ -1448,11 +1448,17 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
 
   const buildImageChain = (image: AitagImage, index: number, work: AitagWorkSummary): PromptChain => {
     const importData = parseImageImportData(image);
+    const referenceUsage = getAitagWorkReferenceUsage(work);
+    // AITag 卡片上的参考徽标同样存成风格串标签，保存后能在风格串页面看到。
+    const referenceTags = [
+      ...(referenceUsage.precise ? ['精准参考'] : []),
+      ...(referenceUsage.vibe ? ['氛围参考'] : []),
+    ];
     const now = Date.now();
     return {
       id: `aitag-${image.work_id}-${image.file_name}`, userId: currentUser.id, username: currentUser.username, type: 'style',
       name: `${work.title?.trim() || `aitag-${image.work_id}`} P${index + 1}`,
-      description: buildAitagChainDescription(image.work_id), tags: normalizeChainTags(getAitagWorkTags(work.tags)), previewImage: buildAitagImageUrl(image),
+      description: buildAitagChainDescription(image.work_id), tags: normalizeChainTags([...getAitagWorkTags(work.tags), ...referenceTags]), previewImage: buildAitagImageUrl(image),
       basePrompt: importData.prompt, negativePrompt: importData.negativePrompt, modules: [], params: importData.params,
       variableValues: { subject: '' }, createdAt: now, updatedAt: now,
     };
