@@ -45,6 +45,7 @@ const VIBE_RECOVERY_DIR = join(process.cwd(), 'local-data', 'vibe-recovery');
 const CLOUD_QUEUE_CONFIG_FILE = join(process.cwd(), 'local-data', 'cloud-queue.json');
 const CLOUD_QUEUE_CONFIG_VERSION = 2;
 const LAN_CONFIG_FILE = join(process.cwd(), 'local-data', 'lan-access.json');
+const MAX_REMOTE_ORIGINS = 32;
 const CACHE_LIMIT = 1024 * 1024 * 1024;
 const CACHE_PRUNE_TARGET = 900 * 1024 * 1024;
 // pinned 封面缓存总量上限：封面单张数十 KB，正常画师/角色数量级远达不到；
@@ -482,20 +483,93 @@ export const readLanPin = async (configFile = LAN_CONFIG_FILE) => {
   return null;
 };
 
-/** 原子写入新密码（临时文件 + 改名），保留 secret 等其他字段；非法输入抛出带 status 的错误。 */
+// 密码与来源列表共用文件，串行合并以免同时保存时互相覆盖。
+let lanConfigWrite = Promise.resolve();
+const updateLanConfig = (patch, configFile, { recoverMalformed = false, validateCurrent } = {}) => {
+  const pending = lanConfigWrite.catch(() => {}).then(async () => {
+    await mkdir(dirname(configFile), { recursive: true });
+    const current = await readFile(configFile, 'utf8').then(
+      text => { try { return JSON.parse(text); } catch (error) { if (recoverMalformed) return {}; throw error; } },
+      error => { if (error.code === 'ENOENT') return {}; throw error; }
+    );
+    if (!current || typeof current !== 'object' || Array.isArray(current)) throw new Error('局域网配置格式无效');
+    validateCurrent?.(current);
+    const temporary = `${configFile}.tmp`;
+    await writeFile(temporary, `${JSON.stringify({ ...current, ...patch }, null, 2)}\n`, 'utf8');
+    await rename(temporary, configFile);
+  });
+  lanConfigWrite = pending;
+  return pending;
+};
+
+/** 原子写入新密码，保留 secret 与来源配置。 */
 export const writeLanPin = async (pin, configFile = LAN_CONFIG_FILE) => {
   if (!/^\d{4}$/.test(String(pin || ''))) {
     throw Object.assign(new Error('局域网密码必须是 4 位数字'), { status: 400 });
   }
-  await mkdir(dirname(configFile), { recursive: true });
-  const current = await readFile(configFile, 'utf8').then(
-    text => { try { return JSON.parse(text); } catch { return {}; } },
-    () => ({})
-  );
-  const next = { ...(current && typeof current === 'object' ? current : {}), pin: String(pin) };
-  const temporary = `${configFile}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
-  await rename(temporary, configFile);
+  await updateLanConfig({ pin: String(pin) }, configFile, { recoverMalformed: true });
+};
+
+/** 来源只包含协议、主机与端口；允许尾斜杠，不接受路径或宽泛匹配。 */
+export const normalizeTaggerOrigin = value => {
+  if (typeof value !== 'string' || value.length > 512 || !/^https?:\/\/[^/?#\\\s]+\/?$/i.test(value.trim()) || /[*@]/.test(value)) return null;
+  try {
+    const url = new URL(value.trim());
+    if (!url.hostname || url.username || url.password) return null;
+    return url.origin;
+  } catch { return null; }
+};
+const validateTaggerRemoteAccess = value => {
+  if (!value || typeof value.enabled !== 'boolean' || !Array.isArray(value.origins) || value.origins.length > MAX_REMOTE_ORIGINS) throw Object.assign(new Error('来源配置无效（最多 32 条）'), { status: 400 });
+  const origins = value.origins.map(normalizeTaggerOrigin);
+  if (origins.some(origin => !origin)) throw Object.assign(new Error('请填写完整的 http(s) 来源，不含路径、账号、查询或通配符'), { status: 400 });
+  return { enabled: value.enabled, origins: [...new Set(origins)] };
+};
+export const readTaggerRemoteAccess = async (configFile = LAN_CONFIG_FILE) => {
+  let text;
+  try { text = await readFile(configFile, 'utf8'); }
+  catch (error) {
+    if (error.code === 'ENOENT') return { enabled: false, origins: [] };
+    throw error;
+  }
+  const saved = JSON.parse(text);
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) throw new Error('局域网配置格式无效');
+  if (!Object.hasOwn(saved, 'taggerRemoteAccess')) return { enabled: false, origins: [] };
+  return validateTaggerRemoteAccess(saved.taggerRemoteAccess);
+};
+export const writeTaggerRemoteAccess = async (value, configFile = LAN_CONFIG_FILE) => {
+  const normalized = validateTaggerRemoteAccess(value);
+  await updateLanConfig({ taggerRemoteAccess: normalized }, configFile, {
+    validateCurrent: current => { if (Object.hasOwn(current, 'taggerRemoteAccess')) validateTaggerRemoteAccess(current.taggerRemoteAccess); },
+  });
+  return normalized;
+};
+export const isTaggerOriginAllowed = (req, policy = { enabled: false, origins: [] }) => {
+  if (req.headers['sec-fetch-site'] === 'cross-site') return false;
+  // 保留旧客户端无 Origin 的行为；配置写接口另外要求 Origin，不能由此自授权。
+  if (!req.headers.origin) return true;
+  const origin = normalizeTaggerOrigin(req.headers.origin);
+  if (!origin) return false;
+  if (origin === normalizeTaggerOrigin(`http://${req.headers.host}`)) return true;
+  // 反代须保留 Host；不读取 X-Forwarded-*，白名单也不放行跨主机请求。
+  return policy.enabled && policy.origins.includes(origin) && origin === normalizeTaggerOrigin(`https://${req.headers.host}`);
+};
+
+export const handleTaggerRemoteAccess = async (req, res, { secret, configFile = LAN_CONFIG_FILE } = {}) => {
+  if (!['GET', 'PUT'].includes(req.method)) return sendJson(res, 405, { error: 'Method not allowed' });
+  if (!hasValidLanCookie(req, secret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+  let policy;
+  try { policy = await readTaggerRemoteAccess(configFile); }
+  catch { return sendJson(res, 503, { error: '无法读取来源配置', code: 'TAGGER_REMOTE_ACCESS_READ_FAILED' }); }
+  if (req.method === 'GET') return sendJson(res, 200, policy);
+  if (!req.headers.origin || !isTaggerOriginAllowed(req, policy)) return sendJson(res, 403, { error: '请从本机页面或已允许的来源修改配置；首次配置可使用 SSH 端口转发' });
+  try {
+    const payload = await readJsonBody(req, 24 * 1024);
+    return sendJson(res, 200, await writeTaggerRemoteAccess(payload, configFile));
+  } catch (error) {
+    const status = Number(error.status);
+    return sendJson(res, status >= 400 && status < 500 ? status : 500, { error: status >= 400 && status < 500 ? error.message : '保存来源配置失败' });
+  }
 };
 
 /** 与 worker 端 createLanAccessToken 完全一致的令牌格式：expiresAt.nonce.HMAC-SHA256(base64url)。 */
@@ -3444,11 +3518,16 @@ export const proxyRequest = (req, res, workerPort, extraHeaders = {}) => new Pro
   });
 });
 
-export async function handleImageTaggerRequest(req, res, url, lanSecret, imageTagger) {
+export async function handleImageTaggerRequest(req, res, url, lanSecret, imageTagger, configFile = LAN_CONFIG_FILE) {
   const statusRequest = url.pathname.endsWith('/status');
   if (req.method !== (statusRequest ? 'GET' : 'POST')) return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
-  if (!statusRequest && (req.headers['sec-fetch-site'] === 'cross-site' || (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`))) return sendJson(res, 403, { error: '仅允许当前页面管理反推模型' });
+  if (!statusRequest) {
+    let policy;
+    try { policy = await readTaggerRemoteAccess(configFile); }
+    catch { policy = { enabled: false, origins: [] }; } // 配置损坏或不可读时保持来源校验关闭。
+    if (!isTaggerOriginAllowed(req, policy)) return sendJson(res, 403, { error: '仅允许当前页面管理反推模型；HTTPS 入口需先配置允许的来源' });
+  }
   try {
     if (statusRequest) return sendJson(res, 200, await imageTagger.status());
     if (url.pathname.endsWith('/pause')) { await imageTagger.pauseDownload(); return sendJson(res, 200, { success: true }); }
@@ -3960,6 +4039,7 @@ const serveDistFile = async (req, res, url) => {
     // 改密后立即生效无需重启（worker 的 env.PIN 是启动快照，仅作本机直连兜底）。
     if (url.pathname === '/api/lan/unlock') return handleLanUnlock(req, res, { secret: lanSecret });
     if (url.pathname === '/api/lan/pin') return handleLanPinUpdate(req, res, { secret: lanSecret });
+    if (url.pathname === '/api/lan/tagger-remote-access') return handleTaggerRemoteAccess(req, res, { secret: lanSecret });
     if (url.pathname.startsWith('/api/prompt-agent/')) {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       try {

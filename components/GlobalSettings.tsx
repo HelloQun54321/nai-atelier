@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
 import { ImageTaggerModelManager } from './ImageTaggerModelManager';
+import { TaggerRemoteAccessSettings } from './TaggerRemoteAccessSettings';
 import { setCleanSharedImages, useCleanSharedImages, setSharedImageCustomText, useSharedImageCustomText, setSharedImageCleanContent, useSharedImageCleanContent } from '../services/imageSharing';
 import { copyTagText } from '../services/externalImageTags';
 import { InlineSpinner } from './DesignSystem';
@@ -1607,6 +1608,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   >{lanPinSaving ? t("保存中…") : t("更新密码")}</button>
                 </div>
               </div>
+
+              <TaggerRemoteAccessSettings />
 
               {/* 手机图片缓存 */}
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("手机图片缓存")}</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("仅缩略图，不影响原图。")}</p></div><Smartphone className="h-4 w-4 flex-none text-indigo-500" /></div><div className="appearance-segmented mt-3 grid grid-cols-4 gap-2">{[0, 25, 50, 100].map(value => <button key={value} type="button" data-appearance="control" data-tone="neutral" aria-pressed={getMobileCacheLimitMb() === value} onClick={() => { setMobileCacheLimitMb(value); setMobileCacheStats(getMobileCacheStats()); }} className={`${SETTING_SEGMENT_CLASS} ${getMobileCacheLimitMb() === value ? SETTING_SEGMENT_ON : SETTING_SEGMENT_OFF}`}>{value === 0 ? t("关闭") : `${value} MB`}</button>)}</div><div className="appearance-group mt-3 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs dark:bg-gray-800/70"><span className="text-gray-500 dark:text-gray-400">{t("已缓存 {0} 张 · {1} MB / {2} MB", [mobileCacheStats.count, (mobileCacheStats.bytes / 1024 / 1024).toFixed(1), mobileCacheStats.limitMb])}</span><button type="button" onClick={async () => { if (!await confirmAction({ rememberKey: 'thumbnail-cache.clear', title: '清空手机小图缓存？', message: '只会清除可重新生成的缩略图，不会影响原图、历史或任何本地数据。', confirmLabel: '清空缓存', tone: 'danger' })) return; await clearMobileThumbnailCache(); setMobileCacheStats(getMobileCacheStats()); notify('手机小图缓存已清空'); }} data-appearance="control" data-tone="danger" className={`${SETTING_DANGER_CLASS} flex-shrink-0`}>{t("清空缓存")}</button></div></div>
