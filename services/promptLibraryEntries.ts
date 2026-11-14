@@ -249,6 +249,21 @@ export function libraryEntryText(chain: PromptChain, field: PromptLibraryField =
     .map(([, row]) => field.negative ? row.negative : row.text).filter(Boolean).join(', ');
 }
 
+/**
+ * 负面栏位的兼容回退：条目没有负面内容时允许以正文作为负面取用，
+ * 界面须原位注明该行为；libraryEntryText 的纯语义保持不变。
+ * 组合的负面来自快照分栏，不把组合摘要当负面，因此排除。
+ */
+export function libraryNegativeFallbackText(chain: PromptChain, field: PromptLibraryField = {}): string {
+  if (!field.negative || isContentRecord(chain)) return '';
+  if (libraryEntryText(chain, field).trim()) return '';
+  return (chain.basePrompt || '').trim();
+}
+
+/** 取用与候选展示使用：优先负面内容，必要时回退正文。 */
+export const libraryFieldText = (chain: PromptChain, field: PromptLibraryField = {}): string =>
+  libraryEntryText(chain, field) || libraryNegativeFallbackText(chain, field);
+
 /** 原文追加保持空白、换行及权重；片段沿用已有的加权组去重规则。 */
 export function applyLibraryText(current: string, incoming: string, mode: PromptApplyMode, original = false): string {
   if (mode === 'fill-missing' && current.trim()) return current;
@@ -262,7 +277,7 @@ export function searchLibraryEntries(chains: PromptChain[], query: string, field
   const key = normalize(query);
   if (!key) return [];
   return chains.filter(chain => librarySectionOf(chain) && normalize(chain.name).includes(key)
-    && (librarySectionOf(chain) === 'saved' || libraryEntryText(chain, field).trim()))
+    && (librarySectionOf(chain) === 'saved' || libraryEntryText(chain, field).trim() || libraryNegativeFallbackText(chain, field)))
     .sort((a, b) => Number(normalize(b.name) === key) - Number(normalize(a.name) === key)
       || Number(b.updatedAt || 0) - Number(a.updatedAt || 0)).slice(0, 6);
 }

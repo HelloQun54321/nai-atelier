@@ -1,4 +1,10 @@
 {
+  "该条目没有负面内容，将用正文作负面": [
+    "該條目沒有負面內容，將用正文作負面",
+    "This entry has no negative prompt; its body will be used as the negative",
+    "この項目にはネガティブ内容がないため、本文をネガティブとして使用します",
+    "이 항목에는 부정 프롬프트가 없어 본문을 부정 프롬프트로 사용합니다"
+  ],
   "合并分类": [
     "合併分類",
     "Merge categories",

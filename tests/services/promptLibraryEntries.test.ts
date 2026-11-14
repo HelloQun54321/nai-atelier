@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NAIParams, PromptChain } from '../../types';
-import { applyCombinationPicksToCharacter, applyLibraryText, combinationPicks, createCharacterDataFromCombinationPicks, createCombinationData, createFragmentData, isPromptLibraryCharacterProjection, librarySectionOf, libraryEntryText, projectCustomCharacterAsCombination, promptLibraryEntryLabel, searchLibraryEntries, workspacePicks, parsePromptLibraryTags, PROMPT_LIBRARY_CHARACTER_SOURCE_KEY } from '../../services/promptLibraryEntries';
+import { applyCombinationPicksToCharacter, applyLibraryText, combinationPicks, createCharacterDataFromCombinationPicks, createCombinationData, createFragmentData, isPromptLibraryCharacterProjection, librarySectionOf, libraryEntryText, libraryFieldText, libraryNegativeFallbackText, projectCustomCharacterAsCombination, promptLibraryEntryLabel, searchLibraryEntries, workspacePicks, parsePromptLibraryTags, PROMPT_LIBRARY_CHARACTER_SOURCE_KEY } from '../../services/promptLibraryEntries';
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
 import { applyLibrarySelection, planLibrarySelection, type PromptLibraryWorkspaceState } from '../../services/promptLibraryApply';
 
@@ -31,6 +31,21 @@ describe('提示词库的对象边界与定向取用', () => {
     expect(librarySectionOf(chain(createFragmentData('a dress', '', 'wardrobe')))).toBe('items');
     expect(librarySectionOf(combo)).toBe('saved');
     expect(librarySectionOf(chain({ type: 'style', basePrompt: 'a dress' }))).toBeNull();
+  });
+  it('负面栏位没有负面内容时回退正文，组合与纯语义不受影响', () => {
+    const onlyPositive = chain(createFragmentData('lowres, blurry', '低质量', 'general'));
+    expect(libraryEntryText(onlyPositive, { negative: true })).toBe('');
+    expect(libraryNegativeFallbackText(onlyPositive, { negative: true })).toBe('lowres, blurry');
+    expect(libraryFieldText(onlyPositive, { negative: true })).toBe('lowres, blurry');
+    expect(libraryFieldText(onlyPositive, {})).toBe('lowres, blurry');
+    expect(libraryNegativeFallbackText(onlyPositive, {})).toBe('');
+    expect(searchLibraryEntries([onlyPositive], '低', { negative: true })).toHaveLength(1);
+    const negativeEntry = chain({ basePrompt: 'lowres', params: { _promptLibraryPolarity: 'negative' } as unknown as NAIParams });
+    expect(libraryFieldText(negativeEntry, { negative: true })).toBe('lowres');
+    expect(libraryNegativeFallbackText(negativeEntry, { negative: true })).toBe('');
+    expect(libraryFieldText(negativeEntry, {})).toBe('');
+    expect(libraryFieldText(combo, { negative: true })).toContain('black dress');
+    expect(libraryNegativeFallbackText(combo, { negative: true })).toBe('');
   });
   it('自定义角色投影为「角色」夹内组合卡片，同 id 含封面，不另存副本', () => {
     const character = chain({

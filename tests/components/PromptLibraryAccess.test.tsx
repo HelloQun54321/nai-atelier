@@ -63,6 +63,17 @@ it('使用提示词与主浏览一致，只提供片段与组合', () => {
   expect(screen.queryByRole('tab', { name: '原文' })).toBeNull();
 });
 
+it('负面栏位列出没有负面内容的条目，注明以正文作负面并据此取用', () => {
+  const entries: PromptChain[] = [{ ...promptEntry, id: 'only-positive', name: '低质量', basePrompt: 'lowres, blurry', negativePrompt: '', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: [], _promptLibraryPurposes: ['place'] } }];
+  const onText = vi.fn();
+  render(<PromptLibraryContext.Provider value={{ chains: entries, save: vi.fn() }}><PromptLibraryChooser value="" onText={onText} onClose={vi.fn()} field={{ negative: true }} /></PromptLibraryContext.Provider>);
+  expect(screen.getByText('低质量')).toBeTruthy();
+  expect(screen.getByText('该条目没有负面内容，将用正文作负面')).toBeTruthy();
+  fireEvent.click(screen.getByText('低质量'));
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
+  expect(onText).toHaveBeenCalledWith('lowres, blurry');
+});
+
 it('全局画风栏锁定画风配方，旧细项用途也归并进来', () => {
   const directories = { revision: 1, nodes: [{ id: 'style-root', parentId: null, name: '画风配方' }] };
   const entries: PromptChain[] = [

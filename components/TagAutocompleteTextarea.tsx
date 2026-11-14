@@ -9,7 +9,7 @@ import { PromptHeightHandle } from './PromptHeightHandle';
 import { PromptTidyActions, type PromptTidyOptions } from './PromptTidyActions';
 import type { PromptChain } from '../types';
 import { PromptLibraryChooser, PromptLibraryFieldActions, usePromptLibrary } from './PromptLibraryAccess';
-import { isLibraryOnlyQuery, libraryEntryText, librarySectionOf, searchLibraryEntries, type PromptLibraryField } from '../services/promptLibraryEntries';
+import { isLibraryOnlyQuery, libraryFieldText, librarySectionOf, searchLibraryEntries, type PromptLibraryField } from '../services/promptLibraryEntries';
 import type { LibraryCompletionEdit } from '../services/promptLibraryApply';
 import { lookupTagCatalogEntries, normalizeTagQuery, preloadTagDictionary, searchTagDictionary, TagSuggestion } from '../services/tagDictionary';
 import { usePromptInputAutoHeight, usePromptTranslationAutoHeight } from '../services/appearancePreferences';
@@ -735,7 +735,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       searchTimerRef.current = null;
       const artistPrefix = /artists?:\s*$/i.test(nextValue.slice(0, nextTarget.replaceStart)) || source === 'tag' && editingTag && /artists?:\s*$/i.test(value.slice(0, editingTag.start));
       const personal: PromptSuggestion[] = (personalLibrary && !artistPrefix ? searchLibraryEntries(personalLibrary.chains, nextTarget.query, libraryField) : []).map(entry => ({
-        name: entry.name, chinese: libraryEntryText(entry, libraryField), category: -1, categoryLabel: t(librarySectionOf(entry) === 'saved' ? '组合' : librarySectionOf(entry) === 'originals' ? '原文' : '片段'), postCount: 0, isNovelAI: false, libraryEntry: entry,
+        name: entry.name, chinese: libraryFieldText(entry, libraryField), category: -1, categoryLabel: t(librarySectionOf(entry) === 'saved' ? '组合' : librarySectionOf(entry) === 'originals' ? '原文' : '片段'), postCount: 0, isNovelAI: false, libraryEntry: entry,
       }));
       void (tagAssistEnabled && !isLibraryOnlyQuery(nextTarget.query) ? searchTagDictionary(nextTarget.query) : Promise.resolve([])).then(results => {
         if (requestId === requestIdRef.current) setSuggestions([...personal, ...results]);
@@ -764,7 +764,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       closeSuggestions();
       return;
     }
-    const insertion = suggestion.libraryEntry ? libraryEntryText(suggestion.libraryEntry, libraryField) : suggestion.name;
+    const insertion = suggestion.libraryEntry ? libraryFieldText(suggestion.libraryEntry, libraryField) : suggestion.name;
     const nextValue = sourceValue.slice(0, target.replaceStart)
       + insertion
       + sourceValue.slice(target.replaceEnd);
