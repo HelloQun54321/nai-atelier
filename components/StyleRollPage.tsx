@@ -31,7 +31,7 @@ import { createUuid } from '../services/id';
 import { useAlertDialog, useConfirmDialog } from './ConfirmDialog';
 import { useNaiChannelMode } from '../services/naiChannel';
 import { useAgentCommand } from '../services/agentCommands';
-import { ChromeNotice, ChromeNoticeStack, EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { SmartImage } from './SmartImage';
@@ -263,6 +263,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     finally { if (mounted.current && sequence === librarySequence.current) setLibraryLoading(false); }
   }, []);
   useEffect(() => { if (active) void reloadLibrary(); }, [active, reloadLibrary]);
+  // 词库读取失败不再顶成一条常驻提示：弹一次窗，附带就地重新加载。
+  const promptedLibraryError = useRef('');
+  useEffect(() => {
+    if (!libraryError || promptedLibraryError.current === libraryError) return;
+    promptedLibraryError.current = libraryError;
+    alertDialog(t(libraryError), { title: t('画师词库不可用'), action: { label: t('重新加载'), onClick: () => void reloadLibrary() } });
+  }, [libraryError, alertDialog, reloadLibrary]);
   const refreshHistory = useCallback(async (id: string) => {
     const sequence = ++historySequence.current;
     if (!id) { setHistory([]); return; }
@@ -536,6 +543,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     await persistCandidate(experiment, id);
     notify('已保存到风格串');
   });
+  // 弹窗里保存的「重试」动作要用最新一次渲染的 saveChosen，避免拿着旧记录状态重试。
+  const saveChosenRef = useRef<(retry?: boolean) => void>(() => {});
   const saveChosen = (retry = false) => void perform(async () => {
     if (!experiment || !historyReady) return;
     const ordered = retry && saveFailures?.experimentId === experiment.id ? saveFailures.ids.flatMap(id => experiment.candidates.find(candidate => candidate.id === id) ?? []) : chosen;
@@ -590,11 +599,15 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         const remainingIds = [...failed, ...unprocessed];
         if (currentView()) setSelectedIds(new Set(remainingIds));
         setSaveFailures(remainingIds.length ? { experimentId: experiment.id, ids: remainingIds, unprocessed: unprocessed.length, needsReload, messages } : null);
-        if (remainingIds.length) setError([t('已保存 {0} 个候选，{1} 个失败，{2} 个未处理', [successful, failed.length, unprocessed.length]), ...messages].join('\n'));
+        if (remainingIds.length) alertDialog([t('已保存 {0} 个候选，{1} 个失败，{2} 个未处理', [successful, failed.length, unprocessed.length]), ...messages].join('\n'), {
+          title: t('保存未完成'),
+          action: { label: t(unprocessed.length ? '重试待保存项' : '重试失败项'), onClick: () => saveChosenRef.current(true) },
+        });
         else notify(t('已保存 {0} 个候选', [successful]), 'success');
       }
     } finally { if (mounted.current) setSavingProgress(null); }
   });
+  saveChosenRef.current = saveChosen;
   /** 丢弃就是彻底删除：没有回收站，也没有还原，所以每次都要二次确认。 */
   const deleteCandidates = (ids: string[]) => void perform(async () => {
     if (!experiment) return;
@@ -909,19 +922,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       : t('共 {0} 个候选', [visible.length])}{round && roundPending.length > 0
       ? ` · ${t('本轮已出图 {0}/{1}', [round.candidateIds.filter(id => images.has(id)).length, round.candidateIds.length])}`
       : ''}</ToolbarCountCaption>}
-    {experiment && <ChromeNoticeStack>
-      {libraryError && <ChromeNotice tone="warning">
-        <span>{t(libraryError)}</span>
-        {onOpenArtistLibrary && <button type="button" className="mobile-touch ml-2 underline" onClick={() => onOpenArtistLibrary()}>{t('打开画师库')}</button>}
-        <button type="button" className="mobile-touch ml-2 underline" onClick={() => void reloadLibrary()}>{t('重新加载')}</button>
-      </ChromeNotice>}
-      {saveFailures?.experimentId === experimentId && saveFailures.ids.length > 0 && <ChromeNotice tone="warning">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="min-w-0 flex-1">{t('{0} 个候选没有保存成功', [saveFailures.ids.length])}</span>
-          <ToolbarButton disabled={busy || !historyReady} onClick={() => saveChosen(true)}>{t(saveFailures.unprocessed ? '重试待保存项' : '重试失败项')}</ToolbarButton>
-        </div>
-      </ChromeNotice>}
-    </ChromeNoticeStack>}
     </WorkspaceChrome>
     {(loading || detailLoading) && !experiment ? <PageSpinner className="workspace-scroll-viewport overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
       : <div className="relative flex min-h-0 flex-1">

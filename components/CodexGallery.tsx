@@ -9,8 +9,9 @@ import { codexCharactersToParams, codexEntryMatches, codexPromptImport, loadCode
 import { collectionRevision, collectionTargetActive, collectionTargetComplete, subscribeCollection, type CollectionImage, type CollectionTarget } from '../services/collectionFavorites';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
-import { ChromeNotice, ChromeNoticeStack, EmptyState, IconButton, InlineSpinner, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, IconButton, InlineSpinner, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { useAlertDialog } from './ConfirmDialog';
 import { DetailSidePanel } from './DetailPanel';
 import { ImageShareOverlay } from './ImageShareActions';
 import { SmartImage } from './SmartImage';
@@ -63,6 +64,9 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
+  // 读取失败不再顶成一条横幅：弹一次窗即可，进度与离线提示并入计数行。
+  const alertDialog = useAlertDialog();
+  const alertedError = useRef('');
   const [reload, setReload] = useState(0);
   const [visibleLimit, setVisibleLimit] = useState(120);
   const [metadata, setMetadata] = useState<CodexImageMetadata | null>();
@@ -83,6 +87,12 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
   const columns = useMasonryColumnCount(display, undefined, galleryRef);
   const filter = filters[mode];
   const result = data[mode];
+  useEffect(() => {
+    const message = error || result?.error || boot?.error || '';
+    if (!message || alertedError.current === message) return;
+    alertedError.current = message;
+    alertDialog(message);
+  }, [error, result?.error, boot?.error, alertDialog]);
   const entries = result?.entries || [];
   const selectedKey = selectedKeys[mode];
   const selected = entries.find(entry => entry.key === selectedKey);
@@ -303,8 +313,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
       {loading && <span role="status" aria-label={t('读取中…')} className="flex-none text-xs text-gray-500"><LoaderCircle className="h-4 w-4 animate-spin" /></span>}
       <div className="hidden sm:block"><IconButton label={t('刷新')} disabled={loading} onClick={() => setReload(value => value + 1)}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton></div>
     </WorkspaceToolbar>
-    {(error || result?.error || boot?.offline || progress) && <ChromeNoticeStack><ChromeNotice tone="warning">{progress || error || result?.error || boot?.error}{(result?.offline || boot?.offline) && ` · ${t('正在使用上次成功的数据')}`}</ChromeNotice></ChromeNoticeStack>}
-    <ToolbarCountCaption>{`${t('共 {0} 条', [result && !loading ? filtered.length.toLocaleString() : '—'])} · ${t('已加载 {0} 条', [result && !loading ? Math.min(visibleLimit, filtered.length).toLocaleString() : '—'])}`}</ToolbarCountCaption>
+    <ToolbarCountCaption>{`${t('共 {0} 条', [result && !loading ? filtered.length.toLocaleString() : '—'])} · ${t('已加载 {0} 条', [result && !loading ? Math.min(visibleLimit, filtered.length).toLocaleString() : '—'])}`}{(result?.offline || boot?.offline) ? ` · ${t('正在使用上次成功的数据')}` : ''}{progress ? ` · ${progress}` : ''}</ToolbarCountCaption>
     </WorkspaceChrome>
     <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
       <div ref={scrollRef} onScroll={() => { scrollRestore(); anchor.onScroll(); }} className="workspace-scroll-viewport min-h-0 overflow-y-auto p-3">

@@ -29,10 +29,9 @@ vi.mock('../../services/anlasBudget', () => ({ useAnlasBudget: () => ({ remainin
 vi.mock('../../services/api', async original => ({ ...await original<typeof import('../../services/api')>(), api: { uploadFile: mocks.upload } }));
 vi.mock('../../components/ConfirmDialog', () => ({
   useConfirmDialog: () => mocks.confirm,
-  // 错误已改为弹窗：把弹窗正文挂到无障碍树上，原有按文本查找错误的断言照常成立。
-  useAlertDialog: () => (message: string) => {
+  // 错误与状态都已改为弹窗：把正文与附加动作挂到无障碍树上，原有查找与点击断言照常成立。
+  useAlertDialog: () => (message: string, options?: { action?: { label: string; onClick: () => void | Promise<void> } }) => {
     mocks.alert(message);
-    // 同一时刻只有一个弹窗：先移除上一条探针，避免 getByRole('alert') 命中多个。
     document.querySelectorAll('[data-test-alert]').forEach(node => node.remove());
     const node = document.createElement('p');
     node.setAttribute('data-test-alert', 'true');
@@ -40,6 +39,14 @@ vi.mock('../../components/ConfirmDialog', () => ({
     node.className = 'sr-only';
     node.textContent = String(message);
     document.body.appendChild(node);
+    if (options?.action) {
+      const button = document.createElement('button');
+      button.setAttribute('data-test-alert', 'true');
+      button.textContent = options.action.label;
+      // 点动作等同真实弹窗：先关闭弹窗，再执行动作。
+      button.addEventListener('click', () => { document.querySelectorAll('[data-test-alert]').forEach(node => node.remove()); void options.action!.onClick(); });
+      document.body.appendChild(button);
+    }
   },
 }));
 vi.mock('../../components/ImageShareActions', () => ({ ImageShareActions: () => null, IMAGE_CARD_ACTION_CLASS: 'image-action', IMAGE_CARD_ACTION_TONE: { save: '', delete: '', primary: '' } }));

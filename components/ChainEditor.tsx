@@ -50,7 +50,7 @@ import { compileCharacterContent } from '../services/characterPrompts';
 import { LabModuleSection } from './LabModuleSection';
 import { FileDown } from 'lucide-react';
 import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags, isNativePromptText } from '../services/tagTranslations';
-import { ChromeNotice, ChromeNoticeStack, UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
+import { UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
 import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
 import { buildPromptSampleDraft, getPromptSampleSettings, type PromptSampleBridge, type PromptSampleDraft } from '../services/promptSampleSettings';
@@ -2195,12 +2195,10 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 onSectionedPromptChange={onSectionedPromptChange && activeGenerationMode === 'text-to-image' ? turnSectioned : undefined}
             />
 
-            {activeGenerationMode === 'text-to-image' && artistSampleTarget && <ChromeNoticeStack><ChromeNotice tone="info">
-                <div className="flex min-w-0 items-center justify-between gap-3">
-                  <span className="min-w-0 truncate" title={artistSampleTarget.tag}>{t('补充自建样张：{0} · {1}', [artistSampleTarget.tag, artistSampleTarget.pack === 'v45' ? 'V4.5' : 'V5'])}</span>
-                  <button type="button" className="mobile-touch shrink-0 opacity-80 underline hover:opacity-100" onClick={() => setArtistSampleTarget(null)}>{t('结束补图')}</button>
-                </div>
-            </ChromeNotice></ChromeNoticeStack>}
+            {activeGenerationMode === 'text-to-image' && artistSampleTarget && <div className="mb-2 flex min-w-0 items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50/80 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-200">
+                <span className="min-w-0 truncate" title={artistSampleTarget.tag}>{t('补充自建样张：{0} · {1}', [artistSampleTarget.tag, artistSampleTarget.pack === 'v45' ? 'V4.5' : 'V5'])}</span>
+                <button type="button" className="mobile-touch shrink-0 underline" onClick={() => setArtistSampleTarget(null)}>{t('结束补图')}</button>
+            </div>}
             </WorkspaceChrome>
 
             <PromptAgentOverlayController

@@ -176,36 +176,6 @@ export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ child
   </div>;
 };
 
-const CHROME_NOTICE_TONE: Record<'error' | 'warning' | 'info', string> = {
-  error: 'border-red-200 bg-red-50 text-red-600 dark:border-red-900 dark:bg-red-950/95 dark:text-red-300',
-  warning: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/95 dark:text-amber-300',
-  info: 'border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-900 dark:bg-indigo-950/95 dark:text-indigo-300',
-};
-
-/**
- * 临时状态的容器：浮在窗口右下角，不占布局、不是横条。
- * 页面级错误不再走这里（改成一次性弹窗），这里只留可忽略、可重试的状态。
- * 用 portal 挂到应用根，避免被工作区的 backdrop-filter 限制成局部定位。
- */
-export const ChromeNoticeStack: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [target, setTarget] = useState<HTMLElement | null>(null);
-  useLayoutEffect(() => { setTarget(document.querySelector<HTMLElement>('.agent-stage') || document.body); }, []);
-  return target ? createPortal(<div data-chrome-notice-stack="true" className="pointer-events-none fixed bottom-4 right-4 z-[1400] flex w-[min(26rem,calc(100vw-2rem))] flex-col items-end gap-2">{children}</div>, target) : null;
-};
-
-/** 一张浮起的状态卡片；错误本体现在由弹窗承载。 */
-export const ChromeNotice: React.FC<{
-  tone?: 'error' | 'warning' | 'info';
-  children: React.ReactNode;
-  onClose?: () => void;
-  closeLabel?: string;
-}> = ({ tone = 'info', children, onClose, closeLabel }) => (
-  <div role={tone === 'error' ? 'alert' : 'status'} className={`pointer-events-auto flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-xs shadow-xl backdrop-blur-sm ${CHROME_NOTICE_TONE[tone]}`}>
-    <div className="min-w-0 flex-1 break-words">{children}</div>
-    {onClose && <button type="button" aria-label={closeLabel || t('关闭提示')} onClick={onClose} className="mobile-touch shrink-0 rounded px-1 text-current opacity-70 hover:opacity-100">×</button>}
-  </div>
-);
-
 export const WorkspaceToolbar: React.FC<{
   children: React.ReactNode;
   className?: string;

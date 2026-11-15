@@ -4385,6 +4385,18 @@
     "わかりました",
     "알겠습니다"
   ],
+  "画师词库不可用": [
+    "畫師詞庫不可用",
+    "Artist library unavailable",
+    "絵師辞書を利用できません",
+    "작가 사전을 사용할 수 없습니다"
+  ],
+  "保存未完成": [
+    "儲存未完成",
+    "Save incomplete",
+    "保存が完了していません",
+    "저장이 완료되지 않았습니다"
+  ],
   "草稿属于其他作品或模式，请回到原目标后恢复": [
     "草稿屬於其他作品或模式，請回到原目標後恢復",
     "Draft belongs to another work or mode. Return to its original target to restore it.",
