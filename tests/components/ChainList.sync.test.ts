@@ -768,3 +768,12 @@ it.each(['desktop', 'mobile'] as const)('%s「更多操作」的批量导入口�
   expect(icon?.classList.contains('lucide-folder-down')).toBe(true);
   expect(entry.querySelector('svg.lucide-folder-up')).toBeNull();
 });
+
+// 手机顶栏只留文件夹、搜索、筛选与新建，批量导入固定在「更多」里，不额外的常驻直入按钮。
+it('手机顶栏不常驻批量导入按钮，入口唯一出现在「更多」里', async () => {
+  render(React.createElement(ChainList, props()));
+  expect(screen.queryByRole('button', { name: '批量导入' })).toBeNull();
+  const entry = await clickOverflowItem(/批量导入/, 'mobile');
+  expect(entry).toBeTruthy();
+  expect(screen.getAllByRole('button', { name: '批量导入' })).toHaveLength(1);
+});
