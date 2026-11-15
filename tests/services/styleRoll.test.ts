@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidateFixture, rollFixture, seededRandom } from '../fixtures/styleRoll';
-import { createDefaultRollTemplate, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, formatRollStyle, ROLL_MAX_ARTISTS, getRollPinnedArtists, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidateCapacity, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollPreset, validateRollTemplate, type RollExperiment } from '../../services/styleRoll';
+import { createDefaultRollTemplate, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, formatRollStyle, ROLL_MAX_ARTISTS, getRollPinnedArtists, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollPreset, validateRollTemplate, type RollExperiment } from '../../services/styleRoll';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 
 it('推荐模板工厂沿用当前默认值且各次结果独立', () => {
@@ -277,13 +277,13 @@ describe('风格串保存', () => {
   });
 });
 
-describe('候选容量与永久清理', () => {
+describe('候选删除与记录容量', () => {
   const candidate = (id: string, archived = false) => ({ ...candidateFixture(id), archived });
-  it('容量按全部候选计算，已归档项仍占位', () => {
+  it('候选数量不设上限，已有大量候选时仍可继续抽取', () => {
     const e = rollFixture();
-    e.candidates = Array.from({ length: 238 }, (_, index) => candidate(`c${index}`));
-    expect(rollCandidateCapacity(e)).toBe(2);
-    expect(() => rollCandidates(e, 3)).toThrow('还可 Roll 2 串');
+    e.candidates = Array.from({ length: 600 }, (_, index) => candidate(`c${index}`));
+    expect(() => validateRollExperiment(e)).not.toThrow();
+    expect(rollCandidates(e, 24, { random: seededRandom(7) })).toHaveLength(24);
   });
   it('删除候选接受任意状态，同步移除轮次引用并删除空轮', () => {
     const e = rollFixture();
@@ -294,7 +294,8 @@ describe('候选容量与永久清理', () => {
     expect(next.rounds.map(round => round.id)).toEqual(['r2']);
     expect(next.rounds[0].candidateIds).toEqual(['keep']);
     expect(() => validateRollExperiment(next)).not.toThrow();
-    // 丢弃即删除：未归档的候选同样可以直接删掉。\n  expect(removeRollCandidates(e, ['keep']).candidates.map(item => item.id)).toEqual(['drop']);
+    // 丢弃即删除：未归档的候选同样可以直接删掉。
+    expect(removeRollCandidates(e, ['keep']).candidates.map(item => item.id)).toEqual(['drop']);
     expect(removeRollCandidates(e, [])).toBe(e);
   });
 });

@@ -5,7 +5,7 @@ import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, CopyPlus, Heart,
 import type { LocalGenItem, PromptChain } from '../types';
 import { MobileOverflowMenu } from './MobileUI';
 import { t, useLanguage } from '../services/i18n';
-import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateCapacity, rollCandidateToChain, rollExperimentSummary, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
+import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateToChain, rollExperimentSummary, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
 import { buildRollChainArtistSource } from '../services/styleRollChainArtists';
 import { rollFavoriteMatches, rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
@@ -177,7 +177,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     experiment?.rounds.forEach((item, index) => item.candidateIds.forEach(id => map.set(id, index + 1)));
     return map;
   }, [experiment]);
-  const remaining = experiment ? rollCandidateCapacity(experiment) : 240;
   const selected = experiment?.candidates.find(item => item.id === selectedId);
   const images = useMemo(() => experiment ? rollCandidateImages(experiment, history) : new Map<string, LocalGenItem>(), [experiment, history]);
   // 与卡片爱心共用收藏库判定，收藏或取消后筛选与多选即时跟随。
@@ -750,7 +749,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const selectedPending = experiment ? rollPendingCandidates(experiment, images, chosen.map(candidate => candidate.id)) : [];
   const saveable = chosen.filter(candidate => images.has(candidate.id) && !candidate.archived && !candidate.savedChainId);
   const working = Boolean(session || preparing), frozen = busy || loading || detailLoading;
-  const canStart = !frozen && !working && remaining > 0 && count <= remaining && (chainArtistSource !== undefined || (!libraryLoading && !libraryError && library.length > 0)) && (!experiment || historyReady) && (!sampledOnly || (sampledTags !== null && (effectiveLibrary.length > 0 || pinnedArtists.length >= roundRules.maxArtists)));
+  const canStart = !frozen && !working && (chainArtistSource !== undefined || (!libraryLoading && !libraryError && library.length > 0)) && (!experiment || historyReady) && (!sampledOnly || (sampledTags !== null && (effectiveLibrary.length > 0 || pinnedArtists.length >= roundRules.maxArtists)));
   const roundConditionLabel = (item: RollExperiment['rounds'][number]) => {
     const snapshot = item.snapshot;
     if (!snapshot) return '';
@@ -840,7 +839,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         {/* 本轮还没出完时，补齐入口直接放进顶栏，不再单独占一行。 */}
         {!working && roundPending.length > 0 && <ToolbarButton className="max-md:hidden" aria-label={t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])} title={t('本轮还有 {0} 张没出，点击后确认费用', [roundPending.length])} data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus /><span className="hidden xl:inline">{t(continuousGenerationEnabled ? '补齐剩余 {0} 张' : '生成本轮 1 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])}</span><span className="xl:hidden tabular-nums">{continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1}</span></ToolbarButton>}
         <div className="flex shrink-0 items-center">
-          <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} title={remaining <= 0 ? t('本记录候选已满，请删除部分候选后再 Roll') : count > remaining ? t('超出剩余容量') : t('本轮将生成 {0} 张，点击后确认费用', [count])} data-agent-action="business" tone="primary" disabled={!canStart} className="!rounded-r-none !border-r-0 font-bold shadow-sm transition-transform active:scale-95" onClick={() => runRound()}><Dice5 className="h-4 w-4" /><span className="sm:hidden">Roll</span><span className="hidden sm:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
+          <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} title={t('本轮将生成 {0} 张，点击后确认费用', [count])} data-agent-action="business" tone="primary" disabled={!canStart} className="!rounded-r-none !border-r-0 font-bold shadow-sm transition-transform active:scale-95" onClick={() => runRound()}><Dice5 className="h-4 w-4" /><span className="sm:hidden">Roll</span><span className="hidden sm:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
           <ToolbarPopover label={t('本轮设置')} title={t('本轮设置')} icon={<ChevronDown />} disabled={frozen || working} width={360} className="[&_button[aria-haspopup]]:rounded-l-none" onOpenChange={open => { if (open) void loadQueueInterval(); }}>
             {close => <div className="space-y-3">
               <label className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300"><span>{t('本轮张数')}</span><input type="number" aria-label={t('本轮生成张数')} className={`${TOOLBAR_FIELD_CLASS} text-center tabular-nums`} min={1} max={24} value={count} onChange={event => setCount(Math.min(24, Math.max(1, Number(event.target.value) || 1)))} /></label>
@@ -870,10 +869,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
                 <ToolbarButton className="w-full !justify-between !px-2" onClick={() => openFromSettings(close, () => setChainTarget(experimentId))}><span className="flex items-center gap-2"><Layers />{t('从风格串提取')}</span><span className="ml-auto text-xs font-normal text-gray-500">{chainArtistSource ? t('已选 {0} 串', [chainArtistSource.chainIds.length]) : t('画师库')}</span><ChevronRight /></ToolbarButton>
                 <ToolbarButton className="w-full !justify-between !px-2" onClick={() => openFromSettings(close, () => setArtistDialogOpen(true))}><span className="flex items-center gap-2"><Settings2 />{t('管理画师与偏好')}</span><span className="ml-auto text-xs font-normal text-gray-500">{t('固定 {0} 位', [pinnedArtists.length])}</span><ChevronRight /></ToolbarButton>
                 <ToolbarButton className="w-full !justify-between !px-2" onClick={() => openFromSettings(close, () => setSetup({ ...(experiment || makeExperiment()), drawPlan: undefined, artists: artistOverrides, pinnedArtists, chainArtistSource, rules: roundRules, sampledOnly }))}><span className="flex items-center gap-2"><Settings2 />{t('提示词与生成设置')}</span><ChevronRight /></ToolbarButton>
-              </div>
-              <div className={`flex items-center justify-between gap-2 text-micro ${remaining <= 0 ? 'text-red-600 dark:text-red-300' : remaining < count ? 'text-amber-700 dark:text-amber-300' : 'text-gray-400'}`}>
-                <span>{t('本记录还可 Roll {0} 个候选', [remaining])}</span>
-                {remaining < count && <span className="font-semibold">{remaining <= 0 ? t('候选已满') : t('超出剩余容量')}</span>}
               </div>
             </div>}
           </ToolbarPopover>

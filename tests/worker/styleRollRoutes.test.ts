@@ -4,7 +4,7 @@ import { handleStyleRollRoute } from '../../worker/routes/styleRollRoutes';
 import { INIT_SQL, type D1Database, type RouteContext } from '../../worker/routes/types';
 import { candidateFixture, rollFixture } from '../fixtures/styleRoll';
 import { beginRollRound } from '../../services/styleRollWorkflow';
-import { ROLL_CANDIDATE_LIMIT, ROLL_MAX_ARTISTS, type RollPreset } from '../../services/styleRoll';
+import { ROLL_MAX_ARTISTS, type RollPreset } from '../../services/styleRoll';
 
 const databases: DatabaseSync[] = [];
 afterEach(() => { databases.splice(0).forEach(db => db.close()); });
@@ -269,10 +269,11 @@ it('助手直接读取分页记录、轮次和候选精确历史条件，原接�
   expect(summaries.experiments[0]).not.toHaveProperty('template');
 });
 
-it('记录体积不设上限：候选与人数都到合法上限的记录超过 1MB 仍能保存并读回', async () => {
+it('记录体积与候选数量都不设上限：超过旧的 240 上限且记录超过 1MB 仍能保存并读回', async () => {
   const f = fixture(), e = { ...rollFixture(), revision: 0 };
   const tag = (index: number, slot: number) => `artist ${index} slot ${slot} ${'x'.repeat(40)}`;
-  e.candidates = Array.from({ length: ROLL_CANDIDATE_LIMIT }, (_, index) => ({
+  const count = 300;
+  e.candidates = Array.from({ length: count }, (_, index) => ({
     id: `candidate-${index}`, createdAt: index, archived: false,
     tags: Array.from({ length: ROLL_MAX_ARTISTS }, (_, slot) => ({ tag: tag(index, slot), weight: 1 })),
   }));
@@ -280,7 +281,7 @@ it('记录体积不设上限：候选与人数都到合法上限的记录超过 
   expect(raw.length).toBeGreaterThan(1_000_000);
   expect((await f.invoke(e))!.status).toBe(200);
   const restored = await f.readExperiment(e.id);
-  expect(restored.candidates).toHaveLength(ROLL_CANDIDATE_LIMIT);
+  expect(restored.candidates).toHaveLength(count);
   expect(JSON.stringify(restored).length).toBeGreaterThan(1_000_000);
 });
 

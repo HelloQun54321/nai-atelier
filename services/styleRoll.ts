@@ -133,7 +133,6 @@ export function validateRollPreset(value: unknown): asserts value is RollPreset 
     ![preset.createdAt, preset.updatedAt].every(Number.isFinite)) throw new Error('Roll 预设资料无效');
   validateRollTemplate(preset.template);
 }
-export const ROLL_CANDIDATE_LIMIT = 240;
 /** 单条 Roll 配方最多包含的画师数；足够覆盖较长的风格串，同时保留数据与界面安全边界。 */
 export const ROLL_MAX_ARTISTS = 64;
 const tenth = (value: number) => Math.round(value * 10) / 10;
@@ -297,7 +296,7 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
   const validId = (id: unknown): id is string => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(id);
   if (!e || e.version !== 1 || !validId(e.id) || typeof e.name !== 'string' || !e.name.trim() || e.name.length > 120 ||
     !Number.isSafeInteger(e.revision) || e.revision < 0 || ![e.createdAt, e.updatedAt].every(Number.isFinite) ||
-    !Array.isArray(e.artists) || e.artists.length > 1000 || !Array.isArray(e.candidates) || e.candidates.length > ROLL_CANDIDATE_LIMIT ||
+    !Array.isArray(e.artists) || e.artists.length > 1000 || !Array.isArray(e.candidates) ||
     (e.archived !== undefined && typeof e.archived !== 'boolean') || (e.sampledOnly !== undefined && typeof e.sampledOnly !== 'boolean')) throw new Error('Roll 串画风记录资料无效');
   validateRollTemplate(e.template);
   if (e.chainArtistSource !== undefined) validateRollChainArtistSource(e.chainArtistSource);
@@ -323,7 +322,7 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
     ids.add(candidate.id);
   }
   const rounds = new Set<string>();
-  if (!Array.isArray(e.rounds) || e.rounds.length > ROLL_CANDIDATE_LIMIT) throw new Error('画风轮次资料无效');
+  if (!Array.isArray(e.rounds)) throw new Error('画风轮次资料无效');
   for (const round of e.rounds) {
     if (!round || !validId(round.id) || rounds.has(round.id) ||
       !Number.isFinite(round.createdAt) || (round.closedAt !== undefined && !Number.isFinite(round.closedAt)) ||
@@ -354,10 +353,7 @@ export function rollCandidates(experiment: RollExperiment, count: number, option
   const pinnedTags = frequencies ? [...new Map(rawPinnedTags.map(tag => [keyOf(tag), tag])).values()] : rawPinnedTags;
   validateRollPinnedArtists(pinnedTags);
   if (pinnedTags.length > experiment.rules.maxArtists) throw new Error('固定画师数量不能超过每串总人数');
-  if (!Number.isSafeInteger(count) || count < 1 || count > 24 || experiment.candidates.length + count > ROLL_CANDIDATE_LIMIT) {
-    const remaining = Math.max(0, ROLL_CANDIDATE_LIMIT - experiment.candidates.length);
-    throw new Error(`本记录最多保留 ${ROLL_CANDIDATE_LIMIT} 个候选，当前还可 Roll ${remaining} 串；可在回收站永久清理旧候选后继续`);
-  }
+  if (!Number.isSafeInteger(count) || count < 1 || count > 24) throw new Error('每轮可生成 1～24 张图片');
   const random = options.random || Math.random, rules = experiment.rules;
   const blocked = new Set((options.blockedTags || []).map(keyOf));
   const excluded = new Set(experiment.artists.filter(artist => artist.excluded).map(artist => keyOf(artist.tag)));
@@ -409,9 +405,6 @@ export function rollCandidates(experiment: RollExperiment, count: number, option
   if (!result.length) throw new Error('当前规则下没有新的组合，请调整画师数量、锁定项或权重范围');
   return result;
 }
-
-/** 记录容量：候选上限只约束实际配方，不把已归档项藏成另一套计数。 */
-export const rollCandidateCapacity = (experiment: RollExperiment) => Math.max(0, ROLL_CANDIDATE_LIMIT - experiment.candidates.length);
 
 /**
  * 删除候选并同步移除轮次引用；空轮随之删除。
