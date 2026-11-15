@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ShortestColumnMasonry } from '../../components/ShortestColumnMasonry';
 
@@ -155,6 +155,68 @@ it('已经浏览后返回上方的卡片继续保留原列，尺寸更新不搬�
     expect(container.querySelector(`[data-key="${index}"]`)).toBe(card);
     expect(card.parentElement).toBe(parents[index]);
   });
+  expect(scroll.scrollTop).toBe(0);
+});
+
+it('少量删除（收录后移出未保存筛选）保留其余卡片所属列，不把整页重新分列', () => {
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe() { this.callback([{ contentRect: { width: 800 } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
+    disconnect() {}
+  });
+  const props = {
+    columns: 2,
+    getItemKey,
+    estimateItemHeight: () => 100,
+    renderItem: (item: string) => <span data-testid={`keep-${item}`}>{item}</span>,
+  };
+  const { rerender } = render(<ShortestColumnMasonry {...props} items={['a', 'b', 'c', 'd', 'e', 'f']} />);
+  const columnIndex = (item: string) => {
+    const columns = Array.from(document.querySelectorAll('.chain-masonry-column'));
+    return columns.indexOf(screen.getByTestId(`keep-${item}`).parentElement as Element);
+  };
+  const before = new Map(['a', 'b', 'c', 'd', 'e', 'f'].map(item => [item, columnIndex(item)]));
+  rerender(<ShortestColumnMasonry {...props} items={['a', 'b', 'd', 'e', 'f']} />);
+  for (const item of ['a', 'b', 'd', 'e', 'f']) {
+    expect(columnIndex(item), `${item} 应留在原列`).toBe(before.get(item));
+  }
+  // 删除比例较大时仍按新集合重新平衡，避免稀疏结果全堆在一列。
+  rerender(<ShortestColumnMasonry {...props} items={['a', 'b']} />);
+  const columns = Array.from(document.querySelectorAll('.chain-masonry-column'));
+  expect(screen.getByTestId('keep-a').parentElement).toBe(columns[0]);
+  expect(screen.getByTestId('keep-b').parentElement).toBe(columns[1]);
+});
+
+it('删除视口上方卡片后回填滚动位置，列表不整体上移', () => {
+  installGeometry();
+  const cards = Array.from({ length: 12 }, (_, index) => String(index));
+  const view = (values: string[]) => (
+    <div data-scroll style={{ overflowY: 'auto' }}>
+      <ShortestColumnMasonry items={values} columns={2} getItemKey={getItemKey}
+        estimateItemHeight={() => 300} renderItem={item => <article data-height="300" data-key={item}>{item}</article>} />
+    </div>
+  );
+  const { container, rerender } = render(view(cards));
+  const scroll = container.querySelector<HTMLElement>('[data-scroll]')!;
+  scroll.scrollTop = 650;
+  rerender(view(cards.filter(item => item !== '0')));
+  // 卡片 0 在首列首位，高 300 + 间距 12，删除后补回这段滚动距离。
+  expect(scroll.scrollTop).toBe(650 - 312);
+});
+
+it('少量删除时只补偿视口上方的卡片，视口内的移出不改滚动位置', () => {
+  installGeometry();
+  const cards = Array.from({ length: 12 }, (_, index) => String(index));
+  const view = (values: string[]) => (
+    <div data-scroll style={{ overflowY: 'auto' }}>
+      <ShortestColumnMasonry items={values} columns={2} getItemKey={getItemKey}
+        estimateItemHeight={() => 300} renderItem={item => <article data-height="300" data-key={item}>{item}</article>} />
+    </div>
+  );
+  const { container, rerender } = render(view(cards));
+  const scroll = container.querySelector<HTMLElement>('[data-scroll]')!;
+  scroll.scrollTop = 0;
+  rerender(view(cards.filter(item => item !== '6')));
   expect(scroll.scrollTop).toBe(0);
 });
 

@@ -128,6 +128,17 @@ const masonryScrollRoot = (element: HTMLElement | null) => {
   return root;
 };
 
+/** 判断 candidate 是否为 reference 的子序列：允许删项，不允许新增或换序。 */
+const isKeySubsequence = (candidate: readonly string[], reference: readonly string[]) => {
+  let cursor = 0;
+  for (const key of candidate) {
+    while (cursor < reference.length && reference[cursor] !== key) cursor += 1;
+    if (cursor === reference.length) return false;
+    cursor += 1;
+  }
+  return true;
+};
+
 /** 只识别一项一个根节点的可见列表；隐藏或几何未知时保留旧分列。 */
 const readMasonryViewport = <T,>(element: HTMLElement | null, layout: readonly (readonly T[])[], key: (item: T) => string, indices: ReadonlyMap<string, number>, root = masonryScrollRoot(element)) => {
   if (!element || element.getBoundingClientRect().width <= 0) return;
@@ -176,6 +187,7 @@ export const ShortestColumnMasonry = <T,>({
   const latestWidth = useRef(0);
   const committed = useRef({ count: 0, keys: [] as string[], indices: new Map<string, number>(), layout: [] as T[][], placement: new Map<string, number>(), heights: new Map<string, number>(), columnWidth: 0, resetKey });
   const viewedThrough = useRef(-1);
+  const removalScrollCompensation = useRef(0);
 
   // 首帧同步量宽：useEffect + ResizeObserver 会晚一拍，风格串等页会先闪「加载更多」再出卡片。
   useLayoutEffect(() => {
@@ -214,8 +226,39 @@ export const ShortestColumnMasonry = <T,>({
     const indices = new Map(keys.map((key, index) => [key, index]));
     // 仅同序列或尾部追加沿用列；筛选删项与中途插入必须按新集合重新平衡。
     const samePrefix = keys.length >= committed.current.keys.length && committed.current.keys.every((key, index) => key === keys[index]);
-    const previous = stableColumns && committed.current.count === usedColumns && samePrefix && Object.is(committed.current.resetKey, resetKey)
+    // 少量删除（例如收录一张作品后它不再匹配筛选）只是少了几张卡：
+    // 沿用旧列让同列后续卡片自然上移即可，重新分列会把整页搬走。
+    const removedCount = committed.current.keys.length - keys.length;
+    const smallRemoval = removedCount > 0
+      && removedCount <= Math.max(1, Math.ceil(committed.current.keys.length / 10))
+      && isKeySubsequence(keys, committed.current.keys);
+    const reusableColumns = samePrefix || smallRemoval;
+    const previous = stableColumns && committed.current.count === usedColumns && reusableColumns && Object.is(committed.current.resetKey, resetKey)
       ? committed.current.placement : new Map<string, number>();
+    // 被删卡片若原本在视口上方，内容变短会让整页上移；记录其高度，提交后回填滚动位置。
+    removalScrollCompensation.current = 0;
+    if (smallRemoval && containerRef.current) {
+      const element = containerRef.current;
+      const root = masonryScrollRoot(element);
+      if (root && committed.current.layout.length === element.children.length) {
+        const removedKeys = new Set(committed.current.keys.filter(key => !indices.has(key)));
+        const rootTop = root.getBoundingClientRect().top;
+        let delta = 0;
+        committed.current.layout.forEach((columnItems, columnIndex) => {
+          const columnElement = element.children[columnIndex] as HTMLElement | undefined;
+          if (!columnElement) return;
+          columnItems.forEach((item, itemIndex) => {
+            const key = getItemKey(item);
+            if (!removedKeys.has(key)) return;
+            const card = columnElement.children[itemIndex] as HTMLElement | undefined;
+            if (!card) return;
+            const rect = card.getBoundingClientRect();
+            if (rect.height > 0 && rect.bottom <= rootTop) delta += rect.height + gap;
+          });
+        });
+        removalScrollCompensation.current = delta;
+      }
+    }
     if (!previous.size) viewedThrough.current = -1;
     const heights = new Map<string, number>();
     const estimate = (item: T, width: number) => {
@@ -252,6 +295,15 @@ export const ShortestColumnMasonry = <T,>({
     return { layout, placement, keys, indices, heights: new Map(keys.map(key => [key, heights.get(key) ?? committed.current.heights.get(key)!])), columnWidth, count: usedColumns, resetKey };
   }, [items, usedColumns, estimateItemHeight, columnWidth, stableColumns, getItemKey, gap, resetKey]);
   useEffect(() => { if (columnWidth > 0) committed.current = computed; }, [computed, columnWidth]);
+  // 少量删除后回填滚动位置：被删卡片原本在视口上方时，内容变短会让整页看起来往上跳。
+  useLayoutEffect(() => {
+    const delta = removalScrollCompensation.current;
+    if (delta <= 0) return;
+    removalScrollCompensation.current = 0;
+    const root = masonryScrollRoot(containerRef.current);
+    if (!root) return;
+    root.scrollTop = Math.max(0, root.scrollTop - delta);
+  }, [computed]);
   useEffect(() => {
     if (!stableColumns) return;
     const root = masonryScrollRoot(containerRef.current);
