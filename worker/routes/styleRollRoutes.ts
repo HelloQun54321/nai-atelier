@@ -135,16 +135,22 @@ export async function handleStyleRollRoute({ path, method, request, db, currentU
   }
   if ((previous?.revision ?? 0) !== experiment.revision || (!previous && experiment.revision !== 0)) return error('实验已在其他页面更新，请重新加载后继续', 409);
   if (previous?.candidates.length) {
-    if (JSON.stringify(previous.template) !== JSON.stringify(experiment.template)) return error('已有候选的实验配置不可修改，请新建实验', 400);
     for (const candidate of previous.candidates) {
       const next = experiment.candidates.find(item => item.id === candidate.id);
-      if (!next || JSON.stringify(candidate.tags) !== JSON.stringify(next.tags)) return error('已有候选不可覆盖或删除，请丢弃后重新抽取', 400);
+      // 删除候选是允许的：丢弃即彻底删除，删掉后容量立即回到记录上；但抽到的配方不能被悄悄改写。
+      if (next && JSON.stringify(candidate.tags) !== JSON.stringify(next.tags)) return error('已有候选的画师配方不可改写，请删除后重新抽取', 400);
     }
   }
   for (const round of previous?.rounds ?? []) {
     const next = experiment.rounds.find(item => item.id === round.id);
-    if (!next || (round.closedAt !== undefined && next.closedAt !== round.closedAt) || JSON.stringify({ ...round, closedAt: undefined }) !== JSON.stringify({ ...next, closedAt: undefined })) return error('已有画风轮次不可覆盖或删除', 400);
+    // 候选删光后空轮随之移除，所以轮次允许被删除；已记录的轮次内容与关闭时间仍不可改写。
+    if (!next) continue;
+    if ((round.closedAt !== undefined && next.closedAt !== round.closedAt) || JSON.stringify({ ...round, closedAt: undefined }) !== JSON.stringify({ ...next, closedAt: undefined })) return error('已有画风轮次不可改写', 400);
   }
+  /**
+   * 模板现在允许修改：旧候选的图片靠历史记录里的候选 ID 归位，不依赖模板指纹，
+   * 所以这里不回写旧资料；新候选仍按抽取时的模板写入 configKey 作为来源信息。
+   */
   const saved = { ...experiment, revision: experiment.revision + 1, updatedAt: Date.now() };
   // Android 的 D1 适配器没有 meta.changes，RETURNING 在两端直接确认本次写入。
   const result = row

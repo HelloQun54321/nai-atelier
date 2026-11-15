@@ -593,17 +593,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     setSelectedIds(new Set()); setSelectedId('');
     notify(t('已删除 {0}', [label]), 'success');
   });
-  const purgeCandidates = (ids: string[]) => void perform(async () => {
-    if (!experiment) return;
-    const archivedIds = experiment.candidates.filter(candidate => ids.includes(candidate.id) && candidate.archived).map(candidate => candidate.id);
-    if (!archivedIds.length) return;
-    if (!await confirm({ title: '永久清理候选', message: t('将永久删除 {0} 个已归档候选；它们生成的历史图片与已保存风格串仍保留。', [archivedIds.length]), confirmLabel: t('永久清理'), tone: 'danger' })) return;
-    const next = removeRollCandidates(experiment, archivedIds);
-    await store(next);
-    if (roundId && !next.rounds.some(round => round.id === roundId)) setRoundId('');
-    setSelectedIds(new Set()); setSelectedId('');
-    notify(t('已永久清理 {0} 个候选', [archivedIds.length]), 'success');
-  });
+  // 归档候选只来自更早的丢弃方式；现在「丢弃」就是直接删除，容量立即回到记录上，不再有可永久清理的归档项。
   // 归档／恢复改按记录 ID 处理：不在当前选中的记录可能只有摘要，先补读完整内容再保存。
   const archiveRecord = (id: string, archived: boolean) => void perform(async () => {
     if (getGenerationSeriesSession(rollSourceId(id)) || generatingRef.current) return;
@@ -760,7 +750,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const selectedPending = experiment ? rollPendingCandidates(experiment, images, chosen.map(candidate => candidate.id)) : [];
   const saveable = chosen.filter(candidate => images.has(candidate.id) && !candidate.archived && !candidate.savedChainId);
   const working = Boolean(session || preparing), frozen = busy || loading || detailLoading;
-  const canStart = !frozen && !working && remaining > 0 && (chainArtistSource !== undefined || (!libraryLoading && !libraryError && library.length > 0)) && (!experiment || historyReady) && (!sampledOnly || (sampledTags !== null && (effectiveLibrary.length > 0 || pinnedArtists.length >= roundRules.maxArtists)));
+  const canStart = !frozen && !working && remaining > 0 && count <= remaining && (chainArtistSource !== undefined || (!libraryLoading && !libraryError && library.length > 0)) && (!experiment || historyReady) && (!sampledOnly || (sampledTags !== null && (effectiveLibrary.length > 0 || pinnedArtists.length >= roundRules.maxArtists)));
   const roundConditionLabel = (item: RollExperiment['rounds'][number]) => {
     const snapshot = item.snapshot;
     if (!snapshot) return '';
@@ -850,7 +840,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         {/* 本轮还没出完时，补齐入口直接放进顶栏，不再单独占一行。 */}
         {!working && roundPending.length > 0 && <ToolbarButton className="max-md:hidden" aria-label={t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])} title={t('本轮还有 {0} 张没出，点击后确认费用', [roundPending.length])} data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus /><span className="hidden xl:inline">{t(continuousGenerationEnabled ? '补齐剩余 {0} 张' : '生成本轮 1 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])}</span><span className="xl:hidden tabular-nums">{continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1}</span></ToolbarButton>}
         <div className="flex shrink-0 items-center">
-          <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} title={remaining <= 0 ? t('本记录候选已满，请删除部分候选后再 Roll') : t('本轮将生成 {0} 张，点击后确认费用', [count])} data-agent-action="business" tone="primary" disabled={!canStart} className="!rounded-r-none !border-r-0 font-bold shadow-sm transition-transform active:scale-95" onClick={() => runRound()}><Dice5 className="h-4 w-4" /><span className="sm:hidden">Roll</span><span className="hidden sm:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
+          <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} title={remaining <= 0 ? t('本记录候选已满，请删除部分候选后再 Roll') : count > remaining ? t('超出剩余容量') : t('本轮将生成 {0} 张，点击后确认费用', [count])} data-agent-action="business" tone="primary" disabled={!canStart} className="!rounded-r-none !border-r-0 font-bold shadow-sm transition-transform active:scale-95" onClick={() => runRound()}><Dice5 className="h-4 w-4" /><span className="sm:hidden">Roll</span><span className="hidden sm:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
           <ToolbarPopover label={t('本轮设置')} title={t('本轮设置')} icon={<ChevronDown />} disabled={frozen || working} width={360} className="[&_button[aria-haspopup]]:rounded-l-none" onOpenChange={open => { if (open) void loadQueueInterval(); }}>
             {close => <div className="space-y-3">
               <label className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300"><span>{t('本轮张数')}</span><input type="number" aria-label={t('本轮生成张数')} className={`${TOOLBAR_FIELD_CLASS} text-center tabular-nums`} min={1} max={24} value={count} onChange={event => setCount(Math.min(24, Math.max(1, Number(event.target.value) || 1)))} /></label>

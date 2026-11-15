@@ -1,7 +1,7 @@
 import type { LocalGenItem } from '../types';
 import { api } from './api';
 import { localHistory } from './localHistory';
-import { rollCandidateModuleId, rollPrompt, rollTemplateSignature, rollSourceId, validateRollBlocklist, validateRollExperiment, validateRollExperimentSummary, validateRollPreset, type RollExperiment, type RollExperimentSummary, type RollPreset } from './styleRoll';
+import { rollCandidateModuleId, rollSourceId, validateRollBlocklist, validateRollExperiment, validateRollExperimentSummary, validateRollPreset, type RollExperiment, type RollExperimentSummary, type RollPreset } from './styleRoll';
 
 export async function loadRollPresets(): Promise<RollPreset[]> {
   const result = await api.get('/style-roll/presets', { cache: 'no-store' });
@@ -77,12 +77,9 @@ export function rollCandidateImages(experiment: RollExperiment, history: LocalGe
     if (item.sourceChainId !== rollSourceId(experiment.id) || item.edit) continue;
     const candidate = experiment.candidates.find(candidate => item.modules?.some(module => module.id === rollCandidateModuleId(candidate.id)));
     if (!candidate || images.has(candidate.id)) continue;
-    // 候选记录了生成时的模板指纹：模板改过以后旧图仍归它自己，不再拿当前模板去比对整段 prompt。
-    // 没有指纹的旧记录继续沿用原来的 prompt 比对，避免历史数据错配。
-    const matched = candidate.configKey
-      ? true
-      : item.prompt === rollPrompt(experiment.template, candidate.tags) && item.params.seed === experiment.template.params.seed;
-    if (matched) images.set(candidate.id, item);
+    // 候选与图片由历史记录 modules 里的候选 ID 唯一关联（uuid），这就是最强归属依据：
+    // 旧记录没有模板指纹，改过提示词也不能靠 prompt 比对把旧图丢掉；configKey 仅作来源信息保留。
+    images.set(candidate.id, item);
   }
   return images;
 }

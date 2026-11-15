@@ -139,13 +139,18 @@ it('旧版本写入和重复创建返回冲突，不覆盖已保存的记录或�
   expect(list.experiments[0].name).toBe(experiment.name);
 });
 
-it('已有候选配置和画师权重不可改写，归档可逆且不删除其他资料', async () => {
+it('已有候选的配方不可改写但可删除，模板可改且不回写旧候选，归档可逆', async () => {
   const f = fixture(), experiment = { ...rollFixture(), revision: 0, candidates: [candidateFixture('one')] };
   const { experiment: saved } = await (await f.invoke(experiment))!.json() as any;
-  expect((await f.invoke({ ...saved, template: { ...saved.template, prompt: '{style}, different' } }))!.status).toBe(400);
-  expect((await f.invoke({ ...saved, candidates: [] }))!.status).toBe(400);
   expect((await f.invoke({ ...saved, candidates: [{ ...saved.candidates[0], tags: [{ tag: 'changed', weight: 1 }] }] }))!.status).toBe(400);
-  expect((await f.invoke({ ...saved, candidates: [{ ...saved.candidates[0], archived: true }] }))!.status).toBe(200);
+  const { experiment: retemplated } = await (await f.invoke({ ...saved, template: { ...saved.template, prompt: '{style}, different' } }))!.json() as any;
+  expect(retemplated.template.prompt).toBe('{style}, different');
+  // 旧候选不被回写：图片靠历史里的候选 ID 归位，模板指纹只属于新抽的候选。
+  expect(retemplated.candidates).toEqual(saved.candidates);
+  const { experiment: archived } = await (await f.invoke({ ...retemplated, candidates: [{ ...retemplated.candidates[0], archived: true }] }))!.json() as any;
+  expect(archived.candidates[0].archived).toBe(true);
+  const { experiment: emptied } = await (await f.invoke({ ...archived, candidates: [] }))!.json() as any;
+  expect(emptied.candidates).toEqual([]);
 });
 
 it('无效输入、访客、坏存档与未知方法均明确拒绝，不写空默认值', async () => {
@@ -159,16 +164,18 @@ it('无效输入、访客、坏存档与未知方法均明确拒绝，不写空�
   expect(f.sqlite.prepare('SELECT value FROM settings').get()?.value).toBe('{');
 });
 
-it('普通轮次配方不可改写或删除，关闭后不能重新打开', async () => {
+it('普通轮次配方不可改写，但候选删光后的空轮可以移除，关闭后不能重新打开', async () => {
   const f = fixture(), e = { ...rollFixture(), revision: 0 };
   e.candidates = [candidateFixture('one'), candidateFixture('two')];
   e.rounds = [{ id: 'round', candidateIds: ['one'], createdAt: 1 }];
   const { experiment: saved } = await (await f.invoke(e))!.json() as any;
-  expect((await f.invoke({ ...saved, rounds: [] }))!.status).toBe(400);
   expect((await f.invoke({ ...saved, rounds: [{ ...saved.rounds[0], candidateIds: ['two'] }] }))!.status).toBe(400);
   const { experiment: closed } = await (await f.invoke({ ...saved, rounds: [{ ...saved.rounds[0], closedAt: 2 }] }))!.json() as any;
   expect((await f.invoke({ ...closed, rounds: [{ ...closed.rounds[0], closedAt: undefined }] }))!.status).toBe(400);
   expect((await f.invoke({ ...closed, rounds: [{ ...closed.rounds[0], closedAt: 3 }] }))!.status).toBe(400);
+  const { experiment: cleared } = await (await f.invoke({ ...closed, rounds: [] }))!.json() as any;
+  expect(cleared.rounds).toEqual([]);
+  expect(cleared.candidates).toEqual(closed.candidates);
 });
 
 it('普通出图批次沿用原私人存储，可保存偏好并完整回读', async () => {

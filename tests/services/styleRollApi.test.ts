@@ -43,13 +43,17 @@ it('全局屏蔽只在保存成功并校验回执后通知画师库和 Roll', as
   } finally { window.removeEventListener(ROLL_BLOCKLIST_CHANGED, changed); }
 });
 
-it('只从匹配实验、候选、提示词和 Seed 的历史读取图片，固定首次匹配结果', () => {
+it('只按实验与历史里的候选 ID 归位图片：改提示词或 Seed 后旧图仍归位，同一候选固定最早一张', () => {
   const e = rollFixture(); e.candidates = [candidateFixture('a'), candidateFixture('b')];
   const first = rollImageFixture(e, e.candidates[0]), late = { ...first, id: 'later', createdAt: 2 };
-  const wrongSeed = { ...rollImageFixture(e, e.candidates[1]), params: { ...e.template.params, seed: 9 } };
-  const wrongPrompt = { ...rollImageFixture(e, e.candidates[1]), prompt: 'something else' };
-  expect([...rollCandidateImages(e, [late, wrongSeed, wrongPrompt, first]).values()]).toEqual([first]);
+  // 关联依据是历史 modules 里的候选 UUID，不是 prompt 文本或 Seed：
+  // 所以改过提示词以后旧图不会从 Roll 页消失。
+  const rewritten = { ...e, template: { ...e.template, prompt: '{style}, rewritten', params: { ...e.template.params, seed: 9 } } };
+  expect([...rollCandidateImages(rewritten, [late, first]).values()]).toEqual([first]);
+  const duplicate = { ...first, id: 'duplicate', createdAt: 3 };
+  expect([...rollCandidateImages(e, [first, duplicate]).values()]).toEqual([first]);
   expect(rollCandidateImages(e, [{ ...first, sourceChainId: 'other' }]).size).toBe(0);
+  expect(rollCandidateImages(e, [{ ...first, modules: [] }]).size).toBe(0);
 });
 it('读取全部候选历史时复用轻量索引分页，超过旧入口 200 张上限仍能完整恢复', async () => {
   const ids = Array.from({ length: 240 }, (_, index) => `image-${index}`); mocks.getBrowseOrder.mockResolvedValue({ ids });
