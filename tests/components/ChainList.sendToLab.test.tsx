@@ -82,6 +82,26 @@ const props = (chains: PromptChain[], type: 'style' | 'character' = 'style') => 
   onUpdateChain: vi.fn(), onNavigateToPlayground: vi.fn(), isLoading: false, notify: vi.fn(),
 });
 
+// 查找相似、风格串分享包等低频操作已按顶栏分层收进桌面「更多操作」，
+// 测试必须经过真实入口打开浮层再点条目，不能直接假设它们常驻在顶栏。
+const desktopOverflowTrigger = () => screen.queryAllByRole('button', { name: '更多操作' })
+  .find(button => !button.closest('.md\\:hidden'));
+const openOverflowItem = async (name: string) => {
+  const trigger = desktopOverflowTrigger();
+  if (!trigger) throw new Error('未找到桌面「更多操作」入口');
+  fireEvent.click(trigger);
+  const dialog = await screen.findByRole('dialog', { name: '更多操作' });
+  fireEvent.click(within(dialog).getByRole('button', { name }));
+};
+const expectNoOverflowEntry = async (name: string) => {
+  // 没有可收起的低频操作时整颗「更多操作」入口不渲染；有入口就必须打开浮层确认里面也没有该条目。
+  const trigger = desktopOverflowTrigger();
+  if (!trigger) { expect(screen.queryByRole('button', { name })).toBeNull(); return; }
+  fireEvent.click(trigger);
+  const dialog = await screen.findByRole('dialog', { name: '更多操作' });
+  expect(within(dialog).queryByRole('button', { name })).toBeNull();
+};
+
 beforeEach(() => {
   confirmAction.mockReset().mockResolvedValue(false);
   localStorage.clear();
@@ -97,8 +117,9 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 describe('风格串发送到实验室', () => {
   it('在顶栏下沿显示当前类型的精确结果数', async () => {
     render(<ChainList {...props([styleChain, characterChain])} />);
-    const caption = await screen.findByText('共 1 条');
+    const caption = await screen.findByText(/共 1 条/);
     expect(caption.getAttribute('data-toolbar-count-caption')).toBe('true');
+    expect(caption.textContent).toBe('共 1 条 · 已加载 1 条');
   });
 
   it('把所有提示词结构、模块、角色槽位与生成参数投递到导入通道并跳转实验室', () => {
@@ -126,11 +147,11 @@ describe('风格串发送到实验室', () => {
     expect(viewProps.onDelete).not.toHaveBeenCalled();
   });
 
-  it('自定义角色列表不提供该入口，普通风格串卡片仍可发送', () => {
+  it('自定义角色列表不提供该入口，普通风格串卡片仍可发送', async () => {
     const viewProps = props([characterChain], 'character');
     const { unmount } = render(<ChainList {...viewProps} />);
     expect(screen.queryByRole('button', { name: '发送到实验室：角色 A' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '查找相似' })).toBeNull();
+    await expectNoOverflowEntry('查找相似');
     unmount();
 
     const styleProps = props([styleChain, characterChain]);
@@ -147,21 +168,21 @@ describe('风格串发送到实验室', () => {
     expect(view.container.querySelector('[data-return-item-id="style-69"]')).toBeNull();
     const search = screen.getByRole('searchbox');
     fireEvent.change(search, { target: { value: '合成串 0' } });
-    fireEvent.click(screen.getByRole('button', { name: '查找相似' }));
+    await openOverflowItem('查找相似');
     await screen.findByText('已扫描 70 条 · 1 组相似 · 涉及 2 条 · 线索不足 0 条');
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     expect(screen.queryByRole('dialog', { name: '查找相似' })).toBeNull();
     expect((search as HTMLInputElement).value).toBe('合成串 0');
-    fireEvent.click(screen.getByRole('button', { name: '查找相似' }));
+    await openOverflowItem('查找相似');
     await screen.findByRole('button', { name: '打开原串：合成串 69' });
     fireEvent.click(screen.getByRole('button', { name: '打开原串：合成串 69' }));
     expect(viewProps.onSelect).toHaveBeenCalledWith('style-69');
     expect(viewProps.onDelete).not.toHaveBeenCalled(); expect(viewProps.onUpdateChain).not.toHaveBeenCalled();
   });
 
-  it('访客没有查找相似入口', () => {
+  it('访客没有查找相似入口', async () => {
     render(<ChainList {...props([styleChain])} isGuest />);
-    expect(screen.queryByRole('button', { name: '查找相似' })).toBeNull();
+    await expectNoOverflowEntry('查找相似');
   });
 
   it('分享包收到首屏外完整列表，关闭保留搜索，多选直接导出已选并复用刷新', async () => {
@@ -169,7 +190,7 @@ describe('风格串发送到实验室', () => {
     const viewProps = { ...props([...items, characterChain]), onBulkDelete: vi.fn() };
     render(<ChainList {...viewProps} />);
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: '分享串 6' } });
-    fireEvent.click(screen.getByRole('button', { name: '风格串分享包' }));
+    await openOverflowItem('风格串分享包');
     await screen.findByText('all/70/11/0');
     fireEvent.click(screen.getByRole('button', { name: '完成分享包导入' }));
     expect(viewProps.onRefresh).toHaveBeenCalledTimes(1);
@@ -181,18 +202,18 @@ describe('风格串发送到实验室', () => {
     await screen.findByText('selected/70/11/11');
   });
 
-  it('自定义角色与访客不提供风格串分享包', () => {
+  it('自定义角色与访客不提供风格串分享包', async () => {
     const view = render(<ChainList {...props([characterChain], 'character')} />);
-    expect(screen.queryByRole('button', { name: '风格串分享包' })).toBeNull();
+    await expectNoOverflowEntry('风格串分享包');
     view.rerender(<ChainList {...props([styleChain])} isGuest />);
-    expect(screen.queryByRole('button', { name: '风格串分享包' })).toBeNull();
+    await expectNoOverflowEntry('风格串分享包');
   });
 
   it('对比悬浮删除复用单删确认，取消与失败保留，成功只移除指定风格串', async () => {
     const items = ['a', 'b', 'c'].map(id => ({ ...styleChain, id, name: id, basePrompt: 'artist:shared', modules: [] }));
     const viewProps = props(items);
     render(<ChainList {...viewProps} />);
-    fireEvent.click(screen.getByRole('button', { name: '查找相似' }));
+    await openOverflowItem('查找相似');
     await screen.findByText('已扫描 3 条 · 1 组相似 · 涉及 3 条 · 线索不足 0 条');
     const dialog = within(screen.getByRole('dialog', { name: '查找相似' }));
     const remove = () => fireEvent.click(dialog.getByRole('button', { name: '删除：b' }));
