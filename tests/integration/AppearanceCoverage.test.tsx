@@ -373,6 +373,21 @@ describe('全局外观覆盖审计', () => {
     const controls = sources.find(item => item.file === 'components/DesignSystem.tsx')!.text;
     expect(controls).toContain('bg-emerald-700 text-white hover:bg-emerald-800');
   });
+  it('图上浮钮默认保持中性，语义色只在悬停、聚焦或按下时出现（收藏爱心是唯一例外）', () => {
+    const floating = classes.filter(({ text }) => /IMAGE_CARD_ACTION_CLASS|nai-float-btn/.test(text));
+    expect(floating.length).toBeGreaterThan(20);
+    // 裸色阶（未经 hover:／focus-visible:／active: 修饰）会让一屏几十张卡片各浮一块彩色，必须走 IMAGE_CARD_ACTION_TONE。
+    const offenders = floating.filter(({ text }) => /(?<![\w:!-])(?:dark:)?bg-(?:emerald|red|rose|amber|orange|green|blue|indigo|violet|sky|cyan)-\d/.test(text));
+    expect(offenders.map(({ file, text }) => ({ file, text }))).toEqual([]);
+    // 收藏爱心按用户明确要求保持常驻玫红，是唯一允许的例外；画师偏好爱心只染图标，同样保留。
+    expect(sources.find(item => item.file === 'components/ImageShareActions.tsx')!.text)
+      .toContain("'!border-rose-400 !bg-rose-500 !text-white hover:!bg-rose-400'");
+    // 触屏没有 hover、键盘没有指针：每档语义色都要同时提供聚焦与按下态，否则手机长按后按钮仍是灰的。
+    const shared = sources.find(item => item.file === 'components/ImageShareActions.tsx')!.text;
+    const tones = shared.slice(shared.indexOf('export const IMAGE_CARD_ACTION_TONE'), shared.indexOf('} as const'));
+    for (const tone of ['save', 'delete', 'primary']) expect(tones).toContain(`${tone}:`);
+    for (const state of ['hover:!bg-', 'focus-visible:!bg-', 'active:!bg-']) expect(tones).toContain(state);
+  });
   it('图片上的定位点、导入标记与拖入提示保留独立承托，不被中性分组清空', () => {
     const overlays = [
       ['components/chain/CharacterPositionStage.tsx', '定位点', /absolute flex h-7 w-7/, ['bg-white', 'bg-indigo-700']],

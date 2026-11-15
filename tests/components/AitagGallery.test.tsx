@@ -169,10 +169,12 @@ it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(gl
   const firstImage = card(1).querySelector('img');
   const saved = within(card(1)).getByRole('img', { name: '已收录到风格串' });
   const unsaved = within(card(2)).getByRole('button', { name: '未收录到风格串' });
-  expect(saved.className).toContain('!bg-emerald-700');
+  expect(saved.className).toContain('bg-black/45');
+  expect(saved.className).toContain('hover:!bg-emerald-700');
+  expect(saved.className.split(/\s+/)).not.toContain('!bg-emerald-700');
   expect(saved.querySelector('.lucide-check')).toBeTruthy();
   expect(saved.querySelector('.lucide-layers')).toBeNull();
-  expect(unsaved.className).not.toContain('!bg-emerald-700');
+  expect(unsaved.className).not.toContain('hover:!bg-emerald-700');
   expect(unsaved.querySelector('.lucide-layers')).toBeTruthy();
   expect(saved.className).toContain('rounded-full');
   expect(saved.className).not.toContain('hover-reveal');

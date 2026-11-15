@@ -14,6 +14,7 @@ vi.mock('../../components/SmartImage', () => ({
 }));
 vi.mock('../../components/ImageShareActions', () => ({
   IMAGE_CARD_ACTION_CLASS: 'image-action',
+  IMAGE_CARD_ACTION_TONE: { save: '', delete: '', primary: '' },
   ImageShareActions: () => <button data-card-action>收藏</button>,
 }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => true) }));

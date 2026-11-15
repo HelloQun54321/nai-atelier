@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({ lookup: vi.fn(), preference: vi.fn(), observer
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleLookup: mocks.lookup }));
 vi.mock('../../services/collectionFavorites', () => ({ toggleArtistPreference: mocks.preference }));
 vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ eager, previewTransform, ...props }: any) => <img {...props} data-eager={String(eager)} data-preview-transform={previewTransform} /> }));
-vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'h-11 w-11 rounded-full md:h-8 md:w-8' }));
+vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'h-11 w-11 rounded-full md:h-8 md:w-8', IMAGE_CARD_ACTION_TONE: { save: '', delete: '', primary: '' } }));
 beforeEach(() => {
   vi.clearAllMocks(); mocks.observers.length = 0;
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));

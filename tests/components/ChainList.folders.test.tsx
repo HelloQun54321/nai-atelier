@@ -21,7 +21,7 @@ vi.mock('../../services/naiModels', () => ({ DEFAULT_NAI_MODEL: 'nai-diffusion-4
 vi.mock('../../services/imageDisplayPreferences', () => ({ useMobileImageDisplayPreferences: () => ({ layout: 'grid' }), mobileGalleryClassName: () => '', mobileGalleryStyle: () => ({}) }));
 vi.mock('../../components/StyleCollectorControl', () => ({ StyleCollectorControl: () => null }));
 vi.mock('../../components/chain/FolderBatchImportModal', () => ({ FolderBatchImportModal: () => null }));
-vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: '', ImageShareActions: () => null }));
+vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: '', IMAGE_CARD_ACTION_TONE: { save: '', delete: '', primary: '' }, ImageShareActions: () => null }));
 vi.mock('../../components/SmartImage', async importOriginal => ({ ...(await importOriginal<typeof import('../../components/SmartImage')>()), SmartImage: () => null }));
 vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 2, ShortestColumnMasonry: () => null }));
 

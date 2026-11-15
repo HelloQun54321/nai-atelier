@@ -23,7 +23,7 @@ vi.mock('../../services/artistSamples', async original => ({ ...await original<t
 }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), getArtistDictionaryPage: async () => ({ entries: [], pageCount: 0, total: 0 }) }));
 vi.mock('../../services/collectionFavorites', () => ({ ensureCollection: async () => {}, toggleArtistPreference: vi.fn(), collectionSnapshot: () => [], subscribeCollection: () => () => {} }));
-vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'h-11 w-11 rounded-full md:h-8 md:w-8' }));
+vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'h-11 w-11 rounded-full md:h-8 md:w-8', IMAGE_CARD_ACTION_TONE: { save: '', delete: '', primary: '' } }));
 vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ eager, previewTransform, ...props }: any) => <img {...props} /> }));
 vi.mock('../../services/imageDisplayPreferences', () => ({ useMobileImageDisplayPreferences: () => ({ layout: 'masonry', columns: 'auto', desktopColumns: 5 }), mobileGalleryClassName: () => '', mobileGalleryStyle: () => ({}) }));
 

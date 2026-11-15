@@ -729,9 +729,12 @@ describe('ImageEditPreview', () => {
     const remove = screen.getByRole('button', { name: '移除当前图片' });
     const clear = screen.getByRole('button', { name: '清空当前历史组' });
     expect(remove.classList.contains('rounded-full')).toBe(true);
-    expect(remove.classList.contains('!bg-red-600/90')).toBe(true);
+    // 浮钮常态统一黑磨砂，语义色只在悬停／聚焦／按下时出现。
+    expect(remove.classList.contains('hover:!bg-red-600')).toBe(true);
+    expect(remove.classList.contains('bg-red-600/90')).toBe(false);
     expect(clear.classList.contains('rounded-full')).toBe(true);
-    expect(clear.classList.contains('!bg-gray-900/85')).toBe(true);
+    expect(clear.classList.contains('bg-black/45')).toBe(true);
+    expect(clear.classList.contains('!bg-gray-900/85')).toBe(false);
     fireEvent.click(remove);
     fireEvent.click(clear);
     expect(onRemoveCurrentHistory).toHaveBeenCalledOnce();

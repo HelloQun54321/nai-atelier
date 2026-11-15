@@ -521,7 +521,8 @@ it('片段统一封面与caption卡片，空封面只展示一次摘要，真实
     expect(remove.closest('.image-card-actions')).toBeNull();
     const left = remove.closest('[data-image-action-left]')!;
     for (const value of ['hover-reveal-md', 'absolute', 'left-2', 'top-2', 'z-20']) expect(left.classList.contains(value)).toBe(true);
-    for (const value of ['mobile-size-locked', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'bg-red-500']) expect(remove.classList.contains(value)).toBe(true);
+    for (const value of ['nai-float-btn', 'rounded-full', 'hover:!bg-red-600']) expect(remove.classList.contains(value)).toBe(true);
+    expect(remove.classList.contains('bg-red-500')).toBe(false);
     expect(within(card).queryByRole('button', { name: /^编辑/ })).toBeNull();
     expect(within(card).queryByRole('button', { name: /^复制(?:礼服|花园|组合数据)/ })).toBeNull();
     expect(within(card).queryByRole('button', { name: '使用' })).toBeNull();

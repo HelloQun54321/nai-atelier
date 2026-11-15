@@ -25,7 +25,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { ImageActivityContext, SmartImage } from './SmartImage';
 import { MobileDetailView, MobileOverflowMenu } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
-import { IMAGE_CARD_ACTION_CLASS, ImageShareActions, ImageShareOverlay } from './ImageShareActions';
+import { IMAGE_CARD_ACTION_CLASS, IMAGE_CARD_ACTION_TONE, ImageShareActions, ImageShareOverlay } from './ImageShareActions';
 import { ImageCardActions } from './ImageCardActions';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
@@ -154,7 +154,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                   )}
                   {card.kind === 'custom' && card.chain && <>
                     <div data-card-action="true" data-image-action-left className="hover-reveal-md absolute left-2 top-2 z-20">
-                      <button type="button" aria-label={t('删除这个自定义角色')} title={t('删除')} onClick={event => { event.stopPropagation(); void deleteCustom(card); }} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8"><Trash2 className="h-4 w-4" /></button>
+                      <button type="button" aria-label={t('删除这个自定义角色')} title={t('删除')} onClick={event => { event.stopPropagation(); void deleteCustom(card); }} className={`${IMAGE_CARD_ACTION_CLASS} ${IMAGE_CARD_ACTION_TONE.delete} inline-flex items-center justify-center`}><Trash2 className="h-4 w-4" /></button>
                     </div>
                     <ImageCardActions>
                       {card.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(card.previewImage)} filename={`character-${card.name}.png`} notify={notify} favorite={{ imageUrl: card.previewImage, sourceType: 'character', sourceId: card.chain?.id || card.key, title: card.name, prompt: card.chain?.basePrompt, negativePrompt: card.chain?.negativePrompt, params: card.chain?.params }} />}

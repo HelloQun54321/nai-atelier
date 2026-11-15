@@ -11,7 +11,7 @@ vi.mock('../../../services/artistSamples', () => ({ getArtistSampleDictionary: a
 vi.mock('../../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true),
   SmartImage: ({ src, alt }: { src: string; alt: string }) => <img src={src} alt={alt} />,
   OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} /> }));
-vi.mock('../../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: '', ImageShareOverlay: () => null }));
+vi.mock('../../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: '', IMAGE_CARD_ACTION_TONE: { save: '', delete: '', primary: '' }, ImageShareOverlay: () => null }));
 const chains = ['a', 'b', 'c'].map(id => ({ id, name: id, userId: 'synthetic', type: 'style', tags: [],
   description: '', basePrompt: 'artist:synthetic_artist', negativePrompt: '', modules: [],
   previewImage: '/synthetic/' + id + '.png', createdAt: 1, updatedAt: 1,

@@ -81,11 +81,12 @@ it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操�
   expect(remove.parentElement!.hasAttribute('data-image-action-left')).toBe(true);
   expect(remove.parentElement!.classList.contains('hover-reveal-md')).toBe(true);
   expect(remove.classList.contains('rounded-full')).toBe(true);
-  // 红色危险填充是本用例意图，不锁定具体色阶（bg-red-600 等等价）。
-  expect(remove.className).toMatch(/(^|\s)bg-red-\d{2,3}(\s|$)/);
+  // 图上浮钮默认保持中性磨砂，危险色只在悬停、聚焦或按下时出现（收藏爱心是唯一常驻彩色例外）。
+  expect(remove.className).not.toMatch(/(^|\s)bg-red-\d{2,3}(\s|$)/);
+  expect(remove.className).toContain('hover:!bg-red-600');
   expect(remove.classList.contains('text-white')).toBe(true);
   expect(remove.classList.contains('mobile-size-locked')).toBe(true);
-  expect(remove.classList.contains('nai-float-btn')).toBe(false);
+  expect(remove.classList.contains('nai-float-btn')).toBe(true);
   expect(within(card).queryByRole('button', { name: '复制/查看详情：风格 A' })).toBeNull();
   fireEvent.click(imageCopy);
   await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/synthetic/cover.png', false));

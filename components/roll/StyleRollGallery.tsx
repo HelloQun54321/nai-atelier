@@ -9,7 +9,7 @@ import { useGalleryFrostedCaption } from '../../services/appearancePreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from '../ShortestColumnMasonry';
 import { PressRevealSurface } from '../PressRevealSurface';
 import { SmartImage } from '../SmartImage';
-import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from '../ImageShareActions';
+import { IMAGE_CARD_ACTION_CLASS, IMAGE_CARD_ACTION_TONE, ImageShareActions } from '../ImageShareActions';
 import { ImageCardActions } from '../ImageCardActions';
 import { EmptyState, InlineSpinner } from '../DesignSystem';
 
@@ -150,14 +150,14 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
             <ImageCardActions>
               {item && <ImageShareActions imageUrl={item.imageUrl} filename={`roll-${item.id}.png`} generationData={item} favorite={{ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id }} notify={notify} variant="card" className="flex-col" showTransfer={false} />}
               {item && (candidate.savedChainId
-                ? <span data-image-action-item aria-label={t('已保存候选 {0}', [index])} title={t('已保存到风格串')} className={`${IMAGE_CARD_ACTION_CLASS} inline-flex items-center justify-center rounded-full bg-emerald-700 text-white shadow-lg backdrop-blur-md`}><Check className="h-4 w-4" /></span>
+                ? <span data-image-action-item aria-label={t('已保存候选 {0}', [index])} title={t('已保存到风格串')} className={`${IMAGE_CARD_ACTION_CLASS} ${IMAGE_CARD_ACTION_TONE.save} inline-flex items-center justify-center rounded-full shadow-lg`}><Check className="h-4 w-4" strokeWidth={3} /></span>
                 : <button
                   type="button"
                   aria-label={t('保存候选 {0}', [index])}
                   title={t('存为风格串')}
                   disabled={busy}
                   onClick={event => { event.stopPropagation(); onSave(candidate.id); }}
-                  className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex items-center justify-center rounded-full bg-emerald-700 text-white shadow-lg transition-all hover:bg-emerald-800 hover:scale-110 active:scale-95 disabled:opacity-40`}
+                  className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} ${IMAGE_CARD_ACTION_TONE.save} inline-flex items-center justify-center rounded-full shadow-lg transition-all hover:scale-110 active:scale-95 disabled:opacity-40`}
                 >
                   <Save className="h-4 w-4" />
                 </button>

@@ -3,6 +3,7 @@ import { ArrowLeftRight, Ban, Heart } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import type { ArtistSamplePack } from '../services/artistSamples';
 import { ImageCardActions } from './ImageCardActions';
+import { IMAGE_CARD_ACTION_TONE } from './ImageShareActions';
 
 /** 画师库与 Roll 共用画师级操作，点击不改变卡片选择。 */
 export const ArtistPreferenceActions: React.FC<{
@@ -17,7 +18,7 @@ export const ArtistPreferenceActions: React.FC<{
   const switchLabel = t('样张版本 {0}，切换为 {1}', [pack === 'v45' ? 'V4.5' : 'V5 Full', nextPack === 'v45' ? 'V4.5' : 'V5 Full']);
   const stop = (event: React.SyntheticEvent) => event.stopPropagation();
   return <>
-    <button type="button" data-card-action="true" data-image-action-left="true" aria-label={t(blocked ? '取消屏蔽画师：{0}' : '屏蔽画师：{0}', [tag])} aria-pressed={blocked} disabled={disabled} onPointerDown={stop} onKeyDown={stop} onClick={event => { stop(event); onBlock(); }} className={`${corner} absolute left-2 top-2 z-20 ${blocked ? '!bg-red-600' : ''}`}><Ban className="h-4 w-4" /></button>
+    <button type="button" data-card-action="true" data-image-action-left="true" aria-label={t(blocked ? '取消屏蔽画师：{0}' : '屏蔽画师：{0}', [tag])} aria-pressed={blocked} disabled={disabled} onPointerDown={stop} onKeyDown={stop} onClick={event => { stop(event); onBlock(); }} className={`${corner} absolute left-2 top-2 z-20 ${blocked ? IMAGE_CARD_ACTION_TONE.delete : ''}`}><Ban className="h-4 w-4" /></button>
     <ImageCardActions singleColumn className="!gap-1" onClick={stop} onPointerDown={stop} onKeyDown={stop}>
       <button type="button" data-card-action="true" aria-label={t(preferred ? '取消偏好画师：{0}' : '偏好画师：{0}', [tag])} aria-pressed={preferred} disabled={disabled} onPointerDown={stop} onKeyDown={stop} onClick={event => { stop(event); onFavorite(); }} className={`${corner} ${preferred ? '!text-rose-400' : ''}`}><Heart className={`h-4 w-4 ${preferred ? 'fill-current' : ''}`} /></button>
       {children}

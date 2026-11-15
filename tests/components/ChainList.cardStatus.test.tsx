@@ -30,7 +30,7 @@ vi.mock('../../services/imageDisplayPreferences', () => ({
 vi.mock('../../components/StyleCollectorControl', () => ({ StyleCollectorControl: () => null }));
 vi.mock('../../components/chain/FolderBatchImportModal', () => ({ FolderBatchImportModal: () => null }));
 vi.mock('../../components/chain/StyleBundleDialog', () => ({ StyleBundleDialog: ({ onImported }: { onImported: () => Promise<void> }) => <button onClick={() => void onImported()}>合成分享包回读</button> }));
-vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: '', ImageShareActions: () => null }));
+vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: '', IMAGE_CARD_ACTION_TONE: { save: '', delete: '', primary: '' }, ImageShareActions: () => null }));
 vi.mock('../../components/SmartImage', () => ({
   ImageActivityContext: React.createContext(true),
   SmartImage: ({ src, alt }: { src: string; alt: string }) => <img src={src} alt={alt} />,

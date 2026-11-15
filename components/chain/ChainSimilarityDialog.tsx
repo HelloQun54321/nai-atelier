@@ -13,6 +13,7 @@ import { SmartImage } from '../SmartImage';
 import { PressRevealSurface } from '../PressRevealSurface';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
+import { IMAGE_CARD_ACTION_CLASS, IMAGE_CARD_ACTION_TONE } from '../ImageShareActions';
 
 export interface ChainSimilaritySession {
   source: PromptChain[] | null;
@@ -124,7 +125,7 @@ const ChainCard = ({ profile, tokens, onOpen, onDelete, deletingId, busy, detail
       <div data-card-action="true" data-image-action-left className="hover-reveal-md absolute left-2 top-2 z-20">
         <button type="button" disabled={busy} aria-busy={deletingId === chain.id}
           onClick={event => { event.stopPropagation(); onDelete(chain); }}
-          className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-50 md:h-8 md:w-8"
+          className={`${IMAGE_CARD_ACTION_CLASS} ${IMAGE_CARD_ACTION_TONE.delete} inline-flex items-center justify-center disabled:opacity-50`}
           aria-label={t('删除：{0}', [chain.name])} title={t('删除')}>
           {deletingId === chain.id ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Trash2 className="h-4 w-4" />}
         </button>

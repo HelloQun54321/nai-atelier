@@ -31,7 +31,7 @@ vi.mock('../../services/imageDisplayPreferences', () => ({
 vi.mock('../../components/StyleCollectorControl', () => ({ StyleCollectorControl: () => null }));
 vi.mock('../../components/chain/FolderBatchImportModal', () => ({ FolderBatchImportModal: () => null }));
 vi.mock('../../components/ImageTaggerPanel', () => ({ ImageTaggerAction: () => null }));
-vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: '', ImageShareActions: () => null }));
+vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: '', IMAGE_CARD_ACTION_TONE: { save: '', delete: '', primary: '' }, ImageShareActions: () => null }));
 vi.mock('../../components/SmartImage', () => ({
   ImageActivityContext: React.createContext(true),
   SmartImage: ({ src, alt, onLoad }: { src: string; alt: string; onLoad?: React.ReactEventHandler<HTMLImageElement> }) => <img src={src} alt={alt} data-testid={`preview-${alt}`} onLoad={onLoad} />,

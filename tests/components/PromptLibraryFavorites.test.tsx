@@ -15,7 +15,7 @@ vi.mock('../../services/collectionFavorites', () => ({
   subscribeCollection: (listener: () => void) => { collection.listeners.add(listener); return () => collection.listeners.delete(listener); },
   ensureCollection: collection.ensure,
 }));
-vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: '', ImageShareActions: () => null, ImageShareOverlay: () => null }));
+vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: '', IMAGE_CARD_ACTION_TONE: { save: '', delete: '', primary: '' }, ImageShareActions: () => null, ImageShareOverlay: () => null }));
 vi.mock('../../components/HistoryImagePicker', () => ({ HistoryImagePicker: () => null }));
 vi.mock('../../services/promptLibraryUsage', () => ({
   PROMPT_LIBRARY_USAGE_PAGE_SIZE: 24, PROMPT_LIBRARY_USAGE_PREVIEW_SIZE: 6,

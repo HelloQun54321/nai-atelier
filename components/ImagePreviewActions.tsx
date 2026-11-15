@@ -1,7 +1,7 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { ArrowLeft, Check, Image, ImageMinus, ImagePlus, ListX, LoaderCircle, Maximize2, Palette, Upload } from 'lucide-react';
-import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
+import { IMAGE_CARD_ACTION_CLASS, IMAGE_CARD_ACTION_TONE, ImageShareActions } from './ImageShareActions';
 import { useConfirmDialog } from './ConfirmDialog';
 import { NAI_UPSCALE_FACTOR, downloadUpscaledImage, upscaleCostHint, upscaleHistoryImage, upscaleSupported } from '../services/naiUpscale';
 import { beginExportTarget } from '../services/exportLocation';
@@ -143,8 +143,8 @@ export const ImagePreviewActions: React.FC<Props> = ({
         <ArrowLeft className="h-7 w-7" aria-hidden="true" />
       </button>}
       {imageUrl && canManageHistoryGroup && <>
-        <button type="button" onClick={() => onRemoveCurrentHistory?.()} className={`${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS} !bg-red-600/90 hover:!bg-red-500`} aria-label={t("移除当前图片")} title={t("移除当前图片，历史页仍会保留")}><ImageMinus className="h-4 w-4" aria-hidden="true" /></button>
-        <button type="button" onClick={() => onClearHistoryGroup?.()} className={`${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS} !bg-gray-900/85 hover:!bg-gray-800`} aria-label={t("清空当前历史组")} title={t("清空当前历史组，历史页仍会保留")}><ListX className="h-4 w-4" aria-hidden="true" /></button>
+        <button type="button" onClick={() => onRemoveCurrentHistory?.()} className={`${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS} ${IMAGE_CARD_ACTION_TONE.delete}`} aria-label={t("移除当前图片")} title={t("移除当前图片，历史页仍会保留")}><ImageMinus className="h-4 w-4" aria-hidden="true" /></button>
+        <button type="button" onClick={() => onClearHistoryGroup?.()} className={`${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS}`} aria-label={t("清空当前历史组")} title={t("清空当前历史组，历史页仍会保留")}><ListX className="h-4 w-4" aria-hidden="true" /></button>
       </>}
     </div>}
     {imageUrl && <div data-card-action="true" className="image-preview-action-group image-preview-action-group-right absolute top-4 right-4 z-30 gap-2" onClick={event => event.stopPropagation()}>
@@ -158,8 +158,8 @@ export const ImagePreviewActions: React.FC<Props> = ({
       {onReverseTag && <button type="button" onClick={onReverseTag} aria-label={t('反推当前图片的 Tag')} title={t('反推当前图片的 Tag 并追加到全局正面提示词')} className={`${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS}`}>
         <ImagePlus className="h-4 w-4" />
       </button>}
-      {onSetCover && <button type="button" onClick={onSetCover} disabled={isUploading} aria-busy={isUploading} aria-label={t("设为封面")} title={isUploading ? t("封面处理中…") : t("设为封面并保存")} className={`${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS} !bg-indigo-700/90 hover:!bg-indigo-700`}>
-        {isUploading ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <span className="relative h-4 w-4" aria-hidden="true"><Image className="h-4 w-4" /><Check className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-indigo-700" strokeWidth={3} /></span>}
+      {onSetCover && <button type="button" onClick={onSetCover} disabled={isUploading} aria-busy={isUploading} aria-label={t("设为封面")} title={isUploading ? t("封面处理中…") : t("设为封面并保存")} className={`group ${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS} ${IMAGE_CARD_ACTION_TONE.primary}`}>
+        {isUploading ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <span className="relative h-4 w-4" aria-hidden="true"><Image className="h-4 w-4" /><Check className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-black/70 group-hover:bg-indigo-600" strokeWidth={3} /></span>}
       </button>}
     </div>}
     {onUploadCover && <div data-card-action="true" data-image-preview-footer className={`absolute bottom-4 right-4 z-30 ${visibility}`} onClick={event => event.stopPropagation()}>

@@ -9,7 +9,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { PressRevealSurface } from './PressRevealSurface';
 import { SmartImage } from './SmartImage';
 import { ImageCardActions } from './ImageCardActions';
-import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
+import { IMAGE_CARD_ACTION_CLASS, IMAGE_CARD_ACTION_TONE, ImageShareActions } from './ImageShareActions';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { useConfirmDialog } from './ConfirmDialog';
 import { PromptLibraryCoverGenerateButton, PromptLibraryCoverGenerationStatus } from './usePromptLibraryCoverActions';
@@ -71,7 +71,7 @@ export function PromptLibraryCard({ chain, label: _label, title, summary, tagCon
         {combination ? <Layers className="h-8 w-8 shrink-0" /> : <FileText className="h-8 w-8 shrink-0" />}
         <p className="mt-2 min-h-0 line-clamp-3 break-words text-xs leading-5">{summary || chain.basePrompt || t('还没有提示词')}</p>
       </div>}
-      {onDelete && <div data-card-action data-image-action-left className="hover-reveal-md absolute left-2 top-2 z-20"><button type="button" disabled={deleteDisabled} aria-label={t('删除「{0}」', [name])} title={t('删除')} onClick={event => { event.stopPropagation(); onDelete(); }} className="mobile-size-locked inline-flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white focus-visible:ring-2 focus-visible:ring-white disabled:opacity-50 md:h-8 md:w-8">{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</button></div>}
+      {onDelete && <div data-card-action data-image-action-left className="hover-reveal-md absolute left-2 top-2 z-20"><button type="button" disabled={deleteDisabled} aria-label={t('删除「{0}」', [name])} title={t('删除')} onClick={event => { event.stopPropagation(); onDelete(); }} className={`${IMAGE_CARD_ACTION_CLASS} ${IMAGE_CARD_ACTION_TONE.delete} inline-flex items-center justify-center disabled:opacity-50`}>{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</button></div>}
       {showClearCover && <div data-card-action data-image-action-left className={`absolute left-2 z-20 ${onDelete ? 'top-14 md:top-11' : 'top-2'}`} onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
         <button type="button" aria-label={t('删除当前封面')} title={t('删除当前封面')} disabled={busy || coverBusy || clearing || deleteDisabled}
           onClick={() => void clearCover()} className={`${IMAGE_CARD_ACTION_CLASS} hover-reveal-md flex items-center justify-center`}>

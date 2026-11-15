@@ -21,7 +21,7 @@ import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { getLabModeLabel } from '../services/labWorkspace';
 import { collectionTargetActive, syncHistoryCollectionFavorites } from '../services/collectionFavorites';
-import { ImageShareActions } from './ImageShareActions';
+import { IMAGE_CARD_ACTION_CLASS, IMAGE_CARD_ACTION_TONE, ImageShareActions } from './ImageShareActions';
 import { ImageCardActions } from './ImageCardActions';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
@@ -169,7 +169,7 @@ const HistoryCard = React.memo(function HistoryCard({
                     <ImageShareActions imageUrl={item.imageUrl} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} filename={getDownloadFilename(item.createdAt)} notify={notify} variant="card" className="flex-col" favorite={favoriteTarget} favoriteActive={Boolean(item.isFavorite)} favoritePending={isFavoritePending} onToggleFavorite={() => onFavorite(item)} />
                 </ImageCardActions>}
                 {!selectionMode && <div data-card-action="true" data-image-action-left className={`absolute left-2 top-2 z-10 ${HISTORY_CARD_HOVER_ACTIONS}`} onPointerDown={event => event.stopPropagation()}>
-                    <button type="button" onClick={e => onDelete(item, e)} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8" aria-label={t("删除历史图片")} title={t("删除")}>
+                    <button type="button" onClick={e => onDelete(item, e)} className={`${IMAGE_CARD_ACTION_CLASS} ${IMAGE_CARD_ACTION_TONE.delete} inline-flex items-center justify-center`} aria-label={t("删除历史图片")} title={t("删除")}>
                         <Trash2 className="h-4 w-4" />
                     </button>
                 </div>}

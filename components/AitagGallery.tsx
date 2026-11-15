@@ -52,7 +52,7 @@ import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { AnchoredToolbarPopover, ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
-import { IMAGE_CARD_ACTION_CLASS, ImageShareOverlay } from './ImageShareActions';
+import { IMAGE_CARD_ACTION_CLASS, IMAGE_CARD_ACTION_TONE, ImageShareOverlay } from './ImageShareActions';
 import { collectionSnapshot, subscribeCollection, aitagCollectionImages, type CollectionTarget } from '../services/collectionFavorites';
 import { buildMediaUrl, getMobileOriginalUrl } from '../services/mobileImageCache';
 
@@ -615,7 +615,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
               点一下直接把首图收进风格串，不必先点开作品。 */}
           {isSaved ? (
             <span role="img" aria-label={savedLabel} title={savedLabel} data-aitag-chain-status="saved"
-              className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} !border-emerald-300/70 !bg-emerald-700 !text-white`}>
+              className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} ${IMAGE_CARD_ACTION_TONE.save}`}>
               <Check aria-hidden="true" className="h-4 w-4" strokeWidth={3} />
             </span>
           ) : (

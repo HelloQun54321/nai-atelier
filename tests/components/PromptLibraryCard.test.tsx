@@ -12,7 +12,7 @@ vi.mock('../../components/SmartImage', () => ({ SmartImage: (props: React.ImgHTM
   const { containerClassName, thumbnailVariant: _variant, ...image } = props;
   return <div className={containerClassName}><img {...image} /></div>;
 } }));
-vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'image-action', ImageShareActions: () => <button data-card-action>收藏</button> }));
+vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'image-action', IMAGE_CARD_ACTION_TONE: { save: '', delete: '', primary: '' }, ImageShareActions: () => <button data-card-action>收藏</button> }));
 const confirm = vi.fn(async () => true);
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirm }));
 afterEach(() => { cleanup(); confirm.mockReset(); confirm.mockResolvedValue(true); });

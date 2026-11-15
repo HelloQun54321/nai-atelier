@@ -974,7 +974,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
                     onClick={() => patchDetail({ references: detail.references.filter(row => row.id !== reference.id) })}
                     aria-label={t('移除参考图 {0}', [index + 1])}
                     title={t('移除')}
-                    className="absolute -right-1.5 -top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    className="absolute -right-1.5 -top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-white/60 bg-black/45 text-white shadow hover:border-red-300/70 hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
