@@ -1,12 +1,18 @@
 import { api } from './api';
+import {
+  extractAitagPromptBase,
+  formatAitagMetadataJson,
+  getAitagGenerationFlags,
+  getAitagMetadataText as readAitagMetadataText,
+  getAitagPositivePromptText as readAitagPositivePromptText,
+  pickAitagModelName,
+} from './aitagMetadataCore';
 import { promptHasArtistTags } from './styleRollSeed';
 import { getNaiModelDisplayLabel, resolveNaiMetadataModel } from './naiModels';
 import type { PromptChain } from '../types';
 
 const AITAG_IMAGE_BASE_URL = 'https://ai-img.10118899.xyz/';
 const AITAG_SOURCE_TYPE = 'nai';
-const MIN_AITAG_METADATA_BYTES = 30;
-const utf8Encoder = new TextEncoder();
 
 export interface AitagFirstImageMeta {
   /** 原始模型名，前端再映射成注册表标签。 */
@@ -301,25 +307,6 @@ const getAitagCommentObject = (parsed: Record<string, any> | null) => {
   return parseMaybeJsonObject(parsed.Comment ?? parsed.comment);
 };
 
-const hasValue = (value: unknown): boolean => {
-  if (value === null || value === undefined || value === false) return false;
-  if (typeof value === 'string') return value.trim().length > 0;
-  if (typeof value === 'number') return Number.isFinite(value) && value !== 0;
-  if (Array.isArray(value)) return value.some(hasValue);
-  if (typeof value === 'object') return Object.values(value as Record<string, unknown>).some(hasValue);
-  return Boolean(value);
-};
-
-const hasMeaningfulKey = (value: unknown, patterns: RegExp[], depth = 0): boolean => {
-  if (!value || depth > 5 || typeof value !== 'object') return false;
-
-  return Object.entries(value as Record<string, unknown>).some(([key, child]) => {
-    const isTargetKey = patterns.some(pattern => pattern.test(key));
-    if (isTargetKey && hasValue(child)) return true;
-    return hasMeaningfulKey(child, patterns, depth + 1);
-  });
-};
-
 const formatGenerationType = (rawValue: string) => {
   const raw = rawValue.trim();
   const normalized = raw.toLowerCase().replace(/[\s_-]+/g, '');
@@ -372,19 +359,8 @@ const aitagWorkModelLabels = new WeakMap<AitagWorkSummary, { label: string; badg
 export const getAitagModelLabel = (image: AitagImage) => {
   const cached = aitagModelLabelCache.get(image);
   if (cached !== undefined) return cached;
-  const parsed = parseAitagAiJson(image.ai_json);
-  const comment = getAitagCommentObject(parsed);
-  const parameters = parsed?.parameters;
-
-  const label = normalizeAitagModelLabel(pickString(
-    image.model,
-    parsed?.model,
-    parsed?.Model,
-    parameters?.model,
-    comment?.model,
-    comment?.Model,
-    image.image_type
-  ));
+  // 与 Worker 列表派生结论共用同一套取值规则（services/aitagMetadataCore.ts）。
+  const label = normalizeAitagModelLabel(pickAitagModelName(image) || String(image.image_type || ''));
   aitagModelLabelCache.set(image, label);
   return label;
 };
@@ -396,17 +372,7 @@ export const getAitagModelLabel = (image: AitagImage) => {
 export const getAitagModelBadgeLabel = (image: AitagImage) => {
   const cached = aitagModelBadgeCache.get(image);
   if (cached !== undefined) return cached;
-  const parsed = parseAitagAiJson(image.ai_json);
-  const comment = getAitagCommentObject(parsed);
-  const parameters = parsed?.parameters;
-  const raw = pickString(
-    image.model,
-    parsed?.model,
-    parsed?.Model,
-    parameters?.model,
-    comment?.model,
-    comment?.Model
-  );
+  const raw = pickAitagModelName(image);
   const modelId = raw ? resolveNaiMetadataModel({ model_name: raw }) : undefined;
   let label = '';
   if (modelId) {
@@ -460,91 +426,31 @@ export const getAitagGenerationLabels = (image: AitagImage) => {  const parsed =
     addLabel(formatGenerationType(rawType));
   }
 
-  const metadataSources = { image, parsed, comment, parameters };
+  // 判定与 Worker 列表派生结论共用同一实现，详情标签与卡片筛选不会漂移。
+  const flags = getAitagGenerationFlags(image);
 
-  if (hasMeaningfulKey(metadataSources, [/inpaint/i, /infill/i, /mask/i])) {
-    addLabel('局部重绘 (Inpainting)');
-  }
-
-  if (hasMeaningfulKey(metadataSources, [/img2img/i, /image2image/i, /init_?image/i, /initial_?image/i, /source_?image/i])) {
-    addLabel('图生图 (Image to Image)');
-  }
-
-  if (hasMeaningfulKey(metadataSources, [/^vibe_?transfer$/i, /^reference_?image/i, /^reference_?strength/i, /^reference_?information_?extracted/i])) {
-    addLabel('氛围参考 (Vibe Transfer)');
-  }
-
-  if (hasMeaningfulKey(metadataSources, [/character_?reference/i, /char_?ref/i, /reference_?character/i, /director_?reference/i])) {
-    addLabel('精准参考 (Precise Reference)');
-  }
-
-  if (
-    labels.length === 0 &&
-    (parsed?.prompt || parsed?.v4_prompt || comment?.prompt || comment?.v4_prompt || image.prompt_text)
-  ) {
-    addLabel('文生图 (Text to Image)');
-  }
+  if (flags.inpaint) addLabel('局部重绘 (Inpainting)');
+  if (flags.img2img) addLabel('图生图 (Image to Image)');
+  if (flags.vibe) addLabel('氛围参考 (Vibe Transfer)');
+  if (flags.precise) addLabel('精准参考 (Precise Reference)');
+  if (labels.length === 0 && flags.hasPrompt) addLabel('文生图 (Text to Image)');
 
   return labels;
 };
 
-export const extractAitagPrompt = (image: AitagImage) => {
-  const parsed = parseAitagAiJson(image.ai_json);
-  const comment = parsed?.Comment;
-
-  if (comment && typeof comment === 'object') {
-    const prompt = comment.v4_prompt?.caption?.base_caption || comment.prompt;
-    if (typeof prompt === 'string' && prompt.trim()) return prompt;
-  }
-
-  const v4Prompt = parsed?.v4_prompt?.caption?.base_caption;
-  if (typeof v4Prompt === 'string' && v4Prompt.trim()) return v4Prompt;
-
-  if (typeof parsed?.prompt === 'string' && parsed.prompt.trim()) return parsed.prompt;
-  if (typeof parsed?.Description === 'string' && parsed.Description.trim()) return parsed.Description;
-  return image.prompt_text || '';
-};
+export const extractAitagPrompt = (image: AitagImage) => extractAitagPromptBase(image);
 
 /**
  * 判定图片是否携带可用于生图/导入的有效 prompt。
- * 与 extractAitagPrompt 使用同一套提取顺序（Comment.v4_prompt → Comment.prompt →
- * v4_prompt → prompt → Description → prompt_text），但直接基于原始字段判定，
- * 避免为了过滤而构造中间字符串。
+ * 与 extractAitagPrompt 使用同一套提取顺序，直接复用共享实现，避免两处顺序不一致。
  */
 export const hasAitagImagePrompt = (image: AitagImage): boolean => {
   if (!image) return false;
-
-  const parsed = parseAitagAiJson(image.ai_json);
-  const comment = parsed?.Comment;
-
-  if (comment && typeof comment === 'object') {
-    const prompt = comment.v4_prompt?.caption?.base_caption || comment.prompt;
-    if (typeof prompt === 'string' && prompt.trim()) return true;
-  }
-
-  const v4Prompt = parsed?.v4_prompt?.caption?.base_caption;
-  if (typeof v4Prompt === 'string' && v4Prompt.trim()) return true;
-
-  if (typeof parsed?.prompt === 'string' && parsed.prompt.trim()) return true;
-  if (typeof parsed?.Description === 'string' && parsed.Description.trim()) return true;
-  return typeof image.prompt_text === 'string' && image.prompt_text.trim().length > 0;
+  return extractAitagPromptBase(image).trim().length > 0;
 };
 
 /** 作品图片的正向提示词全文（基础提示词与角色提示词），用于本地细筛和画师识别。 */
-export const getAitagPositivePromptText = (image?: AitagImage | null) => {
-  if (!image) return '';
-  const parsed = parseAitagAiJson(image.ai_json);
-  const comment = getAitagCommentObject(parsed);
-  const parts = [extractAitagPrompt(image)];
-  for (const source of [comment?.v4_prompt, parsed?.v4_prompt]) {
-    const characters = source?.caption?.char_captions;
-    if (!Array.isArray(characters)) continue;
-    for (const character of characters) {
-      if (typeof character?.char_caption === 'string' && character.char_caption.trim()) parts.push(character.char_caption);
-    }
-  }
-  return Array.from(new Set(parts.map(part => part.trim()).filter(Boolean))).join(', ');
-};
+export const getAitagPositivePromptText = (image?: AitagImage | null) => readAitagPositivePromptText(image);
 
 /** 作品已知图片的正向提示词：详情已加载时覆盖全部页，否则只能依据首图。 */
 export const getAitagWorkPromptTexts = (work: AitagWorkSummary, detail?: AitagWorkDetail | null) => {
@@ -691,27 +597,9 @@ export const getAitagSavedChainWorkIds = (chains: ReadonlyArray<Pick<PromptChain
   return ids;
 };
 
-export const formatAitagJson = (image: AitagImage) => {
-  const parsed = parseAitagAiJson(image.ai_json);
-  if (parsed) return JSON.stringify(parsed, null, 2);
-  return String(image.ai_json || '');
-};
+export const formatAitagJson = (image: AitagImage) => formatAitagMetadataJson(image);
 
-export const getAitagMetadataText = (image: AitagImage) => {
-  const parsed = parseAitagAiJson(image.ai_json);
-  const comment = parsed?.Comment ?? parsed?.comment;
-  let metadataText: string;
-
-  if (comment && typeof comment === 'object') {
-    metadataText = JSON.stringify(comment);
-  } else if (typeof comment === 'string' && comment.trim()) {
-    metadataText = comment;
-  } else {
-    metadataText = formatAitagJson(image);
-  }
-
-  return utf8Encoder.encode(metadataText.trim()).byteLength < MIN_AITAG_METADATA_BYTES ? '' : metadataText;
-};
+export const getAitagMetadataText = (image: AitagImage) => readAitagMetadataText(image);
 
 export const aitagService = {
   search: (params: AitagSearchParams): Promise<AitagSearchResponse> => {

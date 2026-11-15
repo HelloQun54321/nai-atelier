@@ -1,6 +1,7 @@
 // AITag scraping + reverse-proxy routes.
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
 import { json, error, addColumnIfMissing, clampInt, sleep, type D1Database, type Env, type RouteContext } from './types';
+import { buildAitagFirstImageMeta as buildAitagFirstImageMetaCore } from '../../services/aitagMetadataCore';
 
 const AITAG_BASE_URL = 'https://aitag.win';
 const AITAG_IMAGE_BASE_URL = 'https://ai-img.10118899.xyz/';
@@ -945,85 +946,6 @@ function getAitagDetailCacheInfo(detail: any) {
   };
 }
 
-const AITAG_METADATA_MIN_BYTES = 30;
-
-/** 与前端 getAitagGenerationLabels 相同的判定范围：只看元数据里有没有对应键。 */
-function hasAitagMeaningfulKey(value: any, patterns: RegExp[], depth = 0): boolean {
-  if (!value || depth > 5 || typeof value !== 'object') return false;
-  return Object.entries(value).some(([key, child]) => {
-    if (patterns.some(pattern => pattern.test(key)) && hasAitagMeaningfulValue(child)) return true;
-    return hasAitagMeaningfulKey(child, patterns, depth + 1);
-  });
-}
-
-function hasAitagMeaningfulValue(value: any): boolean {
-  if (value === null || value === undefined || value === false) return false;
-  if (typeof value === 'string') return value.trim().length > 0;
-  if (typeof value === 'number') return Number.isFinite(value) && value !== 0;
-  if (Array.isArray(value)) return value.some(hasAitagMeaningfulValue);
-  if (typeof value === 'object') return Object.values(value).some(hasAitagMeaningfulValue);
-  return Boolean(value);
-}
-
-const AITAG_VIBE_KEY_PATTERNS = [/^vibe_?transfer$/i, /^reference_?image/i, /^reference_?strength/i, /^reference_?information_?extracted/i];
-const AITAG_PRECISE_KEY_PATTERNS = [/character_?reference/i, /char_?ref/i, /^reference_?character/i, /director_?reference/i];
-
-/**
- * 列表不再携带整份 ai_json（平均 7.6 KB/条，占一页体积的绝大部分）：
- * 把卡片筛选与展示要用的结论算好随首图下发，规则与前端同名函数保持一致。
- */
-function buildAitagFirstImageMeta(firstImage: any) {
-  if (!firstImage) return null;
-  let parsed: any = null;
-  try {
-    parsed = typeof firstImage.ai_json === 'string' ? JSON.parse(firstImage.ai_json) : (firstImage.ai_json || null);
-  } catch {
-    parsed = null;
-  }
-  const comment = parsed && typeof parsed === 'object' ? (parsed.Comment ?? parsed.comment) : null;
-  const commentObject = comment && typeof comment === 'object' ? comment : null;
-  const parameters = parsed?.parameters;
-  const pick = (...values: any[]) => {
-    for (const value of values) if (typeof value === 'string' && value.trim()) return value.trim();
-    return '';
-  };
-  const model = pick(
-    firstImage.model,
-    parsed?.model,
-    parsed?.Model,
-    parameters?.model,
-    commentObject?.model,
-    commentObject?.Model,
-  );
-  const promptParts = [pick(
-    commentObject?.v4_prompt?.caption?.base_caption,
-    commentObject?.prompt,
-    parsed?.v4_prompt?.caption?.base_caption,
-    parsed?.prompt,
-    parsed?.Description,
-    firstImage.prompt_text,
-  )];
-  for (const source of [commentObject?.v4_prompt, parsed?.v4_prompt]) {
-    const characters = source?.caption?.char_captions;
-    if (!Array.isArray(characters)) continue;
-    for (const character of characters) {
-      if (typeof character?.char_caption === 'string' && character.char_caption.trim()) promptParts.push(character.char_caption.trim());
-    }
-  }
-  const promptText = Array.from(new Set(promptParts.filter(Boolean))).join(', ');
-  const width = Number(commentObject?.width ?? parameters?.width ?? parsed?.width ?? 0) || 0;
-  const height = Number(commentObject?.height ?? parameters?.height ?? parsed?.height ?? 0) || 0;
-  const sources = { image: firstImage, parsed, comment: commentObject, parameters };
-  const hasVibe = hasAitagMeaningfulKey(sources, AITAG_VIBE_KEY_PATTERNS);
-  const hasPrecise = hasAitagMeaningfulKey(sources, AITAG_PRECISE_KEY_PATTERNS);
-  let metadataText = '';
-  if (commentObject) metadataText = safeJsonStringify(commentObject) || '';
-  else if (typeof comment === 'string' && comment.trim()) metadataText = comment;
-  else metadataText = typeof firstImage.ai_json === 'string' ? firstImage.ai_json : (safeJsonStringify(firstImage.ai_json) || '');
-  const hasMetadata = new TextEncoder().encode(String(metadataText || '').trim()).byteLength >= AITAG_METADATA_MIN_BYTES;
-  return { model, promptText, width, height, hasVibe, hasPrecise, hasMetadata };
-}
-
 /** 首图只保留展示与缓存状态需要的字段，完整参数走详情接口。 */
 function stripAitagFirstImageAiJson(firstImage: any) {
   if (!firstImage || typeof firstImage !== 'object') return firstImage;
@@ -1052,7 +974,7 @@ function mapAitagWorkRow(row: any) {
       ? null
       : { imageCount: detailImageCount, hasFullyCachedImages: Boolean(row.has_fully_cached_images) };
   const rawFirstImage = firstImage || parsed?.firstImage || parsed?.first_image || null;
-  const firstImageMeta = rawFirstImage ? buildAitagFirstImageMeta(rawFirstImage) : null;
+  const firstImageMeta = rawFirstImage ? buildAitagFirstImageMetaCore(rawFirstImage) : null;
 
   return {
     ...(parsed || {}),
