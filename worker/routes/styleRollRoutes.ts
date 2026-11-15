@@ -145,7 +145,10 @@ export async function handleStyleRollRoute({ path, method, request, db, currentU
     const next = experiment.rounds.find(item => item.id === round.id);
     // 候选删光后空轮随之移除，所以轮次允许被删除；已记录的轮次内容与关闭时间仍不可改写。
     if (!next) continue;
-    if ((round.closedAt !== undefined && next.closedAt !== round.closedAt) || JSON.stringify({ ...round, closedAt: undefined }) !== JSON.stringify({ ...next, closedAt: undefined })) return error('已有画风轮次不可改写', 400);
+    // 删除候选时轮次的 candidateIds 会跟着收缩，这不算改写；只允许减少，不允许新增或换人。
+    const sameRound = JSON.stringify({ ...round, candidateIds: [], closedAt: undefined }) === JSON.stringify({ ...next, candidateIds: [], closedAt: undefined });
+    const onlyRemoved = next.candidateIds.every(id => round.candidateIds.includes(id));
+    if (!sameRound || !onlyRemoved || (round.closedAt !== undefined && next.closedAt !== round.closedAt)) return error('已有画风轮次不可改写', 400);
   }
   /**
    * 模板现在允许修改：旧候选的图片靠历史记录里的候选 ID 归位，不依赖模板指纹，

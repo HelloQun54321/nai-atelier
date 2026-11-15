@@ -178,6 +178,22 @@ it('普通轮次配方不可改写，但候选删光后的空轮可以移除，�
   expect(cleared.candidates).toEqual(closed.candidates);
 });
 
+it('删除候选时轮次引用随之收缩，轮次内容与关闭时间仍不可改写', async () => {
+  const f = fixture(), e = { ...rollFixture(), revision: 0 };
+  e.candidates = [candidateFixture('one'), candidateFixture('two')];
+  e.rounds = [{ id: 'round', candidateIds: ['one', 'two'], createdAt: 1 }];
+  const { experiment: saved } = await (await f.invoke(e))!.json() as any;
+  // 删除 one 后，轮次引用收缩成 ['two']：这是删除候选的连带结果，必须放行（否则丢弃必报「轮次不可改写」）。
+  const { experiment: shrunk } = await (await f.invoke({
+    ...saved,
+    candidates: saved.candidates.filter((candidate: any) => candidate.id !== 'one'),
+    rounds: [{ ...saved.rounds[0], candidateIds: ['two'] }],
+  }))!.json() as any;
+  expect(shrunk.rounds[0].candidateIds).toEqual(['two']);
+  // 反向加回来仍拒绝：轮次不能靠保存长出新引用。
+  expect((await f.invoke({ ...shrunk, rounds: [{ ...shrunk.rounds[0], candidateIds: ['one', 'two'] }] }))!.status).toBe(400);
+});
+
 it('普通出图批次沿用原私人存储，可保存偏好并完整回读', async () => {
   const f = fixture(), e = { ...rollFixture(), revision: 0, candidates: [candidateFixture('a')], rounds: [{ id: 'batch', candidateIds: ['a'], createdAt: 1 }] };
   const { experiment: saved } = await (await f.invoke(e))!.json() as any;
