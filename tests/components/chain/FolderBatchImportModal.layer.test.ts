@@ -61,6 +61,13 @@ it('批量导入遮罩与侧栏同处应用根层，关闭与卸载不操作文�
   view.rerender(tree(false));
   expect(screen.queryByRole('dialog')).toBeNull();
 });
+it('二级窗口标题沿用导入方向图标：箭头进入文件夹而不是移出文件夹', () => {
+  render(React.createElement(FolderBatchImportModal, { isOpen: true, existingChains: [], onClose: vi.fn(), onSuccess: vi.fn(), notify: vi.fn() }));
+  const overlay = screen.getByRole('dialog', { name: '批量导入风格串' });
+  expect(overlay.querySelector('svg.lucide-folder-down')).toBeTruthy();
+  expect(overlay.querySelector('svg.lucide-folder-up')).toBeNull();
+});
+
 it('手机可从候选列表移除单项，保留其他勾选项，不上传、不写库、不删除原文件', async () => {
   vi.stubGlobal('innerWidth', 390);
   class PreviewURL extends URL {

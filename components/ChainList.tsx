@@ -14,7 +14,7 @@ import type { ChainSimilaritySession } from './chain/ChainSimilarityDialog';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, EyeOff, FileOutput, Filter, FlaskConical, FolderUp, Heart, Image, Link2, ListChecks, Package, Pencil, Plus, ScanSearch, Sparkles, Tags, Trash2, User, X } from 'lucide-react';
+import { Check, EyeOff, FileOutput, Filter, FlaskConical, FolderDown, Heart, Image, Link2, ListChecks, Package, Pencil, Plus, ScanSearch, Sparkles, Tags, Trash2, User, X } from 'lucide-react';
 import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { GalleryModelBadge } from './GalleryModelBadge';
@@ -516,7 +516,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const desktopOverflowItems: ToolbarOverflowItem[] = [
     ...(!isGuest && type === 'style' ? [{ label: '查找相似', icon: <ScanSearch />, onClick: () => setSimilarityOpen(true) }] : []),
     ...(!isGuest && type === 'style' ? [{ label: '风格串分享包', icon: <Package />, onClick: () => setBundleScope('all') }] : []),
-    ...(!isGuest && type === 'style' ? [{ label: '批量导入', icon: <FolderUp />, onClick: () => setIsFolderImportOpen(true) }] : []),
+    ...(!isGuest && type === 'style' ? [{ label: '批量导入', icon: <FolderDown />, onClick: () => setIsFolderImportOpen(true) }] : []),
     ...(canSync ? [{ label: '智慧姬同步', hint: syncSelection.savedCount > 0 ? `待同步 ${syncSelection.savedCount}` : '', icon: <Link2 />, onClick: syncSelection.open ? syncSelection.cancel : syncSelection.begin, disabled: syncSelection.busy && !syncSelection.open }] : []),
   ];
   // 桌面弹层与手机抽屉共享筛选内容，切换视图也保持同一份筛选状态。
@@ -577,7 +577,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               <ToolbarButton tone="primary" onClick={() => setIsModalOpen(true)} aria-label={t(createLabel)} title={t(createLabel)}><Plus className="h-4 w-4" /><span className="hidden xl:inline">{t(createLabel)}</span></ToolbarButton>
             </div>
             <div className="flex gap-1 md:hidden">
-              {type === 'style' && <MobileIconButton label={t("批量导入")} onClick={() => setIsFolderImportOpen(true)} className="max-md:hidden border border-gray-200 bg-white text-indigo-600 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-400"><FolderUp className="h-5 w-5" /></MobileIconButton>}
+              {type === 'style' && <MobileIconButton label={t("批量导入")} onClick={() => setIsFolderImportOpen(true)} className="max-md:hidden border border-gray-200 bg-white text-indigo-600 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-400"><FolderDown className="h-5 w-5" /></MobileIconButton>}
               <MobileIconButton label={t(createLabel)} onClick={() => setIsModalOpen(true)} className="bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white"><Plus className="h-5 w-5" /></MobileIconButton>
             </div>
             <ToolbarOverflowMenu className="max-md:hidden" items={desktopOverflowItems} />
@@ -587,7 +587,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             ...(!isGuest && type === 'style' && onBulkDelete ? [{ label: '批量选择风格串', icon: <ListChecks />, onClick: beginSelection, disabled: syncSelection.busy }] : []),
             ...(!isGuest && type === 'style' ? [{ label: '查找相似', icon: <ScanSearch />, onClick: () => setSimilarityOpen(true) }] : []),
             ...(!isGuest && type === 'style' ? [{ label: '风格串分享包', icon: <Package />, onClick: () => setBundleScope('all') }] : []),
-            ...(!isGuest && type === 'style' ? [{ label: '批量导入', icon: <FolderUp />, onClick: () => setIsFolderImportOpen(true) }] : []),
+            ...(!isGuest && type === 'style' ? [{ label: '批量导入', icon: <FolderDown />, onClick: () => setIsFolderImportOpen(true) }] : []),
             ...(canSync ? [{ label: '智慧姬同步', hint: syncSelection.savedCount > 0 ? `待同步 ${syncSelection.savedCount}` : '', icon: <Link2 />, onClick: syncSelection.open ? syncSelection.cancel : syncSelection.begin, disabled: syncSelection.busy && !syncSelection.open }] : []),
           ]} className="md:hidden" />
           </>}

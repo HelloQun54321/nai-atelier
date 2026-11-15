@@ -758,3 +758,13 @@ it.each(['style', 'character'] as const)('%s收藏目录按对象身份保留已
   expect(screen.queryByText(current.name)).toBeNull(); expect(screen.getByText(missing.name)).toBeTruthy();
   expect(localStorage.getItem('nai_chain_favs')).toBe(raw);
 });
+
+// 批量导入是把本地图片收进风格串库：桌面「更多操作」与手机「更多」都用箭头进入文件夹的方向，
+// 不再沿用箭头向上的「从文件夹取出／上传」图标。
+it.each(['desktop', 'mobile'] as const)('%s「更多操作」的批量导入口保持导入方向图标', async scope => {
+  render(React.createElement(ChainList, props()));
+  const entry = await clickOverflowItem(/批量导入/, scope);
+  const icon = entry.querySelector('svg');
+  expect(icon?.classList.contains('lucide-folder-down')).toBe(true);
+  expect(entry.querySelector('svg.lucide-folder-up')).toBeNull();
+});

@@ -1,7 +1,7 @@
 import { t, useLanguage } from '../../services/i18n';
 import { PressRevealSurface } from '../PressRevealSurface';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, AlertTriangle, Check, CheckSquare, EyeOff, FileQuestion, FolderOpen, FolderUp, Layers, Loader2, RefreshCw, Sparkles, Square, Trash2, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Check, CheckSquare, EyeOff, FileQuestion, FolderDown, FolderOpen, Layers, Loader2, RefreshCw, Sparkles, Square, Trash2, X } from 'lucide-react';
 import { extractMetadata, parseNovelAIMetadata } from '../../services/metadataService';
 import { api } from '../../services/api';
 import { db } from '../../services/dbService';
@@ -934,7 +934,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
         <div className="appearance-content operation-header flex flex-none items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
-              <FolderUp className="h-5 w-5" />
+              <FolderDown className="h-5 w-5" />
             </div>
             <div>
               <h2 className="text-base font-bold text-gray-900 dark:text-white">{t("批量导入文件夹图片为风格串")}</h2>
