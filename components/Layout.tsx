@@ -372,7 +372,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
 
   return (
     <div className="workspace-canvas relative flex h-[100dvh] bg-gray-50 font-sans text-gray-900 transition-colors duration-300 dark:bg-gray-900 dark:text-gray-100">
-      {toast && <div role={toast.type === "error" ? "alert" : "status"} data-agent-notification={toast.type} className="fixed left-1/2 top-4 z-[2300] w-[90%] -translate-x-1/2 text-center md:top-6 md:w-auto"><div className={`flex items-center justify-center gap-2 rounded-xl px-5 py-3 shadow-xl ${toast.type === 'error' ? 'bg-red-500 text-white' : 'appearance-contrast bg-gray-800 text-white dark:bg-white dark:text-gray-900'}`}>{toast.type === 'error' ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}<span className="text-sm font-medium">{t(toast.message)}</span></div></div>}
       <CloudQueueStatus hidden={Boolean(hideNav)} />
 
       <aside data-collapsed={sidebarCollapsed} data-resizing={isSidebarResizing} style={{ width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth }} className={`app-sidebar relative z-40 hidden flex-shrink-0 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:flex ${isSidebarResizing ? '' : 'transition-[width] duration-200'}`}>
@@ -491,7 +490,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         {!sidebarCollapsed && <button type="button" aria-label={t("调整侧边栏宽度")} data-agent-interaction="resize" title={t("拖动调整宽度；双击恢复默认")} onPointerDown={startSidebarResize} onDoubleClick={() => { setSidebarCollapsed(false); setSidebarWidth(SIDEBAR_DEFAULT_WIDTH); localStorage.setItem('nai_sidebar_width', String(SIDEBAR_DEFAULT_WIDTH)); }} className="group absolute -right-1 top-0 bottom-0 z-30 hidden w-2 cursor-col-resize outline-none md:block"><span className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${isSidebarResizing ? 'bg-indigo-500' : 'bg-transparent group-hover:bg-indigo-400'}`} /></button>}
       </aside>
 
-      <main ref={workspaceRef} className={`app-workspace workspace-container relative isolate flex min-w-0 flex-1 flex-col overflow-hidden bg-white transition-colors duration-300 dark:bg-gray-900 ${hideNav ? 'pb-0' : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))]'} md:pb-0`}>{children}</main>
+      <main ref={workspaceRef} className={`app-workspace workspace-container relative isolate flex min-w-0 flex-1 flex-col overflow-hidden bg-white transition-colors duration-300 dark:bg-gray-900 ${hideNav ? 'pb-0' : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))]'} md:pb-0`}>
+      {/* 提示相对「除去侧边栏的工作区」居中，而不是整窗居中；移动端工作区本就占满宽度。 */}
+      {toast && <div role={toast.type === "error" ? "alert" : "status"} data-agent-notification={toast.type} className="pointer-events-none absolute inset-x-0 top-4 z-[2300] flex justify-center px-4 md:top-6"><div className={`pointer-events-auto flex max-w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-center shadow-xl ${toast.type === 'error' ? 'bg-red-500 text-white' : 'appearance-contrast bg-gray-800 text-white dark:bg-white dark:text-gray-900'}`}>{toast.type === 'error' ? <XCircle className="h-4 w-4 flex-none" /> : <CheckCircle2 className="h-4 w-4 flex-none" />}<span className="min-w-0 break-words text-sm font-medium">{t(toast.message)}</span></div></div>}
+      {children}</main>
 
       {!showResources && !showSettings && <button
         type="button"
