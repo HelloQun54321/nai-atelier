@@ -89,6 +89,23 @@ it('按作品编号直接取缓存条目，不触发关键词全表匹配', asyn
   expect(byQuery.items).toHaveLength(0);
 });
 
+it('列表下发首图派生结论，不再附带完整参数', async () => {
+  const f = fixture();
+  await f.invoke('/api/aitag/cache/first-images?ids=&timeout_ms=0');
+  f.sqlite.prepare("INSERT INTO aitag_works(id,source_sort,source_page,source_index,ai_type,raw_json,local_cover_url,first_image_json,is_favorite) VALUES(9,'new',1,0,'NAI','{}','/synthetic/nine.png',?,1)")
+    .run(JSON.stringify({
+      ai_json: { model: 'NovelAI Diffusion V4.5 1229B44F', width: 832, height: 1216, prompt: '1girl, artist:synthetic', reference_image_multiple: ['synthetic'] },
+      prompt_text: '1girl, artist:synthetic',
+    }));
+  const data = await (await f.invoke('/api/aitag/cache/search?ids=9')).json() as any;
+  const work = data.items[0];
+  expect(work.firstImage.ai_json).toBeUndefined();
+  expect(work.firstImage.prompt_text).toBe('1girl, artist:synthetic');
+  expect(work.firstImageMeta).toMatchObject({ width: 832, height: 1216, hasVibe: true, hasPrecise: false, hasMetadata: true });
+  expect(work.firstImageMeta.model).toContain('V4.5');
+  expect(work.firstImageMeta.promptText).toContain('artist:synthetic');
+});
+
 it('首图资料独立参与缓存关键词和提示词检索，兼容旧列表、详情及缓存组合', async () => {
   const f = fixture();
   await f.invoke('/api/aitag/cache/first-images?ids=&timeout_ms=0');
@@ -167,11 +184,12 @@ it.each([false, true])('慢原图不阻塞元数据和下一作品，图片失�
   let settled = false; void f.pending[0].then(() => { settled = true; });
   await vi.advanceTimersByTimeAsync(0);
   const early = await (await f.invoke('/api/aitag/cache/first-images?ids=1,2&metadata_ids=1,2&timeout_ms=0')).json() as any;
-  expect(early.items).toHaveLength(1); expect(early.items[0]).toMatchObject({ id: 1, firstImageStatus: 'metadata', firstImage: { ai_json: { prompt: 'recipe-1' } } });
+  expect(early.items).toHaveLength(1); expect(early.items[0]).toMatchObject({ id: 1, firstImageStatus: 'metadata', firstImageMeta: { promptText: 'recipe-1' } });
+  expect(early.items[0].firstImage.ai_json).toBeUndefined();
   expect(early.items[0].localFirstImageUrl).toBeFalsy(); expect(f.files.size).toBe(0);
   await vi.advanceTimersByTimeAsync(550);
   const next = await (await f.invoke('/api/aitag/cache/first-images?ids=1,2&metadata_ids=2,999&timeout_ms=0')).json() as any;
-  expect(next.items.map((item: any) => item.id)).toEqual([2]); expect(next.items[0].firstImage.ai_json.prompt).toBe('recipe-2');
+  expect(next.items.map((item: any) => item.id)).toEqual([2]); expect(next.items[0].firstImageMeta.promptText).toBe('recipe-2');
   expect(fetch.mock.calls.filter(([url]) => new URL(url).hostname === 'ai-img.10118899.xyz')).toHaveLength(1);
   const ordinary = await (await f.invoke('/api/aitag/cache/first-images?ids=1,2&timeout_ms=0')).json() as any;
   expect(ordinary.items).toEqual([]); expect(ordinary.timedOut).toBe(true);
@@ -184,7 +202,7 @@ it.each([false, true])('慢原图不阻塞元数据和下一作品，图片失�
   expect(settled).toBe(true);
   const final = await (await f.invoke('/api/aitag/cache/first-images?ids=1,2&timeout_ms=0')).json() as any;
   expect(final.items).toHaveLength(2);
-  expect(final.items[0].firstImage.ai_json.prompt).toBe('recipe-1');
+  expect(final.items[0].firstImageMeta.promptText).toBe('recipe-1');
   expect(final.items[0].firstImageStatus).toBe(failImage ? 'error' : 'cached');
   if (!failImage) expect(f.files.get('aitag-covers/1.webp')).toEqual(new Uint8Array([1, 9, 8]));
   expect(f.files.get('aitag-covers/2.webp')).toEqual(new Uint8Array([2, 3, 4]));

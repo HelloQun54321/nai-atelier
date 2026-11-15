@@ -8,6 +8,18 @@ const AITAG_SOURCE_TYPE = 'nai';
 const MIN_AITAG_METADATA_BYTES = 30;
 const utf8Encoder = new TextEncoder();
 
+export interface AitagFirstImageMeta {
+  /** 原始模型名，前端再映射成注册表标签。 */
+  model: string;
+  /** 首图正向提示词（基础词 + 角色词），用于画师串与提示词细筛。 */
+  promptText: string;
+  width: number;
+  height: number;
+  hasVibe: boolean;
+  hasPrecise: boolean;
+  hasMetadata: boolean;
+}
+
 export interface AitagWorkSummary {
   id: number;
   userId?: number;
@@ -27,6 +39,8 @@ export interface AitagWorkSummary {
   firstImageCachedAt?: number;
   first_image?: AitagImage;
   first_image_cached_at?: number;
+  /** 列表响应自带的派生结论；列表不再下发完整 ai_json，卡片筛选与展示读这里。 */
+  firstImageMeta?: AitagFirstImageMeta | null;
   firstImage?: AitagImage;
   hasCachedDetail?: boolean;
   hasFullyCachedImages?: boolean;
@@ -352,6 +366,8 @@ const normalizeAitagModelLabel = (raw: string) =>
 const aitagModelLabelCache = new WeakMap<AitagImage, string>();
 const aitagModelBadgeCache = new WeakMap<AitagImage, string>();
 const aitagReferenceUsageCache = new WeakMap<AitagImage, { vibe: boolean; precise: boolean; unknown: boolean }>();
+const aitagWorkReferenceUsageCache = new WeakMap<AitagWorkSummary, { vibe: boolean; precise: boolean; unknown: boolean }>();
+const aitagWorkModelLabels = new WeakMap<AitagWorkSummary, { label: string; badge: string }>();
 
 export const getAitagModelLabel = (image: AitagImage) => {
   const cached = aitagModelLabelCache.get(image);
@@ -532,14 +548,29 @@ export const getAitagPositivePromptText = (image?: AitagImage | null) => {
 
 /** 作品已知图片的正向提示词：详情已加载时覆盖全部页，否则只能依据首图。 */
 export const getAitagWorkPromptTexts = (work: AitagWorkSummary, detail?: AitagWorkDetail | null) => {
-  const images = detail && !detail.isPreviewOnly && detail.images.length
-    ? detail.images
-    : [work.firstImage || work.first_image];
-  return images.map(getAitagPositivePromptText).filter(Boolean);
+  if (detail && !detail.isPreviewOnly && detail.images.length) {
+    return detail.images.map(getAitagPositivePromptText).filter(Boolean);
+  }
+  // 列表首图已不带完整 ai_json，直接采用后端算好的首图提示词（含角色词）。
+  const metaText = work.firstImageMeta?.promptText;
+  if (metaText) return [metaText];
+  return [work.firstImage || work.first_image].map(getAitagPositivePromptText).filter(Boolean);
 };
 
 /** 按首图判断整组，沿用详情的生成类型识别规则，不为筛选读取组内其他图片。 */
 export const getAitagWorkReferenceUsage = (work: AitagWorkSummary) => {
+  const meta = work.firstImageMeta;
+  if (meta) {
+    const cachedMeta = aitagWorkReferenceUsageCache.get(work);
+    if (cachedMeta) return cachedMeta;
+    const usage = {
+      vibe: Boolean(meta.hasVibe),
+      precise: Boolean(meta.hasPrecise),
+      unknown: !meta.hasMetadata,
+    };
+    aitagWorkReferenceUsageCache.set(work, usage);
+    return usage;
+  }
   const image = work.firstImage || work.first_image;
   const cached = image ? aitagReferenceUsageCache.get(image) : undefined;
   if (cached) return cached;
@@ -551,6 +582,34 @@ export const getAitagWorkReferenceUsage = (work: AitagWorkSummary) => {
   };
   if (image) aitagReferenceUsageCache.set(image, usage);
   return usage;
+};
+
+/** 卡片模型标签与短徽章：优先读列表下发的派生结论，旧数据回退到解析首图元数据。 */
+export const getAitagWorkModelLabels = (work: AitagWorkSummary) => {
+  const cached = aitagWorkModelLabels.get(work);
+  if (cached) return cached;
+  const meta = work.firstImageMeta;
+  let labels: { label: string; badge: string };
+  if (meta?.model) {
+    const modelId = resolveNaiMetadataModel({ model_name: meta.model });
+    const normalized = normalizeAitagModelLabel(meta.model);
+    const imageType = String((work.firstImage || work.first_image)?.image_type || '').toLowerCase();
+    labels = {
+      label: normalized,
+      badge: modelId
+        ? getNaiModelDisplayLabel(modelId)
+        : normalized && normalized.toLowerCase() !== imageType
+          ? normalized.replace(/^NovelAI Diffusion\s+/i, '').trim()
+          : '',
+    };
+  } else {
+    const image = work.firstImage || work.first_image;
+    labels = image
+      ? { label: getAitagModelLabel(image), badge: getAitagModelBadgeLabel(image) }
+      : { label: '', badge: '' };
+  }
+  aitagWorkModelLabels.set(work, labels);
+  return labels;
 };
 
 const artistDetectionCache = new WeakMap<ReadonlySet<string>, Map<string, boolean>>();

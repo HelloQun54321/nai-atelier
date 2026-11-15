@@ -20,10 +20,10 @@ import {
   extractAitagPrompt,
   getAitagGenerationLabels,
   getAitagMetadataText,
-  getAitagModelBadgeLabel,
   getAitagModelLabel,
   getAitagSavedChainWorkIds,
   getAitagType,
+  getAitagWorkModelLabels,
   getAitagWorkPromptTexts,
   getAitagWorkReferenceUsage,
   hasAitagLocalPromptTerms,
@@ -158,21 +158,9 @@ const getAitagImageRatio = (image?: AitagImage) => {
     : undefined;
 };
 
-const aitagModelLabels = new WeakMap<AitagImage, string>();
-const getWorkModelLabel = (work: AitagWorkSummary) => {
-  const image = work.firstImage || work.first_image;
-  if (!image) return '';
-  if (!aitagModelLabels.has(image)) aitagModelLabels.set(image, getAitagModelLabel(image));
-  return aitagModelLabels.get(image)!;
-};
+const getWorkModelLabel = (work: AitagWorkSummary) => getAitagWorkModelLabels(work).label;
 /** 卡片角落只放短名（V4.5 Full / V5 Curated），筛选项仍用完整标签。 */
-const aitagModelBadgeLabels = new WeakMap<AitagImage, string>();
-const getWorkModelBadgeLabel = (work: AitagWorkSummary) => {
-  const image = work.firstImage || work.first_image;
-  if (!image) return '';
-  if (!aitagModelBadgeLabels.has(image)) aitagModelBadgeLabels.set(image, getAitagModelBadgeLabel(image));
-  return aitagModelBadgeLabels.get(image)!;
-};
+const getWorkModelBadgeLabel = (work: AitagWorkSummary) => getAitagWorkModelLabels(work).badge;
 
 const isAitagFavorite = (work: AitagWorkSummary) => {
   if (typeof work.isFavorite === 'boolean') return work.isFavorite;
@@ -565,7 +553,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const frostedCaption = useGalleryFrostedCaption();
   const estimateAitagCardHeight = React.useCallback((work: AitagWorkSummary, columnWidth: number) => {
     const image = work.firstImage || work.first_image || details[work.id]?.images[0];
-    const ratio = aitagRatios[work.id] || aitagRatioCache[work.id] || getAitagImageRatio(image) || 1;
+    const meta = work.firstImageMeta;
+    // 列表下发的宽高比可直接用于估高，不必等首图下载完成再测量。
+    const metaRatio = meta && meta.width > 0 && meta.height > 0 ? meta.width / meta.height : undefined;
+    const ratio = aitagRatios[work.id] || aitagRatioCache[work.id] || metaRatio || getAitagImageRatio(image) || 1;
     const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
     return imageHeight + (frostedCaption ? 2 : 70);
   }, [aitagRatios, details, frostedCaption]);
@@ -580,7 +571,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     const firstImage = work.firstImage || work.first_image || detail?.images[0];
     const modelLabel = getWorkModelBadgeLabel(work);
     const referenceUsage = getAitagWorkReferenceUsage(work);
-    const measuredRatio = aitagRatios[work.id] || aitagRatioCache[work.id] || getAitagImageRatio(firstImage);
+    const meta = work.firstImageMeta;
+    const metaRatio = meta && meta.width > 0 && meta.height > 0 ? meta.width / meta.height : 0;
+    const measuredRatio = aitagRatios[work.id] || aitagRatioCache[work.id] || metaRatio || getAitagImageRatio(firstImage);
     const ratioStyle = measuredRatio ? `${Math.round(measuredRatio * 1000)} / 1000` : '1';
     return (
       <PressRevealSurface
@@ -1493,7 +1486,13 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     if (!image || savingWorkId !== null) return;
     setSavingWorkId(Number(work.id));
     try {
-      await onCreateArtistChain(buildImageChain(image, 0, work), { openEditor: false });
+      // 列表不再携带完整参数：缺元数据时按整组详情取回同一张图，保证存下的串带全提示词与参数。
+      let target = image;
+      if (!parseAitagAiJson(image.ai_json)) {
+        const detail = await getDetail(work);
+        target = detail.images.find(item => item.file_name === image.file_name) || detail.images[0] || image;
+      }
+      await onCreateArtistChain(buildImageChain(target, 0, work), { openEditor: false });
       notify(t('已收录首图到风格串'));
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : t('保存失败'), 'error');

@@ -14,6 +14,7 @@ import {
   getAitagPositivePromptText,
   getAitagSavedChainWorkIds,
   getAitagWorkPromptTexts,
+  getAitagWorkModelLabels,
   getAitagModelBadgeLabel,
   getAitagWorkReferenceUsage,
   matchesAitagPromptQuery,
@@ -246,6 +247,29 @@ describe('AITag 本地筛选辅助', () => {
       expect(getAitagWorkReferenceUsage({ id: 7, firstImage: { ...image({}), ai_json } }).unknown).toBe(true);
     }
     expect(getAitagWorkReferenceUsage({ id: 7 }).unknown).toBe(true);
+  });
+
+  it('列表下发派生结论后不必再解析 ai_json：模型、画师串、提示词与参考筛选照常工作', () => {
+    const work = {
+      id: 9,
+      firstImage: { id: 1, work_id: 9, author_id: 1, image_type: 'nai', file_name: 'nine.png' },
+      firstImageMeta: {
+        model: 'NovelAI Diffusion V4.5 1229B44F',
+        promptText: '1girl, artist:synthetic, soft light',
+        width: 832,
+        height: 1216,
+        hasVibe: true,
+        hasPrecise: false,
+        hasMetadata: true,
+      },
+    } as unknown as Parameters<typeof getAitagWorkPromptTexts>[0];
+    expect(getAitagWorkPromptTexts(work)).toEqual(['1girl, artist:synthetic, soft light']);
+    expect(getAitagWorkReferenceUsage(work)).toEqual({ vibe: true, precise: false, unknown: false });
+    expect(getAitagWorkModelLabels(work)).toMatchObject({ label: expect.stringContaining('V4.5'), badge: 'V4.5 Full' });
+    expect(aitagPromptHasArtistTags(getAitagWorkPromptTexts(work)[0], new Set(['synthetic']))).toBe(true);
+    for (const prompt of ['soft light\nartist:synthetic', 'soft light\nmonochrome']) {
+      expect(matchesAitagPromptQuery(getAitagWorkPromptTexts(work), parseAitagPromptQuery(prompt))).toBe(!prompt.includes('monochrome'));
+    }
   });
 
   it('卡片徽章把模型名压成注册表短标签，映射不到时去掉长前缀', () => {
