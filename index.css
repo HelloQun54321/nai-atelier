@@ -883,7 +883,9 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     min-height: 0;
     margin: 0;
     border: 0;
-    border-radius: 0;
+    /* 高光是沿元素圆角绘制的内阴影，随后才被 clip-path 裁切：
+       这里必须沿用顶栏自身的圆角，否则顶部高光在两端会被裁成直角缺口。 */
+    border-radius: var(--nai-panel-radius, 24px) var(--nai-panel-radius, 24px) 0 0;
     background-color: var(--nai-toolbar-surface);
     clip-path: var(--lab-navigation-outline);
   }
