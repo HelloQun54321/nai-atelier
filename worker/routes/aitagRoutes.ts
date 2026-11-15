@@ -585,7 +585,7 @@ async function getCachedAitagWorksByIds(db: D1Database, ids: number[], sort: str
         THEN 1 ELSE 0
       END as has_fully_cached_images,
       cached_detail.cached_at as detail_cached_at,
-      cached_detail.detail_json as detail_json
+      json_array_length(json_extract(cached_detail.detail_json, '$.images')) as detail_image_count
     FROM aitag_works w
     LEFT JOIN aitag_work_details cached_detail ON cached_detail.work_id = w.id
     WHERE w.source_sort = ? AND w.id IN (${placeholders})
@@ -956,7 +956,13 @@ function mapAitagWorkRow(row: any) {
   try {
     detail = row.detail_json ? JSON.parse(row.detail_json) : null;
   } catch {}
-  const detailCacheInfo = detail ? getAitagDetailCacheInfo(detail) : null;
+  // 列表类查询只回传图片张数（整份详情平均 144 KB），收藏等仍带 detail_json 的旧路径照常解析。
+  const detailImageCount = detail ? getAitagDetailImages(detail).length : Number(row.detail_image_count ?? 0);
+  const detailCacheInfo = detail
+    ? getAitagDetailCacheInfo(detail)
+    : row.detail_image_count === undefined || row.detail_image_count === null
+      ? null
+      : { imageCount: detailImageCount, hasFullyCachedImages: Boolean(row.has_fully_cached_images) };
 
   return {
     ...(parsed || {}),
@@ -976,7 +982,7 @@ function mapAitagWorkRow(row: any) {
     localFirstImageUrl: row.local_cover_url ?? parsed?.localFirstImageUrl ?? parsed?.local_cover_url,
     firstImageStatus: row.cover_status ?? parsed?.firstImageStatus ?? parsed?.cover_status,
     firstImageCachedAt: row.first_image_cached_at ?? row.cover_cached_at ?? parsed?.firstImageCachedAt ?? parsed?.first_image_cached_at ?? parsed?.cover_cached_at,
-    first_image: firstImage || parsed?.first_image || parsed?.firstImage,
+    // 首图只输出一个字段：同名双写会把同一份元数据在响应里序列化两次，页面体积直接翻倍。
     firstImage: firstImage || parsed?.firstImage || parsed?.first_image,
     first_image_cached_at: row.first_image_cached_at ?? parsed?.first_image_cached_at,
     hasCachedDetail: Boolean(row.has_cached_detail || parsed?.hasCachedDetail),
@@ -1066,6 +1072,8 @@ async function searchAitagCache(
   const q = (options.q || '').trim().toLowerCase();
   if (q) {
     const like = `%${q}%`;
+    // 关键词只查作品自身字段与首图元数据：详情 JSON 平均 144 KB/行，逐行 LIKE 会拖住整个本地
+    // 服务（详情面板每 3 秒的按编号刷新也走这里）。提示词检索仍单独覆盖整组详情。
     where.push(`(
       CAST(w.id AS TEXT) LIKE ? OR
       CAST(COALESCE(w.user_id, '') AS TEXT) LIKE ? OR
@@ -1075,13 +1083,9 @@ async function searchAitagCache(
       LOWER(COALESCE(w.create_date, '')) LIKE ? OR
       LOWER(COALESCE(w.ai_type, '')) LIKE ? OR
       LOWER(COALESCE(w.raw_json, '')) LIKE ? OR
-      LOWER(COALESCE(w.first_image_json, '')) LIKE ? OR
-      EXISTS (
-        SELECT 1 FROM aitag_work_details d
-        WHERE d.work_id = w.id AND LOWER(COALESCE(d.detail_json, '')) LIKE ?
-      )
+      LOWER(COALESCE(w.first_image_json, '')) LIKE ?
     )`);
-    values.push(like, like, like, like, like, like, like, like, like, like);
+    values.push(like, like, like, like, like, like, like, like, like);
   }
 
   const prompt = (options.prompt || '').trim().toLowerCase();
@@ -1118,7 +1122,7 @@ async function searchAitagCache(
           THEN 1 ELSE 0
         END as has_fully_cached_images,
         cached_detail.cached_at as detail_cached_at,
-        cached_detail.detail_json as detail_json
+        json_array_length(json_extract(cached_detail.detail_json, '$.images')) as detail_image_count
       FROM aitag_works w
       LEFT JOIN aitag_work_details cached_detail ON cached_detail.work_id = w.id
       WHERE ${whereSql} AND w.source_page = ?
@@ -1139,7 +1143,7 @@ async function searchAitagCache(
           THEN 1 ELSE 0
         END as has_fully_cached_images,
         cached_detail.cached_at as detail_cached_at,
-        cached_detail.detail_json as detail_json
+        json_array_length(json_extract(cached_detail.detail_json, '$.images')) as detail_image_count
       FROM aitag_works w
       LEFT JOIN aitag_work_details cached_detail ON cached_detail.work_id = w.id
       WHERE ${whereSql}

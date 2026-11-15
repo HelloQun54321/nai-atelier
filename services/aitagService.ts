@@ -83,6 +83,32 @@ export interface AitagSearchResponse {
   offline?: boolean;
 }
 
+/** 首图关键字段与旧对象一致时复用旧引用，渲染路径按对象缓存的派生结果才不会每页作废。 */
+const sameAitagImage = (left: AitagImage, right: AitagImage) =>
+  left === right || (
+    left.id === right.id &&
+    left.file_name === right.file_name &&
+    left.model === right.model &&
+    left.image_type === right.image_type &&
+    left.local_image_url === right.local_image_url &&
+    left.remote_image_url === right.remote_image_url &&
+    left.image_cached_at === right.image_cached_at &&
+    left.prompt_text === right.prompt_text &&
+    left.ai_json === right.ai_json
+  );
+
+const sameAitagWork = (left: AitagWorkSummary, right: AitagWorkSummary) =>
+  left.firstImage === right.firstImage &&
+  left.localFirstImageUrl === right.localFirstImageUrl &&
+  left.firstImageStatus === right.firstImageStatus &&
+  left.hasCachedDetail === right.hasCachedDetail &&
+  left.hasFullyCachedImages === right.hasFullyCachedImages &&
+  left.title === right.title &&
+  left.caption === right.caption &&
+  String(left.tags) === String(right.tags) &&
+  left.isFavorite === right.isFavorite &&
+  left.image_count === right.image_count;
+
 /** 翻页可能重叠；同一作品就地更新，迟到的列表摘要不能抹掉已补齐的资料。 */
 export const mergeAitagWorks = (previous: readonly AitagWorkSummary[], incoming: readonly AitagWorkSummary[]): AitagWorkSummary[] => {
   const works = new Map<number, AitagWorkSummary>();
@@ -93,21 +119,27 @@ export const mergeAitagWorks = (previous: readonly AitagWorkSummary[], incoming:
     if (!old) { works.set(id, work.id === id ? work : { ...work, id }); continue; }
     const oldImage = old.firstImage || old.first_image;
     const newImage = work.firstImage || work.first_image;
-    const firstImage = oldImage && newImage ? {
-      ...oldImage, ...newImage,
-      ai_json: newImage.ai_json ?? oldImage.ai_json,
-      prompt_text: newImage.prompt_text || oldImage.prompt_text,
-      local_image_url: newImage.local_image_url || oldImage.local_image_url,
-    } : newImage || oldImage;
+    let firstImage = newImage || oldImage;
+    if (oldImage && newImage) {
+      const mergedImage = {
+        ...oldImage, ...newImage,
+        ai_json: newImage.ai_json ?? oldImage.ai_json,
+        prompt_text: newImage.prompt_text || oldImage.prompt_text,
+        local_image_url: newImage.local_image_url || oldImage.local_image_url,
+      };
+      firstImage = sameAitagImage(oldImage, mergedImage) ? oldImage : mergedImage;
+    }
     const localFirstImageUrl = work.localFirstImageUrl || work.local_cover_url || old.localFirstImageUrl || old.local_cover_url;
-    works.set(id, {
+    const next: AitagWorkSummary = {
       ...old, ...work, id,
-      firstImage, first_image: firstImage,
+      firstImage,
       localFirstImageUrl, local_cover_url: localFirstImageUrl,
       firstImageStatus: localFirstImageUrl ? 'cached' : work.firstImageStatus || old.firstImageStatus,
       hasCachedDetail: Boolean(old.hasCachedDetail || work.hasCachedDetail),
       hasFullyCachedImages: Boolean(old.hasFullyCachedImages || work.hasFullyCachedImages),
-    });
+    };
+    // 资料完全没变时直接把旧对象放回去：卡片渲染、模型徽章与参考类型都按对象缓存。
+    works.set(id, sameAitagWork(old, next) ? old : next);
   }
   return [...works.values()];
 };
@@ -310,12 +342,23 @@ const normalizeAitagModelLabel = (raw: string) =>
     .join(' ')
     .trim();
 
+/**
+ * 卡片渲染路径会反复读同一张首图的元数据；按图片对象缓存派生结果，
+ * 避免每次重渲染都对整段 ai_json 重复 JSON.parse 与递归扫描。
+ * 列表合并时资料没变的条目会复用旧对象，所以这些缓存能跨页命中。
+ */
+const aitagModelLabelCache = new WeakMap<AitagImage, string>();
+const aitagModelBadgeCache = new WeakMap<AitagImage, string>();
+const aitagReferenceUsageCache = new WeakMap<AitagImage, { vibe: boolean; precise: boolean; unknown: boolean }>();
+
 export const getAitagModelLabel = (image: AitagImage) => {
+  const cached = aitagModelLabelCache.get(image);
+  if (cached !== undefined) return cached;
   const parsed = parseAitagAiJson(image.ai_json);
   const comment = getAitagCommentObject(parsed);
   const parameters = parsed?.parameters;
 
-  return normalizeAitagModelLabel(pickString(
+  const label = normalizeAitagModelLabel(pickString(
     image.model,
     parsed?.model,
     parsed?.Model,
@@ -324,6 +367,8 @@ export const getAitagModelLabel = (image: AitagImage) => {
     comment?.Model,
     image.image_type
   ));
+  aitagModelLabelCache.set(image, label);
+  return label;
 };
 
 /**
@@ -331,6 +376,8 @@ export const getAitagModelLabel = (image: AitagImage) => {
  * 映射不到再退回去掉「NovelAI Diffusion」前缀的原始名，避免把整串长名塞进卡片角落。
  */
 export const getAitagModelBadgeLabel = (image: AitagImage) => {
+  const cached = aitagModelBadgeCache.get(image);
+  if (cached !== undefined) return cached;
   const parsed = parseAitagAiJson(image.ai_json);
   const comment = getAitagCommentObject(parsed);
   const parameters = parsed?.parameters;
@@ -343,11 +390,18 @@ export const getAitagModelBadgeLabel = (image: AitagImage) => {
     comment?.Model
   );
   const modelId = raw ? resolveNaiMetadataModel({ model_name: raw }) : undefined;
-  if (modelId) return getNaiModelDisplayLabel(modelId);
-  const fallback = getAitagModelLabel(image);
-  // getAitagModelLabel 会拿 image_type 兜底（如 "nai"），那不是模型名，卡片上不该出现。
-  if (!fallback || fallback.toLowerCase() === String(image.image_type || '').toLowerCase()) return '';
-  return fallback.replace(/^NovelAI Diffusion\s+/i, '').trim();
+  let label = '';
+  if (modelId) {
+    label = getNaiModelDisplayLabel(modelId);
+  } else {
+    const fallback = getAitagModelLabel(image);
+    // getAitagModelLabel 会拿 image_type 兜底（如 "nai"），那不是模型名，卡片上不该出现。
+    if (fallback && fallback.toLowerCase() !== String(image.image_type || '').toLowerCase()) {
+      label = fallback.replace(/^NovelAI Diffusion\s+/i, '').trim();
+    }
+  }
+  aitagModelBadgeCache.set(image, label);
+  return label;
 };
 
 export const getAitagGenerationLabels = (image: AitagImage) => {  const parsed = parseAitagAiJson(image.ai_json);
@@ -485,12 +539,16 @@ export const getAitagWorkPromptTexts = (work: AitagWorkSummary, detail?: AitagWo
 /** 按首图判断整组，沿用详情的生成类型识别规则，不为筛选读取组内其他图片。 */
 export const getAitagWorkReferenceUsage = (work: AitagWorkSummary) => {
   const image = work.firstImage || work.first_image;
+  const cached = image ? aitagReferenceUsageCache.get(image) : undefined;
+  if (cached) return cached;
   const labels = image ? getAitagGenerationLabels(image) : [];
-  return {
+  const usage = {
     vibe: labels.includes('氛围参考 (Vibe Transfer)'),
     precise: labels.includes('精准参考 (Precise Reference)'),
     unknown: !image || !parseAitagAiJson(image.ai_json) || !getAitagMetadataText(image),
   };
+  if (image) aitagReferenceUsageCache.set(image, usage);
+  return usage;
 };
 
 const artistDetectionCache = new WeakMap<ReadonlySet<string>, Map<string, boolean>>();

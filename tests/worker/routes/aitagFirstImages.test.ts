@@ -86,14 +86,20 @@ it('首图资料独立参与缓存关键词和提示词检索，兼容旧列表�
   insert.run(6,4,'{}','/synthetic/six.png',JSON.stringify({ai_json:{prompt:'normal',uc:'negative-needle',model:'metadata-only'}}));
   insert.run(7,5,'{}','/synthetic/seven.png',JSON.stringify({ai_json:JSON.stringify({Comment:JSON.stringify({v4_prompt:{caption:{base_caption:'comment-needle',char_captions:[{char_caption:'char-needle'}]}},uc:'excluded-needle'})})}));
   f.sqlite.prepare('INSERT INTO aitag_work_details(work_id,detail_json) VALUES(3,?)').run(JSON.stringify({images:[{ai_json:{prompt:'audit-needle'},local_image_url:'/synthetic/three.png'}]}));
+  // 提示词检索覆盖整组详情；关键词只查作品自身字段与首图元数据，不再逐行扫描详情 JSON。
+  const promptAll = await (await f.invoke('/api/aitag/cache/search?prompt=AUDIT-NEEDLE')).json() as any;
+  expect(promptAll.items.map((work: any) => work.id)).toEqual([1,2,3]);
+  const qAll = await (await f.invoke('/api/aitag/cache/search?q=AUDIT-NEEDLE')).json() as any;
+  expect(qAll.items.map((work: any) => work.id)).toEqual([1,2]);
   for (const field of ['prompt','q']) {
-    const all = await (await f.invoke(`/api/aitag/cache/search?${field}=AUDIT-NEEDLE`)).json() as any;
-    expect(all.items.map((work: any) => work.id)).toEqual([1,2,3]);
     const first = await (await f.invoke(`/api/aitag/cache/search?cacheFilter=first-image&${field}=audit-needle`)).json() as any;
     expect(first.items.map((work: any) => work.id)).toEqual([1]); expect(first.total).toBe(1);
-    const full = await (await f.invoke(`/api/aitag/cache/search?cacheFilter=full&${field}=audit-needle`)).json() as any;
-    expect(full.items.map((work: any) => work.id)).toEqual([3]);
   }
+  const promptFull = await (await f.invoke('/api/aitag/cache/search?cacheFilter=full&prompt=audit-needle')).json() as any;
+  expect(promptFull.items.map((work: any) => work.id)).toEqual([3]);
+  // 详情命中依赖提示词检索：关键词不再把整组详情算作命中。
+  const qFull = await (await f.invoke('/api/aitag/cache/search?cacheFilter=full&q=audit-needle')).json() as any;
+  expect(qFull.items).toHaveLength(0);
   const favorite = await (await f.invoke('/api/aitag/cache/search?cacheFilter=favorite&q=audit-needle&prompt=artist%3Asynthetic')).json() as any;
   expect(favorite.items.map((work: any) => work.id)).toEqual([1]);
   for (const value of ['negative-needle','metadata-only','excluded-needle']) {

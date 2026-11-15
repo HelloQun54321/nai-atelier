@@ -532,6 +532,35 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
 
   // 瀑布流（masonry 布局时）：图片加载后按真实宽高比完整显示，最短列分配互相补齐。
   const [aitagRatios, setAitagRatios] = useState<Record<number, number>>(() => ({ ...aitagRatioCache }));
+  // 图片逐张就绪时立刻 setState 会让整页瀑布流重复估高重排；合并到一个短窗口批量落地，
+  // 只改这一批卡片的比例，其余卡片保持原布局。
+  const pendingAitagRatiosRef = useRef<Record<number, number>>({});
+  const aitagRatioFlushRef = useRef<number | null>(null);
+  const queueAitagRatio = React.useCallback((workId: number, ratio: number) => {
+    if (!Number.isFinite(ratio) || ratio <= 0) return;
+    pendingAitagRatiosRef.current[workId] = ratio;
+    if (aitagRatioFlushRef.current !== null) return;
+    aitagRatioFlushRef.current = window.setTimeout(() => {
+      aitagRatioFlushRef.current = null;
+      const batch = pendingAitagRatiosRef.current;
+      pendingAitagRatiosRef.current = {};
+      for (const [id, value] of Object.entries(batch)) aitagRatioCache[Number(id)] = value;
+      setAitagRatios(previous => {
+        let changed = false;
+        const next = { ...previous };
+        for (const [id, value] of Object.entries(batch)) {
+          if (next[Number(id)] === value) continue;
+          next[Number(id)] = value;
+          changed = true;
+        }
+        return changed ? next : previous;
+      });
+    }, 150);
+  }, []);
+  useEffect(() => () => {
+    if (aitagRatioFlushRef.current !== null) window.clearTimeout(aitagRatioFlushRef.current);
+    aitagRatioFlushRef.current = null;
+  }, []);
   const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);
   const frostedCaption = useGalleryFrostedCaption();
   const estimateAitagCardHeight = React.useCallback((work: AitagWorkSummary, columnWidth: number) => {
@@ -586,10 +615,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
               const ratio = width / Math.max(1, height);
               // 缩略图整数像素取整不改变原图比例，避免每张图就绪都触发一次整列估高。
               if (measuredRatio && Math.abs(ratio / measuredRatio - 1) < 0.005) return;
-              if (Number.isFinite(ratio) && ratio > 0 && aitagRatios[work.id] !== ratio) {
-                aitagRatioCache[work.id] = ratio;
-                setAitagRatios(previous => (previous[work.id] === ratio ? previous : { ...previous, [work.id]: ratio }));
-              }
+              if (Number.isFinite(ratio) && ratio > 0 && aitagRatios[work.id] !== ratio) queueAitagRatio(work.id, ratio);
             }}
           />
           {/* 保存状态用单个圆钮表达：已收录是翠绿实底 + 对勾（只作状态）；未收录是磨砂底 + 图层图标，
