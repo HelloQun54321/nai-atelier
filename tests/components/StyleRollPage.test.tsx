@@ -270,8 +270,8 @@ it('删除样张广播刷新已打开Roll详情缩略图，保留候选且不保
   expect(container.querySelector('[data-roll-page]')).toBeTruthy();
   expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled();
 });
-const configure = (name: string, value: string) => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); for (const label of name === '每串总人数' ? ['最少画师人数', '最多画师人数'] : [name]) fireEvent.change(screen.getByRole('spinbutton', { name: label }), { target: { value } }); fireEvent.keyDown(window, { key: 'Escape' }); };
-const openArtists = () => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ })); };
+const configure = (name: string, value: string) => { fireEvent.click(screen.getByRole('button', { name: '设置' })); for (const label of name === '每串总人数' ? ['最少画师人数', '最多画师人数'] : [name]) fireEvent.change(screen.getByRole('spinbutton', { name: label }), { target: { value } }); fireEvent.keyDown(window, { key: 'Escape' }); };
+const openArtists = () => { fireEvent.click(screen.getByRole('button', { name: '设置' })); fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ })); };
 const reloadRecords = () => { fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '重新加载画风记录' })); };
 /** 详情里的操作已直接放在标题栏与正文中，不再需要展开「更多操作」。 */
 const details = () => {};
@@ -339,7 +339,7 @@ it('手机390px工具栏可横向滚动，主操作固定在滚动区外并保�
   expect(scroller.classList.contains('overflow-x-auto')).toBe(true);
   expect(scroller.closest('header')).toBeTruthy();
   const roll = screen.getByRole('button', { name: '再 Roll 一轮' });
-  const settings = screen.getByRole('button', { name: '本轮设置' });
+  const settings = screen.getByRole('button', { name: '设置' });
   expect(scroller.contains(roll)).toBe(false); expect(scroller.contains(settings)).toBe(false);
   expect(scroller.closest('header')!.contains(roll)).toBe(true); expect(scroller.closest('header')!.contains(settings)).toBe(true);
   expect(roll.classList.contains('h-10')).toBe(true);
@@ -348,7 +348,7 @@ it('手机390px工具栏可横向滚动，主操作固定在滚动区外并保�
   expect(preview.classList.contains('object-contain')).toBe(true);
   expect(preview.className).not.toMatch(/(?:group-hover:|hover:)scale/);
   fireEvent.click(settings);
-  const menu = screen.getByRole('dialog', { name: '本轮设置' });
+  const menu = screen.getByRole('dialog', { name: '设置' });
   expect(scroller.contains(menu)).toBe(false);
   expect(menu.closest('[data-roll-page]')).toBeNull();
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '0.7');
@@ -374,12 +374,12 @@ it('权重范围随记录切换并在重新进入后恢复，新范围只作用�
   const other = { ...structuredClone(experiment), id: 'other-record', name: '另一记录', rules: { ...experiment.rules, minWeight: 2, maxWeight: 2.4 } };
   mocks.load.mockResolvedValue([experiment, other]);
   const view = await setup();
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '0.2');
   fireEvent.keyDown(window, { key: 'Escape' });
   fireEvent.change(screen.getByRole('combobox', { name: '切换画风记录' }), { target: { value: other.id } });
-  await waitFor(() => expect(screen.getByRole('button', { name: '本轮设置' }).hasAttribute('disabled')).toBe(false));
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '设置' }).hasAttribute('disabled')).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '2');
   expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '2.4');
   fireEvent.keyDown(window, { key: 'Escape' });
@@ -391,14 +391,14 @@ it('权重范围随记录切换并在重新进入后恢复，新范围只作用�
   expect(saved.candidates.slice(0, 2)).toEqual(other.candidates);
   expect(saved.rules).toMatchObject({ minWeight: 1.7, maxWeight: 1.9 });
   view.unmount(); mocks.load.mockResolvedValue([saved]); await setup();
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '1.7');
   expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '1.9');
 });
-it('本轮设置可调生成间隔与随机浮动，按同一 Key 保存并立即生效', async () => {
+it('设置可调生成间隔与随机浮动，按同一 Key 保存并立即生效', async () => {
   await setup();
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
-  const dialog = screen.getByRole('dialog', { name: '本轮设置' });
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
+  const dialog = screen.getByRole('dialog', { name: '设置' });
   await waitFor(() => expect(mocks.getQueue).toHaveBeenCalledWith('synthetic-key'));
   const interval = within(dialog).getByRole('spinbutton', { name: '生成间隔' }) as HTMLInputElement;
   expect(interval.value).toBe('2.0');
@@ -409,9 +409,9 @@ it('本轮设置可调生成间隔与随机浮动，按同一 Key 保存并立�
   await waitFor(() => expect(mocks.setIntervalPref).toHaveBeenCalledWith('synthetic-key', 3.5, 20));
   expect((within(dialog).getByRole('spinbutton', { name: '生成间隔' }) as HTMLInputElement).value).toBe('3.5');
 });
-it('本轮设置与完整配置双向同步人数和权重范围，保存配置不会自动出图', async () => {
+it('设置与完整配置双向同步人数和权重范围，保存配置不会自动出图', async () => {
   await setup(); configure('每串总人数', '5'); configure('最低权重', '0.4'); configure('最高权重', '0.6');
-  const openSetup = () => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); fireEvent.click(screen.getByRole('button', { name: '提示词与生成设置' })); };
+  const openSetup = () => { fireEvent.click(screen.getByRole('button', { name: '设置' })); fireEvent.click(screen.getByRole('button', { name: '提示词与生成设置' })); };
   openSetup(); fireEvent.click(screen.getByRole('button', { name: '保存合成实验' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
   expect(mocks.save.mock.calls[0][0].rules).toEqual({ minArtists: 5, maxArtists: 5, minWeight: 0.4, maxWeight: 0.6 });
@@ -419,7 +419,7 @@ it('本轮设置与完整配置双向同步人数和权重范围，保存配置�
   mocks.setupRules = { minArtists: 6, maxArtists: 6, minWeight: 0.2, maxWeight: 0.3 };
   openSetup(); fireEvent.click(screen.getByRole('button', { name: '保存合成实验' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
   expect(screen.getByRole('spinbutton', { name: '最多画师人数' })).toHaveProperty('value', '6');
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '0.2');
   expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '0.3');
@@ -427,7 +427,7 @@ it('本轮设置与完整配置双向同步人数和权重范围，保存配置�
 });
 it('强制清空种子对 Roll 生效：配置窗口同步状态，生成按随机种子提交', async () => {
   await setup({ forceEmptySeed: true });
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
   fireEvent.click(screen.getByRole('button', { name: '提示词与生成设置' }));
   expect(screen.getByRole('dialog', { name: 'Roll 串配置' }).getAttribute('data-force-empty')).toBe('true');
   fireEvent.click(screen.getByRole('button', { name: '取消草稿' }));
@@ -720,9 +720,9 @@ it('记录可重命名、移入与恢复回收站，全部收起后仍保留恢�
   expect(mocks.save.mock.calls.at(-1)![0].candidates).toEqual(experiment.candidates); expect(mocks.generate).not.toHaveBeenCalled();
 });
 
-it('本轮设置直接固定部分 Tag，总人数包含固定项且所有权重随机', async () => {
+it('设置直接固定部分 Tag，总人数包含固定项且所有权重随机', async () => {
   await setup(); configure('每串总人数', '5'); configure('最低权重', '1.8'); configure('最高权重', '2.2');
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
   expect(screen.queryByRole('button', { name: /全随机|固定权重|选择固定画师/ })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ }));
   fireEvent.click(within(screen.getByRole('dialog', { name: 'Roll 画师' })).getByRole('button', { name: '抽取设置' }));
@@ -771,7 +771,7 @@ it('只从有样张的画师中抽取会过滤抽取范围，并把开关写进�
   experiment.artists = [];
   mocks.dictionary.mockResolvedValue(['alpha', 'beta', 'gamma'].map(name => ({ name, chinese: '', postCount: 1 })));
   await setup(); configure('每串总人数', '1');
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
   fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ }));
   fireEvent.click(within(screen.getByRole('dialog', { name: 'Roll 画师' })).getByRole('button', { name: '抽取设置' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '只从有样张的画师中抽取' }));
@@ -792,15 +792,15 @@ it('筛选面板显示轮次条件并可沿用，沿用只填设置不自动提�
   fireEvent.change(screen.getByRole('combobox', { name: '查看轮次' }), { target: { value: 'r1' } });
   expect(screen.getByRole('option', { name: /2 位画师.*固定 0 位/ })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '沿用这轮条件' }));
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '2');
   expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '2.4');
   expect(mocks.generate).not.toHaveBeenCalled();
 });
 
 it('生成设置从本轮菜单打开时关闭原弹层，避免两个模态窗口叠盖', async () => {
-  await setup(); fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); fireEvent.click(screen.getByRole('button', { name: '提示词与生成设置' }));
-  expect(screen.queryByRole('dialog', { name: '本轮设置' })).toBeNull(); expect(screen.getByRole('button', { name: '保存合成实验' })).toBeTruthy();
+  await setup(); fireEvent.click(screen.getByRole('button', { name: '设置' })); fireEvent.click(screen.getByRole('button', { name: '提示词与生成设置' }));
+  expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull(); expect(screen.getByRole('button', { name: '保存合成实验' })).toBeTruthy();
 });
 it.each([false, true])('多选补图显示实际提交张数，遵循连续生成开关与每轮24张上限：%s', async continuous => {
   experiment.candidates = Array.from({ length: 25 }, (_, index) => candidateFixture('pending-' + index, 'artist-' + index)); mocks.history.mockResolvedValue([]);
@@ -856,7 +856,7 @@ it('可从候选新建记录并预置固定画师，保留自定义公共配置�
   expect(created.rules).toMatchObject({ minArtists: 1, maxArtists: 1 });
   expect(created.candidates).toEqual([]);
   expect(created.name).not.toContain('权重');
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
   fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ }));
   expect(screen.getByRole('button', { name: '锁定画师：alpha' }).getAttribute('aria-pressed')).toBe('true');
 });
@@ -941,7 +941,7 @@ it('从画师库带入固定画师时新建记录并固定 Tag，不覆盖当前
   expect(created.pinnedArtists).toEqual(['alpha', 'beta']);
   expect(created.drawPlan).toBeUndefined();
   expect(created.rules).toMatchObject({ minArtists: 2, maxArtists: 2 });
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
   fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ }));
   expect(screen.getByRole('button', { name: '锁定画师：beta' }).getAttribute('aria-pressed')).toBe('true');
 });
@@ -1011,7 +1011,7 @@ it('本轮人数与权重各占一行，保存范围并让助手遵循偏好保�
   preferredItems.push({ sourceType: 'artist', sourceId: 'beta', archived: false });
   const { container } = await setup();
   configure('最少画师人数', '4'); configure('最多画师人数', '6');
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
   const people = screen.getByRole('group', { name: '每串人数范围' }), weights = screen.getByRole('group', { name: '权重范围' });
   expect(people.contains(screen.getByLabelText('最多画师人数'))).toBe(true);
   expect(weights.contains(screen.getByLabelText('最低权重'))).toBe(true);
@@ -1179,12 +1179,12 @@ it('保存阶段即使关闭过程预览仍展示最终图，状态条明确保�
 
 vi.mock('../../components/roll/StyleRollChainArtistDialog', () => ({ StyleRollChainArtistDialog: ({ source, blocked, onConfirm, onClose }: any) => <div role="dialog" aria-label="提取接线" data-source={JSON.stringify(source ?? null)} data-blocked={blocked.join(',')}><button onClick={() => { onConfirm({ chainIds: ['source-chain', 'source-two'], artists: [{ tag: 'beta', count: 2 }, { tag: 'gamma', count: 1 }, { tag: 'delta', count: 1 }, { tag: 'epsilon', count: 1 }] }); onClose(); }}>确认提取接线</button><button onClick={() => { onConfirm(undefined); onClose(); }}>使用全部画师接线</button><button onClick={onClose}>取消提取接线</button></div> }));
 
-it('本轮设置里直接提取抽样来源，不打开管理、不生成或保存参数；隐藏与切记录卸载', async () => {
+it('设置里直接提取抽样来源，不打开管理、不生成或保存参数；隐藏与切记录卸载', async () => {
   const second = { ...rollFixture(), id: 'other-record', name: '另一个记录' };
   mocks.load.mockImplementation(async () => [structuredClone(experiment), second]);
   const view = await setup();
   const chainButton = () => screen.getByRole('button', { name: /从风格串提取/ });
-  const openSettings = () => fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  const openSettings = () => fireEvent.click(screen.getByRole('button', { name: '设置' }));
   const closeSettings = () => fireEvent.keyDown(window, { key: 'Escape' });
   const open = () => { openSettings(); fireEvent.click(chainButton()); };
   openSettings();
@@ -1202,7 +1202,7 @@ it('本轮设置里直接提取抽样来源，不打开管理、不生成或保�
   view.rerender(<StyleRollPage {...view.props} />); await waitFor(() => expect(screen.getByRole('button', { name: '再 Roll 一轮' }).hasAttribute('disabled')).toBe(false)); open();
   fireEvent.change(screen.getByRole('combobox', { name: '切换画风记录' }), { target: { value: second.id } });
   expect(screen.queryByRole('dialog', { name: '提取接线' })).toBeNull();
-  await waitFor(() => expect(screen.getByRole('button', { name: '本轮设置' }).hasAttribute('disabled')).toBe(false));
+  await waitFor(() => expect(screen.getByRole('button', { name: '设置' }).hasAttribute('disabled')).toBe(false));
   open(); expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).not.toContain('beta');
   expect(mocks.generate).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
 });
@@ -1216,7 +1216,7 @@ it.each([false, true])('提取来源经页面/Agent保存到记录与轮次，�
   ] as unknown as PromptChain[];
   const view = await setup({ chains: sourceChains });
   const chainButton = () => screen.getByRole('button', { name: /从风格串提取/ });
-  const openSettings = () => fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  const openSettings = () => fireEvent.click(screen.getByRole('button', { name: '设置' }));
   const closeSettings = () => fireEvent.keyDown(window, { key: 'Escape' });
   openSettings(); fireEvent.click(chainButton());
   fireEvent.click(screen.getByRole('button', { name: '确认提取接线' }));
@@ -1254,7 +1254,7 @@ it.each([false, true])('已有提取来源不依赖全词库成功，仍显示�
   const view = await setup();
   await waitFor(() => expect(screen.getByRole('button', { name: '再 Roll 一轮' }).hasAttribute('disabled')).toBe(false));
   expect((await executeAgentCommand(view.container, 'get_roll_state', {}, true) as any).library.error).toContain('合成词库读取失败');
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
   expect(screen.getByRole('button', { name: /从风格串提取/ }).hasAttribute('disabled')).toBe(false);
   fireEvent.keyDown(window, { key: 'Escape' });
   if (agent) await act(async () => { await executeAgentCommand(view.container, 'run_roll_round', { count: 1, generate: false }, false); });

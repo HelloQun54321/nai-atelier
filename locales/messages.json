@@ -3341,6 +3341,18 @@
     "ラウンド設定",
     "라운드 설정"
   ],
+  "本轮": [
+    "本輪",
+    "This round",
+    "今回",
+    "이번 라운드"
+  ],
+  "记录设置": [
+    "記錄設定",
+    "Record settings",
+    "記録設定",
+    "기록 설정"
+  ],
   "本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。": [
     "本輪生成 {0} 張，預計共消耗 {1} Anlas。本地剩餘預算：{2}。",
     "Generate {0} images this round for an estimated total of {1} Anlas. Local budget remaining: {2}.",
