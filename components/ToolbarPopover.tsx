@@ -78,6 +78,8 @@ export const AnchoredToolbarPopover: React.FC<{
 /** 同一套内容在桌面锚定展示、手机使用底部面板。 */
 export const ToolbarPopover: React.FC<{
   label?: string;
+  /** 按钮的无障碍名称；显示文本可以随当前对象变化（如当前记录名），定位仍保持稳定。 */
+  ariaLabel?: string;
   title: string;
   icon?: React.ReactNode;
   count?: number | ((mobile: boolean) => number);
@@ -92,7 +94,7 @@ export const ToolbarPopover: React.FC<{
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   children: React.ReactNode | ((close: () => void, mobile: boolean) => React.ReactNode);
-}> = ({ label = '筛选', title, icon = <Filter />, count = 0, active, width, above, iconOnly, iconTone, zIndex, disabled, className = '', open: controlledOpen, onOpenChange, children }) => {
+}> = ({ label = '筛选', ariaLabel, title, icon = <Filter />, count = 0, active, width, above, iconOnly, iconTone, zIndex, disabled, className = '', open: controlledOpen, onOpenChange, children }) => {
   useLanguage();
   const anchorRef = useRef<HTMLDivElement>(null);
   const [internalOpen, setInternalOpen] = useState(false);
@@ -112,8 +114,8 @@ export const ToolbarPopover: React.FC<{
   const content = typeof children === 'function' ? children(close, mobile) : children;
   const countValue = typeof count === 'function' ? count(mobile) : count;
   return <div ref={anchorRef} className={`flex-none ${className}`}>
-    {iconOnly ? <IconButton data-agent-action="browse" label={label} tone={iconTone} disabled={disabled} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="dialog">{icon}</IconButton> : <ToolbarButton data-agent-action="browse" disabled={disabled} active={active ?? countValue > 0} onClick={() => setOpen(!open)} aria-label={`${t(label)}${countValue > 0 ? ` ${countValue}` : ''}`} aria-expanded={open} aria-haspopup="dialog" title={title} className="mobile-touch !px-2.5 md:!px-3">
-      {icon}<span className="hidden sm:inline">{t(label)}{countValue > 0 ? ` ${countValue}` : ''}</span>{countValue > 0 && <span className="sm:hidden">{countValue}</span>}
+    {iconOnly ? <IconButton data-agent-action="browse" label={ariaLabel ? t(ariaLabel) : label} tone={iconTone} disabled={disabled} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="dialog">{icon}</IconButton> : <ToolbarButton data-agent-action="browse" disabled={disabled} active={active ?? countValue > 0} onClick={() => setOpen(!open)} aria-label={`${t(ariaLabel || label)}${countValue > 0 ? ` ${countValue}` : ''}`} aria-expanded={open} aria-haspopup="dialog" title={title} className="mobile-touch !px-2.5 md:!px-3">
+      {icon}<span className="hidden max-w-40 truncate sm:inline">{t(label)}{countValue > 0 ? ` ${countValue}` : ''}</span>{countValue > 0 && <span className="sm:hidden">{countValue}</span>}
     </ToolbarButton>}
     {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={title} zIndex={zIndex} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={title} width={width} above={above} zIndex={zIndex} onClose={close}>{content}</AnchoredToolbarPopover>)}
   </div>;

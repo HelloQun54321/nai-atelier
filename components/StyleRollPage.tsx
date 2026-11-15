@@ -31,7 +31,7 @@ import { createUuid } from '../services/id';
 import { useAlertDialog, useConfirmDialog } from './ConfirmDialog';
 import { useNaiChannelMode } from '../services/naiChannel';
 import { useAgentCommand } from '../services/agentCommands';
-import { EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { SmartImage } from './SmartImage';
@@ -142,6 +142,9 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const [savingProgress, setSavingProgress] = useState<{ completed: number; total: number } | null>(null);
   const [saveFailures, setSaveFailures] = useState<{ experimentId: string; ids: string[]; unprocessed: number; needsReload: boolean; messages: string[] } | null>(null);
   const [recordName, setRecordName] = useState('');
+  // 记录列表默认按最近使用排；也可以按创建时间排，并支持搜索。
+  const [recordQuery, setRecordQuery] = useState('');
+  const [recordSort, setRecordSort] = useState<'recent' | 'created'>('recent');
   const [setup, setSetup] = useState<RollExperiment | null>(null), [lightbox, setLightbox] = useState<LocalGenItem | null>(null);
   useEffect(() => { if (setup) setChainTarget(null); }, [setup]);
   const [session, setSession] = useState<GenerationSeriesSession | null>(null), [preparing, setPreparing] = useState(false);
@@ -353,11 +356,21 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     await ensureCollection();
     return collectionSnapshot().filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => item.sourceId!);
   };
+  // 记录名用「日期 + 分钟」而不是无意义的序号；重名时自动加后缀，避免删改后出现两条同名记录。
+  const uniqueRecordName = (base: string) => {
+    const names = new Set(experiments.map(item => item.name));
+    if (!names.has(base)) return base;
+    let index = 2;
+    while (names.has(`${base} ${index}`)) index += 1;
+    return `${base} ${index}`;
+  };
   const makeExperiment = () => {
     const now = Date.now();
+    const stamp = new Date(now);
+    const dateLabel = `${String(stamp.getMonth() + 1).padStart(2, '0')}-${String(stamp.getDate()).padStart(2, '0')} ${String(stamp.getHours()).padStart(2, '0')}:${String(stamp.getMinutes()).padStart(2, '0')}`;
     const template = createDefaultRollTemplate(runtime);
     const next: RollExperiment = {
-      version: 1, id: createUuid(), name: t('画风记录 {0}', [experiments.length + 1]), revision: 0, createdAt: now, updatedAt: now,
+      version: 1, id: createUuid(), name: uniqueRecordName(t('记录 {0}', [dateLabel])), revision: 0, createdAt: now, updatedAt: now,
       artists: structuredClone(artistOverrides), rules: roundRules, sampledOnly, chainArtistSource,
       template,
       candidates: [], rounds: [], pinnedArtists: [...pinnedArtists],
@@ -801,25 +814,39 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         </div>
         <ToolbarButton aria-label={t('退出多选')} disabled={frozen} onClick={() => { setSelecting(false); setSelectedIds(new Set()); }}><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
       </> : <div data-roll-toolbar-scroll="true" className="flex h-full min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none]">
-        {/* 左侧：画风记录选择与管理（胶囊卡片，归正核心上下文） */}
-        <div className="appearance-group flex shrink-0 items-center gap-1 rounded-xl border border-gray-200/80 bg-gray-100/60 p-0.5 dark:border-gray-800 dark:bg-gray-800/40">
-          <span className="hidden pl-2 text-micro font-semibold text-gray-500 dark:text-gray-400 lg:inline">{t('画风记录')}</span>
-          <ToolbarSelect label={t('切换画风记录')} containerClassName="max-w-32 sm:max-w-48 lg:max-w-72 min-w-0" className="!h-8 !border-transparent !bg-transparent !pl-2 !text-sm font-semibold" value={experimentId} disabled={frozen || preparing} onChange={event => setExperimentId(event.target.value)}>
-            {!experiment && <option value="">{t('新画风记录')}</option>}{experiments.filter(item => !item.archived).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </ToolbarSelect>
-          <ToolbarPopover title={t('画风记录管理')} label={t('管理记录')} icon={<MoreHorizontal className="h-4 w-4" />} iconOnly disabled={frozen || working || selecting} width={320} open={mobileRecordMenuOpen} onOpenChange={setMobileRecordMenuOpen} className="[&_button]:!h-11 [&_button]:!w-11 max-md:hidden md:[&_button]:!h-7 md:[&_button]:!w-7">
+        {/* 左侧：画风记录（一个面板同时承担切换、搜索、排序与管理） */}
+        <div className="appearance-group flex shrink-0 items-center rounded-xl border border-gray-200/80 bg-gray-100/60 p-0.5 dark:border-gray-800 dark:bg-gray-800/40">
+          <ToolbarPopover title={t('画风记录')} label={experiment?.name || t('新画风记录')} ariaLabel={t('画风记录')} icon={<ChevronDown className="h-4 w-4" />} disabled={frozen || preparing || selecting} width={380} open={mobileRecordMenuOpen} onOpenChange={setMobileRecordMenuOpen}>
             {close => <div className="space-y-3">
+              <div role="group" aria-label={t('记录排序')} className="grid grid-cols-2 gap-2">
+                <ToolbarButton active={recordSort === 'recent'} onClick={() => setRecordSort('recent')}>{t('最近使用')}</ToolbarButton>
+                <ToolbarButton active={recordSort === 'created'} onClick={() => setRecordSort('created')}>{t('创建时间')}</ToolbarButton>
+              </div>
+              <input aria-label={t('搜索画风记录')} placeholder={t('搜索画风记录')} value={recordQuery} onChange={event => setRecordQuery(event.target.value)} className={TOOLBAR_FIELD_CLASS} />
+              <div role="listbox" aria-label={t('画风记录列表')} className="max-h-64 space-y-0.5 overflow-y-auto">
+                {[...experiments.filter(item => !item.archived && (!recordQuery.trim() || item.name.toLowerCase().includes(recordQuery.trim().toLowerCase())))]
+                  .sort((a, b) => recordSort === 'created' ? b.createdAt - a.createdAt : b.updatedAt - a.updatedAt)
+                  .map(item => <button key={item.id} type="button" role="option" aria-selected={item.id === experimentId} aria-label={item.name} onClick={() => { setExperimentId(item.id); setRecordQuery(''); close(); }}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm ${item.id === experimentId ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'}`}>
+                    <span className="min-w-0 flex-1 truncate" title={item.name}>{item.name}</span>
+                    <span className="shrink-0 text-micro text-gray-400">{t('{0} 候选 · {1} 轮', [item.candidates, item.rounds])}</span>
+                  </button>)}
+                {!experiments.some(item => !item.archived && (!recordQuery.trim() || item.name.toLowerCase().includes(recordQuery.trim().toLowerCase()))) && <p className="px-2 py-3 text-xs text-gray-400">{t('没有匹配的记录')}</p>}
+              </div>
               {experiment && <div className="appearance-group rounded-xl bg-gray-50 px-2.5 py-2 text-xs text-gray-500 dark:bg-gray-800/60">{t('{0} 轮 · {1} 张已出图 · {2} 个已存风格串', [experiment.rounds.length, images.size, experiment.candidates.filter(candidate => candidate.savedChainId).length])}</div>}
               {experiment && <form onSubmit={event => { event.preventDefault(); if (!recordName.trim() || recordName.trim() === experiment.name) return; void perform(async () => { await store({ ...experiment, name: recordName.trim() }); close(); }); }}>
                 <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('记录名称')}<input aria-label={t('记录名称')} value={recordName} maxLength={120} onChange={event => setRecordName(event.target.value)} className={TOOLBAR_FIELD_CLASS} /></label>
                 <ToolbarButton type="submit" className="mt-2 w-full" disabled={!recordName.trim() || recordName.trim() === experiment.name}>{t('重命名')}</ToolbarButton>
               </form>}
-              <div className="space-y-1">
+              <div className="space-y-1 border-t border-gray-200 pt-2 dark:border-gray-800">
                 <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => openFromSettings(close, () => setSetup(makeExperiment()))}><Plus />{t('新建记录')}</button>
                 <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); close(); }}><RefreshCw />{t('重新加载画风记录')}</button>
                 {experiment && <button type="button" className={`${TOOLBAR_MENU_CLASS} !text-red-500`} onClick={() => { archiveRecord(experiment.id, true); close(); }}><Trash2 />{t('将记录移入回收站')}</button>}
               </div>
-              {experiments.some(item => item.archived) && <div className="space-y-1 border-t border-gray-200 pt-3 dark:border-gray-800"><p className="mb-2 text-xs text-gray-400">{t('记录回收站')}</p>{experiments.filter(item => item.archived).map(item => <div key={item.id} className="flex items-center gap-2 text-sm"><span className="min-w-0 flex-1 truncate">{item.name}</span><button type="button" className="mobile-touch shrink-0 px-2 text-xs text-indigo-500" aria-label={t('恢复记录：{0}', [item.name])} onClick={() => { archiveRecord(item.id, false); close(); }}>{t('恢复')}</button></div>)}</div>}
+              {experiments.some(item => item.archived) && <details className="border-t border-gray-200 pt-2 dark:border-gray-800">
+                <summary className="cursor-pointer select-none text-xs text-gray-400">{t('记录回收站')}（{experiments.filter(item => item.archived).length}）</summary>
+                <div className="mt-1 space-y-1">{experiments.filter(item => item.archived).map(item => <div key={item.id} className="flex items-center gap-2 text-sm"><span className="min-w-0 flex-1 truncate">{item.name}</span><button type="button" className="mobile-touch shrink-0 px-2 text-xs text-indigo-500" aria-label={t('恢复记录：{0}', [item.name])} onClick={() => { archiveRecord(item.id, false); close(); }}>{t('恢复')}</button></div>)}</div>
+              </details>}
             </div>}
           </ToolbarPopover>
         </div>
