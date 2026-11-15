@@ -995,8 +995,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     const data = await aitagService.searchCache({
       page: 1,
       pageSize: 1,
-      q: String(workId),
-      prompt: '',
+      ids: [workId],
       sort,
       timeRange: getAitagTimeRange(sort, rankMonth),
     });

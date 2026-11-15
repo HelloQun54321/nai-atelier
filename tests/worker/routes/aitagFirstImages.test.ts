@@ -75,6 +75,20 @@ it('详情 404 不被搜索空结果规则吞掉，损坏 JSON 仍报错', async
   await expect(f.invoke('/api/aitag/search?q=synthetic')).rejects.toThrow('aitag returned invalid JSON');
 });
 
+it('按作品编号直接取缓存条目，不触发关键词全表匹配', async () => {
+  const f = fixture();
+  await f.invoke('/api/aitag/cache/first-images?ids=&timeout_ms=0');
+  f.sqlite.prepare("INSERT INTO aitag_works(id,source_sort,source_page,source_index,ai_type,raw_json,local_cover_url,first_image_json,is_favorite) VALUES(3,'new',1,0,'NAI','{}','/synthetic/three.png',NULL,1)").run();
+  f.sqlite.prepare('INSERT INTO aitag_work_details(work_id,detail_json) VALUES(3,?)')
+    .run(JSON.stringify({ images: [{ ai_json: { prompt: 'detail-only-needle' }, local_image_url: '/synthetic/three.png' }] }));
+  const byId = await (await f.invoke('/api/aitag/cache/search?ids=3')).json() as any;
+  expect(byId.items.map((work: any) => work.id)).toEqual([3]);
+  expect(byId.total).toBe(1);
+  // 关键词不再扫描整组详情：同样的词用 q 搜不到，但按编号仍可直接取回。
+  const byQuery = await (await f.invoke('/api/aitag/cache/search?q=detail-only-needle')).json() as any;
+  expect(byQuery.items).toHaveLength(0);
+});
+
 it('首图资料独立参与缓存关键词和提示词检索，兼容旧列表、详情及缓存组合', async () => {
   const f = fixture();
   await f.invoke('/api/aitag/cache/first-images?ids=&timeout_ms=0');

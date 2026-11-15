@@ -155,6 +155,8 @@ export interface AitagSearchParams {
 
 export interface AitagCacheSearchParams extends AitagSearchParams {
   cacheFilter?: 'all' | 'full' | 'first-image' | 'favorite';
+  /** 按作品编号精确取回缓存条目；详情轮询用，避免触发关键词匹配。 */
+  ids?: number[];
 }
 
 export interface AitagCacheStatus {
@@ -679,6 +681,7 @@ export const aitagService = {
     if (params.q?.trim()) query.set('q', params.q.trim());
     if (params.prompt?.trim()) query.set('prompt', params.prompt.trim());
     if (params.cacheFilter) query.set('cacheFilter', params.cacheFilter);
+    if (params.ids?.length) query.set('ids', params.ids.join(','));
 
     return api.get(`/aitag/cache/search?${query.toString()}`);
   },

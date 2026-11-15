@@ -11,6 +11,8 @@ const AITAG_CACHE_BATCH_PAGES = 2;
 const AITAG_CACHE_DELAY_MIN_MS = 800;
 const AITAG_CACHE_DELAY_MAX_MS = 1200;
 const AITAG_CONFIG_VERSION = '260528a';
+const AITAG_STATUS_TTL_MS = 2000;
+const aitagStatusCache = new WeakMap<D1Database, Map<string, { at: number; value: any }>>();
 
 function buildAitagSearchUrl(sourceUrl: URL) {
   const sort = sourceUrl.searchParams.get('sort') === 'monthly' ? 'monthly' : 'new';
@@ -1020,7 +1022,10 @@ function firstImagePromptMatchSql() {
       REPLACE(prompt_part.fullkey, '"', '') LIKE '$.v4_prompt.caption.char_captions[%].char_caption'
     ) AND LOWER(prompt_part.value) LIKE ?
   )`;
-  return `(LOWER(COALESCE(json_extract((${image}), '$.prompt_text'), '')) LIKE ? OR ${matchTree(ai)} OR ${matchTree(comment)})`;
+  // 先用整行首图文本做便宜的前置筛选，命中后才展开 json_tree 精筛：
+  // 未命中行的标题、参数、图片地址里本来也没有这个提示词，不必逐节点展开。
+  return `(LOWER(COALESCE(json_extract((${image}), '$.prompt_text'), '')) LIKE ?
+    OR (LOWER(COALESCE(${image}, '')) LIKE ? AND (${matchTree(ai)} OR ${matchTree(comment)})))`;
 }
 
 async function searchAitagCache(
@@ -1099,7 +1104,7 @@ async function searchAitagCache(
         WHERE d.work_id = w.id AND LOWER(COALESCE(d.detail_json, '')) LIKE ?
       )
     )`);
-    values.push(like, like, like, like, like);
+    values.push(like, like, like, like, like, like);
   }
 
   const whereSql = where.join(' AND ');
@@ -1178,11 +1183,21 @@ async function getAitagIndexState(db: D1Database, sort: string, timeRange = 'all
     .first<any>();
 }
 
-async function getAitagCacheStatus(db: D1Database, sort: string, timeRange = 'all', aiType: AitagAiTypeFilter = 'all') {
+async function getAitagCacheStatus(db: D1Database, sort: string, timeRange = 'all', aiType: AitagAiTypeFilter = 'all', options: { fresh?: boolean } = {}) {
   const normalizedSort = normalizeAitagSort(sort);
   const normalizedTimeRange = normalizeAitagTimeRange(timeRange, normalizedSort);
   const sourceSort = getAitagSourceSort(normalizedSort, normalizedTimeRange);
   const key = getAitagStateKey(normalizedSort, normalizedTimeRange, aiType);
+  const cacheKey = `${sourceSort}|${key}`;
+  let statusStore = aitagStatusCache.get(db);
+  if (!statusStore) {
+    statusStore = new Map();
+    aitagStatusCache.set(db, statusStore);
+  }
+  if (statusStore.size > 64) statusStore.clear();
+  const cachedStatus = statusStore.get(cacheKey);
+  // 状态由翻页、详情轮询和首图检查反复读取，但计数变化很慢；短缓存避免每个请求都跑全表 COUNT。
+  if (!options.fresh && cachedStatus && Date.now() - cachedStatus.at < AITAG_STATUS_TTL_MS) return cachedStatus.value;
   const state = await getAitagIndexState(db, normalizedSort, normalizedTimeRange, aiType);
   const worksCount = await db.prepare('SELECT COUNT(DISTINCT id) as count FROM aitag_works')
     .first<{count: number}>();
@@ -1199,7 +1214,7 @@ async function getAitagCacheStatus(db: D1Database, sort: string, timeRange = 'al
     .bind(...sortValues)
     .first<{count: number}>();
 
-  return {
+  const status = {
     key,
     sort: normalizedSort,
     timeRange: normalizedTimeRange,
@@ -1220,6 +1235,8 @@ async function getAitagCacheStatus(db: D1Database, sort: string, timeRange = 'al
     firstImagesCount: Number(firstImagesCount?.count || 0),
     coversCount: Number(firstImagesCount?.count || 0),
   };
+  statusStore.set(cacheKey, { at: Date.now(), value: status });
+  return status;
 }
 
 async function upsertAitagIndexState(
@@ -1330,7 +1347,7 @@ async function runAitagIndexBatch(
     }
   }
 
-  return getAitagCacheStatus(db, sort, timeRange, aiType);
+  return getAitagCacheStatus(db, sort, timeRange, aiType, { fresh: true });
 }
 
 // All /api/aitag/* routes, in the original dispatch order.
@@ -1404,6 +1421,23 @@ export async function handleAitagRoute(ctx: RouteContext): Promise<Response | nu
     const pageSize = clampInt(url.searchParams.get('page_size'), AITAG_MAX_PAGE_SIZE, 1, AITAG_MAX_PAGE_SIZE);
     const aiType = normalizeAitagAiTypeFilter(url.searchParams.get('aiType'));
     const cacheFilter = normalizeAitagCacheFilter(url.searchParams.get('cacheFilter'));
+    const ids = (url.searchParams.get('ids') || '')
+      .split(',')
+      .map(value => Number(value.trim()))
+      .filter(id => Number.isSafeInteger(id) && id > 0)
+      .slice(0, AITAG_MAX_PAGE_SIZE);
+    if (ids.length > 0) {
+      // 按作品编号精确查：详情面板轮询只关心这几条，不必再走关键词的全表匹配。
+      const items = await getCachedAitagWorksByIds(db, ids, sourceSort);
+      return json({
+        page: 1,
+        page_size: ids.length,
+        total: items.length,
+        items,
+        status: await getAitagCacheStatus(db, sort, timeRange, normalizeAitagAiTypeFilter(url.searchParams.get('statusAiType') || url.searchParams.get('aiType'))),
+        source: 'cache',
+      });
+    }
     const searchResult = await searchAitagCache(db, {
       page,
       pageSize,
@@ -1502,7 +1536,7 @@ export async function handleAitagRoute(ctx: RouteContext): Promise<Response | nu
       VALUES (?, ?, ?, ?, 1, ?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET status = excluded.status, paused = 1, updated_at = excluded.updated_at
     `).bind(key, sort, timeRange, 'paused', AITAG_CACHE_DEFAULT_TARGET_PAGES, AITAG_MAX_PAGE_SIZE, Date.now()).run();
-    return json(await getAitagCacheStatus(db, sort, timeRange, aiType));
+    return json(await getAitagCacheStatus(db, sort, timeRange, aiType, { fresh: true }));
   }
 
   if (path === '/api/aitag/cache/resume' && method === 'POST') {
