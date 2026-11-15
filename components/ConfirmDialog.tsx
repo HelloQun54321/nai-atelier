@@ -10,6 +10,8 @@ export interface ConfirmDialogOptions {
     confirmLabel?: string;
     cancelLabel?: string;
     tone?: 'primary' | 'danger';
+    /** 只提示、不询问：隐藏取消按钮，用于把页面上的错误横条改成一次性弹窗。 */
+    hideCancel?: boolean;
     /** 稳定的操作类型；实质授权范围变化通过 scope 隔离，不能使用翻译文案。 */
     rememberKey?: string;
     rememberScope?: unknown;
@@ -149,7 +151,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                             </div>
                             <div className="min-w-0 flex-1">
                                 <h2 id="confirm-dialog-title" className="text-lg font-bold text-gray-900 dark:text-white">{t(options.title)}</h2>
-                                <p id="confirm-dialog-description" className="mt-2 whitespace-pre-line text-sm leading-6 text-gray-600 dark:text-gray-300">
+                                <p id="confirm-dialog-description" className="mt-2 max-h-[50vh] overflow-y-auto whitespace-pre-line break-words text-sm leading-6 text-gray-600 dark:text-gray-300">
                                     {t(options.message)}
                                 </p>
                             </div>
@@ -158,8 +160,8 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                             <input type="checkbox" data-agent-action="business" checked={remember} disabled={isSaving} onChange={event => setRemember(event.target.checked)} className="h-4 w-4 accent-indigo-600" />
                             {t('今日内不再显示')}
                         </label>}
-                        <div className={`${options.rememberKey ? 'mt-2' : 'mt-6'} grid gap-3 md:flex md:justify-end ${options.onSave ? 'grid-cols-1 md:flex-wrap' : 'grid-cols-2'}`}>
-                            <button
+                        <div className={`${options.rememberKey ? 'mt-2' : 'mt-6'} grid gap-3 md:flex md:justify-end ${options.hideCancel ? 'grid-cols-1' : options.onSave ? 'grid-cols-1 md:flex-wrap' : 'grid-cols-2'}`}>
+                            {!options.hideCancel && <button
                                 type="button"
                                 autoFocus
                                 disabled={isSaving}
@@ -168,7 +170,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                 className={`appearance-group mobile-touch rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-750 dark:focus:ring-offset-gray-900 ${options.onSave ? 'order-3 min-h-11 md:order-2' : ''}`}
                             >
                                 {t(options.cancelLabel) || t("取消")}
-                            </button>
+                            </button>}
                             <button
                                 type="button"
                                 disabled={isSaving}
@@ -203,4 +205,18 @@ export const useConfirmDialog = () => {
     const context = useContext(ConfirmDialogContext);
     if (!context) throw new Error('useConfirmDialog must be used inside ConfirmDialogProvider');
     return context.confirmAction;
+};
+
+/** 只提示、不询问：把页面上的错误横条改成一次性弹窗，点「知道了」即可关闭。 */
+export const useAlertDialog = () => {
+    const confirmAction = useConfirmDialog();
+    return useCallback((message: string, options: { title?: string; tone?: 'primary' | 'danger' } = {}) => {
+        void confirmAction({
+            title: options.title || t('操作失败'),
+            message,
+            confirmLabel: t('知道了'),
+            hideCancel: true,
+            tone: options.tone || 'danger',
+        });
+    }, [confirmAction]);
 };

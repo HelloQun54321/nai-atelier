@@ -1,7 +1,7 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { flushSync } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, CopyPlus, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, CopyPlus, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { MobileOverflowMenu } from './MobileUI';
 import { t, useLanguage } from '../services/i18n';
@@ -28,7 +28,7 @@ import { DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT, DEFAULT_GENERATION_INTERVAL
 import { localHistory } from '../services/localHistory';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { createUuid } from '../services/id';
-import { useConfirmDialog } from './ConfirmDialog';
+import { useAlertDialog, useConfirmDialog } from './ConfirmDialog';
 import { useNaiChannelMode } from '../services/naiChannel';
 import { useAgentCommand } from '../services/agentCommands';
 import { ChromeNotice, ChromeNoticeStack, EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
@@ -99,6 +99,7 @@ const ArtistFavoriteButton: React.FC<{ tag: string; sampleUrl?: string }> = ({ t
 export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStepLimit, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, selectionFocusEnabled = true, continuousGenerationEnabled = true, notify, onSaveChain, onOpenChain, onNavigateToPlayground, onOpenArtistLibrary, initialPinned }) => {
   useLanguage();
   const confirm = useConfirmDialog();
+  const alertDialog = useAlertDialog();
   const perUseNaiChannel = useNaiChannelMode() === 'per-use';
   const runtime = useNaiRuntime(); applyEstimatorRuntime(runtime);
   const subscription = useNovelaiUsage(), budget = useAnlasBudget();
@@ -110,10 +111,17 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   // 生成失败不占用顶部横幅：Roll 常驻小框承担出图过程、结果与失败回执。
   const [generationError, setGenerationError] = useState<{ experimentId: string; message: string; tone: 'error' | 'warning' } | null>(null);
   const setError = useCallback((message: string, source: 'request' | 'generation' = 'request') => {
-    const text = message ? parseHttpError(message).message : '';
+    // 带换行的消息是「汇总 + 逐条失败详情」，不再按单条 HTTP 错误解析。
+    const text = message ? (message.includes('\n') ? message : parseHttpError(message).message) : '';
     if (source === 'generation') setGenerationError(text ? { experimentId, message: text, tone: 'error' } : null);
     else setErrorState(text);
   }, [experimentId]);
+  // 请求错误不再顶成一条横幅：交给一次性弹窗，关掉即结束。
+  useEffect(() => {
+    if (!error) return;
+    setErrorState('');
+    alertDialog(error);
+  }, [error, alertDialog]);
   const [library, setLibrary] = useState<string[]>([]), [libraryLoading, setLibraryLoading] = useState(true), [libraryError, setLibraryError] = useState('');
   const [libraryEntries, setLibraryEntries] = useState<ArtistDictionaryEntry[]>([]);
   const [sampleUrls, setSampleUrls] = useState<Map<string, string>>(new Map());
@@ -304,11 +312,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     }
     return saved;
   };
-  // 生成失败回执进候选卡占位区，不再占用顶部横幅。
+  // 生成失败回执同时落在候选卡占位区（就地重试）和一次性弹窗（不再占用顶部横幅）。
   const reportGeneration = useCallback((message: string, tone: 'error' | 'warning' = 'error') => {
     if (!mounted.current) return;
-    setGenerationError({ experimentId: selectedExperimentRef.current, message: t(parseHttpError(message).message), tone });
-  }, []);
+    const text = t(parseHttpError(message).message);
+    setGenerationError({ experimentId: selectedExperimentRef.current, message: text, tone });
+    alertDialog(text);
+  }, [alertDialog]);
   const perform = async (action: () => Promise<void>, source: 'request' | 'generation' = 'request') => {
     if (busyRef.current || loadingRef.current) return;
     busyRef.current = true; setBusy(true);
@@ -316,7 +326,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     try { await action(); }
     catch (cause) {
       if (!mounted.current) return;
-      if (source === 'generation') reportGeneration((cause as Error).message); else setError((cause as Error).message);
+      // 一律用弹窗报错；生成过程失败同时落在候选卡占位区，方便就地重试。
+      // 请求类错误交给 error 状态的 effect 弹窗，这里不重复弹。
+      if (source === 'generation') reportGeneration((cause as Error).message);
+      else setError((cause as Error).message);
     }
     finally { busyRef.current = false; if (mounted.current) setBusy(false); }
   };
@@ -382,8 +395,11 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     generatingRef.current = true; setPreparing(true); setGenerationError(null);
     const reportError = (message: string, tone: 'error' | 'warning' = 'error') => {
       if (!mounted.current) return;
-      if (selectedExperimentRef.current === target.id) setGenerationError({ experimentId: target.id, message: t(parseHttpError(message).message), tone });
-      else notify(t('画风记录 {0}：{1}', [target.name, t(parseHttpError(message).message)]), 'error');
+      const text = t(parseHttpError(message).message);
+      if (selectedExperimentRef.current === target.id) setGenerationError({ experimentId: target.id, message: text, tone });
+      else notify(t('画风记录 {0}：{1}', [target.name, text]), 'error');
+      // 出图回执里的错误与警告同样用一次弹窗说清楚，候选卡占位区仍保留就地重试。
+      alertDialog(text);
     };
     try {
       void subscription.refreshIfStale();
@@ -574,7 +590,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         const remainingIds = [...failed, ...unprocessed];
         if (currentView()) setSelectedIds(new Set(remainingIds));
         setSaveFailures(remainingIds.length ? { experimentId: experiment.id, ids: remainingIds, unprocessed: unprocessed.length, needsReload, messages } : null);
-        if (remainingIds.length) setError(t('已保存 {0} 个候选，{1} 个失败，{2} 个未处理', [successful, failed.length, unprocessed.length]));
+        if (remainingIds.length) setError([t('已保存 {0} 个候选，{1} 个失败，{2} 个未处理', [successful, failed.length, unprocessed.length]), ...messages].join('\n'));
         else notify(t('已保存 {0} 个候选', [successful]), 'success');
       }
     } finally { if (mounted.current) setSavingProgress(null); }
@@ -893,17 +909,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       : t('共 {0} 个候选', [visible.length])}{round && roundPending.length > 0
       ? ` · ${t('本轮已出图 {0}/{1}', [round.candidateIds.filter(id => images.has(id)).length, round.candidateIds.length])}`
       : ''}</ToolbarCountCaption>}
-    {experiment && generationError?.experimentId === experiment.id && !nextPendingId && <div role="status" className={`flex items-center gap-2 px-3 py-1 text-xs ${generationError.tone === 'warning' ? 'text-amber-700 dark:text-amber-300' : 'text-red-600 dark:text-red-300'}`}>
-      <AlertTriangle className="h-3.5 w-3.5 flex-none" />
-      <span className="min-w-0 flex-1 truncate" title={generationError.message}>{generationError.message}</span>
-    </div>}
-    {/* 临时状态统一浮在顶栏下沿：出现和消失都不再推动候选区。 */}
-    {(error || libraryError || (saveFailures?.experimentId === experimentId && saveFailures.ids.length > 0)) && <ChromeNoticeStack>
-      {error && <ChromeNotice tone="error" closeLabel={t('关闭错误提示')} onClose={() => setError('')}>
-        <span>{t(error)}</span>
-        {saveFailures?.experimentId === experimentId && saveFailures.messages.length > 0 && <details open><summary>{t('失败详情')}</summary><ul className="max-h-32 overflow-y-auto">{saveFailures.messages.map((message, index) => <li key={index}>{message}</li>)}</ul></details>}
-        <button type="button" className="mobile-touch ml-2 underline" onClick={() => { void reload(); if (experimentId) void refreshHistory(experimentId); }}>{t('重新加载')}</button>
-      </ChromeNotice>}
+    {experiment && <ChromeNoticeStack>
       {libraryError && <ChromeNotice tone="warning">
         <span>{t(libraryError)}</span>
         {onOpenArtistLibrary && <button type="button" className="mobile-touch ml-2 underline" onClick={() => onOpenArtistLibrary()}>{t('打开画师库')}</button>}

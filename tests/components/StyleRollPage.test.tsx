@@ -11,7 +11,7 @@ import { executeAgentCommand, getAgentCommands } from '../../services/agentComma
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { setLanguage } from '../../services/i18n';
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), loadOne: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, ensureCollection: vi.fn(), favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>(), interrupted: [] as any[], clearInterrupted: vi.fn(), restore: vi.fn(async () => {}), getQueue: vi.fn(async () => ({ intervalSeconds: 2, intervalJitterPercent: 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })), setIntervalPref: vi.fn(async (_key: string, seconds: number, jitterPercent?: number) => ({ intervalSeconds: seconds, intervalJitterPercent: jitterPercent ?? 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })) }));
+const mocks = vi.hoisted(() => ({ load: vi.fn(), loadOne: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), alert: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, ensureCollection: vi.fn(), favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>(), interrupted: [] as any[], clearInterrupted: vi.fn(), restore: vi.fn(async () => {}), getQueue: vi.fn(async () => ({ intervalSeconds: 2, intervalJitterPercent: 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })), setIntervalPref: vi.fn(async (_key: string, seconds: number, jitterPercent?: number) => ({ intervalSeconds: seconds, intervalJitterPercent: jitterPercent ?? 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })) }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: async () => ({ available: true, canManage: true, packs: [] }), ARTIST_SAMPLES_CHANGED: 'nai-artist-samples-changed', getArtistSampleLibrary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: async () => [] }));
 const sampleUrls = new Map<string, string>();
@@ -27,7 +27,21 @@ vi.mock('../../services/naiRuntime', async original => { const actual = await or
 vi.mock('../../services/naiUsage', () => ({ useNovelaiUsage: () => ({ info: { tier: 3 }, refreshIfStale: vi.fn() }), isActiveOpusSubscription: () => true }));
 vi.mock('../../services/anlasBudget', () => ({ useAnlasBudget: () => ({ remaining: 100 }), applyEstimatorRuntime: () => {}, estimateV45GenerationCost: () => mocks.cost, formatGenerationCostLabel: (cost: number) => cost > 0 ? `${cost} Anlas` : '免费' }));
 vi.mock('../../services/api', async original => ({ ...await original<typeof import('../../services/api')>(), api: { uploadFile: mocks.upload } }));
-vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
+vi.mock('../../components/ConfirmDialog', () => ({
+  useConfirmDialog: () => mocks.confirm,
+  // 错误已改为弹窗：把弹窗正文挂到无障碍树上，原有按文本查找错误的断言照常成立。
+  useAlertDialog: () => (message: string) => {
+    mocks.alert(message);
+    // 同一时刻只有一个弹窗：先移除上一条探针，避免 getByRole('alert') 命中多个。
+    document.querySelectorAll('[data-test-alert]').forEach(node => node.remove());
+    const node = document.createElement('p');
+    node.setAttribute('data-test-alert', 'true');
+    node.setAttribute('role', 'alert');
+    node.className = 'sr-only';
+    node.textContent = String(message);
+    document.body.appendChild(node);
+  },
+}));
 vi.mock('../../components/ImageShareActions', () => ({ ImageShareActions: () => null, IMAGE_CARD_ACTION_CLASS: 'image-action', IMAGE_CARD_ACTION_TONE: { save: '', delete: '', primary: '' } }));
 vi.mock('../../components/ImageLightbox', () => ({ ImageLightbox: () => null }));
 vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className, previewTransform, containerClassName }: any) => <img src={src} alt={alt} className={className} data-preview-transform={previewTransform} data-container-class={containerClassName} />, OriginalImage: (props: any) => <img {...props} /> }));
@@ -57,7 +71,7 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { callback: ResizeObserverCallback; constructor(callback: ResizeObserverCallback) { this.callback = callback; } observe(target: Element) { this.callback([{ target, contentRect: { width: 1024 } } as ResizeObserverEntry], this as unknown as ResizeObserver); } unobserve() {} disconnect() {} });
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: async () => new Blob(['synthetic-image'], { type: 'image/png' }) })));
 });
-afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); document.querySelectorAll('[data-test-alert]').forEach(node => node.remove()); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
 const setup = async (options = {}) => {
   const onSaveChain = vi.fn(async chain => ({ ...chain, id: 'saved-chain' })), onNavigateToPlayground = vi.fn();
   const props = { active: true, chains: [], enforceFreeStepLimit: true, generationStreamPreview: true, notify: vi.fn(), onSaveChain, onNavigateToPlayground, onOpenChain: vi.fn(), ...options };
@@ -170,11 +184,10 @@ it('批存遵循筛选排序，逐项清理网页错误且长错误不截掉后�
   await screen.findByRole('button', { name: '重试失败项' });
   const alert = screen.getByRole('alert');
   expect(alert.textContent).toContain('已保存 0 个候选，2 个失败，0 个未处理');
-  const errors = within(alert).getAllByRole('listitem');
-  expect(errors[0].textContent).toBe('#2：服务返回了错误页面，请稍后重试');
-  expect(errors[1].textContent).toContain('#1：后续失败');
+  // 失败详情随汇总一起进弹窗正文（多行文本），不再渲染成旧错误条里的列表。
+  expect(alert.textContent).toContain('#2：服务返回了错误页面，请稍后重试');
+  expect(alert.textContent).toContain('#1：后续失败');
   expect(alert.textContent).not.toContain('<html>');
-  expect(alert.querySelector('ul')?.className).toContain('overflow-y-auto');
 });
 
 it('关联冲突后回读最新修订再保存其他项，保留外部修改，重试不重复建串或封面', async () => {
