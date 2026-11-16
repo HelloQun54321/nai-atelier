@@ -1,9 +1,9 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { flushSync } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, CopyPlus, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, CopyPlus, Folder, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
-import { MobileOverflowMenu } from './MobileUI';
+import { MobileBottomSheet, MobileOverflowMenu } from './MobileUI';
 import { t, useLanguage } from '../services/i18n';
 import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateToChain, rollExperimentSummary, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
@@ -48,6 +48,7 @@ import { StyleRollArtistDialog } from './roll/StyleRollArtistDialog';
 import { StyleRollRuleFields } from './roll/StyleRollRuleFields';
 import { collectionRevision, collectionSnapshot, collectionTargetActive, ensureCollection, subscribeCollection, toggleArtistPreference } from '../services/collectionFavorites';
 import { StyleRollGallery } from './roll/StyleRollGallery';
+import { RollRecordNavigation } from './roll/RollRecordNavigation';
 import { rollChipColor } from './roll/rollPalette';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -137,8 +138,15 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const [artistOverrides, setArtistOverrides] = useState<RollExperiment['artists']>([]);
   const [query, setQuery] = useState(''), [sort, setSort] = useState('new'), [roundId, setRoundId] = useState('');
   const [selecting, setSelecting] = useState(false), [selectedIds, setSelectedIds] = useState(new Set<string>());
-  // 手机：画风记录管理收进「更多」，用受控开关从菜单打开同一个面板。
+  // 画风记录：桌面用可折叠左栏（与其他资料页同构），手机用底部面板承载同一份列表。
+  const [recordsExpanded, setRecordsExpanded] = useState(() => { try { return localStorage.getItem('nai-roll-records-expanded') === 'true'; } catch { return false; } });
   const [mobileRecordMenuOpen, setMobileRecordMenuOpen] = useState(false);
+  const toggleRecords = () => setRecordsExpanded(current => {
+    const next = !current;
+    try { localStorage.setItem('nai-roll-records-expanded', String(next)); } catch { /* 本端偏好不可写时仍可展开。 */ }
+    return next;
+  });
+  const currentRecordName = experiment?.name || experiments.find(item => item.id === experimentId)?.name || '';
   const [savingProgress, setSavingProgress] = useState<{ completed: number; total: number } | null>(null);
   const [saveFailures, setSaveFailures] = useState<{ experimentId: string; ids: string[]; unprocessed: number; needsReload: boolean; messages: string[] } | null>(null);
   const [recordName, setRecordName] = useState('');
@@ -630,6 +638,14 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (archived && id === experimentId) setExperimentId(experiments.find(item => item.id !== id && !item.archived)?.id || '');
     if (!archived) setExperimentId(id);
   });
+  /** 记录导航里的重命名：当前记录直接用内存副本，其他记录先按 ID 补读完整内容再保存。 */
+  const renameRecord = (id: string, name: string) => void perform(async () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const target = experiment?.id === id ? experiment : await loadRollExperiment(id);
+    if (target.name === trimmed) return;
+    await store({ ...target, name: trimmed });
+  });
   const sendToLab = () => {
     if (!experiment || !selected) return;
     const chain = rollCandidateToChain(experiment, selected);
@@ -801,13 +817,22 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         </div>
         <ToolbarButton aria-label={t('退出多选')} disabled={frozen} onClick={() => { setSelecting(false); setSelectedIds(new Set()); }}><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
       </> : <div data-roll-toolbar-scroll="true" className="flex h-full min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none]">
-        {/* 左侧：画风记录选择与管理（胶囊卡片，归正核心上下文） */}
+        {/* 左侧：画风记录。桌面是可折叠左栏（与其他资料页同构，折叠态保留记录名下拉），手机是同一份列表的底部面板。 */}
         <div className="appearance-group flex shrink-0 items-center gap-1 rounded-xl border border-gray-200/80 bg-gray-100/60 p-0.5 dark:border-gray-800 dark:bg-gray-800/40">
           <span className="hidden pl-2 text-micro font-semibold text-gray-500 dark:text-gray-400 lg:inline">{t('画风记录')}</span>
-          <ToolbarSelect label={t('切换画风记录')} containerClassName="max-w-32 sm:max-w-48 lg:max-w-72 min-w-0" className="!h-8 !border-transparent !bg-transparent !pl-2 !text-sm font-semibold" value={experimentId} disabled={frozen || preparing} onChange={event => setExperimentId(event.target.value)}>
-            {!experiment && <option value="">{t('新画风记录')}</option>}{experiments.filter(item => !item.archived).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </ToolbarSelect>
-          <ToolbarPopover title={t('画风记录管理')} label={t('管理记录')} icon={<MoreHorizontal className="h-4 w-4" />} iconOnly disabled={frozen || working || selecting} width={320} open={mobileRecordMenuOpen} onOpenChange={setMobileRecordMenuOpen} className="[&_button]:!h-11 [&_button]:!w-11 max-md:hidden md:[&_button]:!h-7 md:[&_button]:!w-7">
+          {isMobile
+            ? <button type="button" aria-label={t('切换画风记录')} aria-haspopup="dialog" aria-expanded={mobileRecordMenuOpen} disabled={frozen || preparing}
+              onClick={() => setMobileRecordMenuOpen(true)}
+              className="mobile-touch flex h-9 min-w-0 max-w-44 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-gray-800 disabled:opacity-50 dark:text-gray-100">
+              <span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span><ChevronDown className="h-4 w-4 flex-none opacity-60" />
+            </button>
+            : <>
+              <ToolbarButton className="!h-7 !w-7 !border-transparent !bg-transparent !px-0" aria-label={t(recordsExpanded ? '收起画风记录' : '展开画风记录')} title={t(recordsExpanded ? '收起画风记录' : '展开画风记录')} aria-expanded={recordsExpanded} active={recordsExpanded} disabled={frozen || preparing} onClick={toggleRecords}><Folder className="h-4 w-4" /></ToolbarButton>
+              <ToolbarSelect label={t('切换画风记录')} containerClassName="max-w-32 sm:max-w-48 lg:max-w-72 min-w-0" className="!h-8 !border-transparent !bg-transparent !pl-2 !text-sm font-semibold" value={experimentId} disabled={frozen || preparing} onChange={event => setExperimentId(event.target.value)}>
+                {!experiment && <option value="">{t('新画风记录')}</option>}{experiments.filter(item => !item.archived).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </ToolbarSelect>
+            </>}
+          {!isMobile && !recordsExpanded && <ToolbarPopover title={t('画风记录管理')} label={t('管理记录')} icon={<MoreHorizontal className="h-4 w-4" />} iconOnly disabled={frozen || working || selecting} width={320} className="[&_button]:!h-11 [&_button]:!w-11 max-md:hidden md:[&_button]:!h-7 md:[&_button]:!w-7">
             {close => <div className="space-y-3">
               {experiment && <div className="appearance-group rounded-xl bg-gray-50 px-2.5 py-2 text-xs text-gray-500 dark:bg-gray-800/60">{t('{0} 轮 · {1} 张已出图 · {2} 个已存风格串', [experiment.rounds.length, images.size, experiment.candidates.filter(candidate => candidate.savedChainId).length])}</div>}
               {experiment && <form onSubmit={event => { event.preventDefault(); if (!recordName.trim() || recordName.trim() === experiment.name) return; void perform(async () => { await store({ ...experiment, name: recordName.trim() }); close(); }); }}>
@@ -821,7 +846,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               </div>
               {experiments.some(item => item.archived) && <div className="space-y-1 border-t border-gray-200 pt-3 dark:border-gray-800"><p className="mb-2 text-xs text-gray-400">{t('记录回收站')}</p>{experiments.filter(item => item.archived).map(item => <div key={item.id} className="flex items-center gap-2 text-sm"><span className="min-w-0 flex-1 truncate">{item.name}</span><button type="button" className="mobile-touch shrink-0 px-2 text-xs text-indigo-500" aria-label={t('恢复记录：{0}', [item.name])} onClick={() => { archiveRecord(item.id, false); close(); }}>{t('恢复')}</button></div>)}</div>}
             </div>}
-          </ToolbarPopover>
+          </ToolbarPopover>}
         </div>
 
         {/* 中间：自适应搜索框铺满可用宽度 */}
@@ -907,10 +932,9 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               </section>
             </div>}
           </ToolbarPopover>
-          {/* 手机顶栏只留画风记录、搜索、筛选与 Roll；管理、多选、提取画师收进「更多」。 */}
+          {/* 手机顶栏只留画风记录、搜索、筛选与 Roll；记录面板由记录名按钮直接打开，多选与提取画师收进「更多」。 */}
           <MobileOverflowMenu className="md:hidden" items={[
             ...(roundPending.length > 0 ? [{ label: t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1]), icon: <ImagePlus />, disabled: frozen || working || !historyReady, onClick: () => generatePending() }] : []),
-            { label: '画风记录管理', icon: <MoreHorizontal />, disabled: frozen || working, onClick: () => setMobileRecordMenuOpen(true) },
             { label: '批量选择候选', icon: <ListChecks />, disabled: frozen || !experiment, onClick: () => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); } },
             { label: chainArtistSource ? `已选 ${chainArtistSource.chainIds.length} 串` : '从风格串提取', icon: <Layers />, disabled: frozen || working || libraryLoading, onClick: () => setChainTarget(experimentId) },
           ]} />
@@ -923,11 +947,27 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       ? ` · ${t('本轮已出图 {0}/{1}', [round.candidateIds.filter(id => images.has(id)).length, round.candidateIds.length])}`
       : ''}</ToolbarCountCaption>}
     </WorkspaceChrome>
+    <div className="flex min-h-0 min-w-0 flex-1">
+      {!isMobile && recordsExpanded && <RollRecordNavigation records={experiments} selectedId={experimentId} busy={frozen || preparing} loading={loading}
+        className="workspace-fixed-pane workspace-category-navigation appearance-panel hidden min-h-0 w-52 flex-none flex-col overflow-hidden border-r border-gray-200 p-3 dark:border-gray-800 md:flex"
+        onSelect={id => setExperimentId(id)} onCreate={() => setSetup(makeExperiment())}
+        onReload={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); }}
+        onRename={(id, name) => renameRecord(id, name)} onArchive={id => archiveRecord(id, true)} onRestore={id => archiveRecord(id, false)} />}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
     {(loading || detailLoading) && !experiment ? <PageSpinner className="workspace-scroll-viewport overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
       : <div className="relative flex min-h-0 flex-1">
         {ROLL_TRIAGE_FILTERS.includes(filter) && !filterReady ? (filter === 'favorited' && collectionFailed ? <div role="alert" className="flex flex-1 items-center justify-center gap-2 p-6 text-sm text-gray-500"><span>{t('收藏状态读取失败')}</span><ToolbarButton onClick={() => void loadFavorites()}>{t('重新加载')}</ToolbarButton></div> : historyReady || historyLoading ? <PageSpinner /> : <div role="status" className="flex flex-1 items-center justify-center p-6 text-sm text-gray-500">{t('历史暂不可用')}</div>) : <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} roundNumbers={roundNumbers} positions={roundPositions} generationState={{ generatingId: generatingCandidateId, nextId: nextPendingId, running: working, paused: session?.state === 'paused', awaiting: Boolean(session?.awaiting), saving: session?.state === 'saving', error: generationError && generationError.experimentId === experiment.id ? generationError : null }} onGenerate={id => { const candidate = experiment.candidates.find(item => item.id === id); if (candidate) void generate([candidate], experiment); }} onPause={pause} onResume={resume} onCancel={cancelSession} onApprove={approve} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => deleteCandidates([id])} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />}
         {!isMobile && selected && <aside className="workspace-fixed-pane appearance-surface flex w-84 max-w-[40%] flex-none flex-col border-l border-gray-200/80 bg-white/95 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/95 xl:w-92 shadow-sm"><div className="appearance-surface flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="appearance-surface text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><div className="flex items-center gap-1">{detailActions}<IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div></div><div className="appearance-surface min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}
       </div>}
+      </div>
+    </div>
+    {isMobile && <ImagePreviewPortal><MobileBottomSheet open={mobileRecordMenuOpen} title={t('画风记录')} onClose={() => setMobileRecordMenuOpen(false)}>
+      <RollRecordNavigation records={experiments} selectedId={experimentId} mobile busy={frozen || preparing} loading={loading} className="flex min-h-0 flex-col"
+        onSelect={id => { setExperimentId(id); setMobileRecordMenuOpen(false); }}
+        onCreate={() => openFromSettings(() => setMobileRecordMenuOpen(false), () => setSetup(makeExperiment()))}
+        onReload={() => { void reload(); if (experimentId) void refreshHistory(experimentId); }}
+        onRename={(id, name) => renameRecord(id, name)} onArchive={id => archiveRecord(id, true)} onRestore={id => archiveRecord(id, false)} />
+    </MobileBottomSheet></ImagePreviewPortal>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')} actions={detailActions}>{detail}</MobileDetailView></ImagePreviewPortal>}
     {active && chainTarget !== null && chainTarget === experimentId && !setup && <StyleRollChainArtistDialog knownArtists={knownArtists} source={chainArtistSource} blocked={[...blocklist, ...excludedArtistTags]} onConfirm={source => { if (active && !frozen && !working && chainTarget === experimentId) setChainArtistSource(source); }} onClose={() => setChainTarget(null)} />}
     {setup && <StyleRollSetup key={setup.id} initial={setup} libraryCount={library.length} libraryLoading={libraryLoading} libraryError={libraryError} blockedTags={blocklist} library={libraryEntries} onBlockedChange={updateBlocklist} enforceFreeStepLimit={enforceFreeStepLimit} forceEmptySeed={forceEmptySeed} onForceEmptySeedChange={onForceEmptySeedChange} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
