@@ -15,7 +15,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { SearchFilterChips } from './SearchFilterChips';
-import { CountFraction } from './ToolbarCountBadge';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { ImageActivityContext } from './SmartImage';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { InspirationDetail } from './inspiration/InspirationDetail';
@@ -479,7 +479,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 <WorkspaceToolbar>
       <ToolbarButton data-agent-action="browse" aria-label={t(navigationExpanded ? '收起收藏分类' : '展开收藏分类')} aria-expanded={navigationExpanded} aria-controls={navigationId}
         title={[t(navigationExpanded ? '收起收藏分类' : '展开收藏分类'), boardId ? boards.find(board => board.id === boardId)?.name || t('收藏夹') : sourceFilter ? t(sourceLabel(sourceFilter)) : t(collection === 'unorganized' ? '未整理' : '全部')].join(' · ')}
-        active={navigationExpanded || collection !== 'all' || Boolean(boardId) || Boolean(sourceFilter)} onClick={toggleNavigation} className="hidden md:inline-flex"><Folder />{inspirationsData !== null && <CountFraction total={groups.length} loaded={Math.min(visibleCount, groups.length)} className="ml-1" />}</ToolbarButton>
+        active={navigationExpanded || collection !== 'all' || Boolean(boardId) || Boolean(sourceFilter)} onClick={toggleNavigation} className="hidden md:inline-flex"><Folder /></ToolbarButton>
+      {inspirationsData !== null && <ToolbarCountBadge total={groups.length} loaded={Math.min(visibleCount, groups.length)} />}
       {selectionMode ? <>
         <div role="group" aria-label={t("收藏批量操作")} className="flex h-full min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <b className="flex-none text-xs font-semibold text-gray-600 dark:text-gray-300">{t("已选 {0} 个作品，共 {1} 页", [selectedWorks, selectedItems.length])}</b>

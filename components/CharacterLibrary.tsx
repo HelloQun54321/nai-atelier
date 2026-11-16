@@ -842,7 +842,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        {infoChain && <ChainInfoModal key={infoChain.id} chain={infoChain} tagAssistEnabled={tagAssistEnabled} onTagAssistEnabledChange={onTagAssistEnabledChange} catalogIdentity={infoCatalog} onSave={saveInfo} onClose={() => { setInfoChain(null); setInfoCatalog(undefined); }} notify={notify} />}
        <WorkspaceChrome>
 <WorkspaceToolbar>
-         <div className="appearance-group flex flex-none items-center gap-1 rounded-xl p-0.5">{groups.toolbar}{(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountBadge total={!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length} loaded={visibleCards.length} />}</div>
+         {groups.toolbar}
+         {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountBadge total={!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length} loaded={visibleCards.length} />}
          <div className="relative min-w-0 flex-1 max-md:min-w-[7.5rem]">
            <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="md:max-w-none!" className="pr-9" />
            {!customSource && isLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}

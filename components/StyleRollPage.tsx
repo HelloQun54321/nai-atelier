@@ -33,7 +33,7 @@ import { useNaiChannelMode } from '../services/naiChannel';
 import { useAgentCommand } from '../services/agentCommands';
 import { EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
-import { CountFraction } from './ToolbarCountBadge';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { SmartImage } from './SmartImage';
 import { ImageLightbox } from './ImageLightbox';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
@@ -837,10 +837,9 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
             </ToolbarButton>
             : /* 记录切换只留左栏一处：顶栏这个按钮就是开关，不再另开一个下拉，避免两套并列。 */ <ToolbarButton active={recordsExpanded} className="!h-8 !min-w-0 !max-w-32 !justify-start !gap-1.5 !px-2 focus-visible:ring-inset sm:!max-w-48 lg:!max-w-72" aria-label={t('切换画风记录')} aria-expanded={recordsExpanded} disabled={frozen || preparing} onClick={toggleRecords}>
               <Folder className="opacity-80" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
-              {experiment && <CountFraction total={round && roundPending.length > 0 ? round.candidateIds.length : visible.length} loaded={round && roundPending.length > 0 ? round.candidateIds.filter(id => images.has(id)).length : undefined} className="ml-1" />}
               <ChevronDown className={`opacity-60 transition-transform ${recordsExpanded ? 'rotate-180' : ''}`} />
             </ToolbarButton>}
-  
+          {experiment && <ToolbarCountBadge total={round && roundPending.length > 0 ? round.candidateIds.length : visible.length} loaded={round && roundPending.length > 0 ? round.candidateIds.filter(id => images.has(id)).length : undefined} />}
         </div>
 
         {/* 中间：自适应搜索框铺满可用宽度 */}

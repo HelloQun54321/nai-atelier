@@ -762,7 +762,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   const listToolbarContent = (
     <>
-      <div className="appearance-group flex flex-none items-center gap-1 rounded-xl p-0.5">{categoryToggle}{chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountBadge total={items.length} loaded={shown.length} />}</div>
+      {categoryToggle}
+      {chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountBadge total={items.length} loaded={shown.length} />}
       <ToolbarPopover title={t('筛选{0}', [t(config.title)])} count={selectedTags.size} width={320} zIndex={dynamicDirectories ? 1960 : undefined}>
         <div className="space-y-3">
           <label className="block text-xs font-semibold text-gray-500">{t('排序')}
