@@ -1234,34 +1234,39 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     touch-action: manipulation;
   }
 
-  /* 实验室分区条降权并压矮：顶栏是唯一的一级导航，分区退成次级标签。
-     选中态由实心块改为强调色文字 + 下划线，整条不再铺不透明底。 */
+  /* 实验室分区条降权并压矮：顶栏是唯一的一级导航，分区退成次级页签。
+     选中态由实心块改为强调色文字 + 下划线；手机去掉未选项竖线，避免与上排抢戏。 */
   .workspace-mode-tabs {
-    height: 2.5rem !important;
+    height: 2.25rem !important;
     background: transparent !important;
     border-bottom-color: transparent !important;
   }
   .workspace-mode-tabs > button {
     position: relative;
-    font-size: 13px;
+    font-size: 12px;
+    font-weight: 500 !important;
     border-radius: 0 !important;
     background: transparent !important;
     box-shadow: none !important;
     color: var(--color-gray-500) !important;
   }
+  .workspace-mode-tabs > button[aria-selected='false'] + button[aria-selected='false']::before {
+    content: none;
+  }
   .workspace-mode-tabs > button[aria-current='page'],
   .workspace-mode-tabs > button[aria-selected='true'] {
     background: transparent !important;
     color: var(--nai-accent, var(--color-indigo-500)) !important;
+    font-weight: 600 !important;
     box-shadow: none !important;
   }
   .workspace-mode-tabs > button[aria-current='page']::after,
   .workspace-mode-tabs > button[aria-selected='true']::after {
     content: '';
     position: absolute;
-    left: 28%;
-    right: 28%;
-    bottom: 4px;
+    left: 30%;
+    right: 30%;
+    bottom: 3px;
     height: 2px;
     border-radius: 2px;
     background: var(--nai-accent, var(--color-indigo-500));

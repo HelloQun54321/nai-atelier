@@ -1,4 +1,5 @@
 ## 2026-11-17
+- **Composer**：按用户确认把手机实验室四模式收成当前模式入口（fix: compact mobile lab mode switcher），分区去竖线并降权，拉开上下导航层级。
 - **Composer**：按用户反馈修复实验室翻译区插入缝被手机 44px 触控下限撑乱（fix: keep prompt translation insert slots compact），词与权重组恢复紧凑换行。
 - **Composer**：按用户反馈把手机文件夹面板的新建／改名／删除收进标题栏（fix: put mobile directory actions in sheet header），去掉列表上方独占一行的加号。
 - **Composer**：按用户确认让手机顶栏文件夹直达底部选择面板（feat: open mobile directory sheet from toolbar）；`DirectoryTreeNavigation` 增加 `onRequestClose` 直达模式，风格串／分组／提示词等入口与产品决策、回归一并更新。
