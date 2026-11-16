@@ -424,9 +424,15 @@ html[data-control-style='filled'] :is([role='tablist'], .appearance-segmented) >
   background-color: var(--nai-control-surface) !important;
   color: var(--nai-segment-text) !important;
 }
-html[data-control-style='filled'] .generation-mode-nav > button[aria-current='page'] {
+html[data-control-style='filled'] .generation-mode-nav[data-mode-chrome='segmented'] > button[aria-current='page'] {
   background-color: var(--color-indigo-700) !important;
   color: var(--nai-on-accent-600) !important;
+}
+/* 手机紧凑标题不是分段选中块，保持导航标题字色，不套实心胶囊。 */
+html[data-control-style='filled'] .generation-mode-nav[data-mode-chrome='compact'] > button[aria-current='page'] {
+  background-color: transparent !important;
+  color: inherit !important;
+  box-shadow: none !important;
 }
 html[data-control-style='filled'] .workspace-mode-tabs > button[aria-selected='true'] {
   background-color: color-mix(in srgb, var(--nai-accent) 14%, var(--nai-control-surface)) !important;

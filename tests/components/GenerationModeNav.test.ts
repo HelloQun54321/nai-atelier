@@ -49,7 +49,7 @@ describe('GenerationModeNav', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('手机顶栏只显示当前模式，点开底部面板切换', () => {
+  it('手机顶栏当前模式是左对齐导航标题，无胶囊底，点开底部面板切换', () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: String(query).includes('max-width: 767px'),
       media: query,
@@ -61,8 +61,14 @@ describe('GenerationModeNav', () => {
 
     const nav = screen.getByRole('navigation', { name: '生成模式' });
     expect(nav.getAttribute('data-mode-chrome')).toBe('compact');
+    expect(nav.className).toContain('justify-start');
+    expect(nav.className).not.toContain('appearance-segmented');
     const trigger = screen.getByRole('button', { name: '文生图' });
     expect(trigger.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(trigger.className).toContain('font-semibold');
+    expect(trigger.className).not.toContain('bg-white');
+    expect(trigger.className).not.toContain('shadow-sm');
+    expect(trigger.getAttribute('data-appearance')).toBeNull();
     expect(screen.queryByRole('button', { name: '图生图' })).toBeNull();
 
     fireEvent.click(trigger);

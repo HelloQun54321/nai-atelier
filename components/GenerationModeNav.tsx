@@ -37,22 +37,21 @@ export const GenerationModeNav: React.FC<GenerationModeNavProps> = ({ activeMode
     if (!isMobile) setSheetOpen(false);
   }, [isMobile]);
 
-  // 手机：顶栏只显示当前模式，点开底部面板切换；避免四段文字与返回／保存挤成一级噪音。
+  // 手机：当前模式做成导航标题（左对齐、无胶囊底），点开底部面板切换；不像分段控件。
   if (isMobile) {
     return <>
-      <nav className="generation-mode-nav appearance-segmented mx-auto flex w-full min-w-0 max-w-3xl justify-center" aria-label={t('生成模式')} data-mode-chrome="compact">
+      <nav className="generation-mode-nav flex min-w-0 justify-start" aria-label={t('生成模式')} data-mode-chrome="compact">
         <button
           type="button"
-          data-appearance="control"
           disabled={disabled}
           aria-haspopup="dialog"
           aria-expanded={sheetOpen}
           aria-current="page"
           onClick={() => { if (!disabled) setSheetOpen(true); }}
-          className="mobile-touch inline-flex min-h-11 min-w-0 max-w-full items-center gap-1.5 rounded-xl border border-gray-200/60 bg-white px-3 py-1.5 text-sm font-bold text-indigo-600 shadow-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800/80 dark:bg-gray-800 dark:text-indigo-300"
+          className="mobile-touch inline-flex min-h-11 min-w-0 max-w-full items-center gap-0.5 rounded-lg px-1 py-1 text-base font-semibold tracking-tight text-gray-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-white"
         >
           <span className="min-w-0 truncate">{t(active.label)}</span>
-          <ChevronDown className="h-4 w-4 flex-none opacity-70" aria-hidden="true" />
+          <ChevronDown className="h-3.5 w-3.5 flex-none text-gray-400 dark:text-gray-500" aria-hidden="true" />
         </button>
       </nav>
       <ImagePreviewPortal>
