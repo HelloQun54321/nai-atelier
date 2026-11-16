@@ -1,4 +1,5 @@
 ## 2026-11-17
+- **Composer**：按用户反馈「没变化」补强实验室模块连续面：重建可见包，去掉展开分隔条，并用薄井覆盖输入／翻译实心底（fix: keep lab module fields flush with card）。
 - **Composer**：按用户确认把实验室可折叠模块标题与正文改成同一表面（fix: unify lab module header with card surface），去掉标题另铺底色造成的割裂。
 - **Composer**：按用户确认把手机实验室当前模式改成左对齐导航标题（fix: style mobile lab mode as nav title），去掉胶囊底与居中飘浮。
 - **Composer**：按用户确认把手机实验室四模式收成当前模式入口（fix: compact mobile lab mode switcher），分区去竖线并降权，拉开上下导航层级。

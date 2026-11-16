@@ -229,10 +229,10 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
   backdrop-filter: none;
 }
 html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .lab-module-section > summary {
-  padding: .875rem 1rem;
+  padding: .875rem 1rem .5rem;
 }
-html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .lab-module-section > div {
-  padding: .75rem 1rem 1.25rem;
+html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .lab-module-section > .lab-module-section__body {
+  padding: .25rem 1rem 1.25rem;
 }
 html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .chain-editor-main .prompt-tag-assist {
   padding-inline: 0;
@@ -240,6 +240,16 @@ html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-ma
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .chain-editor-main :is(input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file']), select, textarea) {
   background-color: color-mix(in srgb, var(--nai-panel-solid-surface) var(--nai-editor-field-fill, 16%), transparent);
   border-color: color-mix(in srgb, var(--nai-panel-border) 32%, transparent);
+}
+/* 模块卡是唯一承托面：输入／翻译不得再用实心底另起一块，否则标题条与正文会像两截。 */
+html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .lab-editor-surface .lab-module-section :is(textarea, input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file']), select) {
+  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) var(--nai-editor-field-fill, 16%), transparent) !important;
+  border-color: color-mix(in srgb, var(--nai-panel-border) 28%, transparent) !important;
+}
+html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .lab-editor-surface .lab-module-section .prompt-tag-assist {
+  background: transparent !important;
+  border-color: color-mix(in srgb, var(--nai-panel-border) 22%, transparent) !important;
+  border-radius: var(--nai-control-radius, 12px);
 }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .generation-action-button--workbench:not(.generation-action-button--loading) {
   color: var(--nai-on-accent-600);

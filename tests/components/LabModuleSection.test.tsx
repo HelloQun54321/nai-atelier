@@ -15,11 +15,12 @@ it('沿用默认展开偏好，手动收起后普通更新保持状态与草稿�
   const input = screen.getByLabelText('合成提示词') as HTMLInputElement;
   expect(section.open).toBe(true);
   expect(section.style.order).toBe('');
-  // 标题栏透出模块卡底色，不另挂 appearance-group／实心底，避免与正文割裂。
+  // 标题栏透出模块卡底色，不另挂 appearance-group／实心底／展开分隔条，避免与正文割裂。
   const summary = section.querySelector('summary')!;
   expect(summary.className).toContain('bg-transparent');
   expect(summary.className).not.toContain('appearance-group');
-  expect(summary.className).not.toMatch(/bg-gray-50|bg-gray-800/);
+  expect(summary.className).not.toMatch(/bg-gray-50|bg-gray-800|group-open:border-b/);
+  expect(section.querySelector('.lab-module-section__body')).toBeTruthy();
   fireEvent.change(input, { target: { value: '未保存草稿' } });
   fireEvent.click(screen.getByText('全局提示词'));
   await waitFor(() => expect(section.open).toBe(false));

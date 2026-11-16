@@ -4,6 +4,20 @@
 @import "./components/operationDialog.css";
 @import "./components/inputCapabilities.css";
 
+/* 实验室折叠模块：标题与正文共用卡片面；输入／翻译只做薄井，不另铺实心第二层。 */
+.lab-module-section > summary {
+  background-color: transparent !important;
+}
+.lab-module-section .prompt-tag-assist {
+  background-color: color-mix(in srgb, var(--nai-panel-solid-surface, #111827) 10%, transparent) !important;
+}
+.lab-module-section :is(textarea, input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file'])) {
+  background-color: color-mix(in srgb, var(--color-gray-100, #f3f4f6) 55%, transparent) !important;
+}
+.dark .lab-module-section :is(textarea, input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file'])) {
+  background-color: color-mix(in srgb, var(--color-gray-950, #030712) 28%, transparent) !important;
+}
+
 .image-card-actions {
   display: grid;
   grid-auto-flow: column;

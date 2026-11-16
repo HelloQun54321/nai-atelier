@@ -607,6 +607,10 @@ describe('全局外观覆盖审计', () => {
     for (const suffix of [' > summary', ' :is(div, section, article, fieldset).appearance-group:not([role]):not([data-active]):not(.appearance-segmented)']) {
       expect(declarations(`${root} .chain-editor-main .lab-module-section${suffix}`, undefined, source)).toMatchObject({ background: 'transparent', border: '0', 'backdrop-filter': 'none' });
     }
+    expect(declarations(`${root} .lab-editor-surface .lab-module-section :is(textarea, input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file']), select)`, undefined, source)['background-color']).toBe('color-mix(in srgb, var(--nai-panel-solid-surface) var(--nai-editor-field-fill, 16%), transparent)');
+    expect(declarations(`${root} .lab-editor-surface .lab-module-section .prompt-tag-assist`, undefined, source).background).toBe('transparent');
+    expect(source).toMatch(/\.lab-module-section :is\(textarea[\s\S]*?background-color:[^;]+!important/);
+    expect(source).toMatch(/\.lab-module-section \.prompt-tag-assist[\s\S]*?background:\s*transparent\s*!important/);
     expect(declarations('.lab-preview-stage', undefined, source)['backdrop-filter']).toBe('none');
     expect(declarations('.lab-preview-stage', undefined, source)['background-color']).toBeUndefined();
     expect(declarations("html[data-theme-material='glass'] .lab-preview-stage", undefined, source)['background-color']).toBeUndefined();
