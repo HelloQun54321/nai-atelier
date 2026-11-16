@@ -2881,3 +2881,11 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     expect(getGenerationSeriesSession(chain.id)).toBeNull();
   });
 });
+
+it('全局正面提示词的输入框工具栏提供本栏反推入口', async () => {
+  setup();
+  // 反推入口跟着文本栏走：与整理、收藏、复制同排，不再挤在顶栏。
+  const reverse = await screen.findByRole('button', { name: '从图片反推 Tag 到这一栏' });
+  expect(reverse.getAttribute('title')).toContain('追加到这一栏');
+  expect(screen.queryByRole('button', { name: /^从图片反推 Tag$/ })).toBeNull();
+});

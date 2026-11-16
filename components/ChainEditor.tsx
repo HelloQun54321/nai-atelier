@@ -404,7 +404,6 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         : (displayedPreviewImage || chain.previewImage);
     const imageEditPreviewHistoryIndex = imageEditPreviewImage ? previewHistory.findIndex(item => item.imageUrl === imageEditPreviewImage) : -1;
     // 顶栏反推入口只在文生图与图生图常驻：打开空面板让用户上传图片，不自动拿底图或结果去反推。
-    const reverseTagEntryEnabled = activeGenerationMode === 'text-to-image' || activeGenerationMode === 'image-to-image';
     const openReverseTagPanel = () => {
         setReverseTagImage(null);
         setReverseTagOpen(true);
@@ -2187,7 +2186,6 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 handleFork={handleFork}
                 handleSaveAll={handleSaveAll}
                 handleImportImage={handleImportImage}
-                onReverseTag={reverseTagEntryEnabled ? openReverseTagPanel : undefined}
                 onTranslateMissingPrompts={() => { void translateAllMissingPromptTags(); }}
                 translationPending={translationPending}
                 notify={notify}
@@ -2264,6 +2262,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                             sample={promptSample}
                             activeLabLayout={activeLabLayout}
                             mobileEditorTab={sectionedActive ? 'reference' : mobileEditorTab}
+                            onReversePromptTag={openReverseTagPanel}
                         />
 
                         {/* Character Management (New V4.5) */}

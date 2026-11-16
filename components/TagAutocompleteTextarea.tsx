@@ -1,7 +1,7 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Eraser, EyeOff, Info, Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
+import { Eraser, EyeOff, ImagePlus, Info, Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
 import type { PromptTagLibraryTarget } from './PromptTagLibraryInfo';
 import { InlineSpinner } from './DesignSystem';
 import { InfoPopover } from './InfoPopover';
@@ -64,6 +64,8 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   promptLibraryActions?: boolean;
   /** 提供时在工具栏加「整理」：提取画风、清洗格式，结果覆盖原文并可撤销。 */
   promptTidy?: PromptTidyOptions;
+  /** 提供时工具栏显示「从图片反推」，把识别结果追加到这一栏。 */
+  reverseTag?: { onReverse: () => void; disabled?: boolean };
 }
 type PromptSuggestion = TagSuggestion & { libraryEntry?: PromptChain };
 const PromptTagLibraryInfo = React.lazy(() => import('./PromptTagLibraryInfo').then(module => ({ default: module.PromptTagLibraryInfo })));
@@ -122,6 +124,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   libraryEnabled = true,
   promptLibraryActions = true,
   promptTidy,
+  reverseTag,
   disabled,
   readOnly,
   onFocus,
@@ -937,7 +940,11 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     ? <PromptTidyActions value={value} disabled={!editable} notify={promptTidy.notify} sample={promptTidy.sample} onApply={applyTidy}
       canUndo={clearActionState === 'cleared' && undoableAction === 'tidy'} onUndo={() => { moveHistory(); textareaRef.current?.focus(); }} />
     : null;
-  const promptActions = <>{tidyAction}{libraryAction}{clearAction}<PromptHeightHandle targetRef={textareaRef} label={t('调整输入框高度')} alwaysVisible={inputAutoHeight} onManualResize={() => { inputManualHeightRef.current = true; }} /></>;
+  const reverseAction = reverseTag
+    ? <button type="button" aria-label={t('从图片反推 Tag 到这一栏')} title={t('上传或粘贴图片，识别后追加到这一栏')} disabled={!editable || reverseTag.disabled} onClick={event => { event.stopPropagation(); reverseTag.onReverse(); }}
+      className="rounded p-0.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"><ImagePlus className="h-4 w-4" /></button>
+    : null;
+  const promptActions = <>{reverseAction}{tidyAction}{libraryAction}{clearAction}<PromptHeightHandle targetRef={textareaRef} label={t('调整输入框高度')} alwaysVisible={inputAutoHeight} onManualResize={() => { inputManualHeightRef.current = true; }} /></>;
 
   return (
     <div className={`group relative ${containerClassName}`} onKeyDownCapture={event => {
