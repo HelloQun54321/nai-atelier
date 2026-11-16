@@ -833,7 +833,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       </> : <div data-roll-toolbar-scroll="true" className="flex h-full min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none]">
         {/* 左侧：画风记录。桌面是可折叠左栏（与其他资料页同构，折叠态保留记录名下拉），手机是同一份列表的底部面板。 */}
         <div className="appearance-group flex shrink-0 items-center gap-1 rounded-xl border border-gray-200/80 bg-gray-100/60 p-0.5 dark:border-gray-800 dark:bg-gray-800/40">
-          <span className="hidden pl-2 text-micro font-semibold text-gray-500 dark:text-gray-400 lg:inline">{t('画风记录')}</span>
           {isMobile
             ? <button type="button" aria-label={t('切换画风记录')} aria-haspopup="dialog" aria-expanded={mobileRecordMenuOpen} disabled={frozen || preparing}
               onClick={() => setMobileRecordMenuOpen(true)}
