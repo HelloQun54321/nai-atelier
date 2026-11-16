@@ -2,6 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { pickDirectoryOption } from '../support/directoryPicker';
 import { ArtistLibrary } from '../../components/ArtistLibrary';
 import { CharacterLibrary } from '../../components/CharacterLibrary';
 import { DanbooruGallery } from '../../components/DanbooruGallery';
@@ -72,7 +73,7 @@ describe('资料目录工具栏行为', () => {
     render(<ArtistLibrary notify={vi.fn()} />);
     await waitFor(() => expect(getArtistDictionaryPage).toHaveBeenCalledWith(0, 'popular'));
     fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-    fireEvent.change(screen.getByRole('combobox', { name: '画师排序' }), { target: { value: 'name-desc' } });
+    pickDirectoryOption('画师排序', 'name-desc');
     await waitFor(() => expect(getArtistDictionaryPage).toHaveBeenCalledWith(0, 'name-desc'));
     expect(localStorage.getItem('nai_artist_sort')).toBe('name-desc');
     fireEvent.keyDown(window, { key: 'Escape' });
@@ -86,13 +87,13 @@ describe('资料目录工具栏行为', () => {
     render(<CharacterLibrary chains={[]} onCreate={vi.fn()} onDelete={vi.fn()} onUpdateChain={vi.fn()} onNavigateToPlayground={vi.fn()} notify={vi.fn()} onSelect={vi.fn()} />);
     await waitFor(() => expect(getCharacterDictionaryPage).toHaveBeenCalledWith(0, 'popular'));
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    fireEvent.change(screen.getByRole('combobox', { name: '角色排序' }), { target: { value: 'least' } });
+    pickDirectoryOption('角色排序', 'least');
     await waitFor(() => expect(getCharacterDictionaryPage).toHaveBeenCalledWith(0, 'least'));
     expect(localStorage.getItem('nai_character_sort')).toBe('least');
     fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
     await screen.findByRole('option', { name: '自定义 (0)' });
-    fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: '#source:custom' } });
-    fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: '#favorites' } });
+    pickDirectoryOption('选择分组', '#source:custom');
+    pickDirectoryOption('选择分组', '#favorites');
     expect(screen.getByRole('button', { name: '筛选 1' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
     expect(screen.queryByRole('combobox', { name: '角色范围' })).toBeNull();
@@ -110,7 +111,7 @@ describe('资料目录工具栏行为', () => {
     render(<DanbooruGallery active={false} currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
     fireEvent.change(screen.getByRole('searchbox', { name: '搜索 Danbooru' }), { target: { value: 'blue_hair' } });
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    fireEvent.change(screen.getByRole('combobox', { name: '排序方式' }), { target: { value: 'latest' } });
+    pickDirectoryOption('排序方式', 'latest');
     await waitFor(() => expect(danbooruService.search).toHaveBeenCalledWith(expect.objectContaining({ query: expect.stringContaining('order:id_desc') })));
     expect(vi.mocked(danbooruService.search).mock.calls.at(-1)?.[0]?.query).toContain('blue_hair');
     fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));

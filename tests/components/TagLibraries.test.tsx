@@ -4,6 +4,7 @@ import React from 'react';
 import { mockGalleryGeometry } from '../support/galleryGeometry';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { pickDirectoryOption } from '../support/directoryPicker';
 import { ArtistPreferenceActions } from '../../components/ArtistPreferenceActions';
 import { ImageShareOverlay } from '../../components/ImageShareActions';
 import { ArtistLibrary } from '../../components/ArtistLibrary';
@@ -139,7 +140,7 @@ const kindLabels = (kind: Kind) => kind === 'artist'
 const chooseFavorites = (_kind: Kind, enabled = true) => {
   const navigation = screen.getByRole('button', { name: '分组导航' });
   if (navigation.getAttribute('aria-expanded') !== 'true') fireEvent.click(navigation);
-  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: enabled ? '#favorites' : '*' } });
+  pickDirectoryOption('选择分组', enabled ? '#favorites' : '*');
 };
 const seedFavorites = (kind: Kind, names: string[]) => {
   if (kind === 'character') localStorage.setItem('nai_character_favorites', JSON.stringify(names.map(name => `catalog:${name}`)));
@@ -615,7 +616,7 @@ it('自定义角色卡片铅笔编辑正负提示词，不显示文字编辑或�
   expect(within(card).queryByRole('button', { name: '编辑' })).toBeNull();
   fireEvent.click(edit);
   expect(screen.getByRole('dialog', { name: '编辑自定义角色信息' })).toBeTruthy();
-  fireEvent.change(screen.getByRole('combobox', { name: '正面提示词' }), { target: { value: 'new positive' } });
+  pickDirectoryOption('正面提示词', 'new positive');
   fireEvent.change(screen.getByRole('combobox', { name: '负面提示词' }), { target: { value: 'new negative' } });
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(p.onUpdateChain).toHaveBeenCalledWith(custom.id, { name: custom.name, description: '', tags: [], basePrompt: 'new positive', negativePrompt: 'new negative' }));

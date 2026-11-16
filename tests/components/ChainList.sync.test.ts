@@ -4,6 +4,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expectDirectoryCount } from '../support/directoryPicker';
 import type { PromptChain } from '../../types';
 import { ChainList } from '../../components/ChainList';
 import { IMAGE_CARD_ACTION_CLASS } from '../../components/ImageShareActions';
@@ -204,7 +205,8 @@ it.each([390, 1280])('宽度 %s：直达多选进入原位批量选择，四个�
   await beginBulkSelection();
   expect(view.container.querySelector('header')).toBe(header);
   expect([...view.container.querySelectorAll('.mobile-gallery-frame')]).toEqual(frames);
-  expect(within(header).getByRole('group', { name: '风格串批量操作' }).classList.contains('overflow-x-auto')).toBe(true);
+  expect(within(header).getByRole('group', { name: '风格串批量操作' }).classList.contains('overflow-hidden')).toBe(true);
+  expect(within(header).getByRole('group', { name: '风格串批量操作' }).classList.contains('overflow-x-auto')).toBe(false);
   expect(screen.queryByPlaceholderText('搜索我的风格串')).toBeNull();
   for (const item of chains) {
     const card = screen.getByRole('checkbox', { name: `选择风格串：${item.name}` });
@@ -552,7 +554,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     render(React.createElement(ChainList, { ...props(), chains: items }));
     fireEvent.change(screen.getByPlaceholderText('搜索我的风格串'), { target: { value: '共同' } });
     fireEvent.click(screen.getByRole('button', { name: '展开文件夹' }));
-    await screen.findByRole('option', { name: '收藏 (2)' });
+    await waitFor(() => expectDirectoryCount('收藏', '2'));
     fireEvent.click(screen.getByRole('button', { name: surface === 'desktop' ? '筛选' : '筛选与排序' }));
     const dialog = screen.getByRole('dialog', { name: '筛选与排序' });
     const filter = within(dialog);
@@ -560,7 +562,8 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(filter.getByRole('button', { name: '标签甲' })).toBeTruthy();
     expect(filter.queryByRole('button', { name: '待实测' })).toBeNull();
     expect(screen.getByText('共同 A')).toBeTruthy(); expect(screen.getByText('共同 B')).toBeTruthy();
-    fireEvent.change(screen.getByRole('combobox', { name: '选择文件夹' }), { target: { value: '#favorites' } });
+    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '选择文件夹' })).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === '#favorites' }));
     expect(screen.queryByText('共同 B')).toBeNull(); expect(screen.getByText('共同 V5')).toBeTruthy();
     fireEvent.change(filter.getByRole('combobox', { name: '模型筛选' }), { target: { value: 'nai-diffusion-4-5-full' } });
     expect(screen.queryByText('共同 V5')).toBeNull(); expect(screen.getByText('共同 A')).toBeTruthy();
@@ -748,8 +751,9 @@ it.each(['style', 'character'] as const)('%s收藏目录按对象身份保留已
   expect(within(screen.getByRole('button', { name: `打开${label}：${replaced.name}` })).getByRole('button', { name: '收藏' })).toBeTruthy();
   if (type === 'style') {
     fireEvent.click(screen.getByRole('button', { name: '展开文件夹' }));
-    await screen.findByRole('option', { name: '收藏 (3)' });
-    fireEvent.change(screen.getByRole('combobox', { name: '选择文件夹' }), { target: { value: '#favorites' } });
+    fireEvent.click(await screen.findByRole('button', { name: '选择文件夹' }));
+    await waitFor(() => expectDirectoryCount('收藏', '3'));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '选择文件夹' })).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === '#favorites' }));
   } else {
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     fireEvent.click(within(screen.getByRole('dialog', { name: '筛选与排序' })).getByRole('button', { name: '只看收藏' }));

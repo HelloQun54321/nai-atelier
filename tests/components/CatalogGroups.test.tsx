@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { directoryPickerValue, expectDirectoryCount, openDirectoryPicker, pickDirectoryOption } from '../support/directoryPicker';
 import { useCatalogGroupBrowser } from '../../components/CatalogGroups';
 import { DIRECTORY_FAVORITES_ID } from '../../components/DirectoryTreeNavigation';
 import { ImageActivityContext } from '../../components/SmartImage';
@@ -84,13 +85,14 @@ it('收藏使用业务已有对象状态，位于来源前并保留浏览选择�
   render(<FavoritesBrowser />);
   expect(screen.getByTestId('favorite-matches').textContent).toBe('false/true');
   expect(shownCount('收藏')).toBe('1');
-  expect(Array.from(screen.getByRole('combobox', { name: '选择分组' }).querySelectorAll('option')).slice(0, 4).map(option => option.value)).toEqual(['*', '', DIRECTORY_FAVORITES_ID, '#source']);
+  expect(Array.from(openDirectoryPicker('选择分组').getAllByRole('option')).slice(0, 4).map(option => option.getAttribute('data-value'))).toEqual(['*', '', DIRECTORY_FAVORITES_ID, '#source']);
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
   expect(screen.queryByRole('button', { name: '重命名分组' })).toBeNull();
   const dataTransfer = transfer();
   fireEvent.dragStart(screen.getByTestId('favorite-drag'), { dataTransfer });
   fireEvent.drop(screen.getByRole('button', { name: '收藏' }), { dataTransfer });
   expect(mocks.save).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: '*' } });
+  pickDirectoryOption('选择分组', '*');
   fireEvent.click(screen.getByRole('button', { name: '收藏' }));
   expect(JSON.parse(localStorage.getItem('nai_catalog_groups_artist')!).active).toBe(DIRECTORY_FAVORITES_ID);
 });
@@ -114,7 +116,7 @@ it('业务范围嵌入已有导航，收起保留筛选与分组，按钮提示�
   expect(trigger).toHaveProperty('title', '展开分类 · 组二 · 偏好画师');
   expect(trigger.dataset.active).toBe('true');
   openNavigation();
-  expect(screen.getByRole('combobox', { name: '画师范围' })).toHaveProperty('value', 'preferred');
+  expect((screen.getByRole('combobox', { name: '画师范围' }) as HTMLSelectElement).value).toBe('preferred');
   expect(screen.getByRole('button', { name: '组二' }).getAttribute('aria-current')).toBe('page');
   expect(mocks.save).not.toHaveBeenCalled();
 });
@@ -123,7 +125,7 @@ it('完整目录单次计数，跨组各记一次，去重并排除幽灵和无�
   mocks.state.memberships['artist:a'] = ['one', 'two'];
   const view = render(<Harness catalogKeys={[...completeKeys, 'artist:a', 'artist: ', 'catalog:a', 'artist:bad\nkey']} selected={['artist:a']} />); openNavigation();
   expect(shownCount('全部')).toBe('5'); expect(shownCount('未分组')).toBe('3'); expect(shownCount('组一')).toBe('1'); expect(shownCount('组二')).toBe('2');
-  expect(screen.getByRole('option', { name: '组二 (2)' })).toBeTruthy();
+  expectDirectoryCount('组二', '2');
   fireEvent.change(screen.getByLabelText('业务草稿'), { target: { value: '仅搜索一项' } });
   view.rerender(<Harness selected={[]} />);
   expect(shownCount('全部')).toBe('5'); expect(shownCount('组二')).toBe('2');
@@ -241,7 +243,7 @@ it('导航默认收起，选择与收展保留业务节点和本端范围偏好'
   expect(screen.getByRole('button', { name: '分组导航' }).title).toBe('展开分类 · 全部');
   fireEvent.change(draft, { target: { value: '正在编辑' } });
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'one' } });
+  pickDirectoryOption('选择分组', 'one');
   expect(screen.getByRole('button', { name: '分组导航' }).title).toBe('收起分类 · 组一');
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
   expect(screen.getByLabelText('业务草稿')).toBe(draft); expect(draft).toHaveProperty('value', '正在编辑');
@@ -269,7 +271,7 @@ it('保存失败保留弹窗与勾选草稿，重试不丢未触及组', async (
 
 it('删除需要明确确认，只移除分组和归属，条目其它组仍保留', async () => {
   render(<Harness selected={[]} />); fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'one' } });
+  pickDirectoryOption('选择分组', 'one');
   mocks.confirm.mockResolvedValueOnce(false);
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: '删除分组' })); });
   expect(mocks.save).not.toHaveBeenCalled();
@@ -294,7 +296,7 @@ it('侧栏标题行直接Plus新建，当前组显示Pencil和Trash，导航行�
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull()); view.rerender(<Harness selected={[]} />);
   const created = mocks.state.groups.find(group => group.name === '直接新建')!;
-  expect(screen.getByRole('combobox', { name: '选择分组' })).toHaveProperty('value', created.id);
+  expect(directoryPickerValue('选择分组')).toBe(created.id);
   expect(screen.getByRole('button', { name: '重命名分组' }).querySelector('svg.lucide-pencil')).toBeTruthy();
   expect(screen.getByRole('button', { name: '删除分组' }).querySelector('svg.lucide-trash-2')).toBeTruthy();
   expect(mocks.state.memberships).toEqual({ 'artist:a': ['one'], 'artist:b': ['two'], 'artist:outside': ['one', 'two'] });
@@ -302,7 +304,7 @@ it('侧栏标题行直接Plus新建，当前组显示Pencil和Trash，导航行�
 
 it('标题行改名保存失败保留草稿，取消不写，隐藏恢复保留同一编辑输入', async () => {
   const view = render(<Harness selected={[]} />); fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'one' } });
+  pickDirectoryOption('选择分组', 'one');
   fireEvent.click(screen.getByRole('button', { name: '重命名分组' }));
   const input = screen.getByRole('textbox', { name: '分组名称' }); expect(input).toHaveProperty('value', '组一');
   fireEvent.change(input, { target: { value: '改后的名称' } }); view.rerender(<Harness selected={[]} active={false} />);
@@ -386,23 +388,23 @@ it('父目录筛选含深层后代，完整名单按身份对每个祖先去重'
   expect(shownCount('组一')).toBe('2'); expect(shownCount('组一 / 子组')).toBe('2');
   fireEvent.click(screen.getByRole('button', { name: '组一' }));
   expect(screen.getByTestId('matches').textContent).toBe('true/true');
-  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'deep' } });
+  pickDirectoryOption('选择分组', 'deep');
   expect(shownCount('组一 / 子组 / 深组')).toBe('2'); expect(shownCount('未分组')).toBe('3');
-  expect(screen.getByRole('option', { name: '组一 / 子组 / 深组 (2)' })).toBeTruthy();
+  expectDirectoryCount('组一 / 子组 / 深组', '2');
 });
 it('任意层级新建与编辑父级使用路径，编辑排除自己和后代', async () => {
   mocks.state.groups.push({ id: 'child', name: '子组', parentId: 'one' }, { id: 'deep', name: '深组', parentId: 'child' });
   mocks.save.mockImplementation(async next => { mocks.state = { ...next, revision: next.revision + 1 }; });
   const view = render(<Harness selected={[]} />); openNavigation();
-  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'deep' } });
+  pickDirectoryOption('选择分组', 'deep');
   fireEvent.click(screen.getByRole('button', { name: '新建分组' }));
-  expect(screen.getByRole('combobox', { name: '上级目录' })).toHaveProperty('value', 'deep');
+  expect((screen.getByRole('combobox', { name: '上级目录' }) as HTMLSelectElement).value).toBe('deep');
   fireEvent.change(screen.getByRole('textbox', { name: '分组名称' }), { target: { value: '再细分' } });
   fireEvent.click(screen.getByRole('button', { name: '保存' })); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   view.rerender(<Harness selected={[]} />);
   const created = mocks.state.groups.find(group => group.name === '再细分')!;
   expect(created.parentId).toBe('deep');
-  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'child' } });
+  pickDirectoryOption('选择分组', 'child');
   fireEvent.click(screen.getByRole('button', { name: '重命名分组' }));
   const parent = screen.getByRole('combobox', { name: '上级目录' });
   expect(Array.from((parent as HTMLSelectElement).options).map(option => option.value)).toEqual(['', 'one', 'two']);
@@ -438,7 +440,7 @@ it('Roll复用画师分组资料，选择与目录展开偏好按入口独立且
   expect(screen.getByRole('button', { name: '组一 / 子组' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '组二' }));
   view.rerender(<Harness selected={[]} />);
-  expect(screen.getByRole('combobox', { name: '选择分组' })).toHaveProperty('value', 'one');
+  expect(directoryPickerValue('选择分组')).toBe('one');
   expect(screen.queryByRole('button', { name: '组一 / 子组' })).toBeNull();
   expect(mocks.save).not.toHaveBeenCalled();
 });
@@ -455,7 +457,7 @@ it('目录拖入另一目录仅移动父级，整棵子树及成员归属随原C
   expect(mocks.save.mock.calls[0][0]).toEqual({ ...before, groups: before.groups.map(group => group.id === 'one' ? { ...group, parentId: 'two' } : group) });
   expect(mocks.notify).toHaveBeenCalledWith('分组已保存', 'success');
   view.rerender(<Harness selected={[]} />);
-  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'child' } });
+  pickDirectoryOption('选择分组', 'child');
   expect(shownCount('组二')).toBe('2'); expect(shownCount('组二 / 组一')).toBe('1');
   expect(screen.getByTestId('matches').textContent).toBe('true/false');
   const cardTransfer = transfer(); fireEvent.dragStart(screen.getByTestId('artist:c'), { dataTransfer: cardTransfer });

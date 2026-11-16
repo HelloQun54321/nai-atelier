@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { expectDirectoryCount, pickDirectoryOptionAsync } from '../support/directoryPicker';
 import { StyleRollArtistDialog } from '../../components/roll/StyleRollArtistDialog';
 import { DEFAULT_ROLL_RULES, type RollRules } from '../../services/styleRoll';
 import { installPointerEvents, longPress } from '../support/touchEvents';
@@ -39,23 +40,26 @@ beforeEach(() => {
   vi.clearAllMocks(); mocks.usage.mockResolvedValue({ byTag: new Map(), indexed: 0, total: 0 }); localStorage.clear(); mocks.items = []; mocks.urls.mockImplementation(async () => new Map([['alpha', '/api/assets/alpha.png']])); mocks.block.mockResolvedValue(undefined); mocks.favorite.mockResolvedValue(true); vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} })); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-const chooseFavoriteDirectory = () => {
+const chooseGroup = async (id: string) => {
   if (!screen.queryByLabelText('选择分组')) fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-  fireEvent.change(screen.getByLabelText('选择分组'), { target: { value: '#favorites' } });
+  await pickDirectoryOptionAsync('选择分组', id);
 };
+const chooseFavoriteDirectory = async () => await chooseGroup('#favorites');
 
 it('Roll画师收藏目录共享真实收藏，计数去重、忽略归档且保留独立浏览选择', async () => {
   mocks.items = [{ sourceType: 'artist', sourceId: 'beta' }, { sourceType: 'artist', sourceId: 'beta' }, { sourceType: 'artist', sourceId: 'alpha', archived: true }];
   localStorage.setItem('nai_catalog_groups_roll-artists', JSON.stringify({ active: '#favorites', expanded: true }));
   render(<Fixture />);
-  await screen.findByRole('option', { name: '收藏 (1)' });
+  await waitFor(() => expectDirectoryCount('收藏', '1'));
   expect(screen.getByRole('button', { name: '锁定画师：beta' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '锁定画师：alpha' })).toBeNull();
-  expect(Array.from(screen.getByLabelText('选择分组').querySelectorAll('option')).slice(0, 3).map(option => option.value)).toEqual(['*', '', '#favorites']);
+  fireEvent.click(screen.getByLabelText('选择分组'));
+  expect(Array.from(within(screen.getByRole('dialog', { name: '选择分组' })).getAllByRole('option')).slice(0, 3).map(option => option.getAttribute('data-value'))).toEqual(['*', '', '#favorites']);
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
   expect(screen.queryByRole('button', { name: '偏好画师' })).toBeNull();
   expect(screen.queryByRole('button', { name: '重命名分组' })).toBeNull();
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: 'no-match' } });
-  expect(screen.getByRole('option', { name: '收藏 (1)' })).toBeTruthy();
+  expectDirectoryCount('收藏', '1');
   expect(localStorage.getItem('nai_catalog_groups_artist')).toBeNull();
   expect(mocks.groupPut).not.toHaveBeenCalled();
 });
@@ -66,10 +70,10 @@ it('Roll画师收藏读取失败保持未知计数，主动重试后展示真实
   localStorage.setItem('nai_catalog_groups_roll-artists', JSON.stringify({ active: '#favorites', expanded: true }));
   render(<Fixture />);
   await screen.findByText('合成收藏读取失败');
-  expect(screen.getByRole('option', { name: '收藏 (—)' })).toBeTruthy();
+  expectDirectoryCount('收藏', '—');
   expect(screen.queryByText('没有匹配的画师')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
-  await screen.findByRole('option', { name: '收藏 (1)' });
+  await waitFor(() => expectDirectoryCount('收藏', '1'));
   expect(screen.getByRole('button', { name: '锁定画师：beta' })).toBeTruthy();
 });
 
@@ -322,7 +326,7 @@ it('复用画师库四种排序，排序重置滚动且保留锁定、筛选和�
   expect(order()).toEqual(['beta', 'alpha', 'charlie']); expect(gallery.scrollTop).toBe(0);
   fireEvent.change(select, { target: { value: 'name-asc' } }); expect(order()).toEqual(['alpha', 'beta', 'charlie']);
   fireEvent.change(select, { target: { value: 'name-desc' } }); expect(order()).toEqual(['charlie', 'beta', 'alpha']);
-  chooseFavoriteDirectory(); expect(order()).toEqual(['beta', 'alpha']);
+  await chooseFavoriteDirectory(); expect(order()).toEqual(['beta', 'alpha']);
   expect(screen.getByRole('button', { name: '锁定画师：alpha' }).getAttribute('aria-pressed')).toBe('true');
   expect(library).toEqual(before); expect(localStorage.getItem('nai_roll_artist_sort')).toBe('name-desc');
   expect(mocks.favorite).not.toHaveBeenCalled(); expect(mocks.block).not.toHaveBeenCalled();
@@ -439,7 +443,7 @@ it('收藏库已有的画师会直接显示偏好，并可按偏好筛选', asyn
   mocks.items = [{ sourceType: 'artist', sourceId: 'beta', archived: false }];
   render(<Fixture />); await screen.findByAltText('alpha');
   expect(screen.getByRole('button', { name: '取消偏好画师：beta' }).getAttribute('aria-pressed')).toBe('true');
-  chooseFavoriteDirectory();
+  await chooseFavoriteDirectory();
   expect(screen.queryByRole('button', { name: '锁定画师：alpha' })).toBeNull();
   expect(screen.getByRole('button', { name: '锁定画师：beta' })).toBeTruthy();
 });
@@ -580,7 +584,7 @@ it('多词搜索仍与偏好锁定屏蔽和使用统计取交集，搜索不改�
   await screen.findByText('收录 2 串 · 生成 0 张');
   const names = () => screen.getAllByRole('button', { name: /^锁定画师：/ }).map(card => card.getAttribute('aria-label')!.slice('锁定画师：'.length));
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: ' ALPHA TAG，beta_tag, gamma ' } });
-  chooseFavoriteDirectory(); expect(names()).toEqual(['alpha_tag', 'beta_tag']);
+  await chooseFavoriteDirectory(); expect(names()).toEqual(['alpha_tag', 'beta_tag']);
   fireEvent.click(screen.getByRole('button', { name: '已锁定' })); expect(names()).toEqual(['beta_tag']);
   expect(screen.getByRole('button', { name: '锁定画师：beta_tag' }).getAttribute('aria-pressed')).toBe('true');
   fireEvent.click(screen.getByRole('button', { name: '已屏蔽' })); expect(names()).toEqual(['alpha_tag']);
@@ -603,11 +607,12 @@ it('Roll分组浏览与原搜索、偏好、屏蔽取交集，不改固定名单
   await waitFor(() => expect(mocks.groupGet).toHaveBeenCalledWith('/catalog-groups/artist', expect.anything()));
   expect(screen.queryByRole('complementary', { name: '分组导航' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-  fireEvent.change(await screen.findByLabelText('选择分组'), { target: { value: 'g' } });
+  await screen.findByLabelText('选择分组');
+  await chooseGroup('g');
   const names = () => screen.getAllByRole('button', { name: /^锁定画师：/ }).map(card => card.getAttribute('aria-label'));
   expect(names()).toEqual(['锁定画师：alpha_tag', '锁定画师：beta_tag']);
-  chooseFavoriteDirectory(); expect(names()).toEqual(['锁定画师：beta_tag']);
-  fireEvent.change(screen.getByLabelText('选择分组'), { target: { value: 'g' } });
+  await chooseFavoriteDirectory(); expect(names()).toEqual(['锁定画师：beta_tag']);
+  await chooseGroup('g');
   fireEvent.click(screen.getByRole('button', { name: '已屏蔽' })); expect(names()).toEqual(['锁定画师：alpha_tag']);
   fireEvent.click(screen.getByRole('button', { name: '全部画师' }));
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: 'beta' } });
@@ -628,7 +633,7 @@ it('分组筛选先覆盖完整目录再分页，精确原名区分同义画师�
   await waitFor(() => expect(screen.getByRole('button', { name: '设置分组' })).toHaveProperty('disabled', false));
   expect(screen.queryByRole('button', { name: '锁定画师：artist_80' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-  fireEvent.change(screen.getByLabelText('选择分组'), { target: { value: 'g' } });
+  await chooseGroup('g');
   expect(screen.getByRole('button', { name: '锁定画师：artist_80' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '锁定画师：artist_81' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '锁定画师：artist 80' })).toBeNull();
@@ -661,7 +666,7 @@ it('分组元数据更新不重置全部画师浏览的已加载页与滚动', a
   expect(screen.getByRole('button', { name: '锁定画师：entry_80' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-  expect(screen.getByRole('option', { name: '新分组 (0)' })).toBeTruthy();
+  expectDirectoryCount('新分组', '0');
 });
 
 
@@ -714,20 +719,20 @@ it('Roll分组计数使用未筛选完整真实目录，分页外和资料变化
   const props = { library, pinned: ['ghost'], onPinnedChange: vi.fn(), blocked: ['unknown'], onBlockedChange: mocks.block, excluded: [], onExcludedChange: vi.fn(), sampledOnly: false, onSampledOnlyChange: vi.fn(), rules: DEFAULT_ROLL_RULES, onRulesChange: vi.fn(), onClose: vi.fn() };
   const view = render(<StyleRollArtistDialog {...props} />);
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-  await screen.findByRole('option', { name: '完整组 (82)' });
-  expect(screen.getByRole('option', { name: '全部 (82)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '未分组 (0)' })).toBeTruthy();
+  await waitFor(() => expectDirectoryCount('完整组', '82'));
+  expectDirectoryCount('全部', '82');
+  expectDirectoryCount('未分组', '0');
   expect(screen.queryByRole('button', { name: '锁定画师：count_80' })).toBeNull();
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: 'count_0' } });
   expect(screen.getAllByRole('button', { name: /^锁定画师：/ })).toHaveLength(1);
-  expect(screen.getByRole('option', { name: '完整组 (82)' })).toBeTruthy();
+  expectDirectoryCount('完整组', '82');
   fireEvent.click(screen.getByRole('button', { name: '已锁定' }));
   expect(screen.queryByRole('button', { name: /^锁定画师：/ })).toBeNull();
-  expect(screen.getByRole('option', { name: '完整组 (82)' })).toBeTruthy();
+  expectDirectoryCount('完整组', '82');
   view.rerender(<StyleRollArtistDialog {...props} library={[...library, { name: 'new_actual', chinese: '', postCount: 0 }]} />);
-  expect(screen.getByRole('option', { name: '全部 (83)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '完整组 (82)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '未分组 (1)' })).toBeTruthy();
+  expectDirectoryCount('全部', '83');
+  expectDirectoryCount('完整组', '82');
+  expectDirectoryCount('未分组', '1');
   expect(props.onPinnedChange).not.toHaveBeenCalled(); expect(props.onRulesChange).not.toHaveBeenCalled();
 });
 
@@ -738,15 +743,15 @@ it('Roll目录或样张读取中及真实目录读取失败时分组计数未知
   const props = { library: [{ name: 'alpha', chinese: '', postCount: 1 }], pinned: [], onPinnedChange: vi.fn(), blocked: [], onBlockedChange: mocks.block, excluded: [], onExcludedChange: vi.fn(), sampledOnly: false, onSampledOnlyChange: vi.fn(), rules: DEFAULT_ROLL_RULES, onRulesChange: vi.fn(), onClose: vi.fn() };
   const view = render(<StyleRollArtistDialog {...props} />);
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-  await screen.findByRole('option', { name: '未知组 (—)' });
+  await waitFor(() => expectDirectoryCount('未知组', '—'));
   await act(async () => { resolveSamples({ templates: {}, samples: [] }); });
-  await screen.findByRole('option', { name: '未知组 (1)' });
+  await waitFor(() => expectDirectoryCount('未知组', '1'));
   view.rerender(<StyleRollArtistDialog {...props} loading />);
-  expect(screen.getByRole('option', { name: '未知组 (—)' })).toBeTruthy();
+  expectDirectoryCount('未知组', '—');
   view.rerender(<StyleRollArtistDialog {...props} libraryError="合成目录失败" />);
-  expect(screen.getByRole('option', { name: '未知组 (—)' })).toBeTruthy();
+  expectDirectoryCount('未知组', '—');
   view.rerender(<StyleRollArtistDialog {...props} />);
-  expect(screen.getByRole('option', { name: '未知组 (1)' })).toBeTruthy();
+  expectDirectoryCount('未知组', '1');
 });
 
 it('自动连续加载：Roll画师无需滚动事件或按钮继续到真实末尾', async () => {

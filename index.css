@@ -1166,14 +1166,11 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
 
 @media (max-width: 767px) {
   /* 手机顶栏不渲染折叠把手，整行宽度都归控件，分区条也不再让出左列。 */
-  /* 顶栏放不下时整排横向滑动，不换行、不新增工具行；两侧还有控件时在该侧边缘淡出提示。 */
-  .workspace-toolbar-scroll { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
-  .workspace-toolbar-scroll::-webkit-scrollbar { display: none; }
+  /* 禁止横滑与边缘淡出：靠图标精简一次排开，可伸缩的搜索／弹性区允许收缩。 */
+  .workspace-toolbar-scroll { overflow: hidden; }
   .workspace-toolbar-scroll > * { flex-shrink: 0; }
-  .workspace-toolbar-scroll > .flex-1 { flex-shrink: 1; }
-  .workspace-toolbar-scroll[data-overflow-end] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1.75rem), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 1.75rem), transparent); }
-  .workspace-toolbar-scroll[data-overflow-start] { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 1.75rem), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 1.75rem), transparent); }
-  .workspace-toolbar-scroll[data-overflow-start][data-overflow-end] { -webkit-mask-image: linear-gradient(to right, transparent, #000 1.75rem, #000 calc(100% - 1.75rem), transparent); mask-image: linear-gradient(to right, transparent, #000 1.75rem, #000 calc(100% - 1.75rem), transparent); }
+  .workspace-toolbar-scroll > .flex-1,
+  .workspace-toolbar-scroll > .min-w-0 { flex-shrink: 1; min-width: 0; }
 
   :root {
     --mobile-topbar: 3.5rem;

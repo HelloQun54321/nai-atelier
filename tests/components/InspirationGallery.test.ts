@@ -190,9 +190,11 @@ it.each([390, 1280])('宽度 %s：共用目录树父夹含任意深度后代，�
   if (width < 768) {
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     const filter = screen.getByRole('dialog', { name: '筛选收藏' });
-    const select = within(filter).getByRole('combobox', { name: '选择目录' });
-    expect(within(select).getByRole('option', { name: '根夹 / 子夹 / 孙夹 (1)' })).toBeTruthy();
-    fireEvent.change(select, { target: { value: 'root' } }); fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
+    fireEvent.click(within(filter).getByRole('button', { name: '选择目录' }));
+    const picker = screen.getByRole('dialog', { name: '选择目录' });
+    expect(within(picker).getByRole('option', { name: '根夹 / 子夹 / 孙夹 (1)' })).toBeTruthy();
+    fireEvent.click(within(picker).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === 'root' }));
+    fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
   } else fireEvent.click(screen.getByRole('button', { name: '选择收藏夹：根夹' }));
   expect(screen.getByText('跨层作品')).toBeTruthy(); expect(screen.getByText('子夹作品')).toBeTruthy(); expect(screen.queryByText('其他作品')).toBeNull();
   expect(screen.getByRole('button', { name: '选择收藏夹：根夹' }).textContent).toContain('2');
@@ -1084,7 +1086,8 @@ it('手机筛选内的共用收藏夹编辑返回只关闭最上层，不关闭�
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   const filter = screen.getByRole('dialog', { name: '筛选收藏' });
-  fireEvent.change(within(filter).getByRole('combobox', { name: '选择目录' }), { target: { value: 'board-1' } });
+  fireEvent.click(within(filter).getByRole('button', { name: '选择目录' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '选择目录' })).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === 'board-1' }));
   await waitFor(() => expect(window.history.state.__naiMobileLayers).toHaveLength(1));
   const parentState = window.history.state;
   fireEvent.click(within(filter).getByRole('button', { name: '编辑收藏夹' }));
@@ -1371,7 +1374,8 @@ it.each([390, 1280])('宽度 %s：多选只替换原顶栏，不向列表插入�
   expect(screen.getByRole('banner')).toBe(header); expect(view.container.querySelectorAll('header')).toHaveLength(1);
   const batch = within(header).getByRole('group', { name: '收藏批量操作' });
   expect(batch.classList.contains('flex-nowrap')).toBe(true); expect(batch.classList.contains('flex-wrap')).toBe(false);
-  expect(batch.classList.contains('overflow-x-auto')).toBe(true);
+  expect(batch.classList.contains('overflow-hidden')).toBe(true);
+  expect(batch.classList.contains('overflow-x-auto')).toBe(false);
   expect(within(header).getByRole('button', { name: '管理收藏夹' })).toBeTruthy();
   expect(within(header).getByRole('textbox', { name: '添加标签' })).toBeTruthy();
   expect(within(header).getByRole('button', { name: '取消收藏' }).classList.contains('mobile-touch')).toBe(true);

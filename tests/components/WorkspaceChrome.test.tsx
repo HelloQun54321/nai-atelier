@@ -116,24 +116,13 @@ it('卸载清理观察器并恢复宿主已有的高度值', () => {
   expect(disconnect).toHaveBeenCalledOnce();
 });
 
-it('手机顶栏放不下时整排横向滑动，按真实滚动位置只在仍有控件的一侧淡出', () => {
-  let scrollWidth = 520;
-  const clientWidth = 307;
-  vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('workspace-toolbar-scroll') ? scrollWidth : 0; });
-  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('workspace-toolbar-scroll') ? clientWidth : 0; });
+it('手机顶栏禁用横滑，控件仍在同一排并由 contents 在电脑端还原直属布局', () => {
   const { container } = render(<WorkspaceChrome><WorkspaceToolbar><button type="button">文件夹</button><input type="search" aria-label="搜索" /><button type="button">新建风格串</button></WorkspaceToolbar></WorkspaceChrome>);
   const scroller = container.querySelector<HTMLElement>('header > .workspace-toolbar-scroll')!;
-  // 控件仍在同一排，电脑端此层用 contents 不改变原布局。
   expect(scroller.className).toContain('md:contents');
   expect(Array.from(scroller.children).map(child => child.textContent || child.getAttribute('aria-label'))).toEqual(['文件夹', '搜索', '新建风格串']);
-  expect([scroller.hasAttribute('data-overflow-start'), scroller.hasAttribute('data-overflow-end')]).toEqual([false, true]);
-  scroller.scrollLeft = 100; fireEvent.scroll(scroller);
-  expect([scroller.hasAttribute('data-overflow-start'), scroller.hasAttribute('data-overflow-end')]).toEqual([true, true]);
-  scroller.scrollLeft = scrollWidth - clientWidth; fireEvent.scroll(scroller);
-  expect([scroller.hasAttribute('data-overflow-start'), scroller.hasAttribute('data-overflow-end')]).toEqual([true, false]);
-  // 放得下（或跨到电脑断点）时不再标记，避免最后一个按钮被淡出。
-  scrollWidth = 300; scroller.scrollLeft = 0; fireEvent(window, new Event('resize'));
-  expect([scroller.hasAttribute('data-overflow-start'), scroller.hasAttribute('data-overflow-end')]).toEqual([false, false]);
+  expect(scroller.hasAttribute('data-overflow-start')).toBe(false);
+  expect(scroller.hasAttribute('data-overflow-end')).toBe(false);
 });
 
 it('自带窄屏排布的顶栏可关闭横滑，子元素仍是顶栏的直接子级', () => {
@@ -142,7 +131,7 @@ it('自带窄屏排布的顶栏可关闭横滑，子元素仍是顶栏的直接�
   expect(container.querySelector('header.content-library-toolbar > [role="tablist"]')).not.toBeNull();
 });
 
-it('手机顶栏不渲染折叠把手、整行宽度都给控件，横滑只在手机断点生效且搜索框保底宽度', () => {
+it('手机顶栏不渲染折叠把手、整行宽度都给控件，且禁止横滑与边缘淡出', () => {
   const css = readFileSync('index.css', 'utf8');
   const mobile = css.slice(css.indexOf('@media (max-width: 767px) {'));
   // 手机没有把手，原先为它留的居中、让位规则一并撤掉，避免留下 2.75rem 的空位。
@@ -156,11 +145,14 @@ it('手机顶栏不渲染折叠把手、整行宽度都给控件，横滑只在�
   expect(design).toContain('max-lg:hidden');
   expect(design).not.toContain('max-md:hidden');
   expect(design).toContain('md:h-5 md:min-h-0 md:w-auto');
-  expect(mobile).toMatch(/\.workspace-toolbar-scroll \{ overflow-x: auto; overflow-y: hidden;/);
+  expect(mobile).toMatch(/\.workspace-toolbar-scroll \{ overflow: hidden;/);
+  expect(mobile).not.toContain('overflow-x: auto');
+  expect(mobile).not.toContain('data-overflow-end');
   expect(css.slice(0, css.indexOf('@media (max-width: 767px) {'))).not.toContain('.workspace-toolbar-scroll');
-  // 曾因搜索框被压到 0～16px、输入框溢出盖住筛选按钮而出现双层边框。
-  // 手机下限 120px：去掉把手后紧邻的那排操作能完整排下，不再把「新建」切掉一截。
-  for (const file of ['components/ChainList.tsx', 'components/InspirationGallery.tsx', 'components/CharacterLibrary.tsx']) expect(readFileSync(file, 'utf8'), file).toContain('max-md:min-w-[7.5rem]');
+  // 手机靠图标精简一次排开，搜索允许收缩，不再设保底宽度硬挤出相邻按钮。
+  for (const file of ['components/ChainList.tsx', 'components/InspirationGallery.tsx', 'components/CharacterLibrary.tsx']) {
+    expect(readFileSync(file, 'utf8'), file).not.toContain('max-md:min-w-[7.5rem]');
+  }
   expect(readFileSync('components/ContentLibraryPage.tsx', 'utf8')).toContain('<WorkspaceToolbar scrollable={false}');
 });
 

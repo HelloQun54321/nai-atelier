@@ -356,19 +356,23 @@ it.each(['standard', 'full', 'read_only'] as const)('通用Roll命令不能通�
   expect(mocks.generate).toHaveBeenCalledTimes(permissionMode === 'full' ? 1 : 0);
 });
 
-it('手机390px工具栏可横向滚动，主操作固定在滚动区外并保持触控尺寸，菜单通过Portal显示且预览不单独放大', async () => {
+it('手机390px工具栏禁止横滑，主操作固定在左侧区外并保持触控尺寸，菜单通过Portal显示且预览不单独放大', async () => {
   mocks.mobile = true; vi.stubGlobal('innerWidth', 390);
   const { container } = await setup();
   const scroller = container.querySelector<HTMLElement>('[data-roll-toolbar-scroll]')!;
   expect(scroller.classList.contains('min-w-0')).toBe(true);
-  expect(scroller.classList.contains('overflow-x-auto')).toBe(true);
+  expect(scroller.classList.contains('overflow-hidden')).toBe(true);
+  expect(scroller.classList.contains('overflow-x-auto')).toBe(false);
   expect(scroller.closest('header')).toBeTruthy();
   const roll = screen.getByRole('button', { name: '再 Roll 一轮' });
   const settings = screen.getByRole('button', { name: '设置' });
   expect(scroller.contains(roll)).toBe(false); expect(scroller.contains(settings)).toBe(false);
   expect(scroller.closest('header')!.contains(roll)).toBe(true); expect(scroller.closest('header')!.contains(settings)).toBe(true);
-  expect(roll.classList.contains('h-10')).toBe(true);
+  expect(roll.className).toMatch(/!h-10/);
+  expect(roll.className).toMatch(/!w-10/);
   expect(roll.className).not.toContain('!h-7');
+  // 手机不再常驻英文 “Roll” 短标签；完整文案仅在 md+ 的隐藏跨度里保留无障碍名称。
+  expect([...roll.querySelectorAll('span')].some(span => span.textContent === 'Roll')).toBe(false);
   const preview = screen.getByAltText('候选 1');
   expect(preview.classList.contains('object-contain')).toBe(true);
   expect(preview.className).not.toMatch(/(?:group-hover:|hover:)scale/);
@@ -745,12 +749,12 @@ it('记录可重命名与删除，删除后记录与候选一并离场且不触�
   fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
   fireEvent.click(await screen.findByRole('button', { name: '重命名记录：合成实验' }));
   fireEvent.change(screen.getByRole('textbox', { name: '记录名称' }), { target: { value: '新的画风记录' } }); fireEvent.submit(screen.getByRole('textbox', { name: '记录名称' }).closest('form')!);
-  await waitFor(() => expect(screen.getByRole('button', { name: '切换画风记录' }).textContent).toContain('新的画风记录'));
+  await waitFor(() => expect(screen.getByRole('button', { name: '切换画风记录' }).getAttribute('title') || screen.getByRole('button', { name: '切换画风记录' }).textContent).toContain('新的画风记录'));
   fireEvent.click(await screen.findByRole('button', { name: '删除记录：新的画风记录' }));
   // 删除是彻底的：直接走 DELETE，而不是把 archived 标记写回记录。
   await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith(experiment.id, expect.any(Number)));
   expect(mocks.confirm).toHaveBeenCalled();
-  await waitFor(() => expect(screen.getByRole('button', { name: '切换画风记录' }).textContent).toContain('另一记录'));
+  await waitFor(() => expect(screen.getByRole('button', { name: '切换画风记录' }).getAttribute('title') || screen.getByRole('button', { name: '切换画风记录' }).textContent).toContain('另一记录'));
   expect(mocks.save.mock.calls.some(call => call[0]?.archived === true)).toBe(false);
   expect(mocks.generate).not.toHaveBeenCalled();
 });
@@ -1342,7 +1346,7 @@ it('桌面展开画风记录左栏，按名称与最近时间列出并切换记�
   expect(within(navigation).getByText(/1 轮 · 2 个候选/)).toBeTruthy();
   expect(within(navigation).getByText(/1 轮 · 5 个候选/)).toBeTruthy();
   fireEvent.click(within(navigation).getByRole('button', { name: '打开画风记录：另一记录' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: '切换画风记录' }).textContent).toContain('另一记录'));
+  await waitFor(() => expect(screen.getByRole('button', { name: '切换画风记录' }).getAttribute('title') || screen.getByRole('button', { name: '切换画风记录' }).textContent).toContain('另一记录'));
   expect(within(navigation).getByRole('button', { name: '打开画风记录：另一记录' }).getAttribute('aria-pressed')).toBe('true');
   expect(localStorage.getItem('nai-roll-records-expanded')).toBe('true');
 });
@@ -1394,5 +1398,5 @@ it('手机记录按钮打开底部面板，选中记录后面板收起', async (
   expect(within(panel).getByRole('button', { name: '打开画风记录：另一记录' })).toBeTruthy();
   fireEvent.click(within(panel).getByRole('button', { name: '打开画风记录：另一记录' }));
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '画风记录' })).toBeNull());
-  expect(screen.getByRole('button', { name: '切换画风记录' }).textContent).toContain('另一记录');
+  expect(screen.getByRole('button', { name: '切换画风记录' }).getAttribute('title') || '').toContain('另一记录');
 });

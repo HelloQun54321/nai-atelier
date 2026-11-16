@@ -482,18 +482,23 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         active={navigationExpanded || collection !== 'all' || Boolean(boardId) || Boolean(sourceFilter)} onClick={toggleNavigation} className="hidden md:inline-flex"><Folder /><span className="max-w-24 truncate">{boardId ? boards.find(board => board.id === boardId)?.name || t('收藏夹') : sourceFilter ? sourceLabel(sourceFilter) : collection === 'unorganized' ? t('未整理') : t('全部')}</span></ToolbarButton>
       {inspirationsData !== null && <ToolbarCountBadge total={groups.length} loaded={Math.min(visibleCount, groups.length)} />}
       {selectionMode ? <>
-        <div role="group" aria-label={t("收藏批量操作")} className="flex h-full min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <b className="flex-none text-xs font-semibold text-gray-600 dark:text-gray-300">{t("已选 {0} 个作品，共 {1} 页", [selectedWorks, selectedItems.length])}</b>
-          <ToolbarButton aria-label={t("全选筛选结果")} disabled={Boolean(busy)} onClick={() => selectFiltered()} className="mobile-touch !px-2.5">{t("全选筛选结果")}</ToolbarButton>
-          <ToolbarButton aria-label={t("反选筛选结果")} disabled={Boolean(busy)} onClick={() => selectFiltered(true)} className="mobile-touch !px-2.5">{t("反选筛选结果")}</ToolbarButton>
-          <ToolbarButton disabled={Boolean(busy) || !selectedIds.size} onClick={() => setSelectedIds(new Set())} className="mobile-touch !px-2.5">{t("清空选择")}</ToolbarButton>
+        <div role="group" aria-label={t("收藏批量操作")} className="flex h-full min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden whitespace-nowrap">
+          <b className="flex-none text-xs font-semibold tabular-nums text-gray-600 dark:text-gray-300" title={t("已选 {0} 个作品，共 {1} 页", [selectedWorks, selectedItems.length])}><span className="md:hidden">{selectedWorks}</span><span className="hidden md:inline">{t("已选 {0} 个作品，共 {1} 页", [selectedWorks, selectedItems.length])}</span></b>
+          <ToolbarButton aria-label={t("全选筛选结果")} title={t("全选筛选结果")} disabled={Boolean(busy)} onClick={() => selectFiltered()} className="mobile-touch !px-2.5 max-md:hidden">{t("全选筛选结果")}</ToolbarButton>
+          <ToolbarButton aria-label={t("反选筛选结果")} title={t("反选筛选结果")} disabled={Boolean(busy)} onClick={() => selectFiltered(true)} className="mobile-touch !px-2.5 max-md:hidden">{t("反选筛选结果")}</ToolbarButton>
+          <ToolbarButton aria-label={t("清空选择")} title={t("清空选择")} disabled={Boolean(busy) || !selectedIds.size} onClick={() => setSelectedIds(new Set())} className="mobile-touch !px-2.5 max-md:hidden">{t("清空选择")}</ToolbarButton>
           {renderFolderPicker(selectedItems)}
-          <div className="appearance-group flex flex-none overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"><CollectionTagInput aria-label={t("添加标签")} onPick={setBulkTag} disabled={Boolean(busy) || !selectedIds.size} value={bulkTag} suggestions={allTags.map(([tag]) => tag)} onChange={event => setBulkTag(event.target.value)} placeholder={t("添加标签")} className="mobile-touch h-10 w-28 bg-transparent px-2 text-xs outline-none" /><button type="button" disabled={Boolean(busy) || !selectedIds.size || !bulkTag.trim()} onClick={() => void addBulkTags()} className="mobile-touch border-l border-gray-200 px-2 text-xs font-bold text-indigo-600 disabled:opacity-40 dark:border-gray-800 dark:text-indigo-300">{t("添加")}</button></div>
-          <ToolbarButton tone="danger" aria-label={t("取消收藏")} disabled={Boolean(busy) || !selectedIds.size} onClick={() => void deleteCollected(Array.from(selectedIds))} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span>{t("取消收藏")}</span></ToolbarButton>
+          <div className="appearance-group flex flex-none overflow-hidden rounded-xl border border-gray-200 bg-white max-md:hidden dark:border-gray-800 dark:bg-gray-900"><CollectionTagInput aria-label={t("添加标签")} onPick={setBulkTag} disabled={Boolean(busy) || !selectedIds.size} value={bulkTag} suggestions={allTags.map(([tag]) => tag)} onChange={event => setBulkTag(event.target.value)} placeholder={t("添加标签")} className="mobile-touch h-10 w-28 bg-transparent px-2 text-xs outline-none" /><button type="button" disabled={Boolean(busy) || !selectedIds.size || !bulkTag.trim()} onClick={() => void addBulkTags()} className="mobile-touch border-l border-gray-200 px-2 text-xs font-bold text-indigo-600 disabled:opacity-40 dark:border-gray-800 dark:text-indigo-300">{t("添加")}</button></div>
+          <ToolbarButton tone="danger" aria-label={t("取消收藏")} title={t("取消收藏")} disabled={Boolean(busy) || !selectedIds.size} onClick={() => void deleteCollected(Array.from(selectedIds))} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span className="hidden md:inline">{t("取消收藏")}</span></ToolbarButton>
         </div>
-        <ToolbarButton aria-label={t("退出多选")} title={t("退出多选")} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t("退出多选")}</span></ToolbarButton>
+        <MobileOverflowMenu className="md:hidden" items={[
+          { label: '全选筛选结果', disabled: Boolean(busy), onClick: () => selectFiltered() },
+          { label: '反选筛选结果', disabled: Boolean(busy), onClick: () => selectFiltered(true) },
+          { label: '清空选择', disabled: Boolean(busy) || !selectedIds.size, onClick: () => setSelectedIds(new Set()) },
+        ]} />
+        <ToolbarButton aria-label={t("退出多选")} title={t("退出多选")} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden md:inline">{t("退出多选")}</span></ToolbarButton>
       </> : <>
-      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="h-11 min-w-0 flex-1 max-md:min-w-[7.5rem] md:h-10 md:max-w-none!" className="h-full! min-h-0!">
+      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="h-11 min-w-0 flex-1 md:h-10 md:max-w-none!" className="h-full! min-h-0!">
         <SearchFilterChips chips={tagChips} expanded={showFilters} onMore={() => setShowFilters(true)} />
       </ToolbarSearch>
       <ToolbarPopover title={t("筛选收藏")} open={showFilters} onOpenChange={setShowFilters} count={activeFilterCount} width={360}>

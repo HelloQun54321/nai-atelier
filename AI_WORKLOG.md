@@ -1,3 +1,8 @@
+## 2026-11-17
+- **Composer**：按用户确认把手机目录完整路径选择从原生 `<select>` 换成主题化 `MobileBottomSheet`（feat: theme mobile directory path picker）；共用 `DirectoryTreeNavigation`、产品决策与相关回归一并更新。
+- **Composer**：按用户要求取消手机顶栏横滑与叠压（fix: compact mobile topbars without scroll）；共用工具栏改为 overflow hidden，Roll／风格串／画师／角色／收藏／提示词等页图标化长按钮，多选次要项进「更多」，同步产品决策与回归。
+- **Composer**：将「启动时自动开启安全模式」默认值从开启改为关闭（fix: default safe mode startup off）；抽取 `readSafeModeStartupPreference`，App／Agent 共用，并补偏好回归测试与决策／说明同步。
+
 ## 2026-11-16
 - **DeepSeek Harness (deepseek-v4.1-flash)**：按用户分析结论删掉 Roll 顶栏重复的「管理记录」浮层（refactor: drop the duplicate roll manage popover）。`components/StyleRollPage.tsx` 移除该 `ToolbarPopover`（摘要／重命名表单／新建／刷新／删除／清理）、随之失效的 `recordName` 状态与同步 effect，以及 `MoreHorizontal`、`TOOLBAR_MENU_CLASS` 引用；左栏 header 刷新补上 `reloadLibrary()` 与 `refreshHistory()`，与管理浮层原来的完整刷新对齐。测试里刷新、新建、重命名、删除的入口全部改走左栏，并新增「顶栏不再有管理记录」断言。同步 5 语言 README 与 `docs/PRODUCT_DECISIONS.md`。验证：`StyleRollPage` 121 项与 TypeScript 通过。版本 1.189.5。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：按用户反馈修正 Roll 顶栏记录按钮的两处观感问题（fix: steady the roll record switcher）。记录按钮改用共用 ToolbarButton（outline-none + ocus-visible:ring-2 + ing-inset），替掉被记录胶囊裁成残缺方框的浏览器默认 outline；ctive={recordsExpanded} 让展开态走主题既有的已展开高光，chevron 同步旋转；「管理记录」去掉 !recordsExpanded 条件，收起与展开都常驻，不再出现按钮忽然消失。验证：StyleRollPage 121 项与 TypeScript 通过。版本 1.189.4。

@@ -27,6 +27,7 @@ import {
   saveAppearancePreferences,
   ThemeMode,
 } from './services/appearancePreferences';
+import { readSafeModeStartupPreference } from './services/safeModePreferences';
 import { PromptChain, User, Inspiration, ChainType, NAIParams } from './types';
 import { applyContentRollToParams, undoContentRollApply, type ContentRollApplyPlan, type ContentRollEntryTarget } from './services/contentRollApply';
 import { contentRead, contentSnapshotOf } from './services/contentRoll';
@@ -289,10 +290,10 @@ const App = () => {
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const isDark = themeMode === 'dark' || (themeMode === 'system' && systemDark);
   useCollectorAppearance(appearancePreferences, isDark);
-  const [safeModeStartup, setSafeModeStartup] = useState(() => localStorage.getItem('nai_safe_mode_startup') !== 'false');
+  const [safeModeStartup, setSafeModeStartup] = useState(() => readSafeModeStartupPreference());
   // 启动偏好唯一决定启动时的安全模式状态：开关开启则每次启动必定进入安全模式，关闭则必定关闭。
-  // 会话中的手动开关只影响当前会话；nai_safe_mode 键继续作为当前状态镜像供 Agent 读取，不参与启动判定。
-  const [safeMode, setSafeMode] = useState(() => localStorage.getItem('nai_safe_mode_startup') !== 'false');
+  // 无本地记录时默认关闭。会话中的手动开关只影响当前会话；nai_safe_mode 键继续作为当前状态镜像供 Agent 读取，不参与启动判定。
+  const [safeMode, setSafeMode] = useState(() => readSafeModeStartupPreference());
   const [safeModeHideTitles, setSafeModeHideTitles] = useState(() => localStorage.getItem('nai_safe_mode_hide_titles') !== 'false');
 
   // Toast State

@@ -3,6 +3,7 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
+import { expectDirectoryCount, openDirectoryPicker, pickDirectoryOption } from '../support/directoryPicker';
 import { CharacterLibrary } from '../../components/CharacterLibrary';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 import { createDefaultRollTemplate } from '../../services/styleRoll';
@@ -61,28 +62,28 @@ it('加载状态：自定义链读取未知不报空，错误重试与缓存刷�
   expect(await screen.findByText('没有找到符合条件的角色')).toBeTruthy();
 });
 const select = async (id: string) => {
-  if (!screen.queryByRole('combobox', { name: '选择分组' })) fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-  await waitFor(() => expect(within(screen.getByRole('combobox', { name: '选择分组' })).getByRole('option', { name: /^甲组 \(/ })).toBeTruthy());
-  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: id } });
+  if (!screen.queryByRole('button', { name: '选择分组' })) fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
+  await waitFor(() => expect(openDirectoryPicker('选择分组').getByRole('option', { name: /^甲组 \(/ })).toBeTruthy());
+  pickDirectoryOption('选择分组', id);
 };
 it('加载状态：自定义链未知时来源与完整计数未知，缓存非零保留且成功空才显示零', async () => {
   localStorage.setItem('nai_catalog_groups_character', JSON.stringify({ expanded: true }));
   localStorage.setItem('nai_character_link_variant_favorites', 'false');
   const view = setup({ chains: [], chainsLoading: true });
-  await screen.findByRole('option', { name: 'danbooru (3)' });
-  expect(screen.getByRole('option', { name: '自定义 (—)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '全部 (—)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '收藏 (—)' })).toBeTruthy();
+  await waitFor(() => expectDirectoryCount('danbooru', '3'));
+  expectDirectoryCount('自定义', '—');
+  expectDirectoryCount('全部', '—');
+  expectDirectoryCount('收藏', '—');
   view.rerender(<CharacterLibrary {...view.props} chainsLoading={false} chainsError="合成读取失败" />);
-  expect(screen.getByRole('option', { name: '自定义 (—)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: 'danbooru (3)' })).toBeTruthy();
+  expectDirectoryCount('自定义', '—');
+  expectDirectoryCount('danbooru', '3');
   view.rerender(<CharacterLibrary {...view.props} chains={[custom]} chainsLoading />);
-  expect(screen.getByRole('option', { name: '自定义 (1)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '全部 (4)' })).toBeTruthy();
+  expectDirectoryCount('自定义', '1');
+  expectDirectoryCount('全部', '4');
   view.rerender(<CharacterLibrary {...view.props} chainsLoading={false} />);
-  expect(screen.getByRole('option', { name: '自定义 (0)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '全部 (3)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '收藏 (0)' })).toBeTruthy();
+  expectDirectoryCount('自定义', '0');
+  expectDirectoryCount('全部', '3');
+  expectDirectoryCount('收藏', '0');
 });
 it('来源目录与用户分组可切换，来源搜索按身份过滤且同名角色不混淆', async () => {
   localStorage.setItem('nai_character_link_variant_favorites', 'false');
@@ -110,19 +111,19 @@ it('来源目录与用户分组可切换，来源搜索按身份过滤且同名�
 it('来源目录显示完整计数且随自定义角色新增删除即时更新，不写入分组或进入分组设置', async () => {
   const view = setup();
   await select('#source:catalog');
-  expect(screen.getByRole('option', { name: 'danbooru (3)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '自定义 (1)' })).toBeTruthy();
+  expectDirectoryCount('danbooru', '3');
+  expectDirectoryCount('自定义', '1');
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'late' } });
-  expect(screen.getByRole('option', { name: 'danbooru (3)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '自定义 (1)' })).toBeTruthy();
+  expectDirectoryCount('danbooru', '3');
+  expectDirectoryCount('自定义', '1');
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
   await select('#source:custom');
   expect(screen.getAllByRole('button', { name: /选择角色：/ })).toHaveLength(1);
   view.rerender(<CharacterLibrary chains={[custom, { ...custom, id: 'new-custom', name: '新角色' }]} onCreate={vi.fn()} onSelect={vi.fn()} onDelete={vi.fn(async () => {})} onUpdateChain={vi.fn()} onNavigateToPlayground={vi.fn()} notify={vi.fn()} />);
-  expect(screen.getByRole('option', { name: '自定义 (2)' })).toBeTruthy();
+  expectDirectoryCount('自定义', '2');
   expect(screen.getByRole('button', { name: '选择角色：新角色' })).toBeTruthy();
   view.rerender(<CharacterLibrary chains={[custom]} onCreate={vi.fn()} onSelect={vi.fn()} onDelete={vi.fn(async () => {})} onUpdateChain={vi.fn()} onNavigateToPlayground={vi.fn()} notify={vi.fn()} />);
-  expect(screen.getByRole('option', { name: '自定义 (1)' })).toBeTruthy();
+  expectDirectoryCount('自定义', '1');
   expect(screen.queryByRole('button', { name: '选择角色：新角色' })).toBeNull();
   expect(screen.queryByRole('button', { name: '重命名分组' })).toBeNull();
   expect(screen.queryByRole('button', { name: '删除分组' })).toBeNull();
@@ -183,9 +184,8 @@ it('仅有自定义成员的组在混合随机下仍可抽取，不补入全词�
 
 it('danbooru来源下抽卡只包含词库角色，手机目录选项可选择两个来源', async () => {
   setup(); await select('#source:catalog');
-  const selector = screen.getByRole('combobox', { name: '选择分组' });
-  expect(within(selector).getByRole('option', { name: 'danbooru (3)' })).toBeTruthy();
-  expect(within(selector).getByRole('option', { name: '自定义 (1)' })).toBeTruthy();
+  expectDirectoryCount('danbooru', '3');
+  expectDirectoryCount('自定义', '1');
   fireEvent.click(screen.getByRole('button', { name: '角色库设置' }));
   const mode = screen.getByRole('combobox', { name: '抽卡范围' }) as HTMLSelectElement;
   expect(mode.value).toBe('catalog'); expect(mode.disabled).toBe(true);
@@ -306,18 +306,18 @@ it('展开按完整身份计数，搜索不缩小分组数，删除自定义不�
   const view = setup(); await screen.findByRole('button', { name: '选择角色：首页' });
   await waitFor(() => expect(mocks.all).toHaveBeenCalledOnce());
   await select('two');
-  await waitFor(() => expect(screen.getByRole('option', { name: '全部 (4)' })).toBeTruthy());
-  expect(screen.getByRole('option', { name: '甲组 (1)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '乙组 (2)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '未分组 (2)' })).toBeTruthy();
+  await waitFor(() => expectDirectoryCount('全部', '4'));
+  expectDirectoryCount('甲组', '1');
+  expectDirectoryCount('乙组', '2');
+  expectDirectoryCount('未分组', '2');
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'late' } });
-  expect(screen.getByRole('option', { name: '乙组 (2)' })).toBeTruthy();
+  expectDirectoryCount('乙组', '2');
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
   expect(mocks.all).toHaveBeenCalledOnce();
   view.rerender(<CharacterLibrary chains={[]} onCreate={vi.fn()} onSelect={vi.fn()} onDelete={vi.fn(async () => {})} onUpdateChain={vi.fn()} onNavigateToPlayground={vi.fn()} notify={vi.fn()} />);
-  expect(screen.getByRole('option', { name: '全部 (3)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '乙组 (1)' })).toBeTruthy();
+  expectDirectoryCount('全部', '3');
+  expectDirectoryCount('乙组', '1');
   expect(mocks.all).toHaveBeenCalledOnce();
 });
 it('完整目录未读和失败计数保持未知，空目录成功才显示有效零值', async () => {
@@ -325,15 +325,15 @@ it('完整目录未读和失败计数保持未知，空目录成功才显示有�
   mocks.all.mockImplementationOnce(() => new Promise(value => { resolve = value; }));
   const view = setup(); await screen.findByRole('button', { name: '选择角色：首页' });
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-  expect(screen.getByRole('option', { name: '全部 (—)' })).toBeTruthy();
+  expectDirectoryCount('全部', '—');
   await act(async () => resolve([]));
-  await waitFor(() => expect(screen.getByRole('option', { name: '全部 (1)' })).toBeTruthy());
-  expect(screen.getByRole('option', { name: '甲组 (0)' })).toBeTruthy();
+  await waitFor(() => expectDirectoryCount('全部', '1'));
+  expectDirectoryCount('甲组', '0');
   view.unmount(); localStorage.clear(); mocks.all.mockRejectedValueOnce(new Error('合成目录失败'));
   setup(); await screen.findByRole('button', { name: '选择角色：首页' });
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
   await waitFor(() => expect(mocks.all).toHaveBeenCalledTimes(2));
-  expect(screen.getByRole('option', { name: '全部 (—)' })).toBeTruthy();
+  expectDirectoryCount('全部', '—');
 });
 
 
@@ -355,7 +355,7 @@ it('词库角色铅笔首次保存个人覆写不跳页，再编辑和抽卡取�
   fireEvent.click(await screen.findByRole('button', { name: '编辑角色信息:early' }));
   expect((screen.getByRole('textbox', { name: '角色 Tag' }) as HTMLInputElement).value).toBe('early');
   expect((screen.getByRole('textbox', { name: '名称' }) as HTMLInputElement).readOnly).toBe(true);
-  fireEvent.change(screen.getByRole('combobox', { name: '补充提示词' }), { target: { value: 'red eyes' } });
+  pickDirectoryOption('补充提示词', 'red eyes');
   fireEvent.change(screen.getByRole('combobox', { name: '负面提示词' }), { target: { value: 'extra arms' } });
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑角色信息' })).toBeNull());
@@ -364,7 +364,7 @@ it('词库角色铅笔首次保存个人覆写不跳页，再编辑和抽卡取�
   expect(selectEditor).not.toHaveBeenCalled(); expect(navigate).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '编辑角色信息:early' }));
   expect((screen.getByRole('combobox', { name: '补充提示词' }) as HTMLTextAreaElement).value).toBe('red eyes');
-  fireEvent.change(screen.getByRole('combobox', { name: '补充提示词' }), { target: { value: 'blue eyes' } });
+  pickDirectoryOption('补充提示词', 'blue eyes');
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(update).toHaveBeenCalledOnce());
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑角色信息' })).toBeNull());
@@ -426,11 +426,11 @@ it('词库覆写首次回执失败后重放同创建身份，再更新新草稿�
   const update = vi.fn(async () => {}), notify = vi.fn(), navigate = vi.fn();
   render(<CharacterLibrary chains={[]} onCreate={vi.fn()} onSelect={navigate} onDelete={vi.fn()} onUpdateChain={update} onCreateCatalogOverride={create} onNavigateToPlayground={navigate} notify={notify} />);
   fireEvent.click(await screen.findByRole('button', { name: '编辑角色信息:early' }));
-  fireEvent.change(screen.getByRole('combobox', { name: '补充提示词' }), { target: { value: 'red eyes' } });
+  pickDirectoryOption('补充提示词', 'red eyes');
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(notify).toHaveBeenCalledWith('合成回执丢失', 'error'));
   expect(screen.getByRole('dialog', { name: '编辑角色信息' })).toBeTruthy();
-  fireEvent.change(screen.getByRole('combobox', { name: '补充提示词' }), { target: { value: 'blue eyes' } });
+  pickDirectoryOption('补充提示词', 'blue eyes');
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑角色信息' })).toBeNull());
   expect(create).toHaveBeenCalledTimes(2); expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
@@ -457,13 +457,13 @@ it('收藏目录计数等待真实收藏就绪，使用完整有效身份且不�
   mocks.ensure.mockImplementationOnce(() => new Promise<void>(resolve => { ready = resolve; }));
   localStorage.setItem('nai_character_favorites', JSON.stringify(['catalog:late', 'catalog:missing']));
   setup(); await select('#favorites');
-  expect(screen.getByRole('option', { name: '收藏 (—)' })).toBeTruthy();
+  expectDirectoryCount('收藏', '—');
   expect(screen.queryByText('没有找到符合条件的角色')).toBeNull();
   expect(screen.getByRole('status').textContent).toContain('加载中');
   await act(async () => ready());
-  await screen.findByRole('option', { name: '收藏 (1)' });
+  await waitFor(() => expectDirectoryCount('收藏', '1'));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'not-found' } });
-  expect(screen.getByRole('option', { name: '收藏 (1)' })).toBeTruthy();
+  expectDirectoryCount('收藏', '1');
   expect(mocks.favorite).not.toHaveBeenCalled();
 });
 
@@ -479,7 +479,7 @@ it('旧词库覆写chainId收藏只读映射原Tag，参与收藏目录和已有
   expect(mocks.favorite.mock.calls[0][1]).toBe(true);
   await select('#favorites');
   expect(screen.getByRole('button', { name: '选择角色：胡滕' }).getAttribute('data-gallery-work-id')).toBe('catalog:' + variantFamily[0].name);
-  expect(screen.getByRole('option', { name: '收藏 (1)' })).toBeTruthy();
+  expectDirectoryCount('收藏', '1');
   expect(oldFavorite.sourceId).toBe('legacy-catalog-id'); expect(oldFavorite.imageUrl).toBe('/kept-old-cover.png');
 });
 

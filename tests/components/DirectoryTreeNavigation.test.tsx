@@ -11,19 +11,34 @@ import { readAgentPage, operateAgentPage } from '../../services/agentWorkspace';
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
 const nodes = [{ id: 'root', name: '根' }, { id: 'child', parentId: 'root', name: '子项' }, { id: 'leaf', parentId: 'child', name: '末层' }, { id: 'other', name: '另一根' }];
 const props = () => ({ nodes, label: '业务文件夹', title: '文件夹', selectedId: '*', onSelect: vi.fn(), expanded: true, preferenceKey: 'first-business', totalCount: 5, unclassifiedCount: 1, counts: new Map([['root', 3], ['child', 2]]) });
+const mobileTrigger = (name = '选择目录') => screen.getByRole('button', { name });
+const openMobilePicker = (name = '选择目录') => {
+  const trigger = mobileTrigger(name);
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger);
+  return within(screen.getByRole('dialog', { name }));
+};
+const pickMobile = (value: string, name = '选择目录') => {
+  fireEvent.click(openMobilePicker(name).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === value }));
+};
+const mobileOptionValues = (name = '选择目录') => Array.from(openMobilePicker(name).getAllByRole('option')).map(option => option.getAttribute('data-value'));
 
 it('只读助手能展开真实共用目录并用手机目录选择浏览，不开放新建或编辑动作', async () => {
   const p = props(), create = vi.fn();
   const Browser = () => {
     const [selectedId, setSelectedId] = React.useState('*');
-    return <main data-agent-view="list"><DirectoryTreeNavigation {...p} selectedId={selectedId} onSelect={id => { p.onSelect(id); setSelectedId(id); }} onCreate={create} /></main>;
+    return <main data-agent-view="list" className="agent-stage"><DirectoryTreeNavigation {...p} selectedId={selectedId} onSelect={id => { p.onSelect(id); setSelectedId(id); }} onCreate={create} /></main>;
   };
   render(<Browser />);
   let page = readAgentPage({ query: '展开目录' });
   await act(async () => { await operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: page.controls[0].id, permissionMode: 'read_only' }); });
   expect(screen.getByRole('button', { name: '根 / 子项 / 末层' })).toBeTruthy(); expect(p.onSelect).not.toHaveBeenCalled();
   page = readAgentPage({ query: '选择目录' });
-  await act(async () => { await operateAgentPage({ action: 'select', snapshotId: page.snapshotId, controlId: page.controls[0].id, value: 'leaf', permissionMode: 'read_only' }); });
+  await act(async () => { await operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: page.controls[0].id, permissionMode: 'read_only' }); });
+  page = readAgentPage({ query: '根 / 子项 / 末层' });
+  const leaf = page.controls.find(control => control.actions.includes('click') && control.label === '根 / 子项 / 末层' && control.role === 'option')
+    || page.controls.find(control => control.actions.includes('click') && control.label === '根 / 子项 / 末层');
+  expect(leaf).toBeTruthy();
+  await act(async () => { await operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: leaf!.id, permissionMode: 'read_only' }); });
   expect(p.onSelect).toHaveBeenCalledWith('leaf');
   page = readAgentPage({ query: '新建目录' });
   await expect(operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: page.controls[0].id, permissionMode: 'read_only' })).rejects.toThrow('只读');
@@ -37,9 +52,10 @@ it('使用统一侧栏与手机完整路径选择，折叠箭头不选择且按�
   expect(screen.getByRole('complementary').className).toContain('workspace-category-navigation');
   expect(screen.getByRole('complementary').className).toContain('md:w-52');
   expect(screen.getByRole('navigation').className).toBe('directory-tree-scroll-viewport hidden min-h-0 space-y-1 md:block md:flex-1 md:overflow-y-auto');
-  expect(screen.getByRole('combobox').className).toContain('md:hidden');
-  expect(screen.getByRole('option', { name: '根 / 子项 / 末层' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: '根 / 子项 / 末层' })).toBeNull();
+  expect(mobileTrigger().className).toContain('md:hidden');
+  expect(openMobilePicker().getByRole('option', { name: '根 / 子项 / 末层' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '根 / 子项 / 末层', current: 'page' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
   fireEvent.click(screen.getByRole('button', { name: '展开目录「根 / 子项」' }));
   expect(p.onSelect).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '根 / 子项 / 末层' }));
@@ -56,10 +72,11 @@ it('选中深层节点自动展开祖先，支持旧多选与全库数量', () =
   render(<DirectoryTreeNavigation {...p} selectedId="#selected" selectedIds={['leaf', 'other']} />);
   expect(screen.getByRole('button', { name: '根 / 子项 / 末层' }).getAttribute('aria-current')).toBe('page');
   expect(screen.getByRole('button', { name: '另一根' }).getAttribute('aria-current')).toBe('page');
-  expect(screen.getByRole('option', { name: '已选 2 个目录' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '全部 (5)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '根 / 子项 (2)' })).toBeTruthy();
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'child' } });
+  const picker = openMobilePicker();
+  expect(picker.getByRole('option', { name: '已选 2 个目录' })).toBeTruthy();
+  expect(picker.getByRole('option', { name: '全部 (5)' })).toBeTruthy();
+  expect(picker.getByRole('option', { name: '根 / 子项 (2)' })).toBeTruthy();
+  pickMobile('child');
   expect(p.onSelect).toHaveBeenCalledWith('child');
 });
 
@@ -70,12 +87,13 @@ it('虚拟来源行可从桌面和手机选择，但不会变成可移动的真�
   const source = screen.getByRole('button', { name: 'danbooru' });
   expect(source.getAttribute('aria-current')).toBe('page');
   expect(screen.getByRole('button', { name: '自定义' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: 'danbooru (3)' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: '自定义 (1)' })).toBeTruthy();
+  const picker = openMobilePicker();
+  expect(picker.getByRole('option', { name: 'danbooru (3)' })).toBeTruthy();
+  expect(picker.getByRole('option', { name: '自定义 (1)' })).toBeTruthy();
   expect(source.getAttribute('draggable')).not.toBe('true');
   expect(screen.queryByRole('button', { name: '重命名目录' })).toBeNull();
   expect(screen.queryByRole('button', { name: '删除目录' })).toBeNull();
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: '#source:custom' } });
+  pickMobile('#source:custom');
   expect(p.onSelect).toHaveBeenCalledWith('#source:custom');
   const values = new Map<string, string>();
   const transfer = { get types() { return [...values.keys()]; }, setData(type: string, value: string) { values.set(type, value); }, getData(type: string) { return values.get(type) || ''; }, effectAllowed: '', dropEffect: '' };
@@ -87,16 +105,16 @@ it('虚拟来源行可从桌面和手机选择，但不会变成可移动的真�
 it('收藏排在全部和未归类后，桌面手机共用且不可编辑或作为目录移动目标', () => {
   const p = props(), onMove = vi.fn(), onCreate = vi.fn();
   render(<DirectoryTreeNavigation {...p} selectedId={DIRECTORY_FAVORITES_ID} virtualNodes={[{ id: DIRECTORY_FAVORITES_ID, name: '收藏' }, { id: '#source', name: '来源' }]} counts={new Map([[DIRECTORY_FAVORITES_ID, 2]])} onMove={onMove} onCreate={onCreate} onRename={vi.fn()} onDelete={vi.fn()} />);
-  expect(Array.from(screen.getByRole('combobox').querySelectorAll('option')).slice(0, 4).map(option => option.value)).toEqual(['*', '', DIRECTORY_FAVORITES_ID, '#source']);
+  expect(mobileOptionValues().slice(0, 4)).toEqual(['*', '', DIRECTORY_FAVORITES_ID, '#source']);
   const favorite = screen.getByRole('button', { name: '收藏' });
   expect(favorite.getAttribute('aria-current')).toBe('page');
   expect(favorite.getAttribute('draggable')).not.toBe('true');
-  expect(screen.getByRole('option', { name: '收藏 (2)' })).toBeTruthy();
+  expect(openMobilePicker().getByRole('option', { name: '收藏 (2)' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '重命名目录' })).toBeNull();
   expect(screen.queryByRole('button', { name: '删除目录' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '新建目录' }));
   expect(onCreate).toHaveBeenCalledWith(null);
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: DIRECTORY_FAVORITES_ID } });
+  pickMobile(DIRECTORY_FAVORITES_ID);
   expect(p.onSelect).toHaveBeenCalledWith(DIRECTORY_FAVORITES_ID);
 });
 
@@ -130,8 +148,8 @@ it.each([false, true])('嵌入=%s：长目录只在列表滚动，标题操作�
   expect(fixedHeader.contains(screen.getByTitle('文件夹'))).toBe(true);
   expect(list.contains(screen.getByRole('button', { name: '目录 119' }))).toBe(true);
   expect(list.contains(fixedHeader)).toBe(false);
-  expect(screen.getByRole('combobox').className).toContain('shrink-0');
-  expect(screen.getByRole('combobox').parentElement).toBe(pane);
+  expect(mobileTrigger().className).toContain('shrink-0');
+  expect(mobileTrigger().parentElement).toBe(pane);
   expect(screen.getByText('业务状态').parentElement?.className).toContain('shrink-0');
   expect(list.contains(screen.getByText('业务状态'))).toBe(false);
   expect(pane.className).not.toContain('sticky'); expect(fixedHeader.className).not.toContain('sticky');
@@ -146,7 +164,7 @@ it('禁用后不改变选择或分支，收起不占空间，嵌入窗口避开�
   fireEvent.click(screen.getByRole('button', { name: '新建目录' }));
   expect(p.onSelect).not.toHaveBeenCalled(); expect(onCreate).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: '根 / 子项' })).toBeTruthy();
-  expect((screen.getByRole('combobox') as HTMLSelectElement).disabled).toBe(true);
+  expect((mobileTrigger() as HTMLButtonElement).disabled).toBe(true);
   view.rerender(<DirectoryTreeNavigation {...p} embedded hideSpecial />);
   expect(screen.getByRole('complementary').className).not.toContain('workspace-fixed-pane');
   expect(screen.getByRole('complementary').className).toContain('w-full');
@@ -190,7 +208,7 @@ it('旧多选包含未归类时保留各行高亮与手机混合选择', () => {
   render(<DirectoryTreeNavigation {...props()} selectedId="#selected" selectedIds={['child', '']} />);
   expect(screen.getByRole('button', { name: '未归类' }).getAttribute('aria-current')).toBe('page');
   expect(screen.getByRole('button', { name: '根 / 子项' }).getAttribute('aria-current')).toBe('page');
-  expect(screen.getByRole('option', { name: '已选 2 个目录' })).toBeTruthy();
+  expect(openMobilePicker().getByRole('option', { name: '已选 2 个目录' })).toBeTruthy();
 });
 
 it('业务名称可覆写，管理禁用不妨碍浏览，外围拖放透传且行禁用拦截外部按钮', () => {
@@ -199,7 +217,7 @@ it('业务名称可覆写，管理禁用不妨碍浏览，外围拖放透传且�
   expect(screen.getByRole('complementary').className).toContain('business-navigation');
   expect((screen.getByRole('button', { name: '新建分组' }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByRole('button', { name: '新建分组' }).title).toBe('新建分组');
-  expect(screen.getByRole('combobox', { name: '选择分组' })).toBeTruthy();
+  expect(mobileTrigger('选择分组')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '另一根' }));
   expect(p.onSelect).toHaveBeenCalledWith('other');
   fireEvent.drop(screen.getByRole('complementary')); expect(onDrop).toHaveBeenCalledOnce();
@@ -213,7 +231,7 @@ it('深层树仍完整可选，视觉缩进不把目录移出侧栏', () => {
   render(<DirectoryTreeNavigation {...props()} nodes={deepNodes} selectedId="d71" />);
   const path = deepNodes.map(node => node.name).join(' / ');
   expect(screen.getByRole('button', { name: path }).getAttribute('aria-current')).toBe('page');
-  expect(screen.getByRole('option', { name: path })).toBeTruthy();
+  expect(openMobilePicker().getByRole('option', { name: path })).toBeTruthy();
   expect(screen.getByRole('button', { name: path }).parentElement?.style.paddingLeft).toBe('92px');
 });
 
@@ -346,10 +364,10 @@ it('全部、来源和独立用户根目录对齐，真实子目录保留缩进�
   expect(screen.getByRole('button', { name: '收起目录「根」' }).getAttribute('aria-expanded')).toBe('true');
   fireEvent.click(screen.getByRole('button', { name: '展开目录「根 / 子项」' }));
   expect(row('根 / 子项 / 末层').style.paddingLeft).toBe('36px');
-  const options = Array.from((screen.getByRole('combobox') as HTMLSelectElement).options);
-  expect(options.map(option => option.textContent)).toEqual(['全部 (5)', '未归类 (1)', 'danbooru', '自定义', '根 (3)', '根 / 子项 (2)', '根 / 子项 / 末层', '另一根']);
-  expect(options.find(option => option.value === 'other')?.textContent).toBe('另一根');
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'other' } });
+  const picker = openMobilePicker();
+  expect(Array.from(picker.getAllByRole('option')).map(option => option.textContent)).toEqual(['全部 (5)', '未归类 (1)', 'danbooru', '自定义', '根 (3)', '根 / 子项 (2)', '根 / 子项 / 末层', '另一根']);
+  expect(picker.getByRole('option', { name: '另一根' }).getAttribute('data-value')).toBe('other');
+  pickMobile('other');
   expect(p.onSelect).toHaveBeenCalledWith('other');
   expect(nodes.find(node => node.id === 'other')).toEqual({ id: 'other', name: '另一根' });
 });

@@ -3,6 +3,8 @@ import { ChevronDown, ChevronRight, Folder, Heart, Pencil, Plus, Trash2 } from '
 import { flattenDirectoryTree, type DirectoryTreeNode } from '../services/directoryTree.mjs';
 import { t, useLanguage } from '../services/i18n';
 import { ToolbarButton } from './DesignSystem';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { MobileBottomSheet } from './MobileUI';
 
 export const DIRECTORY_FAVORITES_ID = '#favorites';
 
@@ -110,7 +112,9 @@ export function DirectoryTreeNavigation({ id, label, title, className, asideProp
     return values;
   }, [selected, byId]);
   const [view, setView] = useState(() => ({ key: preferenceKey, branches: readBranches(preferenceKey) }));
+  const [pickerOpen, setPickerOpen] = useState(false);
   const branches = view.key === preferenceKey ? view.branches : readBranches(preferenceKey);
+  useEffect(() => { if (!expanded || disabled) setPickerOpen(false); }, [expanded, disabled]);
   useEffect(() => {
     setView(previous => {
       const current = previous.key === preferenceKey ? previous.branches : readBranches(preferenceKey);
@@ -139,6 +143,20 @@ export function DirectoryTreeNavigation({ id, label, title, className, asideProp
   const special = [...(hideSpecial ? [] : [{ id: '*', name: allLabel ?? t('全部') }, { id: '', name: unclassifiedLabel ?? t('未归类') }]), ...virtualNodes];
   const count = (value: string) => value === '*' ? totalCount ?? counts?.get(value) : value === '' ? unclassifiedCount ?? counts?.get(value) : counts?.get(value);
   const countNode = (value: string) => count(value) === undefined ? null : <span id={countIds.get(value)} className="shrink-0 text-xs tabular-nums opacity-60">{count(value)}</span>;
+  const optionLabel = (value: string, name: string) => count(value) === undefined ? name : `${name} (${count(value)})`;
+  const mobileOptions = [
+    ...(mobileValue === '#selected' ? [{ id: '#selected', name: t('已选 {0} 个目录', [selectionCount]), disabled: true as const }] : []),
+    ...special.map(node => ({ id: node.id, name: optionLabel(node.id, node.name), disabled: false as const })),
+    ...tree.map(node => ({ id: node.id, name: optionLabel(node.id, node.path.join(' / ')), disabled: false as const })),
+  ];
+  const mobileLabel = mobileOptions.find(option => option.id === mobileValue)?.name
+    ?? (mobileValue === '#selected' ? t('已选 {0} 个目录', [selectionCount]) : selectLabel ?? t('选择目录'));
+  const pickerTitle = selectLabel ?? t('选择目录');
+  const pickDirectory = (value: string) => {
+    if (disabled || value === '#selected') return;
+    onSelect(value);
+    setPickerOpen(false);
+  };
   const row = (value: string, name: string, path: string, depth: number, node?: DirectoryTreeNode) => {
     const active = selected.has(value);
     const props = nodeProps?.(value) || {};
@@ -165,11 +183,24 @@ export function DirectoryTreeNavigation({ id, label, title, className, asideProp
       {current && onRename && <ToolbarButton aria-label={renameLabel ?? t('重命名目录')} title={renameLabel ?? t('重命名目录')} disabled={disabled || actionDisabled} onClick={() => onRename(current.id)} className="!px-2"><Pencil className="h-4 w-4" /></ToolbarButton>}
       {current && onDelete && <ToolbarButton aria-label={deleteLabel ?? t('删除目录')} title={deleteLabel ?? t('删除目录')} disabled={disabled || actionDisabled} onClick={() => onDelete(current.id)} className="!px-2"><Trash2 className="h-4 w-4" /></ToolbarButton>}
     </div></div></div>
-    <select data-agent-action="browse" aria-label={selectLabel ?? t('选择目录')} value={mobileValue} disabled={disabled} onChange={event => { if (!disabled) onSelect(event.target.value); }} className="mobile-touch min-h-11 w-full min-w-0 shrink-0 rounded-lg border border-gray-300 bg-transparent px-2 py-2 text-sm dark:border-gray-700 md:hidden">
-      {mobileValue === '#selected' && <option value="#selected" disabled>{t('已选 {0} 个目录', [selectionCount])}</option>}
-      {special.map(node => <option key={node.id} value={node.id}>{node.name}{count(node.id) === undefined ? '' : ` (${count(node.id)})`}</option>)}
-      {tree.map(node => <option key={node.id} value={node.id}>{node.path.join(' / ')}{count(node.id) === undefined ? '' : ` (${count(node.id)})`}</option>)}
-    </select>
+    <button type="button" data-agent-action="browse" data-appearance="control" data-tone="neutral" data-value={mobileValue} aria-label={pickerTitle} title={pickerTitle} aria-haspopup="dialog" aria-expanded={pickerOpen} disabled={disabled} onClick={() => { if (!disabled) setPickerOpen(true); }} className="mobile-touch flex min-h-11 w-full min-w-0 shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-transparent px-2 py-2 text-left text-sm text-gray-700 dark:border-gray-700 dark:text-gray-200 md:hidden">
+      <span className="min-w-0 flex-1 truncate">{mobileLabel}</span>
+      <ChevronDown className="h-4 w-4 flex-none opacity-60" aria-hidden="true" />
+    </button>
+    <ImagePreviewPortal>
+      <MobileBottomSheet open={pickerOpen} title={pickerTitle} onClose={() => setPickerOpen(false)}>
+        <div role="listbox" aria-label={pickerTitle} className="space-y-1">
+          {mobileOptions.map(option => {
+            const active = !option.disabled && option.id === mobileValue;
+            const rowClass = `mobile-touch flex min-h-11 w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${active ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'} ${option.disabled || disabled ? 'opacity-60' : ''}`;
+            const icon = option.id === DIRECTORY_FAVORITES_ID ? <Heart className="h-4 w-4 flex-none" /> : <Folder className="h-4 w-4 flex-none" />;
+            // 多选摘要行只用 aria-disabled，避免 disabled 从无障碍树里消失导致测试／读屏找不到。
+            if (option.disabled) return <div key={`${option.id}:${option.name}`} role="option" data-value={option.id} aria-selected={false} aria-disabled="true" className={rowClass}>{icon}<span className="min-w-0 flex-1 truncate">{option.name}</span></div>;
+            return <button key={`${option.id}:${option.name}`} type="button" role="option" data-agent-action="browse" data-value={option.id} aria-selected={active} disabled={disabled} onClick={() => pickDirectory(option.id)} className={rowClass}>{icon}<span className="min-w-0 flex-1 truncate">{option.name}</span></button>;
+          })}
+        </div>
+      </MobileBottomSheet>
+    </ImagePreviewPortal>
     <nav className="directory-tree-scroll-viewport hidden min-h-0 space-y-1 md:block md:flex-1 md:overflow-y-auto" onClickCapture={event => { if (disabled) { event.preventDefault(); event.stopPropagation(); } }} onDropCapture={event => { if (disabled) { event.preventDefault(); event.stopPropagation(); } }} onDragStartCapture={event => { if (disabled) { event.preventDefault(); event.stopPropagation(); } }}>
       {draggingId && moveAvailable && <div role="group" aria-label={t('移到根目录')} data-directory-root-drop="true" onDragOver={event => hoverDirectory(event, null)} onDrop={event => dropDirectory(event, null)} onDragLeave={() => setDropTarget(undefined)} className={`mb-2 rounded-lg border border-dashed px-2 py-2 text-xs ${dropTarget === null ? 'border-indigo-500 text-indigo-600 ring-2 ring-indigo-500 dark:text-indigo-300' : 'border-gray-300 text-gray-500 dark:border-gray-700'}`}>{t('移到根目录')}</div>}
       {special.map(node => row(node.id, node.name, node.name, 0))}{visible.map(node => row(node.id, node.name, node.path.join(' / '), node.depth, node))}

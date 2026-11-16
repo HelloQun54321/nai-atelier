@@ -34,6 +34,7 @@ import { vibeService } from '../services/vibeService';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
 import { getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { readSafeModeStartupPreference } from '../services/safeModePreferences';
 import { clearMobileThumbnailCache, getMobileCacheStats, setMobileCacheLimitMb } from '../services/mobileImageCache';
 import { ArrowDown, ArrowUp, ArrowLeft, Bot, Check, ChevronDown, Copy, Download, Expand, ImagePlus, List, Minimize2, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Square, Trash2, X } from 'lucide-react';
 import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
@@ -1014,7 +1015,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       await promptAgentCoordinator.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? imageAttachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], characterReferences: effectiveMode === 'prompt' ? activeReferences : [], draft: props.draft, context: { clientSettings: {
         language: getLanguage(),
         currentPage: (() => { const page = readAgentPage(); return { view: page.view, title: page.title, snapshotId: page.snapshotId, capturedAt: page.capturedAt }; })(),
-        themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true', safeModeStartup: localStorage.getItem('nai_safe_mode_startup') !== 'false',
+        themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true', safeModeStartup: readSafeModeStartupPreference(),
         imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         autoShowGenerated: displayPreferences.autoShowGenerated,

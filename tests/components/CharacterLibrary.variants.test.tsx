@@ -2,6 +2,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { pickDirectoryOption } from '../support/directoryPicker';
 import { CharacterLibrary } from '../../components/CharacterLibrary';
 import * as libraryRandom from '../../services/libraryRandom';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
@@ -97,9 +98,9 @@ function setup(width = 1280, chains: PromptChain[] = []) {
 }
 
 async function selectGroup(id: string) {
-  if (!screen.queryByRole('combobox', { name: '选择分组' })) fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-  await waitFor(() => expect(screen.getByRole('combobox', { name: '选择分组' })).toBeTruthy());
-  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: id } });
+  if (!screen.queryByRole('button', { name: '选择分组' })) fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '选择分组' })).toBeTruthy());
+  pickDirectoryOption('选择分组', id);
 }
 
 const familyId = `catalog:${baseTag}`;
