@@ -16,7 +16,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, EyeOff, FileOutput, Filter, FlaskConical, FolderDown, Heart, Image, Link2, ListChecks, Package, Pencil, Plus, ScanSearch, Sparkles, Tags, Trash2, User, X } from 'lucide-react';
 import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { GalleryModelBadge } from './GalleryModelBadge';
 import { DEFAULT_NAI_MODEL, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
@@ -558,6 +558,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
           </> : <>
           {!isGuest && type === 'style' && <ToolbarButton data-agent-action="browse" aria-label={t(foldersExpanded ? '收起文件夹' : '展开文件夹')} title={[t(foldersExpanded ? '收起文件夹' : '展开文件夹'), activeFolder === '*' ? t('全部') : activeFolder === '' ? t('未整理') : activeFolder === DIRECTORY_FAVORITES_ID ? t('收藏') : folderStore.state.folders.find(folder => folder.id === activeFolder)?.name || t('全部')].join(' · ')} aria-expanded={foldersExpanded} active={foldersExpanded || activeFolder !== '*'} disabled={folderStore.busy} onClick={toggleFolders}><Folder className="h-4 w-4" /></ToolbarButton>}
+          {!loadError && !isLoading && <ToolbarCountBadge total={filteredChains.length} loaded={Math.min(visibleCount, filteredChains.length)} />}
           <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t("搜索{0}", [title])} containerClassName="min-w-0 flex-1 max-md:min-w-[7.5rem] md:max-w-none!" />
           <div className="hidden flex-none items-center gap-2 md:flex">
             <div ref={filterAnchorRef} className="relative flex-none">
@@ -591,10 +592,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           ]} className="md:hidden" />
           </>}
         </WorkspaceToolbar>
-        {/* 刷新提示并入已存在的计数行（绝对定位在顶栏下沿），不再往列表上方插一行。 */}
-        {!loadError && <ToolbarCountCaption>{isLoading && filteredChains.length > 0
-          ? <InlineSpinner label={t('加载中…')} className="text-xs" />
-          : `${countCaptionFiltered ? t('匹配 {0} 条', [filteredChains.length]) : t('共 {0} 条', [filteredChains.length])} · ${t('已加载 {0} 条', [Math.min(visibleCount, filteredChains.length)])}`}</ToolbarCountCaption>}
 
         {!selecting && canSync && syncSelection.open && <WisdomSyncToolbar sync={syncSelection} filteredIds={filteredChains.map(chain => chain.id)} />}
 

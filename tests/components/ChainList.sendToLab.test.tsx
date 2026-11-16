@@ -115,11 +115,11 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('风格串发送到实验室', () => {
-  it('在顶栏下沿显示当前类型的精确结果数', async () => {
+  it('在文件夹按钮旁显示当前类型的精确结果数', async () => {
     render(<ChainList {...props([styleChain, characterChain])} />);
-    const caption = await screen.findByText(/共 1 条/);
-    expect(caption.getAttribute('data-toolbar-count-caption')).toBe('true');
-    expect(caption.textContent).toBe('共 1 条 · 已加载 1 条');
+    const badge = await waitFor(() => { const node = document.querySelector('[data-toolbar-count-badge]'); expect(node).toBeTruthy(); return node; });
+    expect(badge!.getAttribute('title')).toBe('已加载 1 / 共 1');
+    expect(badge!.textContent).toBe('1');
   });
 
   it('把所有提示词结构、模块、角色槽位与生成参数投递到导入通道并跳转实验室', () => {

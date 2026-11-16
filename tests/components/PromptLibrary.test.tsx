@@ -159,10 +159,10 @@ describe('图片提示词库', () => {
     expect(screen.queryByRole('searchbox')).toBeNull();
   });
 
-  it('在顶栏下沿显示当前分类的条目数', async () => {
+  it('在文件夹按钮旁显示当前分类的条目数', async () => {
     const Component = Hub(); render(<Component {...props()} />);
-    const caption = await screen.findByText(/共 2 条/);
-    expect(caption.getAttribute('data-toolbar-count-caption')).toBe('true');
+    const badge = await waitFor(() => { const node = document.querySelector('[data-toolbar-count-badge]'); expect(node).toBeTruthy(); return node; });
+    expect(badge!.getAttribute('title')).toContain('共 2');
   });
 
   it('顶栏按筛选、搜索排列，新建与 AI 生成留在分类内容区', async () => {

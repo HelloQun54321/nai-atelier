@@ -48,7 +48,7 @@ import { promptAgentService, type PromptLibraryItem, type PromptLibraryKind } fr
 import { LAB_DEFAULT_PARAMS } from '../services/labWorkspace';
 import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { HistoryImagePicker } from './HistoryImagePicker';
 import { PromptLibraryCard, PromptLibraryGallery } from './PromptLibraryCard';
 import { ImageLightbox } from './ImageLightbox';
@@ -763,6 +763,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const listToolbarContent = (
     <>
       {categoryToggle}
+      {chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountBadge total={items.length} loaded={shown.length} />}
       <ToolbarPopover title={t('筛选{0}', [t(config.title)])} count={selectedTags.size} width={320} zIndex={dynamicDirectories ? 1960 : undefined}>
         <div className="space-y-3">
           <label className="block text-xs font-semibold text-gray-500">{t('排序')}
@@ -825,7 +826,6 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           containerClassName="md:max-w-none!"
         />
       </div>
-      {chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountCaption>{`${t(query.trim() || selectedTags.size ? '匹配 {0} 条' : '共 {0} 条', [items.length])} · ${t('已加载 {0} 条', [shown.length])}`}</ToolbarCountCaption>}
 
     </>
   );

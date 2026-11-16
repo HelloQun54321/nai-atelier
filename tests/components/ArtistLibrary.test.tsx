@@ -430,14 +430,14 @@ it.each(['usage-chains', 'usage-images'].flatMap(sort => [false, true].map(exclu
   expect(sampleCards()).toHaveLength(400);
   let random = 0; vi.spyOn(Math, 'random').mockImplementation(() => ((random++ % 410) + 0.1) / 410);
   fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
-  await waitFor(() => expect(screen.getByText('本次抽取 12 位')).toBeTruthy());
+  await waitFor(() => expect(screen.getByTitle('已加载 12')).toBeTruthy());
   expect(sampleCards()).toHaveLength(12);
-  expect(screen.getByText('本次抽取 12 位')).toBeTruthy();
+  expect(screen.getByTitle('已加载 12')).toBeTruthy();
   const first = sampleCards().map(card => card.getAttribute('aria-label'));
   fireEvent.click(screen.getByRole('button', { name: '再选一批' }));
   await waitFor(() => expect((screen.getByRole('button', { name: '再选一批' }) as HTMLButtonElement).disabled).toBe(false));
   expect(sampleCards()).toHaveLength(12);
-  expect(screen.getByText('本次抽取 12 位')).toBeTruthy();
+  expect(screen.getByTitle('已加载 12')).toBeTruthy();
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).not.toEqual(first);
   if (exclude) expect(screen.queryByTestId('cover-' + pool[0].name)).toBeNull();
   expect(mocks.begin).not.toHaveBeenCalled();
@@ -459,7 +459,7 @@ it.each(['mixed', 'uniform', 'popular'].flatMap(mode => [
   setup(); await screen.findByTestId('cover-missing artist');
   const collectionReads = mocks.ensureCollection.mock.calls.length, blockReads = mocks.blockLoad.mock.calls.length;
   fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
-  await waitFor(() => expect(screen.getByText(`本次抽取 ${3 - excluded.length} 位`)).toBeTruthy());
+  await waitFor(() => expect(screen.getByTitle(`已加载 ${3 - excluded.length}`)).toBeTruthy());
   expect(draw).toHaveBeenLastCalledWith(3, 12, mode, [], favorites || blocked ? new Set(excluded) : undefined);
   expect(sampleCards()).toHaveLength(3 - excluded.length);
   for (const index of excluded) expect(screen.queryByTestId('cover-' + entries[index].name)).toBeNull();
@@ -507,7 +507,7 @@ it.each(['favorites', 'blocked'])('排除%s等待最新名单，失败保留浏�
   fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
   mocks.collection = [{ sourceType: 'artist', sourceId: 'beta_artist' }];
   await act(async () => resolve(source === 'blocked' ? ['beta_artist'] : undefined));
-  expect(screen.getByText('本次抽取 1 位')).toBeTruthy();
+  expect(screen.getByTitle('已加载 1')).toBeTruthy();
   expect(screen.queryByTestId('cover-beta artist')).toBeNull();
   expect(screen.getByTestId('cover-alpha artist')).toBeTruthy();
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');
@@ -528,7 +528,7 @@ it.each(['favorites', 'blocked'])('排除%s等待期间的名单更新优先于�
     } else window.dispatchEvent(new CustomEvent('nai-roll-blocklist-changed', { detail: ['alpha_artist'] }));
     resolve(source === 'blocked' ? [] : undefined);
   });
-  expect(screen.getByText('本次抽取 2 位')).toBeTruthy();
+  expect(screen.getByTitle('已加载 2')).toBeTruthy();
   expect(screen.queryByTestId('cover-alpha artist')).toBeNull();
   expect(screen.getByTestId('cover-beta artist')).toBeTruthy();
   expect(screen.getByTestId('cover-missing artist')).toBeTruthy();
@@ -558,7 +558,7 @@ it('改排除选项及偏好屏蔽状态保持当前批，全排除和读取失�
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(first);
   mocks.collection = [{ sourceType: 'artist', sourceId: 'beta_artist' }];
   fireEvent.click(screen.getByRole('button', { name: '再选一批' }));
-  await waitFor(() => expect(screen.getByText('本次抽取 1 位')).toBeTruthy());
+  await waitFor(() => expect(screen.getByTitle('已加载 1')).toBeTruthy());
   expect(screen.getByTestId('cover-missing artist')).toBeTruthy();
 });
 
@@ -753,7 +753,7 @@ it('完整目录分页保留全部词库画师并追加两包独有名称，切�
   fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
   await waitFor(() => expect(sampleCards()).toHaveLength(102));
   fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
-  expect(sampleCards()).toHaveLength(104); expect(screen.getByText(/共 104 位/)).toBeTruthy();
+  expect(sampleCards()).toHaveLength(104); expect(screen.getByTitle(/共 104$/)).toBeTruthy();
   expect(sampleCards().map(card => card.getAttribute('aria-label')).filter(name => name?.includes('dictionary'))).toHaveLength(102);
   fireEvent.click(screen.getByRole('button', { name: '选择画师：v45_exclusive' }));
   fireEvent.click(screen.getByRole('button', { name: '选择画师：v5_exclusive' }));
@@ -780,7 +780,7 @@ it('图包独有画师可在全部目录搜索、收藏和使用统计交集筛�
   expect(within(screen.getByRole('button', { name: '选择画师：pack_only' })).queryByText('作品 0')).toBeNull();
   disableSampleFilter();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'pack only' } });
-  await screen.findByText(/匹配 1 位/);
+  await screen.findByTitle(/共 1$/);
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：pack_only']);
   setArtistScope('preferred');
   openArtistFilters();
@@ -814,7 +814,7 @@ it('图包独有画师参与有图随机池，统计排序后仍只显示固定�
   setup(); await screen.findByTestId('cover-pack_random'); disableSampleFilter();
   expect(sampleCards()).toHaveLength(9);
   fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
-  expect(sampleCards()).toHaveLength(6); expect(screen.getByText('本次抽取 6 位')).toBeTruthy();
+  expect(sampleCards()).toHaveLength(6); expect(screen.getByTitle('已加载 6')).toBeTruthy();
   expect(screen.getByTestId('cover-pack_random').getAttribute('data-packed')).toBe('true');
   expect(screen.queryByTestId('cover-missing artist')).toBeNull();
   act(() => mocks.historyListeners.forEach(listener => listener({ type: 'update' })));
@@ -1259,7 +1259,7 @@ it('逗号OR搜索统一匹配当前版本有图池、图包独有名、收藏�
   fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'used' } });
   fireEvent.change(screen.getByRole('combobox', { name: '图片生成' }), { target: { value: 'unused' } });
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：pack_or', '选择画师：alpha artist']);
-  expect(screen.getByText(/匹配 2 位/)).toBeTruthy();
+  expect(screen.getByTitle(/共 2$/)).toBeTruthy();
   fireEvent.click(screen.getByRole('checkbox', { name: '只看有样张' }));
   expect(sampleCards()).toHaveLength(2);
   expect(mocks.begin).not.toHaveBeenCalled();
@@ -1270,7 +1270,7 @@ it('逗号OR全词库搜索支持英文和中文中间子串，重复命中去�
   setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
   mocks.dictionary.mockResolvedValue([...entries, entries[0]]);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: ' pha，师乙, pha, unknown,pack_or, , ' } });
-  await waitFor(() => expect(screen.getByText(/匹配 3 位/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByTitle(/共 3$/)).toBeTruthy());
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist', '选择画师：beta artist', '选择画师：pack_or']);
   expect(screen.getByRole('searchbox').getAttribute('placeholder')).toBe('搜索画师，多个词用逗号分隔');
 });
@@ -1280,7 +1280,7 @@ it('样张状态不可用时完整词库缓存仍能独立搜索英文和中文�
   mocks.status.mockRejectedValue(new Error('本地图包仅支持电脑端及局域网访问'));
   setup(); await screen.findByTestId('cover-missing artist');
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'pha，师乙,pha' } });
-  await screen.findByText(/匹配 2 位/);
+  await screen.findByTitle(/共 2$/);
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist', '选择画师：beta artist']);
   expect(mocks.catalog).not.toHaveBeenCalled(); expect(mocks.begin).not.toHaveBeenCalled();
 });
@@ -1293,12 +1293,12 @@ it('逗号OR搜索忽略迟到的旧整组响应，只有逗号空项时回普�
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha,beta' } });
   await waitFor(() => expect(resolveOld).toBeTypeOf('function'));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'missing' } });
-  await waitFor(() => expect(screen.getByText(/匹配 1 位/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByTitle(/共 1$/)).toBeTruthy());
   expect(screen.getByTestId('cover-missing artist')).toBeTruthy();
   await act(async () => { resolveOld(entries); });
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：missing artist']);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: ' ， ,   ,，' } });
-  await waitFor(() => expect(screen.getByText(/已加载 2 位/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByTitle('已加载 2')).toBeTruthy());
   expect(sampleCards()).toHaveLength(2); expect(screen.getByRole('button', { name: '加载更多' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '清除搜索' })).toBeNull();
 });
@@ -1324,13 +1324,13 @@ it('逗号空项在有图池按普通目录分页，清空和随机后不会残�
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: pool.map(entry => entry.name) }));
   setup(); await waitFor(() => expect(sampleCards()).toHaveLength(100));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: ',， , ' } });
-  expect(screen.getByText(/已加载 100 位/)).toBeTruthy();
+  expect(screen.getByTitle(/^已加载 100 \//)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
-  expect(sampleCards()).toHaveLength(150); expect(screen.getByText(/共 150 位/)).toBeTruthy();
+  expect(sampleCards()).toHaveLength(150); expect(screen.getByTitle(/共 150$/)).toBeTruthy();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'not found,artist 149' } });
   expect(sampleCards()).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
-  expect(sampleCards()).toHaveLength(12); expect(screen.getByText('本次抽取 12 位')).toBeTruthy();
+  expect(sampleCards()).toHaveLength(12); expect(screen.getByTitle('已加载 12')).toBeTruthy();
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');
 });
 
@@ -1544,7 +1544,7 @@ it('统计筛选后的样张计数使用匹配数，不沿用未筛选样张池�
   await waitFor(() => expect((screen.getByRole('combobox', { name: '风格串收录' }) as HTMLSelectElement).disabled).toBe(false));
   fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'used' } });
   await waitFor(() => expect(sampleCards()).toHaveLength(2));
-  expect(screen.getByText(/匹配 2 位/)).toBeTruthy();
+  expect(screen.getByTitle(/共 2$/)).toBeTruthy();
   expect(screen.queryByText('已加载 2 位')).toBeNull();
 });
 
@@ -1563,7 +1563,7 @@ it('统计筛选切换重置首批分页上限', async () => {
   await waitFor(() => expect(sampleCards()).toHaveLength(200));
   fireEvent.change(chains, { target: { value: 'unused' } });
   await waitFor(() => expect(sampleCards()).toHaveLength(100));
-  expect(screen.getByText(/已加载 100 位/)).toBeTruthy();
+  expect(screen.getByTitle(/^已加载 100 \//)).toBeTruthy();
 });
 
 it('统计读取失败保持未知并可重试；重新进入时重新读取，不触发生成', async () => {

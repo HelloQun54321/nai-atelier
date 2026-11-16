@@ -33,7 +33,7 @@ import { useNaiChannelMode } from '../services/naiChannel';
 import { useAgentCommand } from '../services/agentCommands';
 import { EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { SmartImage } from './SmartImage';
 import { ImageLightbox } from './ImageLightbox';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
@@ -839,6 +839,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               <Folder className="opacity-80" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
               <ChevronDown className={`opacity-60 transition-transform ${recordsExpanded ? 'rotate-180' : ''}`} />
             </ToolbarButton>}
+          {experiment && <ToolbarCountBadge total={round && roundPending.length > 0 ? round.candidateIds.length : visible.length} loaded={round && roundPending.length > 0 ? round.candidateIds.filter(id => images.has(id)).length : undefined} />}
         </div>
 
         {/* 中间：自适应搜索框铺满可用宽度 */}
@@ -933,11 +934,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         </div>
       </div>}
     </WorkspaceToolbar>
-    {experiment && filterReady && <ToolbarCountCaption>{filter !== 'all' || roundId || query.trim()
-      ? t('匹配 {0} 个候选', [visible.length])
-      : t('共 {0} 个候选', [visible.length])}{round && roundPending.length > 0
-      ? ` · ${t('本轮已出图 {0}/{1}', [round.candidateIds.filter(id => images.has(id)).length, round.candidateIds.length])}`
-      : ''}</ToolbarCountCaption>}
     </WorkspaceChrome>
     <div className="flex min-h-0 min-w-0 flex-1">
       {!isMobile && recordsExpanded && <RollRecordNavigation records={experiments} selectedId={experimentId} busy={frozen || preparing} loading={loading}

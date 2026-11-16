@@ -482,11 +482,11 @@ it.each([390, 1280])('宽度 %s：收藏未读取时显示加载中，读取完�
   expect(screen.queryByText('这里还没有匹配的收藏')).toBeNull();
   expect(screen.queryByRole('button', { name: '加入第一条收藏' })).toBeNull();
   view.rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: [] }));
-  expect(view.container.querySelector('[data-toolbar-count-caption]')?.textContent).toContain('共 0 组');
+  expect(view.container.querySelector('[data-toolbar-count-badge]')?.getAttribute('title')).toContain('共 0');
   expect(screen.getByText('这里还没有匹配的收藏')).toBeTruthy();
   expect(screen.getByRole('button', { name: '加入第一条收藏' })).toBeTruthy();
   view.rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: mockInspirations }));
-  expect(view.container.querySelector('[data-toolbar-count-caption]')?.textContent).toContain(`共 ${mockInspirations.length} 组`);
+  expect(view.container.querySelector('[data-toolbar-count-badge]')?.getAttribute('title')).toContain(`共 ${mockInspirations.length}`);
   expect(screen.queryByRole('button', { name: '加入第一条收藏' })).toBeNull();
   expect(view.container.querySelectorAll('article')).toHaveLength(mockInspirations.length);
 });

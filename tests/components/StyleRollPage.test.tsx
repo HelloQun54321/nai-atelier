@@ -481,7 +481,7 @@ it('普通轮次第六张失败后仅手动补缺图，保留五张成品，不�
   const before = structuredClone(experiment);
   mocks.history.mockResolvedValue(rows(experiment).slice(0, 5));
   mocks.generate.mockResolvedValueOnce({ session: {}, settle: Promise.resolve({ success: false, outcome: 'failed', error: '<!DOCTYPE html><html><title>502 Bad Gateway</title><body>synthetic-ray</body></html>' }) });
-  await setup(); expect(screen.getByText(/本轮已出图 5\/6/)).toBeTruthy(); expect(mocks.generate).not.toHaveBeenCalled();
+  await setup(); expect(screen.getByText('5/6')).toBeTruthy(); expect(mocks.generate).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '补齐剩余 1 张' }));
   const errorText = await screen.findByText('服务返回了错误页面，请稍后重试');
   expect(errorText.textContent).not.toMatch(/DOCTYPE|synthetic-ray|<html/);
@@ -644,7 +644,7 @@ it('收藏读取失败不把图片判成未收藏，禁用快捷选择并可原�
   fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
   await screen.findByRole('button', { name: '查看候选 1' });
   expect(screen.queryByRole('button', { name: '查看候选 2' })).toBeNull();
-  expect(screen.getByText('匹配 1 个候选')).toBeTruthy();
+  expect(screen.getByTitle('共 1')).toBeTruthy();
   expect(mocks.ensureCollection).toHaveBeenCalledTimes(2);
 });
 
@@ -682,7 +682,7 @@ it('收藏筛选等待历史真实就绪，不误报零匹配或空结果', asyn
   expect(screen.queryByText('暂无匹配候选')).toBeNull(); expect(screen.queryByText('匹配 0 个候选')).toBeNull();
   expect(screen.getByText('加载中…')).toBeTruthy();
   await act(async () => finish(rows(experiment))); await screen.findByRole('button', { name: '查看候选 1' });
-  expect(screen.getByText('匹配 1 个候选')).toBeTruthy();
+  expect(screen.getByTitle('共 1')).toBeTruthy();
 });
 
 it('筛选可只看已收藏或未收藏的已出图候选，多选可直接选中当前结果中的已收藏或未收藏图片', async () => {

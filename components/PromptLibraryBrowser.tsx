@@ -10,7 +10,7 @@ import { filterPromptBrowseEntries, normalizeBrowseText, promptBrowseEntries, pr
 import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch } from './DesignSystem';
 import { PromptLibraryReadStatus, usePromptLibrary, type PromptLibraryReadState } from './PromptLibraryAccess';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { PromptLibraryCard, PromptLibraryGallery } from './PromptLibraryCard';
 import { PromptPurposePicker } from './PromptPurposePicker';
 import { ViewableImage } from './ImageLightbox';
@@ -259,6 +259,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   const toolbar = <>
     <div className={!mobile && wide ? "prompt-library-navigation-tools flex shrink-0 items-center gap-1" : "contents"}>
     <ToolbarButton data-agent-action="browse" aria-label={t(navigationExpanded ? '收起目录' : '展开目录')} title={[t(navigationExpanded ? '收起目录' : '展开目录'), selectedDirectoryPath].filter(Boolean).join(' · ')} aria-expanded={navigationExpanded} aria-controls={navigationId} active={navigationExpanded || favoritesSelected || (directoryScope ? !memory.allDirectories || memory.unclassified : memory.combinationCategory !== null || memory.combinationUnclassified)} onClick={toggleDirectories} className="!h-11 !w-11 md:!h-10 md:!w-10"><Folder className="h-4 w-4" /></ToolbarButton>
+    {scopeTotal > 0 && <ToolbarCountBadge total={scopeTotal} loaded={shown.length} />}
     {!mobile && wide && <div role="tablist" aria-label={t('提示词库分区')} className="appearance-segmented flex h-11 min-w-0 flex-1 gap-0.5 rounded-xl p-0.5 md:h-10">
       {SCOPES.map(([scope, label], index) => <button key={scope} type="button" role="tab" aria-selected={memory.scope === scope} tabIndex={memory.scope === scope ? 0 : -1}
         onClick={() => setScope(scope)} onKeyDown={event => {
@@ -293,7 +294,6 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
         {mobile && onExtract && <ToolbarButton onClick={() => void openFromFilter(close, mobile, onExtract)}>{t('AI 提取分类')}</ToolbarButton>}</div>
       </>}
     </ToolbarPopover>
-    <ToolbarCountCaption>{mobile ? `${t(SCOPES.find(([scope]) => scope === memory.scope)![1])} · ` : ''}{t('共 {0} 条', [!scopeTotal && countsPending ? '—' : scopeTotal])}{' · '}{t('已加载 {0} 条', [!shown.length && countsPending || favoritesSelected && favorites.status !== 'ready' ? '—' : shown.length])}</ToolbarCountCaption>
   </>;
   return <>{toolbarSlot && createPortal(toolbar, toolbarSlot)}<div data-workspace-body className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row" style={{ '--workspace-chrome-height': '0px' } as React.CSSProperties}>
     {directoryScope ? <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={libraryChains} countsPending={countsPending} selectedIds={memory.directoryIds} allSelected={memory.allDirectories} unclassified={memory.unclassified} favorites={memory.favorites} favoriteIds={favorites.ids} onSelect={updateDirectoryMemory} expanded={directoriesExpanded} onRename={onRenameDirectory} onDelete={onDeleteDirectory} onCreate={onCreateDirectory} onMove={onMoveDirectory} disabled={directoriesBusy} /> : <PromptLibraryCategoryNavigation id={navigationId} chains={combinationChains} customCharacters={customCharacters} countsPending={countsPending} names={categoryNames} tree={categoryTree} selected={memory.combinationCategory} unclassified={memory.combinationUnclassified} favorites={memory.combinationFavorites} favoriteIds={favorites.ids} expanded={categoriesExpanded} disabled={categoriesBusy} onSelect={selection => updateMemory({ ...memory, combinationCategory: selection.category, combinationUnclassified: selection.unclassified, combinationFavorites: selection.favorites === true })} />}
