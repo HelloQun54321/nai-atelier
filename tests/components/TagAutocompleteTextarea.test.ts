@@ -1781,10 +1781,17 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     render(React.createElement(Harness, { initial: 'masterpiece, 1girl', showTranslations: true }));
     await screen.findByRole('button', { name: /^masterpiece/ });
     const zone = () => screen.getByLabelText('提示词中文翻译');
+    const normalSlots = zone().querySelectorAll('[data-prompt-insert-slot]');
+    expect(normalSlots).toHaveLength(3);
+    // 插入缝不能挂 mobile-touch：其 44px 下限会把空白缝撑成大方块并打乱权重组换行。
+    expect((normalSlots[0] as HTMLElement).className).toContain('prompt-insert-slot');
+    expect((normalSlots[0] as HTMLElement).className).not.toContain('mobile-touch');
+    expect((normalSlots[0] as HTMLElement).className).toContain('w-3');
     fireEvent.click(screen.getByRole('button', { name: '屏蔽模式' }));
     let slots = zone().querySelectorAll('[data-prompt-insert-slot]');
     expect(slots).toHaveLength(3);
     expect((slots[0] as HTMLElement).className).toContain('w-3');
+    expect((slots[0] as HTMLElement).className).not.toContain('mobile-touch');
     expect((slots[2] as HTMLElement).className).toContain('flex-1');
     expect((slots[0] as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: '取消' }));

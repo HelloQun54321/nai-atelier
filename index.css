@@ -1209,6 +1209,23 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     min-height: 0;
   }
 
+  /* 翻译区插入缝：决策要求只留空白细缝；抵消本段 button 44px 最小高度，避免缝被撑成大方块／独占空行。 */
+  .prompt-tag-assist button.prompt-insert-slot,
+  .prompt-tag-assist button[data-prompt-insert-slot] {
+    min-width: 0;
+    min-height: 0;
+    height: auto;
+    position: relative;
+    touch-action: manipulation;
+  }
+  /* 触控命中区向两侧扩一点，但不占 flex 宽度，排版仍按 w-3／末尾 flex-1。 */
+  .prompt-tag-assist button.prompt-insert-slot::before,
+  .prompt-tag-assist button[data-prompt-insert-slot]::before {
+    content: '';
+    position: absolute;
+    inset: 0 -10px;
+  }
+
   :root { --nai-scrollbar-size: 6px; --nai-scrollbar-track: transparent; --nai-scrollbar-border: 1px; }
 
   .mobile-touch {

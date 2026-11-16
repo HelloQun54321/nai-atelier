@@ -916,14 +916,15 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     {!editingTag && tagInput.trim() && <span className="min-w-0 max-w-full whitespace-pre-wrap px-1 pb-0.5 font-sans text-xs font-medium [grid-area:2/1] [overflow-wrap:anywhere]">{draftChinese}</span>}
   </span>;
   const insertionAt = (index: number) => {
+    // 插入缝只留窄空白（决策：不显示加号／占位框）。不用 mobile-touch：其 44px 下限会把缝撑成大方块，权重组之间还会被顶成空行。
+    const slotClass = `prompt-insert-slot inline-flex min-h-10 ${index === currentTranslations.length ? 'min-w-3 flex-1' : 'w-3 shrink-0'}`;
     // 屏蔽／删除模式中不提供插入入口，但保留与普通模式同宽同高的占位，避免切换模式后翻译区排版突然变紧凑。
     if (deleteMode || muteMode) {
-      return <button key={`insert:${index}`} type="button" disabled aria-hidden="true" tabIndex={-1} data-prompt-insert-slot
-        className={`mobile-touch inline-flex min-h-10 ${index === currentTranslations.length ? 'min-w-3 flex-1' : 'w-3 shrink-0'}`} />;
+      return <button key={`insert:${index}`} type="button" disabled aria-hidden="true" tabIndex={-1} data-prompt-insert-slot className={slotClass} />;
     }
     if (!editable) return null;
     if (insertionIndex === index) return tagInputField;
-    return <button key={`insert:${index}`} type="button" aria-label={index < currentTranslations.length ? t('插入提示词：位置 {0}', [index + 1]) : t('在末尾插入提示词')}
+    return <button key={`insert:${index}`} type="button" data-prompt-insert-slot aria-label={index < currentTranslations.length ? t('插入提示词：位置 {0}', [index + 1]) : t('在末尾插入提示词')}
       onMouseDown={event => { if (!editingTag) event.preventDefault(); event.stopPropagation(); }}
       onClick={event => {
         event.stopPropagation(); closeSuggestions();
@@ -931,7 +932,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         setInsertionIndex(index);
         requestAnimationFrame(() => tagInputRef.current?.focus());
       }}
-      className={`mobile-touch inline-flex min-h-10 cursor-text rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--nai-accent)] ${index === currentTranslations.length ? 'min-w-3 flex-1' : 'w-3 shrink-0'}`} />;
+      className={`${slotClass} cursor-text rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--nai-accent)]`} />;
   };
   const libraryAction = personalLibrary && promptLibraryActions !== false
     ? <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />
