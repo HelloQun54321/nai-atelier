@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 import { ChainList } from '../../components/ChainList';
+import { directoryPickerValue, pickDirectoryOptionAsync } from '../support/directoryPicker';
 
 const { confirmAction, syncSelection } = vi.hoisted(() => ({
   confirmAction: vi.fn(async () => false),
@@ -125,14 +126,13 @@ describe('ChainList 最短列筛选与加载', () => {
     const { container, rerender } = render(<ChainList {...viewProps} />);
     await waitFor(() => expect(columnIds(container).flat()).toHaveLength(60));
     fireEvent.click(screen.getByRole('button', { name: '展开文件夹' }));
-    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: '选择文件夹' })).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === '#favorites' }));
+    await pickDirectoryOptionAsync('选择文件夹', '#favorites');
     await waitFor(() => expect(columnIds(container).flat()).toHaveLength(0));
     rerender(<ChainList {...viewProps} returnTargetId="chain-100" />);
     const root = container.querySelector<HTMLElement>('.min-h-0.flex-1.overflow-y-auto')!;
     root.scrollTop = 2000;
-    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: '选择文件夹' })).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === '*' }));
+    fireEvent.click(screen.getByRole('button', { name: '展开文件夹' }));
+    await pickDirectoryOptionAsync('选择文件夹', '*');
     await waitFor(() => expect(columnIds(container).flat()).toHaveLength(60));
     expect(root.scrollTop).toBe(0);
     expect(container.querySelector('[data-return-item-id="chain-100"]')).toBeNull();
@@ -152,15 +152,14 @@ describe('ChainList 最短列筛选与加载', () => {
     const dialog = screen.getByRole('dialog', { name: '筛选与排序' });
     const root = container.querySelector<HTMLElement>('.min-h-0.flex-1.overflow-y-auto')!;
     root.scrollTop = 2400;
-    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: '选择文件夹' })).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === '#favorites' }));
+    await pickDirectoryOptionAsync('选择文件夹', '#favorites');
     await waitFor(() => expectBalanced(container, favorites.length));
     expect(root.scrollTop).toBe(0);
-    expect(screen.getByRole('button', { name: '选择文件夹' }).getAttribute('data-value')).toBe('#favorites');
+    expect(directoryPickerValue('选择文件夹')).toBe('#favorites');
 
     root.scrollTop = 1600;
-    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: '选择文件夹' })).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === '*' }));
+    fireEvent.click(screen.getByRole('button', { name: '展开文件夹' }));
+    await pickDirectoryOptionAsync('选择文件夹', '*');
     await waitFor(() => expectBalanced(container, 60));
     expect(root.scrollTop).toBe(0);
     const untestedToggle = within(dialog).getByRole('button', { name: '只看待实测' });

@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parse } from 'postcss';
 import { DIRECTORY_FAVORITES_ID, DirectoryTreeNavigation } from '../../components/DirectoryTreeNavigation';
 import { applyThemeDetails } from '../../services/themeDetails';
 import { readAgentPage, operateAgentPage } from '../../services/agentWorkspace';
 
-afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
+beforeEach(() => {
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} }));
+});
+afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 const nodes = [{ id: 'root', name: '根' }, { id: 'child', parentId: 'root', name: '子项' }, { id: 'leaf', parentId: 'child', name: '末层' }, { id: 'other', name: '另一根' }];
 const props = () => ({ nodes, label: '业务文件夹', title: '文件夹', selectedId: '*', onSelect: vi.fn(), expanded: true, preferenceKey: 'first-business', totalCount: 5, unclassifiedCount: 1, counts: new Map([['root', 3], ['child', 2]]) });
 const mobileTrigger = (name = '选择目录') => screen.getByRole('button', { name });
@@ -43,6 +46,19 @@ it('只读助手能展开真实共用目录并用手机目录选择浏览，不�
   page = readAgentPage({ query: '新建目录' });
   await expect(operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: page.controls[0].id, permissionMode: 'read_only' })).rejects.toThrow('只读');
   expect(create).not.toHaveBeenCalled();
+});
+
+it('手机直达模式：展开即打开选择面板，选中后回调收起且无中间路径条', () => {
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: String(query).includes('max-width: 767px'), media: query, addEventListener() {}, removeEventListener() {} }));
+  const onRequestClose = vi.fn();
+  const p = props();
+  render(<DirectoryTreeNavigation {...p} onRequestClose={onRequestClose} onCreate={vi.fn()} selectLabel="选择文件夹" />);
+  expect(screen.getByRole('dialog', { name: '选择文件夹' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '选择文件夹' })).toBeNull();
+  expect(screen.getByRole('button', { name: '新建目录' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('option', { name: (_, element) => element.getAttribute('data-value') === 'root' }));
+  expect(p.onSelect).toHaveBeenCalledWith('root');
+  expect(onRequestClose).toHaveBeenCalled();
 });
 
 it('使用统一侧栏与手机完整路径选择，折叠箭头不选择且按业务分别记忆', () => {

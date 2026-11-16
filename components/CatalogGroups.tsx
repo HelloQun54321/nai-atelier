@@ -130,6 +130,7 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
       preferenceKey={`nai_catalog_group_branches_${scope}`} counts={navigationCounts} virtualNodes={virtualGroups}
       unclassifiedLabel={t('未分组')} embedded={scope === 'roll-artists'} className={scope === 'roll-artists' ? 'flex-none md:w-52' : undefined} disabled={blocked} header={navigationOptions?.navigationHeader}
       createLabel={t('新建分组')} renameLabel={t('重命名分组')} deleteLabel={t('删除分组')} selectLabel={t('选择分组')}
+      onRequestClose={() => update({ expanded: false })}
       asideProps={{ onDragOver: event => hover(event, '*'), onDrop: event => void drop(event, '*'), className: 'catalog-group-navigation' }}
       onCreate={parentId => setDialog({ scope, keys: [], editing: 'new', parentId })}
       onRename={id => setDialog({ scope, keys: [], editing: id })} onDelete={() => void remove()}

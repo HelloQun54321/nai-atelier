@@ -4,7 +4,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { expectDirectoryCount } from '../support/directoryPicker';
+import { expectDirectoryCount, pickDirectoryOptionAsync } from '../support/directoryPicker';
 import type { PromptChain } from '../../types';
 import { ChainList } from '../../components/ChainList';
 import { IMAGE_CARD_ACTION_CLASS } from '../../components/ImageShareActions';
@@ -562,8 +562,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(filter.getByRole('button', { name: '标签甲' })).toBeTruthy();
     expect(filter.queryByRole('button', { name: '待实测' })).toBeNull();
     expect(screen.getByText('共同 A')).toBeTruthy(); expect(screen.getByText('共同 B')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: '选择文件夹' })).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === '#favorites' }));
+    await pickDirectoryOptionAsync('选择文件夹', '#favorites');
     expect(screen.queryByText('共同 B')).toBeNull(); expect(screen.getByText('共同 V5')).toBeTruthy();
     fireEvent.change(filter.getByRole('combobox', { name: '模型筛选' }), { target: { value: 'nai-diffusion-4-5-full' } });
     expect(screen.queryByText('共同 V5')).toBeNull(); expect(screen.getByText('共同 A')).toBeTruthy();
@@ -751,9 +750,8 @@ it.each(['style', 'character'] as const)('%s收藏目录按对象身份保留已
   expect(within(screen.getByRole('button', { name: `打开${label}：${replaced.name}` })).getByRole('button', { name: '收藏' })).toBeTruthy();
   if (type === 'style') {
     fireEvent.click(screen.getByRole('button', { name: '展开文件夹' }));
-    fireEvent.click(await screen.findByRole('button', { name: '选择文件夹' }));
     await waitFor(() => expectDirectoryCount('收藏', '3'));
-    fireEvent.click(within(screen.getByRole('dialog', { name: '选择文件夹' })).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === '#favorites' }));
+    await pickDirectoryOptionAsync('选择文件夹', '#favorites');
   } else {
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     fireEvent.click(within(screen.getByRole('dialog', { name: '筛选与排序' })).getByRole('button', { name: '只看收藏' }));

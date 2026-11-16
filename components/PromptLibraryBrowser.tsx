@@ -112,11 +112,11 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   const [directoriesExpanded, setDirectoriesExpanded] = useState(() => { try { return localStorage.getItem(EXPANDED_KEY) === 'true'; } catch { return false; } });
   const [categoriesExpanded, setCategoriesExpanded] = useState(() => { try { return localStorage.getItem(CATEGORIES_EXPANDED_KEY) === 'true'; } catch { return false; } });
   const navigationExpanded = memory.scope === 'saved' ? categoriesExpanded : directoriesExpanded;
-  const toggleDirectories = () => {
-    const expanded = !navigationExpanded;
+  const setNavigationOpen = (expanded: boolean) => {
     if (memory.scope === 'saved') setCategoriesExpanded(expanded); else setDirectoriesExpanded(expanded);
     try { localStorage.setItem(memory.scope === 'saved' ? CATEGORIES_EXPANDED_KEY : EXPANDED_KEY, String(expanded)); } catch { /* 本端存储受限时仍可切换。 */ }
   };
+  const toggleDirectories = () => setNavigationOpen(!navigationExpanded);
   const [query, setQuery] = useState('');
   const [scopeTags, setScopeTags] = useState<{ items: string[]; saved: string[] }>({ items: [], saved: [] });
   const tagScope = memory.scope === 'saved' ? 'saved' : 'items';
@@ -296,7 +296,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     </ToolbarPopover>
   </>;
   return <>{toolbarSlot && createPortal(toolbar, toolbarSlot)}<div data-workspace-body className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row" style={{ '--workspace-chrome-height': '0px' } as React.CSSProperties}>
-    {directoryScope ? <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={libraryChains} countsPending={countsPending} selectedIds={memory.directoryIds} allSelected={memory.allDirectories} unclassified={memory.unclassified} favorites={memory.favorites} favoriteIds={favorites.ids} onSelect={updateDirectoryMemory} expanded={directoriesExpanded} onRename={onRenameDirectory} onDelete={onDeleteDirectory} onCreate={onCreateDirectory} onMove={onMoveDirectory} disabled={directoriesBusy} /> : <PromptLibraryCategoryNavigation id={navigationId} chains={combinationChains} customCharacters={customCharacters} countsPending={countsPending} names={categoryNames} tree={categoryTree} selected={memory.combinationCategory} unclassified={memory.combinationUnclassified} favorites={memory.combinationFavorites} favoriteIds={favorites.ids} expanded={categoriesExpanded} disabled={categoriesBusy} onSelect={selection => updateMemory({ ...memory, combinationCategory: selection.category, combinationUnclassified: selection.unclassified, combinationFavorites: selection.favorites === true })} />}
+    {directoryScope ? <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={libraryChains} countsPending={countsPending} selectedIds={memory.directoryIds} allSelected={memory.allDirectories} unclassified={memory.unclassified} favorites={memory.favorites} favoriteIds={favorites.ids} onSelect={updateDirectoryMemory} expanded={directoriesExpanded} onRename={onRenameDirectory} onDelete={onDeleteDirectory} onCreate={onCreateDirectory} onMove={onMoveDirectory} onRequestClose={() => setNavigationOpen(false)} disabled={directoriesBusy} /> : <PromptLibraryCategoryNavigation id={navigationId} chains={combinationChains} customCharacters={customCharacters} countsPending={countsPending} names={categoryNames} tree={categoryTree} selected={memory.combinationCategory} unclassified={memory.combinationUnclassified} favorites={memory.combinationFavorites} favoriteIds={favorites.ids} expanded={categoriesExpanded} disabled={categoriesBusy} onRequestClose={() => setNavigationOpen(false)} onSelect={selection => updateMemory({ ...memory, combinationCategory: selection.category, combinationUnclassified: selection.unclassified, combinationFavorites: selection.favorites === true })} />}
     <div className={`aitag-split relative grid min-h-0 min-w-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
     <div ref={scrollRef} onScroll={event => {
       selectionAnchor.onScroll();

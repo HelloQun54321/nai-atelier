@@ -9,11 +9,12 @@ import { DIRECTORY_FAVORITES_ID, DirectoryTreeNavigation } from './DirectoryTree
 export interface PromptLibraryCategorySelection { category: string | null; unclassified: boolean; favorites?: boolean }
 const encode = (id: string) => 'category:' + id;
 
-export function PromptLibraryCategoryNavigation({ id, chains, customCharacters: suppliedCharacters, names, tree: storedTree, selected, unclassified, favorites = false, favoriteIds, expanded, onSelect, disabled, countsPending = false }: {
+export function PromptLibraryCategoryNavigation({ id, chains, customCharacters: suppliedCharacters, names, tree: storedTree, selected, unclassified, favorites = false, favoriteIds, expanded, onSelect, onRequestClose, disabled, countsPending = false }: {
   id: string; chains: PromptChain[]; customCharacters?: Array<{ id: string; name: string }>; names: string[]; tree?: PromptLibraryCategoryTreeState; selected: string | null; unclassified: boolean; expanded: boolean;
   favorites?: boolean; favoriteIds?: ReadonlySet<string>;
   countsPending?: boolean;
   onSelect: (selection: PromptLibraryCategorySelection) => void;
+  onRequestClose?: () => void;
   disabled?: boolean;
 }) {
   useLanguage();
@@ -34,6 +35,6 @@ export function PromptLibraryCategoryNavigation({ id, chains, customCharacters: 
   return <DirectoryTreeNavigation id={id} label={t('组合分类导航')} title={t('组合分类')} selectLabel={t('选择组合分类')} nodes={nodes}
     selectedId={favorites ? DIRECTORY_FAVORITES_ID : selected !== null ? encode(selected) : unclassified ? '' : '*'} onSelect={value => onSelect({ category: value.startsWith('category:') ? value.slice('category:'.length) : null, unclassified: value === '', ...(value === DIRECTORY_FAVORITES_ID ? { favorites: true } : {}) })}
     virtualNodes={[{ id: DIRECTORY_FAVORITES_ID, name: t('收藏') }]}
-    expanded={expanded} disabled={disabled} preferenceKey="nai-prompt-library-combination-category-branches" counts={counts} totalCount={countsPending && !entries.length ? '—' : entries.length} unclassifiedCount={countsPending && !uncategorized ? '—' : uncategorized}
+    expanded={expanded} disabled={disabled} onRequestClose={onRequestClose} preferenceKey="nai-prompt-library-combination-category-branches" counts={counts} totalCount={countsPending && !entries.length ? '—' : entries.length} unclassifiedCount={countsPending && !uncategorized ? '—' : uncategorized}
     nodeProps={value => value.startsWith('category:') ? { 'aria-label': t('分类「{0}」', [value.slice('category:'.length)]) } : {}} />;
 }

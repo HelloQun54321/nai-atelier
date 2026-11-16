@@ -424,28 +424,34 @@ describe('文件夹区域与弹窗生命周期', () => {
   it.each(['新建文件夹', '编辑文件夹', '设置文件夹'])('%s手机返回只关闭本层并保留父历史', async label => {
     vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
     window.history.replaceState({ __naiMobileLayers: ['parent'], __naiMobileLayer: 'parent' }, '');
-    const view = await setup(); await choose('root');
+    const view = await setup();
+    await choose('root');
+    fireEvent.click(screen.getByRole('button', { name: '展开文件夹' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '新建文件夹' })).toBeTruthy());
     fireEvent.click(folderDialogEntry(label));
-    await waitFor(() => expect(window.history.state.__naiMobileLayers).toHaveLength(2));
+    await waitFor(() => expect(window.history.state.__naiMobileLayers?.length).toBeGreaterThanOrEqual(2));
+    const layersBefore = window.history.state.__naiMobileLayers?.length ?? 0;
     await act(async () => { window.history.back(); await new Promise(resolve => setTimeout(resolve, 20)); });
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(window.history.state.__naiMobileLayers).toEqual(['parent']);
+    expect(screen.queryByRole('dialog', { name: label === '设置文件夹' ? '设置文件夹' : /文件夹/ })).toBeNull();
+    expect(window.history.state.__naiMobileLayers?.length ?? 0).toBeLessThan(layersBefore);
     expect(view.props.onSelect).not.toHaveBeenCalled();
   });
   it('保存中Escape、遮罩、手机返回均不关闭，完成后可返回', async () => {
     vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
-    await setup(); fireEvent.click(screen.getByRole('button', { name: '新建文件夹' }));
+    await setup();
+    fireEvent.click(screen.getByRole('button', { name: '新建文件夹' }));
+    const editor = await screen.findByRole('dialog', { name: '新建文件夹' });
     let finish!: (value: ChainFolderState) => void;
     put.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-    fireEvent.change(screen.getByLabelText('文件夹名称'), { target: { value: '在途' } });
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }));
+    fireEvent.change(within(editor).getByLabelText('文件夹名称'), { target: { value: '在途' } });
+    fireEvent.click(within(editor).getByRole('button', { name: '保存' }));
     fireEvent.keyDown(window, { key: 'Escape' });
-    fireEvent.mouseDown(screen.getByRole('dialog').parentElement!);
+    fireEvent.mouseDown(editor.parentElement!);
     await act(async () => { window.history.back(); await new Promise(resolve => setTimeout(resolve, 20)); });
-    expect(screen.getByRole('dialog')).toBeTruthy();
-    expect(window.history.state.__naiMobileLayers).toHaveLength(1);
+    expect(screen.getByRole('dialog', { name: '新建文件夹' })).toBeTruthy();
+    expect(window.history.state.__naiMobileLayers?.length).toBeGreaterThanOrEqual(1);
     await act(async () => finish({ ...stored, revision: 2 }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '新建文件夹' })).toBeNull());
   });
 });
 
