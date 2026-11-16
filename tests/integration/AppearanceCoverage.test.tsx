@@ -612,9 +612,12 @@ describe('全局外观覆盖审计', () => {
     expect(declarations("html[data-theme-material='glass'] .lab-preview-stage", undefined, source)['background-color']).toBeUndefined();
     expect(declarations("html[data-theme-material='glass']:not(.dark) .lab-preview-stage:has(.lab-preview-empty)", undefined, source)['background-color']).toContain('8%, transparent');
     expect(source).not.toContain('.lab-preview-image');
-    const nav = declarations("html[data-control-style='filled'] .generation-mode-nav > button[aria-current='page']", undefined, source);
+    const nav = declarations("html[data-control-style='filled'] .generation-mode-nav[data-mode-chrome='segmented'] > button[aria-current='page']", undefined, source);
     expect(nav['background-color']).toBe('var(--color-indigo-700)');
     expect(nav.color).toBe('var(--nai-on-accent-600)');
+    const compactNav = declarations("html[data-control-style='filled'] .generation-mode-nav[data-mode-chrome='compact'] > button[aria-current='page']", undefined, source);
+    expect(compactNav['background-color']).toBe('transparent');
+    expect(compactNav.color).toBe('inherit');
     expect(declarations(`${root} .generation-action-button--workbench:not(.generation-action-button--loading) .generation-action-button__cost`, undefined, source)).toMatchObject({ color: 'inherit', background: 'transparent' });
     const secondary = declarations("html[data-control-style='filled'] .workspace-mode-tabs > button[aria-selected='true']", undefined, source);
     expect(secondary['background-color']).toBe('color-mix(in srgb, var(--nai-accent) 14%, var(--nai-control-surface))');
