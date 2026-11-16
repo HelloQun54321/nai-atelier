@@ -839,8 +839,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               <Folder className="opacity-80" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
               <ChevronDown className={`opacity-60 transition-transform ${recordsExpanded ? 'rotate-180' : ''}`} />
             </ToolbarButton>}
-          {experiment && <ToolbarCountBadge total={round && roundPending.length > 0 ? round.candidateIds.length : visible.length} loaded={round && roundPending.length > 0 ? round.candidateIds.filter(id => images.has(id)).length : undefined} />}
         </div>
+        {experiment && <ToolbarCountBadge total={round && roundPending.length > 0 ? round.candidateIds.length : visible.length} loaded={round && roundPending.length > 0 ? round.candidateIds.filter(id => images.has(id)).length : undefined} />}
 
         {/* 中间：自适应搜索框铺满可用宽度 */}
         <ToolbarSearch value={query} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师、中文名或编号')} placeholder={t('搜索画师、中文名或编号')} containerClassName="flex-1 !max-w-none md:!max-w-none min-w-[140px] max-md:min-w-[96px] mx-1 md:mx-2" disabled={!experiment} />
