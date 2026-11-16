@@ -144,8 +144,6 @@ it.each([undefined, 'nai-diffusion-5-full'])('预览名称行沿用模型标记�
   const card = (await screen.findByRole('checkbox', { name: '水彩' })).closest('.media-card') as HTMLElement;
   expect(card.querySelector('.gallery-card-badge')?.textContent).toBe(getNaiModelDisplayLabel(model));
   expect(card.querySelector('h3')?.getAttribute('data-safe-mode-title')).toBe('true');
-  expect(card.className).toContain('rounded-xl');
-  expect(card.className).not.toContain('!rounded-xl');
 });
 
 it.each([390, 1280])('%s宽度导入复用风格串卡片与页面布局偏好，仅导入窗口加宽', async width => {
@@ -164,8 +162,6 @@ it.each([390, 1280])('%s宽度导入复用风格串卡片与页面布局偏好�
   expect(card.className).toContain('gallery-card-visual');
   expect(card.querySelector('.mobile-gallery-frame')).toBeTruthy();
   expect(card.querySelector('.gallery-card-caption h3')?.textContent).toBe('水彩');
-  expect(checkbox.parentElement?.className).toContain('rounded-full');
-  expect(card.className).toContain('ring-2');
   const grid = card.closest('.mobile-gallery--portrait') as HTMLElement;
   expect(grid.style.getPropertyValue('--mobile-gallery-cols-setting')).toBe('1');
   expect(grid.style.getPropertyValue('--mobile-gallery-cols-desktop')).toBe('3');

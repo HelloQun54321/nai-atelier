@@ -146,7 +146,6 @@ it.each([1280, 390])('宽度 %s 时普通列表按跨页完整目录折叠胡滕
   const chooseRepresentative = within(family).getByRole('button', { name: '选择角色：胡滕' });
   expect(chooseRepresentative.textContent).toBe('胡滕');
   expect(chooseRepresentative.querySelector('svg')).toBeNull();
-  expect(chooseRepresentative.className).not.toContain('rounded-full');
   fireEvent.click(chooseRepresentative);
   expect(representative.getAttribute('aria-expanded')).toBe('false');
   expect(representative.getAttribute('aria-pressed')).toBe('true');

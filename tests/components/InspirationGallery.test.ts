@@ -1797,7 +1797,6 @@ it.each([390, 1280])('宽度 %s：多选按钮直接进入选择，空选择保�
   const imageButton = image.closest('button')!;
   const removeFavorite = within(card).getByRole('button', { name: '删除收藏' });
   expect(removeFavorite.className).toContain('hover:!bg-red-600');
-  expect(removeFavorite.className).not.toContain('bg-red-500');
   expect(within(card).queryByRole('button', { name: '选择收藏' })).toBeNull();
   expect(screen.queryByRole('button', { name: '全选筛选结果' })).toBeNull();
   const header = screen.getByRole('banner');

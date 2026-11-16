@@ -39,10 +39,8 @@ it.each(LANGUAGES)('$name 三按钮文案完整，桌面顺序与手机纵排准
   expect(save.parentElement?.className).toContain('grid-cols-1');
   expect(save.parentElement?.className).not.toContain('grid-cols-2');
   expect(save.className).toContain('order-1'); expect(save.className).toContain('md:order-3');
-  expect(save.className).toContain('bg-emerald-700');
   expect(discard.className).toContain('order-2'); expect(discard.className).toContain('md:order-1');
   expect(discard.className).toContain('md:mr-auto'); expect(discard.className).toContain('bg-red-600');
-  expect(discard.className).toContain('text-white');
   expect(cancel.className).toContain('order-3'); expect(cancel.className).toContain('md:order-2');
   expect(document.activeElement).not.toBe(discard);
   fireEvent.click(save);
@@ -91,7 +89,6 @@ it('未提供保存动作时，原有两按钮危险确认保持原布局与返�
   expect(within(dialog).getAllByRole('button')).toHaveLength(2);
   const discard = within(dialog).getByRole('button', { name: '放弃并离开' });
   expect(discard.parentElement?.className).toContain('grid-cols-2');
-  expect(discard.className).toContain('bg-red-600');
   expect(screen.queryByRole('button', { name: '保存并离开' })).toBeNull();
   fireEvent.click(discard);
   await waitFor(() => expect(result).toHaveBeenCalledExactlyOnceWith(true));

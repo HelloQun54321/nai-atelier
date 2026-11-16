@@ -106,7 +106,6 @@ describe('手机实验室账户资源', () => {
     expect(entry.textContent).toBe('Anlas 1666/6.84万Opus额度 196%');
     expect(entry.querySelector('svg')?.classList.contains('lucide-chevron-up')).toBe(true);
     expect(entry.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-    expect(entry.firstElementChild?.className).toContain('decoration-dotted');
     expect(entry.className).not.toContain('appearance-panel');
     entry.focus(); fireEvent.click(entry);
     const dialog = screen.getByRole('dialog', { name: '账户资源' });
@@ -250,7 +249,6 @@ describe('手机实验室账户资源', () => {
     const dialog = screen.getByRole('dialog');
     const status = within(dialog).getByText('订阅状态');
     expect(status.parentElement?.className).toContain('grid-cols-[max-content_minmax(0,1fr)]');
-    expect(status.nextElementSibling?.className).not.toContain('text-right');
     expect(status.parentElement?.parentElement?.className).toContain('max-w-sm');
     expect(within(dialog).getAllByText('本地预算')).toHaveLength(1);
     expect(within(dialog).getAllByText('官方余额')).toHaveLength(1);

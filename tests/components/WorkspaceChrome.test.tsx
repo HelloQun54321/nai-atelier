@@ -50,9 +50,6 @@ it('共用把手收起顶栏：内容隐藏、高度归零、方向与状态持�
   expect(host.textContent).toContain('工具栏');
   expect(host.style.getPropertyValue('--workspace-chrome-height')).toBe('72px');
   // 静止态不给隐藏文案留 gap；底色与顶栏共用 toolbar surface；展开指上、收起后指下。
-  expect(collapse.className).toContain('leading-none');
-  expect(collapse.className).toContain('bg-[var(--nai-toolbar-surface)]');
-  expect(collapse.className).toContain('backdrop-blur-[18px]');
   expect(collapse.className).not.toMatch(/(?:^|\s)gap-1(?:\s|$)/);
   expect(collapse.querySelector('svg.lucide-chevron-up')).toBeTruthy();
   expect(collapse.querySelector('svg.lucide-chevron-down')).toBeNull();

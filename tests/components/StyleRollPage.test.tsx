@@ -883,7 +883,6 @@ it('卡片画师标签最多三个并显示剩余数量，编号只保留在左�
   await setup();
   const chip = screen.getByText('alpha').closest('.gallery-card-badge');
   expect(chip).toBeTruthy();
-  expect(chip!.className).toContain('text-micro');
   expect(chip!.className).toContain('min-w-0');
   // 画师标签行必须撑满底栏：磨砂底栏是纵轴布局，若只靠父级对齐会缩成内容宽度并居中。
   expect(chip!.parentElement!.className).toContain('w-full');

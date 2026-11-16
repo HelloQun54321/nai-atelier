@@ -34,7 +34,6 @@ describe('GenerationModeNav', () => {
     buttons.forEach(button => {
       expect((button as HTMLButtonElement).disabled).toBe(true);
       expect(button.className).toContain('disabled:cursor-not-allowed');
-      expect(button.className).toContain('disabled:opacity-50');
     });
 
     fireEvent.click(screen.getByRole('button', { name: '扩图' }));

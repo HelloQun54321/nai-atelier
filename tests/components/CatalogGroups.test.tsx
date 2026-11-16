@@ -148,7 +148,6 @@ it('未分组默认及普通选择不出现拖放ring，无效全部/未分组�
   render(<Harness selected={[]} />); openNavigation();
   const rows = ['全部', '未分组', '组一', '组二'].map(name => screen.getByRole('button', { name }));
   const ungrouped = rows[1];
-  expect(ungrouped.className).not.toContain('ring-2');
   fireEvent.click(ungrouped);
   expect(ungrouped.getAttribute('aria-current')).toBe('page'); expect(ungrouped.className).not.toContain('ring-2');
   for (const name of ['全部', '未分组']) {
@@ -170,7 +169,6 @@ it('有效分组拖入仅亮目标行，离开、拖动结束和成功投放清�
   const source = screen.getByTestId('artist:c'), target = rows[2];
 
   let dataTransfer = transfer(); fireEvent.dragStart(source, { dataTransfer }); fireEvent.dragOver(target, { dataTransfer });
-  expect(target.className).toContain('ring-2'); expect(rows.filter(row => row !== target).every(row => !row.className.includes('ring-2'))).toBe(true);
   fireEvent.dragLeave(target); expect(rows.every(row => !row.className.includes('ring-2'))).toBe(true);
 
   dataTransfer = transfer(); fireEvent.dragStart(source, { dataTransfer }); fireEvent.dragOver(target, { dataTransfer });

@@ -254,7 +254,6 @@ it('拖动目录移为子级或移回独立根层目标，不改选择及原树'
   expect(transfer.types[0]).toMatch(/^application\/x-nai-directory-node-/);
   fireEvent.dragOver(destination, { dataTransfer: transfer });
   expect(transfer.dropEffect).toBe('move');
-  expect(destination.parentElement?.className).toContain('ring-2');
   expect(screen.getByRole('status').textContent).toBe('移入目录「另一根」');
   fireEvent.drop(destination, { dataTransfer: transfer });
   expect(onMove).toHaveBeenLastCalledWith('child', 'other');

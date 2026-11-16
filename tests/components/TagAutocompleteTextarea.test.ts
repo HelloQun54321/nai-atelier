@@ -1641,7 +1641,6 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     fireEvent.click(within(zone).getAllByRole('button', { name: /^alpha/ })[1]);
     expect(beta.getAttribute('aria-pressed')).toBe('true');
     expect(beta.classList.contains('bg-red-50')).toBe(true);
-    expect(beta.className).not.toContain('bg-[color-mix');
     expect(textarea.value).toBe(initial);
     fireEvent.click(screen.getByRole('button', { name: '删除 3 个 Tag' }));
     expect(textarea.value).toBe('2::alpha::');

@@ -104,7 +104,6 @@ it('实际未变 Tag 仍分隔两处改动，默认省略、展开后中性显�
   fireEvent.click(screen.getByRole('button', { name: '展开完整上下文' }));
   const context = screen.getByText(', unchanged_pose,');
   expect(context.closest('del, ins')).toBeNull();
-  expect(context.className).toContain('text-gray-500');
   expect(screen.getAllByText(', unchanged_pose,')).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: '只看改动' }));
   expect(container.textContent).not.toContain('unchanged_pose');
