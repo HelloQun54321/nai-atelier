@@ -86,7 +86,7 @@ const setup = async (options = {}) => {
   await waitFor(() => expect(mocks.load).toHaveBeenCalled());
   // 列表只回摘要，完整记录是随后按 ID 拉取的；等这次读取落地再让用例操作页面。
   await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
-  await waitFor(() => expect(screen.queryByRole('button', { name: '画风记录' })?.hasAttribute('disabled')).toBe(false));
+  await waitFor(() => expect(screen.queryByRole('combobox', { name: '切换画风记录' })?.getAttribute('disabled')).toBeNull());
   if (experiment.candidates.length) await waitFor(() => expect(mocks.history).toHaveBeenCalled());
   return { ...view, props };
 };
@@ -263,7 +263,7 @@ it('手机390窄窗管理菜单新建先退出旧历史层，配置草稿持续�
   window.history.replaceState(null, '');
   const original = structuredClone(experiment);
   await setup();
-  fireEvent.click(screen.getByRole('button', { name: '画风记录' }));
+  fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
   expect(window.history.state?.__naiMobileLayer).toMatch(/^sheet-/);
   const returned = new Promise<void>(resolve => window.addEventListener('popstate', () => resolve(), { once: true }));
   fireEvent.click(screen.getByRole('button', { name: '新建记录' }));
@@ -292,7 +292,7 @@ it('删除样张广播刷新已打开Roll详情缩略图，保留候选且不保
 });
 const configure = (name: string, value: string) => { fireEvent.click(screen.getByRole('button', { name: '设置' })); for (const label of name === '每串总人数' ? ['最少画师人数', '最多画师人数'] : [name]) fireEvent.change(screen.getByRole('spinbutton', { name: label }), { target: { value } }); fireEvent.keyDown(window, { key: 'Escape' }); };
 const openArtists = () => { fireEvent.click(screen.getByRole('button', { name: '设置' })); fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ })); };
-const reloadRecords = () => { fireEvent.click(screen.getByRole('button', { name: '画风记录' })); fireEvent.click(screen.getByRole('button', { name: '重新加载画风记录' })); };
+const reloadRecords = () => { fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '重新加载画风记录' })); };
 /** 详情里的操作已直接放在标题栏与正文中，不再需要展开「更多操作」。 */
 const details = () => {};
 
@@ -397,7 +397,7 @@ it('权重范围随记录切换并在重新进入后恢复，新范围只作用�
   fireEvent.click(screen.getByRole('button', { name: '设置' }));
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '0.2');
   fireEvent.keyDown(window, { key: 'Escape' });
-  fireEvent.click(screen.getByRole('button', { name: '画风记录' })); fireEvent.click(screen.getByRole('option', { name: '另一记录' }));
+  fireEvent.change(screen.getByRole('combobox', { name: '切换画风记录' }), { target: { value: other.id } });
   await waitFor(() => expect(screen.getByRole('button', { name: '设置' }).hasAttribute('disabled')).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: '设置' }));
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '2');
@@ -730,15 +730,12 @@ it('完整轮次不显示伪补图入口，旧轮缺图可按轮次查到并手�
 });
 
 it('记录可重命名、移入与恢复回收站，全部收起后仍保留恢复入口', async () => {
-  await setup(); fireEvent.click(screen.getByRole('button', { name: '画风记录' }));
+  await setup(); fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
   fireEvent.change(screen.getByRole('textbox', { name: '记录名称' }), { target: { value: '新的画风记录' } }); fireEvent.submit(screen.getByRole('textbox', { name: '记录名称' }).closest('form')!);
-  await waitFor(() => expect(mocks.save).toHaveBeenCalled());
-  // 列表在弹层里，重命名后面板会关闭：重新打开再核对新名称。
-  fireEvent.click(screen.getByRole('button', { name: '画风记录' }));
   await screen.findByRole('option', { name: '新的画风记录' });
-  fireEvent.click(screen.getByRole('button', { name: '将记录移入回收站' }));
+  fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '将记录移入回收站' }));
   await waitFor(() => expect(screen.queryByRole('button', { name: '查看候选 1' })).toBeNull());
-  fireEvent.click(screen.getByRole('button', { name: '画风记录' })); fireEvent.click(screen.getByRole('button', { name: '恢复记录：新的画风记录' }));
+  fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '恢复记录：新的画风记录' }));
   await screen.findByRole('button', { name: '查看候选 1' }); expect(mocks.save.mock.calls.at(-1)![0].archived).toBe(false);
   expect(mocks.save.mock.calls.at(-1)![0].candidates).toEqual(experiment.candidates); expect(mocks.generate).not.toHaveBeenCalled();
 });
@@ -988,7 +985,7 @@ it('普通新建使用推荐模板与默认参数，不继承当前记录且无�
   experiment.template = { ...experiment.template, prompt: '{style}, custom source', negativePrompt: 'custom negative', characterPrompt: 'custom character', params: { ...experiment.template.params, seed: 42, width: 1024, height: 1024 } };
   const original = structuredClone(experiment);
   await setup({ chains: [{ id: 'source', type: 'style', name: '库中风格串' } as PromptChain] });
-  fireEvent.click(screen.getByRole('button', { name: '画风记录' }));
+  fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
   expect(screen.queryByRole('button', { name: '从风格串开始' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '新建记录' }));
   fireEvent.click(screen.getByRole('button', { name: '保存合成实验' }));
@@ -1223,7 +1220,7 @@ it('设置里直接提取抽样来源，不打开管理、不生成或保存参�
   view.rerender(<StyleRollPage {...view.props} active={false} />);
   expect(screen.queryByRole('dialog', { name: '提取接线' })).toBeNull();
   view.rerender(<StyleRollPage {...view.props} />); await waitFor(() => expect(screen.getByRole('button', { name: '再 Roll 一轮' }).hasAttribute('disabled')).toBe(false)); open();
-  fireEvent.click(screen.getByRole('button', { name: '画风记录' })); fireEvent.click(screen.getByRole('option', { name: '另一个记录' }));
+  fireEvent.change(screen.getByRole('combobox', { name: '切换画风记录' }), { target: { value: second.id } });
   expect(screen.queryByRole('dialog', { name: '提取接线' })).toBeNull();
   await waitFor(() => expect(screen.getByRole('button', { name: '设置' }).hasAttribute('disabled')).toBe(false));
   open(); expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).not.toContain('beta');
