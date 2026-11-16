@@ -20,7 +20,7 @@ export const ToolbarCountBadge: React.FC<{ loaded?: number; total?: number; hint
   const single = hasLoaded && hasTotal ? total : hasTotal ? total : loaded;
   const title = hint || (hasLoaded && hasTotal ? t('已加载 {0} / 共 {1}', [loaded, total]) : hasTotal ? t('共 {0}', [total]) : t('已加载 {0}', [loaded]));
   return <span data-toolbar-count-badge="true" title={title} aria-label={title}
-    className={`flex flex-none select-none flex-col items-center justify-center rounded-md bg-gray-500/10 px-1.5 py-0.5 font-semibold leading-none tabular-nums ${fraction ? 'text-[10px]' : 'text-xs'} text-gray-500 dark:bg-gray-100/10 dark:text-gray-300 ${className}`}>
+    className={`flex flex-none select-none flex-col items-center justify-center font-semibold leading-none tabular-nums ${fraction ? 'text-[10px]' : 'text-xs'} text-gray-500 dark:text-gray-300 ${className}`}>
     {fraction ? <>
       <span>{compactCount(loaded as number)}</span>
       <span aria-hidden="true" className="my-[2px] h-px w-full bg-current opacity-40" />
