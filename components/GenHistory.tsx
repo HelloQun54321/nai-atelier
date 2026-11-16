@@ -30,7 +30,7 @@ import { HistoryBrowseControls } from './HistoryBrowseControls';
 import { HistoryImageViewer } from './HistoryImageViewer';
 import { NAI_UPSCALE_FACTOR, UPSCALE_MAX_AREA, downloadUpscaledImage, upscaleCostHint, upscaleHistoryImage, upscaleSupported } from '../services/naiUpscale';
 import { beginExportTarget } from '../services/exportLocation';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { ListJumpButton } from './ListJumpButton';
 
 interface GenHistoryProps {
@@ -1060,6 +1060,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
             <WorkspaceChrome>
 <WorkspaceToolbar>
                 <div className="history-toolbar-shell">
+                {!isLoading && !loadFailed && <ToolbarCountBadge total={totalCount} loaded={items.length} />}
                     {selectionMode ? <>
                         <span className="flex-1 whitespace-nowrap text-sm font-semibold md:hidden">{t("已选 {0} 张", [selectedIds.size])}</span>
                         <ToolbarButton onClick={exitSelectionMode} className="md:hidden">{t("完成")}</ToolbarButton>
@@ -1118,7 +1119,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         </div>
                     </>}
                 </div>
-                <ToolbarCountCaption>{t(browseQuery.from !== undefined || browseQuery.to !== undefined || browseQuery.favoriteOnly || browseQuery.search?.trim() || browseQuery.model || browseQuery.operation || browseQuery.source ? '匹配 {0} 张' : '共 {0} 张', [isLoading || loadFailed ? '—' : totalCount])}{' · '}{t('已加载 {0} 张', [isLoading || loadFailed ? '—' : items.length])}</ToolbarCountCaption>
             </WorkspaceToolbar>
 
             <ImagePreviewPortal><MobileBottomSheet open={showCleanMenu && isMobileViewport} title={t("历史管理")} onClose={() => setShowCleanMenu(false)}>

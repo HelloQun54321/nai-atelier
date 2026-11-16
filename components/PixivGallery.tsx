@@ -21,7 +21,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { Inspiration, NAIParams, User } from '../types';
 import { externalImageAnalysis, externalImageDrafts, type ExternalImageTags } from '../services/externalImageTags';
 import { EmptyState, FilterPill, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ExternalImageTools } from './ExternalImageTools';
@@ -816,6 +816,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
     <div className="workspace-canvas flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceChrome>
       <WorkspaceToolbar className="pixiv-toolbar" scrollable={false}>
+        <ToolbarCountBadge total={showHistory ? historyItems.length : items.length} />
         <div className="pixiv-toolbar-primary">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center">
@@ -1021,7 +1022,6 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
         </div>
       )}
       </WorkspaceToolbar>
-      <ToolbarCountCaption>{showHistory ? t('共 {0} 条', [historyItems.length.toLocaleString()]) : t('已加载 {0} 件', [loadedRef.current ? formatCount(items.length) : '—'])}</ToolbarCountCaption>
       </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className={`${selected ? 'hidden lg:block' : 'block'} workspace-scroll-viewport min-h-0 overflow-y-auto p-3 md:p-5`}>
