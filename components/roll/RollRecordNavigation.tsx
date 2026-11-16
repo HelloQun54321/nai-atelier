@@ -79,7 +79,7 @@ export const RollRecordNavigation: React.FC<RollRecordNavigationProps> = ({ reco
       <div role="list" aria-label={t('画风记录列表')} className="space-y-0.5">
         {listed.map(item => {
           const current = item.id === selectedId;
-          if (item.id === renamingId) return <form key={item.id} onSubmit={submitRename} className="rounded-lg bg-gray-100 p-1.5 dark:bg-gray-800">
+          if (item.id === renamingId) return <form key={item.id} onSubmit={submitRename} className="appearance-group rounded-lg p-1.5">
             <input aria-label={t('记录名称')} autoFocus maxLength={120} value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setRenamingId(''); }}
               className="mobile-touch h-8 w-full rounded-md border border-gray-200 bg-white px-2 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
             <div className="mt-1 flex justify-end gap-1">

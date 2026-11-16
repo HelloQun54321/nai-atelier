@@ -10,12 +10,14 @@ import { collectionRevision, collectionTargetActive, ensureCollection, loadColle
 export const IMAGE_CARD_ACTION_CLASS = 'nai-float-btn mobile-touch mobile-size-locked rounded-full border border-white/60 bg-black/45 text-white shadow hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white dark:text-white/90';
 
 /**
- * 图上浮钮的语义色：常态一律保持统一的黑磨砂，只有指针移到这个钮、键盘聚焦或触摸按下时才显露动作色。
- * 收藏爱心是唯一例外——已收藏时保持玫红实底，让跨页面一眼看到这件作品被收过。
- * 其余状态（已保存等）由图标形状表达，不靠常驻彩色底，避免一屏几十张卡片各自浮着彩色圆点。
+ * 图上浮钮的语义色：可执行动作一律保持统一的黑磨砂，只有指针移到这个钮、键盘聚焦或触摸按下时才显露动作色。
+ * 已完成状态是例外：已收藏的玫红爱心、已保存／已收录的翠绿对勾常驻上色，
+ * 让跨页面一眼看到这件作品已经收过、已经存过；未完成状态仍只靠图标形状表达。
  */
 export const IMAGE_CARD_ACTION_TONE = {
   save: 'hover:!border-emerald-300/70 hover:!bg-emerald-700 focus-visible:!bg-emerald-700 active:!bg-emerald-700',
+  /** 已保存／已收录：状态本身要常驻可见，所以不跟随悬停。 */
+  saved: '!border-emerald-300/70 !bg-emerald-700 !text-white',
   delete: 'hover:!border-red-300/70 hover:!bg-red-600 focus-visible:!bg-red-600 active:!bg-red-600',
   /** 普通实心主操作（设为封面等）沿用靛蓝，同样只在悬停时出现。 */
   primary: 'hover:!border-indigo-300/70 hover:!bg-indigo-700 focus-visible:!bg-indigo-700 active:!bg-indigo-700',
