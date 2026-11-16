@@ -352,7 +352,7 @@ describe('管理提示词分类按需展开', () => {
     const navigation = document.getElementById(toggle.getAttribute('aria-controls')!)!;
     expect(navigation.hidden).toBe(true); expect(navigation.className).toBe('hidden');
     expect(screen.queryByRole('tablist', { name: '提示词分类' })).toBeNull();
-    expect(toggle.textContent).toBe(''); expect(toggle.title).toContain('全部');
+    expect(toggle.textContent).toContain('全部'); expect(toggle.title).toContain('全部');
     fireEvent.click(toggle);
     expect(navigation.hidden).toBe(false);
     expect(navigation.className).toContain('overflow-x-auto');

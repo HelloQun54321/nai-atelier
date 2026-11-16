@@ -479,7 +479,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 <WorkspaceToolbar>
       <ToolbarButton data-agent-action="browse" aria-label={t(navigationExpanded ? '收起收藏分类' : '展开收藏分类')} aria-expanded={navigationExpanded} aria-controls={navigationId}
         title={[t(navigationExpanded ? '收起收藏分类' : '展开收藏分类'), boardId ? boards.find(board => board.id === boardId)?.name || t('收藏夹') : sourceFilter ? t(sourceLabel(sourceFilter)) : t(collection === 'unorganized' ? '未整理' : '全部')].join(' · ')}
-        active={navigationExpanded || collection !== 'all' || Boolean(boardId) || Boolean(sourceFilter)} onClick={toggleNavigation} className="hidden md:inline-flex"><Folder /></ToolbarButton>
+        active={navigationExpanded || collection !== 'all' || Boolean(boardId) || Boolean(sourceFilter)} onClick={toggleNavigation} className="hidden md:inline-flex"><Folder /><span className="max-w-24 truncate">{boardId ? boards.find(board => board.id === boardId)?.name || t('收藏夹') : sourceFilter ? sourceLabel(sourceFilter) : collection === 'unorganized' ? t('未整理') : t('全部')}</span></ToolbarButton>
       {inspirationsData !== null && <ToolbarCountBadge total={groups.length} loaded={Math.min(visibleCount, groups.length)} />}
       {selectionMode ? <>
         <div role="group" aria-label={t("收藏批量操作")} className="flex h-full min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
