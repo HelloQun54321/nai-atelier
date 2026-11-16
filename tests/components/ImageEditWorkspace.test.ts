@@ -8,6 +8,12 @@ import { ImageEditPanel } from '../../components/ImageEditPanel';
 import { ImageEditPreview } from '../../components/ImageEditPreview';
 import type { NAIParams } from '../../types';
 import { imageTaggerService } from '../../services/imageTaggerService';
+vi.mock('../../components/ConfirmDialog', () => ({
+  useConfirmDialog: () => vi.fn(async () => true),
+  useAlertDialog: () => vi.fn(),
+  ConfirmDialogProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 const canvasState = vi.hoisted(() => ({ focused: false }));
 
 vi.mock('../../components/ChainEditorParams', () => ({

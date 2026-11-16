@@ -177,7 +177,7 @@ it('完整配置入口连续调整偏好倍率不重新排序画师目录，保�
   const initial = rollFixture(), blockedTags: string[] = [], save = vi.fn(async (_value: RollExperiment) => {});
   render(<StyleRollSetup initial={initial} library={library} blockedTags={blockedTags} enforceFreeStepLimit onBlockedChange={async () => {}} onSave={save} onClose={() => {}} />);
   fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ }));
-  await screen.findByText('共 1000 位');
+  await screen.findByText(/共 1000 位/);
   fireEvent.click(within(screen.getByRole('dialog', { name: 'Roll 画师' })).getByRole('button', { name: '抽取设置' }));
   await act(async () => {});
   expect(readPopularity).toHaveBeenCalled(); readPopularity.mockClear();

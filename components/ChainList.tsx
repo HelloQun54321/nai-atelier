@@ -559,7 +559,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
           </> : <>
           {!isGuest && type === 'style' && <ToolbarButton data-agent-action="browse" aria-label={t(foldersExpanded ? '收起文件夹' : '展开文件夹')} title={[t(foldersExpanded ? '收起文件夹' : '展开文件夹'), activeFolder === '*' ? t('全部') : activeFolder === '' ? t('未整理') : activeFolder === DIRECTORY_FAVORITES_ID ? t('收藏') : folderStore.state.folders.find(folder => folder.id === activeFolder)?.name || t('全部')].join(' · ')} aria-expanded={foldersExpanded} active={foldersExpanded || activeFolder !== '*'} disabled={folderStore.busy} onClick={toggleFolders}><Folder className="h-4 w-4" /><span className="max-w-24 truncate">{activeFolderLabel}</span></ToolbarButton>}
-          {!loadError && !isLoading && <ToolbarCountBadge total={filteredChains.length} loaded={Math.min(visibleCount, filteredChains.length)} />}
+          {!loadError && (isLoading && filteredChains.length > 0 ? <InlineSpinner label={t('加载中…')} className="text-xs" /> : !isLoading && <ToolbarCountBadge total={filteredChains.length} loaded={Math.min(visibleCount, filteredChains.length)} />)}
           <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t("搜索{0}", [title])} containerClassName="min-w-0 flex-1 max-md:min-w-[7.5rem] md:max-w-none!" />
           <div className="hidden flex-none items-center gap-2 md:flex">
             <div ref={filterAnchorRef} className="relative flex-none">

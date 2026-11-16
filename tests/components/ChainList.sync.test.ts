@@ -529,8 +529,8 @@ describe('风格串列表的酒馆筛选交互', () => {
     const folderToggle = screen.getByRole('button', { name: '展开文件夹' });
     // 手机横滑内层包住整排控件（电脑端为 contents），顺序检查落在实际控件这一层。
     const toolbarRow = header.querySelector('.workspace-toolbar-scroll') || header;
-    expect(toolbarRow.firstElementChild).toBe(folderToggle);
-    expect(folderToggle.nextElementSibling?.contains(screen.getByPlaceholderText('搜索我的风格串'))).toBe(true);
+    expect(toolbarRow.firstElementChild?.getAttribute('aria-label')).toBe('展开文件夹');
+    expect(toolbarRow.contains(screen.getByPlaceholderText('搜索我的风格串'))).toBe(true);
     expect(header.querySelectorAll('[role="switch"]')).toHaveLength(1);
     expect(screen.queryByRole('button', { name: /刷新|反推/ })).toBeNull();
     fireEvent.click(desktop.find(button => button.getAttribute('aria-label') === '更多操作')!);

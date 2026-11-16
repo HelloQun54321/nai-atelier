@@ -8,7 +8,7 @@ import { setLanguage } from '../../../services/i18n';
 import { installPointerEvents } from '../../support/touchEvents';
 
 const mocks = vi.hoisted(() => ({ dictionary: vi.fn() }));
-vi.mock('../../../services/artistSamples', () => ({ getArtistSampleDictionary: mocks.dictionary }));
+vi.mock('../../../services/artistSamples', () => ({ getArtistSampleDictionary: mocks.dictionary, isArtistSampleModelForPack: () => true }));
 vi.mock('../../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true),
   SmartImage: ({ src, alt, thumbnailVariant }: { src: string; alt: string; thumbnailVariant: string }) => <img src={src} alt={alt} data-thumbnail={thumbnailVariant} /> }));
 vi.mock('../../../components/ImageLightbox', () => ({ ImageLightbox: ({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) =>
