@@ -13,7 +13,7 @@ import { ARTIST_SAMPLES_CHANGED, getArtistSampleLibrary, normalizeArtistSampleTa
 import { loadArtistSampleUrls } from '../services/artistSampleUrls';
 import { getSampledArtistTags } from '../services/artistSampleDrafts';
 import type { ArtistDictionaryEntry } from '../services/tagDictionary';
-import { loadRollBlocklist, loadRollExperiment, loadRollExperiments, loadRollHistory, ROLL_BLOCKLIST_CHANGED, rollCandidateImages, saveRollBlocklist, saveRollExperiment } from '../services/styleRollApi';
+import { loadRollBlocklist, loadRollExperiment, loadRollExperiments, loadRollHistory, ROLL_BLOCKLIST_CHANGED, rollCandidateImages, saveRollBlocklist, saveRollExperiment, deleteRollExperiment } from '../services/styleRollApi';
 import { normalizeRollArtistKey } from '../services/styleRollSeed';
 import { beginRollGeneration, readRollApiKey } from '../services/styleRollGeneration';
 import { api, notifyLanAccessRequired, parseErrorResponse } from '../services/api';
@@ -630,13 +630,27 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     notify(t('已删除 {0}', [label]), 'success');
   });
   // 归档候选只来自更早的丢弃方式；现在「丢弃」就是直接删除，容量立即回到记录上，不再有可永久清理的归档项。
-  // 归档／恢复改按记录 ID 处理：不在当前选中的记录可能只有摘要，先补读完整内容再保存。
-  const archiveRecord = (id: string, archived: boolean) => void perform(async () => {
+  // 记录删除与候选一致：二次确认后彻底移除，不保留回收站；历史原图与已保存的风格串独立保存。
+  const deleteRecord = (id: string) => void perform(async () => {
     if (getGenerationSeriesSession(rollSourceId(id)) || generatingRef.current) return;
-    const target = experiment?.id === id ? experiment : await loadRollExperiment(id);
-    await store({ ...target, archived }, { updateDetail: false });
-    if (archived && id === experimentId) setExperimentId(experiments.find(item => item.id !== id && !item.archived)?.id || '');
-    if (!archived) setExperimentId(id);
+    const summary = experiments.find(item => item.id === id);
+    if (!summary) return;
+    if (!await confirm({ title: '删除记录', message: t('将永久删除画风记录「{0}」，其中的 {1} 轮与 {2} 个候选配方一并移除；已生成的历史图片与已保存的风格串保留，删除后不能还原。', [summary.name, summary.rounds, summary.candidates]), confirmLabel: t('删除记录'), tone: 'danger' })) return;
+    await deleteRollExperiment(id, summary.revision);
+    if (!mounted.current) return;
+    setExperiments(current => current.filter(item => item.id !== id));
+    if (id === experimentId) setExperimentId(experiments.find(item => item.id !== id && !item.archived)?.id || '');
+    notify(t('已删除画风记录「{0}」', [summary.name]), 'success');
+  });
+  /** 旧版本把删除做成回收站；这里只提供一次性清理出口，清完就没有这个状态了。 */
+  const purgeArchived = () => void perform(async () => {
+    const targets = experiments.filter(item => item.archived);
+    if (!targets.length) return;
+    if (!await confirm({ title: '清理旧记录', message: t('将永久删除 {0} 条在旧版回收站里标记删除的记录，不能还原。', [targets.length]), confirmLabel: t('清理'), tone: 'danger' })) return;
+    const failed: string[] = [];
+    for (const item of targets) { try { await deleteRollExperiment(item.id, item.revision); } catch { failed.push(item.name); } }
+    await reload();
+    notify(failed.length ? t('已清理 {0} 条，{1} 条失败：{2}', [targets.length - failed.length, failed.length, failed.join('、')]) : t('已清理 {0} 条旧记录', [targets.length]), failed.length ? 'error' : 'success');
   });
   /** 记录导航里的重命名：当前记录直接用内存副本，其他记录先按 ID 补读完整内容再保存。 */
   const renameRecord = (id: string, name: string) => void perform(async () => {
@@ -842,9 +856,9 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               <div className="space-y-1">
                 <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => openFromSettings(close, () => setSetup(makeExperiment()))}><Plus />{t('新建记录')}</button>
                 <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); close(); }}><RefreshCw />{t('重新加载画风记录')}</button>
-                {experiment && <button type="button" className={`${TOOLBAR_MENU_CLASS} !text-red-500`} onClick={() => { archiveRecord(experiment.id, true); close(); }}><Trash2 />{t('将记录移入回收站')}</button>}
+                {experiment && <button type="button" className={`${TOOLBAR_MENU_CLASS} !text-red-500`} onClick={() => { deleteRecord(experiment.id); close(); }}><Trash2 />{t('删除记录')}</button>}
               </div>
-              {experiments.some(item => item.archived) && <div className="space-y-1 border-t border-gray-200 pt-3 dark:border-gray-800"><p className="mb-2 text-xs text-gray-400">{t('记录回收站')}</p>{experiments.filter(item => item.archived).map(item => <div key={item.id} className="flex items-center gap-2 text-sm"><span className="min-w-0 flex-1 truncate">{item.name}</span><button type="button" className="mobile-touch shrink-0 px-2 text-xs text-indigo-500" aria-label={t('恢复记录：{0}', [item.name])} onClick={() => { archiveRecord(item.id, false); close(); }}>{t('恢复')}</button></div>)}</div>}
+              {experiments.some(item => item.archived) && <div className="space-y-1 border-t border-gray-200 pt-3 dark:border-gray-800"><button type="button" className={`${TOOLBAR_MENU_CLASS} !text-red-500`} onClick={() => { purgeArchived(); close(); }}><Trash2 />{t('清理 {0} 条旧的已删除记录', [experiments.filter(item => item.archived).length])}</button></div>}
             </div>}
           </ToolbarPopover>}
         </div>
@@ -952,7 +966,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         className="workspace-fixed-pane workspace-category-navigation appearance-panel hidden min-h-0 w-52 flex-none flex-col overflow-hidden border-r border-gray-200 p-3 dark:border-gray-800 md:flex"
         onSelect={id => setExperimentId(id)} onCreate={() => setSetup(makeExperiment())}
         onReload={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); }}
-        onRename={(id, name) => renameRecord(id, name)} onArchive={id => archiveRecord(id, true)} onRestore={id => archiveRecord(id, false)} />}
+        onRename={(id, name) => renameRecord(id, name)} onDelete={deleteRecord} onPurgeArchived={purgeArchived} />}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
     {(loading || detailLoading) && !experiment ? <PageSpinner className="workspace-scroll-viewport overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
       : <div className="relative flex min-h-0 flex-1">
@@ -966,7 +980,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         onSelect={id => { setExperimentId(id); setMobileRecordMenuOpen(false); }}
         onCreate={() => openFromSettings(() => setMobileRecordMenuOpen(false), () => setSetup(makeExperiment()))}
         onReload={() => { void reload(); if (experimentId) void refreshHistory(experimentId); }}
-        onRename={(id, name) => renameRecord(id, name)} onArchive={id => archiveRecord(id, true)} onRestore={id => archiveRecord(id, false)} />
+        onRename={(id, name) => renameRecord(id, name)} onDelete={deleteRecord} onPurgeArchived={purgeArchived} />
     </MobileBottomSheet></ImagePreviewPortal>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')} actions={detailActions}>{detail}</MobileDetailView></ImagePreviewPortal>}
     {active && chainTarget !== null && chainTarget === experimentId && !setup && <StyleRollChainArtistDialog knownArtists={knownArtists} source={chainArtistSource} blocked={[...blocklist, ...excludedArtistTags]} onConfirm={source => { if (active && !frozen && !working && chainTarget === experimentId) setChainArtistSource(source); }} onClose={() => setChainTarget(null)} />}

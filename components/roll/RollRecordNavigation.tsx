@@ -16,8 +16,10 @@ export interface RollRecordNavigationProps {
   onCreate: () => void;
   onReload: () => void;
   onRename: (id: string, name: string) => void;
-  onArchive: (id: string) => void;
-  onRestore: (id: string) => void;
+  /** 删除记录与候选一致：二次确认后彻底移除，不保留回收站。 */
+  onDelete: (id: string) => void;
+  /** 旧版本回收站里标记删除的记录只留一次性清理出口。 */
+  onPurgeArchived: () => void;
 }
 
 /** 相对时间跟着界面语言走；超过一周直接给日期，避免「37 天前」这类无用精度。 */
@@ -33,7 +35,7 @@ export const rollRecordTimeLabel = (value: number, language = getLanguage(), now
   } catch { return ''; }
 };
 
-export const RollRecordNavigation: React.FC<RollRecordNavigationProps> = ({ records, selectedId, busy = false, loading = false, mobile = false, className = '', onSelect, onCreate, onReload, onRename, onArchive, onRestore }) => {
+export const RollRecordNavigation: React.FC<RollRecordNavigationProps> = ({ records, selectedId, busy = false, loading = false, mobile = false, className = '', onSelect, onCreate, onReload, onRename, onDelete, onPurgeArchived }) => {
   useLanguage();
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<'recent' | 'created'>('recent');
@@ -93,19 +95,18 @@ export const RollRecordNavigation: React.FC<RollRecordNavigationProps> = ({ reco
             </button>
             <div className={`flex flex-none items-center gap-0.5 pr-1 ${mobile ? '' : 'opacity-0 group-hover/record:opacity-100 focus-within:opacity-100'}`}>
               <button type="button" className={actionClass} aria-label={t('重命名记录：{0}', [item.name])} title={t('重命名记录')} disabled={busy} onClick={() => startRename(item)}><Pencil /></button>
-              <button type="button" className={actionClass} aria-label={t('移入回收站：{0}', [item.name])} title={t('将记录移入回收站')} disabled={busy} onClick={() => onArchive(item.id)}><Trash2 /></button>
+              <button type="button" className={actionClass} aria-label={t('删除记录：{0}', [item.name])} title={t('删除记录')} disabled={busy} onClick={() => onDelete(item.id)}><Trash2 /></button>
             </div>
           </div>;
         })}
         {!listed.length && <p role="status" className="px-2 py-3 text-xs text-gray-400">{loading ? t('正在读取画风记录…') : query.trim() ? t('没有匹配的画风记录') : t('还没有画风记录')}</p>}
       </div>
-      {archived.length > 0 && <details className="mt-2 border-t border-gray-200 pt-2 dark:border-gray-800">
-        <summary className="cursor-pointer select-none px-1 text-xs text-gray-400">{t('记录回收站')}（{archived.length}）</summary>
-        <div className="mt-1 space-y-0.5">{archived.map(item => <div key={item.id} className="flex items-center gap-1 rounded-lg px-2 py-1">
-          <span className="min-w-0 flex-1 truncate text-xs text-gray-500 line-through dark:text-gray-400">{item.name}</span>
-          <button type="button" className={actionClass} aria-label={t('恢复记录：{0}', [item.name])} title={t('恢复')} disabled={busy} onClick={() => onRestore(item.id)}><RefreshCw /></button>
-        </div>)}</div>
-      </details>}
+      {archived.length > 0 && <div className="mt-2 border-t border-gray-200 pt-2 dark:border-gray-800">
+        <button type="button" disabled={busy} onClick={onPurgeArchived}
+          className="mobile-touch flex w-full items-center gap-1 rounded-md px-1 py-1.5 text-left text-xs text-red-500 transition-colors hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800">
+          <Trash2 className="h-3.5 w-3.5 flex-none" />{t('清理 {0} 条旧的已删除记录', [archived.length])}
+        </button>
+      </div>}
     </div>
   </aside>;
 };

@@ -310,3 +310,24 @@ it('旧记录的轮次快照继续读取内联来源清单，新快照只记来�
   const restored = await f.readExperiment(e.id);
   expect(restored.rounds[0].snapshot.chainArtistSource).toEqual(e.chainArtistSource);
 });
+
+it('删除记录是彻底的：按版本移除后列表不再返回，版本不符或缺少版本都拒绝', async () => {
+  const f = fixture(), id = 'synthetic-experiment';
+  const created = await f.invoke({ ...rollFixture(), revision: 0 });
+  expect(created!.status).toBe(200);
+  const { experiment: saved } = await created!.json() as any;
+  const missingRevision = await f.invoke(undefined, 'owner', 'admin', 'DELETE', `/api/style-roll/${id}`);
+  expect(missingRevision!.status).toBe(400);
+  const stale = await f.invoke(undefined, 'owner', 'admin', 'DELETE', `/api/style-roll/${id}?revision=0`);
+  expect(stale!.status).toBe(409);
+  const deleted = await f.invoke(undefined, 'owner', 'admin', 'DELETE', `/api/style-roll/${id}?revision=${saved.revision}`);
+  expect(deleted!.status).toBe(200);
+  expect((await deleted!.json() as any).deleted).toBe(id);
+  const listed = await (await f.invoke())!.json() as any;
+  expect(listed.experiments.some((item: any) => item.id === id)).toBe(false);
+  const gone = await f.invoke(undefined, 'owner', 'admin', 'GET', `/api/style-roll/${id}`);
+  expect(gone!.status).toBe(404);
+  // 删除后同名记录可以重新创建，不会被旧键拦住。
+  const recreated = await f.invoke({ ...rollFixture(), revision: 0 });
+  expect(recreated!.status).toBe(200);
+});

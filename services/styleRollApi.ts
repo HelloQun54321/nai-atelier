@@ -46,6 +46,12 @@ export async function saveRollExperiment(experiment: RollExperiment): Promise<Ro
   return result.experiment;
 }
 
+/** 删除记录是彻底的：历史原图与已保存的风格串独立保存，删除后只保留它们。 */
+export async function deleteRollExperiment(id: string, revision: number): Promise<void> {
+  const result = await api.delete(`/style-roll/${encodeURIComponent(id)}?revision=${revision}`);
+  if (result?.deleted !== id) throw new Error('Roll 记录删除回执无效');
+}
+
 export const ROLL_BLOCKLIST_CHANGED = 'nai-roll-blocklist-changed';
 
 export async function loadRollBlocklist(): Promise<string[]> {

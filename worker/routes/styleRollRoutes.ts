@@ -76,6 +76,21 @@ export async function handleStyleRollRoute({ path, method, request, db, currentU
   }
 
   const prefix = `style_roll_v1:${currentUser.id}:`;
+  // 记录删除与候选一致：二次确认后彻底移除，不再保留可恢复的回收站。
+  if (experimentItem && method === 'DELETE') {
+    const id = experimentItem[1], revisionText = new URL(request.url).searchParams.get('revision');
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id) || !revisionText || !/^\d+$/.test(revisionText) || !Number.isSafeInteger(Number(revisionText))) return error('Roll 记录版本无效', 400);
+    const key = prefix + id;
+    const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+    if (!row) return error('Roll 记录不存在', 404);
+    let previous: RollExperiment;
+    try { const value: unknown = JSON.parse(row.value); validateRollExperiment(value); previous = value; }
+    catch { return error('Roll 串资料读取失败，请保留资料并检查备份', 500); }
+    if (previous.revision !== Number(revisionText)) return error('记录已在其他页面更新，请重新加载后继续', 409);
+    const deleted = await db.prepare('DELETE FROM settings WHERE key = ? AND value = ? RETURNING key').bind(key, row.value).first();
+    if (!deleted) return error('记录已在其他页面更新，请重新加载后继续', 409);
+    return json({ deleted: id });
+  }
   // 单条记录按需读取：列表只返回摘要，完整候选与轮次在选中记录时才搬运。
   if (experimentItem) {
     if (method !== 'GET') return error('Method not allowed', 405);
