@@ -1,4 +1,5 @@
 ## 2026-11-17
+- **Composer**：按用户反馈把手机文件夹面板的新建／改名／删除收进标题栏（fix: put mobile directory actions in sheet header），去掉列表上方独占一行的加号。
 - **Composer**：按用户确认让手机顶栏文件夹直达底部选择面板（feat: open mobile directory sheet from toolbar）；`DirectoryTreeNavigation` 增加 `onRequestClose` 直达模式，风格串／分组／提示词等入口与产品决策、回归一并更新。
 - **Composer**：按用户要求隐藏手机顶栏文件夹旁计数徽标（style: hide toolbar count badge on phone）；`ToolbarCountBadge` 改为 `hidden md:flex`，同步产品决策与回归。
 - **Composer**：按用户确认把手机目录完整路径选择从原生 `<select>` 换成主题化 `MobileBottomSheet`（feat: theme mobile directory path picker）；共用 `DirectoryTreeNavigation`、产品决策与相关回归一并更新。

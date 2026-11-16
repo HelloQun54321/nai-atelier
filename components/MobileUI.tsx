@@ -137,9 +137,11 @@ export const MobileBottomSheet: React.FC<{
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  /** 标题与关闭之间的操作区（如新建），避免正文里单独占一行。 */
+  headerActions?: React.ReactNode;
   footer?: React.ReactNode;
   zIndex?: number;
-}> = ({ open, title, onClose, children, footer, zIndex }) => {
+}> = ({ open, title, onClose, children, headerActions, footer, zIndex }) => {
   useLanguage();
   const requestClose = useMobileHistoryLayer(open, onClose, 'sheet');
   const dragStart = useRef<number | null>(null);
@@ -164,8 +166,9 @@ export const MobileBottomSheet: React.FC<{
         }}
       >
         <div className="mx-auto mt-2 h-1.5 w-12 rounded-full bg-gray-300 dark:bg-gray-600" />
-        <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-          <h2 className="font-bold text-gray-900 dark:text-white">{title}</h2>
+        <header className="flex items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
+          <h2 className="min-w-0 flex-1 truncate font-bold text-gray-900 dark:text-white">{title}</h2>
+          {headerActions ? <div className="flex shrink-0 items-center gap-1">{headerActions}</div> : null}
           <MobileIconButton data-agent-action="browse" label={t("关闭")} onClick={requestClose} className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"><X className="h-5 w-5" /></MobileIconButton>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>

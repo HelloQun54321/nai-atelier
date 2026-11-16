@@ -186,17 +186,15 @@ export function DirectoryTreeNavigation({ id, label, title, className, asideProp
     setPickerOpen(false);
     action();
   };
-  const managementActions = (onCreate || onRename && current || onDelete && current) ? (
-    <div className="mb-3 flex flex-wrap items-center gap-1">
-      {onCreate && <ToolbarButton aria-label={createLabel ?? t('新建目录')} title={createLabel ?? t('新建目录')} disabled={disabled || actionDisabled} onClick={() => openManagement(() => onCreate(current?.id ?? null))} className="!px-2"><Plus className="h-4 w-4" /></ToolbarButton>}
-      {current && onRename && <ToolbarButton aria-label={renameLabel ?? t('重命名目录')} title={renameLabel ?? t('重命名目录')} disabled={disabled || actionDisabled} onClick={() => openManagement(() => onRename(current.id))} className="!px-2"><Pencil className="h-4 w-4" /></ToolbarButton>}
-      {current && onDelete && <ToolbarButton aria-label={deleteLabel ?? t('删除目录')} title={deleteLabel ?? t('删除目录')} disabled={disabled || actionDisabled} onClick={() => openManagement(() => onDelete(current.id))} className="!px-2"><Trash2 className="h-4 w-4" /></ToolbarButton>}
-    </div>
-  ) : null;
+  const managementButtons = <>
+    {onCreate && <ToolbarButton aria-label={createLabel ?? t('新建目录')} title={createLabel ?? t('新建目录')} disabled={disabled || actionDisabled} onClick={() => openManagement(() => onCreate(current?.id ?? null))} className="!px-2"><Plus className="h-4 w-4" /></ToolbarButton>}
+    {current && onRename && <ToolbarButton aria-label={renameLabel ?? t('重命名目录')} title={renameLabel ?? t('重命名目录')} disabled={disabled || actionDisabled} onClick={() => openManagement(() => onRename(current.id))} className="!px-2"><Pencil className="h-4 w-4" /></ToolbarButton>}
+    {current && onDelete && <ToolbarButton aria-label={deleteLabel ?? t('删除目录')} title={deleteLabel ?? t('删除目录')} disabled={disabled || actionDisabled} onClick={() => openManagement(() => onDelete(current.id))} className="!px-2"><Trash2 className="h-4 w-4" /></ToolbarButton>}
+  </>;
+  const hasManagement = !!(onCreate || onRename && current || onDelete && current);
   const pickerSheet = (
     <ImagePreviewPortal>
-      <MobileBottomSheet open={pickerOpen} title={pickerTitle} onClose={closePicker}>
-        {mobileDirectSheet ? managementActions : null}
+      <MobileBottomSheet open={pickerOpen} title={pickerTitle} onClose={closePicker} headerActions={mobileDirectSheet && hasManagement ? managementButtons : undefined}>
         <div role="listbox" aria-label={pickerTitle} data-directory-selected={mobileValue} className="space-y-1">
           {mobileOptions.map(option => {
             const active = !option.disabled && option.id === mobileValue;

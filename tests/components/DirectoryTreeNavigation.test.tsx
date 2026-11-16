@@ -48,14 +48,16 @@ it('只读助手能展开真实共用目录并用手机目录选择浏览，不�
   expect(create).not.toHaveBeenCalled();
 });
 
-it('手机直达模式：展开即打开选择面板，选中后回调收起且无中间路径条', () => {
+it('手机直达模式：展开即打开选择面板，管理按钮在标题栏，选中后回调收起且无中间路径条', () => {
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: String(query).includes('max-width: 767px'), media: query, addEventListener() {}, removeEventListener() {} }));
   const onRequestClose = vi.fn();
   const p = props();
   render(<DirectoryTreeNavigation {...p} onRequestClose={onRequestClose} onCreate={vi.fn()} selectLabel="选择文件夹" />);
-  expect(screen.getByRole('dialog', { name: '选择文件夹' })).toBeTruthy();
+  const sheet = screen.getByRole('dialog', { name: '选择文件夹' });
   expect(screen.queryByRole('button', { name: '选择文件夹' })).toBeNull();
-  expect(screen.getByRole('button', { name: '新建目录' })).toBeTruthy();
+  const create = screen.getByRole('button', { name: '新建目录' });
+  expect(sheet.querySelector('header')?.contains(create)).toBe(true);
+  expect(screen.getByRole('listbox', { name: '选择文件夹' }).contains(create)).toBe(false);
   fireEvent.click(screen.getByRole('option', { name: (_, element) => element.getAttribute('data-value') === 'root' }));
   expect(p.onSelect).toHaveBeenCalledWith('root');
   expect(onRequestClose).toHaveBeenCalled();
