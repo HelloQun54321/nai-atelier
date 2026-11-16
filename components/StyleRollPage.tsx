@@ -1,7 +1,7 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { flushSync } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, CopyPlus, Folder, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, CopyPlus, Folder, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { MobileBottomSheet, MobileOverflowMenu } from './MobileUI';
 import { t, useLanguage } from '../services/i18n';
@@ -32,7 +32,7 @@ import { useAlertDialog, useConfirmDialog } from './ConfirmDialog';
 import { useNaiChannelMode } from '../services/naiChannel';
 import { useAgentCommand } from '../services/agentCommands';
 import { EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
-import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
+import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { SmartImage } from './SmartImage';
 import { ImageLightbox } from './ImageLightbox';
@@ -149,7 +149,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const currentRecordName = experiment?.name || experiments.find(item => item.id === experimentId)?.name || '';
   const [savingProgress, setSavingProgress] = useState<{ completed: number; total: number } | null>(null);
   const [saveFailures, setSaveFailures] = useState<{ experimentId: string; ids: string[]; unprocessed: number; needsReload: boolean; messages: string[] } | null>(null);
-  const [recordName, setRecordName] = useState('');
   const [setup, setSetup] = useState<RollExperiment | null>(null), [lightbox, setLightbox] = useState<LocalGenItem | null>(null);
   useEffect(() => { if (setup) setChainTarget(null); }, [setup]);
   const [session, setSession] = useState<GenerationSeriesSession | null>(null), [preparing, setPreparing] = useState(false);
@@ -287,7 +286,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     finally { if (mounted.current && sequence === historySequence.current) setHistoryLoading(false); }
   }, []);
   useEffect(() => { setHistory([]); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setRoundId(''); setQuery(''); setFilter('all'); }, [experimentId]);
-  useEffect(() => { setRecordName(experiment?.name || ''); }, [experiment?.id, experiment?.name]);
   useEffect(() => { setRoundRules(experiment ? { ...experiment.rules, ...getRollArtistRange(experiment) } : { ...DEFAULT_ROLL_RULES }); }, [experimentId, experiment?.rules]);
   useEffect(() => { setArtistOverrides(experiment?.artists ?? []); }, [experimentId, experiment?.artists]);
   useEffect(() => { setPinnedArtists(experiment ? getRollPinnedArtists(experiment) : []); }, [experimentId, experiment?.pinnedArtists, experiment?.drawPlan, experiment?.artists]);
@@ -831,7 +829,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         </div>
         <ToolbarButton aria-label={t('退出多选')} disabled={frozen} onClick={() => { setSelecting(false); setSelectedIds(new Set()); }}><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
       </> : <div data-roll-toolbar-scroll="true" className="flex h-full min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none]">
-        {/* 左侧：画风记录。桌面是可折叠左栏（与其他资料页同构，折叠态保留记录名下拉），手机是同一份列表的底部面板。 */}
+        {/* 左侧：画风记录只有这一个入口——桌面按钮开合左栏（收起时只显示当前记录名），手机打开同一份列表的底部面板。 */}
         <div className="appearance-group flex shrink-0 items-center gap-1 rounded-xl border border-gray-200/80 bg-gray-100/60 p-0.5 dark:border-gray-800 dark:bg-gray-800/40">
           {isMobile
             ? <ToolbarButton className="!h-9 !min-w-0 !max-w-44 !justify-start !gap-1.5 !px-2 focus-visible:ring-inset" aria-label={t('切换画风记录')} aria-haspopup="dialog" aria-expanded={mobileRecordMenuOpen} disabled={frozen || preparing} onClick={() => setMobileRecordMenuOpen(true)}>
@@ -841,21 +839,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               <Folder className="opacity-80" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
               <ChevronDown className={`opacity-60 transition-transform ${recordsExpanded ? 'rotate-180' : ''}`} />
             </ToolbarButton>}
-          {!isMobile && <ToolbarPopover title={t('画风记录管理')} label={t('管理记录')} icon={<MoreHorizontal className="h-4 w-4" />} iconOnly disabled={frozen || working || selecting} width={320} className="[&_button]:!h-11 [&_button]:!w-11 max-md:hidden md:[&_button]:!h-7 md:[&_button]:!w-7">
-            {close => <div className="space-y-3">
-              {experiment && <div className="appearance-group rounded-xl bg-gray-50 px-2.5 py-2 text-xs text-gray-500 dark:bg-gray-800/60">{t('{0} 轮 · {1} 张已出图 · {2} 个已存风格串', [experiment.rounds.length, images.size, experiment.candidates.filter(candidate => candidate.savedChainId).length])}</div>}
-              {experiment && <form onSubmit={event => { event.preventDefault(); if (!recordName.trim() || recordName.trim() === experiment.name) return; void perform(async () => { await store({ ...experiment, name: recordName.trim() }); close(); }); }}>
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('记录名称')}<input aria-label={t('记录名称')} value={recordName} maxLength={120} onChange={event => setRecordName(event.target.value)} className={TOOLBAR_FIELD_CLASS} /></label>
-                <ToolbarButton type="submit" className="mt-2 w-full" disabled={!recordName.trim() || recordName.trim() === experiment.name}>{t('重命名')}</ToolbarButton>
-              </form>}
-              <div className="space-y-1">
-                <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => openFromSettings(close, () => setSetup(makeExperiment()))}><Plus />{t('新建记录')}</button>
-                <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); close(); }}><RefreshCw />{t('重新加载画风记录')}</button>
-                {experiment && <button type="button" className={`${TOOLBAR_MENU_CLASS} !text-red-500`} onClick={() => { deleteRecord(experiment.id); close(); }}><Trash2 />{t('删除记录')}</button>}
-              </div>
-              {experiments.some(item => item.archived) && <div className="space-y-1 border-t border-gray-200 pt-3 dark:border-gray-800"><button type="button" className={`${TOOLBAR_MENU_CLASS} !text-red-500`} onClick={() => { purgeArchived(); close(); }}><Trash2 />{t('清理 {0} 条旧的已删除记录', [experiments.filter(item => item.archived).length])}</button></div>}
-            </div>}
-          </ToolbarPopover>}
         </div>
 
         {/* 中间：自适应搜索框铺满可用宽度 */}
@@ -974,7 +957,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       <RollRecordNavigation records={experiments} selectedId={experimentId} mobile busy={frozen || preparing} loading={loading} className="flex min-h-0 flex-col"
         onSelect={id => { setExperimentId(id); setMobileRecordMenuOpen(false); }}
         onCreate={() => openFromSettings(() => setMobileRecordMenuOpen(false), () => setSetup(makeExperiment()))}
-        onReload={() => { void reload(); if (experimentId) void refreshHistory(experimentId); }}
+        onReload={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); }}
         onRename={(id, name) => renameRecord(id, name)} onDelete={deleteRecord} onPurgeArchived={purgeArchived} />
     </MobileBottomSheet></ImagePreviewPortal>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')} actions={detailActions}>{detail}</MobileDetailView></ImagePreviewPortal>}

@@ -294,7 +294,10 @@ it('删除样张广播刷新已打开Roll详情缩略图，保留候选且不保
 });
 const configure = (name: string, value: string) => { fireEvent.click(screen.getByRole('button', { name: '设置' })); for (const label of name === '每串总人数' ? ['最少画师人数', '最多画师人数'] : [name]) fireEvent.change(screen.getByRole('spinbutton', { name: label }), { target: { value } }); fireEvent.keyDown(window, { key: 'Escape' }); };
 const openArtists = () => { fireEvent.click(screen.getByRole('button', { name: '设置' })); fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ })); };
-const reloadRecords = () => { fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '重新加载画风记录' })); };
+const reloadRecords = () => {
+  if (!screen.queryByRole('complementary', { name: '画风记录列表' })) fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
+  fireEvent.click(screen.getByRole('button', { name: '重新加载画风记录' }));
+};
 /** 详情里的操作已直接放在标题栏与正文中，不再需要展开「更多操作」。 */
 const details = () => {};
 
@@ -736,10 +739,14 @@ it('记录可重命名与删除，删除后记录与候选一并离场且不触�
   const other = { ...structuredClone(experiment), id: 'other-record', name: '另一记录' };
   mocks.load.mockResolvedValue([recordSummary(experiment.id, experiment.name, { updatedAt: 2 }), recordSummary(other.id, other.name, { updatedAt: 1 })]);
   mocks.loadOne.mockImplementation(async (id: string) => structuredClone(id === other.id ? other : experiment));
-  await setup(); fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
+  await setup();
+  // 记录管理只有左栏一处，顶栏不再保留「管理记录」浮层。
+  expect(screen.queryByRole('button', { name: '管理记录' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
+  fireEvent.click(await screen.findByRole('button', { name: '重命名记录：合成实验' }));
   fireEvent.change(screen.getByRole('textbox', { name: '记录名称' }), { target: { value: '新的画风记录' } }); fireEvent.submit(screen.getByRole('textbox', { name: '记录名称' }).closest('form')!);
   await waitFor(() => expect(screen.getByRole('button', { name: '切换画风记录' }).textContent).toContain('新的画风记录'));
-  fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '删除记录' }));
+  fireEvent.click(await screen.findByRole('button', { name: '删除记录：新的画风记录' }));
   // 删除是彻底的：直接走 DELETE，而不是把 archived 标记写回记录。
   await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith(experiment.id, expect.any(Number)));
   expect(mocks.confirm).toHaveBeenCalled();
@@ -1006,7 +1013,7 @@ it('普通新建使用推荐模板与默认参数，不继承当前记录且无�
   experiment.template = { ...experiment.template, prompt: '{style}, custom source', negativePrompt: 'custom negative', characterPrompt: 'custom character', params: { ...experiment.template.params, seed: 42, width: 1024, height: 1024 } };
   const original = structuredClone(experiment);
   await setup({ chains: [{ id: 'source', type: 'style', name: '库中风格串' } as PromptChain] });
-  fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
+  fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
   expect(screen.queryByRole('button', { name: '从风格串开始' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '新建记录' }));
   fireEvent.click(screen.getByRole('button', { name: '保存合成实验' }));
