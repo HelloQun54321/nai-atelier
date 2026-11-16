@@ -235,10 +235,10 @@ it('目录分页按族而非变体张数决定继续加载，展开不膨胀真�
   expect(within(family).getByText('62 种形态')).toBeTruthy();
   expect(itemKeys(family)).toHaveLength(1);
   expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
-  expect(screen.getByText(/共 62 张卡片/)).toBeTruthy();
+  expect(screen.getByTitle(/共 62/)).toBeTruthy();
   fireEvent.click(within(family).getByRole('button', { name: '展开角色变体：胡滕' }));
   expect(itemKeys(family)).toHaveLength(62);
-  expect(screen.getByText(/共 62 张卡片/)).toBeTruthy();
+  expect(screen.getByTitle(/共 62/)).toBeTruthy();
   expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
 });
 

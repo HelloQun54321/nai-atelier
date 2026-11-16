@@ -34,7 +34,7 @@ import { Check, ChevronDown, Dice5, LoaderCircle, Pencil, Plus, Settings2, Tag, 
 import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar, EmptyState } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { DanbooruCover } from './DanbooruCover';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 import { TagSelectionBar } from './TagSelectionBar';
@@ -843,6 +843,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        <WorkspaceChrome>
 <WorkspaceToolbar>
          {groups.toolbar}
+         {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountBadge total={!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length} loaded={visibleCards.length} />}
          <div className="relative min-w-0 flex-1 max-md:min-w-[7.5rem]">
            <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="md:max-w-none!" className="pr-9" />
            {!customSource && isLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
@@ -874,7 +875,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             { label: '角色库设置', icon: <Settings2 />, onClick: () => setMobileSettingsOpen(true) },
           ]} />
        </WorkspaceToolbar>
-       {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountCaption>{`${t('共 {0} 张卡片', [!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length])} · ${t('已加载 {0} 张卡片', [visibleCards.length])}`}</ToolbarCountCaption>}
 
        {gachaCards && <GalleryActiveStateBanner count={groupCards.length} entityName={t("角色")} showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => leaveGacha()} isLoading={isGachaLoading} />}
 
