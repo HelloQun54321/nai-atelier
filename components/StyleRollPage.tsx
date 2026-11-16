@@ -835,7 +835,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
             ? <ToolbarButton className="!h-9 !min-w-0 !max-w-44 !justify-start !gap-1.5 !px-2 focus-visible:ring-inset" aria-label={t('切换画风记录')} aria-haspopup="dialog" aria-expanded={mobileRecordMenuOpen} disabled={frozen || preparing} onClick={() => setMobileRecordMenuOpen(true)}>
               <Folder className="opacity-80" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span><ChevronDown className="opacity-60" />
             </ToolbarButton>
-            : /* 记录切换只留左栏一处：顶栏这个按钮就是开关，不再另开一个下拉，避免两套并列。 */ <ToolbarButton active={recordsExpanded} className="!h-8 !min-w-0 !max-w-32 !justify-start !gap-1.5 !px-2 focus-visible:ring-inset sm:!max-w-48 lg:!max-w-72" aria-label={t('切换画风记录')} aria-expanded={recordsExpanded} disabled={frozen || preparing} onClick={toggleRecords}>
+            : /* 记录切换只留左栏一处：顶栏这个按钮就是开关，不再另开一个下拉，避免两套并列。 */ <ToolbarButton data-active="true" className="!h-8 !min-w-0 !max-w-32 !justify-start !gap-1.5 !border-transparent !bg-transparent !px-2 focus-visible:ring-inset sm:!max-w-48 lg:!max-w-72" aria-label={t('切换画风记录')} aria-expanded={recordsExpanded} disabled={frozen || preparing} onClick={toggleRecords}>
               <Folder className="opacity-80" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
               <ChevronDown className={`opacity-60 transition-transform ${recordsExpanded ? 'rotate-180' : ''}`} />
             </ToolbarButton>}
