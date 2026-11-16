@@ -1,4 +1,5 @@
 ## 2026-11-17
+- **Composer**：按用户要求隐藏手机顶栏文件夹旁计数徽标（style: hide toolbar count badge on phone）；`ToolbarCountBadge` 改为 `hidden md:flex`，同步产品决策与回归。
 - **Composer**：按用户确认把手机目录完整路径选择从原生 `<select>` 换成主题化 `MobileBottomSheet`（feat: theme mobile directory path picker）；共用 `DirectoryTreeNavigation`、产品决策与相关回归一并更新。
 - **Composer**：按用户要求取消手机顶栏横滑与叠压（fix: compact mobile topbars without scroll）；共用工具栏改为 overflow hidden，Roll／风格串／画师／角色／收藏／提示词等页图标化长按钮，多选次要项进「更多」，同步产品决策与回归。
 - **Composer**：将「启动时自动开启安全模式」默认值从开启改为关闭（fix: default safe mode startup off）；抽取 `readSafeModeStartupPreference`，App／Agent 共用，并补偏好回归测试与决策／说明同步。
