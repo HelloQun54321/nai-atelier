@@ -834,17 +834,14 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         {/* 左侧：画风记录。桌面是可折叠左栏（与其他资料页同构，折叠态保留记录名下拉），手机是同一份列表的底部面板。 */}
         <div className="appearance-group flex shrink-0 items-center gap-1 rounded-xl border border-gray-200/80 bg-gray-100/60 p-0.5 dark:border-gray-800 dark:bg-gray-800/40">
           {isMobile
-            ? <button type="button" aria-label={t('切换画风记录')} aria-haspopup="dialog" aria-expanded={mobileRecordMenuOpen} disabled={frozen || preparing}
-              onClick={() => setMobileRecordMenuOpen(true)}
-              className="mobile-touch flex h-9 min-w-0 max-w-44 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-gray-800 disabled:opacity-50 dark:text-gray-100">
-              <Folder className="h-4 w-4 flex-none opacity-70" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span><ChevronDown className="h-4 w-4 flex-none opacity-60" />
-            </button>
-            : /* 记录切换只留左栏一处：顶栏这个按钮就是开关，不再另开一个下拉，避免两套并列。 */ <button type="button" aria-label={t('切换画风记录')} aria-expanded={recordsExpanded} disabled={frozen || preparing} onClick={toggleRecords}
-              className="mobile-touch flex h-8 min-w-0 max-w-32 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-gray-800 disabled:opacity-50 dark:text-gray-100 sm:max-w-48 lg:max-w-72">
-              <Folder className="h-4 w-4 flex-none opacity-70" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
-              <ChevronDown className={`h-4 w-4 flex-none opacity-60 transition-transform ${recordsExpanded ? 'rotate-180' : ''}`} />
-            </button>}
-          {!isMobile && !recordsExpanded && <ToolbarPopover title={t('画风记录管理')} label={t('管理记录')} icon={<MoreHorizontal className="h-4 w-4" />} iconOnly disabled={frozen || working || selecting} width={320} className="[&_button]:!h-11 [&_button]:!w-11 max-md:hidden md:[&_button]:!h-7 md:[&_button]:!w-7">
+            ? <ToolbarButton className="!h-9 !min-w-0 !max-w-44 !justify-start !gap-1.5 !px-2 focus-visible:ring-inset" aria-label={t('切换画风记录')} aria-haspopup="dialog" aria-expanded={mobileRecordMenuOpen} disabled={frozen || preparing} onClick={() => setMobileRecordMenuOpen(true)}>
+              <Folder className="opacity-80" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span><ChevronDown className="opacity-60" />
+            </ToolbarButton>
+            : /* 记录切换只留左栏一处：顶栏这个按钮就是开关，不再另开一个下拉，避免两套并列。 */ <ToolbarButton active={recordsExpanded} className="!h-8 !min-w-0 !max-w-32 !justify-start !gap-1.5 !px-2 focus-visible:ring-inset sm:!max-w-48 lg:!max-w-72" aria-label={t('切换画风记录')} aria-expanded={recordsExpanded} disabled={frozen || preparing} onClick={toggleRecords}>
+              <Folder className="opacity-80" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
+              <ChevronDown className={`opacity-60 transition-transform ${recordsExpanded ? 'rotate-180' : ''}`} />
+            </ToolbarButton>}
+          {!isMobile && <ToolbarPopover title={t('画风记录管理')} label={t('管理记录')} icon={<MoreHorizontal className="h-4 w-4" />} iconOnly disabled={frozen || working || selecting} width={320} className="[&_button]:!h-11 [&_button]:!w-11 max-md:hidden md:[&_button]:!h-7 md:[&_button]:!w-7">
             {close => <div className="space-y-3">
               {experiment && <div className="appearance-group rounded-xl bg-gray-50 px-2.5 py-2 text-xs text-gray-500 dark:bg-gray-800/60">{t('{0} 轮 · {1} 张已出图 · {2} 个已存风格串', [experiment.rounds.length, images.size, experiment.candidates.filter(candidate => candidate.savedChainId).length])}</div>}
               {experiment && <form onSubmit={event => { event.preventDefault(); if (!recordName.trim() || recordName.trim() === experiment.name) return; void perform(async () => { await store({ ...experiment, name: recordName.trim() }); close(); }); }}>
