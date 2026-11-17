@@ -322,7 +322,7 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
                 }}
                 className="h-3.5 w-3.5 rounded text-indigo-600 focus:ring-0"
               />
-              <span className="font-medium">{t('AI 自动构图')}</span>
+              <span className="font-medium">{t('自动构图')}</span>
             </label>
           </div>
         ) : (
