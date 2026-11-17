@@ -17,7 +17,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it('默认高度跟随时：公共、角色及负面提示词用把手调高，不改模板', async () => {
+it('默认高度跟随时：公共、角色及负面提示词自动量高且无高度把手，不改模板', async () => {
   const value = createDefaultRollTemplate(DEFAULT_NAI_RUNTIME), change = vi.fn();
   render(<GenerationTemplateEditor value={value} onChange={change} />);
   await waitFor(() => expect(screen.queryByText('正在读取生成预设…')).toBeNull());
@@ -27,11 +27,7 @@ it('默认高度跟随时：公共、角色及负面提示词用把手调高，�
     expect(field.classList.contains('resize-none')).toBe(true);
     expect(field.classList.contains('resize-y')).toBe(false);
   }
-  const handles = screen.getAllByRole('button', { name: '调整输入框高度' });
-  expect(handles).toHaveLength(3);
-  fields[2].style.height = '80px';
-  fireEvent.keyDown(handles[2], { key: 'ArrowDown' });
-  expect(fields[2].style.height).toBe('112px');
+  expect(screen.queryByRole('button', { name: '调整输入框高度' })).toBeNull();
   expect(change).not.toHaveBeenCalled();
 });
 

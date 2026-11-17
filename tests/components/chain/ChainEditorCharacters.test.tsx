@@ -210,7 +210,7 @@ describe('共用角色编辑器', () => {
     expect((within(screen.getByRole('dialog')).getByRole('searchbox') as HTMLInputElement).value).toBe('');
   });
 
-  it('完整角色原文框默认可跟随内容并用把手调高，动态目录正负词合并显示', () => {
+  it('完整角色原文框默认可跟随内容且无高度把手，动态目录正负词合并显示', () => {
     const role = { ...initial.characters![0], sections: { 'directory:dress': 'dress' }, sectionNegatives: { 'directory:dress': 'coat' }, sectionMeta: { 'directory:dress': { directoryName: '服装' } } };
     render(<Harness initialParams={{ ...initial, characters: [role] }} />);
     const fields = Array.from(document.querySelectorAll('textarea'));
@@ -221,7 +221,7 @@ describe('共用角色编辑器', () => {
       expect(field.classList.contains('resize-none')).toBe(true);
       expect(field.classList.contains('resize-y')).toBe(false);
     }
-    expect(screen.getAllByRole('button', { name: '调整输入框高度' })).toHaveLength(fields.length);
+    expect(screen.queryByRole('button', { name: '调整输入框高度' })).toBeNull();
     expect(mark).not.toHaveBeenCalled();
   });
   it('动态目录正负词整段编辑清栏后不重复编译，其他角色仍保持不变', () => {

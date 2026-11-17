@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **Composer**：去掉提示词高度把手（fix: remove prompt height handles）：原文／翻译区不再显示 ↕，保留自动增高与电脑原生拖角。
 - **Composer**：底栏费用与暂停收进生成选项（fix: stow mobile lab dock cost and pause）：主按钮只留短文案，完整费用可读，去掉常驻暂停格。
 - **Composer**：修手机实验室底栏撑高与飘分（fix: keep mobile lab dock single-row height）：去掉主按钮顶角 0/1，费用同排截断，进度进暂停格。
 - **Composer**：首版手机实验室底栏（feat: add mobile lab generation dock）：额度｜短生成｜右小图，可折预览，替换右下浮动条。
