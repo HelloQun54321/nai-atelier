@@ -223,6 +223,7 @@ describe('ImageEditControls', () => {
     };
     const view = render(React.createElement(ImageEditPanel, props));
     fireEvent.click(screen.getByRole('tab', { name: '提示' }));
+    fireEvent.click(screen.getByRole('button', { name: '角色 1 的更多操作' }));
     fireEvent.click(screen.getByRole('button', { name: '从角色库引用' }));
     expect(screen.getByText('加载中…')).toBeTruthy();
     expect(screen.queryByText('角色库中暂无自定义角色')).toBeNull();
@@ -366,11 +367,12 @@ describe('ImageEditControls', () => {
     try {
       const { onDraftChange, onPromptChange, onSelectImageSource, onPasteImage } = renderControls(operation, false, false, false, { characters: [character] }, 'prompt');
       const tools = screen.getByRole('button', { name: '粘贴反推' }).closest('.character-tools')!;
-      expect(tools.contains(screen.getByRole('button', { name: '坐标' }))).toBe(true);
-      expect(tools.contains(screen.getByRole('button', { name: '下移角色 1' }))).toBe(true);
+      expect(tools.contains(screen.getByRole('button', { name: '角色 1 的更多操作' }))).toBe(true);
       expect(screen.getByRole('button', { name: '粘贴反推' }).textContent).toBe('');
-      expect(screen.getByRole('button', { name: '坐标' }).textContent).toBe('');
+      expect(screen.queryByRole('button', { name: '坐标' })).toBeNull();
       expect(tools.compareDocumentPosition(screen.getByPlaceholderText('角色提示词')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: '角色定位' }));
+      expect(screen.getByRole('spinbutton', { name: '角色 1 水平位置' })).toBeTruthy();
       fireEvent.paste(screen.getByRole('button', { name: '粘贴反推' }), { clipboardData: { files: [new File(['synthetic'], 'role.png', { type: 'image/png' })] } });
       await waitFor(() => expect(onDraftChange).toHaveBeenCalledOnce());
       expect(onDraftChange).toHaveBeenCalledWith({ params: expect.objectContaining({ characters: [{ ...character, prompt: 'blue hair, sitting' }] }) });
@@ -380,16 +382,54 @@ describe('ImageEditControls', () => {
   });
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 角色正负提示词、定位及增删只修改当前模式参数', operation => {
     const character = { id: 'c1', prompt: 'girl, blue hair', negativePrompt: 'red hair', x: 0.25, y: 0.75 };
-    const { onDraftChange } = renderControls(operation, false, false, false, { characters: [character], useCoords: true }, 'prompt');
+    const onDraftChange = vi.fn();
+    const Harness = () => {
+      const [draft, setDraft] = React.useState(() => createLabImageEditDraft(operation, 'blue bottle', 'low quality', { ...params, characters: [character], useCoords: true }));
+      const applyDraft = (patch: Record<string, unknown>) => {
+        onDraftChange(patch);
+        setDraft(current => ({
+          ...current,
+          ...patch,
+          params: patch.params ? { ...current.params, ...(patch.params as NAIParams) } : current.params,
+        }));
+      };
+      return React.createElement(ImageEditControls, {
+        operation,
+        draft,
+        fileInputRef: React.createRef<HTMLInputElement>(),
+        canvasProps: {
+          imageCanvasRef: React.createRef<HTMLCanvasElement>(),
+          maskCanvasRef: React.createRef<HTMLCanvasElement>(),
+          overlayCanvasRef: React.createRef<HTMLCanvasElement>(),
+          width: 832, height: 1216, focusedRect: null, focused: false, isLoading: false,
+          onPointerDown: vi.fn(), onPointerMove: vi.fn(), onPointerUp: vi.fn(),
+        },
+        latestTextToImageItem: undefined,
+        selectableParams: draft.params,
+        strength: draft.strength, noise: draft.noise, brushSize: draft.brushSize,
+        focused: draft.focused, minimumContextArea: draft.minimumContextArea,
+        tool: 'brush', manualMaskEditing: false, safeMode: false, tagAssistEnabled: false,
+        expansion: draft.expansion, apiKey: 'test-key', notify: vi.fn(), mobileTab: 'prompt',
+        onPromptChange: vi.fn(), onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(),
+        onDraftChange: applyDraft, onFileChange: vi.fn(), onPasteImage: vi.fn(), onSelectImageSource: vi.fn(),
+        onStrengthChange: vi.fn(), onNoiseChange: vi.fn(), onBrushSizeChange: vi.fn(), onFocusedChange: vi.fn(),
+        onMinimumContextAreaChange: vi.fn(), onToolChange: vi.fn(), onManualMaskEditingChange: vi.fn(),
+        onClearMask: vi.fn(), onInvertMask: vi.fn(), onUndo: vi.fn(), onRedo: vi.fn(),
+        onExpansionChange: vi.fn(), onApplyOutpaint: vi.fn(),
+      });
+    };
+    render(React.createElement(Harness));
     fireEvent.change(screen.getByPlaceholderText('角色提示词'), { target: { value: 'girl, white hair' } });
     expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ characters: [{ ...character, prompt: 'girl, white hair' }] }) });
     fireEvent.change(screen.getByDisplayValue('red hair'), { target: { value: 'black hair' } });
-    expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ characters: [{ ...character, negativePrompt: 'black hair' }] }) });
+    expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ characters: [{ ...character, prompt: 'girl, white hair', negativePrompt: 'black hair' }] }) });
     fireEvent.click(screen.getByRole('checkbox', { name: 'AI 自动构图' }));
-    expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ useCoords: false, characters: [character] }) });
+    expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ useCoords: false }) });
     fireEvent.click(screen.getByRole('button', { name: '添加角色' }));
     expect(onDraftChange.mock.calls.at(-1)?.[0].params.characters).toHaveLength(2);
-    fireEvent.click(screen.getByRole('button', { name: '移除角色提示词' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除角色' }));
+    expect(onDraftChange.mock.calls.at(-1)?.[0].params.characters).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: '删除角色' }));
     expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ characters: [] }) });
     const module = screen.getByText('角色专属提示词').closest('details')!;
     expect(module.classList.contains('block')).toBe(true);

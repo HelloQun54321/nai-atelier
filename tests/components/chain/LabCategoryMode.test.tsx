@@ -70,10 +70,14 @@ describe('分类模式分页', () => {
     render(<LabCategoryMode {...props} characters={[character]} />);
     expect(screen.getAllByRole('button', { name: '从角色库引用' })).toHaveLength(1);
     expect(screen.getAllByRole('button', { name: '添加角色' })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: '删除角色' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '角色定位' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '保存到角色库' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '角色 1 的更多操作' }));
     expect(screen.getAllByRole('button', { name: '从角色库引用' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: '上移' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下移' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '移除角色' })).toBeNull();
   });
 
   it('角色在页头切换，一次只显示一个，标题跟随角色名', () => {

@@ -84,6 +84,7 @@ export const ToolbarPopover: React.FC<{
   active?: boolean;
   width?: number;
   above?: boolean;
+  compact?: boolean;
   iconOnly?: boolean;
   iconTone?: React.ComponentProps<typeof IconButton>['tone'];
   zIndex?: number;
@@ -92,7 +93,7 @@ export const ToolbarPopover: React.FC<{
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   children: React.ReactNode | ((close: () => void, mobile: boolean) => React.ReactNode);
-}> = ({ label = '筛选', title, icon = <Filter />, count = 0, active, width, above, iconOnly, iconTone, zIndex, disabled, className = '', open: controlledOpen, onOpenChange, children }) => {
+}> = ({ label = '筛选', title, icon = <Filter />, count = 0, active, width, above, compact, iconOnly, iconTone, zIndex, disabled, className = '', open: controlledOpen, onOpenChange, children }) => {
   useLanguage();
   const anchorRef = useRef<HTMLDivElement>(null);
   const [internalOpen, setInternalOpen] = useState(false);
@@ -115,6 +116,6 @@ export const ToolbarPopover: React.FC<{
     {iconOnly ? <IconButton data-agent-action="browse" label={label} tone={iconTone} disabled={disabled} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="dialog">{icon}</IconButton> : <ToolbarButton data-agent-action="browse" disabled={disabled} active={active ?? countValue > 0} onClick={() => setOpen(!open)} aria-label={`${t(label)}${countValue > 0 ? ` ${countValue}` : ''}`} aria-expanded={open} aria-haspopup="dialog" title={title} className="mobile-touch !px-2.5 md:!px-3">
       {icon}<span className="hidden sm:inline">{t(label)}{countValue > 0 ? ` ${countValue}` : ''}</span>{countValue > 0 && <span className="sm:hidden">{countValue}</span>}
     </ToolbarButton>}
-    {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={title} zIndex={zIndex} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={title} width={width} above={above} zIndex={zIndex} onClose={close}>{content}</AnchoredToolbarPopover>)}
+    {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={title} zIndex={zIndex} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={title} width={width} above={above} compact={compact} zIndex={zIndex} onClose={close}>{content}</AnchoredToolbarPopover>)}
   </div>;
 };

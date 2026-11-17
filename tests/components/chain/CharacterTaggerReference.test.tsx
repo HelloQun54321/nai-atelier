@@ -53,6 +53,7 @@ describe('角色就地粘贴反推', () => {
     selectCharacter(/角色 2/);
     fireEvent.click(screen.getByRole('button', { name: '粘贴反推' }));
     await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: '角色 2 的更多操作' }));
     fireEvent.click(screen.getByRole('button', { name: '上移角色 2' }));
     expect(rows().map(character => character.id)).toEqual(['b', 'a']);
     await act(async () => job.resolve(result));
@@ -83,7 +84,7 @@ describe('角色就地粘贴反推', () => {
     await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalled());
     fireEvent.change(screen.getByPlaceholderText('角色提示词'), { target: { value: 'new clothes' } });
     selectCharacter(/角色 1/);
-    fireEvent.click(screen.getByRole('button', { name: '移除角色提示词' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除角色' }));
     await act(async () => job.resolve(result));
     // 横排切换会卸载非当前角色卡，进行中的反推随卸载作废；手改正文保留。
     expect(rows()).toEqual([{ ...initial[1], prompt: 'new clothes' }]);
@@ -94,7 +95,7 @@ describe('角色就地粘贴反推', () => {
     render(<Harness />);
     fireEvent.click(screen.getAllByRole('button', { name: '粘贴反推' })[0]);
     await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalled());
-    fireEvent.click(screen.getAllByRole('button', { name: '移除角色提示词' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: '删除角色' }));
     await act(async () => job.resolve(result));
     expect(rows()).toEqual([initial[1]]);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:reference');

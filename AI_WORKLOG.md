@@ -1,4 +1,5 @@
 ## 2026-11-17
+- **Composer**：按计划收拢实验室角色工具（fix: tidy lab character tool chrome）：页头删／加成对，更多菜单收纳低频操作，随机并进角色库引用，坐标并进定位舞台，字段动作归回标签行；分类编辑同步。
 - **Composer**：按用户反馈把整段编辑「添加角色」收到与定位／自动构图同一工具行（fix: keep lab add-character on tools row），去掉独占空行。
 - **Composer**：按用户要求把分类编辑的角色横排切换落到整段编辑（feat: switch lab characters like category mode），一次只显示当前角色。
 - **Composer**：按用户反馈重排实验室角色页工具（fix: restack lab character tools）：添加升为主操作，定位／自动构图降为次要构图组；分类编辑角色页同步。

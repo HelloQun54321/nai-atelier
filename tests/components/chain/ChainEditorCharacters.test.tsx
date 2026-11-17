@@ -30,6 +30,16 @@ const selectCharacter = (name: string | RegExp) => {
   if (!button) throw new Error(`missing character switch ${String(name)}`);
   fireEvent.click(button);
 };
+const openMore = (index = 1) => {
+  fireEvent.click(screen.getByRole('button', { name: `角色 ${index} 的更多操作` }));
+};
+const clickMoreAction = (name: string | RegExp, index = 1) => {
+  openMore(index);
+  fireEvent.click(screen.getByRole('button', { name }));
+};
+const openReference = (index = 1) => {
+  clickMoreAction('从角色库引用', index);
+};
 beforeEach(() => {
   vi.stubGlobal('matchMedia', vi.fn((media: string) => ({ matches: false, media, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
@@ -60,6 +70,7 @@ describe('共用角色编辑器', () => {
     // 添加与构图工具同一行，但不进「角色构图」组；父级同一容器，避免添加独占空行。
     expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('button', { name: '添加角色' }))).toBe(false);
     expect(screen.getByRole('group', { name: '角色构图' }).parentElement?.contains(screen.getByRole('button', { name: '添加角色' }))).toBe(true);
+    expect(screen.getByRole('button', { name: '删除角色' }).compareDocumentPosition(screen.getByRole('button', { name: '添加角色' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole('group', { name: '角色切换' })).toBeTruthy();
     const positive = screen.getByPlaceholderText('角色提示词');
     const negative = screen.getByPlaceholderText('选填');
@@ -83,16 +94,16 @@ describe('共用角色编辑器', () => {
     render(<Harness />);
     const purposes = ['identity', 'appearance', 'clothing', 'pose', 'expression', 'creature', 'object', 'vehicle'];
     expect(random.mock.calls.some(([props]) => props.roleId === 'a' && props.variant === 'icon' && JSON.stringify(props.purposes) === JSON.stringify(purposes))).toBe(true);
-    expect(screen.getByRole('button', { name: 'random-a' }).closest('.character-tools')).toBeTruthy();
+    expect(document.querySelector('[aria-label="random-a"]')?.closest('.character-tools')).toBeTruthy();
     selectCharacter(/角色 2/);
     expect(random.mock.calls.some(([props]) => props.roleId === 'b' && props.variant === 'icon' && JSON.stringify(props.purposes) === JSON.stringify(purposes))).toBe(true);
-    expect(screen.getByRole('button', { name: 'random-b' }).closest('.character-tools')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '上移角色 2' }));
+    expect(document.querySelector('[aria-label="random-b"]')?.closest('.character-tools')).toBeTruthy();
+    clickMoreAction('上移角色 2', 2);
     selectCharacter(/角色 2/);
     fireEvent.change(screen.getByPlaceholderText('角色提示词'), { target: { value: 'edited role a' } });
     fireEvent.click(screen.getByRole('checkbox', { name: '启用角色 2' }));
     expect(draft().characters).toEqual([initial.characters![1], { ...initial.characters![0], prompt: 'edited role a', enabled: false }]);
-    expect(screen.getByRole('button', { name: 'random-a' }).closest('.lab-character')).toBe(screen.getByRole('checkbox', { name: '启用角色 2' }).closest('.lab-character'));
+    expect(document.querySelector('[aria-label="random-a"]')?.closest('.lab-character')).toBe(screen.getByRole('checkbox', { name: '启用角色 2' }).closest('.lab-character'));
   });
 
   it('页头横排切换角色，一次只显示当前角色', () => {
@@ -121,7 +132,7 @@ describe('共用角色编辑器', () => {
       return <Harness library={{ ...library, showCharacterReference: true, onRetryChains: fetchChains }} />;
     };
     render(<LoadingHarness />);
-    fireEvent.click(screen.getAllByRole('button', { name: '从角色库引用' })[0]);
+    openReference();
     expect(within(screen.getByRole('dialog')).getByRole('status').textContent).toContain('加载中…');
     expect(screen.queryByText('角色库中暂无自定义角色')).toBeNull();
     await act(async () => reject(new Error('角色库读取失败')));
@@ -141,7 +152,7 @@ describe('共用角色编辑器', () => {
     const allChains: PromptChain[] = [{ id: 'stored', userId: 'synthetic', name: '已有角色', type: 'character', description: '', tags: [], basePrompt: 'green hair', negativePrompt: 'hat', modules: [], params: initial, createdAt: 1, updatedAt: 1 }];
     const library = { allChains, chainsLoading: true, showCharacterReference: true };
     const view = render(<Harness library={library} />);
-    fireEvent.click(screen.getAllByRole('button', { name: '从角色库引用' })[0]);
+    openReference();
     const cachedButton = screen.getByRole('button', { name: /已有角色/ });
     expect(within(screen.getByRole('dialog')).getByRole('status')).toBeTruthy();
     view.rerender(<Harness library={{ ...library, chainsLoading: false, chainsError: '刷新失败' }} />);
@@ -160,10 +171,10 @@ describe('共用角色编辑器', () => {
       { id: 'forest', userId: 'synthetic', name: '森林精灵', type: 'character', description: '绿叶角色', tags: ['精灵', '森林'], basePrompt: 'green cloak, forest', negativePrompt: 'low quality', modules: [], params: { ...initial, characters: [{ ...initial.characters![0], prompt: 'green cloak', negativePrompt: 'low quality' }] }, createdAt: 2, updatedAt: 2 },
     ];
     render(<Harness library={{ allChains, showCharacterReference: true }} />);
-    fireEvent.click(screen.getAllByRole('button', { name: '从角色库引用' })[0]);
+    openReference();
     const dialog = screen.getByRole('dialog');
     const search = within(dialog).getByRole('searchbox', { name: '搜索角色库角色' }) as HTMLInputElement;
-    const roleButtons = () => within(dialog).getAllByRole('button').filter(button => button.textContent !== '关闭');
+    const roleButtons = () => within(dialog).getAllByRole('button').filter(button => !['关闭', '随机搭配'].includes(button.textContent || ''));
 
     expect(search).toBeTruthy();
     expect(roleButtons()).toHaveLength(2);
@@ -195,7 +206,7 @@ describe('共用角色编辑器', () => {
     expect(draft().characters?.[0]).toMatchObject({ prompt: 'green cloak, forest', negativePrompt: 'low quality', x: 0.223, y: 0.887 });
     expect(draft().characters?.[1]).toEqual(initial.characters![1]);
 
-    fireEvent.click(screen.getAllByRole('button', { name: '从角色库引用' })[0]);
+    openReference();
     expect((within(screen.getByRole('dialog')).getByRole('searchbox') as HTMLInputElement).value).toBe('');
   });
 
@@ -244,17 +255,22 @@ describe('共用角色编辑器', () => {
     const negative = screen.getByPlaceholderText('选填') as HTMLTextAreaElement;
     expect(negative.disabled).toBe(true); expect(negative.value).toBe('coat, red hair');
   });
-  it.each([[false, 0], [true, 1]] as const)('可编辑=%s 时当前角色工具组显示随机搭配入口，数量=%s', (canEdit, count) => {
+  it.each([[false, true], [true, false]] as const)('可编辑=%s 时引用对话框随机搭配 disabled=%s', (canEdit, randomDisabled) => {
     const onContentRollForRole = vi.fn();
-    render(<Harness canEdit={canEdit} onContentRollForRole={onContentRollForRole} />);
-    const buttons = screen.queryAllByRole('button', { name: '随机搭配' });
-    expect(buttons).toHaveLength(count);
-    if (count) {
-      expect(buttons[0].closest('.character-tools')).toBeTruthy();
-      expect(buttons[0].textContent).toBe('');
-      fireEvent.click(buttons[0]); expect(onContentRollForRole).toHaveBeenCalledWith(0);
+    render(<Harness canEdit={canEdit} onContentRollForRole={onContentRollForRole} library={{ showCharacterReference: true }} />);
+    expect(screen.queryAllByRole('button', { name: '随机搭配' })).toHaveLength(0);
+    openReference();
+    const button = within(screen.getByRole('dialog')).getByRole('button', { name: '随机搭配' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(randomDisabled);
+    fireEvent.click(button);
+    if (randomDisabled) {
+      expect(onContentRollForRole).not.toHaveBeenCalled();
+      expect(screen.getByRole('dialog', { name: '从角色库引用' })).toBeTruthy();
+    } else {
+      expect(onContentRollForRole).toHaveBeenCalledWith(0);
       selectCharacter(/角色 2/);
-      fireEvent.click(screen.getByRole('button', { name: '随机搭配' }));
+      openReference(2);
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '随机搭配' }));
       expect(onContentRollForRole).toHaveBeenCalledWith(1);
     }
     expect(draft()).toEqual(initial);
@@ -271,42 +287,30 @@ describe('共用角色编辑器', () => {
     expect(draft().characters?.[0].sections).toBeUndefined();
     expect(draft().characters?.[1]).toEqual(initial.characters![1]);
   });
-  it.each([1280, 390])('%spx 下坐标图标与原有角色动作同排，展开后仍只修改对应角色并可关闭', async width => {
-    vi.stubGlobal('innerWidth', width);
+  it('定位展开区提供当前角色 X／Y，改数字挪点并只改对应角色', () => {
     render(<Harness freeform />);
     expect(screen.queryByRole('spinbutton', { name: '角色 1 水平位置' })).toBeNull();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'AI 自动构图' }));
-    const trigger = screen.getAllByRole('button', { name: '坐标' })[0];
-    const prompt = screen.getAllByPlaceholderText('角色提示词')[0];
-    const tools = trigger.closest('.character-tools')!;
-    expect(trigger.textContent).toBe('');
-    expect(tools.contains(screen.getByRole('button', { name: '下移角色 1' }))).toBe(true);
-    expect(tools.contains(prompt)).toBe(false);
-    expect(tools.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    trigger.focus();
-    fireEvent.click(trigger);
-    expect(screen.getByRole('dialog', { name: '角色 1 坐标' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '角色定位' }));
+    expect(screen.getByRole('group', { name: '角色 1 坐标' })).toBeTruthy();
+    openMore();
+    expect(screen.getByRole('button', { name: '下移角色 1' })).toBeTruthy();
     const x = screen.getByRole('spinbutton', { name: '角色 1 水平位置' });
     fireEvent.change(x, { target: { value: '0.42' } }); fireEvent.blur(x);
+    expect(draft().useCoords).toBe(true);
     expect(draft().characters?.[0]).toEqual({ ...initial.characters![0], x: 0.42 });
     expect(draft().characters?.[1]).toEqual(initial.characters![1]);
-    if (width < 768) fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '关闭' }));
-    else fireEvent.keyDown(window, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(document.activeElement).toBe(trigger);
   });
-  it('角色正词清空在卡片顶栏，负词清空在负面标题行，两者分别撤销且保留其他角色', () => {
+  it('角色正词清空在提示词标签行，负词清空在负面标题行，两者分别撤销且保留其他角色', () => {
     render(<Harness />);
     const positive = screen.getAllByPlaceholderText('角色提示词')[0] as HTMLTextAreaElement;
     const negative = screen.getAllByPlaceholderText('选填')[0] as HTMLTextAreaElement;
-    const header = screen.getByRole('checkbox', { name: '启用角色 1' }).closest('.character-card-header') as HTMLElement;
-    const clearPositive = within(header).getByRole('button', { name: '清空当前提示词' });
-    expect(header.contains(screen.getByRole('button', { name: '下移角色 1' }))).toBe(true);
-    expect(positive.parentElement!.contains(clearPositive)).toBe(false);
+    const positiveHeader = screen.getByText('角色提示词').parentElement as HTMLElement;
+    const clearPositive = within(positiveHeader).getByRole('button', { name: '清空当前提示词' });
+    expect(screen.getByRole('checkbox', { name: '启用角色 1' }).closest('.character-card-header')!.contains(clearPositive)).toBe(false);
     fireEvent.click(clearPositive);
     expect(draft().characters?.[0]).toMatchObject({ id: 'a', prompt: '', negativePrompt: 'red hair', x: 0.223, y: 0.887 });
     expect(draft().characters?.[1]).toEqual(initial.characters![1]); expect(document.activeElement).toBe(positive);
-    fireEvent.click(within(header).getByRole('button', { name: '撤销清空' }));
+    fireEvent.click(within(positiveHeader).getByRole('button', { name: '撤销清空' }));
     const negativeHeader = screen.getAllByText('角色负面提示词')[0].parentElement!;
     fireEvent.click(within(negativeHeader).getByRole('button', { name: '清空当前提示词' }));
     expect(draft().characters?.[0]).toMatchObject({ prompt: 'blue hair', negativePrompt: '' }); expect(document.activeElement).toBe(negative);
@@ -331,49 +335,50 @@ describe('共用角色编辑器', () => {
     expect(negative.value).toBe('red hair');
   });
 
-  it('旧资料默认自动构图，坐标真正禁用；开启手动后清空／越界归一化，模型切换不改存量草稿', () => {
+  it('定位区数字框清空／越界归一化，模型切换不改存量草稿', () => {
     const { rerender } = render(<Harness />);
     expect((screen.getByRole('checkbox', { name: 'AI 自动构图' }) as HTMLInputElement).checked).toBe(true);
-    fireEvent.click(screen.getAllByRole('button', { name: '坐标' })[0]);
-    expect((screen.getByRole('spinbutton', { name: '角色 1 水平位置' }) as HTMLInputElement).disabled).toBe(true);
-    fireEvent.keyDown(window, { key: 'Escape' });
-    fireEvent.click(screen.getByRole('checkbox', { name: 'AI 自动构图' }));
-    fireEvent.click(screen.getAllByRole('button', { name: '坐标' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: '角色定位' }));
     const x = screen.getByRole('spinbutton', { name: '角色 1 水平位置' });
     expect((x as HTMLInputElement).value).toBe('0.3');
     fireEvent.change(x, { target: { value: '' } });
     expect(draft().characters?.[0].x).toBe(0.223);
     fireEvent.blur(x);
+    expect(draft().useCoords).toBe(true);
     expect(draft().characters?.[0].x).toBe(0.5);
     fireEvent.change(x, { target: { value: '9' } }); fireEvent.blur(x);
     expect(draft().characters?.[0].x).toBe(0.9);
     rerender(<Harness freeform />);
+    const locate = screen.getByRole('button', { name: '角色定位' });
+    if (locate.getAttribute('aria-expanded') !== 'true') fireEvent.click(locate);
     expect((screen.getByRole('spinbutton', { name: '角色 1 垂直位置' }) as HTMLInputElement).value).toBe('0.887');
     expect(draft().characters?.[0].y).toBe(0.887);
   });
 
   it('上移／下移保持 ID 与所有内容，停用再启用保留文字与坐标', () => {
     render(<Harness />);
+    openMore();
     expect((screen.getByRole('button', { name: '上移角色 1' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(window, { key: 'Escape' });
     selectCharacter(/角色 2/);
-    fireEvent.click(screen.getByRole('button', { name: '上移角色 2' }));
+    clickMoreAction('上移角色 2', 2);
     expect(draft().characters).toEqual([initial.characters![1], initial.characters![0]]);
     fireEvent.click(screen.getByRole('checkbox', { name: '启用角色 1' }));
     expect(draft().characters?.[0]).toEqual({ ...initial.characters![1], enabled: false });
     expect(screen.getAllByText('· 已停用').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('checkbox', { name: '启用角色 1' }));
-    fireEvent.click(screen.getByRole('button', { name: '下移角色 1' }));
+    clickMoreAction('下移角色 1', 1);
     expect(draft().characters).toEqual([initial.characters![0], { ...initial.characters![1], enabled: true }]);
     expect(mark).toHaveBeenCalledTimes(4);
   });
 
   it('角色排序后清空撤销仍跟随稳定角色槽位，不落入其他角色顶栏', () => {
     render(<Harness />);
-    const firstHeader = screen.getByRole('checkbox', { name: '启用角色 1' }).closest('.character-card-header') as HTMLElement;
-    fireEvent.click(within(firstHeader).getByRole('button', { name: '清空当前提示词' }));
-    fireEvent.click(screen.getByRole('button', { name: '下移角色 1' }));
-    // 下移后仍停在同一角色（现为槽位 2），撤销清空应还在该卡顶栏。
-    const movedHeader = screen.getByRole('checkbox', { name: '启用角色 2' }).closest('.character-card-header') as HTMLElement;
+    const positiveHeader = screen.getByText('角色提示词').parentElement as HTMLElement;
+    fireEvent.click(within(positiveHeader).getByRole('button', { name: '清空当前提示词' }));
+    clickMoreAction('下移角色 1', 1);
+    // 下移后仍停在同一角色（现为槽位 2），撤销清空应还在该卡提示词标签行。
+    const movedHeader = screen.getByText('角色提示词').parentElement as HTMLElement;
     fireEvent.click(within(movedHeader).getByRole('button', { name: '撤销清空' }));
     expect(draft().characters).toEqual([initial.characters![1], initial.characters![0]]);
     expect(document.activeElement).toBe(screen.getByPlaceholderText('角色提示词'));
@@ -396,12 +401,12 @@ describe('共用角色编辑器', () => {
     render(<Harness canEdit={false} />);
     expect(screen.getAllByRole('button', { name: '清空当前提示词' }).every(button => (button as HTMLButtonElement).disabled)).toBe(true);
     for (const name of ['启用角色 1', 'AI 自动构图']) expect((screen.getByRole('checkbox', { name }) as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: '删除角色' })).toBeNull();
+    openMore();
     expect((screen.getByRole('button', { name: '下移角色 1' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getAllByRole('button', { name: '移除角色提示词' })[0] as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getAllByRole('button', { name: '坐标' })[0]);
-    expect((screen.getByRole('spinbutton', { name: '角色 1 水平位置' }) as HTMLInputElement).disabled).toBe(true);
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: '角色定位' }));
+    expect((screen.getByRole('spinbutton', { name: '角色 1 水平位置' }) as HTMLInputElement).disabled).toBe(true);
     fireEvent.keyDown(screen.getByRole('button', { name: '定位角色 1' }), { key: 'ArrowRight' });
     expect(draft()).toEqual(initial);
   });
