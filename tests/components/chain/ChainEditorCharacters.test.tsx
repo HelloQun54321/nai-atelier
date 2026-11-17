@@ -66,7 +66,7 @@ describe('共用角色编辑器', () => {
     expect(screen.getByText('角色专属提示词')).toBeTruthy();
     expect(screen.getByRole('button', { name: '添加角色' })).toBeTruthy();
     expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('button', { name: '角色定位' }))).toBe(true);
-    expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('checkbox', { name: '自动构图' }))).toBe(true);
+    expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('button', { name: '自动构图' }))).toBe(true);
     // 添加与构图工具同一行，但不进「角色构图」组；父级同一容器，避免添加独占空行。
     expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('button', { name: '添加角色' }))).toBe(false);
     expect(screen.getByRole('group', { name: '角色构图' }).parentElement?.contains(screen.getByRole('button', { name: '添加角色' }))).toBe(true);
@@ -337,7 +337,7 @@ describe('共用角色编辑器', () => {
 
   it('定位区数字框清空／越界归一化，模型切换不改存量草稿', () => {
     const { rerender } = render(<Harness />);
-    expect((screen.getByRole('checkbox', { name: '自动构图' }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole('button', { name: '自动构图' }).getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: '角色定位' }));
     const x = screen.getByRole('spinbutton', { name: '角色 1 水平位置' });
     expect((x as HTMLInputElement).value).toBe('0.3');
@@ -400,7 +400,8 @@ describe('共用角色编辑器', () => {
   it('只读时不能改开关、顺序、位置或删除', () => {
     render(<Harness canEdit={false} />);
     expect(screen.getAllByRole('button', { name: '清空当前提示词' }).every(button => (button as HTMLButtonElement).disabled)).toBe(true);
-    for (const name of ['启用角色 1', '自动构图']) expect((screen.getByRole('checkbox', { name }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('checkbox', { name: '启用角色 1' }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '自动构图' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole('button', { name: '删除角色' })).toBeNull();
     openMore();
     expect((screen.getByRole('button', { name: '下移角色 1' }) as HTMLButtonElement).disabled).toBe(true);

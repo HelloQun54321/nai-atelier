@@ -156,43 +156,45 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
         className={mobileEditorTab === 'character' ? 'block' : 'hidden'}
     >
         <section className={mobileEditorTab === 'character' ? 'block' : 'hidden'}>
-            {/* 模块标题已在 LabModuleSection：定位／自动构图在左；删除当前与添加成对在右。 */}
+            {/* 模块标题已在 LabModuleSection：定位／构图在左；删除与添加成对在右。窄屏短文案同款芯片，可访问名仍用完整词。 */}
             <div className="mb-3 flex min-w-0 flex-col gap-2">
                 <PresetSourceBadges sources={characterPresetSources} />
-                <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                <div className="flex min-w-0 flex-nowrap items-center justify-between gap-1.5">
                     {characters.length > 0 ? (
-                        <div role="group" aria-label={t('角色构图')} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 dark:text-gray-400">
-                            <button type="button" disabled={!characters.length} aria-expanded={positionOpen} title={coordinateHint} onClick={() => setPositionOpen(!positionOpen)}
-                                className={`mobile-touch inline-flex items-center gap-1 rounded-md px-1.5 py-1 transition ${positionOpen ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200'}`}>
-                                <MapPin className="h-3.5 w-3.5" aria-hidden="true" />{t('角色定位')}
+                        <div role="group" aria-label={t('角色构图')} className="flex min-w-0 flex-nowrap items-center gap-1.5">
+                            <button type="button" disabled={!characters.length} aria-label={t('角色定位')} aria-expanded={positionOpen} title={coordinateHint} onClick={() => setPositionOpen(!positionOpen)}
+                                className={`mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2 py-1.5 text-xs font-medium transition ${positionOpen ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}>
+                                <MapPin className="h-3.5 w-3.5" aria-hidden="true" />{t('定位')}
                             </button>
-                            <label className="mobile-touch inline-flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200">
-                                <input
-                                    type="checkbox"
-                                    disabled={!canEdit}
-                                    checked={params.useCoords !== true}
-                                    onChange={(e) => {
-                                        setParams({ ...params, useCoords: !e.target.checked });
-                                        markPresetSectionModified('settings');
-                                        markChange();
-                                    }}
-                                    className="h-3.5 w-3.5 rounded text-indigo-600 focus:ring-0"
-                                />
-                                <span className="font-medium">{t('自动构图')}</span>
-                            </label>
+                            <button
+                                type="button"
+                                disabled={!canEdit}
+                                aria-label={t('自动构图')}
+                                aria-pressed={params.useCoords !== true}
+                                title={t('自动构图')}
+                                onClick={() => {
+                                    // 按下＝自动构图（useCoords 关闭）；再点改为手动定位。
+                                    setParams({ ...params, useCoords: params.useCoords !== true });
+                                    markPresetSectionModified('settings');
+                                    markChange();
+                                }}
+                                className={`mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2 py-1.5 text-xs font-medium transition ${params.useCoords !== true ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'} disabled:cursor-not-allowed disabled:opacity-40`}
+                            >
+                                {t('构图')}
+                            </button>
                         </div>
                     ) : <span className="min-w-0 flex-1" />}
                     {canEdit && (
                         <div className="ml-auto flex shrink-0 items-center gap-1.5">
                             {characters.length > 0 && shownCharacterIndex >= 0 && (
-                                <button type="button" onClick={() => removeCharacter(shownCharacterIndex)}
-                                    className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50/80 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50">
-                                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />{t('删除角色')}
+                                <button type="button" aria-label={t('删除角色')} title={t('删除角色')} onClick={() => removeCharacter(shownCharacterIndex)}
+                                    className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-red-200 bg-red-50/80 px-2 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50">
+                                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />{t('删除')}
                                 </button>
                             )}
-                            <button type="button" onClick={addCharacter}
-                                className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50">
-                                <Plus className="h-3.5 w-3.5" aria-hidden="true" />{t('添加角色')}
+                            <button type="button" aria-label={t('添加角色')} title={t('添加角色')} onClick={addCharacter}
+                                className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-indigo-300 bg-indigo-50 px-2 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50">
+                                <Plus className="h-3.5 w-3.5" aria-hidden="true" />{t('添加')}
                             </button>
                         </div>
                     )}

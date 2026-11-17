@@ -295,39 +295,40 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
     </article>}
     {tab === 'character' && <section aria-label={t('角色')} className="flex flex-col gap-3">
       <div className="flex min-w-0 flex-col gap-2">
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <h2 className="text-xs font-bold text-gray-700 dark:text-gray-300">{t('角色')}</h2>
+        <div className="flex min-w-0 flex-nowrap items-center justify-between gap-1.5">
+          <h2 className="min-w-0 truncate text-xs font-bold text-gray-700 dark:text-gray-300">{t('角色')}</h2>
           <div className="flex shrink-0 items-center gap-1.5">
             {characters.length > 0 && shownCharacterIndex >= 0 && !disabled && (
-              <button type="button" className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50/80 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50" onClick={() => onRemoveCharacter(shownCharacterIndex)}>
-                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />{t('删除角色')}
+              <button type="button" aria-label={t('删除角色')} title={t('删除角色')} className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-red-200 bg-red-50/80 px-2 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50" onClick={() => onRemoveCharacter(shownCharacterIndex)}>
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />{t('删除')}
               </button>
             )}
-            <button type="button" className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50" onClick={onAddCharacter}>
-              <Plus className="h-3.5 w-3.5" aria-hidden="true" />{t('添加角色')}
+            <button type="button" aria-label={t('添加角色')} title={t('添加角色')} className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-indigo-300 bg-indigo-50 px-2 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50" onClick={onAddCharacter}>
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />{t('添加')}
             </button>
           </div>
         </div>
         {characterTools && (characters.length > 0 ? (
-          <div role="group" aria-label={t('角色构图')} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 dark:text-gray-400">
-            <button type="button" aria-expanded={positionOpen} onClick={() => setPositionOpen(open => !open)} className={`mobile-touch inline-flex items-center gap-1 rounded-md px-1.5 py-1 transition ${positionOpen ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200'}`}><MapPin className="h-3.5 w-3.5" aria-hidden="true" />{t('角色定位')}</button>
-            <label className="mobile-touch inline-flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200">
-              <input
-                type="checkbox"
-                disabled={disabled}
-                checked={characterTools.params.useCoords !== true}
-                onChange={event => {
-                  characterTools.setParams({ ...characterTools.params, useCoords: !event.target.checked });
-                  characterTools.onSettingsChange?.();
-                }}
-                className="h-3.5 w-3.5 rounded text-indigo-600 focus:ring-0"
-              />
-              <span className="font-medium">{t('自动构图')}</span>
-            </label>
+          <div role="group" aria-label={t('角色构图')} className="flex min-w-0 flex-nowrap items-center gap-1.5">
+            <button type="button" aria-label={t('角色定位')} aria-expanded={positionOpen} title={t('角色定位')} onClick={() => setPositionOpen(open => !open)} className={`mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2 py-1.5 text-xs font-medium transition ${positionOpen ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}><MapPin className="h-3.5 w-3.5" aria-hidden="true" />{t('定位')}</button>
+            <button
+              type="button"
+              disabled={disabled}
+              aria-label={t('自动构图')}
+              aria-pressed={characterTools.params.useCoords !== true}
+              title={t('自动构图')}
+              onClick={() => {
+                characterTools.setParams({ ...characterTools.params, useCoords: characterTools.params.useCoords !== true });
+                characterTools.onSettingsChange?.();
+              }}
+              className={`mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2 py-1.5 text-xs font-medium transition ${characterTools.params.useCoords !== true ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'} disabled:cursor-not-allowed disabled:opacity-40`}
+            >
+              {t('构图')}
+            </button>
           </div>
         ) : (
-          <div role="group" aria-label={t('角色构图')} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 dark:text-gray-400">
-            <button type="button" className="mobile-touch inline-flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200" onClick={() => openReference(-1)}><UserRound className="h-3.5 w-3.5" aria-hidden="true" />{t('从角色库引用')}</button>
+          <div role="group" aria-label={t('角色构图')} className="flex min-w-0 flex-nowrap items-center gap-1.5">
+            <button type="button" className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700" onClick={() => openReference(-1)}><UserRound className="h-3.5 w-3.5" aria-hidden="true" />{t('从角色库引用')}</button>
           </div>
         ))}
       </div>

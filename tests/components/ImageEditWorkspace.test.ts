@@ -423,7 +423,7 @@ describe('ImageEditControls', () => {
     expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ characters: [{ ...character, prompt: 'girl, white hair' }] }) });
     fireEvent.change(screen.getByDisplayValue('red hair'), { target: { value: 'black hair' } });
     expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ characters: [{ ...character, prompt: 'girl, white hair', negativePrompt: 'black hair' }] }) });
-    fireEvent.click(screen.getByRole('checkbox', { name: '自动构图' }));
+    fireEvent.click(screen.getByRole('button', { name: '自动构图' }));
     expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ useCoords: false }) });
     fireEvent.click(screen.getByRole('button', { name: '添加角色' }));
     expect(onDraftChange.mock.calls.at(-1)?.[0].params.characters).toHaveLength(2);

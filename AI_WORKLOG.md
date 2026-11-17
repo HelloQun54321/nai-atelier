@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **Composer**：角色工具行改短标签同款芯片（fix: unify character tool chips）：定位／构图／删除／添加单行，构图为按下态；整段与分类同步。
 - **Composer**：角色构图开关文案去掉「AI」（fix: shorten auto-composition label）：整段／分类／参数查看同步为「自动构图」。
 - **Composer**：去掉提示词高度把手（fix: remove prompt height handles）：原文／翻译区不再显示 ↕，保留自动增高与电脑原生拖角。
 - **Composer**：底栏费用与暂停收进生成选项（fix: stow mobile lab dock cost and pause）：主按钮只留短文案，完整费用可读，去掉常驻暂停格。
