@@ -169,41 +169,39 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
         className={mobileEditorTab === 'character' ? 'block' : 'hidden'}
     >
         <section className={mobileEditorTab === 'character' ? 'block' : 'hidden'}>
-            {/* 列表做主：添加是主操作；定位／自动构图是有角色后的次要构图工具，不再与添加挤成右侧同级碎胶囊。 */}
-            <div className="mb-3 flex min-w-0 flex-col gap-2.5">
-                <div className="flex min-w-0 items-center justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                        <PresetSourceBadges sources={characterPresetSources} />
-                    </div>
+            {/* 模块标题已在 LabModuleSection：添加与定位／自动构图同一工具行，左次要右主操作，避免添加独占空行。 */}
+            <div className="mb-3 flex min-w-0 flex-col gap-2">
+                <PresetSourceBadges sources={characterPresetSources} />
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                    {characters.length > 0 ? (
+                        <div role="group" aria-label={t('角色构图')} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 dark:text-gray-400">
+                            <button type="button" disabled={!characters.length} aria-expanded={positionOpen} title={coordinateHint} onClick={() => setPositionOpen(!positionOpen)}
+                                className={`mobile-touch inline-flex items-center gap-1 rounded-md px-1.5 py-1 transition ${positionOpen ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200'}`}>
+                                <MapPin className="h-3.5 w-3.5" aria-hidden="true" />{t('角色定位')}
+                            </button>
+                            <label className="mobile-touch inline-flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200">
+                                <input
+                                    type="checkbox"
+                                    disabled={!canEdit}
+                                    checked={params.useCoords !== true}
+                                    onChange={(e) => {
+                                        setParams({ ...params, useCoords: !e.target.checked });
+                                        markPresetSectionModified('settings');
+                                        markChange();
+                                    }}
+                                    className="h-3.5 w-3.5 rounded text-indigo-600 focus:ring-0"
+                                />
+                                <span className="font-medium">{t('AI 自动构图')}</span>
+                            </label>
+                        </div>
+                    ) : <span className="min-w-0 flex-1" />}
                     {canEdit && (
                         <button type="button" onClick={addCharacter}
-                            className="mobile-touch inline-flex shrink-0 items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50">
+                            className="mobile-touch ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50">
                             <Plus className="h-3.5 w-3.5" aria-hidden="true" />{t('添加角色')}
                         </button>
                     )}
                 </div>
-                {characters.length > 0 && (
-                    <div role="group" aria-label={t('角色构图')} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 dark:text-gray-400">
-                        <button type="button" disabled={!characters.length} aria-expanded={positionOpen} title={coordinateHint} onClick={() => setPositionOpen(!positionOpen)}
-                            className={`mobile-touch inline-flex items-center gap-1 rounded-md px-1.5 py-1 transition ${positionOpen ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200'}`}>
-                            <MapPin className="h-3.5 w-3.5" aria-hidden="true" />{t('角色定位')}
-                        </button>
-                        <label className="mobile-touch inline-flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200">
-                            <input
-                                type="checkbox"
-                                disabled={!canEdit}
-                                checked={params.useCoords !== true}
-                                onChange={(e) => {
-                                    setParams({ ...params, useCoords: !e.target.checked });
-                                    markPresetSectionModified('settings');
-                                    markChange();
-                                }}
-                                className="h-3.5 w-3.5 rounded text-indigo-600 focus:ring-0"
-                            />
-                            <span className="font-medium">{t('AI 自动构图')}</span>
-                        </label>
-                    </div>
-                )}
             </div>
 
             {characters.length > 0 && <div role="group" aria-label={t('角色切换')} className="mb-3 flex flex-wrap items-center gap-1.5">

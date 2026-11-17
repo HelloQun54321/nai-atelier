@@ -57,7 +57,9 @@ describe('共用角色编辑器', () => {
     expect(screen.getByRole('button', { name: '添加角色' })).toBeTruthy();
     expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('button', { name: '角色定位' }))).toBe(true);
     expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('checkbox', { name: 'AI 自动构图' }))).toBe(true);
+    // 添加与构图工具同一行，但不进「角色构图」组；父级同一容器，避免添加独占空行。
     expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('button', { name: '添加角色' }))).toBe(false);
+    expect(screen.getByRole('group', { name: '角色构图' }).parentElement?.contains(screen.getByRole('button', { name: '添加角色' }))).toBe(true);
     expect(screen.getByRole('group', { name: '角色切换' })).toBeTruthy();
     const positive = screen.getByPlaceholderText('角色提示词');
     const negative = screen.getByPlaceholderText('选填');

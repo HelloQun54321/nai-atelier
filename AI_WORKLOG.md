@@ -1,4 +1,5 @@
 ## 2026-11-17
+- **Composer**：按用户反馈把整段编辑「添加角色」收到与定位／自动构图同一工具行（fix: keep lab add-character on tools row），去掉独占空行。
 - **Composer**：按用户要求把分类编辑的角色横排切换落到整段编辑（feat: switch lab characters like category mode），一次只显示当前角色。
 - **Composer**：按用户反馈重排实验室角色页工具（fix: restack lab character tools）：添加升为主操作，定位／自动构图降为次要构图组；分类编辑角色页同步。
 - **Composer**：按用户反馈「没变化」补强实验室模块连续面：重建可见包，去掉展开分隔条，并用薄井覆盖输入／翻译实心底（fix: keep lab module fields flush with card）。
