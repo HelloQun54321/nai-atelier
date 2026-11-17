@@ -26,7 +26,7 @@ export interface GenerationCountControlProps {
   intervalSeconds?: number; onIntervalChange?: (seconds: number) => void; intervalPending?: boolean;
   /** 0 = 固定间隔；>0 时每次在该百分比内随机浮动。 */
   intervalJitterPercent?: number; onIntervalJitterChange?: (percent: number) => void;
-  /** 手机实验室底栏：短主按钮，费用／进度作角标，张数进选项。 */
+  /** 手机实验室底栏：主按钮只留短文案；费用与暂停收进「生成选项」。 */
   layout?: 'default' | 'dock';
 }
 
@@ -75,7 +75,9 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
   const primaryUnavailable = Boolean(primaryBlocked && primaryUnavailableLabel);
   const showProgress = continuousGenerationEnabled || paused || waiting.length > 0
     || total - completed > 1 || Boolean(series && series.total - series.current > 1);
-  const hasMenuContent = continuousGenerationEnabled || waiting.length > 0;
+  const dock = layout === 'dock';
+  // 底栏始终保留选项入口：费用全文与暂停／进度都在面板里，不挤主按钮。
+  const hasMenuContent = continuousGenerationEnabled || waiting.length > 0 || dock;
   const showCloudQueue = showQueueStatus && cloudQueueEnabled && Boolean(queueStatus && (queueStatus.phase !== 'completed' || queueStatus.cleanupError));
   useEffect(() => { if (!hasMenuContent) setOpen(false); }, [hasMenuContent]);
   const intervalInputNumber = Number(intervalValue);
@@ -95,7 +97,6 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     setIntervalValue(next.toFixed(1));
     if (next !== intervalSeconds) onIntervalChange?.(next);
   };
-  const dock = layout === 'dock';
   const showPrimaryCount = !dock && continuousGenerationEnabled && !primaryUnavailable;
   const showPrimaryCost = !dock && !primaryUnavailable && (continuousGenerationEnabled || !primaryBlocked);
   const primaryLabel = primaryUnavailable ? primaryUnavailableLabel
@@ -103,11 +104,22 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
       : !continuousGenerationEnabled && saving ? t("正在保存…")
       : !continuousGenerationEnabled && occupied ? t("生成中…")
         : t(occupied && continuousGenerationEnabled ? "加入队列" : "生成");
-  // 底栏单行定高：进度只写在暂停格里，费用截断同排，禁止换行把整条底栏撑高。
   const dockProgressActive = occupied || paused || waiting.length > 0 || Boolean(series && series.current < series.total);
-  const dockCostBadge = dock && !primaryUnavailable && costLabel ? costLabel : null;
   const dockProgressLabel = dock && dockProgressActive ? (saving ? t('保存') : `${completed}/${total}`) : null;
+  const dockShowPause = dock && showProgress;
+  const pauseDisabled = pausePending || series?.stopping || queueState?.pausing || (!occupied && !paused);
+  const pauseLabel = t(queueState?.pausing ? "暂停中…" : paused ? "继续生成" : "暂停生成");
+  const pauseTitle = t(queueState?.pausing ? "当前图片保存后暂停" : paused ? "继续生成" : "暂停生成");
+  const primaryTitle = [primaryLabel, !primaryUnavailable && costLabel ? costLabel : null].filter(Boolean).join(' · ');
   const panel = <>
+    {dock && !primaryUnavailable && costLabel && <p role="status" className="rounded-lg px-2 py-2 text-center text-sm text-gray-600 dark:text-gray-300">{t("预计费用：{0}", [costLabel])}</p>}
+    {dockShowPause && <button type="button" disabled={pauseDisabled} onClick={() => { (onTogglePause || onStop)?.(); }}
+      aria-label={dockProgressLabel ? `${pauseLabel} ${dockProgressLabel}` : pauseLabel} title={pauseTitle}
+      className={TOOLBAR_MENU_CLASS + ' min-h-10 justify-center disabled:cursor-not-allowed disabled:opacity-40'}>
+      {paused && !queueState?.pausing ? <Play aria-hidden="true" className="text-gray-400 dark:text-gray-500" /> : <Pause aria-hidden="true" className="text-gray-400 dark:text-gray-500" />}
+      <span>{pauseLabel}</span>
+      {dockProgressLabel && <span className="tabular-nums opacity-70">{dockProgressLabel}</span>}
+    </button>}
     {continuousGenerationEnabled && <div className="flex min-h-10 items-center justify-center gap-2 rounded-lg px-2 py-1 text-sm text-gray-700 dark:text-gray-200">
       <Images aria-hidden="true" className="h-4 w-4 flex-none text-gray-400 dark:text-gray-500" />
       <label htmlFor={countId} className="w-14 shrink-0">{t("生成张数")}</label>
@@ -176,32 +188,22 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     </div>}
   </>;
   return <div className={'generation-count-control relative inline-flex w-full max-w-full min-w-0 items-stretch gap-1.5 ' + (dock ? '' : 'lg:w-80 ') + (showProgress && showCloudQueue && !dock ? 'lg:max-w-[calc(100%-14rem)]' : showProgress || showCloudQueue ? dock ? '' : 'lg:max-w-[calc(100%-8rem)]' : '')}>
-    {showProgress && !dock && <ToolbarButton onClick={onTogglePause || onStop} disabled={pausePending || series?.stopping || queueState?.pausing || (!occupied && !paused)}
-      aria-label={t(queueState?.pausing ? "暂停中…" : paused ? "继续生成" : "暂停生成")}
-      title={t(queueState?.pausing ? "当前图片保存后暂停" : paused ? "继续生成" : "暂停生成")}
+    {showProgress && !dock && <ToolbarButton onClick={onTogglePause || onStop} disabled={pauseDisabled}
+      aria-label={pauseLabel} title={pauseTitle}
       className="appearance-reading-surface mobile-touch !h-auto min-h-10 !gap-1.5 !px-2.5 !text-xs tabular-nums lg:absolute lg:inset-y-0 lg:right-full lg:mr-3">
       <Images aria-hidden="true" className="h-3.5 w-3.5" />{continuousGenerationEnabled && <span>{saving ? t("正在保存…") : `${completed}/${total}`}</span>}{paused && !queueState?.pausing ? <Play aria-hidden="true" className="h-3.5 w-3.5" /> : <Pause aria-hidden="true" className="h-3.5 w-3.5" />}
     </ToolbarButton>}
-    {dock && showProgress && <ToolbarButton onClick={onTogglePause || onStop} disabled={pausePending || series?.stopping || queueState?.pausing || (!occupied && !paused)}
-      aria-label={dockProgressLabel
-        ? t(queueState?.pausing ? "暂停中… {0}" : paused ? "继续生成 {0}" : "暂停生成 {0}", [dockProgressLabel])
-        : t(queueState?.pausing ? "暂停中…" : paused ? "继续生成" : "暂停生成")}
-      title={t(queueState?.pausing ? "当前图片保存后暂停" : paused ? "继续生成" : "暂停生成")}
-      className="appearance-reading-surface mobile-touch !h-11 !min-h-11 !max-h-11 !w-11 !shrink-0 !flex-col !gap-0 !px-0 !py-0 !text-tiny tabular-nums">
-      {paused && !queueState?.pausing ? <Play aria-hidden="true" className="h-3.5 w-3.5" /> : <Pause aria-hidden="true" className="h-3.5 w-3.5" />}
-      {dockProgressLabel && <span className="leading-none opacity-80">{dockProgressLabel}</span>}
-    </ToolbarButton>}
     <div ref={anchorRef} role="group" className={'generation-action-button generation-action-button--workbench flex min-w-0 flex-1 items-stretch overflow-hidden rounded-full text-sm font-semibold lg:rounded-xl ' + (dock ? 'generation-action-button--dock !h-11 !min-h-11 !max-h-11 !min-w-0 ' : '') + (showCloudQueue && !dock ? 'max-lg:!min-w-0 ' : '') + (executing ? 'generation-action-button--loading' : '')}>
     <button type="button" data-agent-action="business" aria-disabled={primaryBlocked}
+      {...(dock ? { 'aria-label': primaryTitle, title: primaryTitle } : {})}
       onClick={() => { if (!primaryBlocked) { close(); if (occupied && continuousGenerationEnabled && onQueue) onQueue('end'); else onGenerate?.(); } }}
       onKeyDown={event => { if (hasMenuContent && event.altKey && event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); } }}
       className={'mobile-touch relative z-[1] flex min-w-0 flex-1 items-stretch rounded-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 lg:rounded-xl ' + (dock ? '!h-11 ' : '') + (executing ? 'generation-action-button--loading !bg-none !bg-transparent !shadow-none !filter-none' : '')}>
-      <span className={'relative flex min-w-0 flex-1 items-center justify-center gap-x-1.5 ' + (dock ? 'h-11 flex-nowrap overflow-hidden px-2 text-sm' : 'flex-wrap gap-y-0.5 px-4 py-2 ') + (showCloudQueue && !dock ? 'max-lg:!px-2 ' : '') + (primaryBlocked && !executing ? 'opacity-50' : '')}>
+      <span className={'relative flex min-w-0 flex-1 items-center justify-center gap-x-1.5 ' + (dock ? 'h-11 flex-nowrap overflow-hidden px-3 text-sm' : 'flex-wrap gap-y-0.5 px-4 py-2 ') + (showCloudQueue && !dock ? 'max-lg:!px-2 ' : '') + (primaryBlocked && !executing ? 'opacity-50' : '')}>
         {!dock && <ImageIcon aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={2.2} />}
-        <span className={dock ? 'min-w-0 truncate' : undefined}>{primaryLabel}</span>
+        <span>{primaryLabel}</span>
         {showPrimaryCount && <span className="whitespace-nowrap text-xs font-medium opacity-80">{t("{0} 张", [count])}</span>}
         {showPrimaryCost && costLabel && <span className="generation-action-button__cost whitespace-nowrap">{costLabel}</span>}
-        {dockCostBadge && <span className="generation-action-button__cost max-w-[3.75rem] shrink truncate whitespace-nowrap text-micro opacity-90">{dockCostBadge}</span>}
       </span>
     </button>
     {hasMenuContent && <button type="button" data-generation-menu aria-label={t("生成选项")} title={t("生成选项")} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(value => !value)} className={'mobile-touch relative z-[1] flex shrink-0 items-center justify-center border-l border-current/15 outline-none hover:bg-current/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ' + (dock ? 'h-11 w-8' : 'min-h-10 w-9') + (open ? ' bg-current/5' : '')}><ChevronDown aria-hidden="true" className={'h-4 w-4 transition-transform ' + (open ? 'rotate-180' : '')} /></button>}

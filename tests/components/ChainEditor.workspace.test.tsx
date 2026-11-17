@@ -2315,14 +2315,17 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
     view.rerender(<ChainEditor {...view.props} continuousGenerationEnabled={false} />);
     expect(state.cancelJob).not.toHaveBeenCalled();
-    expect(mobileActions().getByRole('button', { name: '暂停生成' }).getAttribute('disabled')).toBeNull();
+    fireEvent.click(mobileActions().getByRole('button', { name: '生成选项' }));
+    expect(within(screen.getByRole('dialog', { name: '生成选项' })).getByRole('button', { name: /暂停生成/ }).getAttribute('disabled')).toBeNull();
+    fireEvent.click(within(screen.getByRole('dialog', { name: '生成选项' })).getByRole('button', { name: '关闭' }));
     await act(async () => {
       completion.resolve({ ...backgroundResult('job-3', 3, { historyIds: ['job-1', 'job-2', 'job-3'] }), token: state.started[0].token });
     });
     await waitFor(() => expect(view.props.notify).toHaveBeenCalledWith('已生成并保存 3 张图片', 'success'), { timeout: 4000 });
     expect(state.started[0].count).toBe(3);
     expect(state.cancelJob).not.toHaveBeenCalled();
-    expect(mobileActions().queryByRole('button', { name: '暂停生成' })).toBeNull();
+    fireEvent.click(mobileActions().getByRole('button', { name: '生成选项' }));
+    expect(within(screen.getByRole('dialog', { name: '生成选项' })).queryByRole('button', { name: /暂停生成/ })).toBeNull();
   });
 
   it('四模式共用当前 Key 的间隔设置，换 Key 后迟到回执不覆盖新设置', async () => {
@@ -2352,14 +2355,15 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     const pendingPause = Promise.withResolvers<GenerationQueueSnapshot>();
     vi.mocked(setGenerationQueuePaused).mockImplementationOnce(() => pendingPause.promise);
     setupSeries();
-    await waitFor(() => expect(mobileActions().getByRole('button', { name: '暂停生成' }).hasAttribute('disabled')).toBe(false));
-    fireEvent.click(mobileActions().getByRole('button', { name: '暂停生成' }));
+    fireEvent.click(mobileActions().getByRole('button', { name: '生成选项' }));
+    await waitFor(() => expect(within(screen.getByRole('dialog', { name: '生成选项' })).getByRole('button', { name: /暂停生成/ }).hasAttribute('disabled')).toBe(false));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '生成选项' })).getByRole('button', { name: /暂停生成/ }));
     await waitFor(() => expect(setGenerationQueuePaused).toHaveBeenCalledWith('synthetic-key', true));
     act(() => { sessionStorage.setItem('nai_api_key', 'next-key'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: 'next-key' })); });
     await waitFor(() => expect(getGenerationQueue).toHaveBeenCalledWith('next-key'));
     await act(async () => { pendingPause.resolve({ ...old, paused: true }); });
-    expect(mobileActions().queryByRole('button', { name: '继续生成' })).toBeNull();
-    expect(mobileActions().getByRole('button', { name: '暂停生成' })).toBeTruthy();
+    expect(within(screen.getByRole('dialog', { name: '生成选项' })).queryByRole('button', { name: /继续生成/ })).toBeNull();
+    expect(within(screen.getByRole('dialog', { name: '生成选项' })).getByRole('button', { name: /暂停生成/ })).toBeTruthy();
   });
 
   it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('%s 只 POST 一次后台任务，描述符保留提示词、模块、来源与编辑元数据', async (operation, label) => {
