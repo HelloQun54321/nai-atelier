@@ -369,15 +369,21 @@ it('画布未就绪主按钮不发送，菜单仍可查看；空闲恢复生成'
   fireEvent.click(screen.getByRole('button', { name: /生成.*3 张.*90 Anlas/ })); expect(generate).toHaveBeenCalledOnce();
 });
 
-it('底栏布局短主文案，费用作角标，不可用时不带空闲 0/0', () => {
+it('底栏布局短主文案，费用同排截断，进度进暂停格，主按钮不飘分数', () => {
   const generate = vi.fn();
   const view = render(<GenerationCountControl {...props} layout="dock" onGenerate={generate} costLabel="30 Anlas" />);
-  expect(screen.getByRole('button', { name: /^生成(?!选项)/ }).textContent).toMatch(/生成/);
-  expect(screen.getByRole('button', { name: /^生成(?!选项)/ }).textContent).toContain('30 Anlas');
+  const primary = screen.getByRole('button', { name: /^生成(?!选项)/ });
+  expect(primary.textContent).toContain('生成');
+  expect(primary.textContent).toContain('30 Anlas');
+  expect(primary.textContent).not.toMatch(/\d+\/\d+/);
+  expect(primary.className).toContain('!h-11');
   expect(screen.queryByText('0/0')).toBeNull();
   view.rerender(<GenerationCountControl {...props} layout="dock" onGenerate={generate} disabled unavailableLabel="读取图片中…" costLabel="30 Anlas" />);
   expect(screen.getByRole('button', { name: '读取图片中…' }).getAttribute('aria-disabled')).toBe('true');
-  expect(screen.queryByText('0/0')).toBeNull();
+  expect(screen.getByRole('button', { name: '读取图片中…' }).textContent).not.toMatch(/\d+\/\d+/);
+  view.rerender(<GenerationCountControl {...props} layout="dock" onGenerate={generate} busy generationState="generating" series={{ current: 0, total: 1, stopping: false }} costLabel="消耗 Opus" />);
+  expect(screen.getByRole('button', { name: /加入队列/ }).textContent).not.toMatch(/\d+\/\d+/);
+  expect(screen.getByRole('button', { name: /暂停生成 0\/1/ }).textContent).toMatch(/0\/1/);
 });
 
 it('菜单内的紧凑张数控件支持加减、直接输入和下限，调整不会触发生图', () => {

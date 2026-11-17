@@ -463,7 +463,9 @@ html[data-design-theme='nai-atelier'] ::selection {
 
 .generation-action-button.generation-action-button--dock {
   min-width: 0;
+  height: 2.75rem;
   min-height: 2.75rem;
+  max-height: 2.75rem;
 }
 
 /* 主要生成按钮：静止时保持轻量，交互和生成中才提高强调度。 */

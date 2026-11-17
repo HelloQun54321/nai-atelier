@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **Composer**：修手机实验室底栏撑高与飘分（fix: keep mobile lab dock single-row height）：去掉主按钮顶角 0/1，费用同排截断，进度进暂停格。
 - **Composer**：首版手机实验室底栏（feat: add mobile lab generation dock）：额度｜短生成｜右小图，可折预览，替换右下浮动条。
 - **Composer**：自检后补齐分类角色工具与整段对齐（fix: align category character tools with whole prompt）：保存进更多、补自动构图、有角色后页头不再常驻引用。
 

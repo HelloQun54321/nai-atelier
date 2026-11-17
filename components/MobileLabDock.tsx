@@ -71,7 +71,7 @@ export const MobileLabDock: React.FC<MobileLabDockProps> = ({
         </div>
       )}
 
-      <div className="appearance-panel flex items-center gap-2 border-t border-gray-200 bg-white/95 px-2 py-1.5 dark:border-gray-800 dark:bg-gray-950/95">
+      <div className="appearance-panel flex h-[3.25rem] items-center gap-2 overflow-hidden border-t border-gray-200 bg-white/95 px-2 dark:border-gray-800 dark:bg-gray-950/95">
         <MobileGenerationResources
           variant="dock"
           apiKey={apiKey}
