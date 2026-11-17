@@ -12,7 +12,6 @@ import { agentOperationError, agentGenerationFailure, normalizeAgentGenerationRe
 import { approveGenerationSeries, beginGenerationSeries, getGenerationSeriesSession, getQueuedGenerationSeries, stopGenerationSeriesSession, subscribeGenerationSeries, type GenerationSeriesSession } from '../services/generationSeries';
 import { cancelGenerationJob, type GenerationJobDescriptor, type GenerationJobState } from '../services/generationJob';
 import { getGenerationQueue, setGenerationQueuePaused, setGenerationInterval, type GenerationPlacement, type GenerationQueueSnapshot } from '../services/generationTask';
-import { GenerationCountControl } from './GenerationCountControl';
 import { AgentDraftReview } from './AgentDraftReview';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -26,7 +25,7 @@ import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImpor
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { ImagePreviewActions } from './ImagePreviewActions';
-import { MobileGenerationResources } from './MobileGenerationResources';
+import { MobileLabDock } from './MobileLabDock';
 import { ImageEditPanel, ImageEditRequest } from './ImageEditPanel';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { dataUrlToBlob, prepareImageEdit, type PreparedImageEdit } from '../services/imageEdit';
@@ -325,8 +324,9 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             const active = document.activeElement;
             const editingPrompt = active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement;
             // 软键盘弹起时 visualViewport 会被压缩（高度小于布局视口），
-            // 底部悬浮胶囊据此上移避让，而不是直接隐藏（隐藏后键盘收起时状态残留不可点）。
-            const lift = window.innerHeight - viewport.height;
+            // 底栏据此上移避让；每次从当前 visualViewport 读高度，避免闭包旧值。
+            const visualHeight = window.visualViewport?.height ?? window.innerHeight;
+            const lift = window.innerHeight - visualHeight;
             if (editingPrompt && lift > 120) {
                 setKeyboardOffset(lift);
             } else if (lift <= 120) {
@@ -2560,24 +2560,25 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 onGenerateBarChange={handleImageEditGenerateBarChange}
             /> : null}
 
-            {!lightboxImg && <>
-            <div className="mobile-generation-actions flex fixed right-4 z-[900] flex-col items-end gap-2 lg:hidden" style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + var(--mobile-generation-bottom))` } : undefined}>
-                {errorMsg && <div role="alert" className="max-h-[30dvh] w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-600 shadow-lg dark:border-red-900/60 dark:bg-red-950/80 dark:text-red-300">{errorMsg}</div>}
-                <div className="flex max-w-[calc(100vw-2rem)] items-center gap-2">
-                    {mobileFloatingPreviewImage && <button type="button" onClick={() => setLightboxImg(mobileFloatingPreviewImage)} className="appearance-media mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-800" aria-label={t("查看当前预览图")}><SmartImage src={mobileFloatingPreviewImage || ''} alt={t("当前预览图")} /></button>}
-                    <div className="flex min-w-0 items-stretch justify-end gap-2">
-                        <GenerationCountControl {...generationCountControl}
-                            generationProgress={generationProgress}
-                            onGenerate={activeEditOperation ? () => imageEditGenerateFnRef.current?.() : () => { void handleGenerate(); }}
-                            busy={isGenerating || externalGenerationBusy}
-                            costLabel={activeEditOperation ? imageEditGenerateBar?.costLabel : generationCostLabel}
-                            unavailableLabel={activeEditOperation && imageEditBaseLoading ? t("读取图片中…") : activeEditOperation ? imageEditGenerateBar?.unavailableLabel : generationUnavailableLabel}
-                            disabled={isGenerating || externalGenerationBusy || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canGenerate)} />
-                    </div>
-                </div>
-            </div>
-            <MobileGenerationResources apiKey={apiKey} budget={anlasBudget} subscription={novelaiStatus} runtime={naiRuntimeConfig} keyboardOffset={keyboardOffset} />
-            </>}
+            {!lightboxImg && <MobileLabDock
+                apiKey={apiKey}
+                budget={anlasBudget}
+                subscription={novelaiStatus}
+                runtime={naiRuntimeConfig}
+                keyboardOffset={keyboardOffset}
+                previewImage={mobileFloatingPreviewImage}
+                errorMsg={errorMsg}
+                onOpenLightbox={setLightboxImg}
+                generation={{
+                    ...generationCountControl,
+                    generationProgress,
+                    onGenerate: activeEditOperation ? () => imageEditGenerateFnRef.current?.() : () => { void handleGenerate(); },
+                    busy: isGenerating || externalGenerationBusy,
+                    costLabel: activeEditOperation ? imageEditGenerateBar?.costLabel : generationCostLabel,
+                    unavailableLabel: activeEditOperation && imageEditBaseLoading ? t("读取图片中…") : activeEditOperation ? imageEditGenerateBar?.unavailableLabel : generationUnavailableLabel,
+                    disabled: isGenerating || externalGenerationBusy || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canGenerate),
+                }}
+            />}
 
             {/* Lightbox Modal */}
             {lightboxImg && (

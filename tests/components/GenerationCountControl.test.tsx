@@ -369,6 +369,17 @@ it('画布未就绪主按钮不发送，菜单仍可查看；空闲恢复生成'
   fireEvent.click(screen.getByRole('button', { name: /生成.*3 张.*90 Anlas/ })); expect(generate).toHaveBeenCalledOnce();
 });
 
+it('底栏布局短主文案，费用作角标，不可用时不带空闲 0/0', () => {
+  const generate = vi.fn();
+  const view = render(<GenerationCountControl {...props} layout="dock" onGenerate={generate} costLabel="30 Anlas" />);
+  expect(screen.getByRole('button', { name: /^生成(?!选项)/ }).textContent).toMatch(/生成/);
+  expect(screen.getByRole('button', { name: /^生成(?!选项)/ }).textContent).toContain('30 Anlas');
+  expect(screen.queryByText('0/0')).toBeNull();
+  view.rerender(<GenerationCountControl {...props} layout="dock" onGenerate={generate} disabled unavailableLabel="读取图片中…" costLabel="30 Anlas" />);
+  expect(screen.getByRole('button', { name: '读取图片中…' }).getAttribute('aria-disabled')).toBe('true');
+  expect(screen.queryByText('0/0')).toBeNull();
+});
+
 it('菜单内的紧凑张数控件支持加减、直接输入和下限，调整不会触发生图', () => {
   const count = vi.fn(), generate = vi.fn();
   const view = render(<GenerationCountControl {...props} count={1} onCountChange={count} onGenerate={generate} />);

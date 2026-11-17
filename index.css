@@ -454,10 +454,16 @@ html[data-design-theme='nai-atelier'] ::selection {
   background: color-mix(in srgb, var(--nai-accent) 28%, transparent);
 }
 
-/* 手机给贴底资源入口留出触控空间；平板沿用原来的图片／生成浮动位置。 */
-.mobile-generation-actions {
-  --mobile-generation-bottom: max(1rem, env(safe-area-inset-bottom));
+/* 手机实验室底栏贴底；保留旧类名兼容测试与避让变量。 */
+.mobile-generation-actions,
+.mobile-lab-dock {
+  --mobile-generation-bottom: env(safe-area-inset-bottom);
   bottom: var(--mobile-generation-bottom);
+}
+
+.generation-action-button.generation-action-button--dock {
+  min-width: 0;
+  min-height: 2.75rem;
 }
 
 /* 主要生成按钮：静止时保持轻量，交互和生成中才提高强调度。 */
@@ -1286,10 +1292,10 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     background: var(--nai-accent, var(--color-indigo-500));
   }
 
-  /* 实验室隐藏了底部导航。资源行虽然占 44px，但文字靠底对齐、上方约 20px 是空白，
-     所以生成条只让到 safe + 32px，视觉上离「Anlas／额度」那行文字只留 8px。 */
-  .mobile-generation-actions {
-    --mobile-generation-bottom: calc(env(safe-area-inset-bottom) + 2rem);
+  /* 实验室底栏已含额度＋生成＋小图，贴 safe-area 即可。 */
+  .mobile-generation-actions,
+  .mobile-lab-dock {
+    --mobile-generation-bottom: env(safe-area-inset-bottom);
   }
 
   /* 助手面板同样停在底栏上沿，输入框整行都可点。 */

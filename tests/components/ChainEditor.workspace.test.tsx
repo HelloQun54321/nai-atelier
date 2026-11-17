@@ -244,6 +244,8 @@ const setup = (entry: PromptChain = chain, rememberGenerationSettings = true, ge
   return { ...render(<ChainEditor {...props} />), props };
 };
 const textPrompt = () => screen.getByRole('textbox', { name: '全局正面提示词' }) as HTMLTextAreaElement;
+/** 底栏短「生成」与「生成选项」都匹配 /^生成/；主按钮排除选项。 */
+const generatePrimaryName = /^(生成|加入队列|读取图片中…)(?!选项)/;
 
 it('统一整段编辑，旧场景与呈现形式完整显示，切页不改原资料', async () => {
   const base = '1.3::artist:test::, soft lighting, high quality';
@@ -991,7 +993,7 @@ it('普通文生图在订阅刷新未返回时立即提交，不等待后台请�
   state.subscription = { active: true, tier: 3 };
   state.delayedSubscription = Promise.withResolvers<NovelaiSubscriptionInfo | null>().promise;
   setup();
-  await act(async () => fireEvent.click(within(document.querySelector('.mobile-generation-actions') as HTMLElement).getByRole('button', { name: /^生成.*张/ })));
+  await act(async () => fireEvent.click(within(document.querySelector('.mobile-lab-dock') as HTMLElement).getByRole('button', { name: generatePrimaryName })));
   expect(state.confirm).not.toHaveBeenCalled();
   expect(state.startJob).toHaveBeenCalledOnce();
 });
@@ -1020,58 +1022,58 @@ it('保持打开的实验室继续接收运行时更新，按钮费用不冻结�
   expect(state.startJob).not.toHaveBeenCalled();
 });
 
-it('四模式共用手机资源入口，切 Key 时继续使用当前工作台状态，不触发生成', async () => {
+it('四模式共用手机底栏资源入口，切 Key 时继续使用当前工作台状态，不触发生成', async () => {
   vi.stubGlobal('innerWidth', 390);
   setup();
   for (const label of ['文生图', '图生图', '局部重绘', '扩图']) {
     if (label !== '文生图') await switchTo(label);
-    const resources = screen.getByRole('button', { name: /查看账户资源：未配置 Key/ });
-    // 小于 md 显示；md 及以上保留桌面侧栏，不能把响应式方向写反。
-    expect(resources.className).toContain('md:hidden');
-    expect(resources.className.split(' ')).not.toContain('hidden');
-    expect(resources.closest('.mobile-generation-actions')).toBeNull();
-    expect(resources.textContent).toBe('Anlas —/—生成额度 —');
+    const dock = document.querySelector('.mobile-lab-dock') as HTMLElement;
+    const resources = within(dock).getByRole('button', { name: /查看账户资源：未配置 Key/ });
+    expect(dock.className).toContain('lg:hidden');
+    expect(resources.closest('.mobile-lab-dock')).toBe(dock);
     act(() => { sessionStorage.setItem('nai_api_key', 'mobile-workspace-fixture'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: 'mobile-workspace-fixture' })); });
-    expect(screen.getByRole('button', { name: /查看账户资源：预算 1666 · 余额 未知 · 额度未知/ })).toBeTruthy();
+    expect(within(dock).getByRole('button', { name: /查看账户资源：预算 1666 · 余额 未知 · 额度未知/ })).toBeTruthy();
     act(() => { sessionStorage.removeItem('nai_api_key'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: '' })); });
   }
   expect(state.startJob).not.toHaveBeenCalled();
 });
 
-it('贴底资源不占图片／生成操作行，图片入口继续打开大图且关闭后恢复资源', async () => {
+it('底栏小图展开预览后可进大图，关闭大图后底栏仍在', async () => {
   vi.stubGlobal('innerWidth', 390);
   const { container } = setup({ ...chain, previewImage: '/synthetic/preview.png' });
-  const preview = await screen.findByRole('button', { name: '查看当前预览图' });
-  const actions = container.querySelector<HTMLElement>('.mobile-generation-actions')!;
-  expect(actions.contains(preview)).toBe(true);
-  const generate = within(actions).getByRole('button', { name: /^生成.*张/ });
-  expect(generate.closest('.mobile-generation-actions')).toBe(actions);
-  expect(actions.contains(screen.getByRole('button', { name: /^查看账户资源/ }))).toBe(false);
-  fireEvent.click(preview);
+  const dock = container.querySelector<HTMLElement>('.mobile-lab-dock')!;
+  const thumb = within(dock).getByRole('button', { name: '展开预览' });
+  fireEvent.click(thumb);
+  const expanded = await screen.findByRole('button', { name: '查看当前预览图' });
+  expect(dock.contains(expanded)).toBe(true);
+  const generate = within(dock).getByRole('button', { name: generatePrimaryName });
+  expect(generate.closest('.mobile-lab-dock')).toBe(dock);
+  expect(within(dock).getByRole('button', { name: /^查看账户资源/ })).toBeTruthy();
+  fireEvent.click(expanded);
   const lightbox = await screen.findByRole('dialog', { name: '图片预览' });
-  const imageStage=within(lightbox).getByLabelText('图片平移与缩放');
+  const imageStage = within(lightbox).getByLabelText('图片平移与缩放');
   longPress(within(lightbox).getByRole('img')); expect(imageStage.getAttribute('data-press-revealed')).toBe('true');
-  expect(screen.getByRole('dialog', { name: '图片预览' })).toBe(lightbox);
   expect(screen.queryByRole('button', { name: /^查看账户资源/ })).toBeNull();
   fireEvent.click(imageStage);
   expect(await screen.findByRole('button', { name: /^查看账户资源/ })).toBeTruthy();
   expect(state.startJob).not.toHaveBeenCalled();
 });
 
-it('提示词软键盘避让同时移动贴底资源与生成操作，收起后恢复各自锚点', () => {
-  let resize!: () => void;
-  const viewport = { height: 600, addEventListener: vi.fn((_event: string, handler: () => void) => { resize = handler; }), removeEventListener: vi.fn() };
+it('提示词软键盘避让抬高整条实验室底栏，收起后贴回 safe-area', () => {
+  // 与 TagAutocomplete 同源：真实 EventTarget，避免多 listener 只保留最后一个。
+  const viewport = Object.assign(new EventTarget(), { height: 600, offsetTop: 0 }) as EventTarget & { height: number; offsetTop: number };
   vi.stubGlobal('visualViewport', viewport);
-  vi.stubGlobal('innerHeight', 800);
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
   const { container } = setup();
   act(() => { textPrompt().focus(); });
-  const resources = screen.getByRole('button', { name: /^查看账户资源/ });
-  const actions = container.querySelector<HTMLElement>('.mobile-generation-actions')!;
-  expect(resources.style.bottom).toBe('calc(200px + env(safe-area-inset-bottom))');
-  expect(actions.style.bottom).toBe('calc(200px + var(--mobile-generation-bottom))');
-  act(() => { viewport.height = 800; resize(); });
-  expect(resources.style.bottom).toBe('');
-  expect(actions.style.bottom).toBe('');
+  const dock = () => container.querySelector<HTMLElement>('.mobile-lab-dock')!;
+  expect(within(dock()).getByRole('button', { name: /^查看账户资源/ })).toBeTruthy();
+  expect(dock().style.getPropertyValue('--mobile-generation-bottom')).toBe('calc(200px + env(safe-area-inset-bottom))');
+  act(() => {
+    viewport.height = 800;
+    viewport.dispatchEvent(new Event('resize'));
+  });
+  expect(dock().style.getPropertyValue('--mobile-generation-bottom')).toBe('');
 });
 
 describe('蓝色导入明确指定文生图', () => {
@@ -1805,7 +1807,8 @@ describe('统一工作台真实状态链路', () => {
     setup();
     await switchTo('扩图');
     expect(screen.getByLabelText('编辑底图读取状态').textContent).toBe('true');
-    expect(screen.getByRole('button', { name: '读取图片中…' }).getAttribute('aria-disabled')).toBe('true');
+    expect(within(document.querySelector('.mobile-lab-dock') as HTMLElement).getByRole('button', { name: generatePrimaryName }).getAttribute('aria-disabled')).toBe('true');
+    expect(within(document.querySelector('.mobile-lab-dock') as HTMLElement).getByRole('button', { name: /读取图片中/ }).textContent).toContain('读取图片中');
     await switchTo('局部重绘');
     await act(async () => { lateBase.resolve(new Blob(['late base'], { type: 'image/png' })); });
     expect(screen.getByRole('region', { name: 'inpaint' })).toBeTruthy();
@@ -2137,7 +2140,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     if (!screen.queryByLabelText('生成张数')) fireEvent.keyDown(within(screen.getByRole('region', { name: regionName })).getByRole('button', { name: /^(生成|加入队列).*张/ }), { key: 'ArrowDown', altKey: true });
     return screen.getByLabelText('生成张数');
   };
-  const mobileActions = () => within(document.querySelector('.mobile-generation-actions') as HTMLElement);
+  const mobileActions = () => within(document.querySelector('.mobile-lab-dock') as HTMLElement);
 
   it('预处理底图失败时不确认费用也不提交后台任务', async () => {
     prepare();
@@ -2237,7 +2240,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     }, { timeout: 3000 });
     await waitFor(() => expect(getGenerationSeriesSession(chain.id)).toBeNull(), { timeout: 4000 });
     expect(desktop.getByRole('button', { name: /^生成.*1 张/ })).toBe(desktopButton);
-    expect(mobileActions().getByRole('button', { name: /^生成.*1 张/ })).toBe(mobileButton);
+    expect(mobileActions().getByRole('button', { name: generatePrimaryName })).toBe(mobileButton);
   }, 10000);
 
   it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('关闭连续生成后 %s 不继承旧张数，费用和实际请求均为单张，重新开启从 1 开始', async (operation, label) => {
@@ -2356,7 +2359,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     await waitFor(() => expect(getGenerationQueue).toHaveBeenCalledWith('next-key'));
     await act(async () => { pendingPause.resolve({ ...old, paused: true }); });
     expect(mobileActions().queryByRole('button', { name: '继续生成' })).toBeNull();
-    expect(mobileActions().getByRole('button', { name: '暂停生成' }).textContent).toBe('0/0');
+    expect(mobileActions().getByRole('button', { name: '暂停生成' })).toBeTruthy();
   });
 
   it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('%s 只 POST 一次后台任务，描述符保留提示词、模块、来源与编辑元数据', async (operation, label) => {
@@ -2701,7 +2704,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     setupSeries();
     await waitFor(() => expect(getGenerationQueue).toHaveBeenCalledWith('synthetic-key'));
     await waitFor(() => expect(screen.getByLabelText('生成不可用原因').textContent).toBe(''));
-    const generate = mobileActions().getByRole('button', { name: /^生成.*1 张/ });
+    const generate = mobileActions().getByRole('button', { name: generatePrimaryName });
     fireEvent.click(generate);
     await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
     expect(state.started[0].placement).toBeUndefined();
