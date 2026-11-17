@@ -308,12 +308,28 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
             </button>
           </div>
         </div>
-        {characterTools && (
+        {characterTools && (characters.length > 0 ? (
           <div role="group" aria-label={t('角色构图')} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 dark:text-gray-400">
-            {characters.length > 0 && <button type="button" disabled={!characters.length} aria-expanded={positionOpen} onClick={() => setPositionOpen(open => !open)} className={`mobile-touch inline-flex items-center gap-1 rounded-md px-1.5 py-1 transition ${positionOpen ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200'}`}><MapPin className="h-3.5 w-3.5" aria-hidden="true" />{t('角色定位')}</button>}
+            <button type="button" aria-expanded={positionOpen} onClick={() => setPositionOpen(open => !open)} className={`mobile-touch inline-flex items-center gap-1 rounded-md px-1.5 py-1 transition ${positionOpen ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200'}`}><MapPin className="h-3.5 w-3.5" aria-hidden="true" />{t('角色定位')}</button>
+            <label className="mobile-touch inline-flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200">
+              <input
+                type="checkbox"
+                disabled={disabled}
+                checked={characterTools.params.useCoords !== true}
+                onChange={event => {
+                  characterTools.setParams({ ...characterTools.params, useCoords: !event.target.checked });
+                  characterTools.onSettingsChange?.();
+                }}
+                className="h-3.5 w-3.5 rounded text-indigo-600 focus:ring-0"
+              />
+              <span className="font-medium">{t('AI 自动构图')}</span>
+            </label>
+          </div>
+        ) : (
+          <div role="group" aria-label={t('角色构图')} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 dark:text-gray-400">
             <button type="button" className="mobile-touch inline-flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200" onClick={() => openReference(-1)}><UserRound className="h-3.5 w-3.5" aria-hidden="true" />{t('从角色库引用')}</button>
           </div>
-        )}
+        ))}
       </div>
       {characters.length > 0 && <div className="flex flex-wrap items-center gap-1.5">
         {characters.map((character, index) => <button key={character.id} type="button" aria-pressed={index === shownCharacterIndex} onClick={() => setActiveCharacterId(character.id)} className={`appearance-group mobile-touch flex max-w-full items-center gap-1 rounded border px-2 py-1 text-xs ${index === shownCharacterIndex ? 'border-indigo-300 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}><span className="max-w-40 truncate">{characterLabel(character, index)}</span>{character.enabled === false && <span className="text-gray-400">{t('· 已停用')}</span>}</button>)}
@@ -346,9 +362,9 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
               <span className="hidden" aria-hidden="true" data-character-random={character.id}>
                 <PromptLibraryRandomButton roleId={character.id} purposes={randomPurposes} variant="icon" disabled={disabled} />
               </span>
-              {characterTools?.onSaveCharacter && <button type="button" aria-label={t('保存到角色库')} title={t('保存到角色库')} disabled={!character.prompt.trim() && !hasCharacterSections(character)} onClick={() => setLibraryAction({ kind: 'save', character })} className="mobile-touch inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-25 dark:hover:bg-emerald-950/30"><Save className="h-4 w-4" />{t('保存到角色库')}</button>}
               <RegionMenu label={t('角色 {0} 的更多操作', [index + 1])} onOpen={() => setFocusedId('')}>
                 {characterTools && <button type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs" onClick={() => openReference(index)}>{t('从角色库引用')}</button>}
+                {characterTools?.onSaveCharacter && <button type="button" className="mobile-touch flex h-9 w-full items-center gap-1 rounded-lg px-2 text-left text-xs disabled:opacity-40" disabled={!character.prompt.trim() && !hasCharacterSections(character)} onClick={() => setLibraryAction({ kind: 'save', character })}><Save className="h-3.5 w-3.5" />{t('保存到角色库')}</button>}
                 <button type="button" className="mobile-touch flex h-9 w-full items-center gap-1 rounded-lg px-2 text-left text-xs disabled:opacity-40" disabled={disabled || index === 0} onClick={() => reorder(-1)}><ArrowUp className="h-3.5 w-3.5" />{t('上移')}</button>
                 <button type="button" className="mobile-touch flex h-9 w-full items-center gap-1 rounded-lg px-2 text-left text-xs disabled:opacity-40" disabled={disabled || index === characters.length - 1} onClick={() => reorder(1)}><ArrowDown className="h-3.5 w-3.5" />{t('下移')}</button>
                 {board.available.map(item => <button key={item.id} type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs" onClick={() => onLayout(addCharacterFacet(stored, item.id, promptPurposeLabel(item.id as PromptPurposeId)))}>{t('添加{0}', [t(item.label)])}</button>)}

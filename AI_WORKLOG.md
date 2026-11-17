@@ -1,3 +1,6 @@
+## 2026-11-18
+- **Composer**：自检后补齐分类角色工具与整段对齐（fix: align category character tools with whole prompt）：保存进更多、补自动构图、有角色后页头不再常驻引用。
+
 ## 2026-11-17
 - **Composer**：按计划收拢实验室角色工具（fix: tidy lab character tool chrome）：页头删／加成对，更多菜单收纳低频操作，随机并进角色库引用，坐标并进定位舞台，字段动作归回标签行；分类编辑同步。
 - **Composer**：按用户反馈把整段编辑「添加角色」收到与定位／自动构图同一工具行（fix: keep lab add-character on tools row），去掉独占空行。
