@@ -256,8 +256,9 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
   const [nameDraft, setNameDraft] = useState('');
   const [libraryAction, setLibraryAction] = useState<{ kind: 'save'; character: CharacterParams } | { kind: 'reference'; index: number } | null>(null);
   const openReference = (index: number) => setLibraryAction({ kind: 'reference', index });
-  /** 角色一次只显示一个，卡片上方用切换按钮切换；删掉后自动回到第一个。 */
-  const shownCharacterIndex = Math.max(0, characters.findIndex(item => item.id === activeCharacterId));
+  /** 角色一次只显示一个，卡片上方用切换按钮切换；空选／删掉后回到仍存在的槽。 */
+  const resolvedCharacterId = characters.some(item => item.id === activeCharacterId) ? activeCharacterId : characters[0]?.id || '';
+  const shownCharacterIndex = characters.length ? Math.max(0, characters.findIndex(item => item.id === resolvedCharacterId)) : -1;
   const characterLabel = (item: CharacterParams, index: number) => item.name || t('角色 {0}', [index + 1]);
   const commitName = (index: number) => {
     onUpdateCharacter(index, { name: nameDraft.trim() || undefined });
@@ -266,8 +267,9 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
   const characterCount = useRef(characters.length);
   useEffect(() => {
     if (characters.length > characterCount.current) setActiveCharacterId(characters[characters.length - 1].id);
+    else if (characters.length && !characters.some(item => item.id === activeCharacterId)) setActiveCharacterId(characters[0].id);
     characterCount.current = characters.length;
-  }, [characters]);
+  }, [characters, activeCharacterId]);
   // 「参考」「参数」两页由下面的独立模块渲染，这里没有内容；此前仍渲染带 128px 底部留白的空容器，
   // 把卡片推到了分区条下方 168px，和另外三页的 16px 对不上。
   if (tab === 'reference' || tab === 'params') return null;

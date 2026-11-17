@@ -106,12 +106,23 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
         return actionSlots.current.get(key)!;
     };
     const [positionOpen, setPositionOpen] = useState(false);
+    const [activeCharacterId, setActiveCharacterId] = useState('');
     const [activeAction, setActiveAction] = useState<{ kind: 'save'; character: CharacterParams } | { kind: 'reference'; index: number } | null>(null);
     const [characterName, setCharacterName] = useState('');
     const [editingNameId, setEditingNameId] = useState('');
     const [nameDraft, setNameDraft] = useState('');
     const [referenceQuery, setReferenceQuery] = useState('');
     const [savingCharacter, setSavingCharacter] = useState(false);
+    // 与分类编辑一致：页头横排切换，一次只编辑当前角色；空选／删后落到仍存在的槽，避免排序后漂到别的角色。
+    const resolvedCharacterId = characters.some(item => item.id === activeCharacterId) ? activeCharacterId : characters[0]?.id || '';
+    const shownCharacterIndex = characters.length ? Math.max(0, characters.findIndex(item => item.id === resolvedCharacterId)) : -1;
+    const characterLabel = (item: CharacterParams, index: number) => item.name || t('角色 {0}', [index + 1]);
+    const characterCount = useRef(characters.length);
+    useEffect(() => {
+        if (characters.length > characterCount.current) setActiveCharacterId(characters[characters.length - 1].id);
+        else if (characters.length && !characters.some(item => item.id === activeCharacterId)) setActiveCharacterId(characters[0].id);
+        characterCount.current = characters.length;
+    }, [characters, activeCharacterId]);
     const actionDialogRef = useModalA11y<HTMLDivElement>(Boolean(activeAction));
     useEffect(() => {
         if (!activeAction) return;
@@ -195,6 +206,10 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                 )}
             </div>
 
+            {characters.length > 0 && <div role="group" aria-label={t('角色切换')} className="mb-3 flex flex-wrap items-center gap-1.5">
+                {characters.map((character, index) => <button key={character.id} type="button" aria-pressed={index === shownCharacterIndex} onClick={() => setActiveCharacterId(character.id)} className={`appearance-group mobile-touch flex max-w-full items-center gap-1 rounded border px-2 py-1 text-xs ${index === shownCharacterIndex ? 'border-indigo-300 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}><span className="max-w-40 truncate">{characterLabel(character, index)}</span>{character.enabled === false && <span className="text-gray-400">{t('· 已停用')}</span>}</button>)}
+            </div>}
+
             {positionOpen && <CharacterPositionStage key={scopeKey} characters={characters} freeform={freeformPosition}
                 width={positionSize?.width || params.width} height={positionSize?.height || params.height} image={positionImage}
                 canEdit={canEdit} useCoords={params.useCoords === true} onPosition={(index, position) => {
@@ -202,11 +217,12 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                     updateCharacter(index, position, true);
                     markPresetSectionModified('settings');
                 }} />}
-            <div className="space-y-3 divide-y divide-gray-200 dark:divide-gray-700">
+            <div className="min-w-0">
                 {(characters || []).length === 0 && (
                     <div className="py-6 text-center text-xs text-gray-400">{t('暂无角色，点击上方添加')}</div>
                 )}
                 {(characters || []).map((char, idx) => {
+                    if (idx !== shownCharacterIndex) return null;
                     const positiveSlotRef = actionSlot(`${scopeKey}:${char.id}:positive`);
                     const negativeSlotRef = actionSlot(`${scopeKey}:${char.id}:negative`);
                     const taggerSlotRef = actionSlot(`${scopeKey}:${char.id}:tagger`);
@@ -228,14 +244,14 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                         />
                     </div>;
                     return (
-                    <div key={`${scopeKey}:${char.id}`} className="lab-character relative min-w-0 py-3">
+                    <div key={`${scopeKey}:${char.id}`} className="lab-character relative min-w-0">
                         <div className="character-card-header mb-2 flex flex-wrap items-center justify-between gap-2">
                             <div className="flex min-w-0 items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
                                 <input type="checkbox" aria-label={t('启用角色 {0}', [idx + 1])} checked={char.enabled !== false} disabled={!canEdit}
                                     onChange={event => updateCharacter(idx, { enabled: event.target.checked })} className="h-3.5 w-3.5 rounded" />
                                 {editingNameId === char.id
                                     ? <input autoFocus aria-label={t('角色名称')} value={nameDraft} onChange={event => setNameDraft(event.target.value)} onBlur={() => { updateCharacter(idx, { name: nameDraft.trim() || undefined }); setEditingNameId(''); }} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); updateCharacter(idx, { name: nameDraft.trim() || undefined }); setEditingNameId(''); } else if (event.key === 'Escape') setEditingNameId(''); }} className="h-6 w-28 rounded border border-gray-300 bg-white px-1.5 text-xs dark:border-gray-600 dark:bg-gray-800" />
-                                    : <button type="button" disabled={!canEdit} title={t('修改角色名称')} onClick={() => { setEditingNameId(char.id); setNameDraft(char.name || ''); }} className="min-w-0 max-w-40 truncate rounded px-1 py-0.5 text-left hover:bg-gray-100 disabled:opacity-100 dark:hover:bg-gray-800">{char.name ? char.name : <>{t('角色 ')}{idx + 1}</>}</button>}
+                                    : <button type="button" disabled={!canEdit} title={t('修改角色名称')} onClick={() => { setEditingNameId(char.id); setNameDraft(char.name || ''); }} className="min-w-0 max-w-40 truncate rounded px-1 py-0.5 text-left hover:bg-gray-100 disabled:opacity-100 dark:hover:bg-gray-800">{characterLabel(char, idx)}</button>}
                                 {char.enabled === false && <span className="text-gray-400">{t("· 已停用")}</span>}
                             </div>
                             <div className="character-tools ml-auto flex flex-wrap items-center justify-end gap-1">

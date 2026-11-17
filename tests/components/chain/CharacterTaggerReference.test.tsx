@@ -40,12 +40,18 @@ const Harness = ({ scope = 'text-to-image' }: { scope?: string }) => {
 };
 const rows = () => JSON.parse(screen.getByTestId('characters').textContent!) as CharacterParams[];
 const deferred = () => { let resolve!: (value: ImageTaggerResult) => void; const promise = new Promise<ImageTaggerResult>(done => { resolve = done; }); return { promise, resolve }; };
+const selectCharacter = (name: string | RegExp) => {
+  const button = screen.getAllByRole('button', { name }).find(node => node.hasAttribute('aria-pressed'));
+  if (!button) throw new Error(`missing character switch ${String(name)}`);
+  fireEvent.click(button);
+};
 
 describe('角色就地粘贴反推', () => {
   it('反推期间调整角色顺序，参考图和迟到结果仍跟随原角色 ID', async () => {
     const job = deferred(); vi.mocked(imageTaggerService.tagFile).mockReturnValueOnce(job.promise);
     render(<Harness />);
-    fireEvent.click(screen.getAllByRole('button', { name: '粘贴反推' })[1]);
+    selectCharacter(/角色 2/);
+    fireEvent.click(screen.getByRole('button', { name: '粘贴反推' }));
     await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalled());
     fireEvent.click(screen.getByRole('button', { name: '上移角色 2' }));
     expect(rows().map(character => character.id)).toEqual(['b', 'a']);
@@ -53,12 +59,13 @@ describe('角色就地粘贴反推', () => {
     expect(rows()).toEqual([{ ...initial[1], prompt: 'red hair, looking at viewer, sitting' }, initial[0]]);
     expect(screen.getByAltText('反推参考图')).toBeTruthy();
     expect(screen.getByAltText('反推参考图').closest('.character-tools')).toBeNull();
-    expect(screen.getAllByRole('button', { name: '粘贴反推' })[0].closest('.character-tools')).not.toBeNull();
+    expect(screen.getByRole('button', { name: '粘贴反推' }).closest('.character-tools')).not.toBeNull();
     expect(URL.revokeObjectURL).not.toHaveBeenCalled();
   });
   it('一次点击直接追加到对应角色，保留其他角色、负面词和坐标，沿用模型默认阈值', async () => {
     render(<Harness />);
-    fireEvent.click(screen.getAllByRole('button', { name: '粘贴反推' })[1]);
+    selectCharacter(/角色 2/);
+    fireEvent.click(screen.getByRole('button', { name: '粘贴反推' }));
     await waitFor(() => expect(rows()[1].prompt).toBe('red hair, looking at viewer, sitting'));
     expect(read).toHaveBeenCalledTimes(1);
     expect(imageTaggerService.tagFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'image/png' }));
@@ -68,15 +75,18 @@ describe('角色就地粘贴反推', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('识别期间编辑词并删除前一个角色，结果使用最新内容和角色位置', async () => {
+  it('识别期间切走当前角色会丢弃迟到反推，手改提示词仍保留', async () => {
     const job = deferred(); vi.mocked(imageTaggerService.tagFile).mockReturnValueOnce(job.promise);
     render(<Harness />);
-    fireEvent.click(screen.getAllByRole('button', { name: '粘贴反推' })[1]);
+    selectCharacter(/角色 2/);
+    fireEvent.click(screen.getByRole('button', { name: '粘贴反推' }));
     await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalled());
-    fireEvent.change(screen.getAllByPlaceholderText('角色提示词')[1], { target: { value: 'new clothes' } });
-    fireEvent.click(screen.getAllByRole('button', { name: '移除角色提示词' })[0]);
+    fireEvent.change(screen.getByPlaceholderText('角色提示词'), { target: { value: 'new clothes' } });
+    selectCharacter(/角色 1/);
+    fireEvent.click(screen.getByRole('button', { name: '移除角色提示词' }));
     await act(async () => job.resolve(result));
-    expect(rows()).toEqual([{ ...initial[1], prompt: 'new clothes, looking at viewer, sitting' }]);
+    // 横排切换会卸载非当前角色卡，进行中的反推随卸载作废；手改正文保留。
+    expect(rows()).toEqual([{ ...initial[1], prompt: 'new clothes' }]);
   });
 
   it('目标角色删除后丢弃迟到结果，不会追加到补位角色', async () => {
