@@ -31,6 +31,16 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mark.mockClear(); });
 
 describe('共用角色编辑器', () => {
+  it('无角色时只留添加主操作，有角色后才出现次要构图组', () => {
+    const empty = render(<Harness initialParams={{ ...initial, characters: [] }} />);
+    expect(screen.getByRole('button', { name: '添加角色' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: '角色构图' })).toBeNull();
+    expect(screen.getByText('暂无角色，点击上方添加')).toBeTruthy();
+    empty.unmount();
+    render(<Harness />);
+    expect(screen.getByRole('group', { name: '角色构图' })).toBeTruthy();
+  });
+
   it('只有完整角色正负大块，旧用途与目录原文编译显示但打开不改写数据', () => {
     const role = { ...initial.characters![0], prompt: '1.3::blue hair::',
       sections: { wardrobe: 'blue dress', 'purpose:lighting': 'rim light', 'directory:old': 'tree' },
@@ -39,7 +49,10 @@ describe('共用角色编辑器', () => {
     const params = { ...initial, characters: [role, initial.characters![1]] };
     render(<Harness initialParams={params} />);
     expect(screen.getByText('角色专属提示词')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '+ 添加角色' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '添加角色' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('button', { name: '角色定位' }))).toBe(true);
+    expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('checkbox', { name: 'AI 自动构图' }))).toBe(true);
+    expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('button', { name: '添加角色' }))).toBe(false);
     const positive = screen.getAllByPlaceholderText('角色提示词')[0];
     const negative = screen.getAllByPlaceholderText('选填')[0];
     expect(positive).toHaveProperty('value', 'blue dress, rim light, tree, 1.3::blue hair::');

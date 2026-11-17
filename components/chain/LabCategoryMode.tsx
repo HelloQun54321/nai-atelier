@@ -284,13 +284,17 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
       </div>
     </article>}
     {tab === 'character' && <section aria-label={t('角色')} className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xs font-bold text-gray-700 dark:text-gray-300">{t('角色')}</h2>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {characterTools && characters.length > 0 && <button type="button" disabled={!characters.length} aria-expanded={positionOpen} onClick={() => setPositionOpen(open => !open)} className="appearance-group mobile-touch flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"><MapPin className="h-3.5 w-3.5" />{t('角色定位')}</button>}
-          {characterTools && <button type="button" className="appearance-group mobile-touch flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700" onClick={() => openReference(-1)}><UserRound className="h-3.5 w-3.5" />{t('从角色库引用')}</button>}
-          <button type="button" className="mobile-touch flex items-center gap-1 rounded border border-indigo-300 bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50" onClick={onAddCharacter}>{t('添加角色')}</button>
+      <div className="flex min-w-0 flex-col gap-2">
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <h2 className="text-xs font-bold text-gray-700 dark:text-gray-300">{t('角色')}</h2>
+          <button type="button" className="mobile-touch inline-flex shrink-0 items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50" onClick={onAddCharacter}>{t('添加角色')}</button>
         </div>
+        {characterTools && (
+          <div role="group" aria-label={t('角色构图')} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 dark:text-gray-400">
+            {characters.length > 0 && <button type="button" disabled={!characters.length} aria-expanded={positionOpen} onClick={() => setPositionOpen(open => !open)} className={`mobile-touch inline-flex items-center gap-1 rounded-md px-1.5 py-1 transition ${positionOpen ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200'}`}><MapPin className="h-3.5 w-3.5" aria-hidden="true" />{t('角色定位')}</button>}
+            <button type="button" className="mobile-touch inline-flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200" onClick={() => openReference(-1)}><UserRound className="h-3.5 w-3.5" aria-hidden="true" />{t('从角色库引用')}</button>
+          </div>
+        )}
       </div>
       {characters.length > 0 && <div className="flex flex-wrap items-center gap-1.5">
         {characters.map((character, index) => <button key={character.id} type="button" aria-pressed={index === shownCharacterIndex} onClick={() => setActiveCharacterId(character.id)} className={`appearance-group mobile-touch flex max-w-full items-center gap-1 rounded border px-2 py-1 text-xs ${index === shownCharacterIndex ? 'border-indigo-300 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}><span className="max-w-40 truncate">{characterLabel(character, index)}</span>{character.enabled === false && <span className="text-gray-400">{t('· 已停用')}</span>}</button>)}

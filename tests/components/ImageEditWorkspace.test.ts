@@ -387,7 +387,7 @@ describe('ImageEditControls', () => {
     expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ characters: [{ ...character, negativePrompt: 'black hair' }] }) });
     fireEvent.click(screen.getByRole('checkbox', { name: 'AI 自动构图' }));
     expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ useCoords: false, characters: [character] }) });
-    fireEvent.click(screen.getByRole('button', { name: '+ 添加角色' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加角色' }));
     expect(onDraftChange.mock.calls.at(-1)?.[0].params.characters).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: '移除角色提示词' }));
     expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ characters: [] }) });
@@ -402,7 +402,7 @@ describe('ImageEditControls', () => {
   it('编辑模式遵守当前模型的角色数量限制', () => {
     const characters = Array.from({ length: 6 }, (_, index) => ({ id: String(index), prompt: 'girl', x: 0.5, y: 0.5 }));
     const { onDraftChange, notify } = renderControls('inpaint', false, false, false, { model: 'nai-diffusion-4-5-full', characters });
-    fireEvent.click(screen.getByRole('button', { name: '+ 添加角色' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加角色' }));
     expect(onDraftChange).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith('当前模型最多支持 6 个角色提示词', 'error');
   });

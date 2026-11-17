@@ -1,7 +1,7 @@
 import { type PromptPurposeId } from '../../services/promptPurposes.mjs';
 import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, MapPin, Save, Trash2, UserRound } from 'lucide-react';
+import { ArrowDown, ArrowUp, MapPin, Plus, Save, Trash2, UserRound } from 'lucide-react';
 import { CharacterParams, NAIParams, PromptChain } from '../../types';
 import { LabPageLayout } from '../../services/appearancePreferences';
 import { LabModuleSection } from '../LabModuleSection';
@@ -158,36 +158,42 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
         className={mobileEditorTab === 'character' ? 'block' : 'hidden'}
     >
         <section className={mobileEditorTab === 'character' ? 'block' : 'hidden'}>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <PresetSourceBadges sources={characterPresetSources} />
-                </div>
-                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-                    <button type="button" disabled={!characters.length} aria-expanded={positionOpen} title={coordinateHint} onClick={() => setPositionOpen(!positionOpen)}
-                        className="appearance-group flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
-                        <MapPin className="h-3.5 w-3.5" />{t('角色定位')}</button>
-                    <label className="appearance-group flex items-center gap-1.5 cursor-pointer bg-white dark:bg-gray-700 px-2 py-1 rounded shadow-sm hover:bg-gray-100 dark:hover:bg-gray-600 border border-transparent dark:border-gray-600">
-                        <input
-                            type="checkbox"
-                            disabled={!canEdit}
-                            checked={params.useCoords !== true}
-                            onChange={(e) => {
-                                setParams({ ...params, useCoords: !e.target.checked });
-                                markPresetSectionModified('settings');
-                                markChange();
-                            }}
-                            className="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-0"
-                        />
-                        <span className="text-xs font-medium text-gray-700 dark:text-gray-200">{t("AI 自动构图")}</span>
-                    </label>
-
+            {/* 列表做主：添加是主操作；定位／自动构图是有角色后的次要构图工具，不再与添加挤成右侧同级碎胶囊。 */}
+            <div className="mb-3 flex min-w-0 flex-col gap-2.5">
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                        <PresetSourceBadges sources={characterPresetSources} />
+                    </div>
                     {canEdit && (
-                        <button onClick={addCharacter} className="appearance-group text-xs flex items-center bg-white dark:bg-gray-700 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-200">
-                            {t('+ 添加角色')}</button>
+                        <button type="button" onClick={addCharacter}
+                            className="mobile-touch inline-flex shrink-0 items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50">
+                            <Plus className="h-3.5 w-3.5" aria-hidden="true" />{t('添加角色')}
+                        </button>
                     )}
                 </div>
+                {characters.length > 0 && (
+                    <div role="group" aria-label={t('角色构图')} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 dark:text-gray-400">
+                        <button type="button" disabled={!characters.length} aria-expanded={positionOpen} title={coordinateHint} onClick={() => setPositionOpen(!positionOpen)}
+                            className={`mobile-touch inline-flex items-center gap-1 rounded-md px-1.5 py-1 transition ${positionOpen ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200'}`}>
+                            <MapPin className="h-3.5 w-3.5" aria-hidden="true" />{t('角色定位')}
+                        </button>
+                        <label className="mobile-touch inline-flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-black/[0.04] hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200">
+                            <input
+                                type="checkbox"
+                                disabled={!canEdit}
+                                checked={params.useCoords !== true}
+                                onChange={(e) => {
+                                    setParams({ ...params, useCoords: !e.target.checked });
+                                    markPresetSectionModified('settings');
+                                    markChange();
+                                }}
+                                className="h-3.5 w-3.5 rounded text-indigo-600 focus:ring-0"
+                            />
+                            <span className="font-medium">{t('AI 自动构图')}</span>
+                        </label>
+                    </div>
+                )}
             </div>
-
 
             {positionOpen && <CharacterPositionStage key={scopeKey} characters={characters} freeform={freeformPosition}
                 width={positionSize?.width || params.width} height={positionSize?.height || params.height} image={positionImage}
@@ -198,7 +204,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                 }} />}
             <div className="space-y-3 divide-y divide-gray-200 dark:divide-gray-700">
                 {(characters || []).length === 0 && (
-                    <div className="text-xs text-gray-400 text-center py-2">{t('暂无角色，点击上方添加')}</div>
+                    <div className="py-6 text-center text-xs text-gray-400">{t('暂无角色，点击上方添加')}</div>
                 )}
                 {(characters || []).map((char, idx) => {
                     const positiveSlotRef = actionSlot(`${scopeKey}:${char.id}:positive`);
