@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **Composer**：理顺角色工具四钮关系（fix: equalize character tool chip family）：左右分组、共用 h-11 芯片与图标，只留语义色差。
 - **Composer**：角色工具行改短标签同款芯片（fix: unify character tool chips）：定位／构图／删除／添加单行，构图为按下态；整段与分类同步。
 - **Composer**：角色构图开关文案去掉「AI」（fix: shorten auto-composition label）：整段／分类／参数查看同步为「自动构图」。
 - **Composer**：去掉提示词高度把手（fix: remove prompt height handles）：原文／翻译区不再显示 ↕，保留自动增高与电脑原生拖角。

@@ -67,11 +67,15 @@ describe('共用角色编辑器', () => {
     expect(screen.getByRole('button', { name: '添加角色' })).toBeTruthy();
     expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('button', { name: '角色定位' }))).toBe(true);
     expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('button', { name: '自动构图' }))).toBe(true);
-    // 添加与构图工具同一行，但不进「角色构图」组；父级同一容器，避免添加独占空行。
+    // 左「角色构图」、右「角色槽位」同款芯片分行语义；添加不进构图组。
     expect(screen.getByRole('group', { name: '角色构图' }).contains(screen.getByRole('button', { name: '添加角色' }))).toBe(false);
-    expect(screen.getByRole('group', { name: '角色构图' }).parentElement?.contains(screen.getByRole('button', { name: '添加角色' }))).toBe(true);
+    expect(screen.getByRole('group', { name: '角色槽位' }).contains(screen.getByRole('button', { name: '删除角色' }))).toBe(true);
+    expect(screen.getByRole('group', { name: '角色槽位' }).contains(screen.getByRole('button', { name: '添加角色' }))).toBe(true);
     expect(screen.getByRole('button', { name: '删除角色' }).compareDocumentPosition(screen.getByRole('button', { name: '添加角色' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole('group', { name: '角色切换' })).toBeTruthy();
+    for (const name of ['角色定位', '自动构图', '删除角色', '添加角色']) {
+      expect(screen.getByRole('button', { name }).className).toContain('h-11');
+    }
     const positive = screen.getByPlaceholderText('角色提示词');
     const negative = screen.getByPlaceholderText('选填');
     expect(positive).toHaveProperty('value', 'blue dress, rim light, tree, 1.3::blue hair::');

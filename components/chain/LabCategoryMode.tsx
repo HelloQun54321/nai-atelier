@@ -2,7 +2,8 @@ import { promptPurposeLabel, type PromptPurposeId } from '../../services/promptP
 import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, MapPin, MoreHorizontal, Plus, Save, Trash2, UserRound } from 'lucide-react';
+import { ArrowDown, ArrowUp, LayoutGrid, MapPin, MoreHorizontal, Plus, Save, Trash2, UserRound } from 'lucide-react';
+import { CHAR_TOOL_ACTIVE, CHAR_TOOL_CHIP, CHAR_TOOL_DANGER, CHAR_TOOL_NEUTRAL, CHAR_TOOL_PRIMARY } from './characterToolChips';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { PromptLibraryFieldActions, PromptLibraryRandomButton } from '../PromptLibraryAccess';
 import { PromptCopyButton } from './PresetSourceBadges';
@@ -297,20 +298,20 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex min-w-0 flex-nowrap items-center justify-between gap-1.5">
           <h2 className="min-w-0 truncate text-xs font-bold text-gray-700 dark:text-gray-300">{t('角色')}</h2>
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div role="group" aria-label={t('角色槽位')} className="flex shrink-0 items-center gap-1.5">
             {characters.length > 0 && shownCharacterIndex >= 0 && !disabled && (
-              <button type="button" aria-label={t('删除角色')} title={t('删除角色')} className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-red-200 bg-red-50/80 px-2 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50" onClick={() => onRemoveCharacter(shownCharacterIndex)}>
+              <button type="button" aria-label={t('删除角色')} title={t('删除角色')} className={`${CHAR_TOOL_CHIP} ${CHAR_TOOL_DANGER}`} onClick={() => onRemoveCharacter(shownCharacterIndex)}>
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />{t('删除')}
               </button>
             )}
-            <button type="button" aria-label={t('添加角色')} title={t('添加角色')} className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-indigo-300 bg-indigo-50 px-2 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50" onClick={onAddCharacter}>
+            <button type="button" aria-label={t('添加角色')} title={t('添加角色')} className={`${CHAR_TOOL_CHIP} ${CHAR_TOOL_PRIMARY}`} onClick={onAddCharacter}>
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />{t('添加')}
             </button>
           </div>
         </div>
         {characterTools && (characters.length > 0 ? (
           <div role="group" aria-label={t('角色构图')} className="flex min-w-0 flex-nowrap items-center gap-1.5">
-            <button type="button" aria-label={t('角色定位')} aria-expanded={positionOpen} title={t('角色定位')} onClick={() => setPositionOpen(open => !open)} className={`mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2 py-1.5 text-xs font-medium transition ${positionOpen ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}><MapPin className="h-3.5 w-3.5" aria-hidden="true" />{t('定位')}</button>
+            <button type="button" aria-label={t('角色定位')} aria-expanded={positionOpen} title={t('角色定位')} onClick={() => setPositionOpen(open => !open)} className={`${CHAR_TOOL_CHIP} ${positionOpen ? CHAR_TOOL_ACTIVE : CHAR_TOOL_NEUTRAL}`}><MapPin className="h-3.5 w-3.5" aria-hidden="true" />{t('定位')}</button>
             <button
               type="button"
               disabled={disabled}
@@ -321,19 +322,19 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
                 characterTools.setParams({ ...characterTools.params, useCoords: characterTools.params.useCoords !== true });
                 characterTools.onSettingsChange?.();
               }}
-              className={`mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2 py-1.5 text-xs font-medium transition ${characterTools.params.useCoords !== true ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'} disabled:cursor-not-allowed disabled:opacity-40`}
+              className={`${CHAR_TOOL_CHIP} ${characterTools.params.useCoords !== true ? CHAR_TOOL_ACTIVE : CHAR_TOOL_NEUTRAL} disabled:cursor-not-allowed disabled:opacity-40`}
             >
-              {t('构图')}
+              <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />{t('构图')}
             </button>
           </div>
         ) : (
           <div role="group" aria-label={t('角色构图')} className="flex min-w-0 flex-nowrap items-center gap-1.5">
-            <button type="button" className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700" onClick={() => openReference(-1)}><UserRound className="h-3.5 w-3.5" aria-hidden="true" />{t('从角色库引用')}</button>
+            <button type="button" className={`${CHAR_TOOL_CHIP} ${CHAR_TOOL_NEUTRAL}`} onClick={() => openReference(-1)}><UserRound className="h-3.5 w-3.5" aria-hidden="true" />{t('从角色库引用')}</button>
           </div>
         ))}
       </div>
       {characters.length > 0 && <div className="flex flex-wrap items-center gap-1.5">
-        {characters.map((character, index) => <button key={character.id} type="button" aria-pressed={index === shownCharacterIndex} onClick={() => setActiveCharacterId(character.id)} className={`appearance-group mobile-touch flex max-w-full items-center gap-1 rounded border px-2 py-1 text-xs ${index === shownCharacterIndex ? 'border-indigo-300 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}><span className="max-w-40 truncate">{characterLabel(character, index)}</span>{character.enabled === false && <span className="text-gray-400">{t('· 已停用')}</span>}</button>)}
+        {characters.map((character, index) => <button key={character.id} type="button" aria-pressed={index === shownCharacterIndex} onClick={() => setActiveCharacterId(character.id)} className={`appearance-group mobile-touch inline-flex h-11 max-w-full items-center gap-1 rounded-lg border px-2.5 text-xs font-medium ${index === shownCharacterIndex ? CHAR_TOOL_ACTIVE : CHAR_TOOL_NEUTRAL}`}><span className="max-w-40 truncate">{characterLabel(character, index)}</span>{character.enabled === false && <span className="text-gray-400">{t('· 已停用')}</span>}</button>)}
       </div>}
       {characterTools && positionOpen && <CharacterPositionStage characters={characters} freeform={Boolean(characterTools.freeformPosition)} width={characterTools.params.width} height={characterTools.params.height} canEdit={!disabled} useCoords={characterTools.params.useCoords === true} onPosition={(index, position) => { characterTools.setParams({ ...characterTools.params, useCoords: true, characters: (characterTools.params.characters || []).map((item, itemIndex) => itemIndex === index ? { ...item, ...position } : item) }); characterTools.onSettingsChange?.(); }} />}
       <article className={cardClass}>

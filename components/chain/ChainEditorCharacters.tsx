@@ -1,7 +1,8 @@
 import { type PromptPurposeId } from '../../services/promptPurposes.mjs';
 import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, ClipboardPaste, MapPin, MoreHorizontal, Plus, Save, Trash2, UserRound } from 'lucide-react';
+import { ArrowDown, ArrowUp, ClipboardPaste, LayoutGrid, MapPin, MoreHorizontal, Plus, Save, Trash2, UserRound } from 'lucide-react';
+import { CHAR_TOOL_ACTIVE, CHAR_TOOL_CHIP, CHAR_TOOL_DANGER, CHAR_TOOL_NEUTRAL, CHAR_TOOL_PRIMARY } from './characterToolChips';
 import { CharacterParams, NAIParams, PromptChain } from '../../types';
 import { LabPageLayout } from '../../services/appearancePreferences';
 import { LabModuleSection } from '../LabModuleSection';
@@ -156,14 +157,14 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
         className={mobileEditorTab === 'character' ? 'block' : 'hidden'}
     >
         <section className={mobileEditorTab === 'character' ? 'block' : 'hidden'}>
-            {/* 模块标题已在 LabModuleSection：定位／构图在左；删除与添加成对在右。窄屏短文案同款芯片，可访问名仍用完整词。 */}
+            {/* 模块标题已在 LabModuleSection：左构图工具、右槽位操作，同款芯片只差色相；短文案 + 完整可访问名。 */}
             <div className="mb-3 flex min-w-0 flex-col gap-2">
                 <PresetSourceBadges sources={characterPresetSources} />
                 <div className="flex min-w-0 flex-nowrap items-center justify-between gap-1.5">
                     {characters.length > 0 ? (
                         <div role="group" aria-label={t('角色构图')} className="flex min-w-0 flex-nowrap items-center gap-1.5">
                             <button type="button" disabled={!characters.length} aria-label={t('角色定位')} aria-expanded={positionOpen} title={coordinateHint} onClick={() => setPositionOpen(!positionOpen)}
-                                className={`mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2 py-1.5 text-xs font-medium transition ${positionOpen ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}>
+                                className={`${CHAR_TOOL_CHIP} ${positionOpen ? CHAR_TOOL_ACTIVE : CHAR_TOOL_NEUTRAL}`}>
                                 <MapPin className="h-3.5 w-3.5" aria-hidden="true" />{t('定位')}
                             </button>
                             <button
@@ -178,22 +179,22 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                     markPresetSectionModified('settings');
                                     markChange();
                                 }}
-                                className={`mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2 py-1.5 text-xs font-medium transition ${params.useCoords !== true ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'} disabled:cursor-not-allowed disabled:opacity-40`}
+                                className={`${CHAR_TOOL_CHIP} ${params.useCoords !== true ? CHAR_TOOL_ACTIVE : CHAR_TOOL_NEUTRAL} disabled:cursor-not-allowed disabled:opacity-40`}
                             >
-                                {t('构图')}
+                                <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />{t('构图')}
                             </button>
                         </div>
                     ) : <span className="min-w-0 flex-1" />}
                     {canEdit && (
-                        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                        <div role="group" aria-label={t('角色槽位')} className="ml-auto flex shrink-0 items-center gap-1.5">
                             {characters.length > 0 && shownCharacterIndex >= 0 && (
                                 <button type="button" aria-label={t('删除角色')} title={t('删除角色')} onClick={() => removeCharacter(shownCharacterIndex)}
-                                    className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-red-200 bg-red-50/80 px-2 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50">
+                                    className={`${CHAR_TOOL_CHIP} ${CHAR_TOOL_DANGER}`}>
                                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />{t('删除')}
                                 </button>
                             )}
                             <button type="button" aria-label={t('添加角色')} title={t('添加角色')} onClick={addCharacter}
-                                className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-indigo-300 bg-indigo-50 px-2 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50">
+                                className={`${CHAR_TOOL_CHIP} ${CHAR_TOOL_PRIMARY}`}>
                                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />{t('添加')}
                             </button>
                         </div>
@@ -202,7 +203,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
             </div>
 
             {characters.length > 0 && <div role="group" aria-label={t('角色切换')} className="mb-3 flex flex-wrap items-center gap-1.5">
-                {characters.map((character, index) => <button key={character.id} type="button" aria-pressed={index === shownCharacterIndex} onClick={() => setActiveCharacterId(character.id)} className={`appearance-group mobile-touch flex max-w-full items-center gap-1 rounded border px-2 py-1 text-xs ${index === shownCharacterIndex ? 'border-indigo-300 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}><span className="max-w-40 truncate">{characterLabel(character, index)}</span>{character.enabled === false && <span className="text-gray-400">{t('· 已停用')}</span>}</button>)}
+                {characters.map((character, index) => <button key={character.id} type="button" aria-pressed={index === shownCharacterIndex} onClick={() => setActiveCharacterId(character.id)} className={`appearance-group mobile-touch inline-flex h-11 max-w-full items-center gap-1 rounded-lg border px-2.5 text-xs font-medium ${index === shownCharacterIndex ? CHAR_TOOL_ACTIVE : CHAR_TOOL_NEUTRAL}`}><span className="max-w-40 truncate">{characterLabel(character, index)}</span>{character.enabled === false && <span className="text-gray-400">{t('· 已停用')}</span>}</button>)}
             </div>}
 
             {positionOpen && <CharacterPositionStage key={scopeKey} characters={characters} freeform={freeformPosition}
