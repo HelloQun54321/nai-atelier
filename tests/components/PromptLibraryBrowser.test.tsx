@@ -145,7 +145,7 @@ it.each(['auto', 4])('列数偏好%s：详情按剩余宽度减少列数，关�
     callback: ResizeObserverCallback;
     constructor(callback: ResizeObserverCallback) { this.callback = callback; }
     observe(target: Element) {
-      if (target.classList.contains('chain-masonry')) this.callback([{ target, contentRect: { width: 800 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+      if (target.classList.contains('chain-masonry')) this.callback([{ target, contentRect: { width: 900 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
       if (target.classList.contains('workspace-scroll-viewport')) resizes.set(this, width => this.callback([{ target, contentRect: { width } } as ResizeObserverEntry], this as unknown as ResizeObserver));
     }
     disconnect() { resizes.delete(this); }
@@ -154,14 +154,14 @@ it.each(['auto', 4])('列数偏好%s：详情按剩余宽度减少列数，关�
   const view = render(<Harness />);
   try {
     const grid = document.querySelector<HTMLElement>('.chain-masonry')!;
-    act(() => resize(800));
+    act(() => resize(900));
     expect(grid.style.gridTemplateColumns).toBe('repeat(4, minmax(0, 1fr))');
     expect(localStorage.getItem('nai_mobile_image_display')).toBe(preferences);
     fireEvent.click(screen.getByRole('button', { name: '查看礼服' }));
     act(() => resize(280));
     expect(grid.style.gridTemplateColumns).toBe('repeat(1, minmax(0, 1fr))');
     fireEvent.click(within(screen.getByRole('complementary', { name: '礼服' })).getByRole('button', { name: '关闭' }));
-    act(() => resize(800));
+    act(() => resize(900));
     expect(grid.style.gridTemplateColumns).toBe('repeat(4, minmax(0, 1fr))');
   } finally { view.unmount(); globalThis.ResizeObserver = OriginalObserver; }
 });

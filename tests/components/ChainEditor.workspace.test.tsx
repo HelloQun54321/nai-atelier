@@ -1029,7 +1029,7 @@ it('四模式共用手机底栏资源入口，切 Key 时继续使用当前工�
     if (label !== '文生图') await switchTo(label);
     const dock = document.querySelector('.mobile-lab-dock') as HTMLElement;
     const resources = within(dock).getByRole('button', { name: /查看账户资源：未配置 Key/ });
-    expect(dock.className).toContain('lg:hidden');
+    expect(dock.className).toContain('md:hidden');
     expect(resources.closest('.mobile-lab-dock')).toBe(dock);
     act(() => { sessionStorage.setItem('nai_api_key', 'mobile-workspace-fixture'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: 'mobile-workspace-fixture' })); });
     expect(within(dock).getByRole('button', { name: /查看账户资源：预算 1666 · 余额 未知 · 额度未知/ })).toBeTruthy();

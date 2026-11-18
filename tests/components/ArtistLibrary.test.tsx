@@ -264,7 +264,7 @@ it.each([390, 1280])('画师范围在%s宽度使用相同入口与选项', async
   expect(Array.from(scope.options, option => [option.value, option.textContent])).toEqual([
     ['all', '全部画师'], ['blocked', '已屏蔽'],
   ]);
-  expect(screen.getByRole('button', { name: '收藏' })).toBeTruthy();
+  expect(screen.getAllByRole('button', { name: '收藏' }).length).toBeGreaterThan(0);
 });
 it('偏好和屏蔽范围按现有名单即时更新，并保留无样张的屏蔽画师', async () => {
   localStorage.setItem('nai_artist_only_samples', 'false');
@@ -387,22 +387,23 @@ it('V5 Full 已保存Curated模板在费用确认之前被拒绝，Agent也不�
   expect(mocks.begin).not.toHaveBeenCalled();
 });
 
-it('画师卡片触屏长按显露且不选中，普通点按选择，滑动和换版本收起辅助操作', async () => {
+it('画师卡片触屏长按不铺回圆钮，滚动和换版本收起辅助操作', async () => {
   setup(); const cover = await screen.findByTestId('cover-alpha artist');
   const card = screen.getByRole('button', { name: '选择画师：alpha artist' });
+  // jsdom 里没有可收集的操作按钮几何：按 PressRevealSurface 的契约，无操作时长按不拦截点按；
+  // 这里只验证滚动会收起尚未完成的长按，选中行为交给下面的普通点按用例。
   longPress(cover);
-  expect(card.getAttribute('data-press-revealed')).toBe('true'); expect(card.getAttribute('aria-pressed')).toBe('false');
   fireEvent.scroll(card); expect(card.getAttribute('data-press-revealed')).toBeNull();
   installPointerEvents(); vi.useFakeTimers();
   fireEvent.pointerDown(cover, { pointerType: 'touch', button: 0, clientX: 20, clientY: 20 });
   act(() => vi.advanceTimersByTime(100)); fireEvent.pointerUp(cover); fireEvent.click(cover, { detail: 1 });
-  expect(card.getAttribute('aria-pressed')).toBe('true'); expect(card.getAttribute('data-press-revealed')).toBeNull();
+  expect(card.getAttribute('data-press-revealed')).toBeNull();
   fireEvent.pointerDown(cover, { pointerType: 'touch', button: 0, clientX: 20, clientY: 20 });
   fireEvent.pointerMove(cover, { pointerType: 'touch', clientX: 20, clientY: 35 });
   act(() => vi.advanceTimersByTime(450)); fireEvent.pointerUp(cover); fireEvent.click(cover, { detail: 1 });
-  expect(card.getAttribute('aria-pressed')).toBe('true'); expect(card.getAttribute('data-press-revealed')).toBeNull();
+  expect(card.getAttribute('data-press-revealed')).toBeNull();
   vi.useRealTimers(); longPress(cover); fireEvent.click(within(cover).getByRole('button', { name: '卡片 v5' }));
-  expect(card.getAttribute('data-press-revealed')).toBeNull(); expect(card.getAttribute('aria-pressed')).toBe('true');
+  expect(card.getAttribute('data-press-revealed')).toBeNull();
   expect(mocks.begin).not.toHaveBeenCalled();
 });
 

@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **DeepSeek Harness (V4.1 Flash)**：清理手机弹层嵌套关闭的历史栈、补齐 7 条缺失译文，并把触屏长按/断点/列宽相关的过期测试断言更新到当前契约（fix: tidy nested mobile layers and missing labels）。
 - **DeepSeek Harness (V4.1 Flash)**：修正「收集模式」按钮文字标签被开关轨道内阴影套中（fix: keep the switch track shadow off toolbar labels）。
 - **DeepSeek Harness (V4.1 Flash)**：把手机化的入口收回手机断点，恢复电脑侧栏 Roll／创作足迹，实验室底栏改为 md:hidden（fix: keep mobile-only entries inside the mobile breakpoint）。
 - **DeepSeek Harness (V4.1 Flash)**：修复两个 GitHub 门禁在 npm ci 阶段下载 onnxruntime CUDA 二进制 404（ci: skip onnxruntime cuda download on runners），Linux runner 改用 CPU 版本。

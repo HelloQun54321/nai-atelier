@@ -2,7 +2,7 @@ import { PressRevealSurface } from '../../components/PressRevealSurface';
 import { longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImageShareActions, ImageShareOverlay } from '../../components/ImageShareActions';
 import { copySharedImage, downloadSharedImage, setCleanSharedImages } from '../../services/imageSharing';
@@ -122,13 +122,14 @@ describe('共用图片分享操作', () => {
     const view = render(React.createElement(PressRevealSurface, { role: 'button', 'aria-label': '作品' }, React.createElement(ImageShareActions, { imageUrl: '/original-image', filename: 'NAI.png', variant: 'card', notify, className: 'flex-col' })));
     const card = view.container.querySelector('.press-reveal-surface')!; longPress(card);
     expect(card.getAttribute('data-press-revealed')).toBe('true');
-    const download = screen.getByRole('button', { name: '下载图片' });
+    const cardQueries = within(card as HTMLElement);
+    const download = cardQueries.getByRole('button', { name: '下载图片' });
     expect(download.textContent).toBe('');
-    expect(screen.getByRole('button', { name: '复制图片' }).textContent).toBe('');
+    expect(cardQueries.getByRole('button', { name: '复制图片' }).textContent).toBe('');
     fireEvent.click(download);
     fireEvent.scroll(card); expect(card.hasAttribute('data-press-revealed')).toBe(false);
     expect(download.parentElement?.classList.contains('!opacity-100')).toBe(false);
-    expect((screen.getByRole('button', { name: '复制图片' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((cardQueries.getByRole('button', { name: '复制图片' }) as HTMLButtonElement).disabled).toBe(true);
     await act(async () => rejectDownload(new Error('下载失败')));
     expect(notify).toHaveBeenCalledWith('下载失败', 'error');
     expect(screen.getByRole('alert').className).toBe('sr-only');

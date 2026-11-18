@@ -51,7 +51,8 @@ describe('小图和全屏大图的共用操作', () => {
     expect(removeButton.classList.contains(fullscreen ? 'hover-reveal-md' : 'hover-reveal-lg')).toBe(true);
     expect(removeButton.parentElement?.classList.contains('gap-2')).toBe(true);
     expect(right.classList.contains('hover-reveal-lg')).toBe(false);
-    expect(screen.getByRole('button', { name: '收藏' }).closest('.hover-reveal-lg')).toBeNull();
+    // 收藏爱心是常驻例外：即使位于悬停组里，也用 data-image-favorite 让触屏规则放行。
+    expect(screen.getByRole('button', { name: '收藏' }).hasAttribute('data-image-favorite')).toBe(true);
     expect(right.classList.contains('image-preview-action-group')).toBe(true);
     expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['收藏', '下载图片', '复制图片', '设为封面']);
     expect(within(left).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(fullscreen ? ['返回小图', '移除当前图片', '清空当前历史组'] : ['移除当前图片', '清空当前历史组']);

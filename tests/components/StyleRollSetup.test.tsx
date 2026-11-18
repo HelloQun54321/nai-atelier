@@ -25,7 +25,7 @@ vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: (props
 /** Roll 的角色栏与实验室普通模式共用多角色编辑器：正文用 placeholder 定位，数据落在 template.characters。 */
 const roleFields = (placeholder = '角色提示词') => screen.queryAllByPlaceholderText(placeholder) as HTMLTextAreaElement[];
 const addRole = (prompt: string) => {
-  fireEvent.click(screen.getByRole('button', { name: '+ 添加角色' }));
+  fireEvent.click(screen.getByRole('button', { name: '添加角色' }));
   const fields = roleFields();
   fireEvent.change(fields[fields.length - 1], { target: { value: prompt } });
 };
@@ -97,7 +97,7 @@ it('已有候选仍可修改生成配置，画师锁定及排除仍可保存且�
   // 出过图后不再冻结：只提示改动仅影响之后的生成，模板仍可编辑
   expect(screen.getByText(/已经出过图/)).toBeTruthy();
   expect((screen.getByRole('combobox', { name: '公共提示词' }) as HTMLTextAreaElement).disabled).toBe(false);
-  expect(screen.getByRole('button', { name: '+ 添加角色' })).toHaveProperty('disabled', false);
+  expect(screen.getByRole('button', { name: '添加角色' })).toHaveProperty('disabled', false);
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
   const value = save.mock.calls[0][0]; expect(value.pinnedArtists).toEqual(['alpha']); expect(value.artists).toEqual(initial.artists);
   expect(value.candidates).toEqual(initial.candidates); expect(value.template).toEqual(initial.template);
@@ -203,7 +203,7 @@ it('打开并保存历史默认记录时保留原模板，不自动套用新版�
   expect(screen.getByRole('combobox', { name: '公共提示词' })).toHaveProperty('value', originalTemplate.prompt);
   // 旧记录没有角色：角色栏为空，也不自动塞入新版推荐角色
   expect(roleFields()).toHaveLength(0);
-  expect(screen.getByRole('button', { name: '+ 添加角色' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '添加角色' })).toBeTruthy();
   expect(screen.getByRole('combobox', { name: '负面提示词' })).toHaveProperty('value', '');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
   expect(save.mock.calls[0][0].template).toEqual(originalTemplate);

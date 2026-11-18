@@ -120,7 +120,7 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
   if (variant === 'dock') {
     return <>
       <button type="button" aria-label={t("查看账户资源：{0}", [summary])} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}
-        className={`mobile-touch inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-1.5 dark:border-gray-700 dark:bg-gray-900/80 ${footerTone}`}>
+        className={`appearance-group mobile-touch inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-1.5 dark:border-gray-700 dark:bg-gray-900/80 ${footerTone}`}>
         <span className="flex w-9 flex-col items-center gap-0.5" aria-hidden="true">
           <AccountIcon className={`h-3 w-3 text-indigo-600 dark:text-indigo-300 ${budget.loading || loading ? 'animate-spin' : ''}`} />
           <span className="text-tiny font-bold leading-none tabular-nums text-indigo-600 dark:text-indigo-300">{footerBudget}</span>

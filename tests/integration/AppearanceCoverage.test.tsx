@@ -201,7 +201,8 @@ describe('全局外观覆盖审计', () => {
   it('角色动作行图标紧凑但保留触屏高度，正文不再有坐标侧栏或额外横向内边距', () => {
     const source = readFileSync('components/chain/ChainEditorCharacters.tsx', 'utf8');
     expect(source).not.toContain('sm:w-28');
-    expect(source).toContain('className="lab-character relative min-w-0 py-3"');
+    // 角色行改成按标签切换后去掉了纵向内边距；这里只守住「不占横向留白／不加侧栏」的契约。
+    expect(source).toContain('className="lab-character relative min-w-0"');
     expect(declarations(".character-tools [data-appearance='control']", undefined, css)).toMatchObject({ height: '24px', width: '24px', background: 'transparent', border: '0' });
     expect(declarations(".character-tools button", '(pointer: coarse)', css)).toMatchObject({ height: '44px', 'min-height': '44px' });
   });

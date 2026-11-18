@@ -667,8 +667,8 @@ it('自定义角色长按可用铅笔，详情编辑入口也打开同一信息�
   const p = renderLibrary('character', 390, [roleWithCover]); const card = screen.getByRole('button', { name: '选择角色：合成自定义角色' });
   longPress(card); expect(card.getAttribute('aria-pressed')).toBe('false');
   fireEvent.click(within(card).getByRole('button', { name: '编辑自定义角色信息' }));
-  expect(screen.getByRole('dialog', { name: '编辑自定义角色信息' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  const editDialog = screen.getByRole('dialog', { name: '编辑自定义角色信息' });
+  fireEvent.click(within(editDialog).getByRole('button', { name: '关闭' }));
   fireEvent.click(card.querySelector('button.h-full.w-full')!);
   const detail = (await screen.findAllByRole('dialog', { name: custom.name })).find(dialog => dialog.classList.contains('mobile-detail'))!;
   expect(detail).toBeTruthy();

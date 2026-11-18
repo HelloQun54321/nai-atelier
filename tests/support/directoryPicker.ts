@@ -17,10 +17,16 @@ export const flushDirectoryPickerHistory = async () => {
   });
 };
 
-/** 打开共用目录树的手机主题化路径面板并点选一项。 */
+/** 打开共用目录树的手机主题化路径面板并点选一项；筛选面板改用原生下拉时直接改值。 */
 export const pickDirectoryOption = (label: string, value: string) => {
   openTrigger(label);
-  fireEvent.click(within(screen.getByRole('dialog', { name: label })).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === value }));
+  const dialog = screen.queryByRole('dialog', { name: label });
+  if (dialog) {
+    fireEvent.click(within(dialog).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === value }));
+    return;
+  }
+  const select = screen.getByRole('combobox', { name: label }) as HTMLSelectElement;
+  fireEvent.change(select, { target: { value } });
 };
 
 export const pickDirectoryOptionAsync = async (label: string, value: string) => {
@@ -36,6 +42,8 @@ export const openDirectoryPicker = (label: string) => {
 export const directoryPickerValue = (label: string) => {
   const trigger = screen.queryByRole('button', { name: label });
   if (trigger) return trigger.getAttribute('data-value');
+  const select = screen.queryByRole('combobox', { name: label }) as HTMLSelectElement | null;
+  if (select) return select.value;
   return document.querySelector('[data-directory-selected]')?.getAttribute('data-directory-selected') ?? null;
 };
 

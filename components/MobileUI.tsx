@@ -117,7 +117,16 @@ export const useMobileHistoryLayer = (open: boolean, onClose: () => void | boole
       window.removeEventListener('popstate', handlePopState);
       // StrictMode／保留子树重连会立刻重新 setup，不把试清理当作真实关闭。
       queueMicrotask(() => {
-        if (registrationRef.current === registration && window.history.state?.__naiMobileLayer === marker) window.history.back();
+        if (registrationRef.current !== registration) return;
+        const state = window.history.state;
+        if (state?.__naiMobileLayer === marker) { window.history.back(); return; }
+        // 两个弹层同一次点击里一起关闭时，先关的已经把栈顶带走；等它的 pop 完成后再退自己，
+        // 否则会留下一条无人负责的 __naiMobileLayer，返回键要多按一次。
+        if (state?.__naiMobileLayers?.includes(marker)) {
+          window.addEventListener('popstate', () => {
+            if (window.history.state?.__naiMobileLayer === marker) window.history.back();
+          }, { once: true });
+        }
       });
     };
   }, [historyReady, open, active]);
