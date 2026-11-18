@@ -35,8 +35,8 @@ it.each(['saved', 'originals'] as const)('条目读取状态：%s列表区分延
 
 it('在顶栏下沿显示当前组合分区条目数', async () => {
   render(<ContentRollLibrary {...props()} />);
-  const caption = await screen.findByText(/共 1 条/);
-  expect(caption.getAttribute('data-toolbar-count-caption')).toBe('true');
+  const caption = await screen.findByTitle(/共 1$/);
+  expect(caption.getAttribute('data-toolbar-count-badge')).toBe('true');
 });
 
 it('组合分类候选显示完整路径，筛选仍使用原分类标签', () => {

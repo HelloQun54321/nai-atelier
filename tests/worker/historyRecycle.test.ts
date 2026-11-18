@@ -5,16 +5,18 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { handleHistoryRoute } from '../../worker/routes/historyRoutes';
 import { INIT_SQL, type D1Database, type Env, type RouteContext } from '../../worker/routes/types';
 import { recordArtistHistory } from '../../worker/routes/artistUsageIndex';
+import { handleStyleRollRoute } from '../../worker/routes/styleRollRoutes';
+import { candidateFixture, rollFixture, rollImageFixture } from '../fixtures/styleRoll';
 const databases: DatabaseSync[]=[];
 afterEach(()=>{for(const db of databases.splice(0))db.close();vi.restoreAllMocks();});
 function fixture(){
  const sqlite=new DatabaseSync(':memory:');databases.push(sqlite);sqlite.exec(INIT_SQL);
- let beforeBatch: (()=>void)|undefined;
- const db={prepare(query:string){let values:any[]=[];return {bind(...next:any[]){values=next;return this;},async first(){return sqlite.prepare(query).get(...values)||null;},async all(){return {results:sqlite.prepare(query).all(...values)};},async run(){return {meta:sqlite.prepare(query).run(...values),success:true};}};},async batch(statements:{run():Promise<any>}[]){beforeBatch?.();beforeBatch=undefined;sqlite.exec('BEGIN');try{const out=[];for(const statement of statements)out.push(await statement.run());sqlite.exec('COMMIT');return out;}catch(cause){sqlite.exec('ROLLBACK');throw cause;}}} as unknown as D1Database;
+ let beforeMove: (() => void) | undefined;
+ const db={prepare(query:string){let values:any[]=[];return {query,bind(...next:any[]){values=next;return this;},async first(){return sqlite.prepare(query).get(...values)||null;},async all(){return {results:sqlite.prepare(query).all(...values)};},async run(){return {meta:sqlite.prepare(query).run(...values),success:true};}};},async batch(statements:{query:string;run():Promise<any>}[]){if(statements[0]?.query.startsWith('INSERT INTO local_generation_recycle_bin')){beforeMove?.();beforeMove=undefined;}sqlite.exec('BEGIN');try{const out=[];for(const statement of statements)out.push(await statement.run());sqlite.exec('COMMIT');return out;}catch(cause){sqlite.exec('ROLLBACK');throw cause;}}} as unknown as D1Database;
  const files=new Map<string,ArrayBuffer>();const bucket={delete:vi.fn(async(key:string)=>{files.delete(key);}),get:vi.fn(async(key:string)=>files.has(key)?{body:files.get(key),httpEtag:'synthetic',writeHttpMetadata(){}}:null),put:vi.fn(async(key:string,value:ArrayBuffer)=>{files.set(key,value);})},env={DB:db,BUCKET:bucket,LOCAL_HISTORY_ENABLED:'true'} as unknown as Env;
  const invoke=async(path:string,method='POST',body?:unknown)=>{if(path.match(/recycle-bin\/(restore|purge)$/)&&body&&!(body as any).expectedVersions){const versions:Record<string,string>={};for(const id of (body as any).ids){const row=sqlite.prepare('SELECT * FROM local_generation_recycle_bin WHERE id=?').get(id) as any;if(row){const keys='id,user_id,image_key,image_type,prompt,negative_prompt,params,base_prompt,subject_prompt,modules,structure_version,source_chain_id,source_chain_name,source_chain_type,external_source,external_id,is_favorite,favorite_at,created_at'.split(',');versions[id]=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(keys.map(k=>row[k]??null))+':'+row.moved_at+':'+(row.move_nonce||'')))),n=>n.toString(16).padStart(2,'0')).join('');}else versions[id]='0'.repeat(64);}body={...(body as any),expectedVersions:versions};}const request=new Request('http://localhost'+path,{method,...(body===undefined?{}:{body:JSON.stringify(body)})});return (await handleHistoryRoute({request,url:new URL(request.url),path:path.split('?')[0],method,db,env,currentUser:{id:'owner',role:'admin'}} as RouteContext))!;};
  const add=(id='h',extra:Record<string,unknown>={})=>{const row={id,user_id:'owner',image_key:id+'.png',created_at:123,prompt:'artist:synthetic',...extra};sqlite.prepare(`INSERT INTO local_generation_history (${Object.keys(row).join(',')}) VALUES (${Object.keys(row).map(()=>'?').join(',')})`).run(...Object.values(row) as any[]);};
- return {sqlite,db,bucket,env,invoke,add,beforeBatch:(fn:()=>void)=>{beforeBatch=fn;}};
+ return {sqlite,db,bucket,env,invoke,add,beforeMove:(fn:()=>void)=>{beforeMove=fn;}};
 }
 it('完整行原子移入恢复，保留时间、结构、蒙版、回执及统计',async()=>{
  const f=fixture();f.add('h',{params:'{"_local_edit":{"operation":"inpaint","maskAvailable":true},"model":"synthetic"}',base_prompt:'base',subject_prompt:'subject',modules:'[{"id":"m"}]',structure_version:1,external_source:'external',external_id:'e'});
@@ -37,6 +39,50 @@ it.each([
 ])('引用 %s 阻止移入，其余批量继续',async(reason,sql)=>{
  const f=fixture();f.add();f.add('safe');f.sqlite.exec(sql);const result=await(await f.invoke('/api/local-history/recycle-bin/move','POST',{ids:['h','safe']})).json();expect(result).toMatchObject({movedCount:reason==='reference_check_failed'?0:1,skippedCount:reason==='reference_check_failed'?2:1});expect(result.skipped).toContainEqual({id:'h',reasons:expect.arrayContaining([reason])});expect(f.bucket.delete).not.toHaveBeenCalled();
 });
+it('Roll 只保护仍被使用的首次原图，删除记录不删除历史', async () => {
+ const f = fixture();
+ const candidate = candidateFixture('used');
+ const archived = { ...candidateFixture('archived'), archived: true };
+ const experiment = { ...rollFixture(), candidates: [candidate, archived] };
+ const addRoll = (id: string, target = candidate, extra: Record<string, unknown> = {}) => {
+  const image = rollImageFixture(experiment, target, id);
+  f.add(id, { structure_version: 1, source_chain_id: image.sourceChainId, modules: JSON.stringify(image.modules), ...extra });
+ };
+ f.sqlite.prepare('INSERT INTO settings (key,value) VALUES (?,?)').run(`style_roll_v1:owner:${experiment.id}`, JSON.stringify(experiment));
+ addRoll('original', candidate, { created_at: 20 });
+ addRoll('later-duplicate', candidate, { created_at: 30 });
+ addRoll('edited', candidate, { created_at: 10, params: JSON.stringify({ _local_edit: { operation: 'inpaint' } }) });
+ addRoll('archived', archived);
+ addRoll('provenance-only', candidate, { modules: '[]' });
+ addRoll('orphan', candidate, { source_chain_id: 'style-roll:deleted-record' });
+ const movePath = '/api/local-history/recycle-bin/move';
+ const ids = ['original', 'later-duplicate', 'edited', 'archived', 'provenance-only', 'orphan'];
+ const preview = await (await f.invoke('/api/local-history/recycle-bin/preview', 'POST', { ids })).json();
+ expect(preview).toMatchObject({ movableCount: 5, skipped: [{ id: 'original', reasons: ['roll'] }] });
+ const moved = await (await f.invoke(movePath, 'POST', { ids })).json();
+ expect(moved).toMatchObject({ completedIds: ids.slice(1), skipped: preview.skipped });
+ const path = `/api/style-roll/${experiment.id}`;
+ const request = new Request(`http://localhost${path}?revision=${experiment.revision}`, { method: 'DELETE' });
+ const deleted = await handleStyleRollRoute({ request, path, method: 'DELETE', db: f.db, currentUser: { id: 'owner', role: 'admin' } } as RouteContext);
+ expect(await deleted!.json()).toEqual({ deleted: experiment.id });
+ expect(f.sqlite.prepare('SELECT id FROM local_generation_history').get()?.id).toBe('original');
+ expect(await (await f.invoke(movePath, 'POST', { ids: ['original'] })).json()).toMatchObject({ completedIds: ['original'] });
+ expect(f.bucket.delete).not.toHaveBeenCalled();
+});
+
+it('Roll 引用在移入事务前到达时，原子检查保留原图', async () => {
+ const f = fixture();
+ const candidate = candidateFixture('used');
+ const experiment = { ...rollFixture(), candidates: [candidate] };
+ const image = rollImageFixture(experiment, candidate);
+ f.add(image.id, { structure_version: 1, source_chain_id: image.sourceChainId, modules: JSON.stringify(image.modules) });
+ f.beforeMove(() => f.sqlite.prepare('INSERT INTO settings (key,value) VALUES (?,?)').run(`style_roll_v1:owner:${experiment.id}`, JSON.stringify(experiment)));
+ const result = await (await f.invoke('/api/local-history/recycle-bin/move', 'POST', { ids: [image.id] })).json();
+ expect(result).toMatchObject({ movedCount: 0, skipped: [{ id: image.id, reasons: ['source_changed_or_referenced'] }] });
+ expect(f.sqlite.prepare('SELECT id FROM local_generation_history').get()?.id).toBe(image.id);
+ expect(f.sqlite.prepare('SELECT id FROM local_generation_recycle_bin').get()).toBeUndefined();
+});
+
 it('迁移DELETE失败整体回滚，恢复普通ID与外部身份冲突均保留两份',async()=>{
  const f=fixture();f.add();f.sqlite.exec("CREATE TRIGGER block_move BEFORE DELETE ON local_generation_history BEGIN SELECT RAISE(ABORT,'synthetic');END");expect(await(await f.invoke('/api/local-history/recycle-bin/move','POST',{ids:['h']})).json()).toMatchObject({failedCount:1});expect(f.sqlite.prepare('SELECT id FROM local_generation_recycle_bin').get()).toBeUndefined();f.sqlite.exec('DROP TRIGGER block_move');await f.invoke('/api/local-history/recycle-bin/move','POST',{ids:['h']});f.add('h',{image_key:'new.png'});expect(await(await f.invoke('/api/local-history/recycle-bin/restore','POST',{ids:['h']})).json()).toMatchObject({failedCount:1});expect(f.sqlite.prepare('SELECT image_key FROM local_generation_history').get()?.image_key).toBe('new.png');expect(f.sqlite.prepare('SELECT id FROM local_generation_recycle_bin').get()?.id).toBe('h');
 });

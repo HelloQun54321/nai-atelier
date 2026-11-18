@@ -2,7 +2,7 @@ import { PressRevealSurface } from '../../components/PressRevealSurface';
 import { longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImageShareActions, ImageShareOverlay } from '../../components/ImageShareActions';
 import { copySharedImage, downloadSharedImage, setCleanSharedImages } from '../../services/imageSharing';
@@ -56,7 +56,7 @@ describe('共用图片分享操作', () => {
     const heart = screen.getByRole('button', { name: '收藏整个作品组' });
     fireEvent.click(heart); fireEvent.click(heart);
     expect(heart.hasAttribute('disabled')).toBe(true);
-    expect(heart.closest('.hover-reveal-md')).toBeNull();
+    expect(heart.classList.contains('hover-reveal-md')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
     await waitFor(() => expect(copySharedImage).toHaveBeenCalledWith('/group.png', false));
     await act(async () => fail(new Error('合成收藏失败')));
@@ -73,7 +73,7 @@ describe('共用图片分享操作', () => {
     expect(group.className).toContain('absolute right-2 top-2');
     expect(group.classList.contains('image-card-actions')).toBe(true);
     expect(group.classList.contains('hover-reveal-md')).toBe(false);
-    expect(screen.getByTitle('收藏').closest('.hover-reveal-md')).toBeNull();
+    expect(screen.getByTitle('收藏').classList.contains('hover-reveal-md')).toBe(true);
     expect(screen.getByTitle('下载图片').classList.contains('hover-reveal-md')).toBe(true);
     expect(surface.hasAttribute('data-press-revealed')).toBe(false);
     longPress(surface);
@@ -122,13 +122,14 @@ describe('共用图片分享操作', () => {
     const view = render(React.createElement(PressRevealSurface, { role: 'button', 'aria-label': '作品' }, React.createElement(ImageShareActions, { imageUrl: '/original-image', filename: 'NAI.png', variant: 'card', notify, className: 'flex-col' })));
     const card = view.container.querySelector('.press-reveal-surface')!; longPress(card);
     expect(card.getAttribute('data-press-revealed')).toBe('true');
-    const download = screen.getByRole('button', { name: '下载图片' });
+    const cardQueries = within(card as HTMLElement);
+    const download = cardQueries.getByRole('button', { name: '下载图片' });
     expect(download.textContent).toBe('');
-    expect(screen.getByRole('button', { name: '复制图片' }).textContent).toBe('');
+    expect(cardQueries.getByRole('button', { name: '复制图片' }).textContent).toBe('');
     fireEvent.click(download);
     fireEvent.scroll(card); expect(card.hasAttribute('data-press-revealed')).toBe(false);
     expect(download.parentElement?.classList.contains('!opacity-100')).toBe(false);
-    expect((screen.getByRole('button', { name: '复制图片' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((cardQueries.getByRole('button', { name: '复制图片' }) as HTMLButtonElement).disabled).toBe(true);
     await act(async () => rejectDownload(new Error('下载失败')));
     expect(notify).toHaveBeenCalledWith('下载失败', 'error');
     expect(screen.getByRole('alert').className).toBe('sr-only');

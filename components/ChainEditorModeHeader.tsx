@@ -24,8 +24,9 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
   onBack,
 }) => {
   useLanguage();
+  // 手机：返回 + 模式标题成一组左对齐；电脑：模式导航仍占满中间可用宽。
   return (
-    <div className="flex w-full min-w-0 items-center gap-2">
+    <div className="flex min-w-0 flex-1 items-center gap-1 md:gap-2">
       <IconButton
         label={isLaboratory ? t("退出实验室，返回上一页面") : t("返回{0}列表", [t(entityLabel)])}
         onClick={() => void onBack()}
@@ -33,7 +34,7 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
       >
         <ArrowLeft className="h-4 w-4" />
       </IconButton>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 md:flex-1">
         <GenerationModeNav activeMode={activeMode} onSelect={onSelectMode} disabled={isGenerating} />
       </div>
     </div>

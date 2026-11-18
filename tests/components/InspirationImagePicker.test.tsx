@@ -2,11 +2,15 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import { pickDirectoryOptionAsync } from '../support/directoryPicker';
 import { InspirationImagePicker } from '../../components/InspirationImagePicker';
 
 const mocks = vi.hoisted(() => ({ items: vi.fn(), boards: vi.fn() }));
 vi.mock('../../services/dbService', () => ({ db: { getAllInspirations: mocks.items, getInspirationBoards: mocks.boards } }));
-vi.mock('../../components/SmartImage', () => ({ SmartImage: ({ alt }: { alt: string }) => <img alt={alt} /> }));
+vi.mock('../../components/SmartImage', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../components/SmartImage')>()),
+  SmartImage: ({ alt }: { alt: string }) => <img alt={alt} />,
+}));
 vi.mock('../../components/ImagePreviewPortal', () => ({ ImagePreviewPortal: ({ children }: { children: React.ReactNode }) => children }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -33,7 +37,7 @@ it.each([390, 1280])('宽度 %s：收藏图片选择共用路径目录，父级�
   ]);
   render(<InspirationImagePicker open onClose={vi.fn()} onSelect={vi.fn()} />);
   await screen.findByRole('button', { name: '选择收藏图片：深层作品' });
-  if (width < 768) fireEvent.change(screen.getByRole('combobox', { name: '选择目录' }), { target: { value: 'root' } });
+  if (width < 768) await pickDirectoryOptionAsync('选择目录', 'root');
   else fireEvent.click(screen.getByRole('button', { name: '根夹' }));
   expect(screen.getAllByRole('button', { name: '选择收藏图片：深层作品' })).toHaveLength(1);
   expect(screen.getByRole('button', { name: '选择收藏图片：子夹作品' })).toBeTruthy(); expect(screen.queryByRole('button', { name: '选择收藏图片：无夹作品' })).toBeNull();

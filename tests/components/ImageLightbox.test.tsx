@@ -2,6 +2,12 @@
 import React, { useState } from 'react';
 import {act,cleanup,fireEvent,render,screen,within,waitFor} from '@testing-library/react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+
+vi.mock('../../components/ConfirmDialog', () => ({
+  useConfirmDialog: () => vi.fn(async () => true),
+  useAlertDialog: () => vi.fn(),
+  ConfirmDialogProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
 import {ImageLightbox,ViewableImage} from '../../components/ImageLightbox';
 import {ChainEditorPreview} from '../../components/ChainEditorPreview';
 import {ImageEditPreview} from '../../components/ImageEditPreview';

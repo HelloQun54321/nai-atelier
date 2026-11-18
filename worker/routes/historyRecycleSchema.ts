@@ -1,4 +1,44 @@
+import { rollCandidateModuleId, rollSourceId } from '../../services/styleRoll';
 import { addColumnIfMissing, type D1Database } from './types';
+
+const ROLL_KEY_PREFIX = 'style_roll_v1:';
+export const rollExperimentKeyPrefix = (userId: string) => `${ROLL_KEY_PREFIX}${userId}:`;
+const safeJson = (value: string) => `(CASE WHEN json_valid(${value}) THEN ${value} ELSE '{}' END)`;
+const originalRollHistory = (row: string) => `${row}.structure_version >= 1
+ AND COALESCE(json_type(${safeJson(`${row}.params`)}, '$._local_edit'), '') NOT IN ('object', 'array')`;
+
+// 和 rollCandidateImages 一样，原图通过记录来源和第一个匹配的候选模块归位，不比较新旧模板。
+const rollHistoryCandidate = (row: string, record: string) => `(SELECT candidate.value
+ FROM json_each(${record}, '$.candidates') candidate
+ WHERE candidate.type = 'object' AND EXISTS (
+  SELECT 1 FROM json_each(${safeJson(`${row}.modules`)}) m WHERE m.type = 'object'
+  AND json_extract(CASE WHEN m.type = 'object' THEN m.value END, '$.id') = '${rollCandidateModuleId('')}' || json_extract(CASE WHEN candidate.type = 'object' THEN candidate.value END, '$.id')
+ ) ORDER BY candidate.key LIMIT 1)`;
+const rollHistoryCandidateId = (row: string, record: string) => `json_extract(${rollHistoryCandidate(row, record)}, '$.id')`;
+
+/** 仍被 Roll 使用的原图是入向引用；同一时刻的旧资料保守保留，不用 SQL 排序猜浏览器的 localeCompare。 */
+export const liveRollHistoryReference = (row: string) => `(CASE WHEN ${row}.source_chain_id GLOB '${rollSourceId('')}*' AND ${originalRollHistory(row)} THEN EXISTS (
+ SELECT 1 FROM settings roll, json_each(json_array(${rollHistoryCandidate(row, safeJson('roll.value'))})) matched
+ WHERE roll.key = '${ROLL_KEY_PREFIX}' || ${row}.user_id || ':' || substr(${row}.source_chain_id, ${rollSourceId('').length + 1})
+ AND json_extract(${safeJson('roll.value')}, '$.id') = substr(${row}.source_chain_id, ${rollSourceId('').length + 1})
+ AND json_extract(${safeJson('roll.value')}, '$.archived') IS NOT 1
+ AND json_extract(matched.value, '$.archived') = 0
+ AND NOT EXISTS (
+  SELECT 1 FROM local_generation_history earlier WHERE earlier.user_id = ${row}.user_id
+  AND earlier.source_chain_id = ${row}.source_chain_id AND earlier.created_at < ${row}.created_at
+  AND ${originalRollHistory('earlier')}
+  AND ${rollHistoryCandidateId('earlier', safeJson('roll.value'))} = json_extract(matched.value, '$.id')
+ )
+) ELSE 0 END)`;
+
+/** 仅检查新启用的候选；若移入抢先提交且无活动原图，保存不能把它当作从未生成。 */
+export const newRollReferenceConflict = `SELECT 1 FROM (SELECT ? AS user_id, ? AS source_chain_id, ? AS value, ? AS new_ids) r
+ JOIN local_generation_recycle_bin b ON b.user_id = r.user_id AND b.source_chain_id = r.source_chain_id
+ JOIN json_each(r.new_ids) added ON added.value = ${rollHistoryCandidateId('b', 'r.value')}
+ WHERE ${originalRollHistory('b')} AND NOT EXISTS (
+  SELECT 1 FROM local_generation_history h WHERE h.user_id = r.user_id AND h.source_chain_id = r.source_chain_id
+  AND ${originalRollHistory('h')} AND ${rollHistoryCandidateId('h', 'r.value')} = added.value
+ )`;
 
 export const HISTORY_COLUMNS = 'id,user_id,image_key,image_type,prompt,negative_prompt,params,base_prompt,subject_prompt,modules,structure_version,source_chain_id,source_chain_name,source_chain_type,external_source,external_id,is_favorite,favorite_at,created_at';
 export const HISTORY_ALL = `(SELECT ${HISTORY_COLUMNS} FROM local_generation_history UNION ALL SELECT ${HISTORY_COLUMNS} FROM local_generation_recycle_bin)`;

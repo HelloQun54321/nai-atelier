@@ -16,7 +16,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, EyeOff, FileOutput, Filter, FlaskConical, FolderDown, Heart, Image, Link2, ListChecks, Package, Pencil, Plus, ScanSearch, Sparkles, Tags, Trash2, User, X } from 'lucide-react';
 import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { GalleryModelBadge } from './GalleryModelBadge';
 import { DEFAULT_NAI_MODEL, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
@@ -41,7 +41,7 @@ import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { useChainFolders } from '../services/useChainFolders';
 import { folderContains, getChainFolderIds, updateChainFolderMemberships } from '../services/chainFolders';
 import { CHAIN_FOLDER_DRAG_TYPE, ChainFolderMembershipDialog, ChainFolderNavigation } from './chain/ChainFolders';
-import { Folder, FolderInput } from 'lucide-react';
+import { Dice5, Folder, FolderInput } from 'lucide-react';
 import { DIRECTORY_FAVORITES_ID } from './DirectoryTreeNavigation';
 
 const ChainSimilarityDialog = React.lazy(() => import('./chain/ChainSimilarityDialog').then(module => ({ default: module.ChainSimilarityDialog })));
@@ -60,6 +60,8 @@ interface ChainListProps {
   onUpdateChain: UpdateChainInfo;
   /** 整串送入实验室：复用历史／灵感页的 sessionStorage 导入通道后跳转。 */
   onNavigateToPlayground?: () => void;
+  /** Roll 串并入风格串页：顶栏骰子只做入口，不占底栏与资源库面板。 */
+  onOpenRoll?: () => void;
   isLoading: boolean;
   loadError?: string;
   notify: (msg: string, type?: 'success' | 'error') => void;
@@ -75,7 +77,7 @@ const chainPreviewRatio = (chain: PromptChain, measured?: number) => {
   return typeof width === 'number' && typeof height === 'number' && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? width / height : 4 / 3;
 };
 
-export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onBundleImported, onReloadTags, onUpdateChain, onNavigateToPlayground, notify, isLoading, loadError, isGuest = false, returnTargetId }) => {
+export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onBundleImported, onReloadTags, onUpdateChain, onNavigateToPlayground, onOpenRoll, notify, isLoading, loadError, isGuest = false, returnTargetId }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
   const RENDER_BATCH_SIZE = 60;
@@ -96,7 +98,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const folderStore = useChainFolders(type === 'style' && !isGuest);
   const [selectedFolder, setSelectedFolder] = useState(() => { try { return localStorage.getItem('nai-style-folder-selection') ?? '*'; } catch { return '*'; } });
   const [foldersExpanded, setFoldersExpanded] = useState(() => { try { return localStorage.getItem('nai-style-folders-expanded') === 'true'; } catch { return false; } });
-  const toggleFolders = () => setFoldersExpanded(previous => { const next = !previous; try { localStorage.setItem('nai-style-folders-expanded', String(next)); } catch { /* 本端存储不可用时仍可展开。 */ } return next; });
+  const setFoldersOpen = (next: boolean) => setFoldersExpanded(() => { try { localStorage.setItem('nai-style-folders-expanded', String(next)); } catch { /* 本端存储不可用时仍可展开。 */ } return next; });
+  const toggleFolders = () => setFoldersOpen(!foldersExpanded);
   const [moveIds, setMoveIds] = useState<string[] | null>(null);
   const activeFolder = type === 'style' && !isGuest && (selectedFolder === DIRECTORY_FAVORITES_ID || folderStore.ready && !folderStore.error) ? selectedFolder : '*';
   const matchingFolderIds = useMemo(() => new Set(folderStore.state.folders.filter(folder => folderContains(folderStore.state.folders, activeFolder, folder.id)).map(folder => folder.id)), [folderStore.state.folders, activeFolder]);
@@ -114,6 +117,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [favOnly, setFavOnly] = useState(false);
   const favoritesOnly = type === 'style' && !isGuest ? activeFolder === DIRECTORY_FAVORITES_ID : favOnly;
+  const activeFolderLabel = activeFolder === '*' ? t('全部') : activeFolder === '' ? t('未整理') : activeFolder === DIRECTORY_FAVORITES_ID ? t('收藏') : folderStore.state.folders.find(folder => folder.id === activeFolder)?.name || t('全部');
   const [untestedOnly, setUntestedOnly] = useState(false);
   // 参考标识只从串参数派生，不写用户标签、也不自动建目录。
   const [vibesOnly, setVibesOnly] = useState(false);
@@ -546,19 +550,26 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         <WorkspaceChrome>
 <WorkspaceToolbar>
           {selecting ? <>
-            <div role="group" aria-label={t('风格串批量操作')} className="flex h-full min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <b aria-live="polite" className="flex-none text-xs font-semibold text-gray-600 dark:text-gray-300">{deleteProgress ? t('正在删除 {0}/{1}', [deleteProgress.completed, deleteProgress.total]) : t('已选 {0} 条', [selectedChains.length])}</b>
-              <ToolbarButton disabled={bulkDeleteBusy} onClick={() => setSelectedIds(new Set(filteredChains.map(chain => chain.id)))} className="mobile-touch !px-2.5">{t('全选筛选结果')}</ToolbarButton>
-              <ToolbarButton disabled={bulkDeleteBusy} onClick={() => setSelectedIds(previous => new Set(filteredChains.filter(chain => !previous.has(chain.id)).map(chain => chain.id)))} className="mobile-touch !px-2.5">{t('反选筛选结果')}</ToolbarButton>
-              <ToolbarButton disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setSelectedIds(new Set())} className="mobile-touch !px-2.5">{t('清空选择')}</ToolbarButton>
-              <ToolbarButton disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setBundleScope('selected')} className="mobile-touch !px-2.5"><FileOutput /><span>{t('导出已选')}</span></ToolbarButton>
-              <ToolbarButton disabled={bulkDeleteBusy || folderStore.busy || !folderStore.ready || Boolean(folderStore.error) || !selectedChains.length} onClick={() => setMoveIds(selectedChains.map(chain => chain.id))} className="mobile-touch !px-2.5"><FolderInput />{t('设置文件夹')}</ToolbarButton>
-              <ToolbarButton tone="danger" disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => void deleteSelected()} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span>{t('删除')}</span></ToolbarButton>
+            <div role="group" aria-label={t('风格串批量操作')} className="flex h-full min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden whitespace-nowrap">
+              <b aria-live="polite" className="flex-none text-xs font-semibold tabular-nums text-gray-600 dark:text-gray-300" title={deleteProgress ? t('正在删除 {0}/{1}', [deleteProgress.completed, deleteProgress.total]) : t('已选 {0} 条', [selectedChains.length])}>{deleteProgress ? <><span className="md:hidden">{deleteProgress.completed}/{deleteProgress.total}</span><span className="hidden md:inline">{t('正在删除 {0}/{1}', [deleteProgress.completed, deleteProgress.total])}</span></> : <><span className="md:hidden">{selectedChains.length}</span><span className="hidden md:inline">{t('已选 {0} 条', [selectedChains.length])}</span></>}</b>
+              <ToolbarButton aria-label={t('全选筛选结果')} title={t('全选筛选结果')} disabled={bulkDeleteBusy} onClick={() => setSelectedIds(new Set(filteredChains.map(chain => chain.id)))} className="mobile-touch !px-2.5 max-md:hidden">{t('全选筛选结果')}</ToolbarButton>
+              <ToolbarButton aria-label={t('反选筛选结果')} title={t('反选筛选结果')} disabled={bulkDeleteBusy} onClick={() => setSelectedIds(previous => new Set(filteredChains.filter(chain => !previous.has(chain.id)).map(chain => chain.id)))} className="mobile-touch !px-2.5 max-md:hidden">{t('反选筛选结果')}</ToolbarButton>
+              <ToolbarButton aria-label={t('清空选择')} title={t('清空选择')} disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setSelectedIds(new Set())} className="mobile-touch !px-2.5 max-md:hidden">{t('清空选择')}</ToolbarButton>
+              <ToolbarButton aria-label={t('导出已选')} title={t('导出已选')} disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setBundleScope('selected')} className="mobile-touch !px-2.5"><FileOutput /><span className="hidden md:inline">{t('导出已选')}</span></ToolbarButton>
+              <ToolbarButton aria-label={t('设置文件夹')} title={t('设置文件夹')} disabled={bulkDeleteBusy || folderStore.busy || !folderStore.ready || Boolean(folderStore.error) || !selectedChains.length} onClick={() => setMoveIds(selectedChains.map(chain => chain.id))} className="mobile-touch !px-2.5"><FolderInput /><span className="hidden md:inline">{t('设置文件夹')}</span></ToolbarButton>
+              <ToolbarButton tone="danger" aria-label={t('删除')} title={t('删除')} disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => void deleteSelected()} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span className="hidden md:inline">{t('删除')}</span></ToolbarButton>
             </div>
-            <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
+            <MobileOverflowMenu className="md:hidden" items={[
+              { label: '全选筛选结果', disabled: bulkDeleteBusy, onClick: () => setSelectedIds(new Set(filteredChains.map(chain => chain.id))) },
+              { label: '反选筛选结果', disabled: bulkDeleteBusy, onClick: () => setSelectedIds(previous => new Set(filteredChains.filter(chain => !previous.has(chain.id)).map(chain => chain.id))) },
+              { label: '清空选择', disabled: bulkDeleteBusy || !selectedChains.length, onClick: () => setSelectedIds(new Set()) },
+            ]} />
+            <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden md:inline">{t('退出多选')}</span></ToolbarButton>
           </> : <>
-          {!isGuest && type === 'style' && <ToolbarButton data-agent-action="browse" aria-label={t(foldersExpanded ? '收起文件夹' : '展开文件夹')} title={[t(foldersExpanded ? '收起文件夹' : '展开文件夹'), activeFolder === '*' ? t('全部') : activeFolder === '' ? t('未整理') : activeFolder === DIRECTORY_FAVORITES_ID ? t('收藏') : folderStore.state.folders.find(folder => folder.id === activeFolder)?.name || t('全部')].join(' · ')} aria-expanded={foldersExpanded} active={foldersExpanded || activeFolder !== '*'} disabled={folderStore.busy} onClick={toggleFolders}><Folder className="h-4 w-4" /></ToolbarButton>}
-          <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t("搜索{0}", [title])} containerClassName="min-w-0 flex-1 max-md:min-w-[7.5rem] md:max-w-none!" />
+          {!isGuest && type === 'style' && <ToolbarButton data-agent-action="browse" aria-label={t(foldersExpanded ? '收起文件夹' : '展开文件夹')} title={[t(foldersExpanded ? '收起文件夹' : '展开文件夹'), activeFolderLabel].join(' · ')} aria-expanded={foldersExpanded} active={foldersExpanded || activeFolder !== '*'} disabled={folderStore.busy} onClick={toggleFolders} className="!px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{activeFolderLabel}</span></ToolbarButton>}
+          {!isGuest && type === 'style' && onOpenRoll && <ToolbarButton data-agent-action="browse" aria-label={t('Roll 串')} title={t('Roll 串')} onClick={onOpenRoll} className="mobile-touch md:hidden !px-2.5"><Dice5 className="h-4 w-4" /></ToolbarButton>}
+          {!loadError && (isLoading && filteredChains.length > 0 ? <InlineSpinner label={t('加载中…')} className="text-xs" /> : !isLoading && <ToolbarCountBadge total={filteredChains.length} loaded={Math.min(visibleCount, filteredChains.length)} />)}
+          <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t("搜索{0}", [title])} containerClassName="min-w-0 flex-1 md:max-w-none!" />
           <div className="hidden flex-none items-center gap-2 md:flex">
             <div ref={filterAnchorRef} className="relative flex-none">
               <ToolbarButton active={filtersActive} onClick={() => setShowDesktopFilters(value => !value)} title={t("筛选与排序")} aria-label={t("筛选{0}", [filterCount > 0 ? ` ${filterCount}` : ''])} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" /><span className="hidden xl:inline">{t("筛选{0}", [filterCount > 0 ? ` ${filterCount}` : ''])}</span></ToolbarButton>
@@ -591,10 +602,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           ]} className="md:hidden" />
           </>}
         </WorkspaceToolbar>
-        {/* 刷新提示并入已存在的计数行（绝对定位在顶栏下沿），不再往列表上方插一行。 */}
-        {!loadError && <ToolbarCountCaption>{isLoading && filteredChains.length > 0
-          ? <InlineSpinner label={t('加载中…')} className="text-xs" />
-          : `${countCaptionFiltered ? t('匹配 {0} 条', [filteredChains.length]) : t('共 {0} 条', [filteredChains.length])} · ${t('已加载 {0} 条', [Math.min(visibleCount, filteredChains.length)])}`}</ToolbarCountCaption>}
 
         {!selecting && canSync && syncSelection.open && <WisdomSyncToolbar sync={syncSelection} filteredIds={filteredChains.map(chain => chain.id)} />}
 
@@ -602,7 +609,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
         </WorkspaceChrome>
         <div data-workspace-body className="flex min-h-0 flex-1 flex-col md:flex-row">
-        {type === 'style' && !isGuest && <ChainFolderNavigation expanded={foldersExpanded} store={folderStore} selected={activeFolder} onSelect={selectFolder} chainIds={chains.filter(chain => chain.type === 'style' || !chain.type).map(chain => chain.id)} countsPending={Boolean((isLoading || loadError) && !chains.length)} favoriteCount={favoritesReady && !((isLoading || loadError) && !chains.length) ? new Set(chains.filter(chain => (chain.type === 'style' || !chain.type) && favorites.has(chain.id)).map(chain => chain.id)).size : '—'} onMove={(ids, folder) => setFolderMemberships(ids, { [folder]: true })} notify={notify} disabled={bulkDeleteBusy || syncSelection.busy} />}
+        {type === 'style' && !isGuest && <ChainFolderNavigation expanded={foldersExpanded} store={folderStore} selected={activeFolder} onSelect={selectFolder} chainIds={chains.filter(chain => chain.type === 'style' || !chain.type).map(chain => chain.id)} countsPending={Boolean((isLoading || loadError) && !chains.length)} favoriteCount={favoritesReady && !((isLoading || loadError) && !chains.length) ? new Set(chains.filter(chain => (chain.type === 'style' || !chain.type) && favorites.has(chain.id)).map(chain => chain.id)).size : '—'} onMove={(ids, folder) => setFolderMemberships(ids, { [folder]: true })} notify={notify} disabled={bulkDeleteBusy || syncSelection.busy} onRequestClose={() => setFoldersOpen(false)} />}
         <div ref={chainScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-5">
             {filteredChains.length > 0 && !isLoading && loadError && <div role="alert" className="mb-3 flex items-center justify-center gap-2 text-center text-sm text-gray-500">{t(loadError)}<button type="button" onClick={onRefresh} className="mobile-touch underline">{t('重试')}</button></div>}
           {filteredChains.length === 0 && (isLoading || loadError) ? (isLoading ? <PageSpinner /> : <WorkspacePageState role="alert" className="py-20 text-center text-sm text-gray-500">{t(loadError || '')}{loadError && <button type="button" onClick={onRefresh} className="mobile-touch ml-2 underline">{t('重试')}</button>}</WorkspacePageState>) : activeFolder === DIRECTORY_FAVORITES_ID && !favoritesReady ? (favoritesError ? <WorkspacePageState role="alert" className="py-20 text-center text-sm text-gray-500">{favoritesError}<button type="button" className="mobile-touch ml-2 underline" onClick={() => setFavoritesRetry(value => value + 1)}>{t('重新加载')}</button></WorkspacePageState> : <PageSpinner />) : filteredChains.length === 0 ? emptyFiltersActive ? (

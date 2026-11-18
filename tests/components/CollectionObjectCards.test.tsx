@@ -13,6 +13,7 @@ import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { createFragmentData } from '../../services/promptLibraryEntries';
 import { collectionSnapshot, loadCollection } from '../../services/collectionFavorites';
 import { LAB_DEFAULT_PARAMS } from '../../services/labWorkspace';
+import { expectDirectoryCount } from '../support/directoryPicker';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), post: vi.fn(), upload: vi.fn(), stored: [] as Inspiration[] }));
 vi.mock('../../services/api', async original => ({ ...await original<typeof import('../../services/api')>(), api: { get: mocks.get, put: mocks.put, post: mocks.post, uploadFile: mocks.upload } }));
@@ -91,7 +92,8 @@ it('提示词管理面板封面大图保留对象来源，从大图取消后目�
   expect(lightbox.getByRole('button', { name: '取消收藏' })).toBeTruthy();
   fireEvent.click(lightbox.getByRole('button', { name: '取消收藏' }));
   await waitFor(() => expect(collectionSnapshot().find(saved => saved.sourceId === fragment.id)?.archived).toBe(true));
-  await screen.findByRole('option', { name: '收藏 (0)' });
+  // 桌面目录行把计数放在 aria-describedby 里，不再拼进可访问名称。
+  expectDirectoryCount('收藏', '0');
   expect(mocks.put).toHaveBeenCalledWith('/inspirations/saved-fragment', { archived: true });
   expect(mocks.post).not.toHaveBeenCalled();
 });

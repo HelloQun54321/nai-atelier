@@ -369,6 +369,25 @@ it('画布未就绪主按钮不发送，菜单仍可查看；空闲恢复生成'
   fireEvent.click(screen.getByRole('button', { name: /生成.*3 张.*90 Anlas/ })); expect(generate).toHaveBeenCalledOnce();
 });
 
+it('底栏主按钮只留短文案，费用与暂停收进生成选项', () => {
+  const generate = vi.fn(), toggle = vi.fn();
+  const view = render(<GenerationCountControl {...props} layout="dock" onGenerate={generate} onTogglePause={toggle} costLabel="消耗 Opus" />);
+  const primary = screen.getByRole('button', { name: '生成 · 消耗 Opus' });
+  expect(primary.textContent).toBe('生成');
+  expect(screen.queryByRole('button', { name: /暂停生成/ })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '生成选项' }));
+  const sheet = within(screen.getByRole('dialog', { name: '生成选项' }));
+  expect(sheet.getByRole('status').textContent).toContain('消耗 Opus');
+  expect(sheet.getByRole('button', { name: '暂停生成' })).toHaveProperty('disabled', true);
+  fireEvent.click(sheet.getByRole('button', { name: '关闭' }));
+  view.rerender(<GenerationCountControl {...props} layout="dock" onGenerate={generate} onTogglePause={toggle} busy generationState="generating" series={{ current: 0, total: 1, stopping: false }} costLabel="消耗 Opus" />);
+  fireEvent.click(screen.getByRole('button', { name: '生成选项' }));
+  const busySheet = within(screen.getByRole('dialog', { name: '生成选项' }));
+  expect(busySheet.getByRole('status').textContent).toContain('消耗 Opus');
+  fireEvent.click(busySheet.getByRole('button', { name: '暂停生成 0/1' }));
+  expect(toggle).toHaveBeenCalledOnce();
+});
+
 it('菜单内的紧凑张数控件支持加减、直接输入和下限，调整不会触发生图', () => {
   const count = vi.fn(), generate = vi.fn();
   const view = render(<GenerationCountControl {...props} count={1} onCountChange={count} onGenerate={generate} />);

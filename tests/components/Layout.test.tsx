@@ -84,11 +84,13 @@ it('素材浏览分组默认收起，手动展开状态跨Layout重挂载保存'
   expect(localStorage.getItem('nai_sidebar_external_gallery_expanded')).toBe('false');
 });
 
-it('记录组提供创作足迹独立入口并标为当前页', () => {
+it('创作足迹保留电脑侧栏入口，打开足迹时由它标为当前页', () => {
   const props = createProps('footprint');
   const { container } = render(<div className="agent-stage"><Layout {...props} /></div>);
-  const item = within(getSidebar(container)).getByRole('button', { name: '创作足迹' });
+  const sidebar = getSidebar(container);
+  const item = within(sidebar).getByRole('button', { name: '创作足迹' });
   expect(item.getAttribute('aria-current')).toBe('page');
+  expect(within(sidebar).getByRole('button', { name: '历史' }).getAttribute('aria-current')).toBeNull();
   fireEvent.click(item);
   expect(props.onNavigate).toHaveBeenCalledWith('footprint');
 });
@@ -177,19 +179,39 @@ it('折叠菜单点外关闭，展开侧栏或切到手机断点也关闭且不�
   expect(localStorage.getItem('nai_sidebar_external_gallery_expanded')).toBe('true');
 });
 
-it('手机底栏仍是五个入口，资源面板可达提示词库与原有资源', () => {
+it('手机底栏仍是五个入口，资源面板两层进入本地素材与外部图源', () => {
   vi.stubGlobal('innerWidth', 390);
-  const { container } = renderLayout('list');
+  const props = createProps('list');
+  const { container } = render(<div className="agent-stage"><Layout {...props} /></div>);
   const mobileNav = container.querySelector('.app-mobile-nav') as HTMLElement;
   expect(within(mobileNav).getAllByRole('button')).toHaveLength(5);
   fireEvent.click(within(mobileNav).getByRole('button', { name: '资源库' }));
   const resources = screen.getByRole('dialog', { name: '资源库菜单' });
-  expect(within(resources).getAllByRole('button')).toHaveLength(10); // 九个入口与关闭按钮。
-  expect(within(resources).getByRole('button', { name: '提示词库' })).toBeTruthy();
-  expect(within(resources).queryByRole('button', { name: '一键 Roll' })).toBeNull();
-  expect(within(resources).queryByRole('button', { name: 'Roll 提示词库' })).toBeNull();
-  expect(within(resources).getByRole('button', { name: 'Roll 串' })).toBeTruthy();
+  // 第一层：四个本地素材库 + 素材浏览入口 + 关闭，外部图源不再摊成格子。
+  expect(within(resources).getAllByRole('button')).toHaveLength(6);
+  for (const label of ['画师库', '角色库', '提示词库', '收藏库', '素材浏览']) expect(within(resources).getByRole('button', { name: label })).toBeTruthy();
+  expect(within(resources).queryByRole('button', { name: 'AITag' })).toBeNull();
+  expect(within(resources).queryByRole('button', { name: 'Roll 串' })).toBeNull();
+  // 第二层：同一块面板里展开四个外部图源，返回键回第一层。
+  fireEvent.click(within(resources).getByRole('button', { name: '素材浏览' }));
+  expect(within(resources).getAllByRole('button')).toHaveLength(6); // 返回、关闭与四个图源。
   expect(within(resources).getByRole('button', { name: 'AITag' })).toBeTruthy();
+  expect(within(resources).getByRole('button', { name: 'Pixiv' })).toBeTruthy();
+  fireEvent.click(within(resources).getByRole('button', { name: '返回资源库' }));
+  expect(within(resources).getByRole('button', { name: '画师库' })).toBeTruthy();
+  fireEvent.click(within(resources).getByRole('button', { name: '素材浏览' }));
+  fireEvent.click(within(resources).getByRole('button', { name: 'AITag' }));
+  expect(props.onNavigate).toHaveBeenCalledWith('aitag');
+});
+
+it('Roll 串保留电脑侧栏工作区入口并标为当前页', () => {
+  const props = createProps('roll');
+  const { container } = render(<div className="agent-stage"><Layout {...props} /></div>);
+  const sidebar = getSidebar(container);
+  const item = within(sidebar).getByRole('button', { name: 'Roll 串' });
+  expect(item.getAttribute('aria-current')).toBe('page');
+  fireEvent.click(item);
+  expect(props.onNavigate).toHaveBeenCalledWith('roll');
 });
 
 const prepareMobileHistory = () => {

@@ -74,7 +74,7 @@ interface DetailImageStageProps {
 
 export const DetailImageStage: React.FC<DetailImageStageProps> = ({ pager, children, pressResetKey }) => (
   <div className="space-y-4">
-    <PressRevealSurface pressResetKey={pressResetKey} className="group relative overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{children}</PressRevealSurface>
+    <PressRevealSurface pressResetKey={pressResetKey} touchActions="bar" className="group relative overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{children}</PressRevealSurface>
     {pager && pager.count > 1 && (
       <div className="flex items-center justify-center gap-3">
         <IconButton data-agent-action="browse" label={t("上一页")} disabled={pager.page <= 0} onClick={pager.onPrev}><ChevronLeft /></IconButton>

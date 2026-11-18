@@ -4,6 +4,7 @@ import React from 'react';
 import { mockGalleryGeometry } from '../support/galleryGeometry';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { pickDirectoryOption } from '../support/directoryPicker';
 import { ArtistPreferenceActions } from '../../components/ArtistPreferenceActions';
 import { ImageShareOverlay } from '../../components/ImageShareActions';
 import { ArtistLibrary } from '../../components/ArtistLibrary';
@@ -139,7 +140,7 @@ const kindLabels = (kind: Kind) => kind === 'artist'
 const chooseFavorites = (_kind: Kind, enabled = true) => {
   const navigation = screen.getByRole('button', { name: '分组导航' });
   if (navigation.getAttribute('aria-expanded') !== 'true') fireEvent.click(navigation);
-  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: enabled ? '#favorites' : '*' } });
+  pickDirectoryOption('选择分组', enabled ? '#favorites' : '*');
 };
 const seedFavorites = (kind: Kind, names: string[]) => {
   if (kind === 'character') localStorage.setItem('nai_character_favorites', JSON.stringify(names.map(name => `catalog:${name}`)));
@@ -189,7 +190,7 @@ function expectCustomCardLayout(card: HTMLElement, hasPreview: boolean) {
   const edit = within(card).getByRole('button', { name: '编辑自定义角色信息' });
   const left = remove.parentElement!;
   const right = edit.parentElement!;
-  // 左侧删除与右侧收藏／分享都常驻卡片浮层：位置由浮层结构和共享 token 表达，不绑定具体工具类。
+  // 左侧删除与右侧分享按悬停显露；未收藏的爱心同样收起，已收藏才留在封面上。
   expect(left.hasAttribute('data-image-action-left')).toBe(true);
   expect(left.classList.contains('hover-reveal-md')).toBe(true);
   expect(within(left).getAllByRole('button')).toEqual([remove]);
@@ -202,7 +203,7 @@ function expectCustomCardLayout(card: HTMLElement, hasPreview: boolean) {
     for (const token of ['nai-float-btn', 'mobile-size-locked']) expect(button.classList.contains(token)).toBe(true);
   }
   const favorite = within(card).queryByRole('button', { name: '收藏' });
-  if (hasPreview) { expect(right.contains(favorite)).toBe(true); expect(favorite!.classList.contains('hover-reveal-md')).toBe(false); }
+  if (hasPreview) { expect(right.contains(favorite)).toBe(true); expect(favorite!.classList.contains('hover-reveal-md')).toBe(true); }
   else expect(favorite).toBeNull();
   expect(edit.classList.contains('hover-reveal-md')).toBe(true);
 }
@@ -615,7 +616,7 @@ it('自定义角色卡片铅笔编辑正负提示词，不显示文字编辑或�
   expect(within(card).queryByRole('button', { name: '编辑' })).toBeNull();
   fireEvent.click(edit);
   expect(screen.getByRole('dialog', { name: '编辑自定义角色信息' })).toBeTruthy();
-  fireEvent.change(screen.getByRole('combobox', { name: '正面提示词' }), { target: { value: 'new positive' } });
+  pickDirectoryOption('正面提示词', 'new positive');
   fireEvent.change(screen.getByRole('combobox', { name: '负面提示词' }), { target: { value: 'new negative' } });
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(p.onUpdateChain).toHaveBeenCalledWith(custom.id, { name: custom.name, description: '', tags: [], basePrompt: 'new positive', negativePrompt: 'new negative' }));
@@ -666,8 +667,8 @@ it('自定义角色长按可用铅笔，详情编辑入口也打开同一信息�
   const p = renderLibrary('character', 390, [roleWithCover]); const card = screen.getByRole('button', { name: '选择角色：合成自定义角色' });
   longPress(card); expect(card.getAttribute('aria-pressed')).toBe('false');
   fireEvent.click(within(card).getByRole('button', { name: '编辑自定义角色信息' }));
-  expect(screen.getByRole('dialog', { name: '编辑自定义角色信息' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  const editDialog = screen.getByRole('dialog', { name: '编辑自定义角色信息' });
+  fireEvent.click(within(editDialog).getByRole('button', { name: '关闭' }));
   fireEvent.click(card.querySelector('button.h-full.w-full')!);
   const detail = (await screen.findAllByRole('dialog', { name: custom.name })).find(dialog => dialog.classList.contains('mobile-detail'))!;
   expect(detail).toBeTruthy();

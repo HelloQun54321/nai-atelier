@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowLeft, ListChecks, MoreHorizontal, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
 import { localHistory, type LocalHistoryRecycleBinItem } from '../services/localHistory';
 import { getLanguage, t, useLanguage } from '../services/i18n';
 import { EmptyState, InlineSpinner, PageSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { compactCount, ToolbarCountBadge } from './ToolbarCountBadge';
+import { ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
+import { useMobileLayout } from './TouchActionMenu';
 import { HistoryImageViewer } from './HistoryImageViewer';
 import { ParamsViewer } from './ParamsViewer';
 import { SmartImage } from './SmartImage';
@@ -27,7 +29,7 @@ const panelItemKey = (item: PanelItem) => `${item.archiveBin === undefined ? 'bi
 
 export const formatHistoryBinReasons = (reasons: string[]) => reasons.map(reason => t(({
     favorite: '有效收藏或收藏正在保存', prompt_library: '提示词库仍在引用', collection: '收藏资料仍在引用',
-    chain: '创作配方仍在引用', artist: '画师资料仍在引用', shared_image: '原图仍被其他资料共享',
+    chain: '创作配方仍在引用', artist: '画师资料仍在引用', roll: 'Roll 候选仍在引用', shared_image: '原图仍被其他资料共享',
     history: '其他历史仍在引用', recycle_bin: '其他回收站条目仍在引用', settings: '设置仍在引用', reference_asset: '参考资产仍在引用',
     reference_check_failed: '无法确认引用关系，已保留原记录', source_changed: '条目已变化，请重新读取后重试',
     source_changed_or_referenced: '条目已变化或仍被引用', write_conflict: '条目正在写入，请稍后重试',
@@ -42,6 +44,7 @@ export const formatHistoryBinReasons = (reasons: string[]) => reasons.map(reason
 export const RecycleBinPanel: React.FC<Props> = ({ onBack, notify, archive, onRetryMigration }) => {
     useLanguage();
     const confirmAction = useConfirmDialog();
+    const mobile = useMobileLayout();
     const archiveRows = archive ? [...archive.active.map(item => ({ ...item, archiveBin: false })), ...archive.bin.map(item => ({ ...item, archiveBin: true }))] : null;
     const archiveRowsRef = useRef(archiveRows); archiveRowsRef.current = archiveRows;
     const [items, setItems] = useState<PanelItem[]>([]);
@@ -205,22 +208,37 @@ export const RecycleBinPanel: React.FC<Props> = ({ onBack, notify, archive, onRe
         } catch (error) { notify(error instanceof Error ? error.message : t('蒙版导出失败'), 'error'); }
     };
     const index = viewer ? items.findIndex(item => panelItemKey(item) === panelItemKey(viewer)) : -1;
+    const heading = t(archive ? '浏览器历史只读档案' : '回收站');
+    const selectedLabel = t('已选 {0} 张', [selected.size]);
+    const secondaryActions = [
+        { label: '刷新', Icon: RefreshCw, disabled: loading, action: () => void refresh() },
+        { label: '全选已加载', Icon: ListChecks, disabled: !items.length, action: () => setSelected(new Set(items.map(item => item.id))) },
+        { label: '清空选择', Icon: X, disabled: !selected.size, action: () => setSelected(new Set()) },
+    ];
+    const toolbarAction = (label: string, icon: React.ReactNode, onClick: () => void, disabled: boolean, tone?: 'danger') =>
+        <ToolbarButton key={label} tone={tone} aria-label={t(label)} title={t(label)} onClick={onClick} disabled={disabled}
+            className="mobile-touch w-10 !px-0 xl:w-auto xl:!px-3">{icon}<span className="hidden xl:inline">{t(label)}</span></ToolbarButton>;
 
     return <div className="workspace-canvas flex h-full min-h-0 flex-1 flex-col overflow-hidden" aria-label={t(archive ? '浏览器历史只读档案' : '历史回收站')}>
-        <WorkspaceChrome><WorkspaceToolbar>
-            <div className="flex w-full flex-wrap items-center gap-2">
-                <ToolbarButton onClick={requestBack} disabled={busy}><ArrowLeft />{t('返回生成历史')}</ToolbarButton>
-                <h2 className="mr-auto text-sm font-bold">{t(archive ? '浏览器历史只读档案' : '回收站')}</h2>
-                {archive ? <ToolbarButton disabled={busy} onClick={() => { busyRef.current = true; setBusy(true); void onRetryMigration?.().finally(() => { busyRef.current = false; if (mounted.current) setBusy(false); }); }}>{t('重试迁移')}</ToolbarButton> : <ToolbarButton disabled={busy || loading} onClick={() => void refresh()}>{t('刷新')}</ToolbarButton>}
-                {!archive && <>
-                <span className="text-xs tabular-nums">{t('已选 {0} 张', [selected.size])}</span>
-                <ToolbarButton disabled={busy || !items.length} onClick={() => setSelected(new Set(items.map(item => item.id)))}>{t('全选已加载')}</ToolbarButton>
-                <ToolbarButton disabled={busy || !selected.size} onClick={() => setSelected(new Set())}>{t('清空选择')}</ToolbarButton>
-                <ToolbarButton disabled={busy || !selected.size} onClick={() => void perform('restore', [...selected])}><RotateCcw />{t('恢复选中')}</ToolbarButton>
-                <ToolbarButton tone="danger" disabled={busy || !selected.size} onClick={() => void perform('purge', [...selected])}><Trash2 />{t('永久删除选中')}</ToolbarButton>
-                </>}
-            </div>
-            <ToolbarCountCaption>{t('共 {0} 张', [count ?? '—'])}{' · '}{t('已加载 {0} 张', [items.length])}</ToolbarCountCaption>
+        <WorkspaceChrome><WorkspaceToolbar scrollable={false} className="!gap-1 lg:!gap-2">
+            {toolbarAction('返回生成历史', <ArrowLeft />, requestBack, busy)}
+            <h2 className="min-w-0 truncate text-sm font-bold" title={heading}>{heading}</h2>
+            <ToolbarCountBadge loaded={items.length} total={count ?? undefined} />
+            <span className="min-w-0 flex-1" aria-hidden="true" />
+            {archive ? toolbarAction('重试迁移', <RefreshCw />, () => {
+                busyRef.current = true;
+                setBusy(true);
+                void onRetryMigration?.().finally(() => { busyRef.current = false; if (mounted.current) setBusy(false); });
+            }, busy) : <>
+                <output aria-label={selectedLabel} title={selectedLabel} className="shrink-0 text-xs tabular-nums">{compactCount(selected.size)}</output>
+                {mobile ? <ToolbarPopover label="更多操作" title={t('更多操作')} icon={<MoreHorizontal />} iconOnly disabled={busy}>
+                    {close => secondaryActions.map(({ label, Icon, disabled, action }) => <button key={label} type="button" disabled={busy || disabled}
+                        className={`${TOOLBAR_MENU_CLASS} disabled:opacity-40`} onClick={() => { close(); action(); }}><Icon />{t(label)}</button>)}
+                </ToolbarPopover> : <div className="flex items-center gap-1">{secondaryActions.map(({ label, Icon, disabled, action }) =>
+                    toolbarAction(label, <Icon />, action, busy || disabled))}</div>}
+                {toolbarAction('恢复选中', <RotateCcw />, () => void perform('restore', [...selected]), busy || !selected.size)}
+                {toolbarAction('永久删除选中', <Trash2 />, () => void perform('purge', [...selected]), busy || !selected.size, 'danger')}
+            </>}
         </WorkspaceToolbar></WorkspaceChrome>
         <div ref={scrollRef} className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
             <p className="mb-4 text-xs text-gray-500">{t(archive ? '浏览器旧资料仅供只读浏览与导出。请连接本地服务完成迁移后再管理历史。' : '移入回收站不释放空间，也不会自动过期。恢复后回到生成历史。')}</p>

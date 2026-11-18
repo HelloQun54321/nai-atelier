@@ -1,6 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ImageEditOperation, NAIParams } from '../types';
 import { api } from './api';
 import { applyNaiModelSettings, DEFAULT_NAI_MODEL } from './naiModels';
@@ -135,6 +135,8 @@ export const useAnlasBudget = () => {
   const [state, setState] = useState<AnlasBudgetState>({ remaining: DEFAULT_ANLAS_BUDGET });
   const [personal, setPersonal] = useState<AnlasPersonalUsage | null>(null);
   const [loading, setLoading] = useState(true);
+  // 刚收到结算预算时，不要再被同一次消耗触发的官方余额刷新覆盖成旧值。
+  const lastBudgetEventRef = useRef<{ keyHash: string; at: number } | null>(null);
   const refresh = useCallback(async () => {
     const requestedKeyHash = await getActiveKeyHash();
     // 按次渠道没有本地预算概念：不读取、不刷新，也不触发预算耗尽确认。
@@ -158,12 +160,13 @@ export const useAnlasBudget = () => {
   useEffect(() => {
     void refresh();
     const update = (event: Event) => {
-      const detail = (event as CustomEvent<AnlasBudgetState & { keyHash?: string; refreshPersonal?: boolean }>).detail;
+      const detail = (event as CustomEvent<Partial<AnlasBudgetState> & { keyHash?: string; refreshPersonal?: boolean }>).detail;
       const eventKeyHash = typeof detail?.keyHash === 'string' ? detail.keyHash : null;
       if (eventKeyHash === null) return;
       void getActiveKeyHash().then(currentKeyHash => {
         if (currentKeyHash !== eventKeyHash) return;
         const { keyHash: _keyHash, refreshPersonal: _refreshPersonal, ...stateDetail } = detail;
+        if (Number.isFinite(stateDetail.remaining)) lastBudgetEventRef.current = { keyHash: eventKeyHash, at: Date.now() };
         setState(previous => ({ ...previous, ...stateDetail }));
         if (stateDetail.personal !== undefined) {
           setPersonal(eventKeyHash ? stateDetail.personal?.[eventKeyHash] || null : null);
@@ -174,6 +177,7 @@ export const useAnlasBudget = () => {
     };
     const refreshProjectChange = () => void refresh();
     const refreshKeyChange = () => {
+      lastBudgetEventRef.current = null;
       setState({ remaining: DEFAULT_ANLAS_BUDGET });
       setPersonal(null);
       setLoading(true);
@@ -181,7 +185,14 @@ export const useAnlasBudget = () => {
     };
     // 生图与编码结算都在后台扣减预算，完成后统一派发这个事件；
     // 不在这里重读，侧栏就会一直停在生成前的剩余预算上。
-    const refreshAfterSpend = () => void refresh();
+    const refreshAfterSpend = () => {
+      // 同一次消耗已经带着权威预算派发过事件，官方余额查询通常更旧；立刻重读会把数字拉回去。
+      void getActiveKeyHash().then(currentKeyHash => {
+        const settled = lastBudgetEventRef.current;
+        if (settled && settled.keyHash === currentKeyHash && Date.now() - settled.at < 1000) return;
+        void refresh();
+      });
+    };
     window.addEventListener(ANLAS_BUDGET_CHANGED_EVENT, update);
     window.addEventListener('nai-project-data-changed', refreshProjectChange);
     window.addEventListener('nai-api-key-changed', refreshKeyChange);

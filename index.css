@@ -4,6 +4,20 @@
 @import "./components/operationDialog.css";
 @import "./components/inputCapabilities.css";
 
+/* 实验室折叠模块：标题与正文共用卡片面；输入／翻译只做薄井，不另铺实心第二层。 */
+.lab-module-section > summary {
+  background-color: transparent !important;
+}
+.lab-module-section .prompt-tag-assist {
+  background-color: color-mix(in srgb, var(--nai-panel-solid-surface, #111827) 10%, transparent) !important;
+}
+.lab-module-section :is(textarea, input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file'])) {
+  background-color: color-mix(in srgb, var(--color-gray-100, #f3f4f6) 55%, transparent) !important;
+}
+.dark .lab-module-section :is(textarea, input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file'])) {
+  background-color: color-mix(in srgb, var(--color-gray-950, #030712) 28%, transparent) !important;
+}
+
 .image-card-actions {
   display: grid;
   grid-auto-flow: column;
@@ -440,10 +454,18 @@ html[data-design-theme='nai-atelier'] ::selection {
   background: color-mix(in srgb, var(--nai-accent) 28%, transparent);
 }
 
-/* 手机给贴底资源入口留出触控空间；平板沿用原来的图片／生成浮动位置。 */
-.mobile-generation-actions {
-  --mobile-generation-bottom: max(1rem, env(safe-area-inset-bottom));
+/* 手机实验室底栏贴底；保留旧类名兼容测试与避让变量。 */
+.mobile-generation-actions,
+.mobile-lab-dock {
+  --mobile-generation-bottom: env(safe-area-inset-bottom);
   bottom: var(--mobile-generation-bottom);
+}
+
+.generation-action-button.generation-action-button--dock {
+  min-width: 0;
+  height: 2.75rem;
+  min-height: 2.75rem;
+  max-height: 2.75rem;
 }
 
 /* 主要生成按钮：静止时保持轻量，交互和生成中才提高强调度。 */
@@ -1166,14 +1188,11 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
 
 @media (max-width: 767px) {
   /* 手机顶栏不渲染折叠把手，整行宽度都归控件，分区条也不再让出左列。 */
-  /* 顶栏放不下时整排横向滑动，不换行、不新增工具行；两侧还有控件时在该侧边缘淡出提示。 */
-  .workspace-toolbar-scroll { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
-  .workspace-toolbar-scroll::-webkit-scrollbar { display: none; }
+  /* 禁止横滑与边缘淡出：靠图标精简一次排开，可伸缩的搜索／弹性区允许收缩。 */
+  .workspace-toolbar-scroll { overflow: hidden; }
   .workspace-toolbar-scroll > * { flex-shrink: 0; }
-  .workspace-toolbar-scroll > .flex-1 { flex-shrink: 1; }
-  .workspace-toolbar-scroll[data-overflow-end] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1.75rem), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 1.75rem), transparent); }
-  .workspace-toolbar-scroll[data-overflow-start] { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 1.75rem), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 1.75rem), transparent); }
-  .workspace-toolbar-scroll[data-overflow-start][data-overflow-end] { -webkit-mask-image: linear-gradient(to right, transparent, #000 1.75rem, #000 calc(100% - 1.75rem), transparent); mask-image: linear-gradient(to right, transparent, #000 1.75rem, #000 calc(100% - 1.75rem), transparent); }
+  .workspace-toolbar-scroll > .flex-1,
+  .workspace-toolbar-scroll > .min-w-0 { flex-shrink: 1; min-width: 0; }
 
   :root {
     --mobile-topbar: 3.5rem;
@@ -1212,6 +1231,23 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     min-height: 0;
   }
 
+  /* 翻译区插入缝：决策要求只留空白细缝；抵消本段 button 44px 最小高度，避免缝被撑成大方块／独占空行。 */
+  .prompt-tag-assist button.prompt-insert-slot,
+  .prompt-tag-assist button[data-prompt-insert-slot] {
+    min-width: 0;
+    min-height: 0;
+    height: auto;
+    position: relative;
+    touch-action: manipulation;
+  }
+  /* 触控命中区向两侧扩一点，但不占 flex 宽度，排版仍按 w-3／末尾 flex-1。 */
+  .prompt-tag-assist button.prompt-insert-slot::before,
+  .prompt-tag-assist button[data-prompt-insert-slot]::before {
+    content: '';
+    position: absolute;
+    inset: 0 -10px;
+  }
+
   :root { --nai-scrollbar-size: 6px; --nai-scrollbar-track: transparent; --nai-scrollbar-border: 1px; }
 
   .mobile-touch {
@@ -1220,43 +1256,48 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     touch-action: manipulation;
   }
 
-  /* 实验室分区条降权并压矮：顶栏是唯一的一级导航，分区退成次级标签。
-     选中态由实心块改为强调色文字 + 下划线，整条不再铺不透明底。 */
+  /* 实验室分区条降权并压矮：顶栏是唯一的一级导航，分区退成次级页签。
+     选中态由实心块改为强调色文字 + 下划线；手机去掉未选项竖线，避免与上排抢戏。 */
   .workspace-mode-tabs {
-    height: 2.5rem !important;
+    height: 2.25rem !important;
     background: transparent !important;
     border-bottom-color: transparent !important;
   }
   .workspace-mode-tabs > button {
     position: relative;
-    font-size: 13px;
+    font-size: 12px;
+    font-weight: 500 !important;
     border-radius: 0 !important;
     background: transparent !important;
     box-shadow: none !important;
     color: var(--color-gray-500) !important;
   }
+  .workspace-mode-tabs > button[aria-selected='false'] + button[aria-selected='false']::before {
+    content: none;
+  }
   .workspace-mode-tabs > button[aria-current='page'],
   .workspace-mode-tabs > button[aria-selected='true'] {
     background: transparent !important;
     color: var(--nai-accent, var(--color-indigo-500)) !important;
+    font-weight: 600 !important;
     box-shadow: none !important;
   }
   .workspace-mode-tabs > button[aria-current='page']::after,
   .workspace-mode-tabs > button[aria-selected='true']::after {
     content: '';
     position: absolute;
-    left: 28%;
-    right: 28%;
-    bottom: 4px;
+    left: 30%;
+    right: 30%;
+    bottom: 3px;
     height: 2px;
     border-radius: 2px;
     background: var(--nai-accent, var(--color-indigo-500));
   }
 
-  /* 实验室隐藏了底部导航。资源行虽然占 44px，但文字靠底对齐、上方约 20px 是空白，
-     所以生成条只让到 safe + 32px，视觉上离「Anlas／额度」那行文字只留 8px。 */
-  .mobile-generation-actions {
-    --mobile-generation-bottom: calc(env(safe-area-inset-bottom) + 2rem);
+  /* 实验室底栏已含额度＋生成＋小图，贴 safe-area 即可。 */
+  .mobile-generation-actions,
+  .mobile-lab-dock {
+    --mobile-generation-bottom: env(safe-area-inset-bottom);
   }
 
   /* 助手面板同样停在底栏上沿，输入框整行都可点。 */
@@ -1277,15 +1318,16 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
 
   .mobile-toolbar { display: flex; align-items: center; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3); }
   .mobile-safe-bottom { padding-bottom: max(.75rem, env(safe-area-inset-bottom)); }
-  /* 顶层原语层级：内容窗口 1200~2000；锚定／信息浮层与手机底部面板默认 2100（调用处可显式抬高）；提示 2300；确认框 2400。
-     菜单与面板可从任意窗口内打开，必须高于全部内容窗口，否则在窗口里打开会被父窗口盖住。 */
-  .mobile-layer { position: fixed; inset: 0; z-index: 2100; background: rgb(0 0 0 / .5); backdrop-filter: blur(2px); animation: ui-fade-in 140ms ease-out; }
-  .mobile-sheet { position: absolute; inset-inline: 0; bottom: 0; display: flex; max-height: min(82dvh, 44rem); flex-direction: column; overflow: hidden; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; background: var(--nai-panel-surface); box-shadow: 0 -16px 40px rgb(0 0 0 / .25); animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }
   .mobile-detail { position: fixed; inset: 0; z-index: 1050; display: flex; height: 100dvh; flex-direction: column; overflow: hidden; background: var(--nai-panel-surface); animation: mobile-detail-in 160ms cubic-bezier(.2,.8,.2,1); }
   @keyframes mobile-detail-in { from { opacity: 0; transform: translateX(10px); } }
   .mobile-detail-header { display: flex; min-height: calc(var(--workspace-toolbar-height) + env(safe-area-inset-top)); align-items: center; gap: calc(var(--spacing) * 1.5); border-bottom: 1px solid var(--nai-panel-border); background: var(--nai-toolbar-surface); padding: env(safe-area-inset-top) calc(var(--spacing) * 2) 0; }
   .mobile-detail-footer { position: absolute; inset-inline: 0; bottom: 0; z-index: 2; display: flex; gap: calc(var(--spacing) * 2); border-top: 1px solid var(--nai-panel-border); background: var(--nai-toolbar-surface); padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3) max(calc(var(--spacing) * 2.5), env(safe-area-inset-bottom)); }
 }
+
+/* 顶层原语层级：内容窗口 1200~2000；锚定／信息浮层与底部面板默认 2100（可显式抬高）；提示 2300；确认框 2400。
+   随指针打开的作品操作面板也用于宽屏触控，尺寸不绑手机断点。 */
+.mobile-layer { position: fixed; inset: 0; z-index: 2100; background: rgb(0 0 0 / .5); backdrop-filter: blur(2px); animation: ui-fade-in 140ms ease-out; }
+.mobile-sheet { position: absolute; inset-inline: 0; bottom: 0; display: flex; max-height: min(82dvh, 44rem); flex-direction: column; overflow: hidden; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; background: var(--nai-panel-surface); box-shadow: 0 -16px 40px rgb(0 0 0 / .25); animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }
 
 /*
  * 图片列表布局（瀑布流/竖向/方形）读取当前页面覆盖，未覆盖时跟随全局偏好。

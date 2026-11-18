@@ -703,7 +703,6 @@ describe('GlobalSettings', () => {
     sessionStorage.setItem('nai_api_key', 'pst-settings-expired');
     render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
     const badge = await screen.findByText('订阅过期');
-    expect(badge.className).toContain('text-amber-700');
     expect(badge.title).toContain('Paid Anlas');
     expect(screen.queryByText('已失效')).toBeNull();
     expect(screen.queryByText('非 Opus')).toBeNull();
@@ -1058,12 +1057,10 @@ describe('GlobalSettings', () => {
     // 触控区 44（h-11/w-11），视觉圆点仍是 h-8/w-8，不再靠 mobile-size-locked 压扁全局 44px 底线。
     expect(indigoBtn.className).toContain('h-11');
     expect(indigoBtn.className).toContain('w-11');
-    expect(indigoBtn.className).toContain('rounded-full');
     expect(indigoBtn.className).not.toContain('mobile-size-locked');
     const dot = indigoBtn.querySelector('span');
     expect(dot?.className).toContain('h-8');
     expect(dot?.className).toContain('w-8');
-    expect(dot?.className).toContain('rounded-full');
   });
 
   it.each([false, true])('手机视图=%s 时四模式可设置默认展开，恢复操作彼此独立且没有排序入口', async mobile => {

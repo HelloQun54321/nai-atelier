@@ -38,7 +38,7 @@ it('同名模型展示时标注服务来源', () => {
   expect(formatModelOptionTitle(models[1], models)).toBe('deepseek-v4-flash (command-goat)');
 });
 
-it('新会话和模型切换只发送原生会话参数，不再提供预设客户端', async () => {
+it('新会话和模型切换只发送原生会话参数，破限预设只走配置保存', async () => {
   const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({ id: 's', title: '新对话' }));
   vi.stubGlobal('fetch', fetch);
   await promptAgentService.createSession({ title: '创作' });
@@ -46,7 +46,7 @@ it('新会话和模型切换只发送原生会话参数，不再提供预设客�
   expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toEqual({ title: '创作' });
   expect(JSON.parse(fetch.mock.calls[1][1]!.body as string)).toEqual({ model: 'a', thinkingLevel: 'high' });
   expect(Object.keys(promptAgentService).filter(name => /Creative|Preset|Injection/.test(name)))
-    .toEqual(['setCreativeDirect', 'setCreativeDirectRules']);
+    .toEqual(['setCreativeDirect', 'setCreativeDirectRules', 'saveCreativeDirectPresets']);
 });
 
 it('历史操作保留完整确认payload与真实partial回执，不把HTTP200提升为成功', async () => {

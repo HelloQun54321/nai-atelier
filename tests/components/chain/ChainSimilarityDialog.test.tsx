@@ -8,7 +8,7 @@ import { setLanguage } from '../../../services/i18n';
 import { installPointerEvents } from '../../support/touchEvents';
 
 const mocks = vi.hoisted(() => ({ dictionary: vi.fn() }));
-vi.mock('../../../services/artistSamples', () => ({ getArtistSampleDictionary: mocks.dictionary }));
+vi.mock('../../../services/artistSamples', () => ({ getArtistSampleDictionary: mocks.dictionary, isArtistSampleModelForPack: () => true }));
 vi.mock('../../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true),
   SmartImage: ({ src, alt, thumbnailVariant }: { src: string; alt: string; thumbnailVariant: string }) => <img src={src} alt={alt} data-thumbnail={thumbnailVariant} /> }));
 vi.mock('../../../components/ImageLightbox', () => ({ ImageLightbox: ({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) =>
@@ -304,7 +304,7 @@ it('关闭和 Esc 归还入口焦点；关闭中的迟到扫描不触发打开�
 it('手机长按显露单项删除，普通点击不删除；打开原串先退出弹层历史', async () => {
   installPointerEvents();
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
-  const viewProps = props(); render(<ChainSimilarityDialog {...viewProps} />);
+  const viewProps = props(); const view = render(<ChainSimilarityDialog {...viewProps} />);
   await screen.findByText('已扫描 3 条 · 1 组相似 · 涉及 3 条 · 线索不足 0 条');
   const image = within(card('原串 B')).getByRole('img'); const surface = image.closest('.press-reveal-surface')!;
   expect(viewProps.onDelete).not.toHaveBeenCalled();
@@ -313,11 +313,13 @@ it('手机长按显露单项删除，普通点击不删除；打开原串先退�
   act(() => vi.advanceTimersByTime(450));
   expect(surface.getAttribute('data-press-revealed')).toBe('true');
   fireEvent.pointerUp(image); vi.useRealTimers();
-  expect(window.history.state.__naiMobileLayer).toContain('chain-similarity-');
+  expect(window.history.state.__naiMobileLayer).toContain('sheet-');
   fireEvent.click(screen.getByRole('button', { name: '打开原串：原串 B' }));
   await waitFor(() => expect(viewProps.onOpenChain).toHaveBeenCalledWith('原串 B'));
   expect(viewProps.onClose).toHaveBeenCalledOnce();
-  expect(window.history.state?.__naiMobileLayer).toBeUndefined();
+  // 生产环境里父层收到 onClose 后会卸载弹层；测试模拟卸载，验证两层弹层一起退栈后不留历史。
+  view.unmount();
+  await waitFor(() => expect(window.history.state?.__naiMobileLayer).toBeUndefined());
   expect(viewProps.onClose.mock.invocationCallOrder[0]).toBeLessThan(viewProps.onOpenChain.mock.invocationCallOrder[0]);
 });
 

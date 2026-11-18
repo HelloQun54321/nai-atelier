@@ -3,6 +3,8 @@ import { ChevronDown, ChevronRight, Folder, Heart, Pencil, Plus, Trash2 } from '
 import { flattenDirectoryTree, type DirectoryTreeNode } from '../services/directoryTree.mjs';
 import { t, useLanguage } from '../services/i18n';
 import { ToolbarButton } from './DesignSystem';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { MobileBottomSheet } from './MobileUI';
 
 export const DIRECTORY_FAVORITES_ID = '#favorites';
 
@@ -34,6 +36,8 @@ export interface DirectoryTreeNavigationProps {
   onRename?: (id: string) => void;
   onDelete?: (id: string) => void;
   onMove?: (id: string, parentId: string | null) => void;
+  /** 手机直达底部选择面板：展开即打开图二，关闭／选中后回调以收起顶栏展开态；未传则保留嵌入路径条（如筛选内目录）。 */
+  onRequestClose?: () => void;
   selectLabel?: string;
   createLabel?: string;
   renameLabel?: string;
@@ -51,7 +55,7 @@ const readBranches = (key: string): Record<string, boolean> => {
 };
 const DIRECTORY_DRAG_MIME = 'application/x-nai-directory-node-';
 
-export function DirectoryTreeNavigation({ id, label, title, className, asideProps, nodes, selectedId, selectedIds, onSelect, expanded, preferenceKey, counts, totalCount, unclassifiedCount, allLabel, unclassifiedLabel, hideSpecial = false, virtualNodes = [], embedded = false, disabled = false, actionDisabled = disabled, header, footer, onCreate, onRename, onDelete, onMove, selectLabel, createLabel, renameLabel, deleteLabel, nodeProps, nodeActions, nodeLeading }: DirectoryTreeNavigationProps) {
+export function DirectoryTreeNavigation({ id, label, title, className, asideProps, nodes, selectedId, selectedIds, onSelect, expanded, preferenceKey, counts, totalCount, unclassifiedCount, allLabel, unclassifiedLabel, hideSpecial = false, virtualNodes = [], embedded = false, disabled = false, actionDisabled = disabled, header, footer, onCreate, onRename, onDelete, onMove, onRequestClose, selectLabel, createLabel, renameLabel, deleteLabel, nodeProps, nodeActions, nodeLeading }: DirectoryTreeNavigationProps) {
   useLanguage();
   const generatedId = useId();
   const navigationId = id || generatedId;
@@ -59,12 +63,22 @@ export function DirectoryTreeNavigation({ id, label, title, className, asideProp
   const countIds = useMemo(() => new Map(['*', '', ...virtualNodes.map(node => node.id), ...nodes.map(node => node.id)].map((value, index) => [value, `${navigationId}-count-${index}`])), [nodes, virtualNodes, navigationId]);
   const byId = useMemo(() => new Map(nodes.map(node => [node.id, node])), [nodes]);
   const parents = useMemo(() => new Set(nodes.map(node => node.parentId)), [nodes]);
-  const dragMime = DIRECTORY_DRAG_MIME + generatedId.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const dragMime = DIRECTORY_DRAG_MIME + generatedId.replace(/[^a-z0-9]+/gi, '').toLowerCase();
   const drag = useRef<{ id: string; scope: string } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null | undefined>();
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 767px)').matches);
   const moveAvailable = Boolean(onMove) && !disabled && !actionDisabled;
+  const mobileDirectSheet = Boolean(onRequestClose);
   const clearDrag = () => { drag.current = null; setDraggingId(null); setDropTarget(undefined); };
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(max-width: 767px)');
+    const sync = () => setIsMobile(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
   useEffect(() => {
     if (!moveAvailable || !expanded || drag.current && (drag.current.scope !== preferenceKey || !byId.has(drag.current.id))) {
       drag.current = null; setDraggingId(null); setDropTarget(undefined);
@@ -110,7 +124,16 @@ export function DirectoryTreeNavigation({ id, label, title, className, asideProp
     return values;
   }, [selected, byId]);
   const [view, setView] = useState(() => ({ key: preferenceKey, branches: readBranches(preferenceKey) }));
+  const [pickerOpen, setPickerOpen] = useState(false);
   const branches = view.key === preferenceKey ? view.branches : readBranches(preferenceKey);
+  useEffect(() => {
+    if (!expanded || disabled) {
+      setPickerOpen(false);
+      return;
+    }
+    // 直达模式：手机展开即打开选择面板，不再经过中间路径条。
+    if (mobileDirectSheet && isMobile) setPickerOpen(true);
+  }, [expanded, disabled, mobileDirectSheet, isMobile]);
   useEffect(() => {
     setView(previous => {
       const current = previous.key === preferenceKey ? previous.branches : readBranches(preferenceKey);
@@ -139,6 +162,52 @@ export function DirectoryTreeNavigation({ id, label, title, className, asideProp
   const special = [...(hideSpecial ? [] : [{ id: '*', name: allLabel ?? t('全部') }, { id: '', name: unclassifiedLabel ?? t('未归类') }]), ...virtualNodes];
   const count = (value: string) => value === '*' ? totalCount ?? counts?.get(value) : value === '' ? unclassifiedCount ?? counts?.get(value) : counts?.get(value);
   const countNode = (value: string) => count(value) === undefined ? null : <span id={countIds.get(value)} className="shrink-0 text-xs tabular-nums opacity-60">{count(value)}</span>;
+  const optionLabel = (value: string, name: string) => count(value) === undefined ? name : `${name} (${count(value)})`;
+  const mobileOptions = [
+    ...(mobileValue === '#selected' ? [{ id: '#selected', name: t('已选 {0} 个目录', [selectionCount]), disabled: true as const }] : []),
+    ...special.map(node => ({ id: node.id, name: optionLabel(node.id, node.name), disabled: false as const })),
+    ...tree.map(node => ({ id: node.id, name: optionLabel(node.id, node.path.join(' / ')), disabled: false as const })),
+  ];
+  const mobileLabel = mobileOptions.find(option => option.id === mobileValue)?.name
+    ?? (mobileValue === '#selected' ? t('已选 {0} 个目录', [selectionCount]) : selectLabel ?? t('选择目录'));
+  const pickerTitle = selectLabel ?? t('选择目录');
+  const closePicker = () => {
+    setPickerOpen(false);
+    // 仅手机直达面板关闭／选中后收起顶栏展开态；电脑侧栏上顺带打开的路径面板不影响展开。
+    if (mobileDirectSheet && isMobile) onRequestClose?.();
+  };
+  const pickDirectory = (value: string) => {
+    if (disabled || value === '#selected') return;
+    onSelect(value);
+    closePicker();
+  };
+  const openManagement = (action: () => void) => {
+    // 先收起选择面板，避免与新建／编辑窗口叠两层；不回调 onRequestClose，以便编辑取消后顶栏仍保持展开语义。
+    setPickerOpen(false);
+    action();
+  };
+  const managementButtons = <>
+    {onCreate && <ToolbarButton aria-label={createLabel ?? t('新建目录')} title={createLabel ?? t('新建目录')} disabled={disabled || actionDisabled} onClick={() => openManagement(() => onCreate(current?.id ?? null))} className="!px-2"><Plus className="h-4 w-4" /></ToolbarButton>}
+    {current && onRename && <ToolbarButton aria-label={renameLabel ?? t('重命名目录')} title={renameLabel ?? t('重命名目录')} disabled={disabled || actionDisabled} onClick={() => openManagement(() => onRename(current.id))} className="!px-2"><Pencil className="h-4 w-4" /></ToolbarButton>}
+    {current && onDelete && <ToolbarButton aria-label={deleteLabel ?? t('删除目录')} title={deleteLabel ?? t('删除目录')} disabled={disabled || actionDisabled} onClick={() => openManagement(() => onDelete(current.id))} className="!px-2"><Trash2 className="h-4 w-4" /></ToolbarButton>}
+  </>;
+  const hasManagement = !!(onCreate || onRename && current || onDelete && current);
+  const pickerSheet = (
+    <ImagePreviewPortal>
+      <MobileBottomSheet open={pickerOpen} title={pickerTitle} onClose={closePicker} headerActions={mobileDirectSheet && hasManagement ? managementButtons : undefined}>
+        <div role="listbox" aria-label={pickerTitle} data-directory-selected={mobileValue} className="space-y-1">
+          {mobileOptions.map(option => {
+            const active = !option.disabled && option.id === mobileValue;
+            const rowClass = `mobile-touch flex min-h-11 w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${active ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'} ${option.disabled || disabled ? 'opacity-60' : ''}`;
+            const icon = option.id === DIRECTORY_FAVORITES_ID ? <Heart className="h-4 w-4 flex-none" /> : <Folder className="h-4 w-4 flex-none" />;
+            // 多选摘要行只用 aria-disabled，避免 disabled 从无障碍树里消失导致测试／读屏找不到。
+            if (option.disabled) return <div key={`${option.id}:${option.name}`} role="option" data-value={option.id} aria-selected={false} aria-disabled="true" className={rowClass}>{icon}<span className="min-w-0 flex-1 truncate">{option.name}</span></div>;
+            return <button key={`${option.id}:${option.name}`} type="button" role="option" data-agent-action="browse" data-value={option.id} aria-selected={active} disabled={disabled} onClick={() => pickDirectory(option.id)} className={rowClass}>{icon}<span className="min-w-0 flex-1 truncate">{option.name}</span></button>;
+          })}
+        </div>
+      </MobileBottomSheet>
+    </ImagePreviewPortal>
+  );
   const row = (value: string, name: string, path: string, depth: number, node?: DirectoryTreeNode) => {
     const active = selected.has(value);
     const props = nodeProps?.(value) || {};
@@ -157,19 +226,27 @@ export function DirectoryTreeNavigation({ id, label, title, className, asideProp
       {nodeActions?.(value)}
     </div>;
   };
-  if (!expanded) return <aside id={navigationId} hidden aria-label={label} className="hidden" />;
-  return <aside {...asideProps} id={navigationId} aria-label={label} className={`directory-tree-navigation flex min-h-0 flex-col overflow-hidden ${embedded ? 'w-full md:h-full' : 'workspace-category-navigation appearance-panel workspace-fixed-pane flex-none border-b border-gray-200 p-3 dark:border-gray-800 md:w-52 md:border-b-0 md:border-r'} ${className || ''} ${asideProps?.className || ''}`}>
+  if (!expanded) return <aside id={navigationId} hidden aria-label={label} className="hidden" data-directory-selected={mobileValue} />;
+  // 手机直达：只挂选择面板，不占顶栏下方中间条；电脑仍展开侧栏树。
+  if (mobileDirectSheet && isMobile) {
+    return <>
+      <aside id={navigationId} hidden aria-label={label} className="hidden" data-directory-selected={mobileValue} />
+      {pickerSheet}
+    </>;
+  }
+  return <aside {...asideProps} id={navigationId} aria-label={label} data-directory-selected={mobileValue} className={`directory-tree-navigation flex min-h-0 flex-col overflow-hidden ${embedded ? 'w-full md:h-full' : 'workspace-category-navigation appearance-panel workspace-fixed-pane flex-none border-b border-gray-200 p-3 dark:border-gray-800 md:w-52 md:border-b-0 md:border-r'} ${className || ''} ${asideProps?.className || ''}`}>
     <div className="directory-tree-header shrink-0">{header}
     <div className="mb-2 flex items-center justify-between gap-1"><span title={title} className="min-w-0 truncate text-xs font-semibold text-gray-500">{title}</span><div className="flex shrink-0 gap-1">
       {onCreate && <ToolbarButton aria-label={createLabel ?? t('新建目录')} title={createLabel ?? t('新建目录')} disabled={disabled || actionDisabled} onClick={() => onCreate(current?.id ?? null)} className="!px-2"><Plus className="h-4 w-4" /></ToolbarButton>}
       {current && onRename && <ToolbarButton aria-label={renameLabel ?? t('重命名目录')} title={renameLabel ?? t('重命名目录')} disabled={disabled || actionDisabled} onClick={() => onRename(current.id)} className="!px-2"><Pencil className="h-4 w-4" /></ToolbarButton>}
       {current && onDelete && <ToolbarButton aria-label={deleteLabel ?? t('删除目录')} title={deleteLabel ?? t('删除目录')} disabled={disabled || actionDisabled} onClick={() => onDelete(current.id)} className="!px-2"><Trash2 className="h-4 w-4" /></ToolbarButton>}
     </div></div></div>
-    <select data-agent-action="browse" aria-label={selectLabel ?? t('选择目录')} value={mobileValue} disabled={disabled} onChange={event => { if (!disabled) onSelect(event.target.value); }} className="mobile-touch min-h-11 w-full min-w-0 shrink-0 rounded-lg border border-gray-300 bg-transparent px-2 py-2 text-sm dark:border-gray-700 md:hidden">
-      {mobileValue === '#selected' && <option value="#selected" disabled>{t('已选 {0} 个目录', [selectionCount])}</option>}
-      {special.map(node => <option key={node.id} value={node.id}>{node.name}{count(node.id) === undefined ? '' : ` (${count(node.id)})`}</option>)}
-      {tree.map(node => <option key={node.id} value={node.id}>{node.path.join(' / ')}{count(node.id) === undefined ? '' : ` (${count(node.id)})`}</option>)}
-    </select>
+    {/* 嵌入模式在手机侧栏内显示路径条；直达模式仅桌面走到这里，路径条用 md:hidden 藏起（真机不占位，无 Tailwind 的单测仍可点开）。 */}
+    <button type="button" data-agent-action="browse" data-appearance="control" data-tone="neutral" data-value={mobileValue} aria-label={pickerTitle} title={pickerTitle} aria-haspopup="dialog" aria-expanded={pickerOpen} disabled={disabled} onClick={() => { if (!disabled) setPickerOpen(true); }} className="mobile-touch flex min-h-11 w-full min-w-0 shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-transparent px-2 py-2 text-left text-sm text-gray-700 dark:border-gray-700 dark:text-gray-200 md:hidden">
+      <span className="min-w-0 flex-1 truncate">{mobileLabel}</span>
+      <ChevronDown className="h-4 w-4 flex-none opacity-60" aria-hidden="true" />
+    </button>
+    {pickerSheet}
     <nav className="directory-tree-scroll-viewport hidden min-h-0 space-y-1 md:block md:flex-1 md:overflow-y-auto" onClickCapture={event => { if (disabled) { event.preventDefault(); event.stopPropagation(); } }} onDropCapture={event => { if (disabled) { event.preventDefault(); event.stopPropagation(); } }} onDragStartCapture={event => { if (disabled) { event.preventDefault(); event.stopPropagation(); } }}>
       {draggingId && moveAvailable && <div role="group" aria-label={t('移到根目录')} data-directory-root-drop="true" onDragOver={event => hoverDirectory(event, null)} onDrop={event => dropDirectory(event, null)} onDragLeave={() => setDropTarget(undefined)} className={`mb-2 rounded-lg border border-dashed px-2 py-2 text-xs ${dropTarget === null ? 'border-indigo-500 text-indigo-600 ring-2 ring-indigo-500 dark:text-indigo-300' : 'border-gray-300 text-gray-500 dark:border-gray-700'}`}>{t('移到根目录')}</div>}
       {special.map(node => row(node.id, node.name, node.name, 0))}{visible.map(node => row(node.id, node.name, node.path.join(' / '), node.depth, node))}

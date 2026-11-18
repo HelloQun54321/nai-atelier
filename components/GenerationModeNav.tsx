@@ -1,6 +1,9 @@
 import { t, useLanguage } from '../services/i18n';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { GenerationMode } from '../types';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { MobileBottomSheet } from './MobileUI';
 
 const GENERATION_MODES: { mode: GenerationMode; label: string }[] = [
   { mode: 'text-to-image', label: '文生图' },
@@ -19,7 +22,64 @@ interface GenerationModeNavProps {
 export const GenerationModeNav: React.FC<GenerationModeNavProps> = ({ activeMode, onSelect, disabled = false }) => {
   useLanguage();
   const modes = GENERATION_MODES;
-  return <nav className={`generation-mode-nav appearance-segmented mx-auto grid w-full max-w-3xl grid-cols-4 gap-1 rounded-xl border border-gray-200/60 bg-gray-100/90 p-1 dark:border-gray-800/80 dark:bg-gray-900/90`} aria-label={t("生成模式")}>
+  const active = modes.find(item => item.mode === activeMode) ?? modes[0];
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 767px)').matches);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(max-width: 767px)');
+    const sync = () => setIsMobile(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
+  useEffect(() => {
+    if (!isMobile) setSheetOpen(false);
+  }, [isMobile]);
+
+  // 手机：当前模式做成导航标题（左对齐、无胶囊底），点开底部面板切换；不像分段控件。
+  if (isMobile) {
+    return <>
+      <nav className="generation-mode-nav flex min-w-0 justify-start" aria-label={t('生成模式')} data-mode-chrome="compact">
+        <button
+          type="button"
+          disabled={disabled}
+          aria-haspopup="dialog"
+          aria-expanded={sheetOpen}
+          aria-current="page"
+          onClick={() => { if (!disabled) setSheetOpen(true); }}
+          className="mobile-touch inline-flex min-h-11 min-w-0 max-w-full items-center gap-0.5 rounded-lg px-1 py-1 text-base font-semibold tracking-tight text-gray-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-white"
+        >
+          <span className="min-w-0 truncate">{t(active.label)}</span>
+          <ChevronDown className="h-3.5 w-3.5 flex-none text-gray-400 dark:text-gray-500" aria-hidden="true" />
+        </button>
+      </nav>
+      <ImagePreviewPortal>
+        <MobileBottomSheet open={sheetOpen} title={t('生成模式')} onClose={() => setSheetOpen(false)}>
+          <div role="listbox" aria-label={t('生成模式')} className="space-y-1">
+            {modes.map(({ mode, label }) => {
+              const selected = activeMode === mode;
+              return <button
+                key={mode}
+                type="button"
+                role="option"
+                data-value={mode}
+                aria-selected={selected}
+                disabled={disabled}
+                onClick={() => {
+                  void onSelect(mode);
+                  setSheetOpen(false);
+                }}
+                className={`mobile-touch flex min-h-11 w-full items-center rounded-lg px-3 py-2 text-left text-sm font-bold ${selected ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'} ${disabled ? 'opacity-50' : ''}`}
+              >{t(label)}</button>;
+            })}
+          </div>
+        </MobileBottomSheet>
+      </ImagePreviewPortal>
+    </>;
+  }
+
+  return <nav className="generation-mode-nav appearance-segmented mx-auto grid w-full max-w-3xl grid-cols-4 gap-1 rounded-xl border border-gray-200/60 bg-gray-100/90 p-1 dark:border-gray-800/80 dark:bg-gray-900/90" aria-label={t('生成模式')} data-mode-chrome="segmented">
     {modes.map(({ mode, label }) => (
       <button
         key={mode}

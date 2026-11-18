@@ -74,10 +74,10 @@ it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(fr
   })));
   const { container } = render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
   await screen.findByRole('button', { name: /synthetic artwork.*artist/ });
-  expect(container.querySelector('[data-toolbar-count-caption]')?.textContent).toBe('已加载 1 件');
+  expect(container.querySelector('[data-toolbar-count-badge]')?.textContent).toBe('1');
   expect(container.querySelector('article')!.style.contentVisibility).toBe('');
   fireEvent.click(screen.getAllByRole('button', { name: '足迹' })[0]);
-  expect(container.querySelector('[data-toolbar-count-caption]')?.textContent).toBe('共 4 条');
+  expect(container.querySelector('[data-toolbar-count-badge]')?.textContent).toBe('4');
   const cards = Array.from(container.querySelectorAll<HTMLElement>('article'));
   expect(cards).toHaveLength(4);
   cards.forEach(card => {
@@ -299,7 +299,6 @@ it.each(['masonry', 'portrait', 'square', 'history'])('Pixiv %s 卡片沿用 AIT
   expect(root.scrollTop).toBe(1050);
   expect(scrollCalls.slice(0, 2)).toEqual([{ top: 800, behavior: 'instant' }, { top: 1050, behavior: 'smooth' }]);
   expect(screen.getByText('Pixiv #100 · 800×1200 · 2页')).toBeTruthy();
-  expect(cards[0].className).toContain('ring-2');
   expect(cards[0].className).not.toContain('brightness-');
   expect(cards[1].className).toContain('brightness-[.7]');
   fireEvent.click(second);

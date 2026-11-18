@@ -15,7 +15,7 @@ import { HistoryImagePicker } from './HistoryImagePicker';
 import { PromptLibraryCard, PromptLibraryGallery } from './PromptLibraryCard';
 import { IMAGE_CARD_ACTION_CLASS } from './ImageShareActions';
 import { EmptyState, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { PromptLibraryTagEditor } from './PromptLibraryTagEditor';
 
@@ -89,6 +89,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
     finally { setBusy(''); }
   };
   const toolbar = <>
+    {chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountBadge total={records.length} loaded={shown.length} />}
     <ToolbarPopover title={t('筛选组合库')} width={280}>
       <label className="block text-xs font-semibold text-gray-500">{t('自定义标签')}<select aria-label={t('自定义标签')} className={TOOLBAR_FIELD_CLASS} value={tag} onChange={event => { setTag(event.target.value); resetScroll(); }}><option value="">{t('全部标签')}</option>{(section === 'saved' ? promptLibraryCategoryNames(chains, [...(library?.categoryNames || []), ...(library?.categoryTree?.nodes.map(node => node.name) || [])]) : [...new Set(records.flatMap(({ chain }) => chain.tags || []))].sort()).map(value => <option key={value} value={value}>{section === 'saved' ? promptLibraryCategoryLabel(library?.categoryTree, value) : value}</option>)}</select></label>
       <label className="block text-xs font-semibold text-gray-500">{t('排序')}
@@ -99,7 +100,6 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
     </ToolbarPopover>
     <ToolbarSearch value={query} aria-label={t('搜索名称、标签或提示词')} placeholder={t('搜索名称、标签或提示词')}
       onChange={event => { setQuery(event.target.value); resetScroll(); }} containerClassName="md:max-w-none!" />
-    {chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountCaption>{`${t(query.trim() || tag ? '匹配 {0} 条' : '共 {0} 条', [records.length])} · ${t('已加载 {0} 条', [shown.length])}`}</ToolbarCountCaption>}
   </>;
 
   return <div className={embedded ? 'flex min-h-0 flex-1 flex-col' : 'workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950'} data-content-roll-library="true">

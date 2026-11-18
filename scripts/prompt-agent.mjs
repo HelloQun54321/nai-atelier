@@ -127,9 +127,16 @@ const isLoopbackHostname = hostname => {
   return normalized === 'localhost' || normalized.endsWith('.localhost') || normalized === '::1' || /^127(?:\.\d{1,3}){3}$/.test(normalized);
 };
 const jsonText = value => [{ type: 'text', text: JSON.stringify(value) }];
-// 历史可能是酒馆原图索引；沿用详情返回的真实资产地址，不凭 ID 拼接另一份图片。
+const historyBinImagePath = (id, item) => {
+  if (item.externalSource !== 'st-chatu8') return `/api/local-history/recycle-bin/${encodeURIComponent(id)}/image`;
+  // 酒馆条目没有 R2 副本；只接受与条目外部 ID 一致的同源原图索引。
+  const { externalId, imageUrl } = item;
+  if (typeof externalId === 'string' && /^[a-f0-9]{64}$/.test(externalId)
+    && imageUrl === `/api/integrations/st-chatu8/history/${externalId}/image`) return imageUrl;
+};
+// 历史可能是酒馆原图索引；不要用活动历史的路径替代回收站原图。
 const projectImagePath = (kind, base, id, item) => kind === 'chain' ? item.previewImage
-  : kind === 'history_bin' ? `/api/local-history/recycle-bin/${encodeURIComponent(id)}/image`
+  : kind === 'history_bin' ? historyBinImagePath(id, item)
     : kind === 'history' || kind === 'inspiration' ? item.imageUrl || `/api/${base}/${encodeURIComponent(id)}/image`
       : item.originalImageUrl || `/api/${base}/${encodeURIComponent(id)}/image`;
 const historyBinIds = ids => {
@@ -137,7 +144,7 @@ const historyBinIds = ids => {
   return [...new Set(ids.map(id => id.trim()))];
 };
 const historyBinRisk = (operation, requestedCount, eligibleCount, skippedCount = 0) => operation === 'purge'
-  ? `将永久删除明确选择的 ${requestedCount} 条回收站历史及其可清理原图、编辑蒙版和元数据，无法恢复；被引用或状态已变化的条目将跳过。不会先移入活动历史，不退还 Anlas、Opus 或预算，也不改写消费账本。`
+  ? `将尝试永久删除明确选择的 ${requestedCount} 条回收站历史记录、可清理原图和编辑蒙版。已删除的记录无法恢复；状态已变化的条目将跳过。仍被引用的原图会保留，但对应的回收站记录仍会删除；酒馆原图不受影响。不会先移入活动历史，不退还 Anlas、Opus 或预算，也不改写消费账本。`
   : operation === 'restore' ? `将尝试恢复明确选择的 ${requestedCount} 条回收站历史；只恢复仍可恢复的条目，不覆盖活动历史或重发生图。原图、编辑蒙版、历史关联与统计保留，不返还或重复记账。`
     : `本次预览固定 ${requestedCount} 条历史，最多移入回收站 ${eligibleCount} 条，已跳过 ${skippedCount} 条。原图、编辑蒙版、元数据、关联与统计保留，可从回收站恢复；收藏或其他引用阻止移入，确认后新增引用或版本变化还会继续跳过。不会永久删除或自动清空回收站，不返还 Anlas、Opus 或预算。`;
 const withActionReason = (facts, reason) => `${facts}${text(reason).trim() ? `\n助手说明：${text(reason).trim().slice(0, 500)}` : ''}`;
@@ -4410,15 +4417,22 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'list_history_recycle_bin', label: '读取历史回收站', description: '直接分页读取回收站，不依赖历史页面。page从0开始，pageSize最多30；from/to为移入时间范围。只读，不恢复或永久删除。详情使用get_history_recycle_bin_item，媒体使用history_bin。',
-        parameters: Type.Object({ page: Type.Optional(Type.Integer({ minimum: 0 })), pageSize: Type.Optional(Type.Integer({ minimum: 1, maximum: 30 })), from: Type.Optional(Type.Number()), to: Type.Optional(Type.Number()) }),
+        name: 'list_history_recycle_bin', label: '读取历史回收站', description: '直接分页读取回收站，不依赖历史页面。page从0开始，pageSize最多30；按生成时间（createdAt）筛选，不是移入时间；结果按移入时间（movedAt）倒序。只读，不恢复或永久删除。详情使用get_history_recycle_bin_item，媒体使用history_bin。',
+        parameters: Type.Object({
+          page: Type.Optional(Type.Integer({ minimum: 0 })), pageSize: Type.Optional(Type.Integer({ minimum: 1, maximum: 30 })),
+          from: Type.Optional(Type.Number({ description: '生成时间下限，Unix 毫秒时间戳（含）' })),
+          to: Type.Optional(Type.Number({ description: '生成时间上限，Unix 毫秒时间戳（含）' })),
+        }),
         execute: async (_id, args) => {
           const page = Math.floor(clamp(args.page, 0, 1000000, 0)), pageSize = Math.floor(clamp(args.pageSize, 1, 30, 10));
           const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
           for (const key of ['from', 'to']) if (Number.isFinite(args[key])) query.set(key, String(args[key]));
           const response = await readProject(`/api/local-history/recycle-bin?${query}`);
           if (!Array.isArray(response?.items) || !Number.isSafeInteger(response.count) || response.count < 0) throw new Error('回收站分页回执不完整');
-          const items = response.items.map(item => ({ id: item.id, movedAt: item.movedAt, createdAt: item.createdAt, sourceChainId: item.sourceChainId, sourceChainName: text(item.sourceChainName).slice(0, 100), promptSummary: text(item.prompt).slice(0, 160), model: item.params?.model, imageUrl: `/api/local-history/recycle-bin/${encodeURIComponent(item.id)}/image`, read: { tool: 'get_history_recycle_bin_item', id: item.id } }));
+          const items = response.items.map(item => {
+            const path = historyBinImagePath(item.id, item);
+            return { id: item.id, movedAt: item.movedAt, createdAt: item.createdAt, sourceChainId: item.sourceChainId, sourceChainName: text(item.sourceChainName).slice(0, 100), promptSummary: text(item.prompt).slice(0, 160), model: item.params?.model, imageUrl: isProjectImagePath(path) ? path : undefined, read: { tool: 'get_history_recycle_bin_item', id: item.id } };
+          });
           const result = { page, pageSize, count: response.count, items, nextPage: (page + 1) * pageSize < response.count ? page + 1 : null };
           return { content: jsonText(result), details: result };
         },
@@ -4766,7 +4780,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'request_purge_history', label: '请求永久删除回收站历史', description: '仅永久删除明确选择的回收站 ID，必须来自回收站读取；不可逆，所有权限均单独确认，不能沿用移入确认、按条件清空或隐式先移入再删除。被引用条目将跳过，不退消费。',
+        name: 'request_purge_history', label: '请求永久删除回收站历史', description: '仅永久删除明确选择的回收站 ID，必须来自回收站读取；不可逆，所有权限均单独确认，不能沿用移入确认、按条件清空或隐式先移入再删除。状态已变化的条目跳过；共享原图保留并返回警告，但对应回收站记录仍删除；酒馆原图不受影响，不退消费。',
         parameters: Type.Object({ ids: Type.Array(Type.String(), { minItems: 1, maxItems: 500 }), reason: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           const ids = historyBinIds(args.ids), expectedVersions = {};

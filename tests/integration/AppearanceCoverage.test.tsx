@@ -201,7 +201,8 @@ describe('全局外观覆盖审计', () => {
   it('角色动作行图标紧凑但保留触屏高度，正文不再有坐标侧栏或额外横向内边距', () => {
     const source = readFileSync('components/chain/ChainEditorCharacters.tsx', 'utf8');
     expect(source).not.toContain('sm:w-28');
-    expect(source).toContain('className="lab-character relative min-w-0 py-3"');
+    // 角色行改成按标签切换后去掉了纵向内边距；这里只守住「不占横向留白／不加侧栏」的契约。
+    expect(source).toContain('className="lab-character relative min-w-0"');
     expect(declarations(".character-tools [data-appearance='control']", undefined, css)).toMatchObject({ height: '24px', width: '24px', background: 'transparent', border: '0' });
     expect(declarations(".character-tools button", '(pointer: coarse)', css)).toMatchObject({ height: '44px', 'min-height': '44px' });
   });
@@ -607,14 +608,21 @@ describe('全局外观覆盖审计', () => {
     for (const suffix of [' > summary', ' :is(div, section, article, fieldset).appearance-group:not([role]):not([data-active]):not(.appearance-segmented)']) {
       expect(declarations(`${root} .chain-editor-main .lab-module-section${suffix}`, undefined, source)).toMatchObject({ background: 'transparent', border: '0', 'backdrop-filter': 'none' });
     }
+    expect(declarations(`${root} .lab-editor-surface .lab-module-section :is(textarea, input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file']), select)`, undefined, source)['background-color']).toBe('color-mix(in srgb, var(--nai-panel-solid-surface) var(--nai-editor-field-fill, 16%), transparent)');
+    expect(declarations(`${root} .lab-editor-surface .lab-module-section .prompt-tag-assist`, undefined, source).background).toBe('transparent');
+    expect(source).toMatch(/\.lab-module-section :is\(textarea[\s\S]*?background-color:[^;]+!important/);
+    expect(source).toMatch(/\.lab-module-section \.prompt-tag-assist[\s\S]*?background:\s*transparent\s*!important/);
     expect(declarations('.lab-preview-stage', undefined, source)['backdrop-filter']).toBe('none');
     expect(declarations('.lab-preview-stage', undefined, source)['background-color']).toBeUndefined();
     expect(declarations("html[data-theme-material='glass'] .lab-preview-stage", undefined, source)['background-color']).toBeUndefined();
     expect(declarations("html[data-theme-material='glass']:not(.dark) .lab-preview-stage:has(.lab-preview-empty)", undefined, source)['background-color']).toContain('8%, transparent');
     expect(source).not.toContain('.lab-preview-image');
-    const nav = declarations("html[data-control-style='filled'] .generation-mode-nav > button[aria-current='page']", undefined, source);
+    const nav = declarations("html[data-control-style='filled'] .generation-mode-nav[data-mode-chrome='segmented'] > button[aria-current='page']", undefined, source);
     expect(nav['background-color']).toBe('var(--color-indigo-700)');
     expect(nav.color).toBe('var(--nai-on-accent-600)');
+    const compactNav = declarations("html[data-control-style='filled'] .generation-mode-nav[data-mode-chrome='compact'] > button[aria-current='page']", undefined, source);
+    expect(compactNav['background-color']).toBe('transparent');
+    expect(compactNav.color).toBe('inherit');
     expect(declarations(`${root} .generation-action-button--workbench:not(.generation-action-button--loading) .generation-action-button__cost`, undefined, source)).toMatchObject({ color: 'inherit', background: 'transparent' });
     const secondary = declarations("html[data-control-style='filled'] .workspace-mode-tabs > button[aria-selected='true']", undefined, source);
     expect(secondary['background-color']).toBe('color-mix(in srgb, var(--nai-accent) 14%, var(--nai-control-surface))');

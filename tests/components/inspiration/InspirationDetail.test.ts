@@ -287,7 +287,8 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(screen.getByText('#少女')).toBeTruthy();
 
     // 图片识别在标签区；底部保留导入和提取资产，分享位于图片右上。
-    expect(screen.getByRole('button', { name: /识别图片 Tag/ })).toBeTruthy();
+    // 反推入口只在实验室与提示词库，收藏详情不重复提供。
+    expect(screen.queryByRole('button', { name: /识别图片 Tag/ })).toBeNull();
     expect(screen.getByRole('button', { name: /导入实验室/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /提取资产/ })).toBeNull();
     expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy();
@@ -312,7 +313,7 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(footer?.firstElementChild?.classList.contains('flex-wrap')).toBe(true);
   });
 
-  it('作品名称行识别当前图片，结果追加到收藏标签', () => {
+  it('详情只展示已有的反推结果，不再提供发起入口', () => {
     render(
       React.createElement(InspirationDetail, {
         item: mockItem,
@@ -324,12 +325,9 @@ describe('InspirationDetail 全新重构界面走查', () => {
       })
     );
 
-    const taggerBtn = screen.getByRole('button', { name: /识别图片 Tag/ });
-    fireEvent.click(taggerBtn);
-    const panel = screen.getByTestId('image-tagger-panel');
-    expect(panel.dataset.imageUrl).toBe(mockItem.imageUrl);
-    expect(panel.dataset.actionLabel).toBe('追加 {count} 个 Tag 到收藏标签');
-    expect(taggerBtn.closest('footer')).toBeNull();
+    // 反推入口只保留在实验室与提示词库；收藏详情不重复提供发起入口。
+    expect(screen.queryByRole('button', { name: /识别图片 Tag|反推 Tag/ })).toBeNull();
+    expect(screen.queryByTestId('image-tagger-panel')).toBeNull();
   });
 
 

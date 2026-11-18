@@ -58,7 +58,7 @@ const devices: Device[] = [
   { width: 390, hover: 'hover', pointer: 'fine', anyPointer: 'fine' },
   { width: 1280, hover: 'hover', pointer: 'fine', anyPointer: 'fine' },
 ];
-it.each(devices)('设备 $width / $hover / $pointer / $anyPointer：静止隐藏，长按原位显露后可点击', device => {
+it.each(devices)('设备 $width / $hover / $pointer / $anyPointer：静止隐藏，长按后交给底部面板，圆钮保持隐藏', device => {
   for (const kind of ['md', 'lg', 'touch'] as const) {
     const { group, actions } = fixture(kind);
     const mouseFavorite = kind === 'touch' && device.anyPointer === 'fine' && device.hover === 'hover';
@@ -66,7 +66,8 @@ it.each(devices)('设备 $width / $hover / $pointer / $anyPointer：静止隐藏
     group.setAttribute('data-press-input', 'touch'); group.setAttribute('data-test-hover', '');
     expect(stylesFor(actions, device)).toMatchObject({ opacity: '0', 'pointer-events': 'none' });
     group.setAttribute('data-press-revealed', 'true');
-    expect(stylesFor(actions, device)).toMatchObject({ opacity: '1', 'pointer-events': 'auto' });
+    // 长按只负责把底部操作面板叫出来；原位圆钮保持隐藏，避免两套操作同时可点。
+    expect(stylesFor(actions, device)).toMatchObject({ opacity: '0', 'pointer-events': 'none' });
     group.removeAttribute('data-press-revealed');
     expect(stylesFor(actions, device)).toMatchObject({ opacity: '0', 'pointer-events': 'none' });
   }

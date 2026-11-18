@@ -3,6 +3,7 @@ import { openPurposeGroup } from '../support/promptPurposeGroups';
 import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { directoryPickerValue, openDirectoryPicker, pickDirectoryOption } from '../support/directoryPicker';
 beforeEach(() => vi.stubGlobal('ResizeObserver', class { constructor(private callback: ResizeObserverCallback) {} observe(target: Element) { if (target.classList.contains('chain-masonry')) this.callback([{ target, contentRect: { width: 800 } } as ResizeObserverEntry], this as unknown as ResizeObserver); } unobserve() {} disconnect() {} }));
 import type { PromptChain } from '../../types';
 import { PromptBrowseHighlight, PromptLibraryBrowser, type PromptLibraryBrowserProps } from '../../components/PromptLibraryBrowser';
@@ -144,7 +145,7 @@ it.each(['auto', 4])('列数偏好%s：详情按剩余宽度减少列数，关�
     callback: ResizeObserverCallback;
     constructor(callback: ResizeObserverCallback) { this.callback = callback; }
     observe(target: Element) {
-      if (target.classList.contains('chain-masonry')) this.callback([{ target, contentRect: { width: 800 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+      if (target.classList.contains('chain-masonry')) this.callback([{ target, contentRect: { width: 900 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
       if (target.classList.contains('workspace-scroll-viewport')) resizes.set(this, width => this.callback([{ target, contentRect: { width } } as ResizeObserverEntry], this as unknown as ResizeObserver));
     }
     disconnect() { resizes.delete(this); }
@@ -153,14 +154,14 @@ it.each(['auto', 4])('列数偏好%s：详情按剩余宽度减少列数，关�
   const view = render(<Harness />);
   try {
     const grid = document.querySelector<HTMLElement>('.chain-masonry')!;
-    act(() => resize(800));
+    act(() => resize(900));
     expect(grid.style.gridTemplateColumns).toBe('repeat(4, minmax(0, 1fr))');
     expect(localStorage.getItem('nai_mobile_image_display')).toBe(preferences);
     fireEvent.click(screen.getByRole('button', { name: '查看礼服' }));
     act(() => resize(280));
     expect(grid.style.gridTemplateColumns).toBe('repeat(1, minmax(0, 1fr))');
     fireEvent.click(within(screen.getByRole('complementary', { name: '礼服' })).getByRole('button', { name: '关闭' }));
-    act(() => resize(800));
+    act(() => resize(900));
     expect(grid.style.gridTemplateColumns).toBe('repeat(4, minmax(0, 1fr))');
   } finally { view.unmount(); globalThis.ResizeObserver = OriginalObserver; }
 });
@@ -389,15 +390,15 @@ it('范围往返保留目录选择，组合不套目录限制，手机使用紧�
   const combo = { id: 'combo', ...createCombinationData('夜间组合', { scene: { kind: 'scene', filled: true, text: 'night sky' } }) } as PromptChain;
   render(<Harness chains={[...entries, combo]} />);
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-  const select = screen.getByRole('combobox', { name: '选择提示词目录' });
-  expect(select.classList.contains('md:hidden')).toBe(true);
-  fireEvent.change(select, { target: { value: 'person-wardrobe' } });
+  const trigger = screen.getByRole('button', { name: '选择提示词目录' });
+  expect(trigger.classList.contains('md:hidden')).toBe(true);
+  pickDirectoryOption('选择提示词目录', 'person-wardrobe');
   const scope = screen.getByRole('combobox', { name: '提示词库范围' });
   fireEvent.change(scope, { target: { value: 'saved' } });
   expect(document.querySelector('[data-prompt-library-entry="combo"]')).toBeTruthy();
   expect(screen.queryByRole('complementary', { name: '提示词目录导航' })).toBeNull();
   fireEvent.change(scope, { target: { value: 'items' } });
-  expect((screen.getByRole('combobox', { name: '选择提示词目录' }) as HTMLSelectElement).value).toBe('person-wardrobe');
+  expect(directoryPickerValue('选择提示词目录')).toBe('person-wardrobe');
   expect(screen.getByRole('button', { name: '收起目录' }).title).toContain('人物 / 服饰与配件');
   expect(screen.getByRole('button', { name: '筛选' }).textContent).not.toContain('服饰');
 });
@@ -408,7 +409,7 @@ it('展开偏好跨重挂载保留，旧多目录偏好在新点选前不被改�
   const view = render(<Harness />);
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   expect(localStorage.getItem('nai-prompt-library-browse')).toBe(JSON.stringify(preference));
-  expect((screen.getByRole('combobox', { name: '选择提示词目录' }) as HTMLSelectElement).value).toBe('#selected');
+  expect(directoryPickerValue('选择提示词目录')).toBe('#selected');
   view.unmount(); render(<Harness />);
   expect(screen.getByRole('button', { name: '收起目录' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '人物 / 服饰与配件' }));
@@ -639,7 +640,7 @@ it('320手机顶栏保留目录搜索筛选，范围与AI提取收进筛选且�
     fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
     expect(document.querySelector('[data-prompt-library-entry="raw"]')).toBeNull();
     expect(document.querySelector('[data-prompt-library-entry="dress"]')).toBeNull();
-    expect(document.body.textContent).toContain('组合 · 共');
+    expect(document.querySelector('[data-toolbar-count-badge]')).toBeTruthy();
     expect(Array.from((screen.getByRole('combobox', { name: '提示词库范围' }) as HTMLSelectElement).options).map(option => option.value)).toEqual(['items', 'saved']);
     fireEvent.click(screen.getByRole('button', { name: 'AI 提取分类' }));
     expect(screen.queryByRole('dialog', { name: '筛选提示词库' })).toBeNull();
@@ -773,18 +774,18 @@ it('手机组合分类选择器只有「角色」根，未归类与全部语义�
   try {
     fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } }); fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-    const select = screen.getByRole('combobox', { name: '选择组合分类' }) as HTMLSelectElement;
-    expect(select.classList.contains('md:hidden')).toBe(true);
-    expect(Array.from(select.options).find(option => option.value === 'category:角色')?.textContent).toBe('角色 (2)');
-    expect(Array.from(select.options).some(option => option.value === 'category:Qun')).toBe(false);
-    fireEvent.change(select, { target: { value: 'category:角色' } });
+    const picker = openDirectoryPicker('选择组合分类');
+    expect(screen.getByRole('button', { name: '选择组合分类' }).classList.contains('md:hidden')).toBe(true);
+    expect(picker.getByRole('option', { name: (_, el) => el.getAttribute('data-value') === 'category:角色' }).textContent).toBe('角色 (2)');
+    expect(picker.queryByRole('option', { name: (_, el) => el.getAttribute('data-value') === 'category:Qun' })).toBeNull();
+    pickDirectoryOption('选择组合分类', 'category:角色');
     expect(document.querySelector('[data-prompt-library-entry="tagged"]')).toBeTruthy();
     expect(document.querySelector('[data-prompt-library-entry="qun"]')).toBeTruthy();
     expect(document.querySelector('[data-prompt-library-entry="empty"]')).toBeNull();
-    fireEvent.change(select, { target: { value: '' } });
+    pickDirectoryOption('选择组合分类', '');
     expect(document.querySelector('[data-prompt-library-entry="empty"]')).toBeTruthy();
     expect(document.querySelector('[data-prompt-library-entry="qun"]')).toBeNull();
-    fireEvent.change(select, { target: { value: '*' } });
+    pickDirectoryOption('选择组合分类', '*');
     expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(3);
   } finally { view.unmount(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth }); }
 });
@@ -840,7 +841,7 @@ it('组合范围隐藏目录管理动作，片段范围保留新建目录', () =
   render(<Harness chains={[customCharacter('empty', '空角色')]} onCreateDirectory={onCreateDirectory} />);
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } }); fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   expect(screen.queryByRole('button', { name: '新建目录' })).toBeNull();
-  fireEvent.change(screen.getByRole('combobox', { name: '选择组合分类' }), { target: { value: 'category:角色' } });
+  pickDirectoryOption('选择组合分类', 'category:角色');
   expect(screen.queryByRole('button', { name: '新建目录' })).toBeNull();
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'items' } }); fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   fireEvent.click(screen.getByRole('button', { name: '新建目录' }));
@@ -851,7 +852,7 @@ it('组合范围隐藏重命名删除，片段目录选中时仍透传片段动�
   const onRenameDirectory = vi.fn(), onDeleteDirectory = vi.fn();
   render(<Harness chains={[customCharacter('star', '星夜')]} onRenameDirectory={onRenameDirectory} onDeleteDirectory={onDeleteDirectory} />);
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } }); fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-  fireEvent.change(screen.getByRole('combobox', { name: '选择组合分类' }), { target: { value: 'category:角色' } });
+  pickDirectoryOption('选择组合分类', 'category:角色');
   expect(screen.queryByRole('button', { name: '重命名目录' })).toBeNull();
   expect(screen.queryByRole('button', { name: '删除目录' })).toBeNull();
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'items' } }); fireEvent.click(screen.getByRole('button', { name: '展开目录' }));

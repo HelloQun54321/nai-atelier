@@ -1221,8 +1221,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <h4 className="mb-3 text-xs font-bold text-gray-800 dark:text-gray-100">{t("提示词编辑")}</h4>
                 <div className="space-y-2">
                   {([
-                    ['promptInputAutoHeight', '原文框高度跟随内容', '有多少字就显示多少；过长时内部滚动。关闭后用手拉固定高度。'],
-                    ['promptTranslationAutoHeight', '翻译区高度跟随内容', 'Tag 有多少就显示多少；过长时内部滚动。关闭后用手拉固定高度。'],
+                    ['promptInputAutoHeight', '原文框高度跟随内容', '有多少字就显示多少；过长时内部滚动。关闭后用固定高度，电脑可拖右下角。'],
+                    ['promptTranslationAutoHeight', '翻译区高度跟随内容', 'Tag 有多少就显示多少；过长时内部滚动。关闭后用固定高度，电脑可拖右下角。'],
                   ] as const).map(([key, label, description]) => <SettingSwitchRow key={key} checked={appearancePreferences[key]} onChange={next => updateAppearance({ [key]: next })} label={label} description={description} />)}
                 </div>
               </div>

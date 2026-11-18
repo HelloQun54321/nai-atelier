@@ -1,5 +1,5 @@
 import { json, error, clampInt, parseStoredJson, type D1Database, type RouteContext } from './types';
-import { HISTORY_COLUMNS, HISTORY_ALL, ensureHistoryRecycleSchema, claimHistoryWrite } from './historyRecycleSchema';
+import { HISTORY_COLUMNS, HISTORY_ALL, ensureHistoryRecycleSchema, claimHistoryWrite, liveRollHistoryReference } from './historyRecycleSchema';
 import { deactivateArtistHistory } from './artistUsageIndex';
 import { deletePromptLibraryLinksByHistory, ensurePromptLibraryLinkSchema } from './promptLibraryLinkRoutes';
 import { deleteR2File } from './settingsRoutes';
@@ -47,6 +47,7 @@ const referenceChecks = Object.entries({
   OR i.source_url IN (SELECT url FROM urls) OR (i.source_type IN ('history','local-history') AND i.source_id = t.id)) OR ${documentReference(documentSources.collection)}`,
  chain: `EXISTS(SELECT 1 FROM chains WHERE preview_image IN (SELECT url FROM urls)) OR ${documentReference(documentSources.chain)}`,
  artist: `EXISTS(SELECT 1 FROM artists WHERE image_url IN (SELECT url FROM urls) OR preview_url IN (SELECT url FROM urls)) OR ${documentReference(documentSources.artist)}`,
+ roll: liveRollHistoryReference('t'),
  shared_image: `EXISTS(SELECT 1 FROM ${HISTORY_ALL} other WHERE other.id <> t.id AND other.image_key = NULLIF(t.image_key,''))`,
  reference_check_failed: Object.values(documentSources).map(({from,value,where}) => `EXISTS(
   SELECT 1 FROM ${from} WHERE ${where} AND ${value} IS NOT NULL AND trim(${value}) <> '' AND NOT json_valid(${value})
@@ -56,9 +57,11 @@ const referenceChecks = Object.entries({
  settings: documentReference(documentSources.settings),
  reference_asset: `${referenceAsset('vibe_assets')} OR ${referenceAsset('character_reference_assets')}`,
 });
-const referenceQuery = `${referenceContext('SELECT h.id,h.is_favorite,h.image_key,h.external_id')}
- SELECT 1 FROM target t WHERE ${referenceChecks.map(([,check]) => `(${check})`).join(' OR ')}`;
-const referenceDetailsQuery = `${referenceContext('SELECT id,is_favorite,image_key,external_id FROM local_generation_history WHERE id = ? AND user_id = ?')}
+const referenceColumns = 'id,is_favorite,image_key,external_id,user_id,source_chain_id,structure_version,params,modules,created_at';
+// CASE 保持各来源条件同层。串联 OR 会让内嵌移入语句在 D1 超过表达式深度限制。
+const referenceQuery = `${referenceContext(`SELECT ${referenceColumns.split(',').map(column => `h.${column}`).join(',')}`)}
+ SELECT 1 FROM target t WHERE CASE ${referenceChecks.map(([,check]) => `WHEN (${check}) THEN 1`).join(' ')} ELSE 0 END`;
+const referenceDetailsQuery = `${referenceContext(`SELECT ${referenceColumns} FROM local_generation_history WHERE id = ? AND user_id = ?`)}
  SELECT ${referenceChecks.map(([reason,check]) => `(${check}) AS ${reason}`).join(',')} FROM target t`;
 const referenceArgs = (row: any) => [`/api/assets/${encodeURIComponent(row.image_key)}`, `/api/assets/${String(row.image_key).split('/').map(encodeURIComponent).join('/')}`];
 async function referenceReasons(db: D1Database, row: any): Promise<string[]> {

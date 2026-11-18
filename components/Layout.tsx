@@ -124,10 +124,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('home');
   const [showResources, setShowResources] = useState(false);
+  // 资源库面板分两层：第一层是本地素材库，第二层是素材浏览里的外部图源。
+  const [resourceLevel, setResourceLevel] = useState<'root' | 'external'>('root');
   const resourceMenuRef = useModalA11y<HTMLDivElement>(showResources && !hideNav);
   const requestResourcesClose = useMobileHistoryLayer(showResources && !hideNav, () => setShowResources(false), 'resources');
   const resourcesClosingRef = useRef(false);
   useEffect(() => { resourcesClosingRef.current = false; }, [showResources]);
+  useEffect(() => { if (!showResources) setResourceLevel('root'); }, [showResources]);
   useEffect(() => {
     if (!showResources || hideNav) return;
     const escape = (event: KeyboardEvent) => {
@@ -213,14 +216,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       window.cancelAnimationFrame(frame);
     };
   }, [currentView]);
-  const resourceItems = [
-    { id: 'roll', label: 'Roll 串', icon: Dice5 },
+  // Roll 串挂在风格串页的骰子入口上，不再占资源库面板与桌面工作区分组。
+  const resourceLibraryItems = [
     { id: 'library', label: '画师库', icon: icons.artist },
     { id: 'characters', label: '角色库', icon: icons.character },
     { id: 'content-library', label: '提示词库', icon: Library },
-    ...externalItems,
     { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
   ];
+  const externalBrowseItem = { id: 'external-browse', label: '素材浏览', icon: Images };
+  const resourceItems = [...resourceLibraryItems, ...externalItems];
   const resourceActive = resourceItems.some(item => item.id === activeView);
   const navigateMobile = (id: string) => {
     setShowResources(false);
@@ -510,9 +514,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       </button>}
 
       {!hideNav && <>
-        {showResources && <div className="fixed inset-0 z-[950] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={requestResourcesClose}><div ref={resourceMenuRef} role="dialog" aria-modal="true" aria-label={t("资源库菜单")} className="appearance-panel appearance-overlay absolute bottom-[calc(var(--mobile-bottom-inset)+0.5rem)] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-gray-300 dark:bg-gray-600" /><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">{t("资源库")}</span><button onClick={requestResourcesClose} className="appearance-group mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label={t("关闭资源库菜单")}><X className="h-[18px] w-[18px]" /></button></div><div className="grid grid-cols-3 gap-2">{resourceItems.map(item => { const ResourceIcon = item.icon; return <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-2xl px-1 ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'appearance-group bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><span className="flex h-6 w-6 items-center justify-center"><ResourceIcon className="h-[18px] w-[18px]" strokeWidth={1.8} /></span><span className="max-w-full truncate text-meta font-medium leading-none">{t(item.label)}</span></button>; })}</div></div></div>}
+        {showResources && <div className="fixed inset-0 z-[950] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={requestResourcesClose}><div ref={resourceMenuRef} role="dialog" aria-modal="true" aria-label={t("资源库菜单")} className="appearance-panel appearance-overlay absolute bottom-[calc(var(--mobile-bottom-inset)+0.5rem)] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-gray-300 dark:bg-gray-600" /><div className="mb-2 flex items-center justify-between gap-2 px-2"><div className="flex min-w-0 items-center gap-1.5">{resourceLevel === 'external' && <button type="button" onClick={() => setResourceLevel('root')} className="appearance-group mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label={t("返回资源库")}><ChevronLeft className="h-[18px] w-[18px]" /></button>}<span className="min-w-0 truncate text-sm font-bold">{t(resourceLevel === 'external' ? "素材浏览" : "资源库")}</span></div><button onClick={requestResourcesClose} className="appearance-group mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label={t("关闭资源库菜单")}><X className="h-[18px] w-[18px]" /></button></div><div className={`grid gap-2 ${resourceLevel === 'external' ? 'grid-cols-2' : 'grid-cols-3'}`}>{(resourceLevel === 'external' ? externalItems : [...resourceLibraryItems, externalBrowseItem]).map(item => { const ResourceIcon = item.icon; const external = item.id === 'external-browse'; const active = external ? Boolean(externalActiveItem) : activeView === item.id; return <button key={item.id} onClick={() => external ? setResourceLevel('external') : navigateMobile(item.id)} className={`flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-2xl px-1 ${active ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'appearance-group bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><span className="flex h-6 w-6 items-center justify-center"><ResourceIcon className="h-[18px] w-[18px]" strokeWidth={1.8} /></span><span className="max-w-full truncate text-meta font-medium leading-none">{t(item.label)}</span></button>; })}</div></div></div>}
         <div className="app-mobile-nav fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start border-t border-gray-200 bg-white/95 px-1 pt-1.5 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 md:hidden">
-          <MobileNavButton label={t("风格串")} active={activeView === 'list'} icon={icons.list} onClick={() => navigateMobile('list')} />
+          <MobileNavButton label={t("风格串")} active={activeView === 'list' || activeView === 'roll'} icon={icons.list} onClick={() => navigateMobile('list')} />
           <MobileNavButton label={t("资源库")} active={resourceActive || showResources} icon={icons.resources} onClick={() => { if (showResources) requestResourcesClose(); else setShowResources(true); }} />
           <MobileNavButton label={t("实验室")} active={activeView === 'playground'} icon={icons.lab} onClick={() => navigateMobile('playground')} />
           <MobileNavButton label={t("历史")} active={activeView === 'history' || activeView === 'footprint'} icon={icons.history} onClick={() => navigateMobile('history')} />

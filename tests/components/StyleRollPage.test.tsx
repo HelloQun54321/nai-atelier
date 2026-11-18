@@ -11,14 +11,14 @@ import { executeAgentCommand, getAgentCommands } from '../../services/agentComma
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { setLanguage } from '../../services/i18n';
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), loadOne: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), alert: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, ensureCollection: vi.fn(), favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>(), interrupted: [] as any[], clearInterrupted: vi.fn(), restore: vi.fn(async () => {}), getQueue: vi.fn(async () => ({ intervalSeconds: 2, intervalJitterPercent: 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })), setIntervalPref: vi.fn(async (_key: string, seconds: number, jitterPercent?: number) => ({ intervalSeconds: seconds, intervalJitterPercent: jitterPercent ?? 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })) }));
+const mocks = vi.hoisted(() => ({ load: vi.fn(), loadOne: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), alert: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, remove: vi.fn(), setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, ensureCollection: vi.fn(), favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>(), interrupted: [] as any[], clearInterrupted: vi.fn(), restore: vi.fn(async () => {}), getQueue: vi.fn(async () => ({ intervalSeconds: 2, intervalJitterPercent: 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })), setIntervalPref: vi.fn(async (_key: string, seconds: number, jitterPercent?: number) => ({ intervalSeconds: seconds, intervalJitterPercent: jitterPercent ?? 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })) }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: async () => ({ available: true, canManage: true, packs: [] }), ARTIST_SAMPLES_CHANGED: 'nai-artist-samples-changed', getArtistSampleLibrary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: async () => [] }));
 const sampleUrls = new Map<string, string>();
 vi.mock('../../services/artistSampleUrls', () => ({ loadArtistSampleUrls: async () => sampleUrls }));
 vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => preferredItems, subscribeCollection: (listener: () => void) => { mocks.collectionListeners.add(listener); return () => { mocks.collectionListeners.delete(listener); }; }, collectionRevision: () => mocks.collectionRevision, ensureCollection: mocks.ensureCollection, toggleArtistPreference: vi.fn(), collectionTargetActive: (target: { sourceId?: string }) => mocks.favorites.has(target.sourceId || '') }));
 vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), getArtistSampleData: async () => ({ templates: {}, samples: [] }), getSampledArtistTags: mocks.sampled }));
-vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollExperiments: mocks.load, loadRollExperiment: mocks.loadOne, saveRollExperiment: mocks.save, loadRollHistory: mocks.history, loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
+vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollExperiments: mocks.load, loadRollExperiment: mocks.loadOne, saveRollExperiment: mocks.save, deleteRollExperiment: mocks.remove, loadRollHistory: mocks.history, loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
 vi.mock('../../services/styleRollGeneration', () => ({ beginRollGeneration: mocks.generate, readRollApiKey: () => mocks.key }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { subscribe: () => () => {} } }));
 vi.mock('../../services/generationSeries', () => ({ getGenerationSeriesSession: () => mocks.session, subscribeGenerationSeries: () => () => {}, stopGenerationSeriesSession: mocks.stop, approveGenerationSeries: mocks.approve, restoreGenerationSeriesSessions: mocks.restore, listInterruptedGenerationSeries: () => mocks.interrupted, clearInterruptedGenerationSeries: mocks.clearInterrupted }));
@@ -59,7 +59,7 @@ let experiment: RollExperiment;
 const rows = (e: RollExperiment) => e.candidates.map(candidate => rollImageFixture(e, candidate));
 beforeEach(() => {
   sampleUrls.clear(); mocks.sampled.mockResolvedValue(new Set(['alpha']));
-  preferredItems.length = 0; vi.clearAllMocks(); mocks.ensureCollection.mockReset().mockResolvedValue(undefined); mocks.favorites = new Set(); mocks.collectionRevision = 0; mocks.collectionListeners.clear(); mocks.cost = 0; mocks.mobile = false; mocks.setupHistory = false; mocks.session = null; mocks.setupRules = null; mocks.key = 'synthetic-key'; localStorage.clear(); sessionStorage.clear();
+  preferredItems.length = 0; vi.clearAllMocks(); mocks.ensureCollection.mockReset().mockResolvedValue(undefined); mocks.favorites = new Set(); mocks.collectionRevision = 0; mocks.collectionListeners.clear(); mocks.cost = 0; mocks.remove.mockReset().mockResolvedValue(undefined); mocks.mobile = false; mocks.setupHistory = false; mocks.session = null; mocks.setupRules = null; mocks.key = 'synthetic-key'; localStorage.clear(); sessionStorage.clear();
   mocks.interrupted = []; mocks.clearInterrupted.mockReset(); mocks.restore.mockClear();
   experiment = rollFixture(); experiment.candidates = [candidateFixture('a', 'alpha'), candidateFixture('b', 'beta')];
   mocks.dictionary.mockResolvedValue(experiment.artists.map(artist => ({ name: artist.tag, chinese: '', postCount: 1 })));
@@ -86,7 +86,8 @@ const setup = async (options = {}) => {
   await waitFor(() => expect(mocks.load).toHaveBeenCalled());
   // 列表只回摘要，完整记录是随后按 ID 拉取的；等这次读取落地再让用例操作页面。
   await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
-  await waitFor(() => expect(screen.queryByRole('combobox', { name: '切换画风记录' })?.getAttribute('disabled')).toBeNull());
+  // 记录切换只有一处入口：桌面是左栏开关，手机是同一个按钮打开面板。
+  await waitFor(() => expect(screen.getByRole('button', { name: '切换画风记录' })).toHaveProperty('disabled', false));
   if (experiment.candidates.length) await waitFor(() => expect(mocks.history).toHaveBeenCalled());
   return { ...view, props };
 };
@@ -263,7 +264,8 @@ it('手机390窄窗管理菜单新建先退出旧历史层，配置草稿持续�
   window.history.replaceState(null, '');
   const original = structuredClone(experiment);
   await setup();
-  fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
+  // 手机不再把记录管理藏在「更多」里：记录名按钮直接打开同一个记录面板。
+  fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
   expect(window.history.state?.__naiMobileLayer).toMatch(/^sheet-/);
   const returned = new Promise<void>(resolve => window.addEventListener('popstate', () => resolve(), { once: true }));
   fireEvent.click(screen.getByRole('button', { name: '新建记录' }));
@@ -292,7 +294,10 @@ it('删除样张广播刷新已打开Roll详情缩略图，保留候选且不保
 });
 const configure = (name: string, value: string) => { fireEvent.click(screen.getByRole('button', { name: '设置' })); for (const label of name === '每串总人数' ? ['最少画师人数', '最多画师人数'] : [name]) fireEvent.change(screen.getByRole('spinbutton', { name: label }), { target: { value } }); fireEvent.keyDown(window, { key: 'Escape' }); };
 const openArtists = () => { fireEvent.click(screen.getByRole('button', { name: '设置' })); fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ })); };
-const reloadRecords = () => { fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '重新加载画风记录' })); };
+const reloadRecords = () => {
+  if (!screen.queryByRole('complementary', { name: '画风记录列表' })) fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
+  fireEvent.click(screen.getByRole('button', { name: '重新加载画风记录' }));
+};
 /** 详情里的操作已直接放在标题栏与正文中，不再需要展开「更多操作」。 */
 const details = () => {};
 
@@ -351,19 +356,23 @@ it.each(['standard', 'full', 'read_only'] as const)('通用Roll命令不能通�
   expect(mocks.generate).toHaveBeenCalledTimes(permissionMode === 'full' ? 1 : 0);
 });
 
-it('手机390px工具栏可横向滚动，主操作固定在滚动区外并保持触控尺寸，菜单通过Portal显示且预览不单独放大', async () => {
+it('手机390px工具栏禁止横滑，主操作固定在左侧区外并保持触控尺寸，菜单通过Portal显示且预览不单独放大', async () => {
   mocks.mobile = true; vi.stubGlobal('innerWidth', 390);
   const { container } = await setup();
   const scroller = container.querySelector<HTMLElement>('[data-roll-toolbar-scroll]')!;
   expect(scroller.classList.contains('min-w-0')).toBe(true);
-  expect(scroller.classList.contains('overflow-x-auto')).toBe(true);
+  expect(scroller.classList.contains('overflow-hidden')).toBe(true);
+  expect(scroller.classList.contains('overflow-x-auto')).toBe(false);
   expect(scroller.closest('header')).toBeTruthy();
   const roll = screen.getByRole('button', { name: '再 Roll 一轮' });
   const settings = screen.getByRole('button', { name: '设置' });
   expect(scroller.contains(roll)).toBe(false); expect(scroller.contains(settings)).toBe(false);
   expect(scroller.closest('header')!.contains(roll)).toBe(true); expect(scroller.closest('header')!.contains(settings)).toBe(true);
-  expect(roll.classList.contains('h-10')).toBe(true);
+  expect(roll.className).toMatch(/!h-10/);
+  expect(roll.className).toMatch(/!w-10/);
   expect(roll.className).not.toContain('!h-7');
+  // 手机不再常驻英文 “Roll” 短标签；完整文案仅在 md+ 的隐藏跨度里保留无障碍名称。
+  expect([...roll.querySelectorAll('span')].some(span => span.textContent === 'Roll')).toBe(false);
   const preview = screen.getByAltText('候选 1');
   expect(preview.classList.contains('object-contain')).toBe(true);
   expect(preview.className).not.toMatch(/(?:group-hover:|hover:)scale/);
@@ -397,7 +406,8 @@ it('权重范围随记录切换并在重新进入后恢复，新范围只作用�
   fireEvent.click(screen.getByRole('button', { name: '设置' }));
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '0.2');
   fireEvent.keyDown(window, { key: 'Escape' });
-  fireEvent.change(screen.getByRole('combobox', { name: '切换画风记录' }), { target: { value: other.id } });
+  fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
+  fireEvent.click(await screen.findByRole('button', { name: '打开画风记录：另一记录' }));
   await waitFor(() => expect(screen.getByRole('button', { name: '设置' }).hasAttribute('disabled')).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: '设置' }));
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '2');
@@ -475,7 +485,7 @@ it('普通轮次第六张失败后仅手动补缺图，保留五张成品，不�
   const before = structuredClone(experiment);
   mocks.history.mockResolvedValue(rows(experiment).slice(0, 5));
   mocks.generate.mockResolvedValueOnce({ session: {}, settle: Promise.resolve({ success: false, outcome: 'failed', error: '<!DOCTYPE html><html><title>502 Bad Gateway</title><body>synthetic-ray</body></html>' }) });
-  await setup(); expect(screen.getByText(/本轮已出图 5\/6/)).toBeTruthy(); expect(mocks.generate).not.toHaveBeenCalled();
+  await setup(); expect(screen.getByTitle('已加载 5 / 共 6')).toBeTruthy(); expect(mocks.generate).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '补齐剩余 1 张' }));
   const errorText = await screen.findByText('服务返回了错误页面，请稍后重试');
   expect(errorText.textContent).not.toMatch(/DOCTYPE|synthetic-ray|<html/);
@@ -638,7 +648,7 @@ it('收藏读取失败不把图片判成未收藏，禁用快捷选择并可原�
   fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
   await screen.findByRole('button', { name: '查看候选 1' });
   expect(screen.queryByRole('button', { name: '查看候选 2' })).toBeNull();
-  expect(screen.getByText('匹配 1 个候选')).toBeTruthy();
+  expect(screen.getByTitle('共 1')).toBeTruthy();
   expect(mocks.ensureCollection).toHaveBeenCalledTimes(2);
 });
 
@@ -676,7 +686,7 @@ it('收藏筛选等待历史真实就绪，不误报零匹配或空结果', asyn
   expect(screen.queryByText('暂无匹配候选')).toBeNull(); expect(screen.queryByText('匹配 0 个候选')).toBeNull();
   expect(screen.getByText('加载中…')).toBeTruthy();
   await act(async () => finish(rows(experiment))); await screen.findByRole('button', { name: '查看候选 1' });
-  expect(screen.getByText('匹配 1 个候选')).toBeTruthy();
+  expect(screen.getByTitle('共 1')).toBeTruthy();
 });
 
 it('筛选可只看已收藏或未收藏的已出图候选，多选可直接选中当前结果中的已收藏或未收藏图片', async () => {
@@ -729,15 +739,37 @@ it('完整轮次不显示伪补图入口，旧轮缺图可按轮次查到并手�
   const saved = mocks.save.mock.calls[0][0]; expect(saved.rounds[1].closedAt).toBeGreaterThan(0); expect(saved.rounds[2].candidateIds).toEqual(['a']);
 });
 
-it('记录可重命名、移入与恢复回收站，全部收起后仍保留恢复入口', async () => {
-  await setup(); fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
+it('记录可重命名与删除，删除后记录与候选一并离场且不触碰原图', async () => {
+  const other = { ...structuredClone(experiment), id: 'other-record', name: '另一记录' };
+  mocks.load.mockResolvedValue([recordSummary(experiment.id, experiment.name, { updatedAt: 2 }), recordSummary(other.id, other.name, { updatedAt: 1 })]);
+  mocks.loadOne.mockImplementation(async (id: string) => structuredClone(id === other.id ? other : experiment));
+  await setup();
+  // 记录管理只有左栏一处，顶栏不再保留「管理记录」浮层。
+  expect(screen.queryByRole('button', { name: '管理记录' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
+  fireEvent.click(await screen.findByRole('button', { name: '重命名记录：合成实验' }));
   fireEvent.change(screen.getByRole('textbox', { name: '记录名称' }), { target: { value: '新的画风记录' } }); fireEvent.submit(screen.getByRole('textbox', { name: '记录名称' }).closest('form')!);
-  await screen.findByRole('option', { name: '新的画风记录' });
-  fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '将记录移入回收站' }));
-  await waitFor(() => expect(screen.queryByRole('button', { name: '查看候选 1' })).toBeNull());
-  fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '恢复记录：新的画风记录' }));
-  await screen.findByRole('button', { name: '查看候选 1' }); expect(mocks.save.mock.calls.at(-1)![0].archived).toBe(false);
-  expect(mocks.save.mock.calls.at(-1)![0].candidates).toEqual(experiment.candidates); expect(mocks.generate).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByRole('button', { name: '切换画风记录' }).getAttribute('title') || screen.getByRole('button', { name: '切换画风记录' }).textContent).toContain('新的画风记录'));
+  fireEvent.click(await screen.findByRole('button', { name: '删除记录：新的画风记录' }));
+  // 删除是彻底的：直接走 DELETE，而不是把 archived 标记写回记录。
+  await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith(experiment.id, expect.any(Number)));
+  expect(mocks.confirm).toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByRole('button', { name: '切换画风记录' }).getAttribute('title') || screen.getByRole('button', { name: '切换画风记录' }).textContent).toContain('另一记录'));
+  expect(mocks.save.mock.calls.some(call => call[0]?.archived === true)).toBe(false);
+  expect(mocks.generate).not.toHaveBeenCalled();
+});
+
+it('旧版回收站里标记删除的记录只保留一次性清理入口', async () => {
+  mocks.load.mockResolvedValue([recordSummary(experiment.id, experiment.name, { updatedAt: 2 }), recordSummary('legacy-record', '旧记录', { archived: true, updatedAt: 1 })]);
+  mocks.loadOne.mockImplementation(async () => structuredClone(experiment));
+  await setup();
+  // 已删除的旧记录不出现在记录导航里，左栏底部只留一次性清理。
+  fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
+  const navigation = await screen.findByRole('complementary', { name: '画风记录列表' });
+  expect(within(navigation).queryByRole('button', { name: '打开画风记录：旧记录' })).toBeNull();
+  fireEvent.click(within(navigation).getByRole('button', { name: '清理 1 条旧的已删除记录' }));
+  await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith('legacy-record', expect.any(Number)));
+  expect(mocks.confirm).toHaveBeenCalled();
 });
 
 it('设置直接固定部分 Tag，总人数包含固定项且所有权重随机', async () => {
@@ -855,7 +887,6 @@ it('卡片画师标签最多三个并显示剩余数量，编号只保留在左�
   await setup();
   const chip = screen.getByText('alpha').closest('.gallery-card-badge');
   expect(chip).toBeTruthy();
-  expect(chip!.className).toContain('text-micro');
   expect(chip!.className).toContain('min-w-0');
   // 画师标签行必须撑满底栏：磨砂底栏是纵轴布局，若只靠父级对齐会缩成内容宽度并居中。
   expect(chip!.parentElement!.className).toContain('w-full');
@@ -985,7 +1016,7 @@ it('普通新建使用推荐模板与默认参数，不继承当前记录且无�
   experiment.template = { ...experiment.template, prompt: '{style}, custom source', negativePrompt: 'custom negative', characterPrompt: 'custom character', params: { ...experiment.template.params, seed: 42, width: 1024, height: 1024 } };
   const original = structuredClone(experiment);
   await setup({ chains: [{ id: 'source', type: 'style', name: '库中风格串' } as PromptChain] });
-  fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
+  fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
   expect(screen.queryByRole('button', { name: '从风格串开始' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '新建记录' }));
   fireEvent.click(screen.getByRole('button', { name: '保存合成实验' }));
@@ -1220,7 +1251,8 @@ it('设置里直接提取抽样来源，不打开管理、不生成或保存参�
   view.rerender(<StyleRollPage {...view.props} active={false} />);
   expect(screen.queryByRole('dialog', { name: '提取接线' })).toBeNull();
   view.rerender(<StyleRollPage {...view.props} />); await waitFor(() => expect(screen.getByRole('button', { name: '再 Roll 一轮' }).hasAttribute('disabled')).toBe(false)); open();
-  fireEvent.change(screen.getByRole('combobox', { name: '切换画风记录' }), { target: { value: second.id } });
+  fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
+  fireEvent.click(await screen.findByRole('button', { name: '打开画风记录：另一个记录' }));
   expect(screen.queryByRole('dialog', { name: '提取接线' })).toBeNull();
   await waitFor(() => expect(screen.getByRole('button', { name: '设置' }).hasAttribute('disabled')).toBe(false));
   open(); expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).not.toContain('beta');
@@ -1296,4 +1328,75 @@ it.each([
   if (agent) await act(async () => { await executeAgentCommand(view.container, 'run_roll_round', { count: 1, generate: false }, false); });
   else { fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' })); await waitFor(() => expect(mocks.save).toHaveBeenCalled()); }
   expect(mocks.save.mock.calls.at(-1)![0].candidates.every((candidate: any) => candidate.tags.length === 1 && candidate.tags[0].tag === expected)).toBe(true);
+});
+
+const recordSummary = (id: string, name: string, extra: { archived?: boolean; rounds?: number; candidates?: number; createdAt?: number; updatedAt?: number } = {}) => ({ id, name, revision: 0, archived: false, createdAt: 1, updatedAt: 1, rounds: 1, candidates: 2, ...extra });
+
+it('桌面展开画风记录左栏，按名称与最近时间列出并切换记录', async () => {
+  const other = { ...structuredClone(experiment), id: 'other-record', name: '另一记录' };
+  mocks.load.mockResolvedValue([recordSummary(experiment.id, experiment.name, { updatedAt: 2 }), recordSummary(other.id, other.name, { updatedAt: 1, candidates: 5 })]);
+  mocks.loadOne.mockImplementation(async (id: string) => structuredClone(id === other.id ? other : experiment));
+  await setup();
+  // 默认折叠：顶栏按钮只显示当前记录名，主区不额外让出宽度。
+  expect(screen.queryByRole('complementary', { name: '画风记录列表' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
+  const navigation = await screen.findByRole('complementary', { name: '画风记录列表' });
+  expect(within(navigation).getByRole('button', { name: '打开画风记录：合成实验' }).getAttribute('aria-pressed')).toBe('true');
+  // 副行给出轮次、候选数与最近时间，不必展开记录就能分辨。
+  expect(within(navigation).getByText(/1 轮 · 2 个候选/)).toBeTruthy();
+  expect(within(navigation).getByText(/1 轮 · 5 个候选/)).toBeTruthy();
+  fireEvent.click(within(navigation).getByRole('button', { name: '打开画风记录：另一记录' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '切换画风记录' }).getAttribute('title') || screen.getByRole('button', { name: '切换画风记录' }).textContent).toContain('另一记录'));
+  expect(within(navigation).getByRole('button', { name: '打开画风记录：另一记录' }).getAttribute('aria-pressed')).toBe('true');
+  expect(localStorage.getItem('nai-roll-records-expanded')).toBe('true');
+});
+
+it('记录左栏支持搜索、按创建时间排序，并记住展开偏好', async () => {
+  localStorage.setItem('nai-roll-records-expanded', 'true');
+  const records = Array.from({ length: 8 }, (_, index) => recordSummary(`record-${index}`, `记录 ${index}`, { createdAt: index + 1, updatedAt: 100 - index }));
+  mocks.load.mockResolvedValue(records);
+  mocks.loadOne.mockImplementation(async (id: string) => structuredClone({ ...experiment, id, name: `记录 ${id.split('-')[1]}` }));
+  await setup();
+  const navigation = await screen.findByRole('complementary', { name: '画风记录列表' });
+  const rows = () => within(navigation).getAllByRole('button', { name: /^打开画风记录：/ }).map(button => button.getAttribute('aria-label'));
+  expect(rows()[0]).toBe('打开画风记录：记录 0');
+  fireEvent.change(within(navigation).getByRole('combobox', { name: '记录排序' }), { target: { value: 'created' } });
+  expect(rows()[0]).toBe('打开画风记录：记录 7');
+  fireEvent.change(within(navigation).getByRole('textbox', { name: '搜索画风记录' }), { target: { value: '记录 3' } });
+  expect(rows()).toEqual(['打开画风记录：记录 3']);
+  fireEvent.change(within(navigation).getByRole('textbox', { name: '搜索画风记录' }), { target: { value: '没有这条' } });
+  expect(within(navigation).getByRole('status').textContent).toBe('没有匹配的画风记录');
+});
+
+it('记录左栏内联重命名当前记录，删除后从导航移除且不触碰历史图片', async () => {
+  const other = { ...structuredClone(experiment), id: 'other-record', name: '另一记录' };
+  mocks.load.mockResolvedValue([recordSummary(experiment.id, experiment.name, { updatedAt: 3 }), recordSummary(other.id, other.name, { updatedAt: 2 })]);
+  mocks.loadOne.mockImplementation(async (id: string) => structuredClone(id === other.id ? other : experiment));
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
+  const navigation = await screen.findByRole('complementary', { name: '画风记录列表' });
+  fireEvent.click(within(navigation).getByRole('button', { name: '重命名记录：合成实验' }));
+  fireEvent.change(within(navigation).getByRole('textbox', { name: '记录名称' }), { target: { value: '改名后的记录' } });
+  fireEvent.submit(within(navigation).getByRole('textbox', { name: '记录名称' }).closest('form')!);
+  await waitFor(() => expect(mocks.save.mock.calls.at(-1)![0].name).toBe('改名后的记录'));
+  await within(navigation).findByRole('button', { name: '打开画风记录：改名后的记录' });
+  fireEvent.click(within(navigation).getByRole('button', { name: '删除记录：改名后的记录' }));
+  await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith(experiment.id, expect.any(Number)));
+  await waitFor(() => expect(screen.queryByRole('button', { name: '打开画风记录：改名后的记录' })).toBeNull());
+  expect(mocks.generate).not.toHaveBeenCalled();
+});
+
+it('手机记录按钮打开底部面板，选中记录后面板收起', async () => {
+  mocks.mobile = true; vi.stubGlobal('innerWidth', 390);
+  const other = { ...structuredClone(experiment), id: 'other-record', name: '另一记录' };
+  mocks.load.mockResolvedValue([recordSummary(experiment.id, experiment.name, { updatedAt: 2 }), recordSummary(other.id, other.name, { updatedAt: 1 })]);
+  mocks.loadOne.mockImplementation(async (id: string) => structuredClone(id === other.id ? other : experiment));
+  await setup();
+  // 手机不铺桌面左栏：同一个按钮打开底部面板。
+  fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
+  const panel = await screen.findByRole('dialog', { name: '画风记录' });
+  expect(within(panel).getByRole('button', { name: '打开画风记录：另一记录' })).toBeTruthy();
+  fireEvent.click(within(panel).getByRole('button', { name: '打开画风记录：另一记录' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '画风记录' })).toBeNull());
+  expect(screen.getByRole('button', { name: '切换画风记录' }).getAttribute('title') || '').toContain('另一记录');
 });

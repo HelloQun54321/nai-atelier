@@ -27,12 +27,13 @@ interface PromptLibraryDirectoryNavigationProps {
   onRename?: (id: string) => void;
   onDelete?: (id: string) => void;
   onMove?: (id: string, parentId: string | null) => void;
+  onRequestClose?: () => void;
   disabled?: boolean;
   embedded?: boolean;
   countsPending?: boolean;
 }
 
-export function PromptLibraryDirectoryNavigation({ id, state, entries, selectedIds, allSelected, unclassified, favorites = false, favoriteIds, onSelect, expanded, onCreate, onRename, onDelete, onMove, disabled = false, embedded = false, countsPending = false }: PromptLibraryDirectoryNavigationProps) {
+export function PromptLibraryDirectoryNavigation({ id, state, entries, selectedIds, allSelected, unclassified, favorites = false, favoriteIds, onSelect, expanded, onCreate, onRename, onDelete, onMove, onRequestClose, disabled = false, embedded = false, countsPending = false }: PromptLibraryDirectoryNavigationProps) {
   useLanguage();
   const counts = useMemo(() => {
     const values = new Map<string, Set<string>>([['*', new Set()], ['', new Set()], ...state.nodes.map(node => [node.id, new Set<string>()] as [string, Set<string>])]);
@@ -57,5 +58,5 @@ export function PromptLibraryDirectoryNavigation({ id, state, entries, selectedI
     selectedIds={favorites ? [DIRECTORY_FAVORITES_ID] : allSelected ? ['*'] : [...selectedIds, ...(unclassified ? [''] : [])]}
     virtualNodes={[{ id: DIRECTORY_FAVORITES_ID, name: t('收藏') }]}
     onSelect={select} expanded={expanded} preferenceKey="nai-prompt-library-directory-branches" counts={counts}
-    onCreate={onCreate} onRename={onRename} onDelete={onDelete} onMove={onMove} disabled={disabled} embedded={embedded} selectLabel={t('选择提示词目录')} />;
+    onCreate={onCreate} onRename={onRename} onDelete={onDelete} onMove={onMove} onRequestClose={onRequestClose} disabled={disabled} embedded={embedded} selectLabel={t('选择提示词目录')} />;
 }

@@ -117,7 +117,16 @@ export const useMobileHistoryLayer = (open: boolean, onClose: () => void | boole
       window.removeEventListener('popstate', handlePopState);
       // StrictMode／保留子树重连会立刻重新 setup，不把试清理当作真实关闭。
       queueMicrotask(() => {
-        if (registrationRef.current === registration && window.history.state?.__naiMobileLayer === marker) window.history.back();
+        if (registrationRef.current !== registration) return;
+        const state = window.history.state;
+        if (state?.__naiMobileLayer === marker) { window.history.back(); return; }
+        // 两个弹层同一次点击里一起关闭时，先关的已经把栈顶带走；等它的 pop 完成后再退自己，
+        // 否则会留下一条无人负责的 __naiMobileLayer，返回键要多按一次。
+        if (state?.__naiMobileLayers?.includes(marker)) {
+          window.addEventListener('popstate', () => {
+            if (window.history.state?.__naiMobileLayer === marker) window.history.back();
+          }, { once: true });
+        }
       });
     };
   }, [historyReady, open, active]);
@@ -137,9 +146,13 @@ export const MobileBottomSheet: React.FC<{
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  /** 标题与关闭之间的操作区（如新建），避免正文里单独占一行。 */
+  headerActions?: React.ReactNode;
   footer?: React.ReactNode;
   zIndex?: number;
-}> = ({ open, title, onClose, children, footer, zIndex }) => {
+  /** 根据实际指针打开的作品操作条也适用于宽屏触控；其他面板仍仅在手机布局显示。 */
+  allowWide?: boolean;
+}> = ({ open, title, onClose, children, headerActions, footer, zIndex, allowWide = false }) => {
   useLanguage();
   const requestClose = useMobileHistoryLayer(open, onClose, 'sheet');
   const dragStart = useRef<number | null>(null);
@@ -148,7 +161,7 @@ export const MobileBottomSheet: React.FC<{
   if (!open) return null;
 
   return (
-    <div className="mobile-layer md:hidden" style={{ zIndex }} onPointerDown={event => {
+    <div className={`mobile-layer${allowWide ? '' : ' md:hidden'}`} style={{ zIndex }} onPointerDown={event => {
       if (event.target === event.currentTarget) requestClose();
     }}>
       <section
@@ -164,8 +177,9 @@ export const MobileBottomSheet: React.FC<{
         }}
       >
         <div className="mx-auto mt-2 h-1.5 w-12 rounded-full bg-gray-300 dark:bg-gray-600" />
-        <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-          <h2 className="font-bold text-gray-900 dark:text-white">{title}</h2>
+        <header className="flex items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
+          <h2 className="min-w-0 flex-1 truncate font-bold text-gray-900 dark:text-white">{title}</h2>
+          {headerActions ? <div className="flex shrink-0 items-center gap-1">{headerActions}</div> : null}
           <MobileIconButton data-agent-action="browse" label={t("关闭")} onClick={requestClose} className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"><X className="h-5 w-5" /></MobileIconButton>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>

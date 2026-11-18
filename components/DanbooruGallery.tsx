@@ -18,7 +18,7 @@ import { Inspiration, NAIParams, User } from '../types';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
 import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { ListJumpButton } from './ListJumpButton';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { ExternalImageTools } from './ExternalImageTools';
@@ -449,6 +449,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
     <div className="workspace-canvas flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceChrome>
 <WorkspaceToolbar>
+        {loadedRef.current && <ToolbarCountBadge total={showHistory ? historyItems.length : rating !== 'all' || ratio !== 'all' || soloOnly ? Math.min(items.length, displayedItems.length) : items.length} loaded={showHistory ? undefined : items.length} />}
         <form onSubmit={submitSearch} className="min-w-0 flex-1"><ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder={t("输入中文或英文 Tag，回车搜索")} aria-label={t("搜索 Danbooru")} containerClassName="md:max-w-none!" /></form>
         <ToolbarPopover title={t("Danbooru 筛选")} count={Number(sort !== 'rank') + Number(rating !== 'all') + Number(ratio !== 'all') + Number(soloOnly)}>
         <div className="space-y-4">
@@ -507,9 +508,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
         <ToolbarButton aria-label={t("浏览足迹")} onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : 'neutral'} className="mobile-touch border-l"><Clock /><span className="hidden sm:inline">{t("足迹")}</span></ToolbarButton>
       </WorkspaceToolbar>
 
-      <ToolbarCountCaption>{showHistory ? t('共 {0} 条', [historyItems.length.toLocaleString()]) : rating !== 'all' || ratio !== 'all' || soloOnly
-        ? `${t('已加载 {0} 件', [loadedRef.current ? formatCount(items.length) : '—'])} · ${t('匹配 {0} 件', [loadedRef.current ? formatCount(displayedItems.length) : '—'])}`
-        : t('已加载 {0} 件', [loadedRef.current ? formatCount(items.length) : '—'])}</ToolbarCountCaption>
       </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className={`${selected ? 'hidden lg:block' : 'block'} workspace-scroll-viewport min-h-0 overflow-y-auto p-3 md:p-5`}>

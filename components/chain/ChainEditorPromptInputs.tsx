@@ -31,9 +31,11 @@ interface PromptFieldProps {
     hideLabel?: boolean;
     /** 提供时工具栏显示「整理」，带 sample 时再显示「样张」 */
     tidy?: PromptTidyOptions;
+    /** 提供时在输入框工具栏显示「从图片反推」，结果追加到这一栏 */
+    onReverseTag?: () => void;
 }
 
-export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, directoryId, purposeId, roleId, negativeLabel, disabled, tagAssistEnabled, onChange, onCopy, sourceName, negative, negativeLocked, onNegativeChange, hideLabel, tidy }) => {
+export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, directoryId, purposeId, roleId, negativeLabel, disabled, tagAssistEnabled, onChange, onCopy, sourceName, negative, negativeLocked, onNegativeChange, hideLabel, tidy, onReverseTag }) => {
     const id = useId();
     const clearSlot = useRef<HTMLSpanElement>(null);
     const negativeContent = onNegativeChange && <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
@@ -55,6 +57,7 @@ export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placehol
         </div>
         <TagAutocompleteTextarea id={id} aria-label={t(label)} clearActionSlotRef={clearSlot}
             promptTidy={tidy}
+            reverseTag={onReverseTag ? { onReverse: onReverseTag } : undefined}
             libraryField={{ kind: library, directoryId, purposeId, roleId }}
             tagAssistEnabled={tagAssistEnabled} showTranslations={!!value.trim()} disabled={disabled} value={value} onValueChange={onChange}
             placeholder={t(placeholder)}
@@ -84,13 +87,15 @@ export interface ChainEditorPromptInputsProps {
     mobileEditorTab: 'global' | 'character' | 'reference' | 'params';
     notify?: PromptTidyNotify;
     sample?: PromptSampleBridge;
+    /** 提供给全局正面：输入框工具栏显示「从图片反推」，结果追加到这一栏 */
+    onReversePromptTag?: () => void;
 }
 
 export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = ({
     prompt, setPrompt, sections, setSections, supplementPrompt = mergePromptSections(sections), setSupplementPrompt,
     presetSources, tagAssistEnabled, canEdit, copyPromptToClipboard,
     onPlainPromptChange, embedded = false,
-    markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab, notify, sample,
+    markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab, notify, sample, onReversePromptTag,
 }) => {
     useLanguage();
     const content = <section hidden={mobileEditorTab !== 'global'} className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>
@@ -99,7 +104,7 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                     .filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />
             </div>
             <div className="flex flex-col gap-3">
-                <PromptField label="全局正面提示词" hideLabel={!embedded} value={getEditableGlobalPrompt(prompt, supplementPrompt)} placeholder="全局正面提示词" disabled={!canEdit}
+                <PromptField label="全局正面提示词" onReverseTag={onReversePromptTag} hideLabel={!embedded} value={getEditableGlobalPrompt(prompt, supplementPrompt)} placeholder="全局正面提示词" disabled={!canEdit}
                     tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} tidy={notify && { notify, sample }} onChange={value => {
                         if (onPlainPromptChange) onPlainPromptChange(value);
                         else { setPrompt(value); setSupplementPrompt?.(''); setSections?.({}); }

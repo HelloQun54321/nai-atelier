@@ -257,7 +257,6 @@ describe('ChainEditorParams', () => {
     renderParams({ params: { ...params, variety: true } });
 
     const varietySwitch = screen.getByRole('switch', { name: 'Variety+（多样性）' });
-    expect(varietySwitch.className).toContain('hover:border-indigo-300');
     expect(varietySwitch.querySelector('.bg-indigo-500')).toBeTruthy();
     const sliders = screen.getAllByRole('slider');
     expect(sliders).toHaveLength(3); // Resolution Scale, CFG Scale, CFG Rescale

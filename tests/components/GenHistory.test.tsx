@@ -90,6 +90,15 @@ const setup = async (width = 1280, expectedCount = 2) => {
     return { ...result, notify, navigate, cards: Array.from(result.container.querySelectorAll<HTMLElement>('.mobile-gallery-item')) };
 };
 
+it('手机历史卡片只留图片，封面下方不再追加时间行', async () => {
+    const { container, cards } = await setup(390);
+    expect(container.querySelectorAll('.gallery-card-footer')).toHaveLength(0);
+    for (const card of cards) {
+        expect(card.children).toHaveLength(1);
+        expect(card.firstElementChild?.classList.contains('mobile-gallery-frame')).toBe(true);
+    }
+});
+
 it('足迹带入的画师筛选应用到历史浏览查询', async () => {
     render(<GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={vi.fn()} initialQuery={{ query: { search: 'artist:alpha_artist', sort: 'newest' }, token: 1 }} />);
     await waitFor(() => expect(vi.mocked(localHistory.getBrowseOrder).mock.calls.some(([query]) => query.search === 'artist:alpha_artist')).toBe(true));
@@ -123,17 +132,18 @@ it('历史图片选择器未知数量显示读取，缓存刷新失败保留图�
 
 it('历史仅追加下沿数量小字，原数量与手机浏览控件保留', async () => {
     const { container } = await setup(390);
-    const caption = container.querySelector('[data-toolbar-count-caption]');
-    expect(caption?.textContent).toBe('共 2 张 · 已加载 2 张');
+    const caption = container.querySelector('[data-toolbar-count-badge]');
+    expect(caption?.textContent).toBe('2');
+    expect(caption?.getAttribute('title')).toBe('已加载 2 / 共 2');
     expect(container.querySelector('.history-result-count')?.textContent).toBe('2 张');
     expect(screen.getByRole('button', { name: '随机浏览' })).toBeTruthy();
-    expect(container.querySelectorAll('[data-toolbar-count-caption]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-toolbar-count-badge]')).toHaveLength(1);
 });
 
 it('历史下沿小字按查询范围显示匹配数', async () => {
     const view = render(<GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={vi.fn()}
         initialQuery={{ query: { search: 'synthetic' }, token: 1 }} />);
-    await waitFor(() => expect(view.container.querySelector('[data-toolbar-count-caption]')?.textContent).toBe('匹配 2 张 · 已加载 2 张'));
+    await waitFor(() => expect(view.container.querySelector('[data-toolbar-count-badge]')?.getAttribute('title')).toBe('已加载 2 / 共 2'));
 });
 
 it('历史图片选择器只追加下沿小字，保留原数量与关闭按钮', async () => {
@@ -237,6 +247,31 @@ describe('历史缩略图就地操作', () => {
         expect(screen.getByRole('dialog', { name: '确认清理历史' })).toBe(dialog);
         confirmAction.mockResolvedValue(true);
         fireEvent.click(within(dialog).getByRole('button', { name: '确认移入回收站' }));
+        await waitFor(() => expect(localHistory.moveToRecycleBin).toHaveBeenCalledWith({ previewToken: 'token-7', protectedIds: [] }));
+    });
+
+    it('手机数量清理的长预览可单独聚焦阅读，保留保护原因和独立确认操作', async () => {
+        await setup(390);
+        const skipped = Array.from({ length: 80 }, (_, index) => ({ id: `protected-image-${index}`, reasons: [index === 79 ? 'reference_check_failed' : 'chain'] }));
+        vi.mocked(localHistory.previewMove).mockImplementation(async selection => ({ previewToken: `token-${selection.keepCount}`, expiresAt: Date.now() + 60000, requestedCount: 82, movableCount: 2, skippedCount: 80, skipped }));
+        fireEvent.click(screen.getByRole('button', { name: '管理' }));
+        fireEvent.click(screen.getByRole('button', { name: '只保留最近指定数量' }));
+        const dialog = screen.getByRole('dialog', { name: '确认清理历史' });
+        const count = within(dialog).getByRole('spinbutton');
+        fireEvent.change(count, { target: { value: '7' } });
+
+        const preview = await within(dialog).findByRole('region', { name: '清理预览' });
+        preview.focus();
+        expect(document.activeElement).toBe(preview);
+        expect(preview.textContent).toContain('protected-image-0: 创作配方仍在引用');
+        expect(preview.textContent).toContain('protected-image-79: 无法确认引用关系，已保留原记录');
+        const confirm = within(dialog).getByRole('button', { name: '确认移入回收站' });
+        expect(preview.contains(count)).toBe(false);
+        expect(preview.contains(confirm)).toBe(false);
+
+        confirmAction.mockResolvedValueOnce(true);
+        fireEvent.click(confirm);
+        expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ message: preview.textContent }));
         await waitFor(() => expect(localHistory.moveToRecycleBin).toHaveBeenCalledWith({ previewToken: 'token-7', protectedIds: [] }));
     });
 
@@ -514,7 +549,7 @@ describe('历史连续浏览会话', () => {
         await act(async () => loadMore?.());
         await waitFor(() => expect(container.querySelectorAll('[data-history-id]').length).toBe(60));
         expect(screen.getByText('当前显示第 1 - 60 张')).toBeTruthy();
-        expect(screen.getByText('共 65 张 · 已加载 60 张')).toBeTruthy();
+        expect(screen.getByTitle('已加载 60 / 共 65')).toBeTruthy();
         expect(localHistory.getBrowseOrder).toHaveBeenCalledOnce();
     });
 
@@ -744,6 +779,15 @@ describe('历史顶栏状态一致性', () => {
         expect(screen.getByLabelText('开始日期')).toBeTruthy();
         expect(screen.getByLabelText('结束日期')).toBeTruthy();
     });
+
+    it('创作足迹入口只在手机历史工具栏显示，电脑沿用侧栏入口', async () => {
+        const onOpenFootprint = vi.fn();
+        render(<GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={vi.fn()} onOpenFootprint={onOpenFootprint} />);
+        const entry = await screen.findByRole('button', { name: '创作足迹' });
+        expect(entry.className).toContain('md:hidden');
+        fireEvent.click(entry);
+        expect(onOpenFootprint).toHaveBeenCalledOnce();
+    });
 });
 
 // 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。
@@ -766,6 +810,81 @@ describe('回收站管理安全边界', () => {
         fireEvent.click(screen.getByRole('button', { name: '返回生成历史' }));
         await waitFor(() => expect(screen.queryByLabelText('历史回收站')).toBeNull());
         expect(container.querySelector('[data-history-id]')).toBe(cards[0]); expect(scroll.scrollTop).toBe(530);
+    });
+    it('手机管理进入回收站前先退掉管理层，返回一次保留历史卡片和滚动', async () => {
+        vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.startsWith('(max-width:'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+        const previousState = window.history.state;
+        const baseState = { syntheticHistoryPage: true };
+        window.history.replaceState(baseState, '');
+        // 延迟旧层的 popstate，模拟浏览器在点击之后才完成返回。
+        const back = vi.spyOn(window.history, 'back').mockImplementation(() => {});
+        try {
+            const { container, cards } = await setup(390);
+            const scroll = container.querySelector<HTMLElement>('.workspace-scroll-viewport')!;
+            scroll.scrollTop = 530;
+            fireEvent.click(screen.getByRole('button', { name: '管理' }));
+            const management = screen.getByRole('dialog', { name: '历史管理' });
+            expect(management.parentElement?.classList.contains('md:hidden')).toBe(true);
+            expect(window.history.state.__naiMobileLayers).toEqual([expect.stringMatching(/^sheet-/)]);
+            fireEvent.click(within(management).getByRole('button', { name: '回收站' }));
+            expect(back).toHaveBeenCalledOnce();
+            expect(screen.queryByLabelText('历史回收站')).toBeNull();
+
+            const popToHistory = () => {
+                window.history.replaceState(baseState, '');
+                fireEvent(window, new PopStateEvent('popstate', { state: baseState }));
+            };
+            popToHistory();
+            await screen.findByLabelText('历史回收站');
+            expect(screen.queryByRole('dialog', { name: '历史管理' })).toBeNull();
+            expect(window.history.state.__naiMobileLayers).toEqual([expect.stringMatching(/^history-recycle-bin-/)]);
+
+            popToHistory();
+            expect(screen.queryByLabelText('历史回收站')).toBeNull();
+            expect(window.history.state).toEqual(baseState);
+            expect(back).toHaveBeenCalledOnce();
+            expect(container.querySelector('[data-history-id]')).toBe(cards[0]);
+            expect(scroll.scrollTop).toBe(530);
+        } finally {
+            window.history.replaceState(previousState, '');
+            back.mockRestore();
+        }
+    });
+    it.each([
+        { action: '按时间移入回收站…', form: true },
+        { action: '全部移入回收站…', form: false },
+    ])('手机 $action 等管理层返回后才读取预览，取消不写入', async ({ action, form }) => {
+        vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.startsWith('(max-width:'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+        const previousState = window.history.state;
+        const baseState = { syntheticHistoryPage: true };
+        window.history.replaceState(baseState, '');
+        const back = vi.spyOn(window.history, 'back').mockImplementation(() => {});
+        const popToHistory = () => {
+            window.history.replaceState(baseState, '');
+            fireEvent(window, new PopStateEvent('popstate', { state: baseState }));
+        };
+        try {
+            await setup(390);
+            fireEvent.click(screen.getByRole('button', { name: '管理' }));
+            fireEvent.click(within(screen.getByRole('dialog', { name: '历史管理' })).getByRole('button', { name: action }));
+            expect(back).toHaveBeenCalledOnce();
+            expect(localHistory.previewMove).not.toHaveBeenCalled();
+            popToHistory();
+            expect(screen.queryByRole('dialog', { name: '历史管理' })).toBeNull();
+            if (form) {
+                await screen.findByRole('dialog', { name: '确认清理历史' });
+                expect(window.history.state.__naiMobileLayers).toEqual([expect.stringMatching(/^history-clean-/)]);
+                popToHistory();
+                expect(screen.queryByRole('dialog', { name: '确认清理历史' })).toBeNull();
+            } else {
+                await waitFor(() => expect(confirmAction).toHaveBeenCalledOnce());
+                expect(window.history.state).toEqual(baseState);
+            }
+            expect(localHistory.moveToRecycleBin).not.toHaveBeenCalled();
+        } finally {
+            window.history.replaceState(previousState, '');
+            back.mockRestore();
+        }
     });
     it('全部移动使用冻结预览，部分成功只移除completedIds并保留失败项选择', async () => {
         const { cards } = await setup(); confirmAction.mockResolvedValue(true);

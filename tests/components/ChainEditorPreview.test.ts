@@ -46,7 +46,8 @@ describe('四模式的分享入口', () => {
     expect(image.closest('.press-reveal-surface')?.getAttribute('data-press-revealed')).toBe('true');
     expect(open).not.toHaveBeenCalled();
     for (const label of ['上一张历史图', '下一张历史图']) {
-      const button = screen.getByRole('button', { name: label }); expect(button.classList.contains('hover-reveal-lg')).toBe(true); fireEvent.click(button);
+      const button = screen.getAllByRole('button', { name: label }).find(element => element.classList.contains('hover-reveal-lg'));
+      expect(button).toBeTruthy(); fireEvent.click(button!);
     }
     expect(previous).toHaveBeenCalledOnce(); expect(next).toHaveBeenCalledOnce(); expect(open).not.toHaveBeenCalled();
   });

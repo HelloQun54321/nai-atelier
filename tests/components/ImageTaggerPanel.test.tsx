@@ -48,7 +48,7 @@ describe('图片识别入口与当前图片衔接', () => {
 
   it('面板打开时可直接粘贴图片并开始识别', async () => {
     render(<ImageTaggerPanel open onClose={vi.fn()} onInsert={vi.fn()} notify={vi.fn()} />);
-    await waitFor(() => expect((screen.getByTitle('也可在此按 Ctrl+V 粘贴') as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect((screen.getByTitle(/也可在此按 Ctrl\+V 粘贴，或把图片拖进来/) as HTMLButtonElement).disabled).toBe(false));
     const image = new File(['image'], 'pasted.png', { type: 'image/png' });
     fireEvent.paste(screen.getByRole('dialog', { name: '图片反推 Tag' }), { clipboardData: { files: [image], items: [] } });
     await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalledWith(image, { threshold: 0.35, characterThreshold: 0.85 }));

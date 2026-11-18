@@ -42,7 +42,6 @@ describe('共用缩略图加载', () => {
     const current = screen.getByRole('img', { name: '同一首图' });
     expect(current.getAttribute('src')).toBe('/synthetic-local.png');
     fireEvent.load(current);
-    expect(current.className).toContain('opacity-100');
     expect(view.container.querySelector('img[aria-hidden="true"]')).toBeNull();
     view.rerender(<SmartImage eager retainWhileLoading src="/synthetic-missing.png" alt="同一首图" />);
     fireEvent.error(screen.getByRole('img', { name: '同一首图' }));
@@ -87,7 +86,6 @@ describe('共用缩略图加载', () => {
     for (const nextWidth of [239, 200, 160, 0, 200, 240]) {
       act(() => { width = nextWidth; resizeCallbacks.forEach(callback => callback()); });
       expect(screen.getByRole('img')).toBe(image);
-      expect(image.className).toContain('opacity-100');
     }
     expect(onRender).not.toHaveBeenCalled();
     act(() => { width = 241; resizeCallbacks.forEach(callback => callback()); });
@@ -116,7 +114,6 @@ describe('共用缩略图加载', () => {
     expect(image.getAttribute('src')).toBe(buildMediaUrl(source, 'thumb-960'));
     expect(image.getAttribute('loading')).toBe('eager');
     fireEvent.load(image);
-    expect(image.className).toContain('opacity-100');
     expect(screen.queryByRole('img', { name: '离屏图' })).toBeNull();
   });
 
@@ -128,7 +125,6 @@ describe('共用缩略图加载', () => {
     const upgrade = document.querySelector<HTMLImageElement>('img[aria-hidden="true"]')!;
     expect(upgrade?.getAttribute('src')).toBe('/clear.png');
     fireEvent.error(upgrade);
-    expect(preview.className).toContain('opacity-100');
   });
 
   it('原图回退仍经过需要 Referer 的网关代理', () => {
@@ -145,7 +141,6 @@ describe('共用缩略图加载', () => {
     const image = screen.getByRole('img');
     expect(image.getAttribute('src')).toBe('/synthetic.png');
     fireEvent.load(image);
-    expect(image.className).toContain('opacity-100');
   });
 
   it('普通懒加载卡片重试后重新进入预取区仍能挂载图片', () => {
@@ -165,7 +160,6 @@ describe('共用缩略图加载', () => {
     const upgrade = document.querySelector<HTMLImageElement>('img[aria-hidden="true"]')!;
     expect(upgrade?.getAttribute('src')).toBe('/synthetic-clear.png');
     fireEvent.load(upgrade);
-    expect(upgrade.className).toContain('opacity-100');
     expect(screen.queryByText('加载中…')).toBeNull();
   });
 

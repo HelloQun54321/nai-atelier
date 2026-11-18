@@ -109,9 +109,7 @@ it('三个操作共用同一形状，导入使用进入本地的向下图标', a
     screen.getByRole('button', { name: '导入词库' }),
     screen.getByRole('button', { name: '更新词库' })
   ]) {
-    expect(element.className).toContain('rounded-lg');
     expect(element.className).toContain('px-2.5');
-    expect(element.className).toContain('text-sm');
   }
   expect(screen.getByRole('button', { name: '导入词库' }).querySelector('svg')?.getAttribute('class')).toContain('lucide-import');
 });

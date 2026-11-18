@@ -62,6 +62,10 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # onnxruntime-node 的 Linux 安装脚本默认会下载 CUDA 二进制，门禁 runner 上该地址 404；
+      # 门禁只需要 CPU 版本，跳过 CUDA EP 下载，避免 npm ci 在安装阶段失败。
+      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
     steps:
       - uses: actions/checkout@v4
 

@@ -34,7 +34,7 @@ import { Check, ChevronDown, Dice5, LoaderCircle, Pencil, Plus, Settings2, Tag, 
 import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar, EmptyState } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { DanbooruCover } from './DanbooruCover';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 import { TagSelectionBar } from './TagSelectionBar';
@@ -843,8 +843,9 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        <WorkspaceChrome>
 <WorkspaceToolbar>
          {groups.toolbar}
-         <div className="relative min-w-0 flex-1 max-md:min-w-[7.5rem]">
-           <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="md:max-w-none!" className="pr-9" />
+         {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountBadge total={!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length} loaded={visibleCards.length} />}
+         <div className="relative min-w-0 flex-1">
+           <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="min-w-0 md:max-w-none!" className="pr-9" />
            {!customSource && isLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
          </div>
          <ToolbarPopover title={t("筛选角色")} count={Number(sort !== 'popular')}>
@@ -874,7 +875,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             { label: '角色库设置', icon: <Settings2 />, onClick: () => setMobileSettingsOpen(true) },
           ]} />
        </WorkspaceToolbar>
-       {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountCaption>{`${t('共 {0} 张卡片', [!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length])} · ${t('已加载 {0} 张卡片', [visibleCards.length])}`}</ToolbarCountCaption>}
 
        {gachaCards && <GalleryActiveStateBanner count={groupCards.length} entityName={t("角色")} showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => leaveGacha()} isLoading={isGachaLoading} />}
 
@@ -934,7 +934,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
          <button onClick={() => sendToPlayground(lightbox)} className="mobile-touch flex-1 rounded-xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 font-bold text-white">{t("导入实验室")}</button>
        </> : null}>
          {lightbox && <div className="space-y-4 p-3">
-           <PressRevealSurface className="group relative overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30" style={{ aspectRatio: lightbox.kind === 'catalog' ? cardRatios[lightbox.key] || 2 / 3 : undefined }}>{lightbox.kind === 'catalog' && lightbox.tagName ? <DanbooruCover tag={lightbox.tagName} kind="character" alt={lightbox.name} fixedSrc={lightbox.previewImage} showSourceBadge={false} imageClassName="w-full object-contain" notify={notify} onEdit={() => editCatalog(lightbox)} favoritePending={linkVariantFavorites && !groupCatalogReady} favoriteVariants={favoriteVariants(lightbox)} favoriteRecipe={{ prompt: cardPromptText(lightbox), negativePrompt: lightbox.chain?.negativePrompt, params: lightbox.chain?.params }} onFavoriteChange={() => toggleFavorite(lightbox, collectionSnapshot().some(item => item.sourceType === 'character' && item.sourceId === lightbox.tagName && !item.archived))} /> : lightbox.previewImage ? <>
+           <PressRevealSurface touchActions="bar" className="group relative overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30" style={{ aspectRatio: lightbox.kind === 'catalog' ? cardRatios[lightbox.key] || 2 / 3 : undefined }}>{lightbox.kind === 'catalog' && lightbox.tagName ? <DanbooruCover tag={lightbox.tagName} kind="character" alt={lightbox.name} fixedSrc={lightbox.previewImage} showSourceBadge={false} imageClassName="w-full object-contain" notify={notify} onEdit={() => editCatalog(lightbox)} favoritePending={linkVariantFavorites && !groupCatalogReady} favoriteVariants={favoriteVariants(lightbox)} favoriteRecipe={{ prompt: cardPromptText(lightbox), negativePrompt: lightbox.chain?.negativePrompt, params: lightbox.chain?.params }} onFavoriteChange={() => toggleFavorite(lightbox, collectionSnapshot().some(item => item.sourceType === 'character' && item.sourceId === lightbox.tagName && !item.archived))} /> : lightbox.previewImage ? <>
              <ViewableImage src={lightbox.previewImage} alt={lightbox.name} filename={`character-${lightbox.name}.png`} favorite={{ imageUrl: lightbox.previewImage, sourceType: 'character', sourceId: lightbox.chain?.id || lightbox.tagName || lightbox.key, title: lightbox.name, prompt: lightbox.chain?.basePrompt, negativePrompt: lightbox.chain?.negativePrompt, params: lightbox.chain?.params }} notify={notify} className="w-full object-contain" data-safe-mode-ignore="true" />
              <ImageShareOverlay imageUrl={getMobileOriginalUrl(lightbox.previewImage)} filename={`character-${lightbox.name}.png`} favorite={{ imageUrl: lightbox.previewImage, sourceType: 'character', sourceId: lightbox.chain?.id || lightbox.tagName || lightbox.key, title: lightbox.name, prompt: lightbox.chain?.basePrompt, negativePrompt: lightbox.chain?.negativePrompt, params: lightbox.chain?.params }} notify={notify} />
            </> : <div className="flex aspect-[2/3] items-center justify-center text-gray-400">{t("暂无封面")}</div>}</PressRevealSurface>

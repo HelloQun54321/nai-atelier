@@ -57,23 +57,35 @@ describe('分类模式分页', () => {
     vi.restoreAllMocks();
   });
 
-  it('空状态不重复页头按钮，卡片只保留保存', () => {
-    const character = { id: 'c1', prompt: '', x: 0.5, y: 0.5 } as CharacterParams;
-    const tools = { chains: [], params: { width: 832, height: 1216, characters: [] } as unknown as NAIParams, setParams: vi.fn(), onSaveCharacter: vi.fn() };
+  it('空状态页头保留引用新建；有角色后构图组对齐整段，保存进更多', () => {
+    const character = { id: 'c1', prompt: 'girl', x: 0.5, y: 0.5 } as CharacterParams;
+    const setParams = vi.fn();
+    const onSettingsChange = vi.fn();
+    const tools = { chains: [], params: { width: 832, height: 1216, characters: [], useCoords: true } as unknown as NAIParams, setParams, onSettingsChange, onSaveCharacter: vi.fn() };
     const props = { tab: 'character' as const, base: '', negative: '', sections, characters: [] as CharacterParams[], tagAssist: false, negativeLocked: false, onBase: vi.fn(), onNegative: vi.fn(), onSections: vi.fn(), onLayout: vi.fn(), onCopy: vi.fn(), onAddCharacter: vi.fn(), onUpdateCharacter: vi.fn(), onRemoveCharacter: vi.fn(), characterTools: tools };
     const empty = render(<LabCategoryMode {...props} />);
     expect(screen.getByText('暂无角色，点击上方添加')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: '从角色库引用' })).toHaveLength(1);
     expect(screen.getAllByRole('button', { name: '添加角色' })).toHaveLength(1);
     expect(screen.queryByRole('button', { name: '角色定位' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '自动构图' })).toBeNull();
     empty.unmount();
-    render(<LabCategoryMode {...props} characters={[character]} />);
-    expect(screen.getAllByRole('button', { name: '从角色库引用' })).toHaveLength(1);
+    render(<LabCategoryMode {...props} characters={[character]} characterTools={{ ...tools, params: { ...tools.params, characters: [character] } }} />);
     expect(screen.getAllByRole('button', { name: '添加角色' })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: '删除角色' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '角色定位' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '保存到角色库' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '自动构图' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '从角色库引用' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '保存到角色库' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '自动构图' }));
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ useCoords: false }));
+    expect(onSettingsChange).toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '角色 1 的更多操作' }));
-    expect(screen.getAllByRole('button', { name: '从角色库引用' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: '从角色库引用' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '保存到角色库' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '上移' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下移' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '移除角色' })).toBeNull();
   });
 
   it('角色在页头切换，一次只显示一个，标题跟随角色名', () => {

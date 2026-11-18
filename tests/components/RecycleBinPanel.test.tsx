@@ -24,7 +24,7 @@ beforeEach(() => {
     vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
     vi.mocked(localHistory.getBrowserMigrationRecoveryMask).mockResolvedValue(new Blob(['synthetic mask'], { type: 'image/png' }));
     vi.stubGlobal('innerWidth', 390);
-    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query === '(max-width: 767px)' && window.innerWidth < 768, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal('IntersectionObserver', class { observe() {} unobserve() {} disconnect() {} });
     vi.mocked(localHistory.getRecycleBinPage).mockResolvedValue({ items, count: items.length });
@@ -53,13 +53,15 @@ it('原图详情完整传递 prompt/negative/params/edit，列表和详情均无
 it('批量恢复仅移出completedIds，冲突条目保留选择与数量并携带冻结版本', async () => {
     vi.mocked(localHistory.restoreFromRecycleBin).mockResolvedValue(receipt(['bin-1'], 'restore', [{ id: 'bin-2', reasons: ['id_conflict'] }]));
     const { notify } = await setup();
-    fireEvent.click(screen.getByRole('button', { name: '全选已加载' }));
+    expect(screen.queryByRole('button', { name: '全选已加载' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    const menu = screen.getByRole('dialog', { name: '更多操作' });
+    fireEvent.click(within(menu).getByRole('button', { name: '全选已加载' }));
     fireEvent.click(screen.getByRole('button', { name: '恢复选中' }));
     await waitFor(() => expect(localHistory.restoreFromRecycleBin).toHaveBeenCalledWith(['bin-1', 'bin-2'], { 'bin-1': 'v1', 'bin-2': 'v2' }));
     await waitFor(() => expect(screen.queryByRole('checkbox', { name: '选择回收站图片 bin-1' })).toBeNull());
     expect((screen.getByRole('checkbox', { name: '选择回收站图片 bin-2' }) as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByText('已选 1 张')).toBeTruthy();
-    expect(screen.getByText('共 1 张 · 已加载 1 张')).toBeTruthy();
+    expect(screen.getByRole('status', { name: '已选 1 张' })).toBeTruthy();
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('已保留两份资料'), 'error');
 });
 
@@ -92,8 +94,10 @@ it('分页连续追加，详情下一张越过首批末尾且操作后定位邻�
     await waitFor(() => expect(within(dialog).getByRole('img', { name: '历史生成图片预览' }).getAttribute('src')).toBe(many[59].imageUrl));
 });
 
-it('外部变化不打断当前选择，显式刷新更新版本后允许重试', async () => {
+it('桌面显式刷新不打断当前选择，更新版本后允许重试', async () => {
+    vi.stubGlobal('innerWidth', 1280);
     await setup(); fireEvent.click(screen.getByRole('checkbox', { name: '选择回收站图片 bin-1' }));
+    expect(screen.getByLabelText('已加载 2 / 共 2')).toBeTruthy();
     act(() => listeners.forEach(listener => listener({ type: 'restore' })));
     expect(screen.getByText('回收站已变化，可刷新后重试；当前浏览与选择仍保留')).toBeTruthy();
     vi.mocked(localHistory.getRecycleBinPage).mockResolvedValue({ items: [{ ...items[0], version: 'v-new' }, items[1]], count: 2 });

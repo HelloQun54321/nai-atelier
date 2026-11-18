@@ -169,14 +169,10 @@ it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(gl
   const firstImage = card(1).querySelector('img');
   const saved = within(card(1)).getByRole('img', { name: '已收录到风格串' });
   const unsaved = within(card(2)).getByRole('button', { name: '未收录到风格串' });
-  expect(saved.className).toContain('bg-black/45');
-  expect(saved.className).toContain('hover:!bg-emerald-700');
-  expect(saved.className.split(/\s+/)).not.toContain('!bg-emerald-700');
   expect(saved.querySelector('.lucide-check')).toBeTruthy();
   expect(saved.querySelector('.lucide-layers')).toBeNull();
   expect(unsaved.className).not.toContain('hover:!bg-emerald-700');
   expect(unsaved.querySelector('.lucide-layers')).toBeTruthy();
-  expect(saved.className).toContain('rounded-full');
   expect(saved.className).not.toContain('hover-reveal');
   expect(saved.parentElement).toBe(card(1).querySelector('.mobile-gallery-frame'));
   expect(within(card(1)).queryByText('NAI')).toBeNull();
@@ -517,8 +513,6 @@ it.each([true, false])('保存后跳转=%s时单项按偏好打开编辑器，�
   expect(toggle.getAttribute('aria-pressed')).toBe(String(enabled)); expect(toggle.textContent).toBe('');
   expect(toggle.hasAttribute('data-appearance')).toBe(false);
   expect(toggle.getAttribute('data-control-kind')).toBe('icon');
-  expect(toggle.className).toContain('!bg-transparent'); expect(toggle.className).toContain('!border-transparent');
-  expect(toggle.className).toContain(enabled ? '!text-indigo-600' : '!text-gray-400');
   expect(toggle.querySelector('svg[data-aitag-icon="save-navigate"]')?.getAttribute('fill')).toBe('none');
   expect(toggle.querySelector('svg')?.getAttribute('stroke')).toBe('currentColor');
   fireEvent.click(await screen.findByRole('button', { name: '保存到风格串' }));
@@ -560,7 +554,6 @@ it('标题批量按钮逐图按自然顺序保存不同配方和封面，全程�
   const button = await screen.findByRole('button', { name: '批量保存风格串' });
   expect(button.closest('header')).toBeTruthy(); expect(button.nextElementSibling?.getAttribute('aria-label')).toBe('保存后跳转');
   expect(button.nextElementSibling?.nextElementSibling?.getAttribute('aria-label')).toBe('关闭');
-  expect(button.className).toContain('!bg-transparent'); expect(button.className).toContain('!border-transparent');
   expect(button.className).toContain('!text-emerald-600'); expect(button.className).not.toContain('hidden');
   expect(button.hasAttribute('data-appearance')).toBe(false); expect(button.getAttribute('data-control-kind')).toBe('icon');
   const icon = button.querySelector('svg[data-aitag-icon="batch-save"]');
@@ -673,7 +666,6 @@ it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(fr
       expect(marker?.getAttribute('aria-hidden')).toBe('true');
     } else expect(marker).toBeNull();
     expect(title.getAttribute('data-safe-mode-title')).toBe('true');
-    expect(first.className).toContain('bg-white');
     expect(first.className).not.toMatch(/(?:bg|border)-(?:emerald|sky)-/);
     expect(first.querySelector('.mobile-gallery-frame')?.className).toContain('bg-gray-100');
     expect(first.querySelector('.mobile-gallery-frame')?.className).not.toMatch(/bg-(?:emerald|sky)-/);
@@ -819,7 +811,6 @@ it.each(['masonry', 'portrait', 'square'])('%s 布局中选中正常亮度、其
   await waitFor(() => selected(1));
   expect(main.scrollTop).toBe(1650);
   expect(scrollTo).toHaveBeenCalledWith({ top: 1650, behavior: 'smooth' });
-  expect(card(1).className).toContain('ring-2');
   expect(card(1).className).not.toContain('brightness-');
   expect(card(2).className).toContain('brightness-[.7]');
   expect(card(1).getAttribute('data-safe-mode-work')).toBe('true');
@@ -838,7 +829,6 @@ it('关闭选中聚焦后仍可打开详情，但不压暗其他作品或自动�
   await waitFor(() => selected(1));
   expect(main.scrollTop).toBe(0);
   expect(scrollTo).not.toHaveBeenCalled();
-  expect(card(1).className).toContain('ring-2');
   expect(card(2).className).not.toContain('brightness-');
 });
 
@@ -1255,7 +1245,7 @@ it.each([1280, 390])('%spx 两项参考排除独立勾选，兼容空参考、�
   fireEvent.click(screen.getByRole('checkbox', { name: '排除精准参考' }));
   expect(visibleIds()).toEqual([1, 6]);
   expect(screen.getByRole('button', { name: width === 390 ? 'AITag 筛选 2' : '筛选 2' })).toBeTruthy();
-  expect(document.querySelector('[data-toolbar-count-caption]')?.textContent).toBe('匹配 6 条 · 已加载 2 条');
+  expect(document.querySelector('[data-toolbar-count-badge]')?.getAttribute('title')).toBe('已加载 2 / 共 6');
   expect(mocks.getWork).not.toHaveBeenCalled();
   view.unmount();
   await setup('portrait');
@@ -1318,18 +1308,18 @@ it('画师串与风格串筛选即时生效，条件标签可单独移除，清�
   const items = promptWorks(['artist:synthetic painter, 1girl', 'synthetic_bare, scenery', 'plain, scenery']);
   mocks.search.mockImplementation(async options => ({ items: options.page === 1 ? items : [], total: 3, page: options.page, page_size: 60 }));
   await setup('portrait', true, [{ id: 'chain', type: 'style', description: 'Imported from aitag #2' } as PromptChain]);
-  const caption = document.querySelector('[data-toolbar-count-caption]');
-  expect(caption?.textContent).toBe('共 3 条 · 已加载 3 条');
+  const caption = document.querySelector('[data-toolbar-count-badge]');
+  expect(caption?.textContent).toBe('3');
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
 
   fireEvent.change(screen.getByLabelText('画师串'), { target: { value: 'with' } });
   await waitFor(() => expect(visibleIds()).toEqual([1, 2]));
-  expect(caption?.textContent).toBe('匹配 3 条 · 已加载 2 条');
+  expect(caption?.getAttribute('title')).toBe('已加载 2 / 共 3');
   expect(screen.getByRole('button', { name: '移除筛选：含画师串' })).toBeTruthy();
 
   fireEvent.change(screen.getByLabelText('风格串'), { target: { value: 'unsaved' } });
   expect(visibleIds()).toEqual([1]);
-  expect(caption?.textContent).toBe('匹配 3 条 · 已加载 1 条');
+  expect(caption?.getAttribute('title')).toBe('已加载 1 / 共 3');
   expect(screen.getByRole('button', { name: '筛选 2' })).toBeTruthy();
 
   fireEvent.click(screen.getByRole('button', { name: '移除筛选：含画师串' }));

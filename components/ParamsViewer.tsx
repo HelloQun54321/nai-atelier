@@ -255,7 +255,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                                 <div className="flex items-center justify-between mb-1.5">
                                     <span className="text-micro font-bold text-indigo-500 dark:text-indigo-400 uppercase">{t("角色 {0}{1}", [idx + 1, char.enabled === false ? t(" · 已停用") : ''])}</span>
                                     <span className="text-micro text-gray-400 font-mono">
-                                        {params.useCoords ? `(${Number.isFinite(char.x) ? char.x.toFixed(2) : '0.50'}, ${Number.isFinite(char.y) ? char.y.toFixed(2) : '0.50'})` : t("AI 自动构图")}
+                                        {params.useCoords ? `(${Number.isFinite(char.x) ? char.x.toFixed(2) : '0.50'}, ${Number.isFinite(char.y) ? char.y.toFixed(2) : '0.50'})` : t("自动构图")}
                                     </span>
                                 </div>
                                 <div className="mb-1 flex items-center justify-between gap-2">

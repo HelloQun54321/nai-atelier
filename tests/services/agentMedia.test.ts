@@ -8,6 +8,14 @@ describe('聊天图片收据', () => {
     expect(extractAgentMedia([{ type: 'text', text: JSON.stringify({ displayImages: [{ id: 'c', kind: 'history', title: '酒馆历史', path }] }) }])).toHaveLength(1);
     for (const invalid of [path.replace('a'.repeat(64), 'private'), path + '?key=secret', path.replace('/image', '/metadata')]) expect(isAgentImagePath(invalid)).toBe(false);
   });
+  it('接收回收站原图收据，不把同级详情或蒙版当作原图地址', () => {
+    const path = '/api/local-history/recycle-bin/%E5%8E%86%E5%8F%B2/image';
+    const image = { id: '历史', kind: 'history_bin', title: '已移入回收站', path };
+    expect(extractAgentMedia([{ type: 'text', text: JSON.stringify({ displayImages: [image] }) }])).toEqual([image]);
+    for (const invalid of [path.replace('/image', ''), path.replace('/image', '/mask'), path.replace('%E5%8E%86%E5%8F%B2', '%2e%2e'), '//example.com' + path]) {
+      expect(isAgentImagePath(invalid)).toBe(false);
+    }
+  });
   it('本地图片只接受会话与不透明 ID，拒绝多余查询参数', () => {
     const path = '/api/prompt-agent/local-image?sessionId=s&id=' + 'a'.repeat(32);
     expect(isAgentImagePath(path)).toBe(true);

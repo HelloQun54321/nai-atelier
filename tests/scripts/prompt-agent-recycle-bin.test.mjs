@@ -1,6 +1,8 @@
 import '../support/node-environment.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
 import { PromptAgentService } from '../../scripts/prompt-agent.mjs';
 
@@ -12,18 +14,18 @@ const isolated = async (t, fn) => {
   service.appendAuditLog = async () => {};
   service.activeAgents.set('session', { agent: { abort() {} }, emit() {} });
   t.after(() => { for (const pending of service.pendingConfirmations.values()) clearTimeout(pending.timer); removeWorkspace(root); });
-  await fn(service);
+  await fn(service, root);
 };
 const receipt = (operation = 'move', extras = {}) => ({ operation, requestedCount: 1, completedCount: 1, skippedCount: 0, failedCount: 0, completedIds: ['h'], skipped: [], failed: [], warnings: [], ok: true, success: true, outcome: 'success', partial: false, ...extras });
 const preview = extras => ({ previewToken: 'frozen-preview', expiresAt: Date.now() + 300000, requestedCount: 1, movableCount: 1, skippedCount: 0, skipped: [], ...extras });
-const setup = (service, requestJson, onAction) => {
-  const project = { agentSessionId: 'session', keyHash: 'key', requestJson };
+const setup = (service, requestJson, { requestBuffer, imageInput = false, onAction } = {}) => {
+  const project = { agentSessionId: 'session', keyHash: 'key', requestJson, requestBuffer };
   let patch;
   const tools = service.createTools({ params: {} }, {}, event => {
     if (event.type !== 'action') return;
     patch = event.action.patch;
     onAction?.(patch);
-  }, project);
+  }, project, { imageInput });
   return { project, tools, patch: () => patch, call: (name, args = {}) => tools.find(tool => tool.name === name).execute('synthetic', args) };
 };
 
@@ -87,16 +89,24 @@ test('partial/blocked/缺回执均不报成功，完整计数与原因返回等�
 for (const [tool, action, operation] of [['request_restore_history', 'restore_history', 'restore'], ['request_purge_history', 'purge_history', 'purge']]) test(`${tool} 固定显式IDs与版本，reason不能覆盖风险事实`, t => isolated(t, async service => {
   service.config.permissionMode = 'full';
   const requests = [];
-  const harness = setup(service, async (path, options) => { requests.push({ path, options }); return options?.method === 'POST' ? receipt(operation) : { item: { id: 'h', version } }; });
+  const warnings = operation === 'purge' ? [{ id: 'h', reasons: ['image_retained_reference'] }] : [];
+  const harness = setup(service, async (path, options) => { requests.push({ path, options }); return options?.method === 'POST' ? receipt(operation, { warnings }) : { item: { id: 'h', version } }; });
   const waiting = harness.call(tool, { ids: ['h', 'h'], reason: '完全安全，无需确认' }); await new Promise(resolve => setImmediate(resolve)); const patch = harness.patch();
   assert.equal(patch.action, action); assert.deepEqual(patch.payload, { ids: ['h'], expectedVersions: { h: version } });
-  if (operation === 'purge') { assert.match(patch.consequence, /无法恢复/); assert.match(patch.consequence, /不退还 Anlas/); }
+  if (operation === 'purge') {
+    assert.match(patch.consequence, /无法恢复/);
+    assert.match(patch.consequence, /原图[^。]*保留[^。]*记录[^。]*删除/);
+    assert.match(patch.consequence, /不退还 Anlas/);
+  }
   assert.match(patch.consequence, /助手说明：完全安全，无需确认/);
   assert.equal(requests.length, 1);
   service.controlSession('session', 'confirm', '', { requestId: patch.requestId, accepted: true });
   await assert.rejects(service.executeConfirmedProjectAction({ sessionId: 'session', confirmationRequestId: patch.requestId, action, payload: { ids: ['h'], expectedVersions: { h: 'b'.repeat(64) } } }, harness.project), /不匹配/);
   const result = await service.executeConfirmedProjectAction({ sessionId: 'session', confirmationRequestId: patch.requestId, action, payload: patch.payload }, harness.project);
-  assert.equal(result.ok, true); await waiting;
+  assert.equal(result.ok, true);
+  const toolReceipt = content(await waiting).result;
+  assert.deepEqual(toolReceipt.completedIds, ['h']);
+  assert.deepEqual(toolReceipt.warnings, warnings);
   assert.deepEqual(requests[1], { path: `/api/local-history/recycle-bin/${operation}`, options: { method: 'POST', body: { ids: ['h'], expectedVersions: { h: version } } } });
   await assert.rejects(service.executeConfirmedProjectAction({ sessionId: 'session', confirmationRequestId: patch.requestId, action, payload: patch.payload }, harness.project), /确认令牌/);
 }));
@@ -131,9 +141,16 @@ test('历史确认保留session/run/key/payload/过期/执行中与重放保护'
 test('回收站分页、长元数据及媒体只读不依赖页面，不从活动历史兜底', t => isolated(t, async service => {
   service.config.permissionMode = 'read_only';
   const requests = [], long = '合成'.repeat(10000);
-  const item = { id: 'h', movedAt: 1700000000000, version, prompt: long, params: { model: 'synthetic', _edit: { mask: 'preserved' } }, imageUrl: '/api/local-history/h/image' };
+  const item = { id: 'h', createdAt: 1600000000000, movedAt: 1700000000000, version, prompt: long, params: { model: 'synthetic', _edit: { mask: 'preserved' } }, imageUrl: '/api/local-history/h/image' };
   const harness = setup(service, async path => { requests.push(path); return path.includes('?') ? { items: [item], count: 3 } : { item }; });
-  const list = content(await harness.call('list_history_recycle_bin', { page: 1, pageSize: 1 })); assert.equal(list.nextPage, 2); assert.equal(list.count, 3); assert.equal(list.items[0].id, 'h'); assert.equal(list.items[0].movedAt, 1700000000000);
+  const listTool = harness.tools.find(tool => tool.name === 'list_history_recycle_bin');
+  assert.match(listTool.parameters.properties.from.description, /生成时间/);
+  assert.match(listTool.parameters.properties.to.description, /生成时间/);
+  const filters = { page: 1, pageSize: 1, from: item.createdAt, to: item.createdAt + 1000 };
+  const list = content(await harness.call(listTool.name, filters));
+  assert.deepEqual(Object.fromEntries(new URL(requests[0], 'http://localhost').searchParams), Object.fromEntries(Object.entries(filters).map(([key, value]) => [key, String(value)])));
+  assert.equal(list.nextPage, 2); assert.equal(list.count, 3); assert.equal(list.items[0].id, 'h');
+  assert.equal(list.items[0].createdAt, item.createdAt); assert.equal(list.items[0].movedAt, item.movedAt);
   assert.equal(content(await harness.call('get_history_recycle_bin_item', { id: 'h' })).partial, true);
   let restored = '', offset = 0;
   do { const part = content(await harness.call('get_history_recycle_bin_item', { id: 'h', field: 'prompt', offset })); restored += part.content; offset = part.nextOffset; } while (offset !== null);
@@ -141,6 +158,68 @@ test('回收站分页、长元数据及媒体只读不依赖页面，不从活�
   const shown = content(await harness.call('show_project_image', { kind: 'history_bin', id: 'h' })); assert.equal(shown.displayImages[0].path, '/api/local-history/recycle-bin/h/image');
   await assert.rejects(harness.call('request_purge_history', { ids: ['h'] }), /只读/);
   assert.ok(requests.every(path => path.startsWith('/api/local-history/recycle-bin')));
+}));
+
+test('回收站酒馆条目展示并读取绑定的外部原图，标准档授权后才保存原始字节', t => isolated(t, async (service, root) => {
+  service.config.permissionMode = 'read_only';
+  const externalId = 'b'.repeat(64), id = 'recycled-external';
+  const imageUrl = `/api/integrations/st-chatu8/history/${externalId}/image`;
+  const item = { id, externalSource: 'st-chatu8', externalId, imageUrl };
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCX0AAAAASUVORK5CYII=', 'base64');
+  const reads = [];
+  let notify;
+  const approval = new Promise(resolve => { notify = resolve; });
+  const harness = setup(service, async path => {
+    if (path.startsWith('/api/local-history/recycle-bin?')) return { items: [item], count: 1 };
+    assert.equal(path, `/api/local-history/recycle-bin/${id}`);
+    return { item };
+  }, {
+    imageInput: true,
+    onAction: notify,
+    requestBuffer: async path => { reads.push(path); return { buffer: png, mimeType: 'image/png' }; },
+  });
+  const args = { kind: 'history_bin', id };
+  assert.equal(content(await harness.call('list_history_recycle_bin')).items[0].imageUrl, imageUrl);
+  const shown = content(await harness.call('show_project_image', args));
+  assert.equal(shown.displayImages[0].path, imageUrl);
+  assert.equal(shown.modelHasSeenImage, false);
+  assert.deepEqual(reads, []);
+  const inspection = await harness.call('inspect_project_image', args);
+  assert.equal(content(inspection).modelHasSeenImage, true);
+  assert.deepEqual(Buffer.from(inspection.content[1].data, 'base64'), png);
+  assert.deepEqual(reads, [imageUrl]);
+
+  const exportArgs = { ...args, directory: root, filename: 'preserved.png' };
+  await assert.rejects(harness.call('save_project_image_to_folder', exportArgs), /只读/);
+  service.config.permissionMode = 'standard';
+  const writing = harness.call('save_project_image_to_folder', exportArgs);
+  const patch = await Promise.race([approval, writing.then(() => { assert.fail('导出必须先确认目录写权限'); })]);
+  assert.equal(patch.action, 'grant_local_image_folder');
+  await assert.rejects(readFile(join(root, exportArgs.filename)), { code: 'ENOENT' });
+  assert.deepEqual(reads, [imageUrl]);
+  service.controlSession('session', 'confirm', '', { requestId: patch.requestId, accepted: true });
+  await service.executeConfirmedProjectAction({ sessionId: 'session', confirmationRequestId: patch.requestId, action: patch.action, payload: patch.payload }, harness.project);
+  const saved = content(await writing);
+  assert.equal(saved.saved, true);
+  assert.equal(saved.overwritten, false);
+  assert.deepEqual(await readFile(saved.path), png);
+  assert.deepEqual(reads, [imageUrl, imageUrl]);
+}));
+
+test('酒馆回收站详情的外部 ID 与同源地址不一致时不读取或兜底', t => isolated(t, async service => {
+  service.config.permissionMode = 'read_only';
+  const id = 'recycled-external', externalId = 'b'.repeat(64);
+  for (const imageUrl of [undefined, `/api/integrations/st-chatu8/history/${'c'.repeat(64)}/image`, `https://example.invalid/api/integrations/st-chatu8/history/${externalId}/image`, '/api/local-history/recycled-external/image']) {
+    const item = { id, externalSource: 'st-chatu8', externalId, imageUrl };
+    const harness = setup(service, async path => {
+      if (path.startsWith('/api/local-history/recycle-bin?')) return { items: [item], count: 1 };
+      assert.equal(path, `/api/local-history/recycle-bin/${id}`);
+      return { item };
+    }, { imageInput: true, requestBuffer: async () => assert.fail('无效外部索引不得读取图片') });
+    assert.equal(content(await harness.call('list_history_recycle_bin')).items[0].imageUrl, undefined);
+    await assert.rejects(harness.call('show_project_image', { kind: 'history_bin', id }), /没有可展示/);
+    await assert.rejects(harness.call('inspect_project_image', { kind: 'history_bin', id }), /没有可读取/);
+  }
 }));
 
 test('长批量回执用本轮私有resultId完整续读，换轮不可读取', t => isolated(t, async service => {

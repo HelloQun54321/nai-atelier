@@ -10,7 +10,7 @@ import { collectionRevision, collectionTargetActive, collectionTargetComplete, s
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { EmptyState, IconButton, InlineSpinner, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { useAlertDialog } from './ConfirmDialog';
 import { DetailSidePanel } from './DetailPanel';
 import { ImageShareOverlay } from './ImageShareActions';
@@ -292,6 +292,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
           <button type="button" className={`${TOOLBAR_MENU_CLASS} sm:hidden`} disabled={loading} onClick={() => { setReload(value => value + 1); close(); }}><RefreshCw />{t('刷新')}</button>
         </div>}
       </ToolbarPopover>
+      {result && !loading && <ToolbarCountBadge total={filtered.length} loaded={Math.min(visibleLimit, filtered.length)} />}
       <ToolbarSearch value={filter.query} onChange={event => changeFilter({ query: event.target.value })} placeholder={t('标题、提示词、作者或说明')} containerClassName="min-w-0 md:max-w-none!" />
       {mode === 'books' && <ToolbarPopover label={filter.path.split('/').at(-1) || '目录'} title={filter.path || t('目录')} icon={<FolderTree />} width={360} active={Boolean(filter.path)} className="[&>button>span]:max-w-24 [&>button>span]:truncate">
         {close => <div className="space-y-2">
@@ -313,7 +314,6 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
       {loading && <span role="status" aria-label={t('读取中…')} className="flex-none text-xs text-gray-500"><LoaderCircle className="h-4 w-4 animate-spin" /></span>}
       <div className="hidden sm:block"><IconButton label={t('刷新')} disabled={loading} onClick={() => setReload(value => value + 1)}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton></div>
     </WorkspaceToolbar>
-    <ToolbarCountCaption>{`${t('共 {0} 条', [result && !loading ? filtered.length.toLocaleString() : '—'])} · ${t('已加载 {0} 条', [result && !loading ? Math.min(visibleLimit, filtered.length).toLocaleString() : '—'])}`}{(result?.offline || boot?.offline) ? ` · ${t('正在使用上次成功的数据')}` : ''}{progress ? ` · ${progress}` : ''}</ToolbarCountCaption>
     </WorkspaceChrome>
     <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
       <div ref={scrollRef} onScroll={() => { scrollRestore(); anchor.onScroll(); }} className="workspace-scroll-viewport min-h-0 overflow-y-auto p-3">
@@ -327,7 +327,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
       <DetailSidePanel open={Boolean(selected)} title={selected?.title || ''} sensitiveTitle subInfo={selected ? [selected.bookTitle, selected.author, selected.images.length ? t('{0}页', [selected.images.length]) : t('纯文本')].filter(Boolean).join(' · ') : ''} sourceUrl={selected?.sourceUrl} onClose={closeDetail} onBack={closeDetail}>
         {selected && sourceEntry && detailEntry && <div className="space-y-3">
           <div className="appearance-content appearance-card overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
-          {selectedImage && <PressRevealSurface pressResetKey={`${selected.key}:${page}`} className="appearance-media group relative mx-auto max-h-[42vh] w-full overflow-hidden bg-black/5 dark:bg-black/20" style={{ aspectRatio: `${selectedImage.width || 3} / ${selectedImage.height || 4}` }}>
+          {selectedImage && <PressRevealSurface pressResetKey={`${selected.key}:${page}`} touchActions="bar" className="appearance-media group relative mx-auto max-h-[42vh] w-full overflow-hidden bg-black/5 dark:bg-black/20" style={{ aspectRatio: `${selectedImage.width || 3} / ${selectedImage.height || 4}` }}>
             <ViewableImage src={getMobileOriginalUrl(selectedImage.originalUrl || selectedImage.url)} alt={selected.title} width={selectedImage.width || 3} height={selectedImage.height || 4} className="absolute inset-0 h-full w-full object-contain" favorite={codexCollectionImage(selected, page)} notify={notify} />
             <ImageShareOverlay imageUrl={getMobileOriginalUrl(selectedImage.originalUrl || selectedImage.url)} filename={`${selected.id}-${page + 1}.png`} favorite={codexCollectionImage(selected, page)} notify={notify} />
           </PressRevealSurface>}

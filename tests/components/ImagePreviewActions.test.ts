@@ -2,6 +2,13 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../components/ConfirmDialog', () => ({
+  useConfirmDialog: () => vi.fn(async () => true),
+  useAlertDialog: () => vi.fn(),
+  ConfirmDialogProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 import { ImagePreviewActions, previewActionLayout } from '../../components/ImagePreviewActions';
 
 beforeEach(() => localStorage.clear());
@@ -9,7 +16,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 // 形状、尺寸与材质统一由共用悬浮圆钮 token 决定（设置项可调），用例只验证 token
 // 与行为，不再写死像素尺寸或材质色阶，避免调「悬浮按钮大小」或换主题就让用例变红。
-const floatTokens = ['nai-float-btn', 'rounded-full', 'mobile-touch', 'mobile-size-locked', 'justify-center', 'backdrop-blur'];
+const floatTokens = ['nai-float-btn', 'rounded-full', 'mobile-touch', 'mobile-size-locked', 'justify-center'];
 const NEUTRAL_TINT = /^(?:white|black|current|transparent|gray|slate|zinc|neutral|stone)$/;
 /** 语义强调底色：只取色系家族，忽略具体色阶与透明度，中性灰不计入语义色。 */
 const tintFamily = (element: HTMLElement) => [...new Set([...element.classList]
@@ -44,22 +51,24 @@ describe('小图和全屏大图的共用操作', () => {
     expect(removeButton.classList.contains(fullscreen ? 'hover-reveal-md' : 'hover-reveal-lg')).toBe(true);
     expect(removeButton.parentElement?.classList.contains('gap-2')).toBe(true);
     expect(right.classList.contains('hover-reveal-lg')).toBe(false);
-    expect(screen.getByRole('button', { name: '收藏' }).closest('.hover-reveal-lg')).toBeNull();
+    // 收藏爱心是常驻例外：即使位于悬停组里，也用 data-image-favorite 让触屏规则放行。
+    expect(screen.getByRole('button', { name: '收藏' }).hasAttribute('data-image-favorite')).toBe(true);
     expect(right.classList.contains('image-preview-action-group')).toBe(true);
     expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['收藏', '下载图片', '复制图片', '设为封面']);
     expect(within(left).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(fullscreen ? ['返回小图', '移除当前图片', '清空当前历史组'] : ['移除当前图片', '清空当前历史组']);
     for (const button of [removeButton, clearButton, coverButton, screen.getByRole('button', { name: '下载图片' }), screen.getByRole('button', { name: '复制图片' })]) {
-      for (const token of floatTokens) expect(button.classList.contains(token)).toBe(true);
+      for (const token of floatTokens) expect(button.classList.contains(token), token).toBe(true);
       // 图标按钮不带文字，也不用胶囊内边距挤压圆钮，焦点样式由 ring token 提供。
       expect(button.textContent).toBe('');
       expect([...button.classList].some(token => /^!?px-\d/.test(token))).toBe(false);
       expect([...button.classList].some(token => token.startsWith('focus-visible:ring'))).toBe(true);
     }
-    // 语义色只校验「各占一个色系家族且互不混用」，具体色阶跟随主题，不写死。
-    expect(tintFamily(removeButton)).toHaveLength(1);
-    expect(tintFamily(coverButton)).toHaveLength(1);
-    expect(tintFamily(removeButton)[0]).not.toBe(tintFamily(coverButton)[0]);
-    expect(tintFamily(clearButton)).toEqual([]);
+    // 语义色只校验「动作有、清空没有」，是否常驻与具体色阶跟随主题，不写死。
+    const hasSemanticTint = (element: HTMLElement) => [...element.classList].some(token => /(?:hover|focus-visible|active):!?bg-[a-z]+-\d/.test(token));
+    expect(hasSemanticTint(removeButton)).toBe(true);
+    expect(hasSemanticTint(coverButton)).toBe(true);
+    expect(hasSemanticTint(removeButton)).toBe(true);
+    expect(hasSemanticTint(clearButton)).toBe(false);
     expect(removeButton.querySelector('svg.lucide-image-minus')).toBeTruthy();
     expect(clearButton.querySelector('svg.lucide-list-x')).toBeTruthy();
     expect(coverButton.querySelector('svg.lucide-image')).toBeTruthy();

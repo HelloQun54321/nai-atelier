@@ -1,4 +1,5 @@
 import { ImageShareOverlay } from './ImageShareActions';
+import { PressRevealSurface } from './PressRevealSurface';
 import { DetailSidePanel } from './DetailPanel';
 import { PromptPurposePicker } from './PromptPurposePicker';
 import { PromptPurposeGroup } from './PromptPurposeGroup';
@@ -48,7 +49,7 @@ import { promptAgentService, type PromptLibraryItem, type PromptLibraryKind } fr
 import { LAB_DEFAULT_PARAMS } from '../services/labWorkspace';
 import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { HistoryImagePicker } from './HistoryImagePicker';
 import { PromptLibraryCard, PromptLibraryGallery } from './PromptLibraryCard';
 import { ImageLightbox } from './ImageLightbox';
@@ -763,6 +764,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const listToolbarContent = (
     <>
       {categoryToggle}
+      {chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountBadge total={items.length} loaded={shown.length} />}
       <ToolbarPopover title={t('筛选{0}', [t(config.title)])} count={selectedTags.size} width={320} zIndex={dynamicDirectories ? 1960 : undefined}>
         <div className="space-y-3">
           <label className="block text-xs font-semibold text-gray-500">{t('排序')}
@@ -825,7 +827,6 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           containerClassName="md:max-w-none!"
         />
       </div>
-      {chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountCaption>{`${t(query.trim() || selectedTags.size ? '匹配 {0} 条' : '共 {0} 条', [items.length])} · ${t('已加载 {0} 条', [shown.length])}`}</ToolbarCountCaption>}
 
     </>
   );
@@ -878,15 +879,15 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         <div>
           <span className={DETAIL_LABEL_CLASS}>{t('封面')}</span>
           {detail.cover ? (
-            <div className="group relative"><button
+            <PressRevealSurface touchActions="bar" className="group relative mt-1.5 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800"><button
               type="button"
               onClick={() => openViewer([{ url: detail.cover, caption: detail.name, favorite: { imageUrl: detail.cover, title: detail.name, sourceType: 'other', sourceId: detail.id } }], 0)}
               aria-label={t('查看封面原图')}
               title={t('点击查看原图')}
-              className="mt-1.5 block w-full overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800"
+              className="block w-full"
             >
               <SmartImage src={detail.cover} alt={t('封面预览')} thumbnailVariant="thumb-640" className="block max-h-48 w-full object-contain" containerClassName="relative w-full overflow-hidden" />
-            </button>{panel && <ImageShareOverlay imageUrl={detail.cover} filename={detail.name + '.png'} notify={notify} favorite={{ imageUrl: detail.cover, title: detail.name, sourceType: 'other', sourceId: detail.id }} />}</div>
+            </button>{panel && <ImageShareOverlay imageUrl={detail.cover} filename={detail.name + '.png'} notify={notify} favorite={{ imageUrl: detail.cover, title: detail.name, sourceType: 'other', sourceId: detail.id }} />}</PressRevealSurface>
           ) : (
             <div className="appearance-media mt-1.5 flex h-24 items-center justify-center rounded-xl bg-gray-100 text-meta text-gray-400 dark:bg-gray-950">{t('暂无封面')}</div>
           )}
@@ -1303,7 +1304,7 @@ const LegacyPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
     try { localStorage.setItem('nai-prompt-library-kind', category); } catch { /* 存储受限时仍可切换分类。 */ }
   };
   const categoryLabel = t(kind === 'all' ? '全部' : FRAGMENT_LABELS[kind]);
-  const categoryToggle = <ToolbarButton data-agent-action="browse" aria-label={t(categoriesExpanded ? '收起分类' : '展开分类')} title={[t(categoriesExpanded ? '收起分类' : '展开分类'), categoryLabel].join(' · ')} aria-expanded={categoriesExpanded} aria-controls={navigationId} active={categoriesExpanded || kind !== 'all'} onClick={toggleCategories}><Folder className="h-4 w-4" /></ToolbarButton>;
+  const categoryToggle = <ToolbarButton data-agent-action="browse" aria-label={t(categoriesExpanded ? '收起分类' : '展开分类')} title={[t(categoriesExpanded ? '收起分类' : '展开分类'), categoryLabel].join(' · ')} aria-expanded={categoriesExpanded} aria-controls={navigationId} active={categoriesExpanded || kind !== 'all'} onClick={toggleCategories} className="!px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{categoryLabel}</span></ToolbarButton>;
   return <div className="prompt-library-hub flex h-full min-h-0 flex-1 flex-col md:flex-row">
     {/* 展开时桌面竖排、手机横排；收起保留分类与内容草稿。 */}
     <nav id={navigationId} hidden={!categoriesExpanded} role="tablist" aria-label={t('提示词分类')} className={categoriesExpanded ? "appearance-panel m-2 flex shrink-0 gap-1 overflow-x-auto rounded-2xl border border-gray-200 p-3 dark:border-gray-800 md:w-52 md:flex-col md:overflow-y-auto" : "hidden"}>
@@ -1338,7 +1339,8 @@ const DirectoryPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   const directories = library.directories!;
   const navigationId = useId();
   const [expanded, setExpanded] = useState(() => { try { return localStorage.getItem('nai-prompt-library-directories-expanded') === 'true'; } catch { return false; } });
-  const toggleDirectories = () => { const next = !expanded; setExpanded(next); try { localStorage.setItem('nai-prompt-library-directories-expanded', String(next)); } catch { /* 本端存储受限时仍可切换。 */ } };
+  const setDirectoriesOpen = (next: boolean) => { setExpanded(next); try { localStorage.setItem('nai-prompt-library-directories-expanded', String(next)); } catch { /* 本端存储受限时仍可切换。 */ } };
+  const toggleDirectories = () => setDirectoriesOpen(!expanded);
   const [selection, setSelection] = useState<PromptLibraryDirectorySelection>(() => {
     const all = { directoryIds: [], allDirectories: true, unclassified: false, favorites: false };
     try {
@@ -1367,8 +1369,8 @@ const DirectoryPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   const chains = favoritesSelected ? fragments.filter(chain => favorites.ids?.has(chain.id)) : allSelected ? fragments : unclassified ? fragments.filter(chain => !getPromptLibraryEntryDirectoryIds(chain, directories).length) : selectPromptLibraryDirectoryEntries(fragments, directories, selectedIds);
   const selectionKey = favoritesSelected ? 'favorites' : allSelected ? 'all' : unclassified ? 'unclassified' : selectedIds.join(',');
   const currentPath = favoritesSelected ? t('收藏') : allSelected ? t('全部') : unclassified ? t('未归类') : selectedIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).join('、');
-  const categoryToggle = <ToolbarButton data-agent-action="browse" aria-label={t(expanded ? '收起目录' : '展开目录')} title={[t(expanded ? '收起目录' : '展开目录'), currentPath].join(' · ')} aria-expanded={expanded} aria-controls={navigationId} active={expanded || !allSelected || unclassified} onClick={toggleDirectories}><Folder className="h-4 w-4" /></ToolbarButton>;
-  const navigation = expanded && <div className="min-h-0 min-w-0 shrink-0 md:flex md:w-52 md:flex-col md:overflow-hidden"><PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={fragments} countsPending={countsPending} selectedIds={selectedIds} allSelected={allSelected} unclassified={unclassified} favorites={favoritesSelected} favoriteIds={favorites.ids} expanded={expanded} embedded onCreate={library.onCreateDirectory} onRename={library.onRenameDirectory} onDelete={library.onDeleteDirectory} onMove={library.onMoveDirectory} disabled={library.directoriesBusy} onSelect={selection => { void select(selection.directoryIds, selection.allDirectories, selection.unclassified, selection.favorites); }} /></div>;
+  const categoryToggle = <ToolbarButton data-agent-action="browse" aria-label={t(expanded ? '收起目录' : '展开目录')} title={[t(expanded ? '收起目录' : '展开目录'), currentPath].join(' · ')} aria-expanded={expanded} aria-controls={navigationId} active={expanded || !allSelected || unclassified} onClick={toggleDirectories} className="!px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{currentPath}</span></ToolbarButton>;
+  const navigation = expanded && <div className="min-h-0 min-w-0 shrink-0 md:flex md:w-52 md:flex-col md:overflow-hidden"><PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={fragments} countsPending={countsPending} selectedIds={selectedIds} allSelected={allSelected} unclassified={unclassified} favorites={favoritesSelected} favoriteIds={favorites.ids} expanded={expanded} embedded onCreate={library.onCreateDirectory} onRename={library.onRenameDirectory} onDelete={library.onDeleteDirectory} onMove={library.onMoveDirectory} onRequestClose={() => setDirectoriesOpen(false)} disabled={library.directoriesBusy} onSelect={selection => { void select(selection.directoryIds, selection.allDirectories, selection.unclassified, selection.favorites); }} /></div>;
   return <PromptLibrary {...props} chains={chains} requestCloseRef={undefined} config={favoritesSelected && favorites.status !== 'ready' ? { ...DIRECTORY_CONFIG, emptyTitle: favorites.status === 'error' ? '收藏库加载失败，请稍后重试' : '加载中…', emptyHint: '' } : DIRECTORY_CONFIG} dynamicDirectories initialDirectoryIds={favoritesSelected || allSelected || unclassified ? [] : selectedIds} directorySelectionKey={selectionKey} directoryNavigation={navigation} categoryToggle={categoryToggle} registerLeaveGuard={guard => { leaveGuard.current = guard; return () => { leaveGuard.current = null; }; }} />;
 };
 

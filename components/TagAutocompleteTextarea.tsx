@@ -1,11 +1,10 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Eraser, EyeOff, Info, Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
+import { Eraser, EyeOff, ImagePlus, Info, Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
 import type { PromptTagLibraryTarget } from './PromptTagLibraryInfo';
 import { InlineSpinner } from './DesignSystem';
 import { InfoPopover } from './InfoPopover';
-import { PromptHeightHandle } from './PromptHeightHandle';
 import { PromptTidyActions, type PromptTidyOptions } from './PromptTidyActions';
 import type { PromptChain } from '../types';
 import { PromptLibraryChooser, PromptLibraryFieldActions, usePromptLibrary } from './PromptLibraryAccess';
@@ -64,6 +63,8 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   promptLibraryActions?: boolean;
   /** 提供时在工具栏加「整理」：提取画风、清洗格式，结果覆盖原文并可撤销。 */
   promptTidy?: PromptTidyOptions;
+  /** 提供时工具栏显示「从图片反推」，把识别结果追加到这一栏。 */
+  reverseTag?: { onReverse: () => void; disabled?: boolean };
 }
 type PromptSuggestion = TagSuggestion & { libraryEntry?: PromptChain };
 const PromptTagLibraryInfo = React.lazy(() => import('./PromptTagLibraryInfo').then(module => ({ default: module.PromptTagLibraryInfo })));
@@ -122,6 +123,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   libraryEnabled = true,
   promptLibraryActions = true,
   promptTidy,
+  reverseTag,
   disabled,
   readOnly,
   onFocus,
@@ -144,8 +146,6 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const highlightRef = useRef<HTMLDivElement>(null);
   const highlightTextRef = useRef<HTMLDivElement>(null);
   const tagListRef = useRef<HTMLDivElement>(null);
-  const inputManualHeightRef = useRef(false);
-  const translationManualHeightRef = useRef(false);
   const fittingInputRef = useRef(false);
   const fittingTranslationRef = useRef(false);
   const [clearActionTarget, setClearActionTarget] = useState<HTMLElement | null>(null);
@@ -389,12 +389,9 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     return () => { resize?.disconnect(); theme.disconnect(); textarea.removeEventListener('scroll', syncHighlight); window.removeEventListener('resize', syncHighlight); };
   }, [hasHighlight, syncHighlight]);
 
-  useEffect(() => { inputManualHeightRef.current = false; }, [inputAutoHeight]);
-  useEffect(() => { translationManualHeightRef.current = false; }, [translationAutoHeight]);
-
   const fitInputHeight = useCallback(() => {
     const el = textareaRef.current;
-    if (!el || !inputAutoHeight || inputManualHeightRef.current) return;
+    if (!el || !inputAutoHeight) return;
     fittingInputRef.current = true;
     el.style.maxHeight = PROMPT_AUTO_HEIGHT_MAX;
     el.style.height = 'auto';
@@ -406,7 +403,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 
   const fitTranslationHeight = useCallback(() => {
     const el = tagListRef.current;
-    if (!el || !translationAutoHeight || translationManualHeightRef.current) return;
+    if (!el || !translationAutoHeight) return;
     fittingTranslationRef.current = true;
     el.style.maxHeight = PROMPT_AUTO_HEIGHT_MAX;
     el.style.height = 'auto';
@@ -418,7 +415,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 
   useLayoutEffect(() => {
     if (!inputAutoHeight) {
-      if (textareaRef.current && !inputManualHeightRef.current) {
+      if (textareaRef.current) {
         textareaRef.current.style.height = '';
         textareaRef.current.style.maxHeight = '';
       }
@@ -429,7 +426,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 
   useLayoutEffect(() => {
     if (!translationAutoHeight) {
-      if (tagListRef.current && !translationManualHeightRef.current) {
+      if (tagListRef.current) {
         tagListRef.current.style.height = '';
         tagListRef.current.style.maxHeight = '';
       }
@@ -438,12 +435,12 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     fitTranslationHeight();
   }, [currentTranslations.length, value, translationAutoHeight, showTranslations, tagAssistEnabled, fitTranslationHeight]);
 
-  // 宽度变化会改换行，跟随模式下重新量高；人工调高后本轮挂载不再自动改。
+  // 宽度变化会改换行，跟随模式下重新量高。
   useEffect(() => {
     const el = textareaRef.current;
     if (!el || !inputAutoHeight || typeof ResizeObserver === 'undefined') return;
     const resize = new ResizeObserver(() => {
-      if (fittingInputRef.current || inputManualHeightRef.current) return;
+      if (fittingInputRef.current) return;
       fitInputHeight();
     });
     resize.observe(el);
@@ -454,7 +451,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     const el = tagListRef.current;
     if (!el || !translationAutoHeight || typeof ResizeObserver === 'undefined') return;
     const resize = new ResizeObserver(() => {
-      if (fittingTranslationRef.current || translationManualHeightRef.current) return;
+      if (fittingTranslationRef.current) return;
       fitTranslationHeight();
     });
     resize.observe(el);
@@ -913,14 +910,15 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     {!editingTag && tagInput.trim() && <span className="min-w-0 max-w-full whitespace-pre-wrap px-1 pb-0.5 font-sans text-xs font-medium [grid-area:2/1] [overflow-wrap:anywhere]">{draftChinese}</span>}
   </span>;
   const insertionAt = (index: number) => {
+    // 插入缝只留窄空白（决策：不显示加号／占位框）。不用 mobile-touch：其 44px 下限会把缝撑成大方块，权重组之间还会被顶成空行。
+    const slotClass = `prompt-insert-slot inline-flex min-h-10 ${index === currentTranslations.length ? 'min-w-3 flex-1' : 'w-3 shrink-0'}`;
     // 屏蔽／删除模式中不提供插入入口，但保留与普通模式同宽同高的占位，避免切换模式后翻译区排版突然变紧凑。
     if (deleteMode || muteMode) {
-      return <button key={`insert:${index}`} type="button" disabled aria-hidden="true" tabIndex={-1} data-prompt-insert-slot
-        className={`mobile-touch inline-flex min-h-10 ${index === currentTranslations.length ? 'min-w-3 flex-1' : 'w-3 shrink-0'}`} />;
+      return <button key={`insert:${index}`} type="button" disabled aria-hidden="true" tabIndex={-1} data-prompt-insert-slot className={slotClass} />;
     }
     if (!editable) return null;
     if (insertionIndex === index) return tagInputField;
-    return <button key={`insert:${index}`} type="button" aria-label={index < currentTranslations.length ? t('插入提示词：位置 {0}', [index + 1]) : t('在末尾插入提示词')}
+    return <button key={`insert:${index}`} type="button" data-prompt-insert-slot aria-label={index < currentTranslations.length ? t('插入提示词：位置 {0}', [index + 1]) : t('在末尾插入提示词')}
       onMouseDown={event => { if (!editingTag) event.preventDefault(); event.stopPropagation(); }}
       onClick={event => {
         event.stopPropagation(); closeSuggestions();
@@ -928,7 +926,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         setInsertionIndex(index);
         requestAnimationFrame(() => tagInputRef.current?.focus());
       }}
-      className={`mobile-touch inline-flex min-h-10 cursor-text rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--nai-accent)] ${index === currentTranslations.length ? 'min-w-3 flex-1' : 'w-3 shrink-0'}`} />;
+      className={`${slotClass} cursor-text rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--nai-accent)]`} />;
   };
   const libraryAction = personalLibrary && promptLibraryActions !== false
     ? <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />
@@ -937,7 +935,11 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     ? <PromptTidyActions value={value} disabled={!editable} notify={promptTidy.notify} sample={promptTidy.sample} onApply={applyTidy}
       canUndo={clearActionState === 'cleared' && undoableAction === 'tidy'} onUndo={() => { moveHistory(); textareaRef.current?.focus(); }} />
     : null;
-  const promptActions = <>{tidyAction}{libraryAction}{clearAction}<PromptHeightHandle targetRef={textareaRef} label={t('调整输入框高度')} alwaysVisible={inputAutoHeight} onManualResize={() => { inputManualHeightRef.current = true; }} /></>;
+  const reverseAction = reverseTag
+    ? <button type="button" aria-label={t('从图片反推 Tag 到这一栏')} title={t('上传或粘贴图片，识别后追加到这一栏')} disabled={!editable || reverseTag.disabled} onClick={event => { event.stopPropagation(); reverseTag.onReverse(); }}
+      className="rounded p-0.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"><ImagePlus className="h-4 w-4" /></button>
+    : null;
+  const promptActions = <>{reverseAction}{tidyAction}{libraryAction}{clearAction}</>;
 
   return (
     <div className={`group relative ${containerClassName}`} onKeyDownCapture={event => {
@@ -1208,7 +1210,6 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             {insertionAt(currentTranslations.length)}
           </div>
           <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
-            <PromptHeightHandle targetRef={tagListRef} label={t('调整翻译区高度')} alwaysVisible={translationAutoHeight} onManualResize={() => { translationManualHeightRef.current = true; }} />
             <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
             {deleteMode || muteMode ? <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <button type="button" onClick={() => { setDeleteMode(false); setMuteMode(false); clearSelection(); }} className="mobile-touch h-8 rounded-md px-2 py-1 text-meta font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">{t("取消")}</button>

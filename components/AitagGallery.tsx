@@ -1,5 +1,5 @@
 import { PromptLibraryCaptureButton } from './PromptLibraryAccess';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { ListJumpButton } from './ListJumpButton';
 import { SearchFilterChip, SearchFilterChips } from './SearchFilterChips';
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
@@ -615,7 +615,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
               点一下直接把首图收进风格串，不必先点开作品。 */}
           {isSaved ? (
             <span role="img" aria-label={savedLabel} title={savedLabel} data-aitag-chain-status="saved"
-              className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} ${IMAGE_CARD_ACTION_TONE.save}`}>
+              className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} ${IMAGE_CARD_ACTION_TONE.saved}`}>
               <Check aria-hidden="true" className="h-4 w-4" strokeWidth={3} />
             </span>
           ) : (
@@ -624,7 +624,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
               disabled={!firstImage || savingWorkId !== null}
               onClick={event => { event.stopPropagation(); void saveFirstImageToChain(work, firstImage); }}
               onPointerDown={event => event.stopPropagation()}
-              className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} disabled:opacity-45`}>
+              className={`hover-reveal-md absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} disabled:opacity-45`}>
               {savingWorkId === Number(work.id)
                 ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />
                 : <Layers aria-hidden="true" className="h-4 w-4" />}
@@ -1606,6 +1606,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
 <WorkspaceToolbar>
         <div className="flex w-full min-w-0 items-center gap-2">
           <span title={isAitagConnected ? t("aitag.win 连接正常") : t("aitag.win 暂时不可用")} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]' : 'bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.14)]'}`} />
+          {hasLoadedRef.current && !isOfflineCache && <ToolbarCountBadge total={total} loaded={visibleItems.length} />}
           <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) handleSearch(); }} aria-label={t('搜索 AITag 作品')} placeholder={t("作品、作者、标题或标签，回车检索")} containerClassName="h-11 min-w-0 flex-1 md:h-10 md:max-w-none!" className="h-full! min-h-0!">
             <SearchFilterChips chips={activeChips} expanded={showMobileFilters || showDesktopFilters} onMore={() => { if (window.innerWidth < 768) setShowMobileFilters(true); else setShowDesktopFilters(true); }} />
           </ToolbarSearch>
@@ -1645,7 +1646,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           <div className="appearance-group rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">{t('共 {0} 条', [formatCount(total)])}{' · '}{t('已加载 {0} 条', [formatCount(visibleItems.length)])}</div>
         </div>
       </MobileBottomSheet></ImagePreviewPortal>
-      <ToolbarCountCaption>{t(hasLocalFilter ? '匹配 {0} 条' : '共 {0} 条', [hasLoadedRef.current && !isOfflineCache ? formatCount(total) : '—'])}{' · '}{t('已加载 {0} 条', [hasLoadedRef.current ? formatCount(visibleItems.length) : '—'])}</ToolbarCountCaption>
       </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selectedWork ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main
@@ -1775,7 +1775,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
 
                     return (
                       <div key={image.id || `${image.work_id}-${image.file_name}`} className="appearance-content appearance-card rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
-                        <PressRevealSurface className="appearance-media group relative">
+                        <PressRevealSurface touchActions="bar" className="appearance-media group relative">
                           <ViewableImage src={buildAitagImageUrl(image)} alt={t("AITAG 作品图片")} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={favorite} notify={notify} className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
                           <ImageShareOverlay imageUrl={getMobileOriginalUrl(buildAitagImageUrl(image))} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={favorite} notify={notify} />
                         </PressRevealSurface>

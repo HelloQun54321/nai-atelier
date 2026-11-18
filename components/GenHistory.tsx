@@ -30,7 +30,7 @@ import { HistoryBrowseControls } from './HistoryBrowseControls';
 import { HistoryImageViewer } from './HistoryImageViewer';
 import { NAI_UPSCALE_FACTOR, UPSCALE_MAX_AREA, downloadUpscaledImage, upscaleCostHint, upscaleHistoryImage, upscaleSupported } from '../services/naiUpscale';
 import { beginExportTarget } from '../services/exportLocation';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { ListJumpButton } from './ListJumpButton';
 import { RecycleBinPanel, formatHistoryBinReasons } from './RecycleBinPanel';
 
@@ -180,7 +180,6 @@ const HistoryCard = React.memo(function HistoryCard({
                     {createdAt}
                 </div>
             </div>
-            <div className="gallery-card-footer truncate px-2 py-2 text-meta text-gray-600 dark:text-gray-300 md:hidden">{createdAt}</div>
         </PressRevealSurface>
     );
 });
@@ -190,7 +189,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     const confirmAction = useConfirmDialog();
     const [upscalingId, setUpscalingId] = useState<string | null>(null);
     const imageDisplay = useMobileImageDisplayPreferences('history');
-    // 与 CSS 768px 断点一致：手机端卡片底部有额外的时间文字行，计入预计高度
+    // 与 CSS 768px 断点一致：手机端改用底部面板与触控控件；图片卡不再追加文字行。
     const [isMobileViewport, setIsMobileViewport] = useState(() => (typeof window === 'undefined' ? false : window.innerWidth < 768));
     useEffect(() => {
         const update = () => setIsMobileViewport(window.innerWidth < 768);
@@ -267,7 +266,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     // 清理相关状态
     const [showCleanMenu, setShowCleanMenu] = useState(false);
     const managementAnchorRef = useRef<HTMLDivElement>(null);
+    const managementAfterBackRef = useRef<((event: PopStateEvent) => void) | null>(null);
     const [showCleanModal, setShowCleanModal] = useState(false);
+    const requestCloseCleanModal = useMobileHistoryLayer(showCleanModal, () => setShowCleanModal(false), 'history-clean');
     const [cleanMode, setCleanMode] = useState<'days' | 'count'>('days');
     const [cleanDays, setCleanDays] = useState<number>(PAGINATION_CONFIG.CLEANUP.DEFAULT_DAYS);
     const [cleanCount, setCleanCount] = useState<number>(PAGINATION_CONFIG.CLEANUP.DEFAULT_COUNT);
@@ -703,6 +704,11 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     // keep-alive 下组件只在首次挂载时加载一次：若当时数据源短暂异常（返回 0 条），
     // 页面会一直停留在空态直到手动刷新。视图重新激活且当前数据为空时自动重载。
     const viewActive = useContext(ImageActivityContext);
+    useEffect(() => () => {
+        if (!managementAfterBackRef.current) return;
+        window.removeEventListener('popstate', managementAfterBackRef.current);
+        managementAfterBackRef.current = null;
+    }, [viewActive]);
     const prevViewActiveRef = useRef(false);
     useEffect(() => {
         if (viewActive && !prevViewActiveRef.current && totalCount === 0) {
@@ -906,10 +912,25 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
         });
     };
 
-    const handleClearAll = async () => {
-        setShowCleanMenu(false);
-        await requestMove({ clear: true });
+    const afterManagementClose = (action: () => void) => {
+        if (managementAfterBackRef.current) return;
+        const open = () => { setShowCleanMenu(false); action(); };
+        const sheetMarker = window.history.state?.__naiMobileLayer;
+        if (!isMobileViewport || !sheetMarker?.startsWith('sheet-')) { open(); return; }
+        // 先退出手机管理面板的历史层，不把已关闭的管理层留在回收站或清理确认框下方。
+        const afterBack = (event: PopStateEvent) => {
+            if (event.state?.__naiMobileLayers?.includes(sheetMarker)) return;
+            window.removeEventListener('popstate', afterBack);
+            managementAfterBackRef.current = null;
+            open();
+        };
+        managementAfterBackRef.current = afterBack;
+        window.addEventListener('popstate', afterBack);
+        window.history.back();
     };
+
+    const openRecycleBin = () => afterManagementClose(() => setShowRecycleBin(true));
+    const handleClearAll = () => afterManagementClose(() => { void requestMove({ clear: true }); });
 
     // 连续输入只接纳最后一个冻结预览，旧结果即使迟到也不得覆盖当前条件。
     const refreshCleanPreview = (mode: 'days' | 'count', value: number) => {
@@ -925,8 +946,10 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     const cleanPreviewLabel = cleanPreview && cleanPreview !== 'error' ? cleanPreview.movableCount : '…';
     const handleCleanMenuClick = (mode: 'days' | 'count') => {
         if (moveCapability !== 'remote') { setShowCleanMenu(false); notify(t('请先连接本地服务完成浏览器历史迁移，再使用回收站清理。原资料仍可只读浏览与导出。'), 'error'); return; }
-        setCleanMode(mode); setShowCleanMenu(false); setShowCleanModal(true);
-        refreshCleanPreview(mode, mode === 'days' ? cleanDays : cleanCount);
+        afterManagementClose(() => {
+            setCleanMode(mode); setShowCleanModal(true);
+            refreshCleanPreview(mode, mode === 'days' ? cleanDays : cleanCount);
+        });
     };
     const handleCleanConfirm = async () => {
         if (moveBusyRef.current || !cleanPreview || cleanPreview === 'error') return;
@@ -986,15 +1009,15 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     }, [items, browseQuery.sort, language]);
     const selectionFavoritePending = Array.from(selectedIds).some(id => pendingFavoriteIds.has(id));
 
-    // 历史卡预计高度：图片区（列宽 / 图片比例）+ 边框 2px + 列间 12px 间距；手机端另计底部时间行。
+    // 历史卡预计高度：图片区（列宽 / 图片比例）+ 边框 2px + 列间 12px 间距；手机上不再有时间行。
     const estimateHistoryCardHeight = useCallback(
         (item: LocalGenItem, columnWidth: number) => {
-            // 估算高度 = 图区（列宽 / 展示比例）+ 手机底部时间行 + 边框 + 列距；与卡片实测共用同一比例解析
+            // 估算高度 = 图区（列宽 / 展示比例）+ 边框 + 列距；与卡片实测共用同一比例解析
             const ratio = resolveHistoryImageRatio(item, actualImageRatios[item.id]);
             const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
-            return imageHeight + (isMobileViewport ? 34 : 0) + 2 + 12;
+            return imageHeight + 2 + 12;
         },
-        [isMobileViewport, actualImageRatios],
+        [actualImageRatios],
     );
 
     // 卡片回调全部以 item 作参数、useCallback 保持稳定：某一张图加载完成/收藏状态变化时，
@@ -1049,6 +1072,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
             <WorkspaceChrome>
 <WorkspaceToolbar>
                 <div className="history-toolbar-shell">
+                {!isLoading && !loadFailed && <ToolbarCountBadge total={totalCount} loaded={items.length} />}
                     {selectionMode ? <>
                         <span className="flex-1 whitespace-nowrap text-sm font-semibold md:hidden">{t("已选 {0} 张", [selectedIds.size])}</span>
                         <ToolbarButton onClick={exitSelectionMode} className="md:hidden">{t("完成")}</ToolbarButton>
@@ -1076,7 +1100,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                                 </ToolbarButton>
                                 {showCleanMenu && !isMobileViewport && (
                                     <AnchoredToolbarPopover anchorRef={managementAnchorRef} title={t("历史管理")} width={256} onClose={() => setShowCleanMenu(false)}>
-                                        <button type="button" disabled={moveBusy} onClick={() => { setShowCleanMenu(false); setShowRecycleBin(true); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"><Trash2 className="h-4 w-4" />{t("回收站")}</button>
+                                        <button type="button" disabled={moveBusy} onClick={openRecycleBin} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"><Trash2 className="h-4 w-4" />{t("回收站")}</button>
                                         <button
                                             type="button"
                                             onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }}
@@ -1108,13 +1132,12 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         </div>
                     </>}
                 </div>
-                <ToolbarCountCaption>{t(browseQuery.from !== undefined || browseQuery.to !== undefined || browseQuery.favoriteOnly || browseQuery.search?.trim() || browseQuery.model || browseQuery.operation || browseQuery.source ? '匹配 {0} 张' : '共 {0} 张', [isLoading || loadFailed ? '—' : totalCount])}{' · '}{t('已加载 {0} 张', [isLoading || loadFailed ? '—' : items.length])}</ToolbarCountCaption>
             </WorkspaceToolbar>
 
             <ImagePreviewPortal><MobileBottomSheet open={showCleanMenu && isMobileViewport} title={t("历史管理")} onClose={() => setShowCleanMenu(false)}>
                 <div className="space-y-2">
                             {newImageCount > 0 && <ToolbarButton className="w-full" onClick={() => { setShowCleanMenu(false); showNewImages(); }}>{t("新增 {0} 张图片 · 查看最新", [newImageCount])}</ToolbarButton>}
-                            <button disabled={moveBusy} onClick={() => { setShowCleanMenu(false); setShowRecycleBin(true); }} className="appearance-group mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("回收站")}</button>
+                            <button disabled={moveBusy} onClick={openRecycleBin} className="appearance-group mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("回收站")}</button>
                             <button onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-50 px-4 text-left text-sm font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">{t("批量选择图片")}</button>
                             <button onClick={() => handleCleanMenuClick('days')} className="appearance-group mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("按时间移入回收站…")}</button>
                             <button onClick={() => handleCleanMenuClick('count')} className="appearance-group mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("只保留最近指定数量")}</button>
@@ -1236,7 +1259,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
             {/* Clean Modal */}
             {showCleanModal && (<ImagePreviewPortal>
                 <div role="dialog" aria-modal="true" aria-label={t("确认清理历史")} className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="appearance-panel bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200 dark:border-gray-800">
+                    <div className="appearance-panel bg-white dark:bg-gray-900 rounded-2xl p-6 max-h-[calc(100dvh-2rem)] max-w-sm w-full overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-800">
                         <h3 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><AlertTriangle className="h-5 w-5 text-amber-500" />{t("确认清理")}</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                             {cleanMode === 'days'
@@ -1246,7 +1269,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         </p>
                         {cleanPreview === 'error' && <p role="alert" className="text-xs text-red-500 mb-2">{t("读取失败，请重试")}</p>}
                         <p className="text-xs text-gray-500 mb-4">{t("有效收藏与引用会跳过。移入回收站不释放空间，也不会自动过期，可在回收站恢复。")}</p>
-                        {cleanPreview && cleanPreview !== 'error' && <p className="mb-3 whitespace-pre-wrap break-words text-xs">{movePreviewMessage(cleanPreview)}</p>}
+                        {cleanPreview && cleanPreview !== 'error' && <div role="region" aria-label={t('{0}预览', [t('清理')])} tabIndex={0} className="mb-3 max-h-[40dvh] overflow-y-auto">
+                            <p className="whitespace-pre-wrap break-words text-xs">{movePreviewMessage(cleanPreview)}</p>
+                        </div>}
                         <div className="mb-4">
                             {cleanMode === 'days' ? (
                                 <div>
@@ -1282,7 +1307,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         </div>
                         <div className="flex gap-2">
                             <button
-                                onClick={() => setShowCleanModal(false)}
+                                onClick={requestCloseCleanModal}
                                 className="appearance-group flex-1 py-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl font-bold"
                             >
                                 {t("取消")}</button>

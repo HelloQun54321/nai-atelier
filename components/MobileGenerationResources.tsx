@@ -1,6 +1,6 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronUp } from 'lucide-react';
+import { ChevronUp, Gem, LoaderCircle } from 'lucide-react';
 import type { useAnlasBudget } from '../services/anlasBudget';
 import { isActiveOpusSubscription, usageRemainingPercent, type useNovelaiUsage } from '../services/naiUsage';
 import { useNaiChannelMode } from '../services/naiChannel';
@@ -18,10 +18,14 @@ interface MobileGenerationResourcesProps {
   subscription: ReturnType<typeof useNovelaiUsage>;
   runtime: NaiRuntimeConfig | null;
   keyboardOffset?: number;
+  /** dock：嵌入实验室底栏的折叠额度格；footer：旧贴底小字入口。 */
+  variant?: 'footer' | 'dock';
 }
 
 /** 四模式共用手机资源入口；复用工作台状态，不另建预算、订阅轮询或费用规则。 */
-export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps> = ({ apiKey, budget, subscription, runtime, keyboardOffset = 0 }) => {
+const OPUS_RING = 2 * Math.PI * 10;
+
+export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps> = ({ apiKey, budget, subscription, runtime, keyboardOffset = 0, variant = 'footer' }) => {
   useLanguage();
   const naiChannelMode = useNaiChannelMode();
   const [open, setOpen] = useState(false);
@@ -93,6 +97,50 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
   };
   // 按次渠道没有点数与额度可看，手机底部只保留生成相关操作。
   if (naiChannelMode === 'per-use') return null;
+  const percentNum = usage ? usageRemainingPercent(usage) : 0;
+  const ringPercent = Math.min(100, percentNum);
+  const AccountIcon = budget.loading || loading ? LoaderCircle : Gem;
+  const sheet = <ImagePreviewPortal>
+    <MobileBottomSheet open={open} title={t("账户资源")} onClose={() => setOpen(false)} footer={<button type="button" onClick={openSettings} className="mobile-touch w-full rounded-xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-4 text-sm font-semibold text-white">{t("账户设置")}</button>}>
+      <div ref={contentRef} className="mx-auto w-full max-w-sm">
+        <p className="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">{!apiKey ? t("未配置 Key") : keyName?.key === apiKey ? keyName.name : t("当前 Key")}</p>
+        <div className="space-y-3">
+          <AnlasBalanceBar variant="details" budget={budget} subscription={subscription} />
+          <OpusUsageBar collapsed={false} showDetails showSyncTime={false} />
+        </div>
+        <dl className="mt-4 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2 text-meta text-gray-500 dark:text-gray-400">
+          <dt>{t("订阅状态")}</dt><dd className="min-w-0 break-words text-gray-700 dark:text-gray-300">{!apiKey ? t("未配置 Key") : !info ? t("尚未同步") : info.active === false ? t(gateway ? '网关权益不可用' : "订阅过期") : gateway ? t('网关成员') : isActiveOpusSubscription(info) ? 'Opus' : t("非 Opus")}</dd>
+          <dt>{t("最近成功同步")}</dt><dd className="min-w-0 break-words tabular-nums">{fetchedAt > 0 ? new Date(fetchedAt).toLocaleString(getLanguage(), { hour12: false }) : t("尚未同步")}</dd>
+        </dl>
+        {runtimeBroken && runtime && <p role="status" className="mt-2 text-xs text-amber-600 dark:text-amber-400">{t("{0}，费用估算可能过期", [describeNaiRuntimeSyncProblem(runtime)])}</p>}
+      </div>
+    </MobileBottomSheet>
+  </ImagePreviewPortal>;
+
+  if (variant === 'dock') {
+    return <>
+      <button type="button" aria-label={t("查看账户资源：{0}", [summary])} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}
+        className={`appearance-group mobile-touch inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-1.5 dark:border-gray-700 dark:bg-gray-900/80 ${footerTone}`}>
+        <span className="flex w-9 flex-col items-center gap-0.5" aria-hidden="true">
+          <AccountIcon className={`h-3 w-3 text-indigo-600 dark:text-indigo-300 ${budget.loading || loading ? 'animate-spin' : ''}`} />
+          <span className="text-tiny font-bold leading-none tabular-nums text-indigo-600 dark:text-indigo-300">{footerBudget}</span>
+          <span className="h-px w-5 bg-gray-300 dark:bg-gray-600" />
+          <span className="text-tiny leading-none tabular-nums text-gray-500 dark:text-gray-400">{footerBalance}</span>
+        </span>
+        <span className={`relative flex h-8 w-8 items-center justify-center ${footerTone}`} aria-hidden="true">
+          <svg viewBox="0 0 24 24" className="absolute inset-0 h-full w-full -rotate-90">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-200 dark:text-gray-700" />
+            <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+              strokeDasharray={OPUS_RING} strokeDashoffset={OPUS_RING * (1 - ringPercent / 100)}
+              className={usage?.isNegative || error ? 'text-red-500' : percentNum <= 20 ? 'text-amber-500' : 'text-emerald-500'} />
+          </svg>
+          <span className="relative text-tiny font-bold tabular-nums">{error ? '!' : footerQuota === '—' ? '—' : footerQuota.replace('%', '')}</span>
+        </span>
+      </button>
+      {sheet}
+    </>;
+  }
+
   return <>
     <button type="button" aria-label={t("查看账户资源：{0}", [summary])} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}
       style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + env(safe-area-inset-bottom))` } : undefined}
@@ -100,21 +148,6 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
       <span className={`whitespace-nowrap tabular-nums underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current ${footerTone}`}>Anlas {footerBudget}/{footerBalance}</span>
       <span className={`inline-flex items-center gap-1 whitespace-nowrap tabular-nums ${footerTone}`}><span className="underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current">{t(!info ? '生成额度' : gateway ? '成员额度' : "Opus额度 ")}{(!info || gateway) && ' '}{footerQuota}{warning && <span aria-hidden="true" className="ml-1">!</span>}</span><ChevronUp aria-hidden="true" className="h-3 w-3 shrink-0" /></span>
     </button>
-    <ImagePreviewPortal>
-      <MobileBottomSheet open={open} title={t("账户资源")} onClose={() => setOpen(false)} footer={<button type="button" onClick={openSettings} className="mobile-touch w-full rounded-xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-4 text-sm font-semibold text-white">{t("账户设置")}</button>}>
-        <div ref={contentRef} className="mx-auto w-full max-w-sm">
-          <p className="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">{!apiKey ? t("未配置 Key") : keyName?.key === apiKey ? keyName.name : t("当前 Key")}</p>
-          <div className="space-y-3">
-            <AnlasBalanceBar variant="details" budget={budget} subscription={subscription} />
-            <OpusUsageBar collapsed={false} showDetails showSyncTime={false} />
-          </div>
-          <dl className="mt-4 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2 text-meta text-gray-500 dark:text-gray-400">
-            <dt>{t("订阅状态")}</dt><dd className="min-w-0 break-words text-gray-700 dark:text-gray-300">{!apiKey ? t("未配置 Key") : !info ? t("尚未同步") : info.active === false ? t(gateway ? '网关权益不可用' : "订阅过期") : gateway ? t('网关成员') : isActiveOpusSubscription(info) ? 'Opus' : t("非 Opus")}</dd>
-            <dt>{t("最近成功同步")}</dt><dd className="min-w-0 break-words tabular-nums">{fetchedAt > 0 ? new Date(fetchedAt).toLocaleString(getLanguage(), { hour12: false }) : t("尚未同步")}</dd>
-          </dl>
-          {runtimeBroken && runtime && <p role="status" className="mt-2 text-xs text-amber-600 dark:text-amber-400">{t("{0}，费用估算可能过期", [describeNaiRuntimeSyncProblem(runtime)])}</p>}
-        </div>
-      </MobileBottomSheet>
-    </ImagePreviewPortal>
+    {sheet}
   </>;
 };

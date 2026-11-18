@@ -22,7 +22,7 @@ import { Check, Dice5, Layers, LoaderCircle, Settings2 } from 'lucide-react';
 import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { MobileOverflowMenu } from './MobileUI';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
-import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { useArtistSampleActions, ArtistSampleGenerationStatus } from './useArtistSampleActions';
 import { indexArtistSampleGallery } from '../services/artistSampleGallery';
 import { ArtistSampleCover } from './ArtistSampleCover';
@@ -718,13 +718,14 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             <WorkspaceChrome>
 <WorkspaceToolbar>
                 {groups.toolbar}
-                <div className="flex h-full min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {statusReady && (!localCatalogBrowse || !sampleLoading && !sampleError) && (!groupBrowse || groups.ready && !groups.error) && !isCatalogLoading && !catalogError && !searchError && !(onlySamples && currentSampleError) && ((!onlySamples && !gachaArtists) || !sampleLoading) && <ToolbarCountBadge total={gachaArtists ? undefined : hasSearch || onlySamples || localCatalogBrowse ? matchedArtists.length : hasMoreUnionCatalog ? undefined : artistCatalogCount + packOnlyArtists.length} loaded={gachaArtists ? filteredArtists.length : localCatalogBrowse && !(groupBrowse || usageFiltersActive || statusBrowse) ? visibleCatalogArtists.length : filteredArtists.length} />}
+                <div className="flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
                 <div role="group" aria-label={t('画师样张模型')} className="appearance-group flex flex-none items-center rounded-xl border border-gray-200 bg-gray-100 p-0.5 max-md:hidden dark:border-gray-700 dark:bg-gray-950">
                     <span className="hidden px-1.5 text-micro font-semibold text-gray-500 dark:text-gray-400 sm:inline">{t('样张')}</span>
                     {(['v45', 'v5'] as const).map(pack => <button type="button" key={pack} aria-pressed={samplePack === pack} onClick={() => { setCardPacks({}); if (pack === samplePack) return; setSamplePack(pack); localStorage.setItem('nai_artist_sample_pack', pack); recentGachaIndicesRef.current = []; leaveGacha(true); }} className={`appearance-group mobile-touch rounded-lg px-2 py-1.5 text-xs font-bold ${samplePack === pack ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>{pack === 'v45' ? 'V4.5' : 'V5 Full'}</button>)}
                 </div>
-                <div className="relative min-w-[140px] flex-1">
-                    <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索画师，多个词用逗号分隔")} containerClassName="md:max-w-none!" className="pr-9" />
+                <div className="relative min-w-0 flex-1">
+                    <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索画师，多个词用逗号分隔")} containerClassName="min-w-0 md:max-w-none!" className="pr-9" />
                     {isCatalogLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
                 </div>
                 <ToolbarPopover title={t("筛选画师")} count={Number(artistSort !== 'popular') + Number(!onlySamples) + Number(chainUsageFilter !== 'all') + Number(imageUsageFilter !== 'all')}>
@@ -766,15 +767,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                     { label: '画师库设置', icon: <Settings2 />, onClick: () => setMobileSettingsOpen(true) },
                 ]} />
             </WorkspaceToolbar>
-            {statusReady && (!localCatalogBrowse || !sampleLoading && !sampleError) && (!groupBrowse || groups.ready && !groups.error) && !isCatalogLoading && !catalogError && !searchError && !(onlySamples && currentSampleError) && ((!onlySamples && !gachaArtists) || !sampleLoading) && <ToolbarCountCaption>{hasSearch
-                ? `${t('匹配 {0} 位', [matchedArtists.length])} · ${t('已加载 {0} 位', [filteredArtists.length])}`
-                : gachaArtists ? t('本次抽取 {0} 位', [filteredArtists.length])
-                : localCatalogBrowse ? groupBrowse || usageFiltersActive || statusBrowse
-                    ? `${t('匹配 {0} 位', [matchedArtists.length])} · ${t('已加载 {0} 位', [filteredArtists.length])}`
-                    : `${t('共 {0} 位', [matchedArtists.length])} · ${t('已加载 {0} 位', [filteredArtists.length])}`
-                : onlySamples ? `${t('共 {0} 位', [matchedArtists.length])} · ${t('已加载 {0} 位', [filteredArtists.length])}`
-                : `${t('共 {0} 位', [hasMoreUnionCatalog ? '—' : artistCatalogCount + packOnlyArtists.length])} · ${t('已加载 {0} 位', [visibleCatalogArtists.length])}`}
-            </ToolbarCountCaption>}
 
             {gachaArtists && (
                 <GalleryActiveStateBanner

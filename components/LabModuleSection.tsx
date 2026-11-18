@@ -18,20 +18,21 @@ export const LabModuleSection: React.FC<LabModuleSectionProps> = ({ moduleId, la
 
   useEffect(() => setOpen(!defaultCollapsed), [defaultCollapsed]);
 
+  // 标题栏不另铺底色／appearance-group：与模块卡同一表面，展开后才像「这一块」而不是上条下卡。
   return <details
     open={open}
     onToggle={event => setOpen(event.currentTarget.open)}
     data-lab-module={moduleId}
     className={`lab-module-section appearance-reading-surface appearance-card appearance-group group min-w-0 rounded-xl border border-gray-200 bg-white/70 shadow-sm transition-all dark:border-gray-800 dark:bg-gray-900/60 overflow-hidden ${className}`}
   >
-    <summary className="appearance-group flex cursor-pointer list-none items-center justify-between gap-3 bg-gray-50/70 px-4 py-3 text-xs font-bold text-gray-700 transition hover:bg-gray-100/80 hover:text-indigo-600 dark:bg-gray-800/45 dark:text-gray-300 dark:hover:bg-gray-800/70 dark:hover:text-indigo-300 group-open:border-b group-open:border-gray-200/80 group-open:bg-gray-50/90 dark:group-open:border-gray-800 dark:group-open:bg-gray-800/60 [&::-webkit-details-marker]:hidden">
+    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-transparent px-4 py-3 text-xs font-bold text-gray-700 transition hover:bg-black/[0.03] hover:text-indigo-600 dark:text-gray-200 dark:hover:bg-white/[0.04] dark:hover:text-indigo-300 [&::-webkit-details-marker]:hidden">
       <span>{t(label)}</span>
-      <span className="flex items-center gap-1 text-micro font-medium text-gray-400">
+      <span className="flex items-center gap-1 text-micro font-medium text-gray-400 dark:text-gray-500">
         {open ? t("收起") : t("展开")}
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
       </span>
     </summary>
-    <div className="p-4 space-y-4">{children}</div>
+    <div className="lab-module-section__body space-y-4 px-4 pb-4 pt-1">{children}</div>
   </details>;
 };
 

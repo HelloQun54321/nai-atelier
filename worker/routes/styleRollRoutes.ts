@@ -1,5 +1,6 @@
 import { rollExperimentSummary, rollPrompt, rollSourceId, rollCandidateModuleId, validateRollBlocklist, validateRollExperiment, validateRollPreset, type RollExperiment, type RollPreset } from '../../services/styleRoll';
 import { error, json, type RouteContext } from './types';
+import { ensureHistoryRecycleSchema, newRollReferenceConflict, rollExperimentKeyPrefix } from './historyRecycleSchema';
 
 const blocklistKey = (userId: string) => `style_roll_blocklist_v1:${userId}`;
 
@@ -75,7 +76,22 @@ export async function handleStyleRollRoute({ path, method, request, db, currentU
     return json({ tags });
   }
 
-  const prefix = `style_roll_v1:${currentUser.id}:`;
+  const prefix = rollExperimentKeyPrefix(currentUser.id);
+  // 记录删除与候选一致：二次确认后彻底移除，不再保留可恢复的回收站。
+  if (experimentItem && method === 'DELETE') {
+    const id = experimentItem[1], revisionText = new URL(request.url).searchParams.get('revision');
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id) || !revisionText || !/^\d+$/.test(revisionText) || !Number.isSafeInteger(Number(revisionText))) return error('Roll 记录版本无效', 400);
+    const key = prefix + id;
+    const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+    if (!row) return error('Roll 记录不存在', 404);
+    let previous: RollExperiment;
+    try { const value: unknown = JSON.parse(row.value); validateRollExperiment(value); previous = value; }
+    catch { return error('Roll 串资料读取失败，请保留资料并检查备份', 500); }
+    if (previous.revision !== Number(revisionText)) return error('记录已在其他页面更新，请重新加载后继续', 409);
+    const deleted = await db.prepare('DELETE FROM settings WHERE key = ? AND value = ? RETURNING key').bind(key, row.value).first();
+    if (!deleted) return error('记录已在其他页面更新，请重新加载后继续', 409);
+    return json({ deleted: id });
+  }
   // 单条记录按需读取：列表只返回摘要，完整候选与轮次在选中记录时才搬运。
   if (experimentItem) {
     if (method !== 'GET') return error('Method not allowed', 405);
@@ -155,10 +171,19 @@ export async function handleStyleRollRoute({ path, method, request, db, currentU
    * 所以这里不回写旧资料；新候选仍按抽取时的模板写入 configKey 作为来源信息。
    */
   const saved = { ...experiment, revision: experiment.revision + 1, updatedAt: Date.now() };
-  // Android 的 D1 适配器没有 meta.changes，RETURNING 在两端直接确认本次写入。
+  const existing = new Set(previous?.archived ? [] : previous?.candidates.filter(candidate => !candidate.archived).map(candidate => candidate.id));
+  const activated = saved.archived ? [] : saved.candidates.filter(candidate => !candidate.archived && !existing.has(candidate.id)).map(candidate => candidate.id);
+  const value = JSON.stringify(saved);
+  const checkBindings = activated.length ? [currentUser.id, rollSourceId(saved.id), value, JSON.stringify(activated)] : [];
+  if (activated.length) await ensureHistoryRecycleSchema(db);
+  // 与版本比较一起在 SQL 中验证，防止预览后迟到的写入重新启用已经移入回收站的原图。
+  const guard = activated.length ? `NOT EXISTS (${newRollReferenceConflict})` : '1';
   const result = row
-    ? await db.prepare('UPDATE settings SET value = ? WHERE key = ? AND value = ? RETURNING key').bind(JSON.stringify(saved), key, row.value).first()
-    : await db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?) RETURNING key').bind(key, JSON.stringify(saved)).first();
-  if (!result) return error('实验已在其他页面更新，请重新加载后继续', 409);
+    ? await db.prepare(`UPDATE settings SET value = ? WHERE key = ? AND value = ? AND ${guard} RETURNING key`).bind(value, key, row.value, ...checkBindings).first()
+    : await db.prepare(`INSERT OR IGNORE INTO settings (key, value) SELECT ?, ? WHERE ${guard} RETURNING key`).bind(key, value, ...checkBindings).first();
+  if (!result) {
+    if (activated.length && await db.prepare(newRollReferenceConflict).bind(...checkBindings).first()) return error('候选原图已在历史回收站，请先恢复原图', 409);
+    return error('实验已在其他页面更新，请重新加载后继续', 409);
+  }
   return json({ experiment: saved });
 }

@@ -376,7 +376,7 @@ test('extension keeps identical Vibe group objects and retains plugin fields on 
 });
 
 test('SillyTavern user paths stay inside the user data root', () => {
-  const root = 'D:\\SillyTavern';
+  const root = tempRoot('user-paths');
   assert.equal(resolveStUserFile(root, '/user/images/example.png'), join(root, 'data', 'default-user', 'user', 'images', 'example.png'));
   assert.equal(resolveStUserFile(root, '/user/../../settings.json'), null);
   assert.equal(resolveStUserFile(root, 'file:///C:/secret.txt'), null);
@@ -552,7 +552,7 @@ test('missing st-chatu8 preview path does not crash with ENOENT and preserves ex
     },
     requestWorkerBuffer: async () => ({ status: 404, buffer: Buffer.alloc(0) }),
   });
-  bridge.root = 'D:\\SillyTavern';
+  bridge.root = tempRoot('missing-cover');
   bridge.applyPreferences({ enabled: true });
   bridge.saveState = async () => {};
 
@@ -572,13 +572,13 @@ test('missing st-chatu8 preview path does not crash with ENOENT and preserves ex
 });
 
 test('computeSillyTavernExtensionTargetDir 智能补全不同层级的酒馆安装路径', () => {
-  const base = 'D:\\SillyTavern';
-  assert.equal(computeSillyTavernExtensionTargetDir(base), 'D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge');
-  assert.equal(computeSillyTavernExtensionTargetDir('D:\\SillyTavern\\public'), 'D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge');
-  assert.equal(computeSillyTavernExtensionTargetDir('D:\\SillyTavern\\public\\scripts'), 'D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge');
-  assert.equal(computeSillyTavernExtensionTargetDir('D:\\SillyTavern\\public\\scripts\\extensions'), 'D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge');
-  assert.equal(computeSillyTavernExtensionTargetDir('D:\\SillyTavern\\public\\scripts\\extensions\\third-party'), 'D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge');
-  assert.equal(computeSillyTavernExtensionTargetDir('D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge'), 'D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge');
+  const base = tempRoot('st-install-path');
+  const parts = ['public', 'scripts', 'extensions', 'third-party', 'npm-bridge'];
+  const expected = join(base, ...parts);
+  for (let depth = 0; depth <= parts.length; depth += 1) {
+    const input = join(base, ...parts.slice(0, depth));
+    assert.equal(computeSillyTavernExtensionTargetDir(input), expected, input);
+  }
 });
 
 test('installSillyTavernBridgeExtension 正常安装扩展、注入服务地址并执行安全阻断', async () => {

@@ -193,7 +193,7 @@ import { createServer } from 'node:http';
 import test, { after } from 'node:test';
 import { createHmac } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -233,6 +233,7 @@ import {
   normalizeVibeStrengths,
   parseInvalidVibeCacheKeys,
   requestRemoteBuffer,
+  requestAgentProjectImage,
   sniffImageMime,
   selectPreciseReferenceCanvas,
   CloudQueueCoordinator,
@@ -252,6 +253,9 @@ import {
 import { PromptAgentService as RuntimePromptAgentService, calculateAgentContextBudget, customProviderRuntime, detectModelCapabilities, estimateContextTokens, parseTranslationResponse, parseWebSearchResponse, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from '../../scripts/prompt-agent.mjs';
 import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, resolveNovelAiModelFamily, searchNovelAiOfficialKnowledge } from '../../scripts/novelai-agent-knowledge.mjs';
 import { readImageDimensions } from '../../worker/imageDimensions.mjs';
+import { StChatu8Bridge } from '../../scripts/st-chatu8-bridge.mjs';
+import { LAN_ACCESS_COOKIE } from '../../worker/sharedWhitelist.mjs';
+import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
 
 // 所有旧 Agent 用例也强制隔离；未调用 init 的登录步骤同样可能通过事务落盘。
 const gatewayAgentTestRoot = await mkdtemp(join(tmpdir(), 'nai-gateway-agent-'));
@@ -1945,6 +1949,37 @@ const lanTestRes = () => {
   res.end = data => { res.body = Buffer.isBuffer(data) ? data.toString('utf8') : String(data || ''); res.ended = true; };
   return res;
 };
+
+test('Agent 使用已鉴权的酒馆原图索引读取本地原图，并保留大小与取消限制', async t => {
+  const projectRoot = createWorkspace('gateway-agent-st-image-');
+  t.after(() => removeWorkspace(projectRoot));
+  const externalId = 'a'.repeat(64), secret = 'synthetic-secret';
+  const path = `/api/integrations/st-chatu8/history/${externalId}/image`;
+  const directory = join(projectRoot, 'data', 'default-user', 'user', 'images');
+  const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCX0AAAAASUVORK5CYII=', 'base64');
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, 'original.png'), image);
+  const bridge = new StChatu8Bridge({ projectRoot });
+  bridge.root = projectRoot;
+  bridge.state.history[externalId] = { path: '/user/images/original.png' };
+  let reads = 0;
+  const stChatu8Bridge = { readHistoryImage: (...args) => { reads++; return bridge.readHistoryImage(...args); } };
+  const options = { req: lanTestReq({ method: 'GET' }), lanSecret: secret, stChatu8Bridge };
+  await assert.rejects(requestAgentProjectImage(path, image.length, options), { status: 401, code: 'LAN_ACCESS_REQUIRED' });
+  assert.equal(reads, 0);
+
+  const token = `${Date.now() + 60000}.synthetic-nonce`;
+  const signature = createHmac('sha256', secret).update(token).digest('base64url');
+  options.req = lanTestReq({ method: 'GET', cookie: `${LAN_ACCESS_COOKIE}=${token}.${signature}` });
+  const result = await requestAgentProjectImage(path, image.length, options);
+  assert.equal(result.mimeType, 'image/png');
+  assert.deepEqual(result.buffer, image);
+  await assert.rejects(requestAgentProjectImage(path, image.length - 1, options), { status: 413 });
+  await assert.rejects(requestAgentProjectImage(`/api/integrations/st-chatu8/history/${'b'.repeat(64)}/image`, image.length, options), { status: 404 });
+  const count = reads;
+  await assert.rejects(requestAgentProjectImage(path, image.length, { ...options, signal: AbortSignal.abort() }), { name: 'AbortError' });
+  assert.equal(reads, count);
+});
 
 test('局域网密码读写：保留 secret、拒绝非法值、缺失按未配置', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'nai-lan-'));

@@ -2,6 +2,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { pickDirectoryOption } from '../support/directoryPicker';
 import { CharacterLibrary } from '../../components/CharacterLibrary';
 import * as libraryRandom from '../../services/libraryRandom';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
@@ -97,9 +98,9 @@ function setup(width = 1280, chains: PromptChain[] = []) {
 }
 
 async function selectGroup(id: string) {
-  if (!screen.queryByRole('combobox', { name: '选择分组' })) fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-  await waitFor(() => expect(screen.getByRole('combobox', { name: '选择分组' })).toBeTruthy());
-  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: id } });
+  if (!screen.queryByRole('button', { name: '选择分组' })) fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '选择分组' })).toBeTruthy());
+  pickDirectoryOption('选择分组', id);
 }
 
 const familyId = `catalog:${baseTag}`;
@@ -146,7 +147,6 @@ it.each([1280, 390])('宽度 %s 时普通列表按跨页完整目录折叠胡滕
   const chooseRepresentative = within(family).getByRole('button', { name: '选择角色：胡滕' });
   expect(chooseRepresentative.textContent).toBe('胡滕');
   expect(chooseRepresentative.querySelector('svg')).toBeNull();
-  expect(chooseRepresentative.className).not.toContain('rounded-full');
   fireEvent.click(chooseRepresentative);
   expect(representative.getAttribute('aria-expanded')).toBe('false');
   expect(representative.getAttribute('aria-pressed')).toBe('true');
@@ -235,10 +235,10 @@ it('目录分页按族而非变体张数决定继续加载，展开不膨胀真�
   expect(within(family).getByText('62 种形态')).toBeTruthy();
   expect(itemKeys(family)).toHaveLength(1);
   expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
-  expect(screen.getByText(/共 62 张卡片/)).toBeTruthy();
+  expect(screen.getByTitle(/共 62/)).toBeTruthy();
   fireEvent.click(within(family).getByRole('button', { name: '展开角色变体：胡滕' }));
   expect(itemKeys(family)).toHaveLength(62);
-  expect(screen.getByText(/共 62 张卡片/)).toBeTruthy();
+  expect(screen.getByTitle(/共 62/)).toBeTruthy();
   expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
 });
 

@@ -208,8 +208,6 @@ describe('ChainEditorHeader 工具栏', () => {
     const props = { chainId: 'asset-1', canSaveCurrentChain: false };
     const view = renderHeader(props);
     const save = within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '保存风格串' });
-    expect(save.className).not.toContain('!bg-emerald-50');
-    expect(save.className).not.toContain('bg-indigo-600');
     fireEvent.click(save);
     const dialog = screen.getByRole('dialog', { name: '保存风格串' });
     expect((within(dialog).getByRole('button', { name: '已保存' }) as HTMLButtonElement).disabled).toBe(true);

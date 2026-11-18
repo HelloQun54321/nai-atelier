@@ -115,6 +115,30 @@ it.each([3, 4])('%s个分区左右键与首尾键切换并同步选中和键盘�
   expect(document.activeElement).toBe(global);
 });
 
+it('手机紧凑模式只有当前模式按钮时，分区条不按单按钮收窄也不画连接底板', () => {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const rect = this.classList.contains('generation-mode-nav') ? { left: 120, right: 220, width: 100, bottom: 52 }
+      : this.classList.contains('chain-editor-body') ? { left: 80 }
+      : this.classList.contains('workspace-chrome') ? { bottom: 64 }
+      : this.classList.contains('chain-editor-header') ? { left: 80, width: 1000, height: 58, bottom: 58 }
+      : this.classList.contains('workspace-mode-tabs') ? { height: 36 } : {};
+    return { x: 0, y: 0, top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0, toJSON: () => ({}), ...rect };
+  });
+  const { container } = render(<div className="chain-editor-workspace">
+    <div className="workspace-chrome"><header className="chain-editor-header"><nav className="generation-mode-nav" data-mode-chrome="compact">
+      <button>文生图</button>
+    </nav></header></div>
+    <LabEditorTabs value="global" options={threeOptions} onChange={() => {}} />
+    <div className="chain-editor-body" />
+  </div>);
+  const tabs = screen.getByRole('tablist');
+  expect(tabs.style.getPropertyValue('--lab-tabs-width')).toBe('');
+  expect(tabs.style.getPropertyValue('--lab-tabs-left')).toBe('');
+  const header = container.querySelector<HTMLElement>('.chain-editor-header')!;
+  expect(header.dataset.labNavigation).toBeUndefined();
+  expect(header.style.getPropertyValue('--lab-navigation-outline')).toBe('');
+});
+
 it('参考页隐藏后从四页恢复三页等宽，保留有效页的选中与焦点并按新顺序循环', () => {
   const onChange = vi.fn();
   const view = render(<LabEditorTabs value="params" options={fourOptions} onChange={onChange} />);

@@ -1,22 +1,30 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { collectTouchActions, TouchActionBar, TouchActionSheet, useCoarsePointer, useMobileLayout } from './TouchActionMenu';
 
 export const PRESS_REVEAL_DELAY = 450;
 const REVEAL_EVENT = 'nai-card-actions-reveal';
 const ACTION_TARGET = '[data-card-action], input, textarea, select, a';
 const SURFACE_TARGET = '.press-reveal-surface';
 
+function isTouchMenuTarget(target: EventTarget | null) {
+  return target instanceof globalThis.Element && Boolean(target.closest('[data-touch-action-menu]'));
+}
+
 type Props = React.HTMLAttributes<HTMLElement> & {
   as?: 'div' | 'article' | 'section';
   pressDisabled?: boolean;
   pressResetKey?: React.Key;
   elementRef?: React.Ref<HTMLElement>;
+  /** sheet：列表卡片长按出底部操作条。bar：详情和大图在手机上直接用这一层的底栏。 */
+  touchActions?: 'sheet' | 'bar';
+  touchBarClassName?: string;
 };
 
-/** 触屏长按只显露原位操作；正常点按、滚动和键盘操作保持各自语义。 */
+/** 触屏长按打开底部操作条；详情和大图改由本层底栏承载。点按、滚动和键盘保持各自语义。 */
 export const PressRevealSurface: React.FC<Props> = ({
-  as: Element = 'div', pressDisabled = false, pressResetKey, elementRef, children, className = '',
+  as: Element = 'div', pressDisabled = false, pressResetKey, elementRef, touchActions = 'sheet', touchBarClassName = '', children, className = '',
   onPointerDownCapture, onPointerMove, onPointerUp, onPointerCancel, onPointerLeave,
-  onPointerEnter, onClickCapture, onContextMenu, ...props
+  onPointerEnter, onClickCapture, onClick, onContextMenu, ...props
 }) => {
   const rootRef = useRef<HTMLElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -25,8 +33,19 @@ export const PressRevealSurface: React.FC<Props> = ({
   const [armed, setArmed] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [input, setInput] = useState('');
+  const [node, setNode] = useState<HTMLElement | null>(null);
+  const coarse = useCoarsePointer();
+  const mobileLayout = useMobileLayout();
+  const contextReveal = useRef(false);
+  const barOnPhone = touchActions === 'bar' && coarse;
+  const clearContextReveal = useCallback(() => {
+    if (!contextReveal.current) return;
+    contextReveal.current = false;
+    setInput('');
+  }, []);
   const attachRef = useCallback((element: HTMLElement | null) => {
     rootRef.current = element;
+    setNode(element);
     if (typeof elementRef === 'function') elementRef(element);
     else if (elementRef) elementRef.current = element;
   }, [elementRef]);
@@ -39,9 +58,10 @@ export const PressRevealSurface: React.FC<Props> = ({
     if (!armed && !revealed) return;
     const dismiss = () => {
       if (startRef.current) consumedRef.current = true;
-      clearTimer(); startRef.current = null; setArmed(false); setRevealed(false);
+      clearTimer(); startRef.current = null; setArmed(false); setRevealed(false); clearContextReveal();
     };
     const outside = (event: PointerEvent) => {
+      if (isTouchMenuTarget(event.target)) return;
       if (!rootRef.current?.contains(event.target as Node)) dismiss();
     };
     const revealOther = (event: Event) => {
@@ -58,30 +78,42 @@ export const PressRevealSurface: React.FC<Props> = ({
       document.removeEventListener('pointerdown', outside);
       window.removeEventListener('blur', dismiss);
     };
-  }, [armed, revealed]);
+  }, [armed, revealed, clearContextReveal]);
 
   useEffect(() => () => clearTimer(), []);
+  useEffect(() => { if (!revealed) clearContextReveal(); }, [revealed, clearContextReveal]);
 
   // 复用预览翻到新图、或进入批量挑选时，清除上一对象的长按状态。
   useEffect(() => {
-    clearTimer(); startRef.current = null; consumedRef.current = false; setArmed(false); setRevealed(false);
-  }, [pressDisabled, pressResetKey]);
+    clearTimer(); startRef.current = null; consumedRef.current = false; setArmed(false); setRevealed(false); clearContextReveal();
+  }, [pressDisabled, pressResetKey, clearContextReveal]);
 
   const endPointer = () => { clearTimer(); startRef.current = null; setArmed(false); };
   return <Element {...props} ref={attachRef}
     className={`press-reveal-surface group ${className}`}
-    data-press-revealed={revealed && !pressDisabled ? 'true' : undefined}
+    data-press-revealed={revealed && !pressDisabled && !contextReveal.current ? 'true' : undefined}
+    data-press-lift={revealed && !pressDisabled && (input === 'touch' || input === 'pen') ? 'true' : undefined}
     data-press-input={input || undefined}
+    data-mobile-ui={mobileLayout ? 'true' : undefined}
+    data-touch-actions={touchActions === 'bar' ? 'bar' : undefined}
     onPointerEnter={event => {
       if (event.pointerType) setInput(event.pointerType);
       onPointerEnter?.(event);
     }}
     onPointerDownCapture={event => {
+      // 操作面板是这张卡片的 React 子节点（createPortal 到 body），面板内的按下也会冒泡到这里。
+      // 鼠标点行时若照常把 input 改回 'mouse'，面板会在 pointerup／click 之前卸载，行按钮就永远点不到。
+      if (isTouchMenuTarget(event.target)) {
+        consumedRef.current = false;
+        endPointer();
+        return;
+      }
       endPointer();
       consumedRef.current = false;
       if (event.pointerType) setInput(event.pointerType);
       onPointerDownCapture?.(event);
       if (event.isPrimary === false) { setRevealed(false); return; }
+      if (barOnPhone) return;
       if ((event.target as Element).closest(SURFACE_TARGET) !== rootRef.current) return;
       if (event.defaultPrevented || pressDisabled || !['touch', 'pen'].includes(event.pointerType)
         || event.button !== 0
@@ -90,8 +122,11 @@ export const PressRevealSurface: React.FC<Props> = ({
       setArmed(true);
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
-        consumedRef.current = true;
+        const actions = rootRef.current ? collectTouchActions(rootRef.current, 'sheet') : [];
         setArmed(false);
+        if (!actions.length) return;
+        consumedRef.current = true;
+        try { navigator.vibrate?.(12); } catch { /* 无震动能力时静默 */ }
         document.dispatchEvent(new CustomEvent(REVEAL_EVENT, { detail: rootRef.current }));
         setRevealed(true);
       }, PRESS_REVEAL_DELAY);
@@ -115,9 +150,34 @@ export const PressRevealSurface: React.FC<Props> = ({
       }
       onClickCapture?.(event);
     }}
+    onClick={event => {
+      // 面板挂在这张卡片的 React 子树里（portal 到 body），面板里的点击也会冒上来。
+      // 关闭、遮罩或空白处的点击只属于面板，不能再顺带触发作品自身的打开行为。
+      if (isTouchMenuTarget(event.target)) return;
+      onClick?.(event);
+    }}
     onContextMenu={event => {
-      if ((input === 'touch' || input === 'pen') && !(event.target as Element).closest('input, textarea, select, a')) event.preventDefault();
+      const target = event.target as globalThis.Element;
+      const editable = target.closest('input, textarea, select, a, [contenteditable="true"]');
+      if ((input === 'touch' || input === 'pen') && !editable) event.preventDefault();
+      // 电脑上把窗口收成手机界面时，鼠标右键走同一条长按操作条。宽屏右键仍留给系统菜单。
+      if (mobileLayout && event.button === 2 && input !== 'touch' && input !== 'pen' && !pressDisabled && !barOnPhone && !editable
+        && target.closest(SURFACE_TARGET) === rootRef.current) {
+        const actions = rootRef.current ? collectTouchActions(rootRef.current, 'sheet') : [];
+        if (actions.length) {
+          event.preventDefault();
+          event.stopPropagation();
+          contextReveal.current = true;
+          setInput('touch');
+          document.dispatchEvent(new CustomEvent(REVEAL_EVENT, { detail: rootRef.current }));
+          setRevealed(true);
+        }
+      }
       onContextMenu?.(event);
     }}
-  >{children}</Element>;
+  >
+    {children}
+    {touchActions === 'bar' && <TouchActionBar root={node} className={touchBarClassName} />}
+    {revealed && !pressDisabled && (input === 'touch' || input === 'pen') && <TouchActionSheet root={node} onDismiss={() => setRevealed(false)} />}
+  </Element>;
 };

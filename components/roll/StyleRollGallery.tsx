@@ -150,7 +150,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
             <ImageCardActions>
               {item && <ImageShareActions imageUrl={item.imageUrl} filename={`roll-${item.id}.png`} generationData={item} favorite={{ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id }} notify={notify} variant="card" className="flex-col" showTransfer={false} />}
               {item && (candidate.savedChainId
-                ? <span data-image-action-item aria-label={t('已保存候选 {0}', [index])} title={t('已保存到风格串')} className={`${IMAGE_CARD_ACTION_CLASS} ${IMAGE_CARD_ACTION_TONE.save} inline-flex items-center justify-center rounded-full shadow-lg`}><Check className="h-4 w-4" strokeWidth={3} /></span>
+                ? <span data-image-action-item aria-label={t('已保存候选 {0}', [index])} title={t('已保存到风格串')} className={`${IMAGE_CARD_ACTION_CLASS} ${IMAGE_CARD_ACTION_TONE.saved} inline-flex items-center justify-center rounded-full shadow-lg`}><Check className="h-4 w-4" strokeWidth={3} /></span>
                 : <button
                   type="button"
                   aria-label={t('保存候选 {0}', [index])}

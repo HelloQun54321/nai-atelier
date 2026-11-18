@@ -83,7 +83,7 @@ export const HistoryImageViewer: React.FC<Props> = props => {
         </header>
         <div className="history-viewer-content">
           <div className="history-viewer-image-column">
-            <PressRevealSurface elementRef={stageRef} pressResetKey={item.id} data-agent-interaction="pan" aria-label={t("历史图片平移与缩放")} className={`history-viewer-stage ${zoom > 1 ? 'history-viewer-stage--zoomed' : ''}`} {...view.handlers}>
+            <PressRevealSurface elementRef={stageRef} pressResetKey={item.id} touchActions="bar" data-agent-interaction="pan" aria-label={t("历史图片平移与缩放")} className={`history-viewer-stage ${zoom > 1 ? 'history-viewer-stage--zoomed' : ''}`} {...view.handlers}>
               <OriginalImage key={`${item.id}:${retry}`} src={item.imageUrl} alt={t("历史生成图片预览")} draggable={false} data-safe-mode-ignore="true" className="history-viewer-image" style={{ ...view.imageStyle, visibility: imageFailed ? 'hidden' : undefined }} onLoad={view.onLoad} onError={() => setImageFailed(true)} />
               {imageFailed && <button data-card-action="true" className="history-viewer-error" onClick={() => { setImageFailed(false); setRetry(value => value + 1); }}>{t("原图加载失败 · 重试")}</button>}
               {!props.hideDelete && <div data-card-action="true" className="hover-reveal-touch history-viewer-manage">

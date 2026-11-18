@@ -123,13 +123,14 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
   return {
     ...data, activeGroup, selectGroup, expanded,
     matches, cardDragProps,
-    toolbar: <><ToolbarButton data-agent-action="browse" aria-label={t('分组导航')} title={[t(expanded ? '收起分类' : '展开分类'), label, navigationOptions?.activeFilterLabel].filter(Boolean).join(' · ')} aria-controls={navigationId} aria-expanded={expanded} active={expanded || activeGroup !== '*' || Boolean(navigationOptions?.activeFilterLabel)} onClick={() => update({ expanded: !expanded })}><Folder /></ToolbarButton>
+    toolbar: <><ToolbarButton data-agent-action="browse" aria-label={t('分组导航')} title={[t(expanded ? '收起分类' : '展开分类'), label, navigationOptions?.activeFilterLabel].filter(Boolean).join(' · ')} aria-controls={navigationId} aria-expanded={expanded} active={expanded || activeGroup !== '*' || Boolean(navigationOptions?.activeFilterLabel)} onClick={() => update({ expanded: !expanded })} className="!px-2.5 md:!px-3"><Folder /><span className="hidden max-w-24 truncate md:inline">{label}</span></ToolbarButton>
       {selectedKeys.length > 0 && <ToolbarButton aria-label={t('设置分组')} title={t('设置分组')} disabled={!data.ready || data.busy || Boolean(data.error)} onClick={() => setDialog({ scope, keys: [...new Set(selectedKeys)] })}><FolderPlus /></ToolbarButton>}
       {dialog?.scope === scope && <GroupDialog key={dialog.editing ?? 'members'} keys={dialog.keys} resolveMembershipKeys={navigationOptions?.resolveMembershipKeys} editing={dialog.editing} parentId={dialog.parentId} state={data.state} save={data.save} busy={data.busy} onClose={() => setDialog(null)} onSaved={selectGroup} notify={notify} />}</>,
     navigation: <DirectoryTreeNavigation id={navigationId} label={t('分组导航')} title={t('分组')} nodes={data.state.groups} selectedId={activeGroup} onSelect={selectGroup} expanded={expanded}
       preferenceKey={`nai_catalog_group_branches_${scope}`} counts={navigationCounts} virtualNodes={virtualGroups}
       unclassifiedLabel={t('未分组')} embedded={scope === 'roll-artists'} className={scope === 'roll-artists' ? 'flex-none md:w-52' : undefined} disabled={blocked} header={navigationOptions?.navigationHeader}
       createLabel={t('新建分组')} renameLabel={t('重命名分组')} deleteLabel={t('删除分组')} selectLabel={t('选择分组')}
+      onRequestClose={() => update({ expanded: false })}
       asideProps={{ onDragOver: event => hover(event, '*'), onDrop: event => void drop(event, '*'), className: 'catalog-group-navigation' }}
       onCreate={parentId => setDialog({ scope, keys: [], editing: 'new', parentId })}
       onRename={id => setDialog({ scope, keys: [], editing: id })} onDelete={() => void remove()}

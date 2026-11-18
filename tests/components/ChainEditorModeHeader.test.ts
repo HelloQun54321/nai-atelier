@@ -25,7 +25,7 @@ describe('ChainEditorModeHeader', () => {
     expect(screen.queryByRole('heading')).toBeNull();
     expect(screen.queryByRole('button', { name: /编辑.*信息/ })).toBeNull();
     expect(container.firstElementChild?.className).not.toContain('flex-wrap');
-    expect(nav.parentElement?.className).toContain('min-w-0 flex-1');
+    expect(nav.parentElement?.className).toContain('min-w-0 md:flex-1');
     fireEvent.click(back);
     expect(onBack).toHaveBeenCalledOnce();
   });

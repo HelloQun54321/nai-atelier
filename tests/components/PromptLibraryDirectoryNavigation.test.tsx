@@ -2,6 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import { directoryPickerValue, openDirectoryPicker, pickDirectoryOption } from '../support/directoryPicker';
 import { PromptLibraryDirectoryNavigation } from '../../components/PromptLibraryDirectoryNavigation';
 import type { PromptLibraryTreeState } from '../../services/promptLibraryTree.mjs';
 import type { PromptChain } from '../../types';
@@ -67,7 +68,7 @@ it('全部统计真实原文和组合，混入风格串与角色资产不进入�
   expect(describedCount(screen.getByRole('button', { name: '全部' }))).toBe('6');
   expect(describedCount(screen.getByRole('button', { name: '未归类' }))).toBe('2');
   expect(describedCount(screen.getByRole('button', { name: '人物' }))).toBe('2');
-  expect(screen.getByRole('option', { name: '全部 (6)' })).toBeTruthy();
+  expect(openDirectoryPicker('选择提示词目录').getByRole('option', { name: '全部 (6)' })).toBeTruthy();
 });
 
 it('点击目录单独定位，展开箭头仅展开分支且在本端记忆，不改选择或资料', () => {
@@ -112,10 +113,10 @@ it('收起不占导航空间，手机只显示紧凑路径选择器，嵌入窗�
   expect(aside.className).not.toContain('workspace-fixed-pane');
   expect(screen.getByRole('navigation').className).toContain('hidden');
   expect(screen.getByRole('navigation').className).toContain('md:block');
-  const select = screen.getByRole('combobox', { name: '选择提示词目录' });
-  expect(select.className).toContain('md:hidden');
-  expect(within(select).getByRole('option', { name: '人物 / 服装 / 上衣 (1)' })).toBeTruthy();
-  fireEvent.change(select, { target: { value: 'shirt' } });
+  const trigger = screen.getByRole('button', { name: '选择提示词目录' });
+  expect(trigger.className).toContain('md:hidden');
+  expect(openDirectoryPicker('选择提示词目录').getByRole('option', { name: '人物 / 服装 / 上衣 (1)' })).toBeTruthy();
+  pickDirectoryOption('选择提示词目录', 'shirt');
   expect(p.onSelect).toHaveBeenCalledWith({ directoryIds: ['shirt'], allDirectories: false, unclassified: false });
 });
 
@@ -123,8 +124,8 @@ it('旧多选混合未归类保持每项高亮，手机选择器不会误显示�
   render(<PromptLibraryDirectoryNavigation {...props()} selectedIds={['shirt']} allSelected={false} unclassified />);
   expect(screen.getByRole('button', { name: '人物 / 服装 / 上衣' }).getAttribute('aria-current')).toBe('page');
   expect(screen.getByRole('button', { name: '未归类' }).getAttribute('aria-current')).toBe('page');
-  expect((screen.getByRole('combobox', { name: '选择提示词目录' }) as HTMLSelectElement).value).toBe('#selected');
-  expect(screen.getByRole('option', { name: '已选 2 个目录' })).toBeTruthy();
+  expect(directoryPickerValue('选择提示词目录')).toBe('#selected');
+  expect(openDirectoryPicker('选择提示词目录').getByRole('option', { name: '已选 2 个目录' })).toBeTruthy();
 });
 
 it('浏览导航拖动把真实节点与目标上级交给持久化回调，不修改条目或选择', () => {
