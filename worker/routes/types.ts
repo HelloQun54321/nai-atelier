@@ -49,6 +49,7 @@ export interface Env {
   LAN_ACCESS_SECRET?: string;
   AITAG_LOCAL_PROXY_URL?: string;
   DANBOORU_LOCAL_PROXY_URL?: string;
+  TAG_DICTIONARY_LOCAL_ORIGIN?: string;
   // GUEST_PASSCODE removed, now stored in DB
 }
 

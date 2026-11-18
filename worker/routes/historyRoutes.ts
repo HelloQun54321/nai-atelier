@@ -1,6 +1,6 @@
 import { HISTORY_ALL, ensureHistoryRecycleSchema, claimHistoryWrite } from './historyRecycleSchema';
 import { handleRecycleRoute, moveHistoryRows } from './historyRecycleRoutes';
-import { ensureArtistHistoryIndex, recordArtistHistory, deactivateArtistHistory, readArtistHistorySnapshots, readArtistGenerationCounts, loadArtistUsageDictionary } from './artistUsageIndex';
+import { ARTIST_DICTIONARY_UNAVAILABLE, ensureArtistHistoryIndex, recordArtistHistory, deactivateArtistHistory, readArtistHistorySnapshots, readArtistGenerationCounts, loadArtistUsageDictionary } from './artistUsageIndex';
 import { ensureArtistChainUsage, readArtistChainCounts } from './artistChainUsage';
 // Local generation history (D1 + R2), inspiration boards/library, and the
 // lightweight agent overview endpoints.
@@ -425,6 +425,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
   if (path === '/api/artist-usage' && method === 'GET') {
     await ensureLocalHistorySchema(db);
     const known = await loadArtistUsageDictionary(env);
+    if (known === null) return error(ARTIST_DICTIONARY_UNAVAILABLE, 503);
     await Promise.all([ensureArtistHistoryIndex(db, currentUser.id, env), ensureArtistChainUsage(db, known)]);
     const [generated, chainCounts, count] = await Promise.all([
       readArtistGenerationCounts(db, currentUser.id), readArtistChainCounts(db),
@@ -1068,10 +1069,10 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         await env.BUCKET.put(editMaskKey, exactArrayBuffer(editMask.bytes), { httpMetadata: { contentType: editMask.contentType } });
       }
       const createdAt = Number.isFinite(Number(body.createdAt)) ? Number(body.createdAt) : Date.now();
-      let artistDictionary: ReadonlySet<string> | undefined;
+      let artistDictionary: ReadonlySet<string> | null = null;
       try {
         artistDictionary = await loadArtistUsageDictionary(env);
-        if (existing) await recordArtistHistory(db, currentUser.id, existing, artistDictionary);
+        if (existing && artistDictionary) await recordArtistHistory(db, currentUser.id, existing, artistDictionary);
       } catch (cause) { console.error('画师统计暂不可用，历史保存继续', cause); }
       await db.prepare(`
         INSERT ${importing ? '' : 'OR REPLACE '}INTO ${importingBin ? 'local_generation_recycle_bin' : 'local_generation_history'} (

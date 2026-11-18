@@ -15,59 +15,97 @@ const protectedFrom = (value: unknown): string[] | null => value === undefined ?
 const idsFrom = (value: unknown): string[] | null => Array.isArray(value) && value.length <= 500 && value.every(id => typeof id === 'string' && id.length > 0 && id.length <= 200) ? [...new Set(value)] : null;
 
 /** 预览与原子移入共用引用谓词。D1 限制复合 SELECT 的分支数，按来源用 EXISTS，不展开大 UNION。 */
-const referenceContext = (target: string) => `WITH target AS (${target}), urls AS (
- SELECT u.value AS url FROM target t, json_each(json_array(
+const referenceContext = (target: string, encodedUrl = '?', segmentedUrl = '?') => `WITH target AS (${target}), urls AS (
+ SELECT t.id AS history_id, u.value AS url FROM target t, json_each(json_array(
   '/api/local-history/' || t.id || '/image',
   '/api/integrations/st-chatu8/history/' || t.external_id || '/image',
   '/api/assets/' || NULLIF(t.image_key,''),
-  CASE WHEN t.image_key <> '' THEN ? END,
-  CASE WHEN t.image_key <> '' THEN ? END
+  CASE WHEN t.image_key <> '' THEN ${encodedUrl} END,
+  CASE WHEN t.image_key <> '' THEN ${segmentedUrl} END
  )) u WHERE u.value IS NOT NULL
 )`;
 const documentSources = {
  chain: { from: 'chains d', value: 'd.params', where: '1' },
  collection: { from: 'inspirations d, json_each(json_array(d.params,d.analysis)) document', value: 'document.value', where: '1' },
- history: { from: 'local_generation_history d', value: 'd.params', where: 'd.id <> t.id' },
+ history: { from: 'local_generation_history d', value: 'd.params', where: '1' },
  recycle_bin: { from: 'local_generation_recycle_bin d', value: 'd.params', where: '1' },
  artist: { from: 'artists d', value: 'd.benchmarks', where: '1' },
  settings: { from: 'settings d', value: 'd.value', where: `d.key NOT GLOB 'artist_usage_v1:*' AND d.key NOT GLOB 'history_write_v1:*'
   AND d.key NOT GLOB 'history_preview_v1:*' AND d.key NOT GLOB 'history_import_v1:*' AND substr(ltrim(d.value),1,1) IN ('{','[')` },
 };
-const documentReference = ({from,value,where}: (typeof documentSources)[keyof typeof documentSources]) => `EXISTS(
- SELECT 1 FROM ${from}, json_tree(CASE WHEN json_valid(${value}) THEN ${value} ELSE '{}' END) n
- WHERE ${where} AND n.type = 'text' AND (
-  EXISTS(SELECT 1 FROM urls WHERE n.atom = url OR (substr(n.atom,1,length(url)) = url AND substr(n.atom,length(url)+1,1) IN ('?','#')))
-  OR n.atom = NULLIF(t.image_key,'') OR (n.key IN ('historyId','history_id','sourceHistoryId') AND n.atom = t.id)
+const documentNames = Object.keys(documentSources) as (keyof typeof documentSources)[];
+const historyIdKey = "n.key IN ('historyId','history_id','sourceHistoryId')";
+const targetUrls = 'SELECT url FROM urls WHERE history_id = t.id';
+const documentNodes = (value: string) => `json_tree(CASE WHEN json_valid(${value}) THEN ${value} ELSE '{}' END) n`;
+const invalidDocument = (value: string) => `${value} IS NOT NULL AND trim(${value}) <> '' AND NOT json_valid(${value})`;
+const documentReference = (name: keyof typeof documentSources, indexed: boolean) => {
+ const { from, value, where } = documentSources[name];
+ const source = indexed ? `${name}_nodes n` : `${from}, ${documentNodes(value)}`;
+ const scope = indexed ? '1' : `(${where}) AND n.type = 'text'`;
+ const other = name === 'history' ? `AND ${indexed ? 'n.source_id' : 'd.id'} <> t.id` : '';
+ return `EXISTS(SELECT 1 FROM ${source} WHERE ${scope} ${other} AND (
+  EXISTS(SELECT 1 FROM urls WHERE history_id = t.id AND
+   (n.atom = url OR (substr(n.atom,1,length(url)) = url AND substr(n.atom,length(url)+1,1) IN ('?','#'))))
+  OR n.atom = NULLIF(t.image_key,'') OR (${historyIdKey} AND n.atom = t.id)
  ))`;
+};
 const referenceAsset = (table: string) => `EXISTS(SELECT 1 FROM ${table} a WHERE a.original_key = NULLIF(t.image_key,'') OR a.thumbnail_key = NULLIF(t.image_key,''))`;
-const referenceChecks = Object.entries({
+const buildReferenceChecks = (indexed = false) => Object.entries({
  favorite: 't.is_favorite = 1',
  prompt_library: 'EXISTS(SELECT 1 FROM prompt_library_links WHERE history_id = t.id)',
- collection: `EXISTS(SELECT 1 FROM inspirations i WHERE i.image_key = NULLIF(t.image_key,'') OR i.image_url IN (SELECT url FROM urls)
-  OR i.source_url IN (SELECT url FROM urls) OR (i.source_type IN ('history','local-history') AND i.source_id = t.id)) OR ${documentReference(documentSources.collection)}`,
- chain: `EXISTS(SELECT 1 FROM chains WHERE preview_image IN (SELECT url FROM urls)) OR ${documentReference(documentSources.chain)}`,
- artist: `EXISTS(SELECT 1 FROM artists WHERE image_url IN (SELECT url FROM urls) OR preview_url IN (SELECT url FROM urls)) OR ${documentReference(documentSources.artist)}`,
+ collection: `EXISTS(SELECT 1 FROM inspirations i WHERE i.image_key = NULLIF(t.image_key,'') OR i.image_url IN (${targetUrls})
+  OR i.source_url IN (${targetUrls}) OR (i.source_type IN ('history','local-history') AND i.source_id = t.id)) OR ${documentReference('collection', indexed)}`,
+ chain: `EXISTS(SELECT 1 FROM chains WHERE preview_image IN (${targetUrls})) OR ${documentReference('chain', indexed)}`,
+ artist: `EXISTS(SELECT 1 FROM artists WHERE image_url IN (${targetUrls}) OR preview_url IN (${targetUrls})) OR ${documentReference('artist', indexed)}`,
  roll: liveRollHistoryReference('t'),
  shared_image: `EXISTS(SELECT 1 FROM ${HISTORY_ALL} other WHERE other.id <> t.id AND other.image_key = NULLIF(t.image_key,''))`,
- reference_check_failed: Object.values(documentSources).map(({from,value,where}) => `EXISTS(
-  SELECT 1 FROM ${from} WHERE ${where} AND ${value} IS NOT NULL AND trim(${value}) <> '' AND NOT json_valid(${value})
- )`).join(' OR '),
- history: documentReference(documentSources.history),
- recycle_bin: documentReference(documentSources.recycle_bin),
- settings: documentReference(documentSources.settings),
+ reference_check_failed: documentNames.map(name => {
+  if (name === 'history' && indexed) return 'EXISTS(SELECT 1 FROM invalid_history WHERE id <> t.id)';
+  const { from, value, where } = documentSources[name];
+  return `EXISTS(SELECT 1 FROM ${from} WHERE (${where}) AND ${invalidDocument(value)} ${name === 'history' ? 'AND d.id <> t.id' : ''})`;
+ }).join(' OR '),
+ history: documentReference('history', indexed),
+ recycle_bin: documentReference('recycle_bin', indexed),
+ settings: documentReference('settings', indexed),
  reference_asset: `${referenceAsset('vibe_assets')} OR ${referenceAsset('character_reference_assets')}`,
 });
-const referenceColumns = 'id,is_favorite,image_key,external_id,user_id,source_chain_id,structure_version,params,modules,created_at';
+const referenceChecks = buildReferenceChecks();
+const referenceColumns = 'id,is_favorite,image_key,external_id,user_id,source_chain_id,structure_version,params,modules,created_at'.split(',');
+const qualifiedReferenceColumns = referenceColumns.map(column => `h.${column}`).join(',');
 // CASE 保持各来源条件同层。串联 OR 会让内嵌移入语句在 D1 超过表达式深度限制。
-const referenceQuery = `${referenceContext(`SELECT ${referenceColumns.split(',').map(column => `h.${column}`).join(',')}`)}
+const referenceQuery = `${referenceContext(`SELECT ${qualifiedReferenceColumns}`)}
  SELECT 1 FROM target t WHERE CASE ${referenceChecks.map(([,check]) => `WHEN (${check}) THEN 1`).join(' ')} ELSE 0 END`;
-const referenceDetailsQuery = `${referenceContext(`SELECT ${referenceColumns} FROM local_generation_history WHERE id = ? AND user_id = ?`)}
- SELECT ${referenceChecks.map(([reason,check]) => `(${check}) AS ${reason}`).join(',')} FROM target t`;
+const referenceFlags = (checks: [string, string][]) => checks.map(([reason, check]) => `(${check}) AS ${reason}`).join(',');
+const referenceDetailsQuery = `${referenceContext(`SELECT ${referenceColumns.join(',')} FROM local_generation_history WHERE id = ? AND user_id = ?`)}
+ SELECT ${referenceFlags(referenceChecks)} FROM target t`;
+// 每批只解析一次源文档，并保留该批可能匹配的节点。预览与移入核对同一组引用条件。
+const previewDocumentIndexes = documentNames.map(name => {
+ const { from, value, where } = documentSources[name];
+ return `${name}_nodes AS MATERIALIZED (
+  SELECT DISTINCT ${name === 'history' ? 'd.id AS source_id, ' : ''}n.key, n.atom FROM ${from}, ${documentNodes(value)}
+  WHERE (${where}) AND n.type = 'text' AND (
+   n.atom GLOB '/api/*' OR n.atom IN (SELECT image_key FROM target WHERE image_key <> '')
+   OR (${historyIdKey} AND n.atom IN (SELECT id FROM target))
+  ))`;
+}).join(', ');
+const previewReferenceDetailsQuery = `${referenceContext(`
+ SELECT ${qualifiedReferenceColumns}, json_extract(q.value, '$[1]') AS encoded_url, json_extract(q.value, '$[2]') AS segmented_url
+ FROM json_each(?) q JOIN local_generation_history h ON h.id = json_extract(q.value, '$[0]') AND h.user_id = ?
+`, 't.encoded_url', 't.segmented_url')},
+ ${previewDocumentIndexes},
+ invalid_history AS MATERIALIZED (SELECT d.id FROM local_generation_history d WHERE ${invalidDocument('d.params')} LIMIT 2)
+ SELECT t.id, ${referenceFlags(buildReferenceChecks(true))} FROM target t`;
 const referenceArgs = (row: any) => [`/api/assets/${encodeURIComponent(row.image_key)}`, `/api/assets/${String(row.image_key).split('/').map(encodeURIComponent).join('/')}`];
+const referenceStatement = (db: D1Database, row: any) => db.prepare(referenceDetailsQuery).bind(row.id, row.user_id, ...referenceArgs(row));
+const reasonsFromFlags = (flags?: Record<string, unknown> | null) => flags
+ ? referenceChecks.filter(([reason]) => flags[reason] === 1).map(([reason]) => reason)
+ : ['not_found'];
 async function referenceReasons(db: D1Database, row: any): Promise<string[]> {
- const flags = await db.prepare(referenceDetailsQuery).bind(row.id,row.user_id,...referenceArgs(row)).first<Record<string, number>>();
- if (!flags) return ['not_found'];
- return referenceChecks.filter(([reason]) => flags[reason] === 1).map(([reason]) => reason);
+ return reasonsFromFlags(await referenceStatement(db, row).first<Record<string, number>>());
+}
+async function checkedReferenceReasons(db: D1Database, row: any): Promise<string[]> {
+ try { return await referenceReasons(db, row); }
+ catch { return ['reference_check_failed']; }
 }
 export function recycleResult(operation: 'move'|'restore'|'purge', requestedCount: number, completedIds: string[], skipped: Issue[] = [], failed: Issue[] = [], warnings: Issue[] = []) {
  const completedCount = completedIds.length, skippedCount = skipped.length, failedCount = failed.length;
@@ -85,8 +123,7 @@ export async function moveHistoryRows(ctx: RouteContext, rows: any[], protectedI
   try {
    const row = await db.prepare('SELECT * FROM local_generation_history WHERE id = ? AND user_id = ?').bind(input.id,currentUser.id).first<any>();
    if (!row || (input._version ? await digest(rowVersion(row))!==input._version : rowVersion(row)!==rowVersion(input))) { skipped.push({id:input.id,reasons:['source_changed']}); continue; }
-   let protectedBy: string[];
-   try { protectedBy = await referenceReasons(db,row); } catch { protectedBy = ['reference_check_failed']; }
+   const protectedBy = await checkedReferenceReasons(db, row);
    if (protectedBy.length) { skipped.push({id:row.id,reasons:protectedBy}); continue; }
    const result = await db.batch([
     db.prepare(`INSERT INTO local_generation_recycle_bin (${HISTORY_COLUMNS},moved_at,move_nonce) SELECT ${columns.map(c=>'h.'+c).join(',')},?,? FROM local_generation_history h WHERE h.id = ? AND h.user_id = ? AND ${version('h')} = ? AND NOT EXISTS(${referenceQuery})`).bind(Date.now(),crypto.randomUUID(),row.id,currentUser.id,rowVersion(row),...referenceArgs(row)),
@@ -98,15 +135,62 @@ export async function moveHistoryRows(ctx: RouteContext, rows: any[], protectedI
  }
  return recycleResult('move',rows.length,completed,skipped,failed);
 }
-export async function selectRecycleCandidates(ctx: RouteContext, body: any) {
- const ids = body.ids === undefined ? null : idsFrom(body.ids);
- if (body.ids !== undefined && !ids) throw new Error('Invalid history IDs');
- const rows = (await ctx.db.prepare('SELECT * FROM local_generation_history WHERE user_id = ? ORDER BY created_at DESC,id DESC').bind(ctx.currentUser.id).all<any>()).results;
- if (ids) { const byId=new Map(rows.map(row=>[row.id,row])); return ids.map(id=>byId.get(id)||{id,_missing:true}); }
- if (body.clear === true) return rows;
- if (Number.isFinite(body.days)) return rows.filter(row=>row.created_at < Date.now()-Math.max(1,Math.floor(body.days))*86400000);
- if (body.keepCount !== undefined && ['string','number'].includes(typeof body.keepCount) && Number.isFinite(Number(body.keepCount))) return rows.slice(Math.max(1,Math.floor(Number(body.keepCount))));
- throw new Error('Invalid history selector');
+async function selectRecycleCandidateIds(ctx: RouteContext, body: any): Promise<string[] | null> {
+ if (body.ids !== undefined) return idsFrom(body.ids);
+ const { db, currentUser } = ctx;
+ const ordered = 'ORDER BY created_at DESC, id DESC';
+ const base = 'SELECT id FROM local_generation_history WHERE user_id = ?';
+ let query;
+ if (body.clear === true) {
+  query = db.prepare(`${base} ${ordered}`).bind(currentUser.id);
+ } else if (Number.isFinite(body.days)) {
+  const cutoff = Date.now() - Math.max(1, Math.floor(body.days)) * 86_400_000;
+  if (!Number.isFinite(cutoff)) return [];
+  query = db.prepare(`${base} AND created_at < ? ${ordered}`).bind(currentUser.id, cutoff);
+ } else if (['string', 'number'].includes(typeof body.keepCount) && Number.isFinite(Number(body.keepCount))) {
+  const keep = Math.min(Number.MAX_SAFE_INTEGER, Math.max(1, Math.floor(Number(body.keepCount))));
+  query = db.prepare(`${base} ${ordered} LIMIT -1 OFFSET ?`).bind(currentUser.id, keep);
+ } else {
+  return null;
+ }
+ return (await query.all<{id: string}>()).results.map(({ id }) => id);
+}
+async function readRecycleCandidates(ctx: RouteContext, ids: string[]) {
+ if (!ids.length) return [];
+ const { results } = await ctx.db.prepare(`SELECT * FROM local_generation_history WHERE user_id = ?
+  AND id IN (SELECT value FROM json_each(?))`).bind(ctx.currentUser.id, JSON.stringify(ids)).all<any>();
+ const byId = new Map(results.map(row => [row.id, row]));
+ return ids.map(id => byId.get(id) || { id, _missing: true });
+}
+async function previewRecycleCandidates(ctx: RouteContext, ids: string[], protectedIds: Set<string>) {
+ const allowed: { id: string; external_source: string | null; external_id: string | null; _version: string }[] = [];
+ const skipped: Issue[] = [];
+ // 候选 ID 已固定。分批读完整字段和核对引用，减少 D1 往返及单次响应载荷。
+ const batchSize = 32;
+ for (let offset = 0; offset < ids.length; offset += batchSize) {
+  const rows = await readRecycleCandidates(ctx, ids.slice(offset, offset + batchSize));
+  const checkable = rows.filter(row => !row._missing && !protectedIds.has(row.id));
+  const reasons = new Map<string, string[]>();
+  if (checkable.length) {
+   try {
+    const candidates = JSON.stringify(checkable.map(row => [row.id, ...referenceArgs(row)]));
+    const { results } = await ctx.db.prepare(previewReferenceDetailsQuery)
+     .bind(candidates, ctx.currentUser.id).all<{ id: string } & Record<string, unknown>>();
+    results.forEach(flags => reasons.set(flags.id, reasonsFromFlags(flags)));
+   } catch {
+    for (const row of checkable) reasons.set(row.id, await checkedReferenceReasons(ctx.db, row));
+   }
+  }
+  for (const row of rows) {
+   const why = row._missing ? ['not_found'] : protectedIds.has(row.id) ? ['favorite'] : reasons.get(row.id) ?? ['not_found'];
+   if (why.length) {
+    skipped.push({ id: row.id, reasons: why });
+   } else {
+    allowed.push({ id: row.id, external_source: row.external_source, external_id: row.external_id, _version: await digest(rowVersion(row)) });
+   }
+  }
+ }
+ return { allowed, skipped };
 }
 const binVersion = (row:any) => digest(rowVersion(row)+':'+row.moved_at+':'+(row.move_nonce||''));
 const mapBin = async (row: any) => ({version:await binVersion(row),...mapLocalHistoryRow(row), imageUrl:row.external_source==='st-chatu8' ? `/api/integrations/st-chatu8/history/${encodeURIComponent(row.external_id)}/image` : `/api/local-history/recycle-bin/${encodeURIComponent(row.id)}/image`, movedAt:Number(row.moved_at)});
@@ -117,14 +201,15 @@ export async function handleRecycleRoute(ctx: RouteContext): Promise<Response|nu
  if (method!=='GET' && currentUser.role==='guest') return error('Forbidden',403);
  if (path===root+'/preview' && method==='POST') {
   const body=await request.json() as any;
-  if (protectedFrom(body.protectedIds) === null) return error('Invalid protected history IDs',400);
-  let rows: any[]; try {rows=await selectRecycleCandidates(ctx,body);} catch {return error('Invalid history selector',400);}
-  const allowed:any[]=[], skipped:Issue[]=[];
-  for(const row of rows) {let why:string[];try{why=row._missing?['not_found']:body.protectedIds?.includes(row.id)?['favorite']:await referenceReasons(db,row);}catch{why=['reference_check_failed'];} if(why.length)skipped.push({id:row.id,reasons:why});else allowed.push({id:row.id,external_source:row.external_source,external_id:row.external_id,_version:await digest(rowVersion(row))});}
+  const protectedIds = protectedFrom(body.protectedIds);
+  if (protectedIds === null) return error('Invalid protected history IDs',400);
+  const ids = await selectRecycleCandidateIds(ctx, body);
+  if (!ids) return error('Invalid history selector',400);
+  const { allowed, skipped } = await previewRecycleCandidates(ctx, ids, new Set(protectedIds));
   await db.prepare("DELETE FROM settings WHERE key LIKE 'history_preview_v1:%' AND json_valid(value) AND json_extract(value,'$.expiresAt') < ?").bind(Date.now()).run();
   const previewToken=crypto.randomUUID(),expiresAt=Date.now()+300000;
-  await db.prepare('INSERT INTO settings (key,value) VALUES (?,?)').bind(`history_preview_v1:${currentUser.id}:${previewToken}`,JSON.stringify({expiresAt,requestedCount:rows.length,allowed,skipped})).run();
-  return json({previewToken,expiresAt,requestedCount:rows.length,movableCount:allowed.length,skippedCount:skipped.length,skipped});
+  await db.prepare('INSERT INTO settings (key,value) VALUES (?,?)').bind(`history_preview_v1:${currentUser.id}:${previewToken}`,JSON.stringify({expiresAt,requestedCount:ids.length,allowed,skipped})).run();
+  return json({previewToken,expiresAt,requestedCount:ids.length,movableCount:allowed.length,skippedCount:skipped.length,skipped});
  }
  if(path===root+'/move' && method==='POST') {
   const body=await request.json() as any;
@@ -135,8 +220,9 @@ export async function handleRecycleRoute(ctx: RouteContext): Promise<Response|nu
    const consumed=await db.prepare('DELETE FROM settings WHERE key = ? AND value = ?').bind(key,saved!.value).run();if(!Number(consumed.meta?.changes))return error('History preview already consumed',409);
    const result=await moveHistoryRows(ctx,preview.allowed,protectedFrom(body.protectedIds)!);return json(recycleResult('move',preview.requestedCount,result.completedIds,[...preview.skipped,...result.skipped],result.failed));
   }
-  if(!idsFrom(body.ids))return error('Invalid history IDs',400);
-  return json(await moveHistoryRows(ctx,await selectRecycleCandidates(ctx,body),protectedFrom(body.protectedIds)!));
+  const ids = idsFrom(body.ids);
+  if (!ids) return error('Invalid history IDs',400);
+  return json(await moveHistoryRows(ctx,await readRecycleCandidates(ctx,ids),protectedFrom(body.protectedIds)!));
  }
  if((path===root+'/restore'||path===root+'/purge')&&method==='POST') {
   const body=await request.json() as any,ids=idsFrom(body.ids);if(!ids)return error('Invalid history IDs',400);

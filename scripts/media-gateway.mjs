@@ -4717,6 +4717,7 @@ const serveDistFile = async (req, res, url) => {
     }
     // 静态前端资源由网关直接提供，/api 与 /__internal 继续转发给 workerd。
     if (!url.pathname.startsWith('/api/') && !url.pathname.startsWith('/__internal/') && await serveDistFile(req, res, url)) return;
+    if (url.pathname.startsWith('/tag-data/')) return sendJson(res, 404, { error: 'Tag 词库文件不存在' });
     if (url.pathname !== '/api/media') {
       const isCover = url.pathname.startsWith('/api/assets/covers/');
       const origin = isCover && isLoopbackOrigin(req.headers.origin) ? req.headers.origin : '';

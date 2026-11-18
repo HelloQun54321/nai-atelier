@@ -394,6 +394,7 @@ async function startServer() {
     '--binding', `LAN_ACCESS_SECRET=${lanAccess.secret}`,
     '--binding', `AITAG_LOCAL_PROXY_URL=${LOCAL_URL}/__internal/aitag-fetch`,
     '--binding', `DANBOORU_LOCAL_PROXY_URL=${LOCAL_URL}/__internal/danbooru-fetch`,
+    '--binding', `TAG_DICTIONARY_LOCAL_ORIGIN=${LOCAL_URL}`,
     '--ip', '127.0.0.1',
     '--port', String(workerPort),
     '--compatibility-date', '2024-04-01',
@@ -407,8 +408,8 @@ async function startServer() {
   console.log(`\x1b[90mWrangler 调试日志: ${wranglerEnv.WRANGLER_LOG_PATH}（可通过环境变量 WRANGLER_LOG_PATH 覆盖）\x1b[0m`);
   // Tag 数据不再随仓库分发（上游未声明许可）：缺失时提示用户自行安装。
   try {
-    if (!existsSync('public/tag-data/manifest.json')) {
-      const notice = '\x1b[33m未检测到 Tag 词库数据（public/tag-data）\x1b[0m\n'
+    if (!existsSync(join(resourcePaths.tagData, 'manifest.json'))) {
+      const notice = '\x1b[33m未检测到 Tag 词库数据\x1b[0m\n'
         + (PACKAGED ? '\x1b[33m  请在「设置 → Tag 词库」安装词库。\x1b[0m' : '\x1b[33m  Tag 自动补全、画师/角色目录将不可用。请运行 npm run update:tags 下载并生成（数据来自 ffdkj 的中英 Tag 数据库，仅本地使用）。\x1b[0m');
       console.log(notice);
     }

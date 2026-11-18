@@ -33,6 +33,13 @@ test('本地 D1：历史移入、恢复、永久删除与 Roll 引用的事务�
     await db.prepare('INSERT INTO chains(id,name,params) VALUES(?,?,?)')
       .bind('chain', 'synthetic chain', JSON.stringify({ image: '/api/local-history/referenced/image?full=1' })).run();
 
+    const days = await invoke(bin + '/preview', { days: 7 });
+    assert.equal(days.movableCount, 1);
+    assert.equal(days.requestedCount, 3);
+    const count = await invoke(bin + '/preview', { keepCount: 1 });
+    assert.equal(count.movableCount, 1);
+    assert.deepEqual(count.skipped, [{ id: 'favorite', reasons: ['favorite'] }]);
+
     const preview = await invoke(bin + '/preview', { ids: ['plain', 'favorite', 'referenced'] });
     assert.equal(preview.movableCount, 1);
     assert.deepEqual(preview.skipped, [{ id: 'favorite', reasons: ['favorite'] }, { id: 'referenced', reasons: ['chain'] }]);

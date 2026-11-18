@@ -89,6 +89,73 @@ it('迁移DELETE失败整体回滚，恢复普通ID与外部身份冲突均保�
 it('冻结预览不会扩大范围，新收藏使执行缩小',async()=>{
  const f=fixture();f.add();const preview=await(await f.invoke('/api/local-history/recycle-bin/preview','POST',{clear:true})).json();f.add('later');f.sqlite.exec("UPDATE local_generation_history SET is_favorite=1 WHERE id='h'");const result=await(await f.invoke('/api/local-history/recycle-bin/move','POST',{previewToken:preview.previewToken})).json();expect(result).toMatchObject({requestedCount:1,movedCount:0,skippedCount:1});expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM local_generation_history').get()?.n).toBe(2);
 });
+
+it.each([
+ { selection: { days: 7 }, keepsNewestOld: false },
+ { selection: { keepCount: 3 }, keepsNewestOld: true },
+])('清理条件 $selection 按完整范围预览并只移动已确认的记录', async ({ selection, keepsNewestOld }) => {
+ const f = fixture();
+ const now = Date.now();
+ const oldTime = now - 8 * 86_400_000;
+ const oldIds = Array.from({ length: 36 }, (_, i) => `old-${String(i).padStart(2, '0')}`);
+ oldIds.forEach(id => f.add(id, { created_at: oldTime, is_favorite: id === 'old-01' ? 1 : 0 }));
+ f.add('new-1', { created_at: now - 1000 });
+ f.add('new-2', { created_at: now });
+ f.add('other-account', { user_id: 'other', created_at: oldTime });
+
+ const preview = await (await f.invoke('/api/local-history/recycle-bin/preview', 'POST', selection)).json();
+ const candidates = keepsNewestOld ? oldIds.slice(0, -1) : oldIds;
+ expect(preview).toMatchObject({
+  requestedCount: candidates.length, movableCount: candidates.length - 1,
+  skipped: [{ id: 'old-01', reasons: ['favorite'] }],
+ });
+ f.add('added-after-preview', { created_at: oldTime });
+ f.sqlite.prepare('UPDATE local_generation_history SET params = ? WHERE id = ?').run('{"steps": 31}', 'old-02');
+ const moved = await (await f.invoke('/api/local-history/recycle-bin/move', 'POST', { previewToken: preview.previewToken })).json();
+ expect(moved.completedIds).toEqual(candidates.filter(id => id !== 'old-01' && id !== 'old-02').reverse());
+ expect(moved.skipped).toContainEqual({ id: 'old-02', reasons: ['source_changed'] });
+ expect(f.bucket.delete).not.toHaveBeenCalled();
+});
+
+it('批量预览区分每张图的引用，识别旧 JSON 中转义的路径及自身引用', async () => {
+ const f = fixture();
+ f.add('escaped');
+ f.add('encoded-key', { image_key: 'synthetic/cover space.png' });
+ f.add('own-ref', { params: '{"historyId":"own-ref"}' });
+ f.add('referencing', { params: String.raw`{"url":"\u002fapi/local-history/escaped/image?full=1","asset":"/api/assets/synthetic%2Fcover%20space.png"}` });
+ const preview = await (await f.invoke('/api/local-history/recycle-bin/preview', 'POST', {
+  ids: ['escaped', 'encoded-key', 'own-ref'],
+ })).json();
+ expect(preview).toMatchObject({ movableCount: 1, skipped: [
+  { id: 'escaped', reasons: ['history'] },
+  { id: 'encoded-key', reasons: ['history'] },
+ ] });
+ const moved = await (await f.invoke('/api/local-history/recycle-bin/move', 'POST', { previewToken: preview.previewToken })).json();
+ expect(moved.completedIds).toEqual(['own-ref']);
+});
+
+it.each([200, 404])('词库返回 %s 时保存原图，装好词库后回填画师统计', async status => {
+ const f = fixture();
+ let dictionaryInstalled = false;
+ f.env.ASSETS = { fetch: async request => {
+  if (!dictionaryInstalled) return new Response('<!doctype html><title>synthetic</title>', { status, headers: { 'Content-Type': 'text/html' } });
+  if (new URL(request.url).pathname.endsWith('/manifest.json')) return Response.json({ artistPages: ['0000.json'] });
+  return Response.json([['synthetic_artist']]);
+ } };
+ const png = encode({ width: 2, height: 2, channels: 4, data: new Uint8Array(16).fill(255) });
+ const saved = await f.invoke('/api/local-history', 'POST', {
+  id: 'saved-without-dictionary', prompt: 'synthetic_artist', imageUrl: 'data:image/png;base64,' + Buffer.from(png).toString('base64'),
+ });
+ expect(saved.ok).toBe(true);
+ expect((await f.invoke('/api/local-history/saved-without-dictionary/image', 'GET')).ok).toBe(true);
+ expect((await f.invoke('/api/artist-usage', 'GET')).status).toBe(503);
+ expect(f.sqlite.prepare("SELECT key FROM settings WHERE key LIKE 'artist_usage_v1:%'").all()).toEqual([]);
+
+ dictionaryInstalled = true;
+ const usage = await f.invoke('/api/artist-usage', 'GET');
+ expect(usage.ok).toBe(true);
+ expect(await usage.json()).toMatchObject({ artists: [{ name: 'synthetic artist', images: 1 }], complete: true });
+});
 it.each([false,true])('purge只删bin，receipt=%s沿用旧扣减且R2故障单独告警',async(receipt)=>{
  const f=fixture();f.add();if(receipt)await recordArtistHistory(f.db,'owner',{id:'h'},new Set());await f.invoke('/api/local-history/recycle-bin/move','POST',{ids:['h']});f.add('safe');f.bucket.delete.mockRejectedValueOnce(new Error('synthetic R2'));const result=await(await f.invoke('/api/local-history/recycle-bin/purge','POST',{ids:['h','safe']})).json();expect(result).toMatchObject({purgedCount:1,skippedCount:1,warnings:[{id:'h',reasons:['image_cleanup_failed']}]});expect(f.sqlite.prepare('SELECT id FROM local_generation_history').get()?.id).toBe('safe');expect(f.sqlite.prepare("SELECT value FROM settings WHERE key='artist_usage_v1:owner:history:h'").get()).toBeUndefined();expect(f.bucket.delete).toHaveBeenCalledWith('local-history/owner/h.edit-mask');
 });

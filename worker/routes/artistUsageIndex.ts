@@ -17,27 +17,47 @@ const readSource = async (db: D1Database, user: string, id: string) => {
   if (rows.results.length > 1) throw new Error('历史与回收站身份冲突，统计未更新');
   return rows.results[0] || null;
 };
-const dictionaries = new WeakMap<object, Promise<ReadonlySet<string>>>();
+const dictionaries = new WeakMap<object, Promise<ReadonlySet<string> | null>>();
+export const ARTIST_DICTIONARY_UNAVAILABLE = '尚未安装 Tag 词库，暂时无法统计画师使用情况';
 
-export function loadArtistUsageDictionary(env: Env): Promise<ReadonlySet<string>> {
-  if (!env.ASSETS) return Promise.resolve(new Set());
-  let pending = dictionaries.get(env.ASSETS);
+export function loadArtistUsageDictionary(env: Env): Promise<ReadonlySet<string> | null> {
+  const origin = env.TAG_DICTIONARY_LOCAL_ORIGIN;
+  if (!origin && !env.ASSETS) return Promise.resolve(new Set());
+  const cacheKey = env.ASSETS || env;
+  let pending = dictionaries.get(cacheKey);
   if (!pending) {
-    const read = async (path: string) => {
-      const response = await env.ASSETS.fetch(new Request(`https://atelier.local/tag-data/${path}`));
+    const read = async (path: string): Promise<unknown> => {
+      const request = new Request(new URL(`/tag-data/${path}`, origin || 'https://atelier.local'), { redirect: 'error' });
+      // 词库随本机资源目录更新，完整本地启动时从网关读取当前词库。
+      const response = origin ? await fetch(request) : await env.ASSETS.fetch(request);
+      if (response.status === 404 || (response.ok && response.headers.get('content-type')?.toLowerCase().startsWith('text/html'))) {
+        await response.body?.cancel();
+        return undefined;
+      }
       if (!response.ok) throw new Error('画师统计词库读取失败');
-      return response.json() as Promise<any>;
+      return response.json().catch(() => { throw new Error('画师统计词库数据格式无效'); });
     };
     pending = (async () => {
-      const manifest = await read('manifest.json');
+      const manifest = await read('manifest.json') as { artistPages?: unknown } | null | undefined;
+      if (manifest === undefined) return null;
+      const files = manifest?.artistPages;
+      if (!Array.isArray(files) || files.some(file => typeof file !== 'string' || !/^[\w.-]+\.json$/.test(file))) {
+        throw new Error('画师统计词库清单格式无效');
+      }
       const names = new Set<string>();
-      for (const file of manifest.artistPages || []) {
+      for (const file of files) {
         const entries = await read(`artist-pages/${file}`);
+        if (!Array.isArray(entries) || entries.some(entry => !Array.isArray(entry) || typeof entry[0] !== 'string')) {
+          throw new Error('画师统计词库分页缺失或格式无效');
+        }
         for (const entry of entries) names.add(normalizeArtistUsageKey(entry[0]));
       }
       return names;
-    })().catch(cause => { dictionaries.delete(env.ASSETS); throw cause; });
-    dictionaries.set(env.ASSETS, pending);
+    })().then(names => {
+      if (names === null) dictionaries.delete(cacheKey);
+      return names;
+    }, cause => { dictionaries.delete(cacheKey); throw cause; });
+    dictionaries.set(cacheKey, pending);
   }
   return pending;
 }
@@ -85,7 +105,11 @@ export async function ensureArtistHistoryIndex(db: D1Database, user: string, env
       WHERE h.user_id = ? AND NOT EXISTS (SELECT 1 FROM settings s WHERE s.key = ? || h.id)
       ORDER BY h.id LIMIT 100`).bind(user, prefix(user, 'history')).all<any>();
     if (!rows.results.length) return;
-    known ??= await loadArtistUsageDictionary(env);
+    if (!known) {
+      const dictionary = await loadArtistUsageDictionary(env);
+      if (dictionary === null) throw new Error(ARTIST_DICTIONARY_UNAVAILABLE);
+      known = dictionary;
+    }
     for (const row of rows.results) await recordArtistHistory(db, user, row, known);
   }
 }
