@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **DeepSeek Harness (V4.1 Flash)**：统一电脑端顶栏骨架：历史补搜索并把条件收进筛选弹层、创作足迹去标题与刷新、法典去刷新、提示词库分段移到搜索右侧、画师库/角色库去竖线、编辑页显示串名（refactor: align desktop page toolbars）。
 - **DeepSeek Harness (V4.1 Flash)**：消耗结算后跳过同批触发的旧余额刷新，避免侧栏预算回跳（fix: keep spent budget from being overwritten）。
 - **DeepSeek Harness (V4.1 Flash)**：清理手机弹层嵌套关闭的历史栈、补齐 7 条缺失译文，并把触屏长按/断点/列宽相关的过期测试断言更新到当前契约（fix: tidy nested mobile layers and missing labels）。
 - **DeepSeek Harness (V4.1 Flash)**：修正「收集模式」按钮文字标签被开关轨道内阴影套中（fix: keep the switch track shadow off toolbar labels）。

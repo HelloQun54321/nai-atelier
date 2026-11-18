@@ -246,7 +246,7 @@ it('离开页面后，迟到的 Key 请求不会继续发起重查询', async ()
   for (const mock of [mocks.getStats, mocks.getAssets, mocks.getSessions, mocks.ensureCollection]) expect(mock).not.toHaveBeenCalled();
 });
 
-it('摘要沿用资产周期口径，切换周期不重读资产，刷新重读且离页取消请求', async () => {
+it('摘要沿用资产周期口径，切换周期不重读资产，重新进入页面重读且离页取消请求', async () => {
   const old = new Date(today.getFullYear() - 1, 0, 1).getTime();
   mocks.getAssets.mockResolvedValue({ roll: [
     { id: 'roll', name: '当前资产排行', updatedAt: now, candidates: [{ createdAt: now, savedChainId: 'saved' }, { createdAt: old, archived: true }], rounds: [{ createdAt: now }] },
@@ -260,11 +260,13 @@ it('摘要沿用资产周期口径，切换周期不重读资产，刷新重读�
   fireEvent.change(select, { target: { value: '' } });
   expect(await screen.findByText('2 候选 · 1 保存')).toBeTruthy();
   expect(mocks.getAssets).toHaveBeenCalledOnce();
-  await waitFor(() => expect((screen.getByRole('button', { name: '刷新统计' }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(screen.getByRole('button', { name: '刷新统计' }));
+  // 顶栏刷新已去掉：重新进入页面（active 由 false 变 true）触发重读。
+  const props = { chains: [], onOpenHistory: () => {}, onOpenCollection: () => {}, onOpenLab: () => {}, onOpenRoll: () => {} };
+  view.rerender(<CreationFootprint {...props} active={false} />);
+  view.rerender(<CreationFootprint {...props} active />);
   await waitFor(() => expect(mocks.getAssets).toHaveBeenCalledTimes(2));
   const signal = mocks.getAssets.mock.calls[1][0] as AbortSignal;
-  view.rerender(<CreationFootprint active={false} chains={[]} onOpenHistory={() => {}} onOpenCollection={() => {}} onOpenLab={() => {}} onOpenRoll={() => {}} />);
+  view.rerender(<CreationFootprint {...props} active={false} />);
   expect(signal.aborted).toBe(true);
 });
 
@@ -303,11 +305,14 @@ it('链库尚未读取或失败时足迹资产不把空数组当零，可沿用�
 
 it('统计刷新失败保留已知内容，收藏初次失败在共享快照成功刷新后恢复', async () => {
   mocks.ensureCollection.mockRejectedValueOnce(new Error('初次收藏失败'));
-  setup(); await screen.findByText('收藏读取失败，请重试');
+  const view = setup(); await screen.findByText('收藏读取失败，请重试');
   act(() => { mocks.collection = [{ sourceType: 'history', sourceId: 'fresh' }]; mocks.collectionRevision++; mocks.collectionListeners.forEach(listener => listener()); });
   await waitFor(() => expect(screen.queryByText('收藏读取失败，请重试')).toBeNull());
   expect(within(screen.getByText('收藏概览').closest('section')!).getByText('收藏的图片').previousElementSibling?.textContent).toBe('1');
-  mocks.getStats.mockRejectedValueOnce(new Error('合成统计刷新失败')); fireEvent.click(screen.getByRole('button', { name: '刷新统计' }));
+  mocks.getStats.mockRejectedValueOnce(new Error('合成统计刷新失败'));
+  const props = { chains: [], onOpenHistory: () => {}, onOpenCollection: () => {}, onOpenLab: () => {}, onOpenRoll: () => {} };
+  view.rerender(<CreationFootprint {...props} active={false} />);
+  view.rerender(<CreationFootprint {...props} active />);
   expect(await screen.findByText('合成统计刷新失败')).toBeTruthy(); expect(screen.getByText('作品总数')).toBeTruthy(); expect(screen.getByText('120')).toBeTruthy(); expect(screen.queryByText('还没有创作记录')).toBeNull();
 });
 

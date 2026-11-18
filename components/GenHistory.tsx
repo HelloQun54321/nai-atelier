@@ -15,7 +15,7 @@ import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Footprints, Heart, Layers, ListChecks, LoaderCircle, Maximize2, Save, Trash2 } from 'lucide-react';
-import { CloseButton, EmptyState, IconButton, InlineSpinner, PageSpinner, ToolbarButton, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { CloseButton, EmptyState, IconButton, InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
@@ -222,6 +222,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     const loadingRef = useRef(false);
     const [favoriteOnly, setFavoriteOnly] = useState(false);
     const [browseQuery, setBrowseQuery] = useState<HistoryBrowseQuery>({ sort: 'newest' });
+    const [searchDraft, setSearchDraft] = useState('');
+    const searchTimerRef = useRef<number | null>(null);
     const [browseOptions, setBrowseOptions] = useState<Omit<HistoryBrowseOrder, 'ids'>>({ models: [], sources: [] });
     const [newImageCount, setNewImageCount] = useState(0);
     const dateRangeRef = useRef<LocalHistoryDateRange>({ sort: 'newest', browseKey: createUuid() });
@@ -662,6 +664,19 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     };
     const applyBrowseQueryRef = useRef(applyBrowseQuery);
     applyBrowseQueryRef.current = applyBrowseQuery;
+    const browseQueryRef = useRef(browseQuery);
+    browseQueryRef.current = browseQuery;
+    // 顶栏搜索与筛选共用同一份查询：输入停顿后应用，筛选变化时回填输入框。
+    useEffect(() => { setSearchDraft(browseQuery.search || ''); }, [browseQuery.search]);
+    useEffect(() => () => { if (searchTimerRef.current !== null) window.clearTimeout(searchTimerRef.current); }, []);
+    const updateSearch = (value: string) => {
+        setSearchDraft(value);
+        if (searchTimerRef.current !== null) window.clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = window.setTimeout(() => {
+            searchTimerRef.current = null;
+            applyBrowseQueryRef.current({ ...browseQueryRef.current, search: value.trim() || undefined });
+        }, 350);
+    };
     const appliedInitialQueryRef = useRef(0);
     useEffect(() => {
         if (!initialQuery || initialQuery.token === appliedInitialQueryRef.current) return;
@@ -1067,13 +1082,13 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                             <span className="mr-auto flex-none text-xs font-semibold text-gray-600 dark:text-gray-300">{t("多选模式 · 已选 {0} 张", [selectedIds.size])}</span>
                             <ToolbarButton onClick={selectCurrentPage}>{t("全选本页")}</ToolbarButton>
                             <ToolbarButton onClick={invertCurrentPageSelection}>{t("反选本页")}</ToolbarButton>
-                            <span aria-hidden="true" className="history-toolbar-divider" />
                             <ToolbarButton tone="favorite" onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending}>{t("收藏选中")}</ToolbarButton>
                             <ToolbarButton onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending}>{t("取消收藏")}</ToolbarButton>
                             <ToolbarButton tone="danger" onClick={() => void handleBulkDelete()} disabled={!selectedIds.size}>{t("删除选中")}</ToolbarButton>
                             <ToolbarButton onClick={exitSelectionMode}>{t("退出多选")}</ToolbarButton>
                         </div>
                     </> : <>
+                        <ToolbarSearch value={searchDraft} onChange={event => updateSearch(event.target.value)} placeholder={t("搜索标题、提示词或标签")} aria-label={t("搜索历史")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
                         <HistoryBrowseControls query={browseQuery} options={browseOptions} mobile={isMobileViewport} onApply={applyBrowseQuery} />
                         {onOpenFootprint && <ToolbarButton aria-label={t('创作足迹')} title={t('创作足迹')} onClick={onOpenFootprint} className="mobile-touch md:hidden !px-2.5"><Footprints /></ToolbarButton>}
                         <div className="history-toolbar-status">

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Activity, ArrowRight, BarChart3, Brush, CalendarDays, Download,
-  Flame, Footprints, Heart, Image as ImageIcon, LoaderCircle, Palette, RefreshCw, Sparkles,
+  Flame, Footprints, Heart, Image as ImageIcon, Palette, Sparkles,
 } from 'lucide-react';
 import { EmptyState, InlineSpinner, PageSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { MobileOverflowMenu } from './MobileUI';
@@ -569,31 +569,23 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
     <div className="workspace-canvas flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       <WorkspaceChrome>
 <WorkspaceToolbar>
-        <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <span className="flex h-8 w-8 flex-none items-center justify-center rounded-xl bg-indigo-50 text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-300"><Footprints className="h-4 w-4" /></span>
-          <div className="min-w-0">
-            <h1 className="truncate text-sm font-bold text-gray-900 dark:text-gray-100">{t('创作足迹')}</h1>
-            <p className="hidden truncate text-micro text-gray-400 dark:text-gray-500 sm:block">{t('回看创作节奏、常用资产与收藏')}</p>
-          </div>
-        </div>
+        <span aria-hidden="true" className="flex h-8 w-8 flex-none items-center justify-center rounded-xl bg-indigo-50 text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-300"><Footprints className="h-4 w-4" /></span>
         <div className="appearance-group flex max-w-[52vw] flex-none items-center gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-950 md:max-w-none">
           {GRANULARITIES.map(item => <button key={item.id} type="button" aria-pressed={granularity === item.id} onClick={() => setGranularity(item.id)} className={`appearance-group mobile-touch whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold transition ${granularity === item.id ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>{t(item.label)}</button>)}
         </div>
-        <ToolbarButton aria-label={t('刷新统计')} title={t('刷新统计')} onClick={() => setReload(value => value + 1)} disabled={loading} className="max-md:hidden !px-2.5">
-          {loading ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}<span className="hidden lg:inline">{t('刷新')}</span>
-        </ToolbarButton>
-        <ToolbarButton aria-label={t('导出 CSV')} title={t('导出 CSV')} onClick={exportCsv} disabled={!stats || eventsLoading || Boolean(eventsError)} className="max-md:hidden !px-2.5">
-          <Download /><span className="hidden xl:inline">CSV</span>
-        </ToolbarButton>
-        <ToolbarButton onClick={() => onOpenHistory({ sort: 'newest' })} className="max-md:hidden !px-2.5">
-          <CalendarDays /><span className="hidden sm:inline">{t('打开历史')}</span>
-        </ToolbarButton>
-        {/* 手机顶栏保留标题与周/月/年，其余工具收进「更多」，标题不再被挤成「创…」。 */}
-        <MobileOverflowMenu className="md:hidden" items={[
-          { label: '刷新统计', icon: <RefreshCw />, disabled: loading, onClick: () => setReload(value => value + 1) },
-          { label: '导出 CSV', icon: <Download />, disabled: !stats || eventsLoading || Boolean(eventsError), onClick: exportCsv },
-          { label: '打开历史', icon: <CalendarDays />, onClick: () => onOpenHistory({ sort: 'newest' }) },
-        ]} />
+        <div className="ml-auto flex flex-none items-center gap-2">
+          <ToolbarButton aria-label={t('导出 CSV')} title={t('导出 CSV')} onClick={exportCsv} disabled={!stats || eventsLoading || Boolean(eventsError)} className="max-md:hidden !px-2.5">
+            <Download /><span className="hidden xl:inline">CSV</span>
+          </ToolbarButton>
+          <ToolbarButton onClick={() => onOpenHistory({ sort: 'newest' })} className="max-md:hidden !px-2.5">
+            <CalendarDays /><span className="hidden sm:inline">{t('打开历史')}</span>
+          </ToolbarButton>
+          {/* 手机顶栏保留图标与周/月/年，其余工具收进「更多」。 */}
+          <MobileOverflowMenu className="md:hidden" items={[
+            { label: '导出 CSV', icon: <Download />, disabled: !stats || eventsLoading || Boolean(eventsError), onClick: exportCsv },
+            { label: '打开历史', icon: <CalendarDays />, onClick: () => onOpenHistory({ sort: 'newest' }) },
+          ]} />
+        </div>
       </WorkspaceToolbar>
 
       </WorkspaceChrome>

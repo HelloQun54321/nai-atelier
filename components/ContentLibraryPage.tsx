@@ -97,7 +97,7 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
     : null;
   return <div className="content-library workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
     <WorkspaceChrome>
-      <WorkspaceToolbar scrollable={false} className={`content-library-toolbar ${browse ? '!flex-nowrap !gap-1' : ''}`}>
+      <WorkspaceToolbar scrollable={false} className={`content-library-toolbar ${browse ? '!flex-nowrap !gap-2' : ''}`}>
         {!browse && <div role="tablist" aria-label={t('提示词库分区')} className="appearance-segmented flex h-11 shrink-0 gap-1 rounded-xl border border-gray-200 bg-gray-100/80 p-0.5 dark:border-gray-800 dark:bg-gray-900/80 md:h-10">
           {SECTIONS.map(([key, label], index) => <button key={key} id={`${id}-${key}-tab`} aria-controls={`${id}-${key}-panel`} type="button" role="tab" aria-selected={section === key} tabIndex={section === key ? 0 : -1}
             onClick={() => onSectionChange(key)}
@@ -114,7 +114,7 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
             {t(label)}
           </button>)}
         </div>}
-        <div ref={setToolbarSlot} className={`content-library-tools flex min-w-0 flex-1 items-center gap-2 ${browse ? '!order-none !basis-0 !gap-1' : ''}`} />
+        <div ref={setToolbarSlot} className={`content-library-tools flex min-w-0 flex-1 items-center gap-2 ${browse ? '!order-none !basis-0 !gap-2' : ''}`} />
         {onCapture && <ToolbarButton className={browse ? 'mobile-touch !hidden md:!inline-flex !h-11 md:!h-10 !w-11 !gap-0 !px-0 xl:!w-auto xl:!gap-2 xl:!px-3' : ''} onClick={() => setReverseOpen(true)} aria-label={t('图片反推 Tag')} title={t('从图片反推 Tag 并新建条目')} aria-haspopup="dialog"><ImagePlus /><span className={browse ? 'hidden xl:inline' : 'hidden sm:inline'}>{t('图片反推')}</span></ToolbarButton>}
         {onExtractSave && <ToolbarButton className={browse ? 'mobile-touch !hidden md:!inline-flex !h-11 md:!h-10 !w-11 !gap-0 !px-0 xl:!w-auto xl:!gap-2 xl:!px-3' : ''} onClick={() => setExtractOpen(true)} aria-label={t('AI 提取分类')} aria-haspopup="dialog"><Sparkles /><span className={browse ? 'hidden xl:inline' : 'hidden sm:inline'}>{t('AI 提取分类')}</span></ToolbarButton>}
         {onCapture && <ToolbarButton tone={browse ? 'primary' : undefined} className={browse ? 'mobile-touch !h-11 md:!h-10 !w-11 !gap-0 !px-0 xl:!w-auto xl:!gap-2 xl:!px-3' : ''} onClick={() => setCaptureOpen(true)} aria-label={t('粘贴收录')} aria-haspopup="dialog"><ClipboardPaste /><span className={browse ? 'hidden xl:inline' : 'hidden sm:inline'}>{t('粘贴收录')}</span></ToolbarButton>}

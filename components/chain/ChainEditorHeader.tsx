@@ -12,6 +12,8 @@ import { ImagePreviewPortal } from '../ImagePreviewPortal';
 export interface ChainEditorHeaderProps {
     chainId: string;
     isCharacterMode: boolean;
+    /** 当前编辑对象名称：电脑端显示在返回箭头旁，实验室不传。 */
+    entityName?: string;
     isOwner: boolean;
     isGuest: boolean;
     canEdit: boolean;
@@ -44,6 +46,7 @@ export interface ChainEditorHeaderProps {
 export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     chainId,
     isCharacterMode,
+    entityName,
     isOwner,
     isGuest,
     canEdit,
@@ -125,12 +128,13 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
 
     return (
         <>
-        <header ref={headerRef} className={`chain-editor-header workspace-command-bar relative z-30 h-auto flex-shrink-0 items-center overflow-visible border-b border-gray-200 bg-white px-2 py-1 dark:border-gray-800/80 dark:bg-gray-900/90 md:px-5 lg:py-0 grid ${compact ? 'grid-cols-1' : 'grid-cols-2'}`}>
+        <header ref={headerRef} className={`chain-editor-header workspace-command-bar workspace-page-heading relative z-30 h-auto flex-shrink-0 items-center overflow-visible border-b border-gray-200 bg-white px-2 py-1 dark:border-gray-800/80 dark:bg-gray-900/90 md:px-5 lg:py-0 grid ${compact ? 'grid-cols-1' : 'grid-cols-2'}`}>
             <div aria-hidden="true" className="lab-navigation-surface workspace-command-bar" />
             <div className={`chain-editor-header-main relative flex min-w-0 items-center gap-2 md:gap-4 ${compact ? '' : 'pr-4'}`}>
                 <ChainEditorModeHeader
                     isLaboratory={isPlayground}
                     entityLabel={isCharacterMode ? '自定义角色' : '风格串'}
+                    entityName={entityName}
                     activeMode={activeGenerationMode}
                     onSelectMode={selectGenerationMode}
                     isGenerating={isGenerating}

@@ -127,7 +127,7 @@ it('历史仅追加下沿数量小字，原数量与手机浏览控件保留', a
     expect(caption?.textContent).toBe('2');
     expect(caption?.getAttribute('title')).toBe('已加载 2 / 共 2');
     expect(container.querySelector('.history-result-count')?.textContent).toBe('2 张');
-    expect(screen.getByRole('button', { name: '随机浏览' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '筛选' })).toBeTruthy();
     expect(container.querySelectorAll('[data-toolbar-count-badge]')).toHaveLength(1);
 });
 
@@ -471,8 +471,8 @@ const emit = (event: Parameters<typeof listeners.add>[0] extends (event: infer E
 describe('历史连续浏览会话', () => {
     it('随机覆盖全部结果，翻图跨过第 20 张且返回/重开保留相同种子与位置', async () => {
         browseFixture(); const { container } = await setup(1280, 20);
-        fireEvent.click(screen.getByRole('button', { name: '随机浏览' }));
-        await screen.findByRole('button', { name: '重新洗牌' });
+        fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+        fireEvent.click(await screen.findByRole('button', { name: '随机浏览' }));
         await waitFor(() => expect(vi.mocked(localHistory.getPage).mock.calls.at(-1)?.[2]?.sort).toBe('random'));
         const query = vi.mocked(localHistory.getBrowseOrder).mock.calls.at(-1)![0];
         const order = await localHistory.getBrowseOrder(query);
@@ -488,11 +488,14 @@ describe('历史连续浏览会话', () => {
         await waitFor(() => expect(within(viewer).getByText('20 / 65')).toBeTruthy());
         fireEvent.click(within(viewer).getByRole('button', { name: '返回历史列表' }));
         await waitFor(() => expect(screen.queryByRole('dialog', { name: '历史图片查看器' })).toBeNull());
+        fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
         expect(screen.getByRole('button', { name: '重新洗牌' })).toBeTruthy();
+        fireEvent.keyDown(window, { key: 'Escape' });
         fireEvent.click(cardById(container, order.ids[20]));
         expect(screen.getByText('21 / 65')).toBeTruthy();
         const seed = query.seed;
         fireEvent.click(screen.getByRole('button', { name: '返回历史列表' }));
+        fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
         fireEvent.click(screen.getByRole('button', { name: '重新洗牌' }));
         await waitFor(() => expect(vi.mocked(localHistory.getBrowseOrder).mock.calls.at(-1)![0].seed).not.toBe(seed));
     });
@@ -553,7 +556,9 @@ describe('历史连续浏览会话', () => {
 
     it('收藏中取消当前收藏或删除当前图片继续下一张，末张则退到上一张', async () => {
         const data = browseFixture(3, true); const { container } = await setup(1280, 3);
-        fireEvent.click(screen.getByRole('button', { name: '只看收藏' }));
+        fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+        fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' }));
+        fireEvent.keyDown(window, { key: 'Escape' });
         await waitFor(() => expect(localHistory.getBrowseOrder).toHaveBeenLastCalledWith(expect.objectContaining({ favoriteOnly: true })));
         await waitFor(() => expect(cardById(container, data[0].id)).toBeTruthy());
         fireEvent.click(cardById(container, data[0].id));
@@ -697,7 +702,9 @@ describe('历史顶栏状态一致性', () => {
     it('多选操作替换固定顶栏，退出保留排序、已加载图片和滚动位置', async () => {
         browseFixture(8);
         const { container } = await setup(1280, 8);
+        fireEvent.click(screen.getByRole('button', { name: '筛选' }));
         fireEvent.change(screen.getByRole('combobox', { name: '历史排序' }), { target: { value: 'oldest' } });
+        fireEvent.keyDown(window, { key: 'Escape' });
         await waitFor(() => expect(localHistory.getBrowseOrder).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'oldest' })));
         const scroll = container.querySelector<HTMLElement>('.overflow-y-auto.p-4')!;
         scroll.scrollTop = 600;
@@ -711,7 +718,9 @@ describe('历史顶栏状态一致性', () => {
         fireEvent.click(header.getByRole('button', { name: '全选本页' }));
         expect(header.getByText(/多选模式 · 已选/).textContent).toContain('8');
         fireEvent.click(header.getByRole('button', { name: '退出多选' }));
-        expect((header.getByRole('combobox', { name: '历史排序' }) as HTMLSelectElement).value).toBe('oldest');
+        fireEvent.click(header.getByRole('button', { name: '筛选' }));
+        expect((screen.getByRole('combobox', { name: '历史排序' }) as HTMLSelectElement).value).toBe('oldest');
+        fireEvent.keyDown(window, { key: 'Escape' });
         expect(scroll.scrollTop).toBe(600);
         expect(vi.mocked(localHistory.getPage).mock.calls.length).toBe(requests);
     });
@@ -728,7 +737,7 @@ describe('历史顶栏状态一致性', () => {
         fireEvent.click(dialog.getByRole('button', { name: '新增 1 张图片 · 查看最新' }));
         await waitFor(() => expect(cardById(container, 'mobile-new')).toBeTruthy());
         expect(screen.queryByRole('dialog', { name: '历史管理' })).toBeNull();
-        fireEvent.click(screen.getByRole('button', { name: '更多筛选' }));
+        fireEvent.click(screen.getByRole('button', { name: '筛选' }));
         expect(screen.getByLabelText('开始日期')).toBeTruthy();
         expect(screen.getByLabelText('结束日期')).toBeTruthy();
     });

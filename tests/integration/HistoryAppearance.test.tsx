@@ -53,16 +53,17 @@ afterEach(() => {
 const setup = () => render(<div className="agent-stage"><header><div className="history-toolbar-shell"><HistoryBrowseControls query={{ sort: 'newest', model: 'model-a' }} options={{ models: ['model-a'], sources: [] }} mobile={false} onApply={vi.fn()} /></div></header></div>);
 
 describe('历史控件主题链路', () => {
-  it('全部顶栏按钮与排序选择器共用样式，选择器不再由局部 CSS 固定圆角、字体或颜色', () => {
+  it('顶栏筛选按钮共用控件样式，排序选择器不再由局部 CSS 固定圆角、字体或颜色', () => {
     const { container } = setup();
-    for (const element of container.querySelectorAll('button, select')) {
+    for (const element of container.querySelectorAll('button')) {
       for (const name of TOOLBAR_CONTROL_CLASS.split(' ')) expect(element.classList.contains(name)).toBe(true);
     }
+    fireEvent.click(screen.getByRole('button', { name: '筛选 1' }));
     const sort = screen.getByRole('combobox', { name: '历史排序' });
-    expect(sort.classList.contains('appearance-none')).toBe(true);
-    expect(sort.parentElement?.querySelectorAll('svg')).toHaveLength(2);
-    expect(toolbarCss).not.toContain('history-sort-select');
-    expect(rule(toolbarCss, '.history-sort-control')).not.toMatch(/border-radius|font-size|background|color/);
+    expect(sort.className).toContain('mobile-touch');
+    expect(toolbarCss).not.toContain('history-sort-control');
+    expect(toolbarCss).not.toContain('history-more-button');
+    expect(toolbarCss).not.toContain('history-date-anchor');
   });
 
   it.each([
@@ -84,9 +85,9 @@ describe('历史控件主题链路', () => {
   });
 
   it('主题切换即时影响颜色、材质和动画属性，已打开弹层及其草稿保持连续', async () => {
-    setup(); fireEvent.click(screen.getByRole('button', { name: '更多筛选 1' }));
-    fireEvent.change(screen.getByPlaceholderText('可选关键词…'), { target: { value: '未应用草稿' } });
-    const panel = screen.getByRole('dialog', { name: '更多筛选' });
+    setup(); fireEvent.click(screen.getByRole('button', { name: '筛选 1' }));
+    fireEvent.change(screen.getByRole('combobox', { name: '历史模型' }), { target: { value: '' } });
+    const panel = screen.getByRole('dialog', { name: '筛选' });
       // 默认主题的 details 自带双模式强调色；设置页改强调色会清掉变体色，这里保持同样前提。
   const baseDetails = DEFAULT_APPEARANCE_PREFERENCES.details;
   const noAccentDetails = baseDetails ? { ...baseDetails, light: { ...baseDetails.light, accentColor: undefined }, dark: { ...baseDetails.dark, accentColor: undefined } } : undefined;
@@ -94,23 +95,19 @@ describe('历史控件主题链路', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(true);
     expect(document.documentElement.style.getPropertyValue('--nai-accent')).toBe('#14b8a6');
     expect(document.documentElement.dataset).toMatchObject({ density: 'compact', corners: 'sharp', surfaces: 'translucent', motion: 'off', fontScale: 'large' });
-    expect(screen.getByRole('dialog', { name: '更多筛选' })).toBe(panel);
+    expect(screen.getByRole('dialog', { name: '筛选' })).toBe(panel);
     expect(panel.classList.contains('appearance-panel')).toBe(true);
-    expect((screen.getByPlaceholderText('可选关键词…') as HTMLInputElement).value).toBe('未应用草稿');
+    expect((screen.getByRole('combobox', { name: '历史模型' }) as HTMLSelectElement).value).toBe('');
     expect(appCss).toContain('--color-indigo-500: var(--nai-accent)');
     expect(appCss).toMatch(/\.appearance-panel\s*\{[^}]*background-color: var\(--nai-panel-surface\)/);
     expect(appCss).toMatch(/html\[data-surfaces='translucent'\][^{}]*\.appearance-panel\s*\{[^}]*backdrop-filter:/);
     expect(appCss).toMatch(/html\[data-motion='off'\][^{}]*\{[^}]*transition-duration: 0\.01ms !important;/);
   });
 
-  it('放大字号后按同等 rem 阈值收纳日期，顶栏保持单行，剩余条件仍可达', async () => {
+  it('窄工作区顶栏保持单行，筛选入口与日期条件始终可达', () => {
     workWidth = 720; setup();
-    expect(screen.getByRole('button', { name: '时间范围：全部时间' })).toBeTruthy();
-    // jsdom 不布局 Tailwind；用编译样式中的实际字号模拟根字号变更。
-    const largeFont = property(rule(generatedCss, "html[data-font-scale='large']"), 'font-size');
-    await act(async () => { document.documentElement.style.fontSize = largeFont; });
-    expect(screen.queryByRole('button', { name: /^时间范围：/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '更多筛选 1' }));
+    expect(screen.getByRole('button', { name: '筛选 1' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '筛选 1' }));
     expect(screen.getByLabelText('开始日期')).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '历史模型' })).toBeTruthy();
     expect(rule(toolbarCss, '.history-browse-controls')).toContain('white-space: nowrap');

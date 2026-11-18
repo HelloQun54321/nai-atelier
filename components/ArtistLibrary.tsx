@@ -746,7 +746,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 <ToolbarButton aria-label={gachaArtists ? t("再选一批") : t("随机选画师")} title={gachaPool.length ? undefined : t(groupBrowse ? '没有匹配的画师样张' : '先下载样张图包或生成样张')} onClick={() => void drawGacha()} disabled={isGachaLoading || gachaPool.length <= 0} className="mobile-touch max-md:hidden" tone="neutral">
                         {isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaArtists ? t("再选一批") : t("随机选画师")}</span>
                 </ToolbarButton>
-                <div ref={librarySettingsRef} className="flex flex-none items-center border-l border-gray-200 pl-2 max-md:hidden dark:border-gray-700">
+                <div ref={librarySettingsRef} className="flex flex-none items-center max-md:hidden">
                     <ToolbarPopover label={t('画师库设置')} title={t('画师库设置')} icon={<Settings2 />} open={mobileSettingsOpen} onOpenChange={setMobileSettingsOpen} className="[&_button>span]:!inline" width={320}>
                       {close => <div className="space-y-4"><div className="grid grid-cols-2 gap-3">
                             <label className="text-sm font-semibold dark:text-white">{t("随机方式")}<select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">{t("惊喜混合")}</option><option value="uniform">{t("完全随机")}</option><option value="popular">{t("热门画师")}</option></select></label>

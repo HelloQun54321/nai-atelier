@@ -8,6 +8,8 @@ import { IconButton } from './DesignSystem';
 interface ChainEditorModeHeaderProps {
   isLaboratory: boolean;
   entityLabel: '风格串' | '自定义角色';
+  /** 当前编辑对象名称：电脑端在返回箭头旁显示，手机端省略以让出模式标题。 */
+  entityName?: string;
   activeMode: GenerationMode;
   onSelectMode: (mode: GenerationMode) => void | Promise<void>;
   /** 生成进行中禁用模式切换（透传至 GenerationModeNav）。 */
@@ -18,6 +20,7 @@ interface ChainEditorModeHeaderProps {
 export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
   isLaboratory,
   entityLabel,
+  entityName,
   activeMode,
   onSelectMode,
   isGenerating = false,
@@ -34,6 +37,7 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
       >
         <ArrowLeft className="h-4 w-4" />
       </IconButton>
+      {!isLaboratory && entityName && <span title={entityName} className="hidden min-w-0 max-w-48 truncate text-sm font-semibold text-gray-700 dark:text-gray-300 md:inline">{entityName}</span>}
       <div className="min-w-0 md:flex-1">
         <GenerationModeNav activeMode={activeMode} onSelect={onSelectMode} disabled={isGenerating} />
       </div>

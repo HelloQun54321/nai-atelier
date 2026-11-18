@@ -64,7 +64,6 @@ it('手机明确当前来源，全书卡片保留书名，目录和筛选独立�
   expect(caption?.getAttribute('title')).toBe('已加载 1 / 共 1');
   expect(screen.getByTitle('法典来源').textContent).toBe('合成书目');
   expect(screen.getByTitle('法典来源').parentElement!.className).toContain('[&>button>span]:inline');
-  expect(screen.getByRole('button', { name: '刷新' }).parentElement!.className).toBe('hidden sm:block');
   chooseSource('全部书目');
   await screen.findByTitle(/共 2$/);
   expect(screen.getByTitle('法典来源').textContent).toBe('全部书目');

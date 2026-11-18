@@ -1,4 +1,4 @@
-/* 根据工作区而非浏览器宽度收纳；浏览状态共用随密度设置变化的单行顶栏。 */
+/* 浏览状态共用随密度设置变化的单行顶栏；时间、收藏、排序与随机统一收进筛选弹层。 */
 .history-toolbar-shell {
   container: history-toolbar / inline-size;
   display: flex;
@@ -15,14 +15,6 @@
   gap: calc(var(--spacing) * 2);
   white-space: nowrap;
 }
-.history-date-anchor { width: 9.25rem; }
-.history-date-button { width: 100%; }
-.history-date-button > span { min-width: 0; }
-.history-more-button { min-width: 7.75rem; }
-.history-random-button { width: 7rem; }
-.history-toolbar-divider { width: 1px; height: calc(var(--spacing) * 5); margin: 0 var(--spacing); background: var(--color-gray-200); }
-.dark .history-toolbar-divider { background: var(--color-gray-700); }
-.history-sort-control { width: 10rem; }
 .history-toolbar-status { margin-left: auto; display: flex; flex: none; align-items: center; gap: calc(var(--spacing) * 3); white-space: nowrap; }
 .history-result-count { font-size: 0.75rem; color: var(--color-gray-500); font-variant-numeric: tabular-nums; }
 .dark .history-result-count { color: var(--color-gray-400); }
@@ -34,28 +26,14 @@
 @container history-toolbar (max-width: 56.25rem) {
   .history-button-label, .history-management-label, .history-management-chevron { display: none; }
   .history-icon-compact, .history-management-button { width: calc(var(--spacing) * 10); padding-inline: 0 !important; }
-  .history-date-anchor { width: 8.25rem; }
   .history-toolbar-status { gap: calc(var(--spacing) * 2); }
-}
-@container history-toolbar (max-width: 35rem) {
-  .history-more-label, .history-more-chevron { display: none; }
-  .history-more-button { position: relative; min-width: calc(var(--spacing) * 10); gap: 0; padding-inline: 8px !important; }
-  .history-more-count { position: absolute; top: -4px; right: -4px; border-radius: 999px; padding: 0 4px; background: var(--color-indigo-600); color: var(--color-white); font-size: 0.625rem; line-height: 1rem; }
-  .history-sort-control { width: 6.5rem; }
-  .history-sort-control .toolbar-select-icon { display: none; }
-  .history-sort-control select { padding-inline-start: calc(var(--spacing) * 3); padding-inline-end: calc(var(--spacing) * 7); }
-  .history-toolbar-divider { margin-inline: 0; }
 }
 @container history-toolbar (max-width: 23.75rem) {
   .history-browse-controls { gap: var(--spacing); }
   .history-toolbar-status { gap: var(--spacing); }
-  .history-toolbar-divider { display: none; }
-  .history-sort-control { width: 6rem; }
-  .history-sort-control select { padding-inline-start: calc(var(--spacing) * 2); padding-inline-end: calc(var(--spacing) * 6); }
-  .history-sort-control .toolbar-select-chevron { right: calc(var(--spacing) * 2); }
   .history-new-image-action { display: none; }
   .history-new-image-badge { display: block; position: absolute; top: -4px; right: -4px; border-radius: 999px; padding: 0 4px; background: var(--color-indigo-600); color: var(--color-white); font-size: 0.625rem; line-height: 1rem; }
 }
 @media (max-width: 767px) {
-  .history-icon-compact, .history-more-button, .history-management-button { min-width: 44px; }
+  .history-icon-compact, .history-management-button { min-width: 44px; }
 }

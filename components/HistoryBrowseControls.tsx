@@ -1,10 +1,10 @@
 import { t, useLanguage } from '../services/i18n';
-import React, { useLayoutEffect, useRef, useState } from 'react';
-import { ArrowDownUp, CalendarDays, ChevronDown, Heart, Shuffle, SlidersHorizontal } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { CalendarDays, ChevronDown, Shuffle, SlidersHorizontal } from 'lucide-react';
 import { HISTORY_SORT_LABELS, type HistoryBrowseOrder, type HistoryBrowseQuery, type HistorySort } from '../services/historyBrowse';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
 import { createUuid } from '../services/id';
-import { ToolbarButton, ToolbarSelect } from './DesignSystem';
+import { ToolbarButton } from './DesignSystem';
 import { MobileBottomSheet } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { AnchoredToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
@@ -16,8 +16,6 @@ interface Props {
   mobile: boolean;
   onApply: (query: HistoryBrowseQuery) => void;
 }
-type Panel = 'date' | 'more' | null;
-const isCompactToolbar = (width: number) => width < 43.75 * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16);
 const dateValue = (value?: number) => {
   if (value === undefined) return '';
   const date = new Date(value);
@@ -41,116 +39,93 @@ const getDateLabel = (query: HistoryBrowseQuery) => {
   return `${from ? short(from) : t('不限')}–${to ? short(to) : t('至今')}`;
 };
 
-/** 范围在前、浏览方式在后；只有窄工作区才把日期收回更多筛选。 */
+/** 历史顶栏只留一个「筛选」入口：时间、收藏、模型、方式、来源、排序和随机浏览都收进同一层。 */
 export const HistoryBrowseControls: React.FC<Props> = ({ query, options, mobile, onApply }) => {
   useLanguage();
-  const [panel, setPanel] = useState<Panel>(null);
-  const [compact, setCompact] = useState(() => isCompactToolbar(window.innerWidth));
-  const [draft, setDraft] = useState({ search: query.search || '', model: query.model || '', operation: query.operation || '', source: query.source || '' });
-  const [dates, setDates] = useState({ from: '', to: '' });
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState({ model: query.model || '', operation: query.operation || '', source: query.source || '' });
+  const [dates, setDates] = useState({ from: dateValue(query.from), to: dateValue(query.to) });
   const [error, setError] = useState('');
-  const controls = useRef<HTMLDivElement>(null);
-  const dateAnchor = useRef<HTMLDivElement>(null);
-  const moreAnchor = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const shell = controls.current?.closest('.history-toolbar-shell') || controls.current;
-    if (!shell) return;
-    let previousCompact: boolean | undefined;
-    let measuredWidth = shell.getBoundingClientRect().width || window.innerWidth;
-    const update = (width: number) => {
-      measuredWidth = width;
-      const next = isCompactToolbar(width);
-      setCompact(previous => previous === next ? previous : next);
-      // 收纳形态变化时取消未应用草稿，避免隐藏日期后悄悄丢弃或应用它。
-      if (previousCompact !== undefined && previousCompact !== next) setPanel(null);
-      previousCompact = next;
-    };
-    const measure = () => update(shell.getBoundingClientRect().width || window.innerWidth);
-    measure();
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(entries => {
-      update(entries[0]?.contentRect.width || shell.getBoundingClientRect().width || window.innerWidth);
-    });
-    observer?.observe(shell);
-    const themeObserver = new MutationObserver(() => update(shell.getBoundingClientRect().width || measuredWidth));
-    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-font-scale', 'data-density', 'style'] });
-    window.addEventListener('resize', measure);
-    return () => { observer?.disconnect(); themeObserver.disconnect(); window.removeEventListener('resize', measure); };
-  }, []);
-  const start = (next: Exclude<Panel, null>) => {
-    setDraft({ search: query.search || '', model: query.model || '', operation: query.operation || '', source: query.source || '' });
+  const anchor = useRef<HTMLDivElement>(null);
+  const openPanel = () => {
+    setDraft({ model: query.model || '', operation: query.operation || '', source: query.source || '' });
     setDates({ from: dateValue(query.from), to: dateValue(query.to) });
-    setError(''); setPanel(previous => previous === next ? null : next);
+    setError('');
+    setOpen(true);
   };
   const apply = (event: React.FormEvent) => {
     event.preventDefault();
-    if ((panel === 'date' || compact) && dates.from && dates.to && dates.from > dates.to) {
+    if (dates.from && dates.to && dates.from > dates.to) {
       setError('开始日期不能晚于结束日期'); return;
     }
-    // 只合并本面板负责的条件，保留当前排序、随机种子、收藏及其他范围。
-    onApply({ ...query, ...(panel === 'more' ? draft : {}), ...(panel === 'date' || compact ? dateBounds(dates) : {}) });
-    setPanel(null);
+    // 日期输入未改动时保留原有时间戳，不把已应用的毫秒精度重算成当天边界。
+    const datesChanged = dates.from !== dateValue(query.from) || dates.to !== dateValue(query.to);
+    onApply({ ...query, ...draft, ...(datesChanged ? dateBounds(dates) : {}) });
+    setOpen(false);
   };
   const quickDate = (next: { from: string; to: string }) => {
     setDates(next); setError('');
-    if (panel === 'date') { onApply({ ...query, ...dateBounds(next) }); setPanel(null); }
+    onApply({ ...query, ...dateBounds(next) });
   };
-  const dateFields = <div className="space-y-3">
-    <div className="flex gap-2">
-      <ToolbarButton type="button" onClick={() => quickDate(recentDates(1))}>{t("今天")}</ToolbarButton>
-      <ToolbarButton type="button" onClick={() => quickDate(recentDates(7))}>{t("近 7 天")}</ToolbarButton>
-      <ToolbarButton type="button" onClick={() => quickDate({ from: '', to: '' })}>{t("不限日期")}</ToolbarButton>
-    </div>
-    <div className="grid grid-cols-2 gap-3">
-      <label className="text-xs font-semibold">{t("开始日期")}<input type="date" aria-label={t("开始日期")} className={TOOLBAR_FIELD_CLASS} value={dates.from} onChange={event => setDates(value => ({ ...value, from: event.target.value }))} /></label>
-      <label className="text-xs font-semibold">{t("结束日期")}<input type="date" aria-label={t("结束日期")} className={TOOLBAR_FIELD_CLASS} value={dates.to} onChange={event => setDates(value => ({ ...value, to: event.target.value }))} /></label>
-    </div>
-  </div>;
-  const moreCount = Number(Boolean(query.search?.trim())) + Number(Boolean(query.model)) + Number(Boolean(query.operation)) + Number(Boolean(query.source)) + Number(compact && (query.from !== undefined || query.to !== undefined));
-  const form = <form onSubmit={apply} className="space-y-4">
-    {panel === 'date' ? dateFields : <>
-      {compact && <fieldset className="space-y-2"><legend className="mb-2 text-xs font-semibold">{t("时间范围 · {0}", [getDateLabel(query)])}</legend>{dateFields}</fieldset>}
-      <div className="grid grid-cols-2 gap-3">
-        <label className="text-xs font-semibold">{t("模型")}<select aria-label={t("历史模型")} className={TOOLBAR_FIELD_CLASS} value={draft.model} onChange={event => setDraft(value => ({ ...value, model: event.target.value }))}><option value="">{t("全部模型")}</option>{options.models.map(model => <option key={model} value={model}>{getNaiModelDisplayLabel(model)}</option>)}</select></label>
-        <label className="text-xs font-semibold">{t("生成方式")}<select aria-label={t("历史生成方式")} className={TOOLBAR_FIELD_CLASS} value={draft.operation} onChange={event => setDraft(value => ({ ...value, operation: event.target.value }))}>{[['', '全部方式'], ['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']].map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label>
-      </div>
-      <label className="block text-xs font-semibold">{t("来源")}<select aria-label={t("历史来源")} className={TOOLBAR_FIELD_CLASS} value={draft.source} onChange={event => setDraft(value => ({ ...value, source: event.target.value }))}><option value="">{t("全部来源")}</option>{options.sources.map(source => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label>
-      <label className="block text-xs font-semibold">{t("提示词包含")}<input className={TOOLBAR_FIELD_CLASS} value={draft.search} onChange={event => setDraft(value => ({ ...value, search: event.target.value }))} placeholder={t("可选关键词…")} maxLength={500} /></label>
-    </>}
-    {error && <p role="alert" className="text-sm text-red-500">{t(error)}</p>}
-    <div className="flex items-center justify-between gap-2">
-      {panel === 'more' ? <button type="button" className="min-h-10 text-xs font-semibold text-gray-500 dark:text-gray-400" onClick={() => {
-        setDraft({ search: '', model: '', operation: '', source: '' });
-        if (compact) setDates({ from: '', to: '' });
-        setError('');
-      }}>{t("重置更多筛选")}</button> : <span />}
-      <ToolbarButton type="submit" tone="primary">{panel === 'date' ? t("应用日期") : t("应用筛选")}</ToolbarButton>
-    </div>
-  </form>;
-  const title = panel === 'date' ? '时间范围' : '更多筛选';
+  const reset = () => {
+    setDraft({ model: '', operation: '', source: '' });
+    setDates({ from: '', to: '' });
+    setError('');
+    onApply({ sort: 'newest', seed: undefined });
+    setOpen(false);
+  };
+  const filterCount = Number(query.from !== undefined || query.to !== undefined)
+    + Number(Boolean(query.favoriteOnly))
+    + Number(Boolean(query.model))
+    + Number(Boolean(query.operation))
+    + Number(Boolean(query.source));
   const chronologicalSort = query.sort === 'favorite' && !query.favoriteOnly ? 'newest' : query.sort || 'newest';
-  return <div ref={controls} className="history-browse-controls">
-    {!compact && <div ref={dateAnchor} className="history-date-anchor">
-      <ToolbarButton aria-label={t("时间范围：{0}", [getDateLabel(query)])} aria-expanded={panel === 'date'} aria-haspopup="dialog" title={[dateValue(query.from), dateValue(query.to)].filter(Boolean).join(t(" 至 ")) || t("全部时间")} onClick={() => start('date')} className="history-date-button">
-        <CalendarDays /><span className="truncate">{getDateLabel(query)}</span><ChevronDown />
-      </ToolbarButton>
-    </div>}
-    <ToolbarButton aria-label={t("只看收藏")} aria-pressed={Boolean(query.favoriteOnly)} tone={query.favoriteOnly ? 'favorite' : 'neutral'} title={t("只看收藏")} className="history-icon-compact" onClick={() => {
-      const favoriteOnly = !query.favoriteOnly;
-      onApply({ ...query, favoriteOnly, sort: !favoriteOnly && query.sort === 'favorite' ? 'newest' : query.sort });
-    }}><Heart className={query.favoriteOnly ? 'fill-current' : ''} /><span className="history-button-label">{t("只看收藏")}</span></ToolbarButton>
-    <div ref={moreAnchor}>
-      <ToolbarButton aria-label={t("更多筛选{0}", [moreCount ? ` ${moreCount}` : ''])} aria-expanded={panel === 'more'} aria-haspopup="dialog" title={t("更多筛选{0}", [compact ? ` · ${getDateLabel(query)}` : ''])} onClick={() => start('more')} active={moreCount > 0} className="history-more-button">
-        <SlidersHorizontal /><span className="history-more-label">{t("更多筛选")}</span>{moreCount > 0 && <span className="history-more-count text-xs tabular-nums">{moreCount}</span>}<ChevronDown className="history-more-chevron" />
-      </ToolbarButton>
+  const form = <form onSubmit={apply} className="space-y-4">
+    <fieldset className="space-y-2">
+      <legend className="text-xs font-semibold">{t("时间范围 · {0}", [getDateLabel(query)])}</legend>
+      <div className="flex gap-2">
+        <ToolbarButton type="button" onClick={() => quickDate(recentDates(1))}>{t("今天")}</ToolbarButton>
+        <ToolbarButton type="button" onClick={() => quickDate(recentDates(7))}>{t("近 7 天")}</ToolbarButton>
+        <ToolbarButton type="button" onClick={() => quickDate({ from: '', to: '' })}>{t("不限日期")}</ToolbarButton>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="text-xs font-semibold">{t("开始日期")}<input type="date" aria-label={t("开始日期")} className={TOOLBAR_FIELD_CLASS} value={dates.from} onChange={event => setDates(value => ({ ...value, from: event.target.value }))} /></label>
+        <label className="text-xs font-semibold">{t("结束日期")}<input type="date" aria-label={t("结束日期")} className={TOOLBAR_FIELD_CLASS} value={dates.to} onChange={event => setDates(value => ({ ...value, to: event.target.value }))} /></label>
+      </div>
+    </fieldset>
+    <label className="flex items-center gap-2 text-sm font-semibold">
+      <input type="checkbox" checked={Boolean(query.favoriteOnly)} onChange={event => {
+        const favoriteOnly = event.target.checked;
+        onApply({ ...query, favoriteOnly, sort: !favoriteOnly && query.sort === 'favorite' ? 'newest' : query.sort });
+      }} />{t("只看收藏")}
+    </label>
+    <div className="grid grid-cols-2 gap-3">
+      <label className="text-xs font-semibold">{t("模型")}<select aria-label={t("历史模型")} className={TOOLBAR_FIELD_CLASS} value={draft.model} onChange={event => setDraft(value => ({ ...value, model: event.target.value }))}><option value="">{t("全部模型")}</option>{options.models.map(model => <option key={model} value={model}>{getNaiModelDisplayLabel(model)}</option>)}</select></label>
+      <label className="text-xs font-semibold">{t("生成方式")}<select aria-label={t("历史生成方式")} className={TOOLBAR_FIELD_CLASS} value={draft.operation} onChange={event => setDraft(value => ({ ...value, operation: event.target.value }))}>{[['', '全部方式'], ['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']].map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label>
     </div>
-    <span aria-hidden="true" className="history-toolbar-divider" />
-    <ToolbarSelect label={t("历史排序")} icon={<ArrowDownUp />} value={chronologicalSort} containerClassName="history-sort-control" onChange={event => onApply({ ...query, sort: event.target.value as HistorySort, seed: undefined })}>
+    <label className="block text-xs font-semibold">{t("来源")}<select aria-label={t("历史来源")} className={TOOLBAR_FIELD_CLASS} value={draft.source} onChange={event => setDraft(value => ({ ...value, source: event.target.value }))}><option value="">{t("全部来源")}</option>{options.sources.map(source => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label>
+    <label className="block text-xs font-semibold">{t("排序")}<select aria-label={t("历史排序")} className={TOOLBAR_FIELD_CLASS} value={chronologicalSort} onChange={event => onApply({ ...query, sort: event.target.value as HistorySort, seed: undefined })}>
       <option value="newest">{t(HISTORY_SORT_LABELS.newest)}</option><option value="oldest">{t(HISTORY_SORT_LABELS.oldest)}</option>
       {query.favoriteOnly && <option value="favorite">{t(HISTORY_SORT_LABELS.favorite)}</option>}
       {query.sort === 'random' && <option value="random" disabled>{t("随机顺序")}</option>}
-    </ToolbarSelect>
-    <ToolbarButton aria-label={query.sort === 'random' ? t("重新洗牌") : t("随机浏览")} title={query.sort === 'random' ? t("重新洗牌") : t("随机浏览")} className="history-icon-compact history-random-button" onClick={() => onApply({ ...query, sort: 'random', seed: createUuid() })}><Shuffle /><span className="history-button-label">{query.sort === 'random' ? t("重新洗牌") : t("随机浏览")}</span></ToolbarButton>
-    {panel && !mobile && <AnchoredToolbarPopover anchorRef={panel === 'date' ? dateAnchor : moreAnchor} title={title} width={380} onClose={() => setPanel(null)}>{form}</AnchoredToolbarPopover>}
-    {mobile && <ImagePreviewPortal><MobileBottomSheet open={panel !== null} title={title} onClose={() => setPanel(null)}>{form}</MobileBottomSheet></ImagePreviewPortal>}
+    </select></label>
+    <ToolbarButton type="button" className="w-full" onClick={() => { onApply({ ...query, sort: 'random', seed: createUuid() }); setOpen(false); }}>
+      <Shuffle />{query.sort === 'random' ? t("重新洗牌") : t("随机浏览")}
+    </ToolbarButton>
+    {error && <p role="alert" className="text-sm text-red-500">{t(error)}</p>}
+    <div className="flex items-center justify-between gap-2">
+      <button type="button" className="min-h-10 text-xs font-semibold text-gray-500 dark:text-gray-400" onClick={reset}>{t("重置筛选")}</button>
+      <ToolbarButton type="submit" tone="primary">{t("应用筛选")}</ToolbarButton>
+    </div>
+  </form>;
+  return <div className="history-browse-controls">
+    <div ref={anchor}>
+      <ToolbarButton aria-label={t("筛选{0}", [filterCount ? ` ${filterCount}` : ''])} aria-expanded={open} aria-haspopup="dialog" title={t("筛选历史{0}", [filterCount ? ` · ${filterCount}` : ''])} onClick={openPanel} active={filterCount > 0}>
+        <SlidersHorizontal /><span className="history-button-label">{t("筛选")}</span>
+        {filterCount > 0 && <span className="text-xs tabular-nums">{filterCount}</span>}<ChevronDown />
+      </ToolbarButton>
+    </div>
+    {open && !mobile && <AnchoredToolbarPopover anchorRef={anchor} title={t("筛选")} width={380} onClose={() => setOpen(false)}>{form}</AnchoredToolbarPopover>}
+    {open && mobile && <ImagePreviewPortal><MobileBottomSheet open title={t("筛选")} onClose={() => setOpen(false)}>{form}</MobileBottomSheet></ImagePreviewPortal>}
   </div>;
 };

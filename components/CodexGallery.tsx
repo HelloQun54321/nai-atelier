@@ -1,7 +1,7 @@
 import { PromptLibraryCaptureButton } from './PromptLibraryAccess';
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ChevronLeft, ChevronRight, Copy, FlaskConical, FolderTree, ImagePlus, Layers, LoaderCircle, RefreshCw } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, Copy, FlaskConical, FolderTree, ImagePlus, Layers, LoaderCircle } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import type { User, ImageEditOperation, PromptChain } from '../types';
 import { IMPORT_SESSION_KEY, type BaseImageImport } from '../services/metadataService';
@@ -289,7 +289,6 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
           <button type="button" className={TOOLBAR_MENU_CLASS} aria-pressed={mode === 'books' && filter.scope === 'all'} onClick={() => { setMode('books'); if (filters.books.scope !== 'all') changeFilter({ scope: 'all', path: '', update: '' }, 'books'); close(); }}>{t('全部书目')}</button>
           <ToolbarSearch value={bookSearch} onChange={event => setBookSearch(event.target.value)} placeholder={t('搜索书目')} />
           {boot?.books.filter(book => [book.title, book.author, bookKinds[book.type]].join(' ').toLocaleLowerCase().includes(bookSearch.trim().toLocaleLowerCase())).map(book => <button type="button" key={book.id} aria-pressed={mode === 'books' && filter.scope === 'book' && book.id === bookId} className={`block w-full rounded-lg p-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800 ${mode === 'books' && filter.scope === 'book' && book.id === bookId ? 'text-indigo-600 dark:text-indigo-300' : ''}`} onClick={() => { close(); selectBook(book.id); }}><span>{book.title}</span><span className="mt-1 block text-xs text-gray-500">{t(bookKinds[book.type] || '法典')} · {book.entryCount} · {book.version}</span></button>)}
-          <button type="button" className={`${TOOLBAR_MENU_CLASS} sm:hidden`} disabled={loading} onClick={() => { setReload(value => value + 1); close(); }}><RefreshCw />{t('刷新')}</button>
         </div>}
       </ToolbarPopover>
       {result && !loading && <ToolbarCountBadge total={filtered.length} loaded={Math.min(visibleLimit, filtered.length)} />}
@@ -312,7 +311,6 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
         </div>}
       </ToolbarPopover>
       {loading && <span role="status" aria-label={t('读取中…')} className="flex-none text-xs text-gray-500"><LoaderCircle className="h-4 w-4 animate-spin" /></span>}
-      <div className="hidden sm:block"><IconButton label={t('刷新')} disabled={loading} onClick={() => setReload(value => value + 1)}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton></div>
     </WorkspaceToolbar>
     </WorkspaceChrome>
     <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
