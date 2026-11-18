@@ -203,7 +203,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
             </div>
 
             {characters.length > 0 && <div role="group" aria-label={t('角色切换')} className="mb-3 flex flex-wrap items-center gap-1.5">
-                {characters.map((character, index) => <button key={character.id} type="button" aria-pressed={index === shownCharacterIndex} onClick={() => setActiveCharacterId(character.id)} className={`appearance-group mobile-touch inline-flex h-11 max-w-full items-center gap-1 rounded-lg border px-2.5 text-xs font-medium ${index === shownCharacterIndex ? CHAR_TOOL_ACTIVE : CHAR_TOOL_NEUTRAL}`}><span className="max-w-40 truncate">{characterLabel(character, index)}</span>{character.enabled === false && <span className="text-gray-400">{t('· 已停用')}</span>}</button>)}
+                {characters.map((character, index) => <button key={character.id} type="button" aria-pressed={index === shownCharacterIndex} onClick={() => setActiveCharacterId(character.id)} className={`mobile-touch inline-flex h-11 max-w-full items-center gap-1 rounded-lg px-2.5 text-xs font-medium transition ${index === shownCharacterIndex ? CHAR_TOOL_ACTIVE : CHAR_TOOL_NEUTRAL}`}><span className="max-w-40 truncate">{characterLabel(character, index)}</span>{character.enabled === false && <span className="text-gray-400">{t('· 已停用')}</span>}</button>)}
             </div>}
 
             {positionOpen && <CharacterPositionStage key={scopeKey} characters={characters} freeform={freeformPosition}
