@@ -629,12 +629,12 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
                   : (selectedYear ? t('所选年份每天生成的作品数；点击某天查看当天作品') : t('全部年份统计；热力图显示最近一年'))}
               action={<div className="flex flex-wrap items-center gap-2">
                 {periodPicker}
-                <span className="hidden items-center gap-1.5 text-micro text-gray-400 sm:flex">{t('少')}<span className="h-2.5 w-2.5 rounded-sm bg-gray-200 dark:bg-gray-800" /><span className="h-2.5 w-2.5 rounded-sm bg-indigo-300 dark:bg-indigo-800" /><span className="h-2.5 w-2.5 rounded-sm bg-indigo-400 dark:bg-indigo-700" /><span className="h-2.5 w-2.5 rounded-sm bg-indigo-500 dark:bg-indigo-700" /><span className="h-2.5 w-2.5 rounded-sm bg-indigo-700 dark:bg-indigo-500" />{t('多')}</span>
+                <span className="hidden items-center gap-1.5 text-micro text-gray-400 sm:flex">{t('少')}<span className="h-2.5 w-2.5 rounded-[2px] bg-gray-200 dark:bg-gray-800" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-300 dark:bg-indigo-800" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-400 dark:bg-indigo-700" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-500 dark:bg-indigo-700" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-700 dark:bg-indigo-500" />{t('多')}</span>
               </div>}
             >
               {compactDays.length > 0 ? <>
                 <div className="grid w-max grid-cols-7 gap-1.5" role="grid" aria-label={t('创作活动热力图')}>
-                  {compactDays.map(day => <button key={day.key} type="button" role="gridcell" disabled={day.future} onClick={() => openDay(day.key)} title={day.future ? '' : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} aria-label={day.future ? t('未来') : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className={`mobile-size-locked h-8 w-8 rounded-sm transition hover:ring-2 hover:ring-indigo-300 disabled:cursor-default disabled:opacity-0 dark:hover:ring-indigo-600 ${heatClass(day.count)} ${day.today ? 'ring-1 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900' : ''}`} />)}
+                  {compactDays.map(day => <button key={day.key} type="button" role="gridcell" disabled={day.future} onClick={() => openDay(day.key)} title={day.future ? '' : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} aria-label={day.future ? t('未来') : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className={`mobile-size-locked h-8 w-8 rounded-[2px] transition hover:ring-2 hover:ring-indigo-300 disabled:cursor-default disabled:opacity-0 dark:hover:ring-indigo-600 ${heatClass(day.count)} ${day.today ? 'ring-1 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900' : ''}`} />)}
                 </div>
                 <div className="mt-2 flex justify-between text-micro text-gray-400 dark:text-gray-500"><span>{formatDay(dayKeyToTime(compactDays[0].key))}</span><span>{granularity === 'week' ? formatDay(endOfWeek(weekStart)) : formatDay(monthBounds.end)}</span></div>
               </> : <>
@@ -655,7 +655,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
                     </div>
                     <div className="flex w-full gap-1" role="grid" aria-label={t('创作活动热力图')}>
                       {heatmap.weeks.map((week, weekIndex) => <div key={weekIndex} role="row" className="flex min-w-0 flex-1 flex-col gap-1">
-                        {week.map((day, dayIndex) => <button key={dayIndex} type="button" role="gridcell" disabled={day.future} onClick={() => openDay(day.key)} title={day.future ? '' : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} aria-label={day.future ? t('未来') : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className={`mobile-size-locked aspect-square w-full rounded-sm transition hover:ring-2 hover:ring-indigo-300 disabled:cursor-default disabled:opacity-0 dark:hover:ring-indigo-600 ${heatClass(day.count)} ${day.today ? 'ring-1 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900' : ''}`} />)}
+                        {week.map((day, dayIndex) => <button key={dayIndex} type="button" role="gridcell" disabled={day.future} onClick={() => openDay(day.key)} title={day.future ? '' : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} aria-label={day.future ? t('未来') : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className={`mobile-size-locked aspect-square w-full rounded-[2px] transition hover:ring-2 hover:ring-indigo-300 disabled:cursor-default disabled:opacity-0 dark:hover:ring-indigo-600 ${heatClass(day.count)} ${day.today ? 'ring-1 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900' : ''}`} />)}
                       </div>)}
                     </div>
                   </div>
