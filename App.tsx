@@ -1101,6 +1101,7 @@ const App = () => {
           onBulkDelete={handleBulkDelete}
           onUpdateChain={handleUpdateChain}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
+          onOpenRoll={() => void handleNavigate('roll')}
           onRefresh={() => refreshData(true)}
           onBundleImported={async () => {
             if (!await refreshData(true)) throw new Error(t('风格串列表加载失败，请稍后重试'));

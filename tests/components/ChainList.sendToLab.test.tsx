@@ -122,6 +122,17 @@ describe('风格串发送到实验室', () => {
     expect(badge!.textContent).toBe('1');
   });
 
+  it('风格串页顶栏的骰子入口直接打开 Roll 串，角色列表不出现', () => {
+    const styleProps = { ...props([styleChain]), onOpenRoll: vi.fn() };
+    const view = render(<ChainList {...styleProps} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Roll 串' }));
+    expect(styleProps.onOpenRoll).toHaveBeenCalledOnce();
+    view.unmount();
+
+    render(<ChainList {...props([characterChain], 'character')} onOpenRoll={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Roll 串' })).toBeNull();
+  });
+
   it('把所有提示词结构、模块、角色槽位与生成参数投递到导入通道并跳转实验室', () => {
     const viewProps = props([styleChain]);
     render(<ChainList {...viewProps} />);

@@ -184,12 +184,20 @@ it('手机底栏仍是五个入口，资源面板可达提示词库与原有资�
   expect(within(mobileNav).getAllByRole('button')).toHaveLength(5);
   fireEvent.click(within(mobileNav).getByRole('button', { name: '资源库' }));
   const resources = screen.getByRole('dialog', { name: '资源库菜单' });
-  expect(within(resources).getAllByRole('button')).toHaveLength(10); // 九个入口与关闭按钮。
+  expect(within(resources).getAllByRole('button')).toHaveLength(9); // 八个素材入口与关闭按钮。
   expect(within(resources).getByRole('button', { name: '提示词库' })).toBeTruthy();
   expect(within(resources).queryByRole('button', { name: '一键 Roll' })).toBeNull();
   expect(within(resources).queryByRole('button', { name: 'Roll 提示词库' })).toBeNull();
-  expect(within(resources).getByRole('button', { name: 'Roll 串' })).toBeTruthy();
+  expect(within(resources).queryByRole('button', { name: 'Roll 串' })).toBeNull();
   expect(within(resources).getByRole('button', { name: 'AITag' })).toBeTruthy();
+});
+
+it('Roll 串不再是独立导航项，侧栏工作区只留风格串与实验室', () => {
+  const { container } = renderLayout('roll');
+  const sidebar = getSidebar(container);
+  expect(within(sidebar).queryByRole('button', { name: 'Roll 串' })).toBeNull();
+  expect(within(sidebar).getByRole('button', { name: '风格串' })).toBeTruthy();
+  expect(within(sidebar).getByRole('button', { name: '实验室' })).toBeTruthy();
 });
 
 const prepareMobileHistory = () => {

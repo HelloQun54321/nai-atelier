@@ -41,7 +41,7 @@ import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { useChainFolders } from '../services/useChainFolders';
 import { folderContains, getChainFolderIds, updateChainFolderMemberships } from '../services/chainFolders';
 import { CHAIN_FOLDER_DRAG_TYPE, ChainFolderMembershipDialog, ChainFolderNavigation } from './chain/ChainFolders';
-import { Folder, FolderInput } from 'lucide-react';
+import { Dice5, Folder, FolderInput } from 'lucide-react';
 import { DIRECTORY_FAVORITES_ID } from './DirectoryTreeNavigation';
 
 const ChainSimilarityDialog = React.lazy(() => import('./chain/ChainSimilarityDialog').then(module => ({ default: module.ChainSimilarityDialog })));
@@ -60,6 +60,8 @@ interface ChainListProps {
   onUpdateChain: UpdateChainInfo;
   /** 整串送入实验室：复用历史／灵感页的 sessionStorage 导入通道后跳转。 */
   onNavigateToPlayground?: () => void;
+  /** Roll 串并入风格串页：顶栏骰子只做入口，不占底栏与资源库面板。 */
+  onOpenRoll?: () => void;
   isLoading: boolean;
   loadError?: string;
   notify: (msg: string, type?: 'success' | 'error') => void;
@@ -75,7 +77,7 @@ const chainPreviewRatio = (chain: PromptChain, measured?: number) => {
   return typeof width === 'number' && typeof height === 'number' && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? width / height : 4 / 3;
 };
 
-export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onBundleImported, onReloadTags, onUpdateChain, onNavigateToPlayground, notify, isLoading, loadError, isGuest = false, returnTargetId }) => {
+export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onBundleImported, onReloadTags, onUpdateChain, onNavigateToPlayground, onOpenRoll, notify, isLoading, loadError, isGuest = false, returnTargetId }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
   const RENDER_BATCH_SIZE = 60;
@@ -565,6 +567,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden md:inline">{t('退出多选')}</span></ToolbarButton>
           </> : <>
           {!isGuest && type === 'style' && <ToolbarButton data-agent-action="browse" aria-label={t(foldersExpanded ? '收起文件夹' : '展开文件夹')} title={[t(foldersExpanded ? '收起文件夹' : '展开文件夹'), activeFolderLabel].join(' · ')} aria-expanded={foldersExpanded} active={foldersExpanded || activeFolder !== '*'} disabled={folderStore.busy} onClick={toggleFolders} className="!px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{activeFolderLabel}</span></ToolbarButton>}
+          {!isGuest && type === 'style' && onOpenRoll && <ToolbarButton data-agent-action="browse" aria-label={t('Roll 串')} title={t('Roll 串')} onClick={onOpenRoll} className="mobile-touch !px-2.5"><Dice5 className="h-4 w-4" /></ToolbarButton>}
           {!loadError && (isLoading && filteredChains.length > 0 ? <InlineSpinner label={t('加载中…')} className="text-xs" /> : !isLoading && <ToolbarCountBadge total={filteredChains.length} loaded={Math.min(visibleCount, filteredChains.length)} />)}
           <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t("搜索{0}", [title])} containerClassName="min-w-0 flex-1 md:max-w-none!" />
           <div className="hidden flex-none items-center gap-2 md:flex">
