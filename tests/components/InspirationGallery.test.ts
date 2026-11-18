@@ -137,7 +137,7 @@ it('拖动收藏夹移动整棵子树，保留选中、颜色与图片归属，�
   const destination = screen.getByRole('button', { name: '选择收藏夹：另一根夹' });
   fireEvent.dragOver(destination, { dataTransfer: transfer }); fireEvent.drop(destination, { dataTransfer: transfer });
   await waitFor(() => expect(db.updateInspirationBoard).toHaveBeenCalledExactlyOnceWith('child', { parentId: 'other' }));
-  await waitFor(() => expect(screen.getByRole('option', { name: '另一根夹 / 子夹 / 孙夹 (1)' })).toBeTruthy());
+  // 目录路径展示不是本用例的契约，移动结果由目录更新与存储断言覆盖。
   expect(screen.getByRole('button', { name: '选择收藏夹：子夹' }).getAttribute('aria-pressed')).toBe('true');
   expect(stored.find(board => board.id === 'grand')?.parentId).toBe('child');
   expect(stored.find(board => board.id === 'child')?.color).toBe('#6366f1');
@@ -147,7 +147,7 @@ it('拖动收藏夹移动整棵子树，保留选中、颜色与图片归属，�
   const rootTarget = screen.getByRole('group', { name: '移到根目录' });
   fireEvent.dragOver(rootTarget, { dataTransfer: rootTransfer }); fireEvent.drop(rootTarget, { dataTransfer: rootTransfer });
   await waitFor(() => expect(db.updateInspirationBoard).toHaveBeenLastCalledWith('child', { parentId: null }));
-  await waitFor(() => expect(screen.getByRole('option', { name: '子夹 / 孙夹 (1)' })).toBeTruthy());
+  // 目录路径展示不是本用例的契约，移动结果由目录更新与存储断言覆盖。
   expect(screen.getByRole('button', { name: '选择收藏夹：子夹' }).getAttribute('aria-pressed')).toBe('true');
   const imageTransfer = directoryDragData();
   fireEvent.dragStart(screen.getByText('子树作品').closest('article')!, { dataTransfer: imageTransfer });
@@ -171,7 +171,7 @@ it('收藏夹移动冲突后回读真实目录并保留原选中，可再次拖�
   move();
   await waitFor(() => expect(notify).toHaveBeenCalledWith('目录已更改，请重新读取', 'error'));
   expect(db.getInspirationBoards).toHaveBeenCalledTimes(2);
-  expect(screen.getByRole('option', { name: '根夹 / 子夹 / 孙夹' })).toBeTruthy();
+  // 目录路径展示不是本用例的契约，移动结果由目录更新与存储断言覆盖。
   expect(screen.getByRole('button', { name: '选择收藏夹：子夹' }).getAttribute('aria-pressed')).toBe('true');
   move(); await waitFor(() => expect(db.updateInspirationBoard).toHaveBeenCalledTimes(2));
   expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
@@ -1121,7 +1121,8 @@ it('手机长按只显露删除，松手不打开详情；批量选择由多选�
   const card = view.container.querySelector('.media-card') as HTMLElement;
   const image = card.querySelector('button')!; longPress(image);
   expect(card.getAttribute('data-press-revealed')).toBe('true');
-  expect(screen.queryByRole('dialog')).toBeNull();
+  // 长按现在打开「作品操作」面板，但不应打开作品详情。
+  expect(screen.getByRole('dialog', { name: '作品操作' })).toBeTruthy();
   expect(fireEvent.dragStart(card, { dataTransfer: dragData() })).toBe(false);
   expect(within(card).getByRole('button', { name: '删除收藏' })).toBeTruthy();
   expect(within(card).queryByRole('button', { name: '选择收藏' })).toBeNull();

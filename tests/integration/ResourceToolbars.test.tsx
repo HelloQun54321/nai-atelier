@@ -91,7 +91,8 @@ describe('资料目录工具栏行为', () => {
     await waitFor(() => expect(getCharacterDictionaryPage).toHaveBeenCalledWith(0, 'least'));
     expect(localStorage.getItem('nai_character_sort')).toBe('least');
     fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
-    await screen.findByRole('option', { name: '自定义 (0)' });
+    // 桌面分组导航是按钮行，不是手机挑选面板里的 option。
+    await screen.findByRole('button', { name: '自定义' });
     pickDirectoryOption('选择分组', '#source:custom');
     pickDirectoryOption('选择分组', '#favorites');
     expect(screen.getByRole('button', { name: '筛选 1' })).toBeTruthy();
