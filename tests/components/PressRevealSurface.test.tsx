@@ -85,6 +85,37 @@ it('只有触摸抑制原生长按菜单，鼠标右键保留', () => {
   expect(fireEvent.contextMenu(screen.getByRole('textbox'))).toBe(true);
   fireEvent.pointerEnter(root, { pointerType: 'mouse' }); expect(fireEvent.contextMenu(root)).toBe(true);
 });
+it('手机界面里鼠标右键打开同一条操作条', () => {
+  const media = (query: string) => ({ matches: query.includes('max-width: 767px'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  vi.stubGlobal('matchMedia', media);
+  const { root, action, open } = fixture();
+  fireEvent.pointerEnter(root, { pointerType: 'mouse' });
+  expect(fireEvent.contextMenu(root, { button: 2 })).toBe(false);
+  expect(root.getAttribute('data-press-lift')).toBe('true');
+  expect(screen.getByRole('menuitem', { name: '收藏' })).toBeTruthy();
+  expect(fireEvent.contextMenu(screen.getByRole('textbox'), { button: 2 })).toBe(true);
+  fireEvent.click(screen.getByRole('menuitem', { name: '收藏' }));
+  expect(action).toHaveBeenCalledOnce();
+  expect(open).not.toHaveBeenCalled();
+  expect(revealed(root)).toBe(false);
+  expect(root.hasAttribute('data-press-input')).toBe(false);
+});
+it('宽屏鼠标右键不打开操作条', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, media: '', addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  const { root } = fixture();
+  fireEvent.pointerEnter(root, { pointerType: 'mouse' });
+  expect(fireEvent.contextMenu(root, { button: 2 })).toBe(true);
+  expect(revealed(root)).toBe(false);
+  expect(screen.queryByRole('menuitem')).toBeNull();
+});
+it('手机界面里没有操作时右键仍保留系统菜单', () => {
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('max-width: 767px'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  render(<PressRevealSurface role="button" aria-label="作品"><img alt="图片" /></PressRevealSurface>);
+  const root = screen.getByRole('button', { name: '作品' });
+  fireEvent.pointerEnter(root, { pointerType: 'mouse' });
+  expect(fireEvent.contextMenu(root, { button: 2 })).toBe(true);
+  expect(revealed(root)).toBe(false);
+});
 it('长按打开底部操作条，点选后执行并收起', () => {
   const { root, action, open } = fixture();
   down(root); advance();

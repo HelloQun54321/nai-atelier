@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **Grok 4.7**：手机布局下鼠标右键等同触屏长按（feat: open mobile actions with right click），宽屏右键不变。
 - **Grok 4.7**：手机作品操作改为长按底部操作条，详情和大图改为该层底栏；图上只常驻已收藏爱心和已保存勾（feat: open touch image actions in a bottom bar）。
 - **Composer**：理顺角色工具四钮关系（fix: equalize character tool chip family）：左右分组、共用 h-11 芯片与图标，只留语义色差。
 - **Composer**：角色工具行改短标签同款芯片（fix: unify character tool chips）：定位／构图／删除／添加单行，构图为按下态；整段与分类同步。

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { t } from '../services/i18n';
 
 const COARSE_QUERY = '(hover: none), (pointer: coarse)';
+const MOBILE_UI_QUERY = '(max-width: 767px)';
 const REVEAL_SELECTOR = '.hover-reveal-md, .hover-reveal-lg, .hover-reveal-touch';
 const STATUS_SELECTOR = '[data-artist-sample-status], [data-prompt-library-cover-status]';
 
@@ -20,6 +21,22 @@ function subscribeCoarse(onChange: () => void) {
 
 function coarseNow() {
   return Boolean(window.matchMedia?.(COARSE_QUERY)?.matches);
+}
+
+/** 与手机顶栏同一宽度：窄于 768px 即为手机界面，不论这下是不是手指。 */
+export function useMobileLayout() {
+  return useSyncExternalStore(subscribeMobile, mobileNow, () => false);
+}
+
+function subscribeMobile(onChange: () => void) {
+  const media = window.matchMedia?.(MOBILE_UI_QUERY);
+  if (!media || typeof media.addEventListener !== 'function') return () => {};
+  media.addEventListener('change', onChange);
+  return () => media.removeEventListener('change', onChange);
+}
+
+function mobileNow() {
+  return Boolean(window.matchMedia?.(MOBILE_UI_QUERY)?.matches);
 }
 
 function actionLabel(button: HTMLButtonElement) {
