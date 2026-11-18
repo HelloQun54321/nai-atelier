@@ -549,7 +549,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     if (aitagRatioFlushRef.current !== null) window.clearTimeout(aitagRatioFlushRef.current);
     aitagRatioFlushRef.current = null;
   }, []);
-  const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);
+  const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef, undefined, false, Boolean(selectedWork));
   const frostedCaption = useGalleryFrostedCaption();
   const estimateAitagCardHeight = React.useCallback((work: AitagWorkSummary, columnWidth: number) => {
     const image = work.firstImage || work.first_image || details[work.id]?.images[0];

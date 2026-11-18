@@ -50,8 +50,10 @@ export const resolveMasonryColumnCount = (
 const DESKTOP_MIN_CARD_WIDTH = 200;
 const DEFAULT_MIN_CARD_WIDTH = 180;
 
-/** 自动列数按图库宽度约束；详情分栏可临时限制明确列数，不改用户偏好或手机列数。 */
-export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences, desktopOverride?: number, containerRef?: RefObject<HTMLElement | null>, minimumCardWidth = DEFAULT_MIN_CARD_WIDTH, fitExplicitColumns = false): number => {
+/** 自动列数按图库宽度约束；详情分栏可临时限制明确列数，不改用户偏好或手机列数。
+ *  `freezeContainerWidth` 在详情分栏打开时冻结容器宽度采样：并排详情会挤窄列表，
+ *  不冻结就会 5 列→4 列→5 列地重排两次；窗口 resize 仍按视口断点正常收敛。 */
+export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences, desktopOverride?: number, containerRef?: RefObject<HTMLElement | null>, minimumCardWidth = DEFAULT_MIN_CARD_WIDTH, fitExplicitColumns = false, freezeContainerWidth = false): number => {
   const [viewport, setViewport] = useState(() => ({
     width: typeof window === 'undefined' ? 0 : window.innerWidth,
     height: typeof window === 'undefined' ? 0 : window.innerHeight,
@@ -70,7 +72,7 @@ export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences
   const clampNarrow = preferences.desktopColumns === 'auto' || fitExplicitColumns || minimumCardWidth === DEFAULT_MIN_CARD_WIDTH;
   useEffect(() => {
     const element = containerRef?.current;
-    if (!desktop || !element || typeof ResizeObserver === 'undefined') return;
+    if (!desktop || !element || freezeContainerWidth || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(entries => {
       const width = entries[0]?.contentRect.width ?? 0;
       // 隐藏的零宽度不改变列数；图片为主的工作区可沿用同一布局并要求更大的预览。
@@ -78,7 +80,7 @@ export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [containerRef, desktop]);
+  }, [containerRef, desktop, freezeContainerWidth]);
   const requested = resolveMasonryColumnCount(preferences, viewport.width, viewport.width > viewport.height, desktopOverride);
   if (!desktop || !clampNarrow || containerWidth <= 0) return requested;
   return Math.min(requested, Math.max(1, Math.floor((containerWidth + 12) / (floor + 12))));

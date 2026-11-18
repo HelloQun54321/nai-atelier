@@ -330,7 +330,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
   useGalleryLoadMore(scrollRef, appendSentinelRef, active && !showHistory && hasMore && !loading && !appendError, () => { void appendNextPage(); }, '1200px 0px', page);
 
   // 瀑布流（masonry 布局时）：真实宽高比完整显示，最短列分配互相补齐。
-  const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);
+  const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef, undefined, false, Boolean(selected));
   const getPostRatio = (post: DanbooruPost) => {
     const ratio = Number(post.width) / Math.max(1, Number(post.height) || 1);
     return Number.isFinite(ratio) && ratio > 0 ? ratio : 0.75;

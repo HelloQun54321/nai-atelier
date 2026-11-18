@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **DeepSeek Harness (V4.1 Flash)**：并排详情打开时冻结列表列宽采样，避免详情开合触发 5↔4 列重排；覆盖 AITag、法典、Danbooru、收藏库、提示词库、Pixiv，窗口真正变窄时仍按可读列宽收敛（fix: freeze gallery columns while detail is open）。
 - **DeepSeek Harness (V4.1 Flash)**：合并 PR #32（生成历史回收站）：解决 GenHistory 批量操作行与本地顶栏改动的冲突，补安装版运行依赖 `naiNoiseSchedule`／`promptTidyAgent`，修正安装包依赖扫描正则把 `['from', 'to']` 误判为 import 的问题（merge: integrate PR #32）。
 - **Codex (GPT-6)**：修复批量清理预览重复解析历史资料的问题，让生成历史的画师统计读取当前工坊词库，补充本地 D1、词库缺失与恢复后的回归测试。
 - **DeepSeek Harness (gpt-6.2-sol)**：整合最新主线与历史回收站，保留主线 Roll 记录删除和回收站的独立语义，保护在用的 Roll 原图，校正手机弹层、助手原图读取与分 Key 预算刷新，并用隔离的合成资料补验 D1/R2、桥接和跨平台测试。

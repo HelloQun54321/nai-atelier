@@ -95,11 +95,11 @@ export function PromptLibraryCard({ chain, label: _label, title, summary, tagCon
   </PressRevealSurface>;
 }
 
-export function PromptLibraryGallery({ chains, scrollRef, fitColumns = false, resetKey, renderCard }: {
-  chains: PromptChain[]; scrollRef: React.RefObject<HTMLDivElement | null>; fitColumns?: boolean; resetKey: string; renderCard: (chain: PromptChain) => React.ReactNode;
+export function PromptLibraryGallery({ chains, scrollRef, fitColumns = false, freezeColumns = false, resetKey, renderCard }: {
+  chains: PromptChain[]; scrollRef: React.RefObject<HTMLDivElement | null>; fitColumns?: boolean; freezeColumns?: boolean; resetKey: string; renderCard: (chain: PromptChain) => React.ReactNode;
 }) {
   const preferences = useMobileImageDisplayPreferences();
-  const columns = useMasonryColumnCount(preferences, undefined, scrollRef, 180, fitColumns);
+  const columns = useMasonryColumnCount(preferences, undefined, scrollRef, 180, fitColumns, freezeColumns);
   return preferences.layout === 'masonry'
     ? <ShortestColumnMasonry items={chains} columns={columns} resetKey={resetKey} getItemKey={chain => chain.id} estimateItemHeight={(_chain, width) => width * 1.5 + 80} renderItem={renderCard} />
     : <div className={`${mobileGalleryClassName(preferences)} workspace-card-grid workspace-character-grid items-start`} style={mobileGalleryStyle(preferences, columns)}>{chains.map(chain => <React.Fragment key={chain.id}>{renderCard(chain)}</React.Fragment>)}</div>;

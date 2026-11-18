@@ -43,6 +43,29 @@ it('自动列数按实际内容宽度收缩，忽略隐藏宽度；窄窗把明�
   rerender(<Gallery value={preferences} />);
   vi.stubGlobal('innerWidth', 700); vi.stubGlobal('innerHeight', 390); act(() => window.dispatchEvent(new Event('resize'))); expectColumns(3);
 });
+it('详情分栏打开时冻结容器宽度，列数不随临时挤压变化', () => {
+  vi.stubGlobal('innerWidth', 1400); vi.stubGlobal('innerHeight', 800);
+  let resize!: (width: number) => void;
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: ResizeObserverCallback) { resize = width => callback([{ contentRect: { width } }] as ResizeObserverEntry[], this as unknown as ResizeObserver); }
+    observe() { resize(1500); }
+    disconnect() {}
+  });
+  const preferences: MobileImageDisplayPreferences = { layout: 'masonry', columns: 'auto', desktopColumns: 'auto' };
+  function Gallery({ freeze }: { freeze: boolean }) {
+    const ref = React.useRef<HTMLDivElement>(null);
+    const count = useMasonryColumnCount(preferences, undefined, ref, undefined, false, freeze);
+    return <div ref={ref} data-testid="columns">{count}</div>;
+  }
+  const expectColumns = (value: number) => expect(screen.getByTestId('columns').textContent).toBe(String(value));
+  const { rerender } = render(<Gallery freeze={false} />);
+  act(() => resize(1500)); expectColumns(5);
+  // 详情打开：effect 断开容器观察，并排面板挤窄容器也不再改列数。
+  rerender(<Gallery freeze />); expectColumns(5);
+  // 详情关闭：重新观察真实容器宽度后按需收敛。
+  rerender(<Gallery freeze={false} />); act(() => resize(1500)); expectColumns(5);
+  act(() => resize(900)); expectColumns(4);
+});
 it('桌面兜底列数不能覆盖明确偏好，手机列数与横屏始终遵循有效偏好', () => {
   const preferences: MobileImageDisplayPreferences = { layout: 'masonry', columns: 'auto', desktopColumns: 'auto' };
   expect(resolveMasonryColumnCount(preferences, 390, false, 6)).toBe(2);

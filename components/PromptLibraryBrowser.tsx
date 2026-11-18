@@ -303,7 +303,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
       scrollPositions.current[memory.scope] = event.currentTarget.scrollTop;
       try { localStorage.setItem(SCROLL_KEY, JSON.stringify(scrollPositions.current)); } catch { /* 滚动记忆受限时保留本次会话位置。 */ }
     }} className="workspace-scroll-viewport min-h-0 min-w-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6">
-      {shown.length ? <PromptLibraryGallery chains={shown.map(entry => entry.chain)} scrollRef={scrollRef} fitColumns={!!selectedId} resetKey={JSON.stringify([memory, query, tags])} renderCard={chain => {
+      {shown.length ? <PromptLibraryGallery chains={shown.map(entry => entry.chain)} scrollRef={scrollRef} fitColumns={!!selectedId} freezeColumns={Boolean(selected)} resetKey={JSON.stringify([memory, query, tags])} renderCard={chain => {
         const entry = shown.find(item => item.chain.id === chain.id)!;
         const name = chain.name?.trim() || entry.summary.split(/[\r\n]/)[0].slice(0, 48) || t('未命名');
         const summary = promptBrowseSummary(entry, query);

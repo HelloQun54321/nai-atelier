@@ -135,7 +135,7 @@ it('组合无可用快照内容时详情回退展示原文，不留空白侧栏'
   expect(within(detail).getByText('手写备注')).toBeTruthy();
 });
 
-it.each(['auto', 4])('列数偏好%s：详情按剩余宽度减少列数，关闭恢复且不改偏好', desktopColumns => {
+it.each(['auto', 4])('列数偏好%s：详情打开时冻结列数，关闭后按真实宽度收敛且不改偏好', desktopColumns => {
   const preferences = JSON.stringify({ layout: 'masonry', columns: 2, desktopColumns });
   localStorage.setItem('nai_mobile_image_display', preferences);
   const resizes = new Map<object, (width: number) => void>();
@@ -159,10 +159,13 @@ it.each(['auto', 4])('列数偏好%s：详情按剩余宽度减少列数，关�
     expect(localStorage.getItem('nai_mobile_image_display')).toBe(preferences);
     fireEvent.click(screen.getByRole('button', { name: '查看礼服' }));
     act(() => resize(280));
-    expect(grid.style.gridTemplateColumns).toBe('repeat(1, minmax(0, 1fr))');
+    expect(grid.style.gridTemplateColumns).toBe('repeat(4, minmax(0, 1fr))');
     fireEvent.click(within(screen.getByRole('complementary', { name: '礼服' })).getByRole('button', { name: '关闭' }));
     act(() => resize(900));
     expect(grid.style.gridTemplateColumns).toBe('repeat(4, minmax(0, 1fr))');
+    // 详情关闭后，窗口/容器真正变窄时仍按可读列宽收敛。
+    act(() => resize(280));
+    expect(grid.style.gridTemplateColumns).toBe('repeat(1, minmax(0, 1fr))');
   } finally { view.unmount(); globalThis.ResizeObserver = OriginalObserver; }
 });
 

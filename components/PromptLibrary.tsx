@@ -833,7 +833,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const listToolbar = <WorkspaceToolbar>{listToolbarContent}</WorkspaceToolbar>;
 
   const listBody = shown.length ? (
-    <PromptLibraryGallery chains={shown} scrollRef={scrollRef} resetKey={JSON.stringify([query, sort, [...selectedTags], directorySelectionKey])} renderCard={renderCard} />
+    <PromptLibraryGallery chains={shown} scrollRef={scrollRef} freezeColumns={Boolean(detail)} resetKey={JSON.stringify([query, sort, [...selectedTags], directorySelectionKey])} renderCard={renderCard} />
   ) : countsPending ? <PromptLibraryReadStatus chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={onRetryChains} /> : config.emptyTitle === '加载中…' ? (
     <PageSpinner />
   ) : (

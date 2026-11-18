@@ -58,7 +58,6 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const imageDisplay = useMobileImageDisplayPreferences('favorites');
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const galleryContentRef = useRef<HTMLDivElement>(null);
-  const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);
   const active = useContext(ImageActivityContext);
   const [boards, setBoards] = useState<InspirationBoard[]>([]);
   const [boardsLoading, setBoardsLoading] = useState(true);
@@ -212,6 +211,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   useGalleryLoadMore(mainScrollRef, loadMoreSentinelRef, visibleCount < groups.length, () => setVisibleCount(count => count + COLLECTION_RENDER_BATCH), '600px 0px', visibleCount);
   const visibleGroups = useMemo(() => groups.slice(0, visibleCount), [groups, visibleCount]);
   const openedGroup = workGroup ? allGroups.get(workGroup) : undefined;
+  // 并排详情打开时冻结列宽采样，关闭再恢复；否则开合会 5↔4 列重排两次。
+  const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef, undefined, false, Boolean(workGroup));
   useEffect(() => {
     if (workGroup && !openedGroup) setWorkGroup(null);
   }, [workGroup, openedGroup]);

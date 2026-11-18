@@ -569,7 +569,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
   };
 
   // 瀑布流（masonry 布局时）：图片按真实宽高比完整显示，最短列分配互相补齐。
-  const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);
+  const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef, undefined, false, Boolean(selected));
   const getIllustRatio = (illust: PixivIllust) => {
     const ratio = Number(illust.width) / Math.max(1, Number(illust.height) || 1);
     return Number.isFinite(ratio) && ratio > 0 ? ratio : 0.75;
