@@ -303,7 +303,9 @@ html[data-theme-material='glass'] [data-appearance='control'][data-tone='neutral
 }
 html[data-theme-material='glass'] :is(.app-sidebar, .settings-navigation) button { border-radius: min(var(--workspace-control-radius), 14px); }
 html[data-theme-material='glass'] .app-sidebar [aria-current] { background-color: color-mix(in srgb, var(--nai-accent) 14%, transparent); }
-html[data-theme-material='glass'] [role='switch'] > span:last-child { box-shadow: inset 0 1px 2px rgb(0 0 0 / .12); }
+/* 只给真正的滑动轨道加内阴影：轨道内含圆点 span。role=switch 的工具按钮（如「收集模式」）
+   最后一个 span 是文字标签，不能吃这条阴影，否则文字外会出现一个很浅的小方框。 */
+html[data-theme-material='glass'] [role='switch'] > span:last-child:has(> span) { box-shadow: inset 0 1px 2px rgb(0 0 0 / .12); }
 /* 菜单内边距与内外圆角关联，仍保留原有紧凑模式和主题参数。 */
 html[data-theme-material='glass'] .appearance-popover:not([data-compact='true']) { padding: clamp(6px, calc(var(--nai-panel-radius, 16px) - var(--workspace-control-radius)), 12px); }
 html[data-theme-material='glass'] .workspace-page-heading { padding-inline: max(8px, calc(var(--nai-panel-radius, 16px) - var(--workspace-control-radius))); }
@@ -422,7 +424,7 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .settings-content :is(.appearance-group[data-active='true'], .atelier-theme-card[aria-pressed='true']) { background-color: color-mix(in srgb, var(--nai-accent) 8%, transparent) !important; }
 html[data-control-style='filled'] :is(.appearance-control-panel, .atelier-theme-card) { border-radius: var(--nai-panel-radius, 14px); }
 html[data-control-style='filled'] [role='switch'] { border-color: var(--nai-control-border); }
-html[data-control-style='filled'] [role='switch'] > span:last-child { box-shadow: inset 0 0 0 1px rgb(0 0 0 / .06); }
+html[data-control-style='filled'] [role='switch'] > span:last-child:has(> span) { box-shadow: inset 0 0 0 1px rgb(0 0 0 / .06); }
 /* 状态填充优先于中性分组；背景和前景必须一起覆盖，避免浅色白字落在浅底。 */
 @layer theme-state {
 html:root[data-control-style='filled'] :is(.app-sidebar, .settings-navigation) button[aria-current],
