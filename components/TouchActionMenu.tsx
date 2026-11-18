@@ -144,26 +144,19 @@ function activateSource(source: HTMLButtonElement, root: HTMLElement | null) {
   restore.forEach(node => { node.style.pointerEvents = ''; });
 }
 
-/** 长按后用和其他手机面板同一款的底部弹层，不另画一条黑底胶囊。 */
+/** 长按后直接用和其他手机面板同一块 MobileBottomSheet，不再另套一层挡点击。 */
 export const TouchActionSheet: React.FC<{ root: HTMLElement | null; onDismiss: () => void }> = ({ root, onDismiss }) => {
   const items = useTouchActions(root, 'sheet');
   if (!items.length || typeof document === 'undefined') return null;
   return createPortal(
-    <div data-touch-action-menu className="fixed inset-0 z-[2100]" onPointerDown={event => event.stopPropagation()}>
+    <div data-touch-action-menu>
       <MobileBottomSheet open title={t('作品操作')} onClose={onDismiss}>
-        <div role="menu" aria-label={t('作品操作')} className="space-y-1">
+        <div className="space-y-1">
           {items.map((button, index) => <button
             key={`${actionLabel(button)}:${index}`}
             type="button"
-            role="menuitem"
-            aria-pressed={button.getAttribute('aria-pressed') === 'true' ? true : undefined}
-            className={`pointer-events-auto relative z-[1] flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium transition-colors disabled:opacity-40 ${actionDanger(button) ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'}`}
-            onPointerDown={event => event.stopPropagation()}
-            onClick={event => {
-              event.stopPropagation();
-              activateSource(button, root);
-              onDismiss();
-            }}
+            onClick={event => { event.stopPropagation(); activateSource(button, root); onDismiss(); }}
+            className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium transition-colors disabled:opacity-40 ${actionDanger(button) ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'}`}
           >
             <ActionIcon source={button} className="flex h-5 w-5 flex-none items-center justify-center [&>svg]:h-[18px] [&>svg]:w-[18px]" />
             <span className="min-w-0 flex-1 truncate">{actionLabel(button)}</span>

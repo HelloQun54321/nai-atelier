@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PressRevealSurface } from '../../components/PressRevealSurface';
 import { installPointerEvents } from '../support/touchEvents';
@@ -10,6 +10,7 @@ afterEach(() => { cleanup(); document.body.replaceChildren(); vi.useRealTimers()
 const down = (target: Element, extra: PointerEventInit = {}) => fireEvent.pointerDown(target, { pointerType: 'touch', button: 0, clientX: 20, clientY: 20, ...extra });
 const advance = (ms = 450) => act(() => vi.advanceTimersByTime(ms));
 const revealed = (target: Element) => target.getAttribute('data-press-revealed') === 'true';
+const sheetAction = (name: string) => within(screen.getByRole('dialog', { name: '作品操作' })).getByRole('button', { name });
 const fixture = () => {
   const open = vi.fn(), action = vi.fn();
   const view = render(<PressRevealSurface role="button" aria-label="作品" tabIndex={0} onClick={open}>
@@ -62,7 +63,7 @@ it('长按另一张卡只保留一组显露操作', () => {
 });
 it('显露后操作直接可点；浏览器不发释放点击时也不会吞掉操作', () => {
   const { root, action, open } = fixture(); down(root); advance(); fireEvent.pointerUp(root);
-  const favorite = screen.getByRole('button', { name: '收藏' }); down(favorite); advance(); fireEvent.pointerUp(favorite); fireEvent.click(favorite);
+  const favorite = within(root).getByRole('button', { name: '收藏' }); down(favorite); advance(); fireEvent.pointerUp(favorite); fireEvent.click(favorite);
   expect(action).toHaveBeenCalledOnce(); expect(open).not.toHaveBeenCalled();
 });
 it.each([
@@ -94,10 +95,12 @@ it('手机界面里鼠标右键打开同一条操作条', () => {
   expect(root.getAttribute('data-mobile-ui')).toBe('true');
   expect(root.getAttribute('data-press-revealed')).toBeNull();
   expect(root.getAttribute('data-press-lift')).toBe('true');
-  screen.getByRole('button', { name: '收藏' }).style.pointerEvents = 'none';
-  expect(screen.getByRole('menuitem', { name: '收藏' })).toBeTruthy();
+  within(root).getByRole('button', { name: '收藏' }).style.pointerEvents = 'none';
+  const item = sheetAction('收藏');
+  fireEvent.pointerDown(item);
+  expect(screen.getByRole('dialog', { name: '作品操作' })).toBeTruthy();
   expect(fireEvent.contextMenu(screen.getByRole('textbox'), { button: 2 })).toBe(true);
-  fireEvent.click(screen.getByRole('menuitem', { name: '收藏' }));
+  fireEvent.click(item);
   expect(action).toHaveBeenCalledOnce();
   expect(open).not.toHaveBeenCalled();
   expect(revealed(root)).toBe(false);
@@ -109,7 +112,7 @@ it('宽屏鼠标右键不打开操作条', () => {
   fireEvent.pointerEnter(root, { pointerType: 'mouse' });
   expect(fireEvent.contextMenu(root, { button: 2 })).toBe(true);
   expect(revealed(root)).toBe(false);
-  expect(screen.queryByRole('menuitem')).toBeNull();
+  expect(screen.queryByRole('dialog', { name: '作品操作' })).toBeNull();
 });
 it('手机界面里没有操作时右键仍保留系统菜单', () => {
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('max-width: 767px'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
@@ -123,7 +126,7 @@ it('长按打开底部操作条，点选后执行并收起', () => {
   const { root, action, open } = fixture();
   down(root); advance();
   expect(root.getAttribute('data-press-lift')).toBe('true');
-  fireEvent.click(screen.getByRole('menuitem', { name: '收藏' }));
+  fireEvent.click(sheetAction('收藏'));
   expect(action).toHaveBeenCalledOnce();
   expect(open).not.toHaveBeenCalled();
   expect(revealed(root)).toBe(false);
