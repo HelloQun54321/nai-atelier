@@ -33,8 +33,8 @@ it('自动列数按实际内容宽度收缩，忽略隐藏宽度；窄窗把明�
   rerender(<Gallery value={preferences} minimumCardWidth={240} />); act(() => resize(840)); expectColumns(3);
   act(() => resize(500)); expectColumns(2);
   rerender(<Gallery value={preferences} />);
-  // 明确 5 列在 760px 内容宽时仍能排到 4 列；压到 300px 时只留 1 列，避免卡片比操作列还窄。
-  rerender(<Gallery value={{ ...preferences, desktopColumns: 5 }} />); act(() => resize(760)); expectColumns(4);
+  // 明确 5 列在 760px 内容宽时收敛到 3 列（每列约 245px）；压到 300px 时只留 1 列，避免卡片比操作列还窄。
+  rerender(<Gallery value={{ ...preferences, desktopColumns: 5 }} />); act(() => resize(760)); expectColumns(3);
   act(() => resize(300)); expectColumns(1);
   rerender(<Gallery value={preferences} override={6} />); expectColumns(6);
   rerender(<Gallery value={{ ...preferences, desktopColumns: 5 }} override={6} />); expectColumns(5);

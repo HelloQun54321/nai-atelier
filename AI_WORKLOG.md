@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **DeepSeek Harness (V4.1 Flash)**：窄窗列数下限提到 200px，消除横版封面在列数过渡段的留白（fix: raise the narrow-window column floor）。
 - **DeepSeek Harness (V4.1 Flash)**：窄窗电脑图库按最小卡宽收敛列数，避免右侧操作列撑高封面（fix: keep gallery columns above the action column width）。
 - **DeepSeek Harness (V4.1 Flash)**：手机历史卡片去掉封面下方的时间行（fix: drop the time row under mobile history thumbs）。
 - **DeepSeek Harness (V4.1 Flash)**：资源库面板收成两层，外部图源收进「素材浏览」第二层（refactor: nest external sources inside the resource sheet）。
