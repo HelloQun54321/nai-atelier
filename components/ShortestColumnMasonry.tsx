@@ -40,8 +40,16 @@ export const resolveMasonryColumnCount = (
   return 6;
 };
 
+/**
+ * 电脑端窄窗的安全下限：列宽低于这个值时，卡片右侧的悬浮操作列只能竖排，
+ * 其最小高度会把图片框撑高、图片被迫留白，瀑布流的高低差也会被抹平。
+ * 明确列数在窄窗下同样按这个下限收敛；自动列数沿用调用方给的最小卡片宽度。
+ */
+const DESKTOP_MIN_CARD_WIDTH = 160;
+const DEFAULT_MIN_CARD_WIDTH = 180;
+
 /** 自动列数按图库宽度约束；详情分栏可临时限制明确列数，不改用户偏好或手机列数。 */
-export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences, desktopOverride?: number, containerRef?: RefObject<HTMLElement | null>, minimumCardWidth = 180, fitExplicitColumns = false): number => {
+export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences, desktopOverride?: number, containerRef?: RefObject<HTMLElement | null>, minimumCardWidth = DEFAULT_MIN_CARD_WIDTH, fitExplicitColumns = false): number => {
   const [viewport, setViewport] = useState(() => ({
     width: typeof window === 'undefined' ? 0 : window.innerWidth,
     height: typeof window === 'undefined' ? 0 : window.innerHeight,
@@ -51,21 +59,27 @@ export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
   }, []);
-  const [containerColumns, setContainerColumns] = useState(Infinity);
-  const fitDesktop = viewport.width >= 768 && (preferences.desktopColumns === 'auto' || fitExplicitColumns) && desktopOverride === undefined;
+  const [containerWidth, setContainerWidth] = useState(0);
+  // 电脑端（含明确列数）都按实际内容宽度兜底；详情临时指定列数时不参与。
+  const desktop = viewport.width >= 768 && desktopOverride === undefined;
+  const floor = preferences.desktopColumns === 'auto' || fitExplicitColumns ? minimumCardWidth : DESKTOP_MIN_CARD_WIDTH;
+  // 弹窗／预览自行指定了卡片宽度或开启拟合时，已经按自己的容器排过版，仍以显式列数优先；
+  // 主图库沿用默认卡宽时才做窄窗兜底，避免向右操作列撑高图片框。
+  const clampNarrow = preferences.desktopColumns === 'auto' || fitExplicitColumns || minimumCardWidth === DEFAULT_MIN_CARD_WIDTH;
   useEffect(() => {
     const element = containerRef?.current;
-    if (!fitDesktop || !element || typeof ResizeObserver === 'undefined') return;
+    if (!desktop || !element || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(entries => {
       const width = entries[0]?.contentRect.width ?? 0;
       // 隐藏的零宽度不改变列数；图片为主的工作区可沿用同一布局并要求更大的预览。
-      if (width > 0) setContainerColumns(Math.max(1, Math.floor((width + 12) / (minimumCardWidth + 12))));
+      if (width > 0) setContainerWidth(width);
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [containerRef, fitDesktop, minimumCardWidth]);
+  }, [containerRef, desktop]);
   const requested = resolveMasonryColumnCount(preferences, viewport.width, viewport.width > viewport.height, desktopOverride);
-  return fitDesktop ? Math.min(requested, containerColumns) : requested;
+  if (!desktop || !clampNarrow || containerWidth <= 0) return requested;
+  return Math.min(requested, Math.max(1, Math.floor((containerWidth + 12) / (floor + 12))));
 };
 
 /**

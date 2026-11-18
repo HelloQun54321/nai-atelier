@@ -6,7 +6,7 @@ import { computeShortestColumnAssignment, resolveMasonryColumnCount, ShortestCol
 import { mobileGalleryStyle, type MobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { useImageRatios } from '../../components/useImageRatios';
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-it('自动列数按实际内容宽度收缩，忽略隐藏宽度，固定桌面与手机偏好不被覆盖', () => {
+it('自动列数按实际内容宽度收缩，忽略隐藏宽度；窄窗把明确桌面列数收敛到可读列宽', () => {
   vi.stubGlobal('innerWidth', 1280); vi.stubGlobal('innerHeight', 800);
   let resize!: (width: number) => void;
   vi.stubGlobal('ResizeObserver', class {
@@ -33,7 +33,9 @@ it('自动列数按实际内容宽度收缩，忽略隐藏宽度，固定桌面�
   rerender(<Gallery value={preferences} minimumCardWidth={240} />); act(() => resize(840)); expectColumns(3);
   act(() => resize(500)); expectColumns(2);
   rerender(<Gallery value={preferences} />);
-  rerender(<Gallery value={{ ...preferences, desktopColumns: 5 }} />); act(() => resize(300)); expectColumns(5);
+  // 明确 5 列在 760px 内容宽时仍能排到 4 列；压到 300px 时只留 1 列，避免卡片比操作列还窄。
+  rerender(<Gallery value={{ ...preferences, desktopColumns: 5 }} />); act(() => resize(760)); expectColumns(4);
+  act(() => resize(300)); expectColumns(1);
   rerender(<Gallery value={preferences} override={6} />); expectColumns(6);
   rerender(<Gallery value={{ ...preferences, desktopColumns: 5 }} override={6} />); expectColumns(5);
   vi.stubGlobal('innerWidth', 390); act(() => window.dispatchEvent(new Event('resize'))); expectColumns(2);
