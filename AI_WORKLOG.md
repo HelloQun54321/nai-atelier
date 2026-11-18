@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **DeepSeek Harness (V4.1 Flash)**：面板内的点击不再触发作品卡片自身打开（fix: keep sheet clicks from opening the work behind），关闭／遮罩只收起面板。
 - **DeepSeek Harness (V4.1 Flash)**：修复窄窗鼠标右键的作品操作面板被卡片提前卸载（fix: keep mobile action sheet mounted while clicking rows），面板内的按下不再改写输入模式。
 - **Grok 4.7**：作品长按菜单改为直接复用 MobileBottomSheet，点选不再冒泡打开作品（fix: reuse mobile bottom sheet for touch actions）。
 - **Grok 4.7**：手机布局关掉悬停圆钮，右键面板改为能点到原操作（fix: keep mobile hover actions hidden and clickable）。

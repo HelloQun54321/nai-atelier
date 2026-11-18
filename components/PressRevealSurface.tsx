@@ -24,7 +24,7 @@ type Props = React.HTMLAttributes<HTMLElement> & {
 export const PressRevealSurface: React.FC<Props> = ({
   as: Element = 'div', pressDisabled = false, pressResetKey, elementRef, touchActions = 'sheet', touchBarClassName = '', children, className = '',
   onPointerDownCapture, onPointerMove, onPointerUp, onPointerCancel, onPointerLeave,
-  onPointerEnter, onClickCapture, onContextMenu, ...props
+  onPointerEnter, onClickCapture, onClick, onContextMenu, ...props
 }) => {
   const rootRef = useRef<HTMLElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -149,6 +149,12 @@ export const PressRevealSurface: React.FC<Props> = ({
         return;
       }
       onClickCapture?.(event);
+    }}
+    onClick={event => {
+      // 面板挂在这张卡片的 React 子树里（portal 到 body），面板里的点击也会冒上来。
+      // 关闭、遮罩或空白处的点击只属于面板，不能再顺带触发作品自身的打开行为。
+      if (isTouchMenuTarget(event.target)) return;
+      onClick?.(event);
     }}
     onContextMenu={event => {
       const target = event.target as globalThis.Element;

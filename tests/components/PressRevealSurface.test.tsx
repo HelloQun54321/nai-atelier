@@ -124,6 +124,18 @@ it('窄窗鼠标右键的面板里，鼠标按下不会提前撤掉面板', () =
   expect(open).not.toHaveBeenCalled();
   expect(revealed(root)).toBe(false);
 });
+it('窄窗右键面板里的关闭和空白点击不会同时点开作品', () => {
+  const media = (query: string) => ({ matches: query.includes('max-width: 767px'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  vi.stubGlobal('matchMedia', media);
+  const { root, open } = fixture();
+  fireEvent.pointerEnter(root, { pointerType: 'mouse' });
+  fireEvent.contextMenu(root, { button: 2 });
+  const dialog = screen.getByRole('dialog', { name: '作品操作' });
+  fireEvent.click(within(dialog).getByLabelText('关闭'));
+  expect(open).not.toHaveBeenCalled();
+  fireEvent.click(dialog);
+  expect(open).not.toHaveBeenCalled();
+});
 it('宽屏鼠标右键不打开操作条', () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, media: '', addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   const { root } = fixture();
