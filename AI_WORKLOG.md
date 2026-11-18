@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **DeepSeek Harness (V4.1 Flash)**：资源库面板收成两层，外部图源收进「素材浏览」第二层（refactor: nest external sources inside the resource sheet）。
 - **DeepSeek Harness (V4.1 Flash)**：修正长按底部面板上线后过期的三条风格串列表测试（test: refresh chain card long-press assertions），按钮查询限定在卡片内。
 - **DeepSeek Harness (V4.1 Flash)**：创作足迹并入历史页的脚印入口，桌面与手机都不再单列（refactor: host creation footprint inside history）。
 - **DeepSeek Harness (V4.1 Flash)**：Roll 串并入风格串页的骰子入口，资源库面板与桌面侧栏不再单列（fix: tuck roll under the style list）。
