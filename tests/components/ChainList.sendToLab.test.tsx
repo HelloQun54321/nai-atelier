@@ -122,10 +122,12 @@ describe('风格串发送到实验室', () => {
     expect(badge!.textContent).toBe('1');
   });
 
-  it('风格串页顶栏的骰子入口直接打开 Roll 串，角色列表不出现', () => {
+  it('手机顶栏的骰子入口直接打开 Roll 串，电脑走侧栏且角色列表不出现', () => {
     const styleProps = { ...props([styleChain]), onOpenRoll: vi.fn() };
     const view = render(<ChainList {...styleProps} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Roll 串' }));
+    const entry = screen.getByRole('button', { name: 'Roll 串' });
+    expect(entry.className).toContain('md:hidden');
+    fireEvent.click(entry);
     expect(styleProps.onOpenRoll).toHaveBeenCalledOnce();
     view.unmount();
 

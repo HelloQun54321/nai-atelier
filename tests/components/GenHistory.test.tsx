@@ -733,11 +733,11 @@ describe('历史顶栏状态一致性', () => {
         expect(screen.getByLabelText('结束日期')).toBeTruthy();
     });
 
-    it('创作足迹从历史工具栏的脚印入口进入，桌面与手机共用同一入口', async () => {
+    it('创作足迹入口只在手机历史工具栏显示，电脑沿用侧栏入口', async () => {
         const onOpenFootprint = vi.fn();
         render(<GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={vi.fn()} onOpenFootprint={onOpenFootprint} />);
         const entry = await screen.findByRole('button', { name: '创作足迹' });
-        expect(entry.className).not.toContain('md:hidden');
+        expect(entry.className).toContain('md:hidden');
         fireEvent.click(entry);
         expect(onOpenFootprint).toHaveBeenCalledOnce();
     });

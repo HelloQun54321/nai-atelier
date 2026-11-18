@@ -84,15 +84,15 @@ it('素材浏览分组默认收起，手动展开状态跨Layout重挂载保存'
   expect(localStorage.getItem('nai_sidebar_external_gallery_expanded')).toBe('false');
 });
 
-it('创作足迹归入历史：侧栏不再单列，打开足迹时历史仍标为当前页', () => {
+it('创作足迹保留电脑侧栏入口，打开足迹时由它标为当前页', () => {
   const props = createProps('footprint');
   const { container } = render(<div className="agent-stage"><Layout {...props} /></div>);
   const sidebar = getSidebar(container);
-  expect(within(sidebar).queryByRole('button', { name: '创作足迹' })).toBeNull();
-  const history = within(sidebar).getByRole('button', { name: '历史' });
-  expect(history.getAttribute('aria-current')).toBe('page');
-  fireEvent.click(history);
-  expect(props.onNavigate).toHaveBeenCalledWith('history');
+  const item = within(sidebar).getByRole('button', { name: '创作足迹' });
+  expect(item.getAttribute('aria-current')).toBe('page');
+  expect(within(sidebar).getByRole('button', { name: '历史' }).getAttribute('aria-current')).toBeNull();
+  fireEvent.click(item);
+  expect(props.onNavigate).toHaveBeenCalledWith('footprint');
 });
 
 it.each([
@@ -204,12 +204,14 @@ it('手机底栏仍是五个入口，资源面板两层进入本地素材与外�
   expect(props.onNavigate).toHaveBeenCalledWith('aitag');
 });
 
-it('Roll 串不再是独立导航项，侧栏工作区只留风格串与实验室', () => {
-  const { container } = renderLayout('roll');
+it('Roll 串保留电脑侧栏工作区入口并标为当前页', () => {
+  const props = createProps('roll');
+  const { container } = render(<div className="agent-stage"><Layout {...props} /></div>);
   const sidebar = getSidebar(container);
-  expect(within(sidebar).queryByRole('button', { name: 'Roll 串' })).toBeNull();
-  expect(within(sidebar).getByRole('button', { name: '风格串' })).toBeTruthy();
-  expect(within(sidebar).getByRole('button', { name: '实验室' })).toBeTruthy();
+  const item = within(sidebar).getByRole('button', { name: 'Roll 串' });
+  expect(item.getAttribute('aria-current')).toBe('page');
+  fireEvent.click(item);
+  expect(props.onNavigate).toHaveBeenCalledWith('roll');
 });
 
 const prepareMobileHistory = () => {

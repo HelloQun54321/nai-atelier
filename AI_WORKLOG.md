@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **DeepSeek Harness (V4.1 Flash)**：把手机化的入口收回手机断点，恢复电脑侧栏 Roll／创作足迹，实验室底栏改为 md:hidden（fix: keep mobile-only entries inside the mobile breakpoint）。
 - **DeepSeek Harness (V4.1 Flash)**：修复两个 GitHub 门禁在 npm ci 阶段下载 onnxruntime CUDA 二进制 404（ci: skip onnxruntime cuda download on runners），Linux runner 改用 CPU 版本。
 - **DeepSeek Harness (V4.1 Flash)**：窄窗列数下限提到 200px，消除横版封面在列数过渡段的留白（fix: raise the narrow-window column floor）。
 - **DeepSeek Harness (V4.1 Flash)**：窄窗电脑图库按最小卡宽收敛列数，避免右侧操作列撑高封面（fix: keep gallery columns above the action column width）。

@@ -41,7 +41,7 @@ export const MobileLabDock: React.FC<MobileLabDockProps> = ({
 
   return (
     <div
-      className="mobile-lab-dock mobile-generation-actions fixed inset-x-0 z-[900] flex flex-col lg:hidden"
+      className="mobile-lab-dock mobile-generation-actions fixed inset-x-0 z-[900] flex flex-col md:hidden"
       style={keyboardOffset > 0
         ? { ['--mobile-generation-bottom' as string]: `calc(${keyboardOffset}px + env(safe-area-inset-bottom))` }
         : undefined}
