@@ -106,6 +106,24 @@ it('手机界面里鼠标右键打开同一条操作条', () => {
   expect(revealed(root)).toBe(false);
   expect(root.hasAttribute('data-press-input')).toBe(false);
 });
+it('窄窗鼠标右键的面板里，鼠标按下不会提前撤掉面板', () => {
+  const media = (query: string) => ({ matches: query.includes('max-width: 767px'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  vi.stubGlobal('matchMedia', media);
+  const { root, action, open } = fixture();
+  fireEvent.pointerEnter(root, { pointerType: 'mouse' });
+  expect(fireEvent.contextMenu(root, { button: 2 })).toBe(false);
+  const item = sheetAction('收藏');
+  // 面板是卡片的 React 子节点（portal），鼠标按在行上也会回到卡片的 pointerdown。
+  // 这里若把输入模式按指针类型改回 mouse，面板会在 pointerup／click 之前被卸载。
+  fireEvent.pointerDown(item, { pointerType: 'mouse', button: 0, isPrimary: true });
+  expect(root.getAttribute('data-press-input')).toBe('touch');
+  expect(screen.getByRole('dialog', { name: '作品操作' })).toBeTruthy();
+  fireEvent.pointerUp(item, { pointerType: 'mouse', button: 0 });
+  fireEvent.click(item);
+  expect(action).toHaveBeenCalledOnce();
+  expect(open).not.toHaveBeenCalled();
+  expect(revealed(root)).toBe(false);
+});
 it('宽屏鼠标右键不打开操作条', () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, media: '', addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   const { root } = fixture();

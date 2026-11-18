@@ -101,6 +101,13 @@ export const PressRevealSurface: React.FC<Props> = ({
       onPointerEnter?.(event);
     }}
     onPointerDownCapture={event => {
+      // 操作面板是这张卡片的 React 子节点（createPortal 到 body），面板内的按下也会冒泡到这里。
+      // 鼠标点行时若照常把 input 改回 'mouse'，面板会在 pointerup／click 之前卸载，行按钮就永远点不到。
+      if (isTouchMenuTarget(event.target)) {
+        consumedRef.current = false;
+        endPointer();
+        return;
+      }
       endPointer();
       consumedRef.current = false;
       if (event.pointerType) setInput(event.pointerType);
