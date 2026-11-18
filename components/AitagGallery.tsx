@@ -365,6 +365,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const [items, setItems] = useState<AitagWorkSummary[]>(() => mergeAitagWorks([], aitagPageCache.items));
   const [details, setDetails] = useState<Record<number, AitagWorkDetail>>(() => aitagPageCache.details);
   const [selectedId, setSelectedId] = useState<number | null>(() => aitagPageCache.selectedId);
+  /** 保存后该作品会移出「未保存」筛选：记录它原来的列与列内位置，交给同列下一张接替居中。 */
+  const pendingSavedAnchor = useRef<{ columnIndex: number; indexInColumn: number } | null>(null);
   const selectionAnchor = useGallerySelectionAnchor(mainScrollRef, galleryContentRef, selectedId, active, selectionFocusEnabled);
   const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'aitag', { skipRestore: selectionAnchor.hasAnchor });
   // 换作品从对应作品的详情位置起步；切页返回则保留同一作品的位置。
@@ -505,6 +507,34 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   useLayoutEffect(() => {
     visibleOrder.current = { key: resultKey, ids: visibleItems.map(work => work.id) };
   }, [resultKey, visibleItems]);
+  // 保存后作品移出「未保存」筛选：把选中作品的锚点交给同列下一张并重新居中，
+  // 否则详情关闭、列表恢复全宽后，同列填补者会被顶到视口外，看起来整页上移。
+  useLayoutEffect(() => {
+    const pending = pendingSavedAnchor.current;
+    if (!pending || selectedId !== null) return;
+    let attempts = 0;
+    let frame = 0;
+    const tryCenter = () => {
+      const root = mainScrollRef.current;
+      const list = root?.querySelector<HTMLElement>('.chain-masonry');
+      // 详情关闭与列表恢复全宽可能跨一两帧：宽度还没恢复时继续等，别直接放弃。
+      if (!root || !list || list.getBoundingClientRect().width <= 0) {
+        if (attempts++ < 12) frame = requestAnimationFrame(tryCenter);
+        return;
+      }
+      pendingSavedAnchor.current = null;
+      const column = list.children[pending.columnIndex] as HTMLElement | undefined;
+      const cards = column ? [...column.children].filter(element => element.getBoundingClientRect().height > 0) : [];
+      const filler = cards[Math.min(pending.indexInColumn, cards.length - 1)] as HTMLElement | undefined;
+      if (!filler) return;
+      const rect = filler.getBoundingClientRect();
+      const rootRect = root.getBoundingClientRect();
+      const target = root.scrollTop + (rect.top - rootRect.top) + rect.height / 2 - root.clientHeight / 2;
+      root.scrollTo({ top: Math.max(0, Math.min(root.scrollHeight - root.clientHeight, target)), behavior: 'instant' });
+    };
+    frame = requestAnimationFrame(tryCenter);
+    return () => cancelAnimationFrame(frame);
+  }, [selectedId, visibleItems]);
   // 筛选或取消收藏移走当前作品时，不留下找不到目标的暗态与详情。
   useEffect(() => {
     if (!isLoading && selectedId !== null && !visibleItems.some(work => work.id === selectedId)) {
@@ -1505,6 +1535,12 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     if (savingImageRef.current !== null) return;
     const imageKey = `${image.work_id}-${image.file_name}`;
     const openEditor = navigateAfterSave;
+    // 记录被保存作品当前所在列与列内位置：保存后它移出「未保存」筛选，同列下一张接替居中。
+    const savedCard = selectedWork ? document.querySelector<HTMLElement>(`[data-gallery-work-id="${selectedWork.id}"]`) : null;
+    const savedColumn = savedCard?.parentElement;
+    const savedColumnIndex = savedColumn?.parentElement ? [...savedColumn.parentElement.children].indexOf(savedColumn) : -1;
+    const savedIndexInColumn = savedCard && savedColumn ? [...savedColumn.children].indexOf(savedCard) : -1;
+    if (savedColumnIndex >= 0 && savedIndexInColumn >= 0) pendingSavedAnchor.current = { columnIndex: savedColumnIndex, indexInColumn: savedIndexInColumn };
     savingImageRef.current = imageKey;
     setSavingImage(imageKey);
     try {
@@ -1512,6 +1548,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       await onCreateArtistChain(chain, { openEditor });
       notify('已保存到风格串');
     } catch (e: any) {
+      pendingSavedAnchor.current = null;
       notify(e.message || '保存失败', 'error');
     } finally {
       savingImageRef.current = null;
