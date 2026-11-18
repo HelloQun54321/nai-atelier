@@ -624,7 +624,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
               disabled={!firstImage || savingWorkId !== null}
               onClick={event => { event.stopPropagation(); void saveFirstImageToChain(work, firstImage); }}
               onPointerDown={event => event.stopPropagation()}
-              className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} disabled:opacity-45`}>
+              className={`hover-reveal-md absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} disabled:opacity-45`}>
               {savingWorkId === Number(work.id)
                 ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />
                 : <Layers aria-hidden="true" className="h-4 w-4" />}
@@ -1775,7 +1775,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
 
                     return (
                       <div key={image.id || `${image.work_id}-${image.file_name}`} className="appearance-content appearance-card rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
-                        <PressRevealSurface className="appearance-media group relative">
+                        <PressRevealSurface touchActions="bar" className="appearance-media group relative">
                           <ViewableImage src={buildAitagImageUrl(image)} alt={t("AITAG 作品图片")} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={favorite} notify={notify} className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
                           <ImageShareOverlay imageUrl={getMobileOriginalUrl(buildAitagImageUrl(image))} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={favorite} notify={notify} />
                         </PressRevealSurface>

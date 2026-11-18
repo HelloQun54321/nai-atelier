@@ -54,7 +54,8 @@ it('点外部收起，外部点按正常执行', () => {
   expect(revealed(root)).toBe(false); expect(click).toHaveBeenCalledOnce();
 });
 it('长按另一张卡只保留一组显露操作', () => {
-  render(<><PressRevealSurface role="button" aria-label="A" /><PressRevealSurface role="button" aria-label="B" /></>);
+  const action = (label: string) => <button data-card-action="true" className="hover-reveal-md" aria-label={label}>{label}</button>;
+  render(<><PressRevealSurface role="button" aria-label="A">{action('下载 A')}</PressRevealSurface><PressRevealSurface role="button" aria-label="B">{action('下载 B')}</PressRevealSurface></>);
   const a = screen.getByRole('button', { name: 'A' }), b = screen.getByRole('button', { name: 'B' });
   down(a); advance(); fireEvent.pointerUp(a); down(b); expect(revealed(a)).toBe(false); advance();
   expect(revealed(b)).toBe(true);
@@ -84,12 +85,37 @@ it('只有触摸抑制原生长按菜单，鼠标右键保留', () => {
   expect(fireEvent.contextMenu(screen.getByRole('textbox'))).toBe(true);
   fireEvent.pointerEnter(root, { pointerType: 'mouse' }); expect(fireEvent.contextMenu(root)).toBe(true);
 });
+it('长按打开底部操作条，点选后执行并收起', () => {
+  const { root, action, open } = fixture();
+  down(root); advance();
+  expect(root.getAttribute('data-press-lift')).toBe('true');
+  fireEvent.click(screen.getByRole('menuitem', { name: '收藏' }));
+  expect(action).toHaveBeenCalledOnce();
+  expect(open).not.toHaveBeenCalled();
+  expect(revealed(root)).toBe(false);
+});
+it('没有可显露的操作时长按不拦截点按', () => {
+  const open = vi.fn();
+  render(<PressRevealSurface role="button" aria-label="作品" onClick={open}><img alt="图片" /></PressRevealSurface>);
+  const root = screen.getByRole('button', { name: '作品' });
+  down(root); advance(); fireEvent.pointerUp(root); fireEvent.click(root, { detail: 1 });
+  expect(revealed(root)).toBe(false);
+  expect(open).toHaveBeenCalledOnce();
+});
+it('手机上的详情直接用底栏，长按不再另开一层', () => {
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('hover: none'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  render(<PressRevealSurface touchActions="bar" aria-label="大图"><button aria-label="下载图片" className="hover-reveal-md nai-float-btn">下载</button></PressRevealSurface>);
+  expect(screen.getByRole('menuitem', { name: '下载图片' })).toBeTruthy();
+  const root = screen.getByLabelText('大图');
+  down(root); advance();
+  expect(revealed(root)).toBe(false);
+});
 it('长按后即使没有释放点击，键盘点击也不会被吞掉', () => {
   const { root, open } = fixture(); down(root); advance(); fireEvent.pointerUp(root); fireEvent.click(root, { detail: 0 });
   expect(open).toHaveBeenCalledOnce();
 });
 it('内层图片长按只启动内层控件，父卡片不同时显露或打开',()=>{
-  const open=vi.fn();render(<PressRevealSurface aria-label="父卡片" onClick={open}><PressRevealSurface aria-label="内层图片"><img src="synthetic.png" alt="合成预览" /><button data-card-action="true">下载</button></PressRevealSurface></PressRevealSurface>);
+  const open=vi.fn();render(<PressRevealSurface aria-label="父卡片" onClick={open}><PressRevealSurface aria-label="内层图片"><img src="synthetic.png" alt="合成预览" /><button data-card-action="true" className="hover-reveal-md" aria-label="下载">下载</button></PressRevealSurface></PressRevealSurface>);
   const parent=screen.getByLabelText('父卡片'),child=screen.getByLabelText('内层图片');down(screen.getByRole('img'));advance();fireEvent.pointerUp(child);fireEvent.click(child,{detail:1});
   expect(revealed(child)).toBe(true);expect(revealed(parent)).toBe(false);expect(open).not.toHaveBeenCalled();
 });

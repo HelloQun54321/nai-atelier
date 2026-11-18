@@ -190,7 +190,7 @@ function expectCustomCardLayout(card: HTMLElement, hasPreview: boolean) {
   const edit = within(card).getByRole('button', { name: '编辑自定义角色信息' });
   const left = remove.parentElement!;
   const right = edit.parentElement!;
-  // 左侧删除与右侧收藏／分享都常驻卡片浮层：位置由浮层结构和共享 token 表达，不绑定具体工具类。
+  // 左侧删除与右侧分享按悬停显露；未收藏的爱心同样收起，已收藏才留在封面上。
   expect(left.hasAttribute('data-image-action-left')).toBe(true);
   expect(left.classList.contains('hover-reveal-md')).toBe(true);
   expect(within(left).getAllByRole('button')).toEqual([remove]);
@@ -203,7 +203,7 @@ function expectCustomCardLayout(card: HTMLElement, hasPreview: boolean) {
     for (const token of ['nai-float-btn', 'mobile-size-locked']) expect(button.classList.contains(token)).toBe(true);
   }
   const favorite = within(card).queryByRole('button', { name: '收藏' });
-  if (hasPreview) { expect(right.contains(favorite)).toBe(true); expect(favorite!.classList.contains('hover-reveal-md')).toBe(false); }
+  if (hasPreview) { expect(right.contains(favorite)).toBe(true); expect(favorite!.classList.contains('hover-reveal-md')).toBe(true); }
   else expect(favorite).toBeNull();
   expect(edit.classList.contains('hover-reveal-md')).toBe(true);
 }

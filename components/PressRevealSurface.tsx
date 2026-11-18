@@ -1,20 +1,28 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { collectTouchActions, TouchActionBar, TouchActionSheet, useCoarsePointer } from './TouchActionMenu';
 
 export const PRESS_REVEAL_DELAY = 450;
 const REVEAL_EVENT = 'nai-card-actions-reveal';
 const ACTION_TARGET = '[data-card-action], input, textarea, select, a';
 const SURFACE_TARGET = '.press-reveal-surface';
 
+function isTouchMenuTarget(target: EventTarget | null) {
+  return target instanceof globalThis.Element && Boolean(target.closest('[data-touch-action-menu]'));
+}
+
 type Props = React.HTMLAttributes<HTMLElement> & {
   as?: 'div' | 'article' | 'section';
   pressDisabled?: boolean;
   pressResetKey?: React.Key;
   elementRef?: React.Ref<HTMLElement>;
+  /** sheet：列表卡片长按出底部操作条。bar：详情和大图在手机上直接用这一层的底栏。 */
+  touchActions?: 'sheet' | 'bar';
+  touchBarClassName?: string;
 };
 
-/** 触屏长按只显露原位操作；正常点按、滚动和键盘操作保持各自语义。 */
+/** 触屏长按打开底部操作条；详情和大图改由本层底栏承载。点按、滚动和键盘保持各自语义。 */
 export const PressRevealSurface: React.FC<Props> = ({
-  as: Element = 'div', pressDisabled = false, pressResetKey, elementRef, children, className = '',
+  as: Element = 'div', pressDisabled = false, pressResetKey, elementRef, touchActions = 'sheet', touchBarClassName = '', children, className = '',
   onPointerDownCapture, onPointerMove, onPointerUp, onPointerCancel, onPointerLeave,
   onPointerEnter, onClickCapture, onContextMenu, ...props
 }) => {
@@ -25,8 +33,12 @@ export const PressRevealSurface: React.FC<Props> = ({
   const [armed, setArmed] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [input, setInput] = useState('');
+  const [node, setNode] = useState<HTMLElement | null>(null);
+  const coarse = useCoarsePointer();
+  const barOnPhone = touchActions === 'bar' && coarse;
   const attachRef = useCallback((element: HTMLElement | null) => {
     rootRef.current = element;
+    setNode(element);
     if (typeof elementRef === 'function') elementRef(element);
     else if (elementRef) elementRef.current = element;
   }, [elementRef]);
@@ -42,6 +54,7 @@ export const PressRevealSurface: React.FC<Props> = ({
       clearTimer(); startRef.current = null; setArmed(false); setRevealed(false);
     };
     const outside = (event: PointerEvent) => {
+      if (isTouchMenuTarget(event.target)) return;
       if (!rootRef.current?.contains(event.target as Node)) dismiss();
     };
     const revealOther = (event: Event) => {
@@ -71,7 +84,9 @@ export const PressRevealSurface: React.FC<Props> = ({
   return <Element {...props} ref={attachRef}
     className={`press-reveal-surface group ${className}`}
     data-press-revealed={revealed && !pressDisabled ? 'true' : undefined}
+    data-press-lift={revealed && !pressDisabled && (input === 'touch' || input === 'pen') ? 'true' : undefined}
     data-press-input={input || undefined}
+    data-touch-actions={touchActions === 'bar' ? 'bar' : undefined}
     onPointerEnter={event => {
       if (event.pointerType) setInput(event.pointerType);
       onPointerEnter?.(event);
@@ -82,6 +97,7 @@ export const PressRevealSurface: React.FC<Props> = ({
       if (event.pointerType) setInput(event.pointerType);
       onPointerDownCapture?.(event);
       if (event.isPrimary === false) { setRevealed(false); return; }
+      if (barOnPhone) return;
       if ((event.target as Element).closest(SURFACE_TARGET) !== rootRef.current) return;
       if (event.defaultPrevented || pressDisabled || !['touch', 'pen'].includes(event.pointerType)
         || event.button !== 0
@@ -90,8 +106,11 @@ export const PressRevealSurface: React.FC<Props> = ({
       setArmed(true);
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
-        consumedRef.current = true;
+        const actions = rootRef.current ? collectTouchActions(rootRef.current, 'sheet') : [];
         setArmed(false);
+        if (!actions.length) return;
+        consumedRef.current = true;
+        try { navigator.vibrate?.(12); } catch { /* 无震动能力时静默 */ }
         document.dispatchEvent(new CustomEvent(REVEAL_EVENT, { detail: rootRef.current }));
         setRevealed(true);
       }, PRESS_REVEAL_DELAY);
@@ -119,5 +138,9 @@ export const PressRevealSurface: React.FC<Props> = ({
       if ((input === 'touch' || input === 'pen') && !(event.target as Element).closest('input, textarea, select, a')) event.preventDefault();
       onContextMenu?.(event);
     }}
-  >{children}</Element>;
+  >
+    {children}
+    {touchActions === 'bar' && <TouchActionBar root={node} className={touchBarClassName} />}
+    {revealed && !pressDisabled && (input === 'touch' || input === 'pen') && <TouchActionSheet root={node} onDismiss={() => setRevealed(false)} />}
+  </Element>;
 };

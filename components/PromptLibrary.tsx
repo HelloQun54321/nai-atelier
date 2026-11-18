@@ -1,4 +1,5 @@
 import { ImageShareOverlay } from './ImageShareActions';
+import { PressRevealSurface } from './PressRevealSurface';
 import { DetailSidePanel } from './DetailPanel';
 import { PromptPurposePicker } from './PromptPurposePicker';
 import { PromptPurposeGroup } from './PromptPurposeGroup';
@@ -878,15 +879,15 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         <div>
           <span className={DETAIL_LABEL_CLASS}>{t('封面')}</span>
           {detail.cover ? (
-            <div className="group relative"><button
+            <PressRevealSurface touchActions="bar" className="group relative mt-1.5 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800"><button
               type="button"
               onClick={() => openViewer([{ url: detail.cover, caption: detail.name, favorite: { imageUrl: detail.cover, title: detail.name, sourceType: 'other', sourceId: detail.id } }], 0)}
               aria-label={t('查看封面原图')}
               title={t('点击查看原图')}
-              className="mt-1.5 block w-full overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800"
+              className="block w-full"
             >
               <SmartImage src={detail.cover} alt={t('封面预览')} thumbnailVariant="thumb-640" className="block max-h-48 w-full object-contain" containerClassName="relative w-full overflow-hidden" />
-            </button>{panel && <ImageShareOverlay imageUrl={detail.cover} filename={detail.name + '.png'} notify={notify} favorite={{ imageUrl: detail.cover, title: detail.name, sourceType: 'other', sourceId: detail.id }} />}</div>
+            </button>{panel && <ImageShareOverlay imageUrl={detail.cover} filename={detail.name + '.png'} notify={notify} favorite={{ imageUrl: detail.cover, title: detail.name, sourceType: 'other', sourceId: detail.id }} />}</PressRevealSurface>
           ) : (
             <div className="appearance-media mt-1.5 flex h-24 items-center justify-center rounded-xl bg-gray-100 text-meta text-gray-400 dark:bg-gray-950">{t('暂无封面')}</div>
           )}

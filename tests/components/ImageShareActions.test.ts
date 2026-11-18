@@ -56,7 +56,7 @@ describe('共用图片分享操作', () => {
     const heart = screen.getByRole('button', { name: '收藏整个作品组' });
     fireEvent.click(heart); fireEvent.click(heart);
     expect(heart.hasAttribute('disabled')).toBe(true);
-    expect(heart.closest('.hover-reveal-md')).toBeNull();
+    expect(heart.classList.contains('hover-reveal-md')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
     await waitFor(() => expect(copySharedImage).toHaveBeenCalledWith('/group.png', false));
     await act(async () => fail(new Error('合成收藏失败')));
@@ -73,7 +73,7 @@ describe('共用图片分享操作', () => {
     expect(group.className).toContain('absolute right-2 top-2');
     expect(group.classList.contains('image-card-actions')).toBe(true);
     expect(group.classList.contains('hover-reveal-md')).toBe(false);
-    expect(screen.getByTitle('收藏').closest('.hover-reveal-md')).toBeNull();
+    expect(screen.getByTitle('收藏').classList.contains('hover-reveal-md')).toBe(true);
     expect(screen.getByTitle('下载图片').classList.contains('hover-reveal-md')).toBe(true);
     expect(surface.hasAttribute('data-press-revealed')).toBe(false);
     longPress(surface);

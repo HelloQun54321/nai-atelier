@@ -1,4 +1,4 @@
-/* 辅助控件共用桌面位置，触屏静止态隐藏且不接收点击；长按后原位显露。 */
+/* 辅助控件共用桌面位置。触屏静止态隐藏；长按打开底部操作条，不再铺回封面上。 */
 .hover-reveal-md,
 .hover-reveal-lg { opacity: 0; pointer-events: none; transition: opacity 150ms; }
 .hover-reveal-touch { opacity: 1; pointer-events: auto; transition: opacity 150ms; }
@@ -40,3 +40,24 @@
 .press-reveal-surface input,
 .press-reveal-surface textarea { -webkit-user-select: text; user-select: text; }
 .press-reveal-surface img { -webkit-touch-callout: none; }
+/* 触屏长按只负责把操作条叫出来，圆钮继续留在原处但不可见、不可点。 */
+.press-reveal-surface[data-press-input="touch"][data-press-revealed="true"] .hover-reveal-md,
+.press-reveal-surface[data-press-input="touch"][data-press-revealed="true"] .hover-reveal-lg,
+.press-reveal-surface[data-press-input="touch"][data-press-revealed="true"] .hover-reveal-touch,
+.press-reveal-surface[data-press-input="pen"][data-press-revealed="true"] .hover-reveal-md,
+.press-reveal-surface[data-press-input="pen"][data-press-revealed="true"] .hover-reveal-lg,
+.press-reveal-surface[data-press-input="pen"][data-press-revealed="true"] .hover-reveal-touch { opacity: 0; pointer-events: none; }
+.press-reveal-surface[data-press-lift="true"] { z-index: 30; transform: scale(1.03); transition: transform 160ms ease; }
+@media (hover: none), (pointer: coarse) {
+  .press-reveal-surface[data-touch-actions="bar"] :is(.hover-reveal-md, .hover-reveal-lg, .hover-reveal-touch),
+  .press-reveal-surface[data-touch-actions="bar"] button.nai-float-btn:not([data-image-favorite][aria-pressed="true"]) { opacity: 0; pointer-events: none; }
+  .press-reveal-surface[data-touch-actions="bar"] :is([data-artist-sample-status], [data-prompt-library-cover-status]) button { opacity: 1 !important; pointer-events: auto !important; }
+}
+.touch-action-sheet { position: fixed; z-index: 2100; left: 0; right: 0; bottom: var(--mobile-bottom-inset, env(safe-area-inset-bottom, 0px)); }
+.touch-action-bar { position: absolute; z-index: 40; left: 0; right: 0; bottom: 0; }
+.touch-action-bar--above-zoom { bottom: 6.5rem; }
+.touch-action-row { display: flex; gap: .5rem; overflow-x: auto; overscroll-behavior-x: contain; padding: .625rem .75rem; background: rgb(17 17 17 / .94); color: #fff; border-top: 1px solid rgb(255 255 255 / .16); touch-action: pan-x; }
+.touch-action-item { display: inline-flex; flex: none; align-items: center; gap: .5rem; min-height: 2.75rem; max-width: 13.75rem; padding: 0 .75rem; border: 1px solid rgb(255 255 255 / .22); border-radius: 999px; background: rgb(255 255 255 / .08); color: inherit; font-size: .8125rem; line-height: 1.2; }
+.touch-action-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.touch-action-icon { display: inline-flex; width: 1rem; height: 1rem; flex: none; }
+.touch-action-icon svg { width: 1rem; height: 1rem; }

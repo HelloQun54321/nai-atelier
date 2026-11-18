@@ -11,7 +11,7 @@ export const IMAGE_CARD_ACTION_CLASS = 'nai-float-btn mobile-touch mobile-size-l
 
 /**
  * 图上浮钮的语义色：可执行动作一律保持统一的黑磨砂，只有指针移到这个钮、键盘聚焦或触摸按下时才显露动作色。
- * 已完成状态是例外：已收藏的玫红爱心、已保存／已收录的翠绿对勾常驻上色，
+ * 已完成状态是例外：已收藏的玫红爱心、已保存／已收录的翠绿对勾留在图上，
  * 让跨页面一眼看到这件作品已经收过、已经存过；未完成状态仍只靠图标形状表达。
  */
 export const IMAGE_CARD_ACTION_TONE = {
@@ -41,7 +41,7 @@ interface Props {
   showTransfer?: boolean;
 }
 
-/** 收藏常驻，下载与复制仍按共用规则显露；所有页面共享收藏状态。 */
+/** 已收藏的爱心留在图上，未收藏与下载／复制按共用规则显露；所有页面共享收藏状态。 */
 export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify, variant = 'toolbar', className = '', generationData, favorite, favoriteActive, favoritePending, onToggleFavorite, onFavoriteChange, revealClassName = 'hover-reveal-md', showFavorite = true, showTransfer = true }) => {
   useLanguage();
   const clean = useCleanSharedImages();
@@ -95,6 +95,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
     } finally { busyRef.current = false; setBusy(''); }
   };
   const iconOnly = variant === 'compact' || variant === 'card';
+  const onImage = variant === 'card' || variant === 'overlay';
   const buttonClass = variant === 'card'
     ? IMAGE_CARD_ACTION_CLASS
     : variant === 'overlay'
@@ -109,7 +110,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
       title={t(favoriteLabel)}
       aria-label={t(favoriteLabel)}
       aria-busy={Boolean(favoriteBusy || favoritePending)} disabled={favoriteBusy || favoritePending} onClick={() => void toggleFavorite()}
-      className={`inline-flex shrink-0 items-center justify-center gap-1.5 transition disabled:cursor-wait disabled:opacity-50 ${buttonClass} ${active ? '!border-rose-400 !bg-rose-500 !text-white hover:!bg-rose-400' : ''} ${variant === 'compact' ? '!h-10 !w-10 !px-0' : ''}`}>
+      className={`${onImage && !active ? revealClassName : ''} inline-flex shrink-0 items-center justify-center gap-1.5 transition disabled:cursor-wait disabled:opacity-50 ${buttonClass} ${active ? '!border-rose-400 !bg-rose-500 !text-white hover:!bg-rose-400' : ''} ${variant === 'compact' ? '!h-10 !w-10 !px-0' : ''}`}>
       {favoriteBusy || favoritePending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Heart className={`h-4 w-4 ${active ? 'fill-current' : ''}`} />}
       {!iconOnly && <span>{t('收藏')}</span>}
     </button>}
@@ -125,7 +126,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
   </div>;
 };
 
-/** 右上角依次为常驻收藏、下载、复制，短封面向左换列。 */
+/** 右上角依次为收藏、下载、复制；已收藏才留在图上，短封面向左换列。 */
 export const ImageShareOverlay: React.FC<Omit<Props, 'variant'>> = ({ className = '', ...props }) => (
   <ImageCardActions className={className}><ImageShareActions {...props} variant="card" /></ImageCardActions>
 );

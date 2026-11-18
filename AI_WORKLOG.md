@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **Grok 4.7**：手机作品操作改为长按底部操作条，详情和大图改为该层底栏；图上只常驻已收藏爱心和已保存勾（feat: open touch image actions in a bottom bar）。
 - **Composer**：理顺角色工具四钮关系（fix: equalize character tool chip family）：左右分组、共用 h-11 芯片与图标，只留语义色差。
 - **Composer**：角色工具行改短标签同款芯片（fix: unify character tool chips）：定位／构图／删除／添加单行，构图为按下态；整段与分类同步。
 - **Composer**：角色构图开关文案去掉「AI」（fix: shorten auto-composition label）：整段／分类／参数查看同步为「自动构图」。
