@@ -84,13 +84,15 @@ it('素材浏览分组默认收起，手动展开状态跨Layout重挂载保存'
   expect(localStorage.getItem('nai_sidebar_external_gallery_expanded')).toBe('false');
 });
 
-it('记录组提供创作足迹独立入口并标为当前页', () => {
+it('创作足迹归入历史：侧栏不再单列，打开足迹时历史仍标为当前页', () => {
   const props = createProps('footprint');
   const { container } = render(<div className="agent-stage"><Layout {...props} /></div>);
-  const item = within(getSidebar(container)).getByRole('button', { name: '创作足迹' });
-  expect(item.getAttribute('aria-current')).toBe('page');
-  fireEvent.click(item);
-  expect(props.onNavigate).toHaveBeenCalledWith('footprint');
+  const sidebar = getSidebar(container);
+  expect(within(sidebar).queryByRole('button', { name: '创作足迹' })).toBeNull();
+  const history = within(sidebar).getByRole('button', { name: '历史' });
+  expect(history.getAttribute('aria-current')).toBe('page');
+  fireEvent.click(history);
+  expect(props.onNavigate).toHaveBeenCalledWith('history');
 });
 
 it.each([

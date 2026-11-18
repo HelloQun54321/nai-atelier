@@ -723,6 +723,15 @@ describe('历史顶栏状态一致性', () => {
         expect(screen.getByLabelText('开始日期')).toBeTruthy();
         expect(screen.getByLabelText('结束日期')).toBeTruthy();
     });
+
+    it('创作足迹从历史工具栏的脚印入口进入，桌面与手机共用同一入口', async () => {
+        const onOpenFootprint = vi.fn();
+        render(<GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={vi.fn()} onOpenFootprint={onOpenFootprint} />);
+        const entry = await screen.findByRole('button', { name: '创作足迹' });
+        expect(entry.className).not.toContain('md:hidden');
+        fireEvent.click(entry);
+        expect(onOpenFootprint).toHaveBeenCalledOnce();
+    });
 });
 
 // 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。

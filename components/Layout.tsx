@@ -177,9 +177,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
       { id: 'external-browse', label: '素材浏览', icon: Images },
     ] },
+    // 创作足迹是历史页里的脚印入口，不再单列导航项。
     { label: '记录', items: [
       { id: 'history', label: '历史', icon: icons.history },
-      { id: 'footprint', label: '创作足迹', icon: icons.footprint },
     ] },
   ];
 
@@ -463,7 +463,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
                   </InteractionPopover></ImagePreviewPortal>}
                 </React.Fragment>;
               }
-              const active = activeView === item.id;
+              // 创作足迹归在历史里：打开足迹时侧栏仍高亮历史，与手机底栏一致。
+              const active = activeView === item.id || (item.id === 'history' && activeView === 'footprint');
               return <button key={item.id} type="button" title={sidebarCollapsed ? t(item.label) : undefined} aria-label={t(item.label)} aria-current={active ? 'page' : undefined} onClick={() => onNavigate(item.id as AppView)} className={`app-sidebar-nav-item relative flex h-11 w-full items-center rounded-xl outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${sidebarCollapsed ? 'px-4' : 'px-3'} ${active ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}>
                 {active && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-indigo-500" />}
                 <item.icon aria-hidden="true" className="h-5 w-5 flex-none" strokeWidth={1.8} />

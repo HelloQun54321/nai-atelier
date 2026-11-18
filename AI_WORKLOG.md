@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **DeepSeek Harness (V4.1 Flash)**：创作足迹并入历史页的脚印入口，桌面与手机都不再单列（refactor: host creation footprint inside history）。
 - **DeepSeek Harness (V4.1 Flash)**：Roll 串并入风格串页的骰子入口，资源库面板与桌面侧栏不再单列（fix: tuck roll under the style list）。
 - **DeepSeek Harness (V4.1 Flash)**：面板内的点击不再触发作品卡片自身打开（fix: keep sheet clicks from opening the work behind），关闭／遮罩只收起面板。
 - **DeepSeek Harness (V4.1 Flash)**：修复窄窗鼠标右键的作品操作面板被卡片提前卸载（fix: keep mobile action sheet mounted while clicking rows），面板内的按下不再改写输入模式。
