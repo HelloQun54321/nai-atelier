@@ -76,14 +76,16 @@ export function collectTouchActions(root: HTMLElement, mode: 'sheet' | 'bar') {
 
 function useTouchActions(root: HTMLElement | null, mode: 'sheet' | 'bar') {
   const [items, setItems] = useState<HTMLButtonElement[]>([]);
-  const signature = useRef('');
+  const snapshot = useRef<{ items: HTMLButtonElement[]; signature: string }>({ items: [], signature: '' });
   useLayoutEffect(() => {
     if (!root) return;
     const update = () => {
       const next = collectTouchActions(root, mode);
       const nextSignature = next.map(button => `${actionLabel(button)}|${button.disabled}|${button.getAttribute('aria-pressed')}`).join('\n');
-      if (nextSignature === signature.current) return;
-      signature.current = nextSignature;
+      const previous = snapshot.current;
+      // 翻图会以同名的新按钮替换操作，不能让底栏继续点击已脱离文档的旧节点。
+      if (nextSignature === previous.signature && next.length === previous.items.length && next.every((button, index) => button === previous.items[index])) return;
+      snapshot.current = { items: next, signature: nextSignature };
       setItems(next);
     };
     update();
@@ -150,7 +152,7 @@ export const TouchActionSheet: React.FC<{ root: HTMLElement | null; onDismiss: (
   if (!items.length || typeof document === 'undefined') return null;
   return createPortal(
     <div data-touch-action-menu>
-      <MobileBottomSheet open title={t('作品操作')} onClose={onDismiss}>
+      <MobileBottomSheet open allowWide title={t('作品操作')} onClose={onDismiss}>
         <div className="space-y-1">
           {items.map((button, index) => <button
             key={`${actionLabel(button)}:${index}`}

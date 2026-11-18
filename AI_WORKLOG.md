@@ -1,4 +1,9 @@
 ## 2026-11-18
+- **DeepSeek Harness (V4.1 Flash)**：合并 PR #32（生成历史回收站）：解决 GenHistory 批量操作行与本地顶栏改动的冲突，补安装版运行依赖 `naiNoiseSchedule`／`promptTidyAgent`，修正安装包依赖扫描正则把 `['from', 'to']` 误判为 import 的问题（merge: integrate PR #32）。
+- **Codex (GPT-6)**：修复批量清理预览重复解析历史资料的问题，让生成历史的画师统计读取当前工坊词库，补充本地 D1、词库缺失与恢复后的回归测试。
+- **DeepSeek Harness (gpt-6.2-sol)**：整合最新主线与历史回收站，保留主线 Roll 记录删除和回收站的独立语义，保护在用的 Roll 原图，校正手机弹层、助手原图读取与分 Key 预算刷新，并用隔离的合成资料补验 D1/R2、桥接和跨平台测试。
+- **DeepSeek Harness (gpt-6.2-sol)**：修复分支宿主机验收中未被引用的历史仍被拦截的问题。旧引用检查超过本地 D1 的复合查询分支限制；预览与原子移入改用同一组 `EXISTS` 判定，保留收藏、创作引用和无法核实资料的保护，技术性导入回执不视为创作引用。新增本地 D1/R2 回归，覆盖移入、恢复、永久删除及保护路径。
+- **DeepSeek Harness (gpt-6.1-sol)**：实现生成历史回收站（11 月 17 日的分支开发）。新增独立回收站、冻结预览与真实批量回执；有效收藏和创作引用阻止移入；恢复保留完整资料，永久删除独立确认并绑定随机移入版本。移入／恢复不改变统计，永久删除不回退用量账本；补齐共享素材反向保护、无覆盖迁移、只读失败档案和助手操作。纯浏览器环境缺完整引用图时禁用移入；异常中断遗留的数据库写入占用保守阻止重试，不自动抢占。分支验证仅用合成资料：Worker 38 文件 497/497、Node 整合 272/272、历史／回收站／i18n 101/101（最终安全互斥增量 1/1、面板复跑 9/9）、localHistory 服务 15/15、助手面板 113/113；助手服务 9/10（方法白名单漏列已有的 `saveCreativeDirectPresets`）。类型检查、前端及 Worker 外置构建通过，改动源码 ESLint 无错误。未执行真实资料迁移、收费生成或浏览器手动验收。
 - **DeepSeek Harness (V4.1 Flash)**：实验室角色专属提示词的工具行降重：定位／构图改为无框开关、角色标签去边框留选中色底，删除／添加保留按钮外壳（style: lighten character tool chips）。
 - **DeepSeek Harness (V4.1 Flash)**：热力图格子与图例改用固定 2px 圆角，避免「柔和圆角」预设把 17px 格子放大成圆点（style: keep heatmap cells square at 2px）。
 - **DeepSeek Harness (V4.1 Flash)**：创作足迹统计未返回时改铺同形状骨架（概览卡片 + 热力图占位），Key 用量照常先显示，消除首屏整块 spinner 与下方内容割裂（fix: skeletonize the footprint first paint）。

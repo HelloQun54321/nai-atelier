@@ -4,7 +4,18 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HistoryImageViewer, clampImagePan } from '../../components/HistoryImageViewer';
+import { copySharedImage } from '../../services/imageSharing';
 import type { LocalGenItem } from '../../types';
+
+vi.mock('../../services/imageSharing', async original => ({
+  ...await original<typeof import('../../services/imageSharing')>(),
+  copySharedImage: vi.fn(async () => {}),
+}));
+
+const stubPhonePointer = () => {
+  vi.stubGlobal('innerWidth', 390);
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.startsWith('(max-width:') || query.includes('pointer: coarse'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+};
 
 const item = { id: 'synthetic', imageUrl: '/synthetic.png', createdAt: 1000, prompt: 'synthetic', params: { model: 'nai-diffusion-4-5-full', width: 1000, height: 1000 } } as LocalGenItem;
 class TestPointer extends MouseEvent {
@@ -114,23 +125,44 @@ describe('历史图片缩放与手势', () => {
   });
 });
 
-it('历史大图触屏长按显露辅助按钮，松手不翻图；双指操作会取消长按并正常缩放', () => {
-  vi.stubGlobal('innerWidth', 390); const { stage, image, onNavigate, onClose } = setup(false);
-  longPress(image); expect(stage.getAttribute('data-press-revealed')).toBe('true');
+it('触屏历史大图操作直接在本层底栏，长按不另开面板且双指仍可缩放', () => {
+  stubPhonePointer();
+  const { stage, image, onNavigate, onClose } = setup(false);
+  const menu = within(screen.getByRole('menu', { name: '作品操作' }));
+  fireEvent.click(menu.getByRole('menuitem', { name: '上一张图片' }));
+  expect(onNavigate).toHaveBeenCalledWith(-1);
+  onNavigate.mockClear();
+  longPress(image);
+  expect(screen.queryByRole('dialog', { name: '作品操作' })).toBeNull();
   expect(onNavigate).not.toHaveBeenCalled(); expect(onClose).not.toHaveBeenCalled();
-  for (const name of ['删除这张历史图片', '上一张图片', '下一张图片']) {
-    const button = screen.getAllByRole('button', { name }).find(element => element.closest('.hover-reveal-touch'));
-    expect(button).toBeTruthy();
-  }
-  expect(screen.getAllByRole('button', { name: '收藏' }).some(button => !button.closest('.hover-reveal-touch'))).toBe(true);
-  for (const name of ['下载图片', '复制图片']) expect(screen.getAllByRole('button', { name }).some(button => button.closest('.hover-reveal-md'))).toBe(true);
-  installPointerEvents(); vi.useFakeTimers();
+
+  installPointerEvents();
   fireEvent.pointerDown(stage, { pointerType: 'touch', pointerId: 1, clientX: 100, clientY: 100, button: 0 });
   fireEvent.pointerDown(stage, { pointerType: 'touch', pointerId: 2, isPrimary: false, clientX: 200, clientY: 100, button: 0 });
   fireEvent.pointerMove(stage, { pointerType: 'touch', pointerId: 2, clientX: 300, clientY: 100 });
-  act(() => vi.advanceTimersByTime(500));
-  expect(stage.hasAttribute('data-press-revealed')).toBe(false); expect(screen.getByLabelText('图片缩放比例').textContent).toBe('120%');
-  vi.useRealTimers();
+  fireEvent.pointerUp(stage, { pointerType: 'touch', pointerId: 2, clientX: 300, clientY: 100 });
+  fireEvent.pointerUp(stage, { pointerType: 'touch', pointerId: 1, clientX: 20, clientY: 100 });
+  expect(screen.getByLabelText('图片缩放比例').textContent).toBe('120%');
+  expect(onNavigate).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog', { name: '作品操作' })).toBeNull();
+});
+
+it('只读档案翻到相邻图片时，同名底栏按钮复制新原图和新参数', async () => {
+  stubPhonePointer();
+  const nextItem = { ...item, id: 'next-synthetic', imageUrl: '/next-synthetic.png', prompt: 'next prompt' };
+  const props = { total: 4, navigating: false, favoritePending: false, hideFavorite: true, hideDelete: true, detailsOpen: false, onDetailsChange: vi.fn(), onClose: vi.fn(), onFavorite: vi.fn(), onDelete: vi.fn(), filename: 'synthetic.png', notify: vi.fn() };
+  const Reader = () => {
+    const [index, setIndex] = React.useState(1);
+    return <HistoryImageViewer {...props} item={index === 1 ? item : nextItem} index={index} onNavigate={delta => setIndex(previous => previous + delta)}>{null}</HistoryImageViewer>;
+  };
+  render(<Reader />);
+  const menu = within(screen.getByRole('menu', { name: '作品操作' }));
+  expect(menu.queryByRole('menuitem', { name: /收藏|删除/ })).toBeNull();
+  // 紧邻两张图片都有相同操作，且只读档案切换时不必等待网络。
+  await act(async () => { fireEvent.click(menu.getByRole('menuitem', { name: '下一张图片' })); });
+  expect(screen.getByRole('img').getAttribute('src')).toBe(nextItem.imageUrl);
+  await act(async () => { fireEvent.click(menu.getByRole('menuitem', { name: '复制图片' })); });
+  expect(copySharedImage).toHaveBeenCalledWith(nextItem.imageUrl, expect.any(Boolean), { prompt: nextItem.prompt, negativePrompt: nextItem.negativePrompt, params: nextItem.params });
 });
 
 // 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。

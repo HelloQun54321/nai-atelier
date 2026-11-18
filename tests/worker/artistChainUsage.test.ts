@@ -46,6 +46,8 @@ it('改词、删除和变更类型按当前现存数量增减，支持未知前�
   await ensureArtistChainUsage(f.db, dictionary);
   expect(await readArtistChainCounts(f.db)).toEqual({ alice: 1, known: 1 });
   f.sqlite.prepare("UPDATE chains SET base_prompt = 'artist:bob', updated_at = 2 WHERE id = 'a'").run();
+  await syncArtistChainUsage(f.db, 'a', null);
+  expect(await readArtistChainCounts(f.db)).toEqual({ alice: 1, known: 1 });
   await ensureArtistChainUsage(f.db, dictionary);
   expect(await readArtistChainCounts(f.db)).toEqual({ bob: 1 });
   f.sqlite.prepare("UPDATE chains SET type = 'character', updated_at = 3 WHERE id = 'a'").run();

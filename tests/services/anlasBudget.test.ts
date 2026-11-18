@@ -60,9 +60,7 @@ describe('useAnlasBudget', () => {
 
     currentBPersonal = true;
     await act(async () => {
-      window.dispatchEvent(new CustomEvent(ANLAS_BUDGET_CHANGED_EVENT, {
-        detail: { remaining: 799, keyHash: keyHashB, refreshPersonal: true },
-      }));
+      window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
     });
     await waitFor(() => {
       expect(hook.result.current.remaining).toBe(799);
@@ -82,6 +80,24 @@ describe('useAnlasBudget', () => {
     remaining = 2744;
     await act(async () => { window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT)); });
     await waitFor(() => expect(hook.result.current.remaining).toBe(2744));
+    hook.unmount();
+  });
+
+  it('同一 Key 的权威结算预算不被紧随的旧余额刷新覆盖', async () => {
+    const key = 'pst-budget-same-key';
+    const keyHash = await hashNaiApiKey(key);
+    const fetchBudget = vi.fn(async () => responseFor({ remaining: 800, personal: {} }));
+    vi.stubGlobal('fetch', fetchBudget);
+    sessionStorage.setItem('nai_api_key', key);
+    const hook = renderHook(() => useAnlasBudget());
+    await waitFor(() => expect(hook.result.current.remaining).toBe(800));
+    const initialRequests = fetchBudget.mock.calls.length;
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(ANLAS_BUDGET_CHANGED_EVENT, { detail: { remaining: 795, keyHash } }));
+      window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
+    });
+    expect(hook.result.current.remaining).toBe(795);
+    expect(fetchBudget).toHaveBeenCalledTimes(initialRequests);
     hook.unmount();
   });
 });

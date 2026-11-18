@@ -4,7 +4,7 @@ import { createWriteStream, readdirSync, mkdirSync } from 'node:fs';
 import { once } from 'node:events';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { cleanupStaleWorkspaces, createWorkspace, projectRoot, removeWorkspace } from './support/workspace.mjs';
+import { cleanupStaleWorkspaces, createWorkspace, projectRoot, removeWorkspace, resolveExternalTestRoot } from './support/workspace.mjs';
 
 export const discoverNodeTests = (root = projectRoot) => {
   const files = [];
@@ -45,7 +45,7 @@ export const runLoggedCommand = async (args, { logPath, append = false, cwd = pr
   } finally { log.end(); await once(log, 'close'); }
 };
 
-export const testLogPath = mode => join(projectRoot, 'logs', 'tests', `${mode}-${Date.now()}-${process.pid}.log`);
+export const testLogPath = mode => join(resolveExternalTestRoot(process.env.NAI_TEST_LOG_ROOT, join(projectRoot, 'logs', 'tests')), `${mode}-${Date.now()}-${process.pid}.log`);
 
 const main = async () => {
   const [mode = 'unit', ...extra] = process.argv.slice(2);

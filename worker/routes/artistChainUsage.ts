@@ -8,7 +8,9 @@ type ChainRow = { id: string; type: string; updated_at: number | null; base_prom
 type Snapshot = { version: number | null; type: string; artists: string[] };
 
 /** 当前仍存在的共享风格串数量；删除、移除画师会扣减，不是历史累计收录次数。 */
-export async function syncArtistChainUsage(db: D1Database, id: string, knownArtists?: ReadonlySet<string>) {
+export async function syncArtistChainUsage(db: D1Database, id: string, knownArtists?: ReadonlySet<string> | null) {
+  // 等词库可用后再更新归因，保留已有的快照与计数。
+  if (knownArtists === null) return;
   for (let attempt = 0; attempt < 8; attempt++) {
     const row = await db.prepare('SELECT id, type, updated_at, base_prompt, modules, params, variable_values FROM chains WHERE id = ?').bind(id).first<ChainRow>();
     const key = SNAPSHOT + id;

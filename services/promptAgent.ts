@@ -19,6 +19,31 @@ const promptVersionPayload = (draft: PromptAgentDraft) => ({ ...pickPromptVersio
 
 export type AgentPermissionMode = 'read_only' | 'standard' | 'full';
 
+export interface PromptAgentProjectActionReceipt {
+  ok: boolean;
+  action: string;
+  resourceId?: string;
+  operation?: 'move' | 'restore' | 'purge';
+  success?: boolean;
+  outcome?: string;
+  partial?: boolean;
+  requestedCount?: number;
+  completedCount?: number;
+  skippedCount?: number;
+  failedCount?: number;
+  movedCount?: number;
+  restoredCount?: number;
+  purgedCount?: number;
+  completedIds?: string[];
+  skipped?: Array<{ id: string; reasons: string[] }>;
+  failed?: Array<{ id: string; reasons: string[] }>;
+  warnings?: Array<{ id: string; reasons: string[] }>;
+  partialDetails?: boolean;
+  resultId?: string;
+  notice?: string;
+  error?: string;
+}
+
 export interface PromptAgentRulePreset {
   id: string;
   name: string;
@@ -723,10 +748,10 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
   },
-  executeProjectAction: async (action: { action: string; resourceId?: string; payload?: Record<string, unknown>; sessionId?: string; confirmationRequestId?: string }) => {
+  executeProjectAction: async (action: { action: string; resourceId?: string; payload?: Record<string, unknown>; sessionId?: string; confirmationRequestId?: string }): Promise<PromptAgentProjectActionReceipt> => {
     const response = await fetch('/api/prompt-agent/project-action', { method: 'POST', headers: { 'Content-Type': 'application/json', ...agentAuthHeaders() }, body: JSON.stringify(action) });
     if (!response.ok) return readError(response) as never;
-    return response.json() as Promise<{ ok: boolean; action: string; resourceId?: string; success?: boolean; outcome?: string; partial?: boolean; completedCount?: number; failedCount?: number; resultId?: string; error?: string }>;
+    return response.json();
   },
   getSession: async (sessionId: string): Promise<PromptAgentHistoryMessage[]> => {
     const response = await fetch(`/api/prompt-agent/session?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' });

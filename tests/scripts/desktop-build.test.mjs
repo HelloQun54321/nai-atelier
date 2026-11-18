@@ -48,7 +48,7 @@ test('桌面运行依赖锁文件单独维护，不带开发工具，版本跟�
   // 公开 Node 脚本新增外部 import 时，必须同步安装版直接依赖白名单。
   for (const file of RUNTIME_FILES.filter(name => name.endsWith('.mjs'))) {
     const source = await readFile(new URL('../../' + file, import.meta.url), 'utf8');
-    const imports = [...source.matchAll(/(?:from\s*|import\s*\(\s*)['"]([^'"]+)['"]/g)].map(match => match[1]);
+    const imports = [...source.matchAll(/(?:^|[\s;{}()])(?:from|import\s*\()\s*['"]([^'"]+)['"]/gm)].map(match => match[1]);
     for (const name of imports.filter(name => !/^(?:[./]|node:)/.test(name))) {
       const dependency = name.startsWith('@') ? name.split('/').slice(0, 2).join('/') : name.split('/')[0];
       if (builtinModules.includes(dependency)) continue;
@@ -60,7 +60,7 @@ test('桌面运行依赖锁文件单独维护，不带开发工具，版本跟�
 test('助手及提示词共用模块的相对依赖均进入安装包清单', async () => {
   for (const file of ['scripts/prompt-agent.mjs', 'scripts/agent-directories.mjs', 'scripts/agent-prompt-library.mjs', 'services/promptPurposes.mjs', 'services/promptClassification.mjs', 'services/promptExtraction.mjs', 'services/agentPromptChanges.mjs']) {
     const source = await readFile(new URL('../../' + file, import.meta.url), 'utf8');
-    for (const match of source.matchAll(/(?:from\s*|import\s*\(\s*)['"]([^'"]+)['"]/g)) {
+    for (const match of source.matchAll(/(?:^|[\s;{}()])(?:from|import\s*\()\s*['"](\.[^'"]*\.mjs)['"]/gm)) {
       if (!match[1].startsWith('.') || !match[1].endsWith('.mjs')) continue;
       const dependency = posix.normalize(posix.join(posix.dirname(file), match[1]));
       assert.ok(RUNTIME_FILES.includes(dependency), `${file} 的依赖 ${dependency} 未进入安装包`);

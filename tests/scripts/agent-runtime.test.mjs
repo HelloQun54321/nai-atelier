@@ -99,6 +99,14 @@ test('长资料、编码与成组结果有界，明确省略且不修改源资�
 test('工具分组只提供能力目录，思考输出预算保留原有边界', () => {
   assert.ok(AGENT_TOOL_GROUPS.creative.includes('update_prompts'));
   assert.ok(AGENT_TOOL_GROUPS.maintenance.includes('request_clear_history'));
+  for (const name of ['list_history_recycle_bin', 'get_history_recycle_bin_item']) {
+    assert.ok(AGENT_TOOL_GROUPS.library.includes(name));
+    assert.equal(isAgentParallelTool(name), true);
+  }
+  for (const name of ['request_restore_history', 'request_purge_history']) {
+    assert.ok(AGENT_TOOL_GROUPS.maintenance.includes(name));
+    assert.equal(isAgentParallelTool(name), false);
+  }
   assert.ok(AGENT_TOOL_GROUPS.local_files.includes('save_project_image_to_folder'));
   assert.equal(AGENT_TOOL_GROUPS.library.includes('manage_artist_favorite'), false);
   assert.equal(agentOutputLimit('off'), 8192); assert.equal(agentOutputLimit('medium'), 16384); assert.equal(agentOutputLimit('max'), 32768);
@@ -150,7 +158,7 @@ test('连续三轮工具调用全部失败时停止，中间有成功即重新�
 });
 
 test('只有不经页面、不导航工作区的查询可以并行，写操作与页面工具保持串行', () => {
-  for (const name of ['search_tags', 'get_lab_state', 'read_novelai_doc', 'web_search', 'list_generation_history', 'get_prompt_library_directories', 'search_prompt_library_items']) assert.equal(isAgentParallelTool(name), true, name);
+  for (const name of ['search_tags', 'get_lab_state', 'read_novelai_doc', 'web_search', 'list_generation_history', 'list_history_recycle_bin', 'get_history_recycle_bin_item', 'read_history_operation_result', 'get_prompt_library_directories', 'search_prompt_library_items']) assert.equal(isAgentParallelTool(name), true, name);
   for (const name of ['read_current_page', 'inspect_current_page_image', 'get_generation_status', 'get_roll_state', 'get_artist_sample_status', 'inspect_image_tags', 'get_agent_capabilities', 'operate_current_page', 'update_prompts', 'request_generation', 'navigate_view', 'unknown_future_tool']) assert.equal(isAgentParallelTool(name), false, name);
   assert.equal(isAgentReadTool('web_search'), true); assert.equal(isAgentReadTool('navigate_view'), false);
 });
@@ -317,6 +325,8 @@ test('真实时区与夏令时偏移按日期计算', () => {
 });
 test('展示只接受项目图片，拒绝外链、路径穿越、编码控制字符', () => {
   assert.equal(isProjectImagePath('/api/local-history/a/image'), true);
+  assert.equal(isProjectImagePath('/api/local-history/recycle-bin/a/image'), true);
+  for (const path of ['/api/local-history/recycle-bin/a/edit-mask', '/api/local-history/recycle-bin/a/b/image', '/api/local-history/recycle-bin/%2e%2e/image']) assert.equal(isProjectImagePath(path), false);
   assert.equal(isProjectImagePath('/api/assets/covers/a.webp'), true);
   for (const path of ['https://example.com/a.png', 'file:///a.png', '/api/assets/../private', '/api/assets/%2e%2e/private', '/api/assets/%5cprivate', '/api/assets/a?secret=x']) assert.equal(isProjectImagePath(path), false);
 });

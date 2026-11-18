@@ -1,8 +1,14 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
+import { resolveExternalTestRoot } from './tests/support/workspace.mjs';
+
+const externalTemp = process.env.NAI_TEST_TEMP_ROOT
+  ? resolveExternalTestRoot(process.env.NAI_TEST_TEMP_ROOT)
+  : undefined;
 
 // 服务纯逻辑与 jsdom 组件定向测试；网关验证仍由 test:gateway 独立执行。
 export default defineConfig({
+  ...(externalTemp ? { cacheDir: path.join(externalTemp, 'vite-cache') } : {}),
   resolve: {
     alias: { '@': path.resolve(__dirname, '.') },
   },

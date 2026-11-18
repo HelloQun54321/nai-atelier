@@ -74,7 +74,8 @@ const toolLabels: Record<string, string> = {
   get_project_overview: '读取项目概况', search_project_library: '搜索项目资料', get_chain: '读取完整资料', list_generation_history: '读取生成历史',
   inspect_generation_image: '查看历史原图', reuse_generation_history: '复用历史生成配置', create_chain: '新建资料', update_chain: '更新资料',
   create_inspiration: '保存收藏', update_inspiration: '更新收藏', list_vibe_groups: '读取氛围参考组合', create_character_reference_from_history: '保存精准参考图', create_vibe_from_history: '从历史创建氛围参考', import_aitag_image: '导入 AITag 图片',
-  request_delete_project_item: '准备删除', request_clear_history: '准备清空历史',
+  request_delete_project_item: '准备移除', request_clear_history: '准备移入回收站', request_cleanup_history: '准备整理旧历史',
+  list_history_recycle_bin: '读取历史回收站', get_history_recycle_bin_item: '读取回收站详情', read_history_operation_result: '续读历史回执', request_restore_history: '恢复回收站历史', request_purge_history: '准备永久删除回收站历史',
   search_aitag: '搜索 AITag', get_aitag_work: '读取 AITag 作品',
   update_vibe: '更新氛围参考', update_character_reference: '更新精准参考', save_vibe_group: '保存氛围参考组合', request_vibe_encoding: '准备氛围参考编码',
   get_project_settings: '读取项目设置', set_anlas_budget: '设置 Anlas 预算', set_cloud_queue: '设置拼车队列',
@@ -906,7 +907,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               const isEncoding = patch.action === 'encode_vibe';
               const encodingCost = Number(patch.payload?.estimatedCost);
               const isLocalAccess = patch.action === 'grant_local_image_folder';
-              const accepted = await confirmAction({ rememberKey: `agent.project.${patch.action}`, rememberScope: isEncoding ? confirmationCostScope(approvalKey, encodingCost, 1, Number.POSITIVE_INFINITY, [patch.payload?.model, patch.payload?.informationExtracted]) : isLocalAccess ? [approvalKey, patch.payload] : patch.payload, title: patch.title, message: patch.consequence, confirmLabel: patch.action === 'clear_history' ? '永久清空' : isEncoding ? Number.isFinite(encodingCost) ? `消耗 ${encodingCost} Anlas 并生成` : '确认费用并生成' : isLocalAccess ? patch.payload?.access === 'write' ? '允许保存' : '允许读取' : '确认执行', ...(isEncoding || isLocalAccess ? {} : { tone: 'danger' as const }) });
+              const isHistoryMove = ['delete_history', 'clear_history', 'cleanup_history'].includes(patch.action);
+              const isHistoryRestore = patch.action === 'restore_history';
+              const isHistoryPurge = patch.action === 'purge_history';
+              // 永久删除每次单独确认，绝不能继承移入或当日通用删除授权。
+              const accepted = await confirmAction({ ...(isHistoryPurge ? {} : { rememberKey: `agent.project.${patch.action}`, rememberScope: isEncoding ? confirmationCostScope(approvalKey, encodingCost, 1, Number.POSITIVE_INFINITY, [patch.payload?.model, patch.payload?.informationExtracted]) : isLocalAccess ? [approvalKey, patch.payload] : patch.payload }), title: patch.title, message: patch.consequence, confirmLabel: isHistoryMove ? '移入回收站' : isHistoryPurge ? '永久删除，无法恢复' : isHistoryRestore ? '恢复所选历史' : isEncoding ? Number.isFinite(encodingCost) ? `消耗 ${encodingCost} Anlas 并生成` : '确认费用并生成' : isLocalAccess ? patch.payload?.access === 'write' ? '允许保存' : '允许读取' : '确认执行', ...(isEncoding || isLocalAccess ? {} : { tone: 'danger' as const }) });
               if (!accepted) {
                 await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
                 setMessages(previous => [...previous, { id: createUuid(), role: 'agent', text: isLocalAccess ? '未开放该图片目录。' : '已取消该项目操作，没有修改数据。' }]);
@@ -926,6 +931,18 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                   await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: true, result: { action: patch.action } });
                 } else receipt = await promptAgentService.executeProjectAction({ action: patch.action, resourceId: patch.resourceId, payload: patch.payload, sessionId: activeSessionId, confirmationRequestId: patch.requestId });
                 if (patch.action !== 'grant_local_image_folder') window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: patch }));
+                const isHistory = isHistoryMove || isHistoryRestore || isHistoryPurge;
+                if (isHistory) {
+                  const verb = isHistoryMove ? '移入回收站' : isHistoryRestore ? '恢复' : '永久删除';
+                  const counted = receipt && ['requestedCount', 'completedCount', 'skippedCount', 'failedCount'].every(key => Number.isSafeInteger(receipt[key as keyof typeof receipt]) && Number(receipt[key as keyof typeof receipt]) >= 0)
+                    && receipt.requestedCount === Number(receipt.completedCount) + Number(receipt.skippedCount) + Number(receipt.failedCount);
+                  const success = counted && receipt?.ok === true && receipt.success === true && !receipt.partial && !receipt.skippedCount && !receipt.failedCount && !['partial', 'blocked', 'failed', 'unconfirmed'].includes(receipt.outcome || '');
+                  const reasons = [...(receipt?.skipped || []), ...(receipt?.failed || []), ...(receipt?.warnings || [])].slice(0, 5).map(item => `${item.id}：${item.reasons.join('、')}`).join('；');
+                  setMessages(previous => [...previous, { id: createUuid(), role: success ? 'agent' : 'error', text: counted && receipt
+                    ? `历史${verb}回执：请求 ${receipt.requestedCount} 条，已完成 ${receipt.completedCount} 条，跳过 ${receipt.skippedCount} 条，失败 ${receipt.failedCount} 条。${reasons ? ` ${reasons}` : ''}${receipt.partialDetails ? ' 明细已截短，可在本轮续读完整回执。' : ''}`
+                    : receipt?.error || '未收到完整历史操作回执，请回读实际状态；不要重复执行。' }]);
+                  return;
+                }
                 if (patch.action !== 'encode_vibe' && patch.action !== 'clear_mobile_cache' && (receipt?.ok !== true || receipt.success === false || receipt.partial || receipt.outcome === 'partial' || receipt.outcome === 'failed')) {
                   const partial = receipt?.partial || receipt?.outcome === 'partial';
                   setMessages(previous => [...previous, { id: createUuid(), role: 'error', text: partial ? `该项目操作仅部分完成：已完成 ${receipt?.completedCount ?? '未知'} 项，失败 ${receipt?.failedCount ?? '未知'} 项。` : receipt?.error || '该项目操作未完成，请核对实际结果。' }]);

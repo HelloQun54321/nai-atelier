@@ -1,3 +1,4 @@
+import { workspace } from '../support/node-environment.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
@@ -149,7 +150,11 @@ test('LocalBackupService 执行备份并生成完整副本与元数据', async (
 test('LocalBackupService.deleteBackup 正常删除备份存档并进行边界防护', async () => {
   const targetTemp = await mkdtemp(join(tmpdir(), 'nai-backup-delete-test-'));
   const configTemp = join(targetTemp, 'backup-config.json');
+  // 默认配置也属于合成工作区，用它验证自定义配置不会误写默认配置。
+  const defaultConfig = join(workspace, 'local-data', 'backup-config.json');
+  const defaultContents = JSON.stringify({ targetDir: join(workspace, 'other-target') });
   try {
+    await writeFile(defaultConfig, defaultContents);
     const backup1 = join(targetTemp, '20260901-114734');
     await mkdir(join(backup1, 'local-data'), { recursive: true });
     await writeFile(join(backup1, 'backup-metadata.json'), '{}');
@@ -159,7 +164,8 @@ test('LocalBackupService.deleteBackup 正常删除备份存档并进行边界防
     const loadedTempConfig = await getBackupConfig(configTemp);
     assert.equal(loadedTempConfig.targetDir, targetTemp);
 
-    const service = new LocalBackupService({ configFile: configTemp, targetDir: targetTemp });
+    const service = new LocalBackupService({ configFile: configTemp });
+    assert.equal(await service.getTargetDir(), targetTemp);
 
     // 1. 非法名称防护
     await assert.rejects(async () => service.deleteBackup('../evil'), { status: 400 });
@@ -182,10 +188,8 @@ test('LocalBackupService.deleteBackup 正常删除备份存档并进行边界防
     service.status.running = true;
     await assert.rejects(async () => service.deleteBackup('any-name'), { status: 400 });
     service.status.running = false;
+    assert.equal(await readFile(defaultConfig, 'utf8'), defaultContents);
   } finally {
     await rm(targetTemp, { recursive: true, force: true });
-    // 确认生产备份配置文件绝对没有被单测篡改
-    const realConfig = await getBackupConfig();
-    assert.equal(realConfig.targetDir, 'D:\\NaiPromptManager-Backups');
   }
 });

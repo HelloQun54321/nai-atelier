@@ -24,6 +24,12 @@ interface Props {
   onClose: () => void;
   onFavorite: () => Promise<void>;
   onDelete: () => void;
+  /** 回收站只读浏览，不开放收藏写入口。 */
+  hideFavorite?: boolean;
+  /** 迁移失败的本地档案只允许读取与导出。 */
+  hideDelete?: boolean;
+  deleteLabel?: string;
+  deleteDisabled?: boolean;
   filename: string;
   notify: (message: string, type?: 'success' | 'error') => void;
   children: React.ReactNode;
@@ -80,10 +86,10 @@ export const HistoryImageViewer: React.FC<Props> = props => {
             <PressRevealSurface elementRef={stageRef} pressResetKey={item.id} touchActions="bar" data-agent-interaction="pan" aria-label={t("历史图片平移与缩放")} className={`history-viewer-stage ${zoom > 1 ? 'history-viewer-stage--zoomed' : ''}`} {...view.handlers}>
               <OriginalImage key={`${item.id}:${retry}`} src={item.imageUrl} alt={t("历史生成图片预览")} draggable={false} data-safe-mode-ignore="true" className="history-viewer-image" style={{ ...view.imageStyle, visibility: imageFailed ? 'hidden' : undefined }} onLoad={view.onLoad} onError={() => setImageFailed(true)} />
               {imageFailed && <button data-card-action="true" className="history-viewer-error" onClick={() => { setImageFailed(false); setRetry(value => value + 1); }}>{t("原图加载失败 · 重试")}</button>}
-              <div data-card-action="true" className="hover-reveal-touch history-viewer-manage">
-                <button className="history-viewer-button history-viewer-delete" aria-label={t("删除这张历史图片")} onClick={props.onDelete}><Trash2 /></button>
-              </div>
-              <ImageShareActions key={item.id} imageUrl={item.imageUrl} filename={props.filename} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} notify={props.notify} variant="card" className="history-viewer-share" favorite={favoriteTarget} favoriteActive={Boolean(item.isFavorite)} favoritePending={props.favoritePending} onToggleFavorite={props.onFavorite} />
+              {!props.hideDelete && <div data-card-action="true" className="hover-reveal-touch history-viewer-manage">
+                <button className="history-viewer-button history-viewer-delete" aria-label={t(props.deleteLabel || "删除这张历史图片")} disabled={navigating || props.deleteDisabled} onClick={props.onDelete}><Trash2 /></button>
+              </div>}
+              <ImageShareActions key={item.id} imageUrl={item.imageUrl} filename={props.filename} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} notify={props.notify} variant="card" className="history-viewer-share" showFavorite={!props.hideFavorite} favorite={props.hideFavorite ? undefined : favoriteTarget} favoriteActive={Boolean(item.isFavorite)} favoritePending={props.favoritePending} onToggleFavorite={props.hideFavorite ? undefined : props.onFavorite} />
               <button data-agent-action="browse" data-card-action="true" className="hover-reveal-touch history-viewer-button history-viewer-previous" aria-label={t("上一张图片")} disabled={index <= 0 || navigating} onClick={() => onNavigate(-1)}><ChevronLeft /></button>
               <button data-agent-action="browse" data-card-action="true" className="hover-reveal-touch history-viewer-button history-viewer-next" aria-label={t("下一张图片")} disabled={index >= total - 1 || navigating} onClick={() => onNavigate(1)}><ChevronRight /></button>
               {navigating && <span role="status" className="history-viewer-loading"><LoaderCircle className="animate-spin" />{t("正在加载图片")}</span>}

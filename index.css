@@ -1318,15 +1318,16 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
 
   .mobile-toolbar { display: flex; align-items: center; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3); }
   .mobile-safe-bottom { padding-bottom: max(.75rem, env(safe-area-inset-bottom)); }
-  /* 顶层原语层级：内容窗口 1200~2000；锚定／信息浮层与手机底部面板默认 2100（调用处可显式抬高）；提示 2300；确认框 2400。
-     菜单与面板可从任意窗口内打开，必须高于全部内容窗口，否则在窗口里打开会被父窗口盖住。 */
-  .mobile-layer { position: fixed; inset: 0; z-index: 2100; background: rgb(0 0 0 / .5); backdrop-filter: blur(2px); animation: ui-fade-in 140ms ease-out; }
-  .mobile-sheet { position: absolute; inset-inline: 0; bottom: 0; display: flex; max-height: min(82dvh, 44rem); flex-direction: column; overflow: hidden; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; background: var(--nai-panel-surface); box-shadow: 0 -16px 40px rgb(0 0 0 / .25); animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }
   .mobile-detail { position: fixed; inset: 0; z-index: 1050; display: flex; height: 100dvh; flex-direction: column; overflow: hidden; background: var(--nai-panel-surface); animation: mobile-detail-in 160ms cubic-bezier(.2,.8,.2,1); }
   @keyframes mobile-detail-in { from { opacity: 0; transform: translateX(10px); } }
   .mobile-detail-header { display: flex; min-height: calc(var(--workspace-toolbar-height) + env(safe-area-inset-top)); align-items: center; gap: calc(var(--spacing) * 1.5); border-bottom: 1px solid var(--nai-panel-border); background: var(--nai-toolbar-surface); padding: env(safe-area-inset-top) calc(var(--spacing) * 2) 0; }
   .mobile-detail-footer { position: absolute; inset-inline: 0; bottom: 0; z-index: 2; display: flex; gap: calc(var(--spacing) * 2); border-top: 1px solid var(--nai-panel-border); background: var(--nai-toolbar-surface); padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3) max(calc(var(--spacing) * 2.5), env(safe-area-inset-bottom)); }
 }
+
+/* 顶层原语层级：内容窗口 1200~2000；锚定／信息浮层与底部面板默认 2100（可显式抬高）；提示 2300；确认框 2400。
+   随指针打开的作品操作面板也用于宽屏触控，尺寸不绑手机断点。 */
+.mobile-layer { position: fixed; inset: 0; z-index: 2100; background: rgb(0 0 0 / .5); backdrop-filter: blur(2px); animation: ui-fade-in 140ms ease-out; }
+.mobile-sheet { position: absolute; inset-inline: 0; bottom: 0; display: flex; max-height: min(82dvh, 44rem); flex-direction: column; overflow: hidden; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; background: var(--nai-panel-surface); box-shadow: 0 -16px 40px rgb(0 0 0 / .25); animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }
 
 /*
  * 图片列表布局（瀑布流/竖向/方形）读取当前页面覆盖，未覆盖时跟随全局偏好。

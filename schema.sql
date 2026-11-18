@@ -217,3 +217,14 @@ CREATE TABLE IF NOT EXISTS prompt_library_links (
 CREATE INDEX IF NOT EXISTS idx_prompt_library_links_chain ON prompt_library_links(chain_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_prompt_library_links_history ON prompt_library_links(history_id);
 
+
+CREATE TABLE IF NOT EXISTS local_generation_recycle_bin (
+ id TEXT PRIMARY KEY, user_id TEXT NOT NULL, image_key TEXT NOT NULL, image_type TEXT DEFAULT 'image/png',
+ prompt TEXT DEFAULT '', negative_prompt TEXT DEFAULT '', params TEXT DEFAULT '{}',
+ base_prompt TEXT DEFAULT '', subject_prompt TEXT DEFAULT '', modules TEXT DEFAULT '[]', structure_version INTEGER NOT NULL DEFAULT 0,
+ source_chain_id TEXT, source_chain_name TEXT, source_chain_type TEXT, external_source TEXT, external_id TEXT,
+ is_favorite INTEGER NOT NULL DEFAULT 0, favorite_at INTEGER, created_at INTEGER NOT NULL, moved_at INTEGER NOT NULL, move_nonce TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_history_bin_moved ON local_generation_recycle_bin(user_id,moved_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS idx_history_bin_created ON local_generation_recycle_bin(user_id,created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_history_bin_external ON local_generation_recycle_bin(user_id,external_source,external_id);

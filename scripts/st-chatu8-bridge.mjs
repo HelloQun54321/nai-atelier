@@ -467,11 +467,36 @@ export class StChatu8Bridge {
     return result;
   }
 
-  async readHistoryImage(externalId) {
+  async readHistoryImage(externalId, { maxBytes, signal } = {}) {
     const record = this.state.history?.[externalId];
     const filePath = record ? this.resolveStUserPath(record.path) : null;
     if (!filePath) throw Object.assign(new Error('st-chatu8 原图记录不存在'), { status: 404 });
-    const buffer = await readFile(filePath);
+    let buffer;
+    if (maxBytes === undefined) buffer = await readFile(filePath);
+    else {
+      signal?.throwIfAborted();
+      const file = await open(filePath, 'r');
+      try {
+        const info = await file.stat();
+        if (!info.isFile()) throw Object.assign(new Error('st-chatu8 原图记录不存在'), { status: 404 });
+        const tooLarge = () => Object.assign(new Error('图片过大，无法交给当前模型识别'), { status: 413 });
+        if (info.size > maxBytes) throw tooLarge();
+        const chunks = [];
+        let size = 0;
+        // 即使文件在检查后继续增长，也至多读取上限加一个字节。
+        while (size <= maxBytes) {
+          signal?.throwIfAborted();
+          const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, maxBytes - size + 1));
+          const { bytesRead } = await file.read(chunk, 0, chunk.length, size);
+          if (!bytesRead) break;
+          size += bytesRead;
+          if (size > maxBytes) throw tooLarge();
+          chunks.push(chunk.subarray(0, bytesRead));
+        }
+        signal?.throwIfAborted();
+        buffer = Buffer.concat(chunks, size);
+      } finally { await file.close(); }
+    }
     const extension = extname(filePath).toLowerCase();
     return { buffer, contentType: extension === '.jpg' || extension === '.jpeg' ? 'image/jpeg' : extension === '.webp' ? 'image/webp' : 'image/png' };
   }

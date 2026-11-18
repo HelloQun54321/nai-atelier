@@ -1,4 +1,6 @@
-import { ensureArtistHistoryIndex, recordArtistHistory, deactivateArtistHistory, readArtistHistorySnapshots, readArtistGenerationCounts, loadArtistUsageDictionary } from './artistUsageIndex';
+import { HISTORY_ALL, ensureHistoryRecycleSchema, claimHistoryWrite } from './historyRecycleSchema';
+import { handleRecycleRoute, moveHistoryRows } from './historyRecycleRoutes';
+import { ARTIST_DICTIONARY_UNAVAILABLE, ensureArtistHistoryIndex, recordArtistHistory, deactivateArtistHistory, readArtistHistorySnapshots, readArtistGenerationCounts, loadArtistUsageDictionary } from './artistUsageIndex';
 import { ensureArtistChainUsage, readArtistChainCounts } from './artistChainUsage';
 // Local generation history (D1 + R2), inspiration boards/library, and the
 // lightweight agent overview endpoints.
@@ -137,9 +139,10 @@ function buildInspirationSetStatements(updates: any): { assignments: string[]; v
 }
 
 // 进程内标记：DDL 幂等但昂贵，同一实例只在首个请求跑一次，不再每个请求都重复整套语句。
-let localHistorySchemaEnsured = false;
+const localHistorySchemasEnsured = new WeakSet<object>();
 export async function ensureLocalHistorySchema(db: D1Database) {
-  if (localHistorySchemaEnsured) return;
+  await ensureHistoryRecycleSchema(db);
+  if (localHistorySchemasEnsured.has(db)) return;
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS local_generation_history (
       id TEXT PRIMARY KEY,
@@ -207,7 +210,7 @@ export async function ensureLocalHistorySchema(db: D1Database) {
         OR TRIM(COALESCE(subject_prompt, '')) != ''
         OR TRIM(COALESCE(modules, '')) NOT IN ('', '[]', 'null')
       )`).run();
-  localHistorySchemaEnsured = true;
+  localHistorySchemasEnsured.add(db);
 }
 
 export function localHistoryEnabled(env: Env) {
@@ -422,10 +425,11 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
   if (path === '/api/artist-usage' && method === 'GET') {
     await ensureLocalHistorySchema(db);
     const known = await loadArtistUsageDictionary(env);
+    if (known === null) return error(ARTIST_DICTIONARY_UNAVAILABLE, 503);
     await Promise.all([ensureArtistHistoryIndex(db, currentUser.id, env), ensureArtistChainUsage(db, known)]);
     const [generated, chainCounts, count] = await Promise.all([
       readArtistGenerationCounts(db, currentUser.id), readArtistChainCounts(db),
-      db.prepare('SELECT COUNT(*) AS total FROM local_generation_history WHERE user_id = ?').bind(currentUser.id).first<{ total: number }>(),
+      db.prepare(`SELECT COUNT(*) AS total FROM ${HISTORY_ALL} WHERE user_id = ?`).bind(currentUser.id).first<{ total: number }>(),
     ]);
     const artists = new Map(generated.map(row => [row.name, { ...row, chains: chainCounts[row.name] || 0 }]));
     for (const [name, chains] of Object.entries(chainCounts)) if (!artists.has(name)) artists.set(name, { name, chains, images: 0, lastAt: 0 });
@@ -544,21 +548,12 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
     await ensureLocalHistorySchema(db);
     await ensureInspirationSchema(db);
 
-    const deleteHistoryRows = async (rows: Array<{id: string, image_key: string}>) => {
-      await deactivateArtistHistory(db, currentUser.id, rows, env);
-      for (const row of rows) {
-        // 历史消失后归属也失去意义；表缺失时自愈创建，不阻塞删除主流程。
-        await deletePromptLibraryLinksByHistory(db, row.id);
-        // 数据库删除已提交；原图与蒙版各自容错，不能让单个 R2 故障截断后续清理。
-        if (row.image_key) {
-          try { await deleteR2File(env, `/api/assets/${encodeURIComponent(row.image_key)}`, db); }
-          catch (cause) { console.error('历史原图清理失败', row.id, cause); }
-        }
-        try { await env.BUCKET!.delete(localHistoryEditMaskKey(currentUser.id, row.id)); }
-        catch (cause) { console.error('历史蒙版清理失败', row.id, cause); }
-      }
-      return rows.length;
-    };
+    const importingBin = path === '/api/local-history/recycle-bin/import' && method === 'POST';
+    const importingActive = path === '/api/local-history/import' && method === 'POST';
+    const importing = importingBin || importingActive;
+    const recycleResponse = importingBin ? null : await handleRecycleRoute(ctx);
+    if (recycleResponse) return recycleResponse;
+    const deleteHistoryRows = (rows: any[]) => moveHistoryRows(ctx, rows);
 
     if (path === '/api/local-history/media-index' && method === 'GET') {
       const page = clampInt(url.searchParams.get('page'), 0, 0, 1000000);
@@ -636,11 +631,11 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
           COUNT(DISTINCT ${dayExpr}) AS activeDays,
           COALESCE(SUM(CASE WHEN is_favorite = 1 THEN 1 ELSE 0 END), 0) AS favoriteImages,
           MIN(created_at) AS firstAt, MAX(created_at) AS lastAt
-          FROM local_generation_history WHERE ${creativeWhere}`)
+          FROM ${HISTORY_ALL} WHERE ${creativeWhere}`)
           .bind(offsetSeconds, ...rangeValues).first<any>(),
         // 足迹页需要跨年切换；日报返回全部日期，前端按 7/30/365/年份截取。
         db.prepare(`SELECT ${dayExpr} AS day, COUNT(*) AS images
-          FROM local_generation_history
+          FROM ${HISTORY_ALL}
           WHERE user_id = ? AND created_at <= ?
           AND COALESCE(source_chain_id, '') NOT LIKE 'artist-sample:%'
           GROUP BY day ORDER BY day`)
@@ -648,11 +643,11 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         db.prepare(`SELECT COALESCE(NULLIF(source_chain_id, ''), 'playground') AS id,
           COALESCE(MAX(NULLIF(source_chain_name, '')), '') AS name,
           COUNT(*) AS images, MAX(created_at) AS lastAt
-          FROM local_generation_history WHERE ${chainWhere}
+          FROM ${HISTORY_ALL} WHERE ${chainWhere}
           GROUP BY COALESCE(NULLIF(source_chain_id, ''), 'playground') ORDER BY images DESC, lastAt DESC LIMIT 12`)
           .bind(...rangeValues).all<{ id: string; name: string; images: number; lastAt: number }>(),
         db.prepare(`SELECT COUNT(DISTINCT COALESCE(NULLIF(source_chain_name, ''), COALESCE(NULLIF(source_chain_id, ''), 'playground'))) AS count
-          FROM local_generation_history WHERE ${chainWhere}`)
+          FROM ${HISTORY_ALL} WHERE ${chainWhere}`)
           .bind(...rangeValues).first<{ count: number }>(),
         // 参数只扫描一遍，按组合聚合后在内存累加，避免每项指标重复解析整份 JSON。
         db.prepare(`SELECT CASE WHEN json_valid(params) THEN json_array(
@@ -663,7 +658,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
           json_extract(params, '$.vibes.enabled') = 1, COALESCE(json_array_length(params, '$.vibes.slots'), 0),
           json_extract(params, '$.characterReferences.enabled') = 1, COALESCE(json_array_length(params, '$.characterReferences.slots'), 0)
           ) ELSE '[null,null,null,null,"text-to-image",0,0,0,0,0]' END AS attributes, COUNT(*) AS images
-          FROM local_generation_history WHERE ${creativeWhere}
+          FROM ${HISTORY_ALL} WHERE ${creativeWhere}
           GROUP BY attributes`)
           .bind(...rangeValues).all<{ attributes: string; images: number }>(),
         readArtistHistorySnapshots(db, currentUser.id, from, to).then(results => ({ results })),
@@ -808,14 +803,6 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       if (typeof legacyMask === 'string' && legacyMask.startsWith('data:image/')) {
         try {
           const parsed = parseImageData(legacyMask);
-          const editMaskKey = localHistoryEditMaskKey(currentUser.id, id);
-          await env.BUCKET.put(editMaskKey, exactArrayBuffer(parsed.bytes), { httpMetadata: { contentType: parsed.contentType } });
-          const normalizedEdit = sanitizeLocalHistoryEdit(legacyEdit);
-          if (normalizedEdit) {
-            await db.prepare('UPDATE local_generation_history SET params = ? WHERE id = ? AND user_id = ?')
-              .bind(JSON.stringify({ ...storedParams, _local_edit: { ...normalizedEdit, maskAvailable: true } }), id, currentUser.id)
-              .run();
-          }
           return new Response(exactArrayBuffer(parsed.bytes), {
             headers: {
               'Content-Type': parsed.contentType,
@@ -948,7 +935,8 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       return json({ updatedCount: Number(result.meta?.changes || 0), favorite });
     }
 
-    if (path === '/api/local-history' && method === 'POST') {
+    if ((path === '/api/local-history' || importing) && method === 'POST') {
+      if (currentUser.role === 'guest') return error('Forbidden',403);
       const multipart = request.headers.get('Content-Type')?.includes('multipart/form-data');
       const form = multipart ? await request.formData() : null;
       let body: any;
@@ -1015,6 +1003,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       // 识别/写入失败只记日志，历史保存本身不能因为关联推断而失败。
       let linkHint: PromptLibraryLinkHint | null = null;
       try {
+        if (importing) throw new Error('import-preserves-links');
         linkHint = await promptLibraryLinkHint(db, promptLibraryHistoryText({
           prompt: body.prompt, base_prompt: body.basePrompt, subject_prompt: body.subjectPrompt, params: normalizedParams,
         }), { sourceChainType: body.sourceChainType, sourceChainId: body.sourceChainId });
@@ -1032,32 +1021,66 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
           }
         }
       } catch (cause) {
-        console.error('提示词库关联识别失败，生成历史按原样保存', cause);
+        if (!importing) console.error('提示词库关联识别失败，生成历史按原样保存', cause);
       }
-      const imageKey = `local-history/${currentUser.id}/${id}.${extension}`;
+      let imageKey = `local-history/${currentUser.id}/${id}.${extension}`;
       const existing = await db.prepare('SELECT * FROM local_generation_history WHERE id = ? AND user_id = ?')
         .bind(id, currentUser.id).first<{image_key: string, is_favorite: number, favorite_at: number | null, external_source: string | null, external_id: string | null}>();
       const isFavorite = body.isFavorite === undefined ? Number(existing?.is_favorite || 0) === 1 : Boolean(body.isFavorite);
       const favoriteAt = isFavorite ? Number(body.favoriteAt || existing?.favorite_at || Date.now()) : null;
 
-      await env.BUCKET.put(imageKey, exactArrayBuffer(bytes), { httpMetadata: { contentType: imageType } });
+      const releaseWrite = await claimHistoryWrite(db, id, currentUser.id, body.externalSource || existing?.external_source, body.externalId || existing?.external_id);
+      if (!releaseWrite) return error('History write conflict', 409);
+      try {
+      const equalBytes = (left:Uint8Array,right:Uint8Array) => left.length===right.length && left.every((value,index)=>value===right[index]);
+      const lockedExisting=await db.prepare('SELECT * FROM local_generation_history WHERE id = ? AND user_id = ?').bind(id,currentUser.id).first<any>();
+      if (lockedExisting) {
+       const original=await env.BUCKET.get(lockedExisting.image_key);
+       if (!original || !equalBytes(new Uint8Array(await new Response(original.body).arrayBuffer()),bytes)) return error('已有历史不能替换原图，请使用新的历史 ID',409);
+       const legacyMask = parseStoredJson(lockedExisting.params,{})._local_edit?.maskData;
+       if (!editMask && typeof legacyMask === 'string' && legacyMask.startsWith('data:image/')) return error('已有历史含内联蒙版，不能隐式移除，请使用新的历史 ID',409);
+       const oldMask=await env.BUCKET.get(localHistoryEditMaskKey(currentUser.id,id));
+       const oldMaskBytes=oldMask?new Uint8Array(await new Response(oldMask.body).arrayBuffer()):null;
+       if ((oldMaskBytes && (!editMask || !equalBytes(oldMaskBytes,editMask.bytes))) || (!oldMaskBytes && editMask)) return error('已有历史不能替换或移除蒙版，请使用新的历史 ID',409);
+      }
+      const importFingerprint = importing ? Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({body,image:Array.from(bytes),mask:editMask?Array.from(editMask.bytes):null})))),n=>n.toString(16).padStart(2,'0')).join('') : '';
+      const importReceiptKey = 'history_import_v1:' + (importingBin ? 'bin:' : 'active:') + currentUser.id + ':' + id;
+      if (importing) {
+       const importedRow = await db.prepare(`SELECT * FROM ${importingBin ? 'local_generation_recycle_bin' : 'local_generation_history'} WHERE id = ? AND user_id = ?`).bind(id,currentUser.id).first<any>();
+       if (importedRow) {
+        const receipt = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(importReceiptKey).first<{value:string}>();
+        const proof = parseStoredJson(receipt?.value,null);
+        const currentRowProof = JSON.stringify(importedRow);
+        if (!proof || proof.request !== importFingerprint || proof.row !== currentRowProof) return error('History import identity conflict; local source retained',409);
+        const original = await env.BUCKET.get(importedRow.image_key);
+        if (!original || !equalBytes(new Uint8Array(await new Response(original.body).arrayBuffer()),bytes)) return error('History import asset conflict; local source retained',409);
+        const storedMask=await env.BUCKET.get(localHistoryEditMaskKey(currentUser.id,id));
+        if ((storedMask && (!editMask || !equalBytes(new Uint8Array(await new Response(storedMask.body).arrayBuffer()),editMask.bytes))) || (!storedMask && editMask)) return error('History import mask conflict; local source retained',409);
+        return json({item:{...mapLocalHistoryRow(importedRow),...(importingBin?{movedAt:importedRow.moved_at,imageUrl:`/api/local-history/recycle-bin/${encodeURIComponent(id)}/image`}:{})},replayed:true});
+       }
+      }
+      const binConflict = await db.prepare('SELECT id FROM local_generation_recycle_bin WHERE id = ? OR (user_id = ? AND external_source = ? AND external_id = ?)').bind(id,currentUser.id,body.externalSource || existing?.external_source || null,body.externalId || existing?.external_id || null).first();
+      const activeOwner = await db.prepare('SELECT user_id FROM local_generation_history WHERE id = ?').bind(id).first<{user_id:string}>();
+      if (binConflict || (activeOwner && (importing || activeOwner.user_id !== currentUser.id))) return error('History identity conflict',409);
+      if (lockedExisting) imageKey=lockedExisting.image_key;
+      else await env.BUCKET.put(imageKey, exactArrayBuffer(bytes), { httpMetadata: { contentType: imageType } });
       const editMaskKey = localHistoryEditMaskKey(currentUser.id, id);
-      if (editMask) {
+      if (editMask && !lockedExisting) {
         await env.BUCKET.put(editMaskKey, exactArrayBuffer(editMask.bytes), { httpMetadata: { contentType: editMask.contentType } });
       }
       const createdAt = Number.isFinite(Number(body.createdAt)) ? Number(body.createdAt) : Date.now();
-      let artistDictionary: ReadonlySet<string> | undefined;
+      let artistDictionary: ReadonlySet<string> | null = null;
       try {
         artistDictionary = await loadArtistUsageDictionary(env);
-        if (existing) await recordArtistHistory(db, currentUser.id, existing, artistDictionary);
+        if (existing && artistDictionary) await recordArtistHistory(db, currentUser.id, existing, artistDictionary);
       } catch (cause) { console.error('画师统计暂不可用，历史保存继续', cause); }
       await db.prepare(`
-        INSERT OR REPLACE INTO local_generation_history (
+        INSERT ${importing ? '' : 'OR REPLACE '}INTO ${importingBin ? 'local_generation_recycle_bin' : 'local_generation_history'} (
           id, user_id, image_key, image_type, prompt, negative_prompt, params,
           base_prompt, subject_prompt, modules, structure_version,
           source_chain_id, source_chain_name, source_chain_type, is_favorite, favorite_at, created_at,
-          external_source, external_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          external_source, external_id${importingBin ? ',moved_at,move_nonce' : ''}
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${importingBin ? ',?,?' : ''})
       `).bind(
         id, currentUser.id, imageKey, imageType, body.prompt || '', body.negativePrompt || '',
         JSON.stringify(normalizedParams), body.basePrompt || '', body.subjectPrompt || '', JSON.stringify(body.modules || []),
@@ -1068,8 +1091,13 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         // INSERT OR REPLACE 是整行删除重插：外部来源行（st-chatu8 索引）重存时必须回填，
         // 否则外链被抹掉、图片指向不存在的 R2 对象
         body.externalSource || existing?.external_source || null,
-        body.externalId || existing?.external_id || null
+        body.externalId || existing?.external_id || null,
+        ...(importingBin ? [Number.isFinite(Number(body.movedAt)) ? Number(body.movedAt) : Date.now(),crypto.randomUUID()] : [])
       ).run();
+      if (importing) {
+       const importedRow = await db.prepare(`SELECT * FROM ${importingBin ? 'local_generation_recycle_bin' : 'local_generation_history'} WHERE id = ? AND user_id = ?`).bind(id,currentUser.id).first<any>();
+       await db.prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(importReceiptKey,JSON.stringify({request:importFingerprint,row:JSON.stringify(importedRow)})).run();
+      }
       // 统计与提示词归属互不依赖；两支都完成后才继续清理资源、交付保存回执。
       await Promise.all([(async () => {
         try { if (artistDictionary) await recordArtistHistory(db, currentUser.id, {
@@ -1080,6 +1108,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         catch (cause) { console.error('画师统计写入失败，生成历史已保存', cause); }
       })(), (async () => {
         try {
+          if (importing) return;
           // 重存同一条历史时，本次没命中也要清掉过期归属（INSERT OR REPLACE 会留下旧行）。
           if (linkHint) {
             await writePromptLibraryLinks(db, linkHint, id, createdAt);
@@ -1093,7 +1122,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         }
       })()]);
       if (existing?.image_key && existing.image_key !== imageKey) await deleteR2File(env, `/api/assets/${encodeURIComponent(existing.image_key)}`, db);
-      if (!editMask) await env.BUCKET.delete(editMaskKey);
+      if (!editMask && !lockedExisting) await env.BUCKET.delete(editMaskKey);
       const item = mapLocalHistoryRow({
         id, image_key: imageKey, prompt: body.prompt, negative_prompt: body.negativePrompt,
         params: JSON.stringify(normalizedParams), base_prompt: body.basePrompt, subject_prompt: body.subjectPrompt,
@@ -1102,6 +1131,8 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         is_favorite: isFavorite ? 1 : 0, favorite_at: favoriteAt,
         created_at: createdAt
       });
+      if (importingBin) return json({item:{...item,imageUrl:`/api/local-history/recycle-bin/${encodeURIComponent(id)}/image`,movedAt:Number(body.movedAt)||Date.now()}});
+      if (importingActive) return json({item});
       try { await archiveArtistSampleHistory(ctx, item, imageKey); }
       // 样张失败仍交付已保存的历史，前端仅重试入库，不能再次消费生成。
       catch (cause) { console.error('画师样张自动保存失败，生成历史已保留', cause); }
@@ -1109,12 +1140,13 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       // 封面失败仍交付已保存的历史，前端仅重试写封面，不能再次消费生成。
       catch (cause) { console.error('提示词库封面自动写入失败，生成历史已保留', cause); }
       return json({ item });
+      } finally { await releaseWrite(); }
     }
 
     if (path === '/api/local-history' && method === 'DELETE') {
-      const result = await db.prepare('SELECT id, image_key FROM local_generation_history WHERE user_id = ?')
+      const result = await db.prepare('SELECT * FROM local_generation_history WHERE user_id = ?')
         .bind(currentUser.id).all<{id: string, image_key: string}>();
-      return json({ deletedCount: await deleteHistoryRows(result.results) });
+      return json(await deleteHistoryRows(result.results));
     }
 
     if (path === '/api/local-history/cleanup' && method === 'POST') {
@@ -1122,7 +1154,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       let result: D1Result<{id: string, image_key: string}>;
       if (Number.isFinite(body.days)) {
         const cutoff = Date.now() - Math.max(1, Math.floor(body.days)) * 86400000;
-        result = await db.prepare('SELECT id, image_key FROM local_generation_history WHERE user_id = ? AND created_at < ?')
+        result = await db.prepare('SELECT * FROM local_generation_history WHERE user_id = ? AND created_at < ?')
           .bind(currentUser.id, cutoff).all<{id: string, image_key: string}>();
       } else {
         const requestedCount = body.keepCount ?? 1;
@@ -1131,11 +1163,11 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         }
         const keepCount = Math.min(Number.MAX_SAFE_INTEGER, Math.max(1, Math.floor(Number(requestedCount))));
         result = await db.prepare(`
-          SELECT id, image_key FROM local_generation_history WHERE user_id = ?
-          ORDER BY created_at DESC LIMIT -1 OFFSET ?
+          SELECT * FROM local_generation_history WHERE user_id = ?
+          ORDER BY created_at DESC,id DESC LIMIT -1 OFFSET ?
         `).bind(currentUser.id, keepCount).all<{id: string, image_key: string}>();
       }
-      return json({ deletedCount: await deleteHistoryRows(result.results) });
+      return json(await deleteHistoryRows(result.results));
     }
 
     if (path === '/api/local-history/count-older' && method === 'GET') {
@@ -1185,10 +1217,11 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
     }
     if (deleteMatch && method === 'DELETE') {
       const id = decodeURIComponent(deleteMatch[1]);
-      const row = await db.prepare('SELECT id, image_key FROM local_generation_history WHERE id = ? AND user_id = ?')
+      const row = await db.prepare('SELECT * FROM local_generation_history WHERE id = ? AND user_id = ?')
         .bind(id, currentUser.id).first<{id: string, image_key: string}>();
-      if (row) await deleteHistoryRows([row]);
-      return json({ success: true });
+      if (!row) return json({ success: true });
+      const result = await deleteHistoryRows([row]);
+      return json(result, result.skippedCount ? 409 : 200);
     }
   }
 

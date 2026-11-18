@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { discoverGatewayTests, discoverNodeTests, nodeTestArguments, runLoggedCommand, testLogPath } from './run.mjs';
-import { createWorkspace, projectRoot, removeWorkspace, temporaryRoot } from './support/workspace.mjs';
+import { createWorkspace, projectRoot, removeWorkspace, temporaryRoot, resolveExternalTestRoot } from './support/workspace.mjs';
 
 test('Node 入口只发现集中目录的模块与跨模块测试，临时目录不参与发现', () => {
   const root = createWorkspace('discovery-');
@@ -88,6 +88,14 @@ test('同类测试并行运行保留各自完整日志，后端两阶段不会�
       { logPath: combined, append: index > 0, cwd: root, output: destination, errors: destination });
     assert.equal(readFileSync(combined, 'utf8'), 'Node phase\nWorker phase\n');
   } finally { removeWorkspace(root); }
+});
+
+test('外置测试路径拒绝工程、根目录与相对路径，日志随显式目录走', () => {
+  assert.throws(() => resolveExternalTestRoot('/'), /根目录/);
+  assert.throws(() => resolveExternalTestRoot(projectRoot), /工程/);
+  assert.throws(() => resolveExternalTestRoot('relative-test-output'), /绝对/);
+  assert.equal(resolveExternalTestRoot(undefined, 'default-root'), 'default-root');
+  if (process.env.NAI_TEST_LOG_ROOT) assert.equal(testLogPath('external').startsWith(process.env.NAI_TEST_LOG_ROOT + '/'), true);
 });
 
 test('临时工作区拒绝路径前缀、越界删除与删除父目录', () => {

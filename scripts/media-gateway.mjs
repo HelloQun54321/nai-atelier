@@ -2887,13 +2887,24 @@ export const createThumbnailPreWarmer = ({ cache, loadOriginal, concurrency = PR
   };
 };
 
+const stChatu8HistoryImageId = source => /^\/api\/integrations\/st-chatu8\/history\/([a-f0-9]{64})\/image$/i.exec(source)?.[1];
+
 export const getValidatedSource = value => {  const source = String(value || '');
   if (!source || source.length > SOURCE_LIMIT || /[\r\n]/.test(source)) throw new Error('Invalid image source');
   if (source.startsWith('/api/artist-samples/')) { validateArtistSampleSource(source); return { type: 'artist-sample', source }; }
   if (source.startsWith('/api/assets/')) return { type: 'local', source };
+  if (/^\/api\/local-history\/recycle-bin\//.test(source)) {
+    // 回收站仅开放只读原图；拒绝多次编码、路径穿越及其它管理端点。
+    const path = source.split('?')[0];
+    let decoded;
+    try { decoded = decodeURIComponent(path); } catch { throw new Error('Unsupported image source'); }
+    if (!/^\/api\/local-history\/recycle-bin\/[^/%\\\u0000-\u001f]+\/image$/.test(decoded)
+      || decoded.split('/').some(part => part === '.' || part === '..')) throw new Error('Unsupported image source');
+    return { type: 'local', source };
+  }
   if (/^\/api\/(?:local-history\/[^/]+\/image|inspirations\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail))(?:\?.*)?$/.test(source)) return { type: 'local', source };
-  const stChatu8History = source.match(/^\/api\/integrations\/st-chatu8\/history\/([a-f0-9]{64})\/image$/i);
-  if (stChatu8History) return { type: 'st-chatu8-history', source, externalId: stChatu8History[1].toLowerCase() };
+  const externalId = stChatu8HistoryImageId(source);
+  if (externalId) return { type: 'st-chatu8-history', source, externalId: externalId.toLowerCase() };
   let url;
   try { url = new URL(source); } catch { throw new Error('Unsupported image source'); }
   const host = url.hostname.toLowerCase();
@@ -2960,6 +2971,38 @@ const requestWorkerBuffer = (source, req, workerPort, signal) => new Promise((re
   upstream.on('error', reject);
   upstream.end();
 });
+
+const readLanStChatu8HistoryImage = (req, lanSecret, bridge, externalId, options) => {
+  if (!hasValidLanCookie(req, lanSecret)) throw Object.assign(new Error('需要局域网访问密码'), { status: 401, code: 'LAN_ACCESS_REQUIRED' });
+  return bridge.readHistoryImage(externalId, options);
+};
+
+export const requestAgentProjectImage = async (source, maxBytes, { req, workerPort, lanSecret, stChatu8Bridge, signal }) => {
+  signal?.throwIfAborted();
+  const limit = Math.min(maxBytes, INPUT_LIMIT);
+  let buffer, header;
+  const externalId = stChatu8HistoryImageId(source);
+  if (externalId) {
+    // 同源酒馆原图属于网关而不是 Worker；只读同步索引对应的原文件。
+    try {
+      ({ buffer, contentType: header } = await readLanStChatu8HistoryImage(req, lanSecret, stChatu8Bridge, externalId, { maxBytes: limit, signal }));
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (error?.status === 401 || error?.status === 413) throw error;
+      throw Object.assign(new Error('读取项目图片失败'), { status: Number(error?.status) || 404 });
+    }
+  } else {
+    const result = await requestWorkerBuffer(source, req, workerPort, signal);
+    if (result.status >= 400) throw Object.assign(new Error('读取项目图片失败'), { status: result.status });
+    buffer = result.buffer;
+    header = result.headers['content-type'];
+  }
+  signal?.throwIfAborted();
+  if (buffer.length > limit) throw Object.assign(new Error('图片过大，无法交给当前模型识别'), { status: 413 });
+  const mimeType = (Array.isArray(header) ? header[0] : header || 'image/png').split(';')[0].trim();
+  if (!/^image\/(?:png|jpeg|webp|gif)$/i.test(mimeType)) throw new Error('历史文件不是支持的图片格式');
+  return { buffer, mimeType };
+};
 
 /** 上游偶发把真图标成 octet-stream；按文件头识别常见图片 MIME，认不出则仍拒绝。 */
 export const sniffImageMime = buffer => {
@@ -3393,7 +3436,7 @@ class ThumbnailCache {
 
   keyFor(source, variant, previewTransform = '') {
     const version = variant === 'thumb-960' && (
-      /^\/api\/local-history\/[^/]+\/image$/i.test(source)
+      /^\/api\/local-history\/(?:recycle-bin\/)?[^/]+\/image$/i.test(source)
       || /^\/api\/integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image$/i.test(source)
     ) ? HISTORY_THUMBNAIL_CACHE_VERSION : CACHE_VERSION;
     return createHash('sha256').update(`${version}|${variant}|${source}${previewTransform ? `|${previewTransform}` : ''}`).digest('hex');
@@ -3949,7 +3992,7 @@ const serveDistFile = async (req, res, url) => {
     }
     if (url.pathname.startsWith('/api/integrations/st-chatu8/')) {
       const isLocalRequest = isLoopbackIp(req.socket.remoteAddress);
-      const isHistoryImage = /^\/api\/integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image$/i.test(url.pathname);
+      const historyImageId = stChatu8HistoryImageId(url.pathname);
       if (req.method === 'OPTIONS') {
         if (!isLocalRequest || !isLoopbackOrigin(req.headers.origin)) return sendJson(res, 403, { error: 'Forbidden' });
         res.writeHead(204, {
@@ -3961,11 +4004,9 @@ const serveDistFile = async (req, res, url) => {
         });
         return res.end();
       }
-      if (isHistoryImage) {
-        if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      if (historyImageId) {
         try {
-          const externalId = decodeURIComponent(url.pathname.split('/')[5]);
-          const image = await stChatu8Bridge.readHistoryImage(externalId);
+          const image = await readLanStChatu8HistoryImage(req, lanSecret, stChatu8Bridge, historyImageId);
           res.writeHead(200, {
             'Content-Type': image.contentType,
             'Content-Length': image.buffer.length,
@@ -3974,6 +4015,7 @@ const serveDistFile = async (req, res, url) => {
           });
           return res.end(image.buffer);
         } catch (error) {
+          if (error.code === 'LAN_ACCESS_REQUIRED') return sendJson(res, 401, { error: error.message, code: error.code });
           return sendJson(res, Number(error.status) || 404, { error: error.message || 'st-chatu8 原图不存在' });
         }
       }
@@ -4315,15 +4357,7 @@ const serveDistFile = async (req, res, url) => {
               getStyleCollectorState: () => styleCollector.state(),
               controlStyleCollector: (action, id) => styleCollector.command(action, id),
               tagDictionary: method => requestTagDictionaryControl(method),
-              requestBuffer: async (path, maxBytes, signal) => {
-                const result = await requestWorkerBuffer(path, req, workerPort, signal);
-                if (result.status >= 400) throw Object.assign(new Error('读取项目图片失败'), { status: result.status });
-                if (result.buffer.length > maxBytes) throw Object.assign(new Error('图片过大，无法交给当前模型识别'), { status: 413 });
-                const header = result.headers['content-type'];
-                const mimeType = (Array.isArray(header) ? header[0] : header || 'image/png').split(';')[0].trim();
-                if (!/^image\/(?:png|jpeg|webp|gif)$/i.test(mimeType)) throw new Error('历史文件不是支持的图片格式');
-                return { buffer: result.buffer, mimeType };
-              },
+              requestBuffer: (path, maxBytes, signal) => requestAgentProjectImage(path, maxBytes, { req, workerPort, lanSecret, stChatu8Bridge, signal }),
             });
 
           } catch (error) {
@@ -4683,6 +4717,7 @@ const serveDistFile = async (req, res, url) => {
     }
     // 静态前端资源由网关直接提供，/api 与 /__internal 继续转发给 workerd。
     if (!url.pathname.startsWith('/api/') && !url.pathname.startsWith('/__internal/') && await serveDistFile(req, res, url)) return;
+    if (url.pathname.startsWith('/tag-data/')) return sendJson(res, 404, { error: 'Tag 词库文件不存在' });
     if (url.pathname !== '/api/media') {
       const isCover = url.pathname.startsWith('/api/assets/covers/');
       const origin = isCover && isLoopbackOrigin(req.headers.origin) ? req.headers.origin : '';

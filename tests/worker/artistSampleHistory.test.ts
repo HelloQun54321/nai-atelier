@@ -17,7 +17,7 @@ const db = { prepare(query: string) {
     async first() { return sqlite.prepare(query).get(...values) || null; },
     async all() { return { results: sqlite.prepare(query).all(...values) }; },
     async run() {
-      if (failArchive && query.startsWith('INSERT INTO settings')) throw new Error('synthetic archive failure');
+      if (failArchive && query.startsWith('INSERT INTO settings') && !query.includes('(key,value)')) throw new Error('synthetic archive failure');
       return { success: true, meta: sqlite.prepare(query).run(...values) };
     },
   };
@@ -222,8 +222,8 @@ it.each([
 ] as const)('%s %s 删除历史保留样张引用和原始字节', async (path, method, body) => {
   await invoke('/api/local-history', 'POST', metadata());
   const [sample] = await samples();
-  expect((await invoke(path, method, body)).status).toBe(200);
-  expect(sqlite.prepare('SELECT count(*) AS n FROM local_generation_history').get()?.n).toBe(0);
+  expect((await invoke(path, method, body)).status).toBe(path.endsWith('generated-1') ? 409 : 200);
+  expect(sqlite.prepare('SELECT count(*) AS n FROM local_generation_history').get()?.n).toBe(1);
   expect(await samples()).toEqual([sample]);
   const image = await worker.fetch(new Request(`http://localhost${sample.imageUrl}`), env);
   expect(new Uint8Array(await image.arrayBuffer())).toEqual(png);
@@ -240,5 +240,8 @@ it('最后一条灵感或其他资产引用释放后仍保留样张，未归档�
   const ordinary = metadata(); ordinary.id = 'ordinary'; ordinary.modules = [];
   await invoke('/api/local-history', 'POST', ordinary);
   await invoke('/api/local-history/ordinary', 'DELETE');
+  expect(images.has('local-history/owner/ordinary.png')).toBe(true);
+  const bin=await(await invoke('/api/local-history/recycle-bin/ordinary')).json();
+  await invoke('/api/local-history/recycle-bin/purge','POST',{ids:['ordinary'],expectedVersions:{ordinary:bin.item.version}});
   expect(images.has('local-history/owner/ordinary.png')).toBe(false);
 });

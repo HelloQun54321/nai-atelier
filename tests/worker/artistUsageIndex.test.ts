@@ -1,10 +1,27 @@
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, expect, it } from 'vitest';
-import { deactivateArtistHistory, ensureArtistHistoryIndex, readArtistGenerationCounts, readArtistHistorySnapshots, recordArtistHistory } from '../../worker/routes/artistUsageIndex';
+import { afterEach, expect, it, vi } from 'vitest';
+import { deactivateArtistHistory, ensureArtistHistoryIndex, loadArtistUsageDictionary, readArtistGenerationCounts, readArtistHistorySnapshots, recordArtistHistory } from '../../worker/routes/artistUsageIndex';
 import { INIT_SQL, type D1Database, type Env } from '../../worker/routes/types';
 
 const databases: DatabaseSync[] = [];
 afterEach(() => { for (const db of databases.splice(0)) db.close(); });
+
+it('完整本地启动时以网关实际提供的电脑资源词库为准', async () => {
+  const fetchRuntime = vi.fn(async (request: Request) => new URL(request.url).pathname.endsWith('/manifest.json')
+    ? Response.json({ artistPages: ['0000.json'] }) : Response.json([['synthetic_artist']]));
+  const fetchBundled = vi.fn();
+  vi.stubGlobal('fetch', fetchRuntime);
+  try {
+    const { env } = fixture();
+    env.ASSETS = { fetch: fetchBundled };
+    env.TAG_DICTIONARY_LOCAL_ORIGIN = 'http://127.0.0.1:9178';
+    expect(await loadArtistUsageDictionary(env)).toEqual(new Set(['synthetic artist']));
+    expect(fetchRuntime.mock.calls.map(([request]) => request.url)).toEqual([
+      'http://127.0.0.1:9178/tag-data/manifest.json', 'http://127.0.0.1:9178/tag-data/artist-pages/0000.json',
+    ]);
+    expect(fetchBundled).not.toHaveBeenCalled();
+  } finally { vi.unstubAllGlobals(); }
+});
 function fixture() {
   const sql = new DatabaseSync(':memory:'); databases.push(sql); sql.exec(INIT_SQL);
   let pending = Promise.resolve<unknown>(undefined);

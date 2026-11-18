@@ -2,7 +2,7 @@ import { PROMPT_PURPOSES, PROMPT_PURPOSE_IDS, PROMPT_PURPOSE_INSTRUCTION, readPr
 import { vibeBaseModel, vibeStrength } from '../services/vibeProtocol.mjs';
 import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, agentStopInfo, createAgentLoopGuard, createAgentRunBudget, boundAgentToolResult, compactAuditEntries, isAgentReadTool, isAgentParallelTool, isProjectImagePath, localTimeInfo, publicAgentToolContent, streamModelWithGuards } from './agent-runtime.mjs';
 import { humanizeAgentError } from './agent-errors.mjs';
-import { readPromptLibraryDirectories, readPromptLibraryChain, searchPromptLibrary } from './agent-prompt-library.mjs';
+import { readPromptLibraryDirectories, readPromptLibraryChain, readPromptLibraryField, searchPromptLibrary } from './agent-prompt-library.mjs';
 import { createAgentDirectories } from './agent-directories.mjs';
 import { createAgentCreativeRead } from './agent-creative-read.mjs';
 import { normalizeAgentGenerationResult, agentOperationError, validateGenerationCount, validateGenerationPlacement } from '../services/agentOperation.mjs';
@@ -127,10 +127,27 @@ const isLoopbackHostname = hostname => {
   return normalized === 'localhost' || normalized.endsWith('.localhost') || normalized === '::1' || /^127(?:\.\d{1,3}){3}$/.test(normalized);
 };
 const jsonText = value => [{ type: 'text', text: JSON.stringify(value) }];
-// 历史可能是酒馆原图索引；沿用详情返回的真实资产地址，不凭 ID 拼接另一份图片。
+const historyBinImagePath = (id, item) => {
+  if (item.externalSource !== 'st-chatu8') return `/api/local-history/recycle-bin/${encodeURIComponent(id)}/image`;
+  // 酒馆条目没有 R2 副本；只接受与条目外部 ID 一致的同源原图索引。
+  const { externalId, imageUrl } = item;
+  if (typeof externalId === 'string' && /^[a-f0-9]{64}$/.test(externalId)
+    && imageUrl === `/api/integrations/st-chatu8/history/${externalId}/image`) return imageUrl;
+};
+// 历史可能是酒馆原图索引；不要用活动历史的路径替代回收站原图。
 const projectImagePath = (kind, base, id, item) => kind === 'chain' ? item.previewImage
-  : kind === 'history' || kind === 'inspiration' ? item.imageUrl || `/api/${base}/${encodeURIComponent(id)}/image`
-    : item.originalImageUrl || `/api/${base}/${encodeURIComponent(id)}/image`;
+  : kind === 'history_bin' ? historyBinImagePath(id, item)
+    : kind === 'history' || kind === 'inspiration' ? item.imageUrl || `/api/${base}/${encodeURIComponent(id)}/image`
+      : item.originalImageUrl || `/api/${base}/${encodeURIComponent(id)}/image`;
+const historyBinIds = ids => {
+  if (!Array.isArray(ids) || !ids.length || ids.length > 500 || ids.some(id => typeof id !== 'string' || !id.trim() || id.length > 200)) throw new Error('必须明确提供 1 至 500 个有效的回收站条目 ID');
+  return [...new Set(ids.map(id => id.trim()))];
+};
+const historyBinRisk = (operation, requestedCount, eligibleCount, skippedCount = 0) => operation === 'purge'
+  ? `将尝试永久删除明确选择的 ${requestedCount} 条回收站历史记录、可清理原图和编辑蒙版。已删除的记录无法恢复；状态已变化的条目将跳过。仍被引用的原图会保留，但对应的回收站记录仍会删除；酒馆原图不受影响。不会先移入活动历史，不退还 Anlas、Opus 或预算，也不改写消费账本。`
+  : operation === 'restore' ? `将尝试恢复明确选择的 ${requestedCount} 条回收站历史；只恢复仍可恢复的条目，不覆盖活动历史或重发生图。原图、编辑蒙版、历史关联与统计保留，不返还或重复记账。`
+    : `本次预览固定 ${requestedCount} 条历史，最多移入回收站 ${eligibleCount} 条，已跳过 ${skippedCount} 条。原图、编辑蒙版、元数据、关联与统计保留，可从回收站恢复；收藏或其他引用阻止移入，确认后新增引用或版本变化还会继续跳过。不会永久删除或自动清空回收站，不返还 Anlas、Opus 或预算。`;
+const withActionReason = (facts, reason) => `${facts}${text(reason).trim() ? `\n助手说明：${text(reason).trim().slice(0, 500)}` : ''}`;
 const imageCapabilityError = model => model?.capabilityDetection?.imageInput === 'unknown'
   ? '当前接口未声明图片输入能力，请在模型设置中确认；展示已有图片仍可用 show_project_image，无需识图'
   : '当前模型不支持图片输入；展示已有图片仍可用 show_project_image，无需识图';
@@ -2815,29 +2832,29 @@ export class PromptAgentService {
     try {
       let actionResult;
       if (action === 'grant_local_image_folder') actionResult = await this.localImages.grant({ sessionId: confirmation.sessionId, keyHash: project.keyHash || '' }, input.payload.directory, input.payload.access, input.payload.create === true);
-      else if (action === 'delete_chain' && resourceId) await project.requestJson(`/api/chains/${encodedId}`, { method: 'DELETE' });
-      else if (action === 'delete_inspiration' && resourceId) await project.requestJson(`/api/inspirations/${encodedId}`, { method: 'DELETE' });
-      else if (action === 'delete_inspiration_board' && resourceId) await project.requestJson(`/api/inspiration-boards/${encodedId}`, { method: 'DELETE' });
+      else if (action === 'delete_chain' && resourceId) actionResult = await project.requestJson(`/api/chains/${encodedId}`, { method: 'DELETE' });
+      else if (action === 'delete_inspiration' && resourceId) actionResult = await project.requestJson(`/api/inspirations/${encodedId}`, { method: 'DELETE' });
+      else if (action === 'delete_inspiration_board' && resourceId) actionResult = await project.requestJson(`/api/inspiration-boards/${encodedId}`, { method: 'DELETE' });
       else if (action === 'delete_directory' && resourceId) actionResult = await createAgentDirectories(project.requestJson, { catalogMembers: scope => this.directoryCatalogMembers(scope), resultStore: confirmation.directoryResultStore }).remove({ scope: input.payload.scope, id: resourceId });
-      else if (action === 'delete_history' && resourceId) await project.requestJson(`/api/local-history/${encodedId}`, { method: 'DELETE' });
-      else if (action === 'delete_vibe' && resourceId) await project.requestJson(`/api/vibes/${encodedId}/archive`, { method: 'POST', body: {} });
-      else if (action === 'delete_vibe_group' && resourceId) await project.requestJson(`/api/vibe-groups/${encodedId}`, { method: 'DELETE' });
-      else if (action === 'delete_character_reference' && resourceId) await project.requestJson(`/api/character-references/${encodedId}/archive`, { method: 'POST', body: {} });
-      else if (action === 'clear_history') await project.requestJson('/api/local-history', { method: 'DELETE' });
-      else if (action === 'cleanup_history') {
-        const days = Number(input?.payload?.days);
-        const keepCount = Number(input?.payload?.keepCount);
-        const body = Number.isFinite(days) ? { days: Math.max(1, Math.floor(days)) } : Number.isFinite(keepCount) ? { keepCount: Math.max(0, Math.floor(keepCount)) } : null;
-        if (!body) throw Object.assign(new Error('缺少有效的历史清理条件'), { status: 400 });
-        await project.requestJson('/api/local-history/cleanup', { method: 'POST', body });
-      } else if (action === 'set_anlas_budget') {
-        await project.requestJson('/api/anlas-budget', { method: 'PUT', body: { remaining: input.payload.remaining } });
+      else if (['delete_history', 'clear_history', 'cleanup_history'].includes(action)) {
+        if (action === 'delete_history' && !resourceId || typeof input.payload?.previewToken !== 'string' || !input.payload.previewToken) throw Object.assign(new Error('历史移入必须重新读取冻结预览后确认'), { status: 400 });
+        actionResult = await project.requestJson('/api/local-history/recycle-bin/move', { method: 'POST', body: { previewToken: input.payload.previewToken } });
+      } else if (action === 'restore_history' || action === 'purge_history') {
+        const ids = historyBinIds(input.payload?.ids), expectedVersions = input.payload?.expectedVersions;
+        if (!expectedVersions || typeof expectedVersions !== 'object' || Array.isArray(expectedVersions) || ids.some(id => !/^[a-f0-9]{64}$/.test(expectedVersions[id]))) throw Object.assign(new Error('回收站操作缺少已确认的版本，请重新读取并确认'), { status: 400 });
+        actionResult = await project.requestJson(`/api/local-history/recycle-bin/${action === 'restore_history' ? 'restore' : 'purge'}`, { method: 'POST', body: { ids, expectedVersions } });
+      }
+      else if (action === 'delete_vibe' && resourceId) actionResult = await project.requestJson(`/api/vibes/${encodedId}/archive`, { method: 'POST', body: {} });
+      else if (action === 'delete_vibe_group' && resourceId) actionResult = await project.requestJson(`/api/vibe-groups/${encodedId}`, { method: 'DELETE' });
+      else if (action === 'delete_character_reference' && resourceId) actionResult = await project.requestJson(`/api/character-references/${encodedId}/archive`, { method: 'POST', body: {} });
+      else if (action === 'set_anlas_budget') {
+        actionResult = await project.requestJson('/api/anlas-budget', { method: 'PUT', body: { remaining: input.payload.remaining } });
       } else if (action === 'set_cloud_queue') {
         if (!project.setQueuePreferences) throw new Error('电脑队列设置服务不可用');
-        await project.setQueuePreferences(input.payload);
+        actionResult = await project.setQueuePreferences(input.payload);
       } else if (action === 'update_tag_dictionary') {
         if (!project.tagDictionary) throw new Error('Tag更新服务不可用');
-        await project.tagDictionary(input?.payload?.checkOnly === true ? 'GET' : 'POST');
+        actionResult = await project.tagDictionary(input?.payload?.checkOnly === true ? 'GET' : 'POST');
       } else if (action === 'manage_aitag') {
         const payload = input?.payload || {};
         const task = text(payload.task).slice(0, 20);
@@ -2846,13 +2863,30 @@ export class PromptAgentService {
         const workId = Number(payload.workId);
         if (task === 'favorite' || task === 'unfavorite') {
           if (!Number.isFinite(workId)) throw new Error('收藏操作缺少AITag作品ID');
-          await project.requestJson(`/api/aitag/work/${Math.floor(workId)}/favorite`, { method: 'POST', body: { favorite: task === 'favorite', sort, timeRange } });
+          actionResult = await project.requestJson(`/api/aitag/work/${Math.floor(workId)}/favorite`, { method: 'POST', body: { favorite: task === 'favorite', sort, timeRange } });
         } else throw new Error('助手不提供 AITag 机械索引任务');
       } else throw Object.assign(new Error('不允许执行这个项目操作'), { status: 400 });
       clearTimeout(confirmation.timer);
       this.pendingConfirmations.delete(requestId);
-      const success = actionResult?.ok !== false && actionResult?.success !== false && actionResult?.partial !== true;
-      const receipt = { action, resourceId, ...actionResult, success, outcome: success ? 'succeeded' : actionResult?.partial ? 'partial' : 'failed' };
+      const isHistory = ['delete_history', 'clear_history', 'cleanup_history', 'restore_history', 'purge_history'].includes(action);
+      // 历史批操作必须有完整业务回执；HTTP 200 或空响应不代表全部完成。
+      const counted = !isHistory || ['requestedCount', 'completedCount', 'skippedCount', 'failedCount'].every(key => Number.isSafeInteger(actionResult?.[key]) && actionResult[key] >= 0)
+        && actionResult.requestedCount === actionResult.completedCount + actionResult.skippedCount + actionResult.failedCount;
+      const partial = actionResult?.partial === true || actionResult?.outcome === 'partial' || isHistory && actionResult?.completedCount > 0 && (actionResult?.skippedCount > 0 || actionResult?.failedCount > 0);
+      const success = counted && actionResult?.ok !== false && actionResult?.success !== false && !partial
+        && !['blocked', 'failed', 'unconfirmed'].includes(actionResult?.outcome) && (!isHistory || actionResult?.ok === true && actionResult?.success === true && !actionResult.skippedCount && !actionResult.failedCount);
+      let receipt = { ...actionResult, action, resourceId, ok: success, success, partial, outcome: partial ? 'partial' : actionResult?.outcome || (success ? 'succeeded' : 'failed'), ...(!counted ? { error: '未收到完整历史操作回执，请回读实际状态；不要重放操作' } : {}) };
+      if (isHistory && confirmation.historyResultStore) {
+        const resultId = randomUUID();
+        confirmation.historyResultStore.set(resultId, structuredClone(receipt));
+        while (confirmation.historyResultStore.size > 4) confirmation.historyResultStore.delete(confirmation.historyResultStore.keys().next().value);
+        receipt = { ...receipt, resultId };
+        for (const key of ['completedIds', 'skipped', 'failed', 'warnings']) if (Array.isArray(receipt[key]) && receipt[key].length > 10) {
+          receipt[key] = receipt[key].slice(0, 10);
+          receipt.partialDetails = true;
+        }
+        if (receipt.partialDetails) receipt.notice = '明细为摘要；使用 read_history_operation_result(resultId, offset) 拼接完整 JSON。仅在本轮可读，过期后回读实际状态，不重放操作。';
+      }
       confirmation.resolve({ accepted: true, result: receipt });
       void this.appendAuditLog(input?.sessionId, { type: success ? 'project_action_completed' : actionResult?.partial ? 'project_action_partial' : 'project_action_failed', action, resourceId, payload: input?.payload || {} }).catch(() => {});
       return { ...receipt, ok: success };
@@ -3739,6 +3773,7 @@ export class PromptAgentService {
       return project.requestJson(path, options);
     };
     const directoryResultStore = project.directoryResultStore || new Map();
+    const historyResultStore = new Map();
     const directories = createAgentDirectories(readProject, { catalogMembers: scope => this.directoryCatalogMembers(scope), resultStore: directoryResultStore });
     const creativeRead = createAgentCreativeRead({ requestJson: readProject });
     const directoryScope = Type.Union(['chains', 'artists', 'characters', 'prompts', 'combinations', 'inspirations'].map(value => Type.Literal(value)));
@@ -3782,11 +3817,25 @@ export class PromptAgentService {
     const pending = async (action, resourceId, title, consequence, payload = {}) => {
       const { requestId, promise: confirmation } = this.createConfirmation(project?.agentSessionId, { action, resourceId: resourceId || '', payload });
       if (action === 'delete_directory') this.pendingConfirmations.get(requestId).directoryResultStore = directoryResultStore;
+      if (['delete_history', 'clear_history', 'cleanup_history', 'restore_history', 'purge_history'].includes(action)) this.pendingConfirmations.get(requestId).historyResultStore = historyResultStore;
       emit({ type: 'action', action: { kind: 'request_project_action', patch: { action, resourceId, title, consequence, payload, requestId } } });
       const result = await confirmation;
       if (!result.accepted || result.result?.success === false && result.result?.ok !== false && !result.result?.partial) throw agentOperationError(result.result?.error || '项目操作未完成，请核对实际回执', result.result?.code || 'project_action_failed', result.result?.outcome || 'failed');
       const ok = result.result?.ok !== false && result.result?.success !== false && !result.result?.partial;
       return { content: jsonText({ ok, confirmed: true, ...(result.result?.partial ? { partial: true } : {}), action, result: result.result }), details: { action, confirmed: true, result: result.result } };
+    };
+    const requestHistoryMove = async (action, resourceId, title, selector, reason) => {
+      const preview = await readProject('/api/local-history/recycle-bin/preview', { method: 'POST', body: selector });
+      if (typeof preview?.previewToken !== 'string' || !preview.previewToken || !Number.isFinite(preview.expiresAt) || preview.expiresAt <= Date.now()
+        || !['requestedCount', 'movableCount', 'skippedCount'].every(key => Number.isSafeInteger(preview[key]) && preview[key] >= 0)
+        || preview.requestedCount !== preview.movableCount + preview.skippedCount) throw new Error('历史移入预览不完整，未提出确认或执行');
+      if (!preview.movableCount) {
+        const result = { ok: false, success: false, operation: 'move', outcome: preview.requestedCount ? 'blocked' : 'noop', requestedCount: preview.requestedCount, completedCount: 0, skippedCount: preview.skippedCount, failedCount: 0, skipped: preview.skipped || [], error: preview.requestedCount ? '预览内全部历史仍被收藏或其他资料引用，未移入回收站' : '预览范围没有可移入的活动历史' };
+        return { content: jsonText(result), details: result };
+      }
+      // 条件只用于生成一次预览；执行仅提交冻结 token，不按条件重新扩大范围。
+      const payload = { ...selector, previewToken: preview.previewToken, expiresAt: preview.expiresAt, requestedCount: preview.requestedCount, movableCount: preview.movableCount, skippedCount: preview.skippedCount };
+      return pending(action, resourceId, title, withActionReason(historyBinRisk('move', preview.requestedCount, preview.movableCount, preview.skippedCount), reason), payload);
     };
     const changed = resource => emit({ type: 'project_changed', resource });
     const directoryChanged = (scope, result) => {
@@ -3887,7 +3936,7 @@ export class PromptAgentService {
       }
     };
     const projectImage = async args => {
-      const bases = { history: 'local-history', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
+      const bases = { history: 'local-history', history_bin: 'local-history/recycle-bin', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
       const id = text(args.id).trim().slice(0, 200); const base = bases[args.kind];
       if (!base || !id || !project.requestBuffer) throw new Error('缺少有效的项目图片 ID 或图片服务');
       const response = await readProject('/api/' + base + '/' + encodeURIComponent(id)); const item = response.item || response;
@@ -3979,8 +4028,8 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'save_project_image_to_folder', label: '保存图片到电脑文件夹', description: '将已存在的项目图片原始字节保存到电脑目录，保留图片元数据；directory省略时使用设置中的默认导出目录，显式目录优先。标准档自动请求首次目录写入确认，完全访问直接保存，不存在的目标目录可以创建。支持历史、收藏、Vibe、参考图、风格串封面。遇到同名文件自动加编号，成功后返回真实绝对路径。刚生成的图先取得已落盘历史 ID 再保存。',
-        parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String(), directory: Type.Optional(Type.String()), filename: Type.Optional(Type.String()) }),
+        name: 'save_project_image_to_folder', label: '保存图片到电脑文件夹', description: '将已存在的项目图片原始字节保存到电脑目录，保留图片元数据；directory省略时使用设置中的默认导出目录，显式目录优先。标准档自动请求首次目录写入确认，完全访问直接保存，不存在的目标目录可以创建。支持活动历史、回收站历史（history_bin）、收藏、Vibe、参考图、风格串封面。遇到同名文件自动加编号，成功后返回真实绝对路径。刚生成的图先取得已落盘历史 ID 再保存。',
+        parameters: Type.Object({ kind: Type.Union(['history', 'history_bin', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String(), directory: Type.Optional(Type.String()), filename: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           const directory = await writableLocalFolder(await exportDirectory(args.directory));
           const image = await projectImage(args);
@@ -4035,10 +4084,10 @@ export class PromptAgentService {
         execute: async (_id, args) => { if (!project?.enableToolGroup) throw new Error('当前运行不支持动态加载工具'); return { content: jsonText(project.enableToolGroup(args.groups)) }; },
       },
       {
-        name: 'show_project_image', label: '在聊天中展示图片', description: '将已经存在的项目图片直接展示在聊天中，无需模型识图。支持 history（历史）、inspiration（收藏）、vibe、reference（精准参考）、chain（风格串封面）；ID 来自项目检索，不能编造或传外部网址。',
-        parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String() }),
+        name: 'show_project_image', label: '在聊天中展示图片', description: '将已经存在的项目图片直接展示在聊天中，无需模型识图。支持 history（活动历史）、history_bin（回收站历史）、inspiration（收藏）、vibe、reference（精准参考）、chain（风格串封面）；ID 来自项目检索，不能编造或传外部网址。',
+        parameters: Type.Object({ kind: Type.Union(['history', 'history_bin', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String() }),
         execute: async (_id, args) => {
-          const bases = { history: 'local-history', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
+          const bases = { history: 'local-history', history_bin: 'local-history/recycle-bin', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
           const base = bases[args.kind]; const id = text(args.id).trim().slice(0, 200);
           if (!base || !id) throw new Error('缺少有效的图片类型或项目 ID');
           const response = await readProject('/api/' + base + '/' + encodeURIComponent(id));
@@ -4050,11 +4099,11 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'inspect_project_image', label: '观察项目图片', description: '把已有历史、收藏、Vibe、参考图或风格串封面直接交给当前模型观察；需要当前模型支持图片，展示图片请用 show_project_image。',
-        parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String(), focus: Type.Optional(Type.String()) }),
+        name: 'inspect_project_image', label: '观察项目图片', description: '把已有活动历史、回收站历史（history_bin）、收藏、Vibe、参考图或风格串封面直接交给当前模型观察；需要当前模型支持图片，展示图片请用 show_project_image。',
+        parameters: Type.Object({ kind: Type.Union(['history', 'history_bin', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String(), focus: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           if (!modelInfo?.imageInput) throw new Error(imageCapabilityError(modelInfo));
-          const bases = { history: 'local-history', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
+          const bases = { history: 'local-history', history_bin: 'local-history/recycle-bin', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
           const base = bases[args.kind]; const id = text(args.id).trim().slice(0, 200);
           if (!base || !id) throw new Error('缺少有效的项目图片 ID');
           const response = await readProject('/api/' + base + '/' + encodeURIComponent(id)); const item = response.item || response;
@@ -4368,6 +4417,48 @@ export class PromptAgentService {
         },
       },
       {
+        name: 'list_history_recycle_bin', label: '读取历史回收站', description: '直接分页读取回收站，不依赖历史页面。page从0开始，pageSize最多30；按生成时间（createdAt）筛选，不是移入时间；结果按移入时间（movedAt）倒序。只读，不恢复或永久删除。详情使用get_history_recycle_bin_item，媒体使用history_bin。',
+        parameters: Type.Object({
+          page: Type.Optional(Type.Integer({ minimum: 0 })), pageSize: Type.Optional(Type.Integer({ minimum: 1, maximum: 30 })),
+          from: Type.Optional(Type.Number({ description: '生成时间下限，Unix 毫秒时间戳（含）' })),
+          to: Type.Optional(Type.Number({ description: '生成时间上限，Unix 毫秒时间戳（含）' })),
+        }),
+        execute: async (_id, args) => {
+          const page = Math.floor(clamp(args.page, 0, 1000000, 0)), pageSize = Math.floor(clamp(args.pageSize, 1, 30, 10));
+          const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+          for (const key of ['from', 'to']) if (Number.isFinite(args[key])) query.set(key, String(args[key]));
+          const response = await readProject(`/api/local-history/recycle-bin?${query}`);
+          if (!Array.isArray(response?.items) || !Number.isSafeInteger(response.count) || response.count < 0) throw new Error('回收站分页回执不完整');
+          const items = response.items.map(item => {
+            const path = historyBinImagePath(item.id, item);
+            return { id: item.id, movedAt: item.movedAt, createdAt: item.createdAt, sourceChainId: item.sourceChainId, sourceChainName: text(item.sourceChainName).slice(0, 100), promptSummary: text(item.prompt).slice(0, 160), model: item.params?.model, imageUrl: isProjectImagePath(path) ? path : undefined, read: { tool: 'get_history_recycle_bin_item', id: item.id } };
+          });
+          const result = { page, pageSize, count: response.count, items, nextPage: (page + 1) * pageSize < response.count ? page + 1 : null };
+          return { content: jsonText(result), details: result };
+        },
+      },
+      {
+        name: 'get_history_recycle_bin_item', label: '读取回收站历史详情', description: '按回收站ID读取真实元数据。长字段用field/offset/limit分段至nextOffset=null，JSON按顺序拼接；不可用摘要覆盖资料。不会回退活动历史或变更数据。',
+        parameters: Type.Object({ id: Type.String(), field: Type.Optional(Type.String()), offset: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 3000 })) }),
+        execute: async (_id, args) => {
+          const id = historyBinIds([args.id])[0];
+          const response = await readProject(`/api/local-history/recycle-bin/${encodeURIComponent(id)}`), item = response?.item || response;
+          if (String(item?.id) !== id) throw new Error('回收站条目不存在，请重新读取回收站');
+          const result = readPromptLibraryChain(item, args);
+          if (result.partial) result.notice = '详情超过单次预算；fields是字段目录。使用get_history_recycle_bin_item(id,field,offset,limit)按nextOffset续读至null，JSON片段拼接后解析。';
+          return { content: jsonText(result), details: result };
+        },
+      },
+      {
+        name: 'read_history_operation_result', label: '续读历史操作完整回执', description: '以本轮结果resultId分段读取移入/恢复/永久删除的完整JSON回执，按nextOffset续读至null。最多暂存4份，仅本轮有效；过期后重新查询实际状态，不重放操作。',
+        parameters: Type.Object({ resultId: Type.String(), offset: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 3000 })) }),
+        execute: async (_id, args) => {
+          if (!historyResultStore.has(args.resultId)) throw new Error('历史操作回执已过期，请回读实际状态，不要重放操作');
+          const result = readPromptLibraryField({ result: historyResultStore.get(args.resultId) }, { ...args, field: 'result' }, { resultId: args.resultId });
+          return { content: jsonText(result), details: result };
+        },
+      },
+      {
         name: 'inspect_generation_image', label: '查看历史原图', description: '读取指定历史项的真实原图和元数据并进行视觉分析。id必须来自list_generation_history；可用focus说明重点。',
         parameters: Type.Object({ id: Type.String(), focus: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
@@ -4648,25 +4739,57 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'request_delete_project_item', label: '请求删除项目数据', description: '请求删除风格串、角色、收藏、历史项，或归档Vibe/精准参考。只会打开项目确认框，不会直接删除。',
+        name: 'request_delete_project_item', label: '请求移除项目数据', description: '历史项仅预览并移入回收站，可恢复；收藏或其他引用阻止移入。其他资料沿用删除或归档。必须用户确认，不会隐式永久删除历史。',
         parameters: Type.Object({ resourceType: Type.Union([Type.Literal('chain'), Type.Literal('inspiration'), Type.Literal('history'), Type.Literal('vibe'), Type.Literal('vibe_group'), Type.Literal('artist'), Type.Literal('character_reference')]), id: Type.String(), name: Type.Optional(Type.String()), reason: Type.Optional(Type.String()) }),
-        execute: async (_id, args) => pending(`delete_${args.resourceType}`, text(args.id).slice(0, 200), `删除${text(args.name || '这个项目').slice(0, 100)}？`, text(args.reason || '确认后将执行删除；历史原图删除后无法恢复。').slice(0, 500)),
+        execute: async (_id, args) => {
+          const id = text(args.id).trim().slice(0, 200);
+          if (!id) throw new Error('必须提供明确的项目 ID');
+          if (args.resourceType === 'history') return requestHistoryMove('delete_history', id, `将${text(args.name || '这条历史').slice(0, 100)}移入回收站？`, { ids: [id] }, args.reason);
+          return pending(`delete_${args.resourceType}`, id, `移除${text(args.name || '这个项目').slice(0, 100)}？`, withActionReason(['vibe', 'character_reference'].includes(args.resourceType) ? '确认后将归档此参考资料；不会永久删除原图。' : '确认后将移除明确选择的项目资料，不能通过本次操作恢复；已有历史原图不因此永久删除。', args.reason));
+        },
       },
       {
-        name: 'request_clear_history', label: '请求清空历史', description: '请求清空全部生成历史。只会打开项目危险确认框。',
+        name: 'request_clear_history', label: '准备将历史移入回收站', description: '预览全部活动历史并请求移入回收站，只处理冻结的允许子集，收藏或其他引用跳过。绝不永久删除或清空回收站。',
         parameters: Type.Object({ reason: Type.Optional(Type.String()) }),
-        execute: async (_id, args) => pending('clear_history', '', '清空全部生成历史？', text(args.reason || '所有本地历史原图和元数据都会永久删除，无法恢复。').slice(0, 500)),
+        execute: async (_id, args) => requestHistoryMove('clear_history', '', '将预览内活动历史移入回收站？', { clear: true }, args.reason),
       },
       {
-        name: 'request_cleanup_history', label: '准备清理历史', description: '按天数删除旧历史，或只保留最近指定数量。只会打开危险确认框。days和keepCount二选一。',
-        parameters: Type.Object({ days: Type.Optional(Type.Number()), keepCount: Type.Optional(Type.Number()) }),
+        name: 'request_cleanup_history', label: '准备整理旧历史', description: '按天数或保留最近 N 条预览后移入回收站；days 和 keepCount 二选一且至少1。最近 N 条按全部活动历史排名，被引用的旧图额外保留。不会永久删除或重新按条件扩大范围。',
+        parameters: Type.Object({ days: Type.Optional(Type.Number({ minimum: 1, maximum: 36500 })), keepCount: Type.Optional(Type.Number({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })), reason: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           const hasDays = Number.isFinite(args.days);
           const hasKeepCount = Number.isFinite(args.keepCount);
           if (hasDays === hasKeepCount) throw new Error('days 和 keepCount 必须且只能填写一个，不能省略');
-          const payload = hasDays ? { days: Math.max(1, Math.floor(args.days)) } : { keepCount: Math.max(0, Math.floor(args.keepCount)) };
-          const consequence = payload.days ? `将永久删除 ${payload.days} 天以前的历史原图和元数据。` : `将只保留最近 ${payload.keepCount} 条历史，其余原图和元数据永久删除。`;
-          return pending('cleanup_history', '', '清理生成历史？', consequence, payload);
+          const value = hasDays ? args.days : args.keepCount;
+          if (value < 1 || value > (hasDays ? 36500 : Number.MAX_SAFE_INTEGER)) throw new Error('历史整理条件超出有效范围，必须至少为1');
+          const selector = hasDays ? { days: Math.floor(value) } : { keepCount: Math.floor(value) };
+          return requestHistoryMove('cleanup_history', '', '将预览内旧历史移入回收站？', selector, args.reason);
+        },
+      },
+      {
+        name: 'request_restore_history', label: '恢复回收站历史', description: '仅恢复明确选择的回收站 ID，来自 list_history_recycle_bin/get_history_recycle_bin_item；先核实条目，再用户确认。不会覆盖活动历史、重新生图或重复记账。',
+        parameters: Type.Object({ ids: Type.Array(Type.String(), { minItems: 1, maxItems: 500 }), reason: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          const ids = historyBinIds(args.ids), expectedVersions = {};
+          for (const id of ids) {
+            const value = await readProject(`/api/local-history/recycle-bin/${encodeURIComponent(id)}`), item = value?.item || value;
+            if (String(item?.id) !== id || !/^[a-f0-9]{64}$/.test(item?.version)) throw new Error('回收站条目或版本已变化，请重新读取后恢复');
+            expectedVersions[id] = item.version;
+          }
+          return pending('restore_history', '', '恢复所选回收站历史？', withActionReason(historyBinRisk('restore', ids.length), args.reason), { ids, expectedVersions });
+        },
+      },
+      {
+        name: 'request_purge_history', label: '请求永久删除回收站历史', description: '仅永久删除明确选择的回收站 ID，必须来自回收站读取；不可逆，所有权限均单独确认，不能沿用移入确认、按条件清空或隐式先移入再删除。状态已变化的条目跳过；共享原图保留并返回警告，但对应回收站记录仍删除；酒馆原图不受影响，不退消费。',
+        parameters: Type.Object({ ids: Type.Array(Type.String(), { minItems: 1, maxItems: 500 }), reason: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          const ids = historyBinIds(args.ids), expectedVersions = {};
+          for (const id of ids) {
+            const value = await readProject(`/api/local-history/recycle-bin/${encodeURIComponent(id)}`), item = value?.item || value;
+            if (String(item?.id) !== id || !/^[a-f0-9]{64}$/.test(item?.version)) throw new Error('回收站条目或版本已变化，请重新读取后永久删除');
+            expectedVersions[id] = item.version;
+          }
+          return pending('purge_history', '', '永久删除所选回收站历史？', withActionReason(historyBinRisk('purge', ids.length), args.reason), { ids, expectedVersions });
         },
       },
       {
@@ -5008,7 +5131,7 @@ export class PromptAgentService {
       },
       {
         name: 'inspect_image_tags', label: '反推图片 Tag', description: '对项目图片或助手已登记的本机图片做本地反推，返回 Tag、置信度和中文对照。本机路径必须是真实绝对路径；需要反推模型已就绪。',
-        parameters: Type.Object({ source: Type.Union([Type.Literal('project'), Type.Literal('local')]), kind: Type.Optional(Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(value => Type.Literal(value)))), id: Type.Optional(Type.String()), path: Type.Optional(Type.String()), threshold: Type.Optional(Type.Number()), characterThreshold: Type.Optional(Type.Number()), model: Type.Optional(Type.String()) }),
+        parameters: Type.Object({ source: Type.Union([Type.Literal('project'), Type.Literal('local')]), kind: Type.Optional(Type.Union(['history', 'history_bin', 'inspiration', 'vibe', 'reference', 'chain'].map(value => Type.Literal(value)))), id: Type.Optional(Type.String()), path: Type.Optional(Type.String()), threshold: Type.Optional(Type.Number()), characterThreshold: Type.Optional(Type.Number()), model: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           if (!project.inspectImageTags) throw new Error('当前运行未连接图片反推服务');
           const image = args.source === 'local' ? await this.localImages.read(localScope, args.path) : await projectImage(args);

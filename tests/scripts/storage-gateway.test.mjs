@@ -2,8 +2,34 @@ import '../support/node-environment.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { createMediaGateway } from '../../scripts/media-gateway.mjs';
 import { getStoragePreferences, updateStoragePreferences } from '../../scripts/storage-locations.mjs';
+
+test('网关从当前资源目录提供词库，缺失文件返回 404', async () => {
+  const dictionary = join(process.cwd(), 'local-cache', 'tag-data');
+  const priorDirectory = process.env.NAI_TAG_DATA_DIR;
+  process.env.NAI_TAG_DATA_DIR = dictionary;
+  let gateway;
+  try {
+    gateway = await createMediaGateway({ port: 0, workerPort: 1 });
+    const base = `http://127.0.0.1:${gateway.address().port}/tag-data/`;
+    assert.equal((await fetch(base + 'manifest.json')).status, 404);
+    await mkdir(dictionary, { recursive: true });
+    await writeFile(join(dictionary, 'manifest.json'), JSON.stringify({ artistPages: ['0000.json'] }));
+    const manifest = await fetch(base + 'manifest.json');
+    assert.equal(manifest.status, 200);
+    assert.match(manifest.headers.get('content-type'), /application\/json/);
+    assert.deepEqual(await manifest.json(), { artistPages: ['0000.json'] });
+    assert.equal((await fetch(base + 'artist-pages/0000.json')).status, 404);
+  } finally {
+    if (priorDirectory === undefined) delete process.env.NAI_TAG_DATA_DIR;
+    else process.env.NAI_TAG_DATA_DIR = priorDirectory;
+    gateway?.closeAllConnections();
+    if (gateway) await new Promise(done => gateway.close(done));
+  }
+});
 
 test('工坊、缓存、备份与导出共用注入目录选择器，等待确认且取消不保存偏好', { skip: process.platform !== 'win32' }, async () => {
   const worker = createServer((_req, res) => { res.setHeader('Content-Type', 'application/json'); res.end('{}'); });

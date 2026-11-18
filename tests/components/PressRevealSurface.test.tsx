@@ -161,6 +161,19 @@ it('长按打开底部操作条，点选后执行并收起', () => {
   expect(open).not.toHaveBeenCalled();
   expect(revealed(root)).toBe(false);
 });
+it.each(['touch', 'pen'])('宽屏的 %s 长按仍能打开和执行底部操作', pointerType => {
+  vi.stubGlobal('innerWidth', 1440);
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  const { root, action, open } = fixture();
+  down(root, { pointerType }); advance(); fireEvent.pointerUp(root);
+  const dialog = screen.getByRole('dialog', { name: '作品操作' });
+  // 触屏操作面板不受手机断点限制，宽屏的鼠标右键仍由原规则处理。
+  expect(dialog.parentElement?.classList.contains('md:hidden')).toBe(false);
+  fireEvent.click(within(dialog).getByRole('button', { name: '收藏' }));
+  expect(action).toHaveBeenCalledOnce();
+  expect(open).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog', { name: '作品操作' })).toBeNull();
+});
 it('没有可显露的操作时长按不拦截点按', () => {
   const open = vi.fn();
   render(<PressRevealSurface role="button" aria-label="作品" onClick={open}><img alt="图片" /></PressRevealSurface>);

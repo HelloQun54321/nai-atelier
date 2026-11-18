@@ -150,7 +150,9 @@ export const MobileBottomSheet: React.FC<{
   headerActions?: React.ReactNode;
   footer?: React.ReactNode;
   zIndex?: number;
-}> = ({ open, title, onClose, children, headerActions, footer, zIndex }) => {
+  /** 根据实际指针打开的作品操作条也适用于宽屏触控；其他面板仍仅在手机布局显示。 */
+  allowWide?: boolean;
+}> = ({ open, title, onClose, children, headerActions, footer, zIndex, allowWide = false }) => {
   useLanguage();
   const requestClose = useMobileHistoryLayer(open, onClose, 'sheet');
   const dragStart = useRef<number | null>(null);
@@ -159,7 +161,7 @@ export const MobileBottomSheet: React.FC<{
   if (!open) return null;
 
   return (
-    <div className="mobile-layer md:hidden" style={{ zIndex }} onPointerDown={event => {
+    <div className={`mobile-layer${allowWide ? '' : ' md:hidden'}`} style={{ zIndex }} onPointerDown={event => {
       if (event.target === event.currentTarget) requestClose();
     }}>
       <section

@@ -7,7 +7,9 @@ import { buildBrowserHistoryOrder, historyBrowseParams, type HistoryBrowseOrder,
 const DB_NAME = 'NAI_History_DB';
 const STORE_NAME = 'generations';
 const EDIT_MASK_STORE_NAME = 'editMasks';
-const DB_VERSION = 4;
+const BIN_STORE_NAME = 'recycleBin';
+const BIN_EDIT_MASK_STORE_NAME = 'recycleBinEditMasks';
+const DB_VERSION = 5;
 const HISTORY_THUMBNAIL_MAX_EDGE = 960;
 const HISTORY_THUMBNAIL_VARIANT = 'thumb-960';
 
@@ -20,6 +22,7 @@ type StoredEditMask = {
     blob: Blob;
     mimeType: string;
     updatedAt: number;
+    revision?: string;
 };
 
 const normalizeHistoryEdit = (edit: ImageEditMetadata | undefined): ImageEditMetadata | undefined => {
@@ -51,8 +54,37 @@ const dataUrlToBlob = async (value: string): Promise<Blob> => {
     return response.blob();
 };
 
+export type LocalHistoryRecycleBinItem = LocalGenItem & { movedAt: number; version: string };
+export type LocalHistoryMoveSelection = { ids?: string[]; days?: number; keepCount?: number; clear?: boolean; protectedIds?: string[] };
+export type LocalHistoryOperationIssue = { id: string; reasons: string[] };
+export type LocalHistoryMovePreview = {
+    previewToken: string; expiresAt: number; requestedCount: number; movableCount: number;
+    skippedCount: number; skipped: LocalHistoryOperationIssue[];
+};
+export type LocalHistoryOperationResult = {
+    operation: 'move' | 'restore' | 'purge'; requestedCount: number; completedCount: number;
+    skippedCount: number; failedCount: number; movedCount: number; restoredCount: number; purgedCount: number;
+    completedIds: string[]; skipped: LocalHistoryOperationIssue[]; failed: LocalHistoryOperationIssue[];
+    warnings: LocalHistoryOperationIssue[]; success: boolean; ok: boolean;
+    outcome: 'success' | 'partial' | 'blocked' | 'noop' | 'failed'; partial: boolean; deletedCount: number;
+};
+const operationResult = (operation: LocalHistoryOperationResult['operation'], requestedCount: number,
+    completedIds: string[], skipped: LocalHistoryOperationIssue[], failed: LocalHistoryOperationIssue[]): LocalHistoryOperationResult => {
+    const completedCount = completedIds.length;
+    const success = skipped.length === 0 && failed.length === 0;
+    return { operation, requestedCount, completedCount, completedIds, skipped, failed, warnings: [],
+        skippedCount: skipped.length, failedCount: failed.length, movedCount: operation === 'move' ? completedCount : 0,
+        restoredCount: operation === 'restore' ? completedCount : 0, purgedCount: operation === 'purge' ? completedCount : 0,
+        success, ok: success, partial: completedCount > 0 && !success, deletedCount: completedCount,
+        outcome: !requestedCount ? 'noop' : success ? 'success' : completedCount ? 'partial' : failed.length ? 'failed' : 'blocked' };
+};
+// 新条目使用随机版本；旧bin行按完整内容生成稳定版本，恢复再移入会获得新版本。
+const binVersion = (item: LocalHistoryRecycleBinItem): string => item.version || JSON.stringify(item);
+const uniqueHistoryIds = (ids: string[]) => [...new Set(ids.map(id => String(id || '').trim()).filter(Boolean))];
+
 export type LocalHistoryChange = {
-    type: 'add' | 'delete' | 'clear' | 'cleanup' | 'favorite' | 'remote-takeover';
+    type: 'add' | 'delete' | 'clear' | 'cleanup' | 'favorite' | 'remote-takeover' | 'move' | 'restore' | 'purge' | 'migration-failed';
+    completedIds?: string[];
     id?: string;
     favorite?: boolean;
     external?: boolean;
@@ -114,6 +146,8 @@ class LocalHistoryService {
     private channel: BroadcastChannel | null = null;
     private remoteEnabled: boolean | null = null;
     private migrationPromise: Promise<number> | null = null;
+    private migrationError: string | null = null;
+    private movePreviews = new Map<string, { expiresAt: number; ids: string[]; versions: Map<string, string>; skipped: LocalHistoryOperationIssue[]; requestedCount: number }>();
 
     constructor() {
         if (typeof BroadcastChannel !== 'undefined') {
@@ -166,67 +200,246 @@ class LocalHistoryService {
         }
     }
 
+    async getRecycleBinCapabilities(): Promise<{ move: 'remote' | 'requires-remote-migration' }> {
+        return { move: await this.isRemoteEnabled() ? 'remote' : 'requires-remote-migration' };
+    }
+
+    /** 失败迁移的本地归档只读入口；正常写入继续走远端，避免重新分叉。 */
+    async getBrowserMigrationRecovery(): Promise<{ error: string | null; active: LocalGenItem[]; bin: LocalHistoryRecycleBinItem[] }> {
+        return { error: this.migrationError, active: await this.browserRows(), bin: (await this.browserRows<LocalHistoryRecycleBinItem>(BIN_STORE_NAME)).map(row => ({ ...row, version: binVersion(row) })) };
+    }
+
+    async getBrowserMigrationRecoveryMask(id: string, bin = false): Promise<Blob | null> {
+        return this.readBrowserMask(id, bin);
+    }
+
+    private async browserRows<T = LocalGenItem>(storeName: string = STORE_NAME): Promise<T[]> {
+        const db = await this.open();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(storeName, 'readonly');
+            const request = tx.objectStore(storeName).getAll();
+            tx.oncomplete = () => resolve(request.result as T[]);
+            tx.onabort = tx.onerror = () => reject(tx.error || new Error('读取历史记录失败'));
+        });
+    }
+
+    async getRecycleBinPage(page: number, pageSize: number, range?: LocalHistoryDateRange): Promise<{ items: LocalHistoryRecycleBinItem[]; count: number }> {
+        if (await this.isRemoteEnabled()) {
+            const query = new URLSearchParams({ page: String(Math.max(0, page)), pageSize: String(Math.max(1, pageSize)) });
+            if (range?.from !== undefined) query.set('from', String(range.from));
+            if (range?.to !== undefined) query.set('to', String(range.to));
+            return api.get(`/local-history/recycle-bin?${query}`, { cache: 'no-store' });
+        }
+        const rows = (await this.browserRows<LocalHistoryRecycleBinItem>(BIN_STORE_NAME))
+            .filter(item => (range?.from === undefined || item.createdAt >= range.from) && (range?.to === undefined || item.createdAt <= range.to))
+            .sort((a, b) => b.movedAt - a.movedAt || b.id.localeCompare(a.id));
+        const size = Math.max(1, Math.floor(pageSize));
+        return { items: rows.slice(Math.max(0, page) * size, (Math.max(0, page) + 1) * size).map(item => ({ ...normalizeHistoryItem(item), movedAt: item.movedAt, version: binVersion(item) })), count: rows.length };
+    }
+
+    async countRecycleBin(range?: LocalHistoryDateRange): Promise<number> {
+        if (await this.isRemoteEnabled()) {
+            const query = new URLSearchParams();
+            if (range?.from !== undefined) query.set('from', String(range.from));
+            if (range?.to !== undefined) query.set('to', String(range.to));
+            return Number((await api.get(`/local-history/recycle-bin/count?${query}`, { cache: 'no-store' })).count);
+        }
+        return (await this.getRecycleBinPage(0, 1, range)).count;
+    }
+
+    async getRecycleBinItem(id: string): Promise<LocalHistoryRecycleBinItem | null> {
+        if (await this.isRemoteEnabled()) return (await api.get(`/local-history/recycle-bin/${encodeURIComponent(id)}`, { cache: 'no-store' })).item || null;
+        const row = (await this.browserRows<LocalHistoryRecycleBinItem>(BIN_STORE_NAME)).find(item => item.id === id);
+        return row ? { ...row, version: binVersion(row) } : null;
+    }
+
+    async getRecycleBinEditMask(id: string, item?: LocalHistoryRecycleBinItem): Promise<Blob | null> {
+        if (await this.isRemoteEnabled()) return api.getBlob(`/local-history/recycle-bin/${encodeURIComponent(id)}/edit-mask`);
+        return this.readBrowserMask(id, true, item);
+    }
+
+    private async readBrowserMask(id: string, bin = false, item?: LocalGenItem): Promise<Blob | null> {
+        const masks = await this.browserRows<StoredEditMask>(bin ? BIN_EDIT_MASK_STORE_NAME : EDIT_MASK_STORE_NAME);
+        const mask = masks.find(entry => entry.historyId === id)?.blob;
+        if (mask) return mask;
+        const row = item?.edit?.maskData ? item : (await this.browserRows(bin ? BIN_STORE_NAME : STORE_NAME)).find(row => row.id === id);
+        return row?.edit?.maskData ? dataUrlToBlob(row.edit.maskData) : null;
+    }
+
+    /** 浏览器没有完整持久引用快照时不能把未知当成未引用。 */
+    private async browserMoveReasons(item: LocalGenItem, protectedIds: string[] = []): Promise<string[]> {
+        if (item.isFavorite || protectedIds.includes(item.id)) return ['favorite'];
+        return ['reference_check_failed'];
+    }
+
+    async previewMove(selection: LocalHistoryMoveSelection): Promise<LocalHistoryMovePreview> {
+        if (await this.isRemoteEnabled()) return api.post('/local-history/recycle-bin/preview', selection);
+        const modes = [selection.ids !== undefined, selection.days !== undefined, selection.keepCount !== undefined, selection.clear === true].filter(Boolean).length;
+        if (modes !== 1 || (selection.days !== undefined && (!Number.isFinite(selection.days) || selection.days < 1)) ||
+            (selection.keepCount !== undefined && (!Number.isInteger(selection.keepCount) || selection.keepCount < 1))) throw new Error('清理条件无效');
+        const rows = (await this.browserRows()).sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id));
+        const cutoff = Date.now() - (selection.days || 0) * 86400000;
+        const ids = selection.ids ? uniqueHistoryIds(selection.ids) : selection.clear ? rows.map(row => row.id) :
+            selection.days !== undefined ? rows.filter(row => row.createdAt < cutoff).map(row => row.id) : rows.slice(selection.keepCount).map(row => row.id);
+        const allowed: string[] = [], skipped: LocalHistoryOperationIssue[] = [], versions = new Map<string, string>();
+        for (const id of ids) {
+            const row = rows.find(item => item.id === id);
+            const reasons = row ? await this.browserMoveReasons(row, selection.protectedIds) : ['not_found'];
+            if (reasons.length) skipped.push({ id, reasons });
+            else { allowed.push(id); versions.set(id, JSON.stringify(row)); }
+        }
+        for (const [token, saved] of this.movePreviews) if (saved.expiresAt <= Date.now()) this.movePreviews.delete(token);
+        const previewToken = createUuid(), expiresAt = Date.now() + 5 * 60000;
+        this.movePreviews.set(previewToken, { expiresAt, ids: allowed, versions, skipped, requestedCount: ids.length });
+        return { previewToken, expiresAt, requestedCount: ids.length, movableCount: allowed.length, skippedCount: skipped.length, skipped };
+    }
+
+    async moveToRecycleBin(input: { ids?: string[]; previewToken?: string; protectedIds?: string[] }): Promise<LocalHistoryOperationResult> {
+        if (await this.isRemoteEnabled()) return this.remoteBinOperation('move', input);
+        const preview = input.previewToken ? this.movePreviews.get(input.previewToken) : undefined;
+        if (input.previewToken && (!preview || preview.expiresAt <= Date.now())) throw new Error('清理预览已过期，请重新预览');
+        const ids = preview ? preview.ids.filter(id => !input.ids || input.ids.includes(id)) : uniqueHistoryIds(input.ids || []);
+        return this.browserBinOperation('move', ids, preview, input.protectedIds);
+    }
+
+    async restoreFromRecycleBin(ids: string[], expectedVersions: Record<string, string>): Promise<LocalHistoryOperationResult> {
+        if (!expectedVersions || uniqueHistoryIds(ids).some(id => !expectedVersions[id])) throw new Error('缺少确认时的回收站版本，请重新选择记录');
+        return await this.isRemoteEnabled() ? this.remoteBinOperation('restore', { ids: uniqueHistoryIds(ids), ...(expectedVersions ? { expectedVersions } : {}) }) : this.browserBinOperation('restore', uniqueHistoryIds(ids), undefined, undefined, expectedVersions);
+    }
+
+    async purgeRecycleBin(ids: string[], expectedVersions: Record<string, string>): Promise<LocalHistoryOperationResult> {
+        if (!expectedVersions || uniqueHistoryIds(ids).some(id => !expectedVersions[id])) throw new Error('缺少确认时的回收站版本，请重新选择记录');
+        return await this.isRemoteEnabled() ? this.remoteBinOperation('purge', { ids: uniqueHistoryIds(ids), ...(expectedVersions ? { expectedVersions } : {}) }) : this.browserBinOperation('purge', uniqueHistoryIds(ids), undefined, undefined, expectedVersions);
+    }
+
+    private async remoteBinOperation(operation: LocalHistoryOperationResult['operation'], input: { ids?: string[]; previewToken?: string; protectedIds?: string[]; expectedVersions?: Record<string, string> }): Promise<LocalHistoryOperationResult> {
+        const result: LocalHistoryOperationResult = await api.post(`/local-history/recycle-bin/${operation}`, input);
+        if (result.completedIds?.length) this.emit({ type: operation, completedIds: result.completedIds, id: result.completedIds.length === 1 ? result.completedIds[0] : undefined });
+        return result;
+    }
+
+    private async browserBinOperation(operation: LocalHistoryOperationResult['operation'], ids: string[], preview?: { versions: Map<string, string>; skipped: LocalHistoryOperationIssue[]; requestedCount: number }, protectedIds?: string[], expectedVersions?: Record<string, string>): Promise<LocalHistoryOperationResult> {
+        const completed: string[] = [], skipped = [...(preview?.skipped || [])], failed: LocalHistoryOperationIssue[] = [];
+        const db = await this.open();
+        for (const id of ids) {
+            // 每项一个跨 active/bin/蒙版的原子事务；一项失败不影响其他项。
+            if (operation === 'move') {
+                const row = (await this.browserRows()).find(item => item.id === id);
+                const reasons = row ? await this.browserMoveReasons(row, protectedIds) : ['not_found'];
+                if (reasons.length) { skipped.push({ id, reasons }); continue; }
+            }
+            try {
+                const reason = await new Promise<string | null>((resolve, reject) => {
+                    const tx = db.transaction([STORE_NAME, BIN_STORE_NAME, EDIT_MASK_STORE_NAME, BIN_EDIT_MASK_STORE_NAME], 'readwrite');
+                    const source = tx.objectStore(operation === 'move' ? STORE_NAME : BIN_STORE_NAME);
+                    const target = tx.objectStore(operation === 'move' ? BIN_STORE_NAME : STORE_NAME);
+                    const sourceMasks = tx.objectStore(operation === 'move' ? EDIT_MASK_STORE_NAME : BIN_EDIT_MASK_STORE_NAME);
+                    const targetMasks = tx.objectStore(operation === 'move' ? BIN_EDIT_MASK_STORE_NAME : EDIT_MASK_STORE_NAME);
+                    let skip: string | null = null;
+                    tx.oncomplete = () => resolve(skip);
+                    tx.onabort = tx.onerror = () => reject(tx.error || new Error('历史事务失败'));
+                    const request = source.get(id);
+                    request.onsuccess = () => {
+                        const row = request.result as LocalHistoryRecycleBinItem | undefined;
+                        if (!row) { skip = 'not_found'; return; }
+                        if (operation !== 'move' && expectedVersions && expectedVersions[id] !== binVersion(row)) { skip = 'source_changed'; return; }
+                        if (operation === 'purge') { source.delete(id); sourceMasks.delete(id); return; }
+                        if (operation === 'move' && (row.isFavorite || (preview && preview.versions.get(id) !== JSON.stringify(row)))) { skip = row.isFavorite ? 'favorite' : 'source_changed'; return; }
+                        const collision = target.get(id);
+                        collision.onsuccess = () => {
+                            if (collision.result) { skip = 'id_conflict'; return; }
+                            const { movedAt: _movedAt, version: _version, ...active } = row;
+                            // 外部身份也必须唯一，不能恢复成重复的外部作品。
+                            const all = target.getAll();
+                            all.onsuccess = () => {
+                                type ExternalIdentity = LocalGenItem & { externalSource?: string; externalId?: string; external_source?: string; external_id?: string };
+                                const identity = row as ExternalIdentity;
+                                const sourceKey = identity.externalSource || identity.external_source;
+                                const externalKey = identity.externalId || identity.external_id;
+                                if (sourceKey && externalKey && all.result.some((other: ExternalIdentity) => (other.externalSource || other.external_source) === sourceKey && (other.externalId || other.external_id) === externalKey)) { skip = 'external_identity_conflict'; return; }
+                                target.add(operation === 'move' ? { ...row, movedAt: Date.now(), version: createUuid() } : active);
+                                const mask = sourceMasks.get(id);
+                                mask.onsuccess = () => { if (mask.result) targetMasks.add(mask.result); sourceMasks.delete(id); };
+                                source.delete(id);
+                            };
+                        };
+                    };
+                });
+                if (reason) skipped.push({ id, reasons: [reason] }); else completed.push(id);
+            } catch { failed.push({ id, reasons: ['transaction_failed'] }); }
+        }
+        const result = operationResult(operation, preview?.requestedCount ?? ids.length, completed, skipped, failed);
+        if (completed.length) this.emit({ type: operation, completedIds: completed, id: completed.length === 1 ? completed[0] : undefined });
+        return result;
+    }
+
     async prepare(onProgress?: (progress: LocalHistoryMigrationProgress) => void): Promise<number> {
         if (!(await this.isRemoteEnabled())) return 0;
         if (this.migrationPromise) return this.migrationPromise;
-
         this.migrationPromise = (async () => {
-            // 宣告接管：广播后其他标签页立即把新历史写远端（本实例 remoteEnabled 已缓存为 true）。
-            // 广播先于任何清空操作，把"迁移窗口内新记录落进待清空库"的窗口压到最短。
             this.channel?.postMessage({ type: 'remote-takeover' } satisfies LocalHistoryChange);
-
-            const initialTotal = await this.getBrowserCount();
-            if (initialTotal === 0) return 0;
-
-            const batchSize = 10;
+            const initialTotal = (await this.browserRows()).length + (await this.browserRows(BIN_STORE_NAME)).length;
             let migrated = 0;
-            // 迁移期间浏览器库不做任何删除，分页偏移因此稳定；已迁移记录靠 id 集合跳过，
-            // 后续轮次只补迁新增（广播前已开始的事务等滞后写入）。
-            const migratedIds = new Set<string>();
             for (let round = 0; round < 6; round++) {
-                let roundNew = 0;
-                for (let page = 0; ; page++) {
-                    const batch = await this.getBrowserPage(page, batchSize);
-                    if (batch.length === 0) break;
-                    for (const item of batch) {
-                        if (migratedIds.has(item.id)) continue;
-                        const editMask = await this.getEditMask(item.id, item);
-                        if (editMask) {
-                            const image = await dataUrlToBlob(item.imageUrl);
-                            const { imageUrl: _imageUrl, ...metadata } = item;
-                            const formData = new FormData();
-                            formData.append('image', image, `generation.${image.type === 'image/jpeg' ? 'jpg' : image.type.split('/')[1] || 'png'}`);
-                            formData.append('editMask', editMask, 'edit-mask.png');
-                            formData.append('metadata', JSON.stringify(metadata));
-                            await api.postForm('/local-history', formData);
-                        } else {
-                            await api.post('/local-history', normalizeHistoryItem(item));
-                        }
-                        migratedIds.add(item.id);
-                        migrated++;
-                        roundNew++;
+                let roundCount = 0;
+                for (const bin of [false, true]) {
+                    const rows = await this.browserRows<LocalHistoryRecycleBinItem>(bin ? BIN_STORE_NAME : STORE_NAME);
+                    for (const item of rows) {
+                        // 蒙版读取失败必须停止迁移并保留源，不能把错误当成没有蒙版。
+                        const maskSnapshot = (await this.browserRows<StoredEditMask>(bin ? BIN_EDIT_MASK_STORE_NAME : EDIT_MASK_STORE_NAME)).find(row => row.historyId === item.id);
+                        const mask = maskSnapshot?.blob || (item.edit?.maskData ? await dataUrlToBlob(item.edit.maskData) : null);
+                        if (item.edit?.maskAvailable && !mask) throw new Error(`历史 ${item.id} 的蒙版缺失，已保留浏览器源记录`);
+                        const image = await dataUrlToBlob(item.imageUrl);
+                        const form = new FormData();
+                        const { imageUrl: _url, ...metadata } = normalizeHistoryItem(item);
+                        form.append('image', image, 'generation.png');
+                        if (mask) form.append('editMask', mask, 'edit-mask.png');
+                        form.append('metadata', JSON.stringify(metadata));
+                        const response = await api.postForm(bin ? '/local-history/recycle-bin/import' : '/local-history/import', form);
+                        if (response?.item?.id !== item.id) throw new Error(`历史 ${item.id} 的远端保存未确认，已保留浏览器源记录`);
+                        await this.removeMigratedBrowserRecord(item, bin, maskSnapshot);
+                        migrated++; roundCount++;
                         onProgress?.({ current: migrated, total: Math.max(initialTotal, migrated) });
                     }
                 }
-                // 完整扫描一轮没有任何新记录，说明滞后写入已被全部补迁。
-                if (roundNew === 0) break;
+                if (!roundCount) break;
             }
-
-            const remaining = await this.getBrowserCount();
-            if (remaining > 0) {
-                // 宁可放弃清空也不冒丢数据的风险：远端已有完整副本，浏览器库留待下次迁移重试。
-                throw new Error(`历史迁移后浏览器库仍有 ${remaining} 条新增记录，已保留浏览器数据，请重试迁移`);
-            }
-            await this.clearBrowserHistory();
-            this.emit({ type: 'add' });
+            const remaining = (await this.browserRows()).length + (await this.browserRows(BIN_STORE_NAME)).length;
+            if (remaining) throw new Error(`仍有 ${remaining} 条浏览器历史待迁移，已保留源数据，请重试`);
+            if (migrated) this.emit({ type: 'add' });
             return migrated;
         })();
-
         try {
-            return await this.migrationPromise;
-        } finally {
-            this.migrationPromise = null;
-        }
+            const result = await this.migrationPromise;
+            this.migrationError = null;
+            return result;
+        } catch (error) {
+            this.migrationError = error instanceof Error ? error.message : String(error);
+            this.emit({ type: 'migration-failed' });
+            throw error;
+        } finally { this.migrationPromise = null; }
+    }
+
+    private async removeMigratedBrowserRecord(item: LocalGenItem, bin: boolean, expectedMask: StoredEditMask | undefined): Promise<void> {
+        const db = await this.open();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction([bin ? BIN_STORE_NAME : STORE_NAME, bin ? BIN_EDIT_MASK_STORE_NAME : EDIT_MASK_STORE_NAME], 'readwrite');
+            const store = tx.objectStore(bin ? BIN_STORE_NAME : STORE_NAME);
+            const masks = tx.objectStore(bin ? BIN_EDIT_MASK_STORE_NAME : EDIT_MASK_STORE_NAME);
+            const row = store.get(item.id), mask = masks.get(item.id);
+            let checked = 0;
+            const finish = () => {
+                if (++checked < 2) return;
+                // Blob 内容不能在活跃 IDB 事务中异步比较；使用写入版本及快照属性核验后清源。
+                const currentMask = mask.result as StoredEditMask | undefined;
+                if (JSON.stringify(row.result) !== JSON.stringify(item) || (!!currentMask !== !!expectedMask) ||
+                    (currentMask && expectedMask && (currentMask.revision !== expectedMask.revision || currentMask.updatedAt !== expectedMask.updatedAt || currentMask.blob.size !== expectedMask.blob.size || currentMask.blob.type !== expectedMask.blob.type))) { tx.abort(); return; }
+                store.delete(item.id); masks.delete(item.id);
+            };
+            row.onsuccess = finish; mask.onsuccess = finish;
+            tx.oncomplete = () => resolve();
+            tx.onabort = tx.onerror = () => reject(tx.error || new Error('迁移期间源记录发生变化，已保留浏览器副本'));
+        });
     }
 
     private async open(): Promise<IDBDatabase> {
@@ -257,6 +470,14 @@ class LocalHistoryService {
                 if (!db.objectStoreNames.contains(EDIT_MASK_STORE_NAME)) {
                     db.createObjectStore(EDIT_MASK_STORE_NAME, { keyPath: 'historyId' });
                 }
+                if (!db.objectStoreNames.contains(BIN_STORE_NAME)) {
+                    const bin = db.createObjectStore(BIN_STORE_NAME, { keyPath: 'id' });
+                    bin.createIndex('movedAt', 'movedAt', { unique: false });
+                    bin.createIndex('createdAt', 'createdAt', { unique: false });
+                }
+                if (!db.objectStoreNames.contains(BIN_EDIT_MASK_STORE_NAME)) {
+                    db.createObjectStore(BIN_EDIT_MASK_STORE_NAME, { keyPath: 'historyId' });
+                }
             };
 
             request.onsuccess = (event) => {
@@ -274,7 +495,7 @@ class LocalHistoryService {
         });
     }
 
-    /** 迁移远端历史前读取浏览器旧库中的蒙版；读取失败不影响普通历史迁移。 */
+    /** 远端蒙版尚未可用时读取旧副本；正式迁移使用严格读取，不吞掉错误。 */
     private async getBrowserEditMask(id: string, item?: LocalGenItem): Promise<Blob | null> {
         try {
             const db = await this.open();
@@ -374,7 +595,7 @@ class LocalHistoryService {
                     historyId: item.id,
                     blob: source.editMask,
                     mimeType: source.editMask.type || 'image/png',
-                    updatedAt: Date.now(),
+                    updatedAt: Date.now(), revision: createUuid(),
                 } satisfies StoredEditMask);
             }
 
@@ -394,14 +615,14 @@ class LocalHistoryService {
         await new Promise<void>((resolve, reject) => {
             const store = db.transaction(EDIT_MASK_STORE_NAME, 'readwrite').objectStore(EDIT_MASK_STORE_NAME);
             const request = mask
-                ? store.put({ historyId: id, blob: mask, mimeType: mask.type || 'image/png', updatedAt: Date.now() } satisfies StoredEditMask)
+                ? store.put({ historyId: id, blob: mask, mimeType: mask.type || 'image/png', updatedAt: Date.now(), revision: createUuid() } satisfies StoredEditMask)
                 : store.delete(id);
             request.onsuccess = () => resolve();
             request.onerror = () => reject(request.error || new Error('保存历史蒙版失败'));
         });
     }
 
-    /** 按需读取历史蒙版；旧记录中的 Base64 会在第一次访问时迁移到独立存储。 */
+    /** 按需读取历史蒙版；旧Base64保持只读，避免接管期间读操作重写或复活源记录。 */
     async getEditMask(id: string, item?: LocalGenItem): Promise<Blob | null> {
         if (await this.isRemoteEnabled()) {
             try {
@@ -433,23 +654,6 @@ class LocalHistoryService {
         if (!legacyMask) return null;
         try {
             const blob = await dataUrlToBlob(legacyMask);
-            await this.saveEditMask(id, blob);
-            // 迁移完成后清除历史记录中的大 Base64，列表与后续读取都只保留轻量元数据。
-            const current = await new Promise<LocalGenItem | undefined>((resolve, reject) => {
-                const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(id);
-                request.onsuccess = () => resolve(request.result as LocalGenItem | undefined);
-                request.onerror = () => reject(request.error || new Error('读取历史记录失败'));
-            });
-            if (current?.edit?.maskData) {
-                const updatedEdit = normalizeHistoryEdit(current.edit);
-                const updated = { ...current, ...(updatedEdit ? { edit: updatedEdit } : { edit: undefined }) };
-                const writeDb = await this.open();
-                await new Promise<void>((resolve, reject) => {
-                    const request = writeDb.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(updated);
-                    request.onsuccess = () => resolve();
-                    request.onerror = () => reject(request.error || new Error('迁移历史蒙版元数据失败'));
-                });
-            }
             return blob;
         } catch {
             return null;
@@ -598,30 +802,8 @@ class LocalHistoryService {
     }
 
     async delete(id: string): Promise<void> {
-        if (await this.isRemoteEnabled()) {
-            await api.delete(`/local-history/${encodeURIComponent(id)}`);
-            // 幂等清理浏览器库中的同 id 残留：远端/本地模式曾翻转或迁移中断时，
-            // 旧副本可能仍留在浏览器库，只删一侧会让记录在翻回本地模式时“复活”。
-            await this.deleteBrowserRecord(id).catch(() => {});
-            this.emit({ type: 'delete', id });
-            return;
-        }
-        await this.deleteBrowserRecord(id);
-        this.emit({ type: 'delete', id });
-    }
-
-    private async deleteBrowserRecord(id: string): Promise<void> {
-        const db = await this.open();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction([STORE_NAME, EDIT_MASK_STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
-            const editMaskStore = transaction.objectStore(EDIT_MASK_STORE_NAME);
-            const request = store.delete(id);
-            editMaskStore.delete(id);
-            transaction.oncomplete = () => resolve();
-            transaction.onerror = () => reject(transaction.error);
-            request.onerror = () => reject(request.error);
-        });
+        const result = await this.moveToRecycleBin({ ids: [id] });
+        if (!result.success) throw new Error('移入回收站未完成：' + [...result.skipped, ...result.failed].flatMap(item => item.reasons).join('、'));
     }
 
     async setFavorite(id: string, favorite: boolean): Promise<number> {
@@ -669,29 +851,9 @@ class LocalHistoryService {
     }
     
     async clear(): Promise<void> {
-        if (await this.isRemoteEnabled()) {
-            await api.delete('/local-history');
-            // 与 delete 同理：清空是用户显式的“全部删除”，两侧副本都应清掉。
-            await this.clearBrowserHistory().catch(() => {});
-            this.emit({ type: 'clear' });
-            return;
-        }
-        await this.clearBrowserHistory();
-        this.emit({ type: 'clear' });
-    }
-
-    private async clearBrowserHistory(): Promise<void> {
-        const db = await this.open();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction([STORE_NAME, EDIT_MASK_STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
-            const editMaskStore = transaction.objectStore(EDIT_MASK_STORE_NAME);
-            const request = store.clear();
-            editMaskStore.clear();
-            transaction.oncomplete = () => resolve();
-            transaction.onerror = () => reject(transaction.error);
-            request.onerror = () => reject(request.error);
-        });
+        const preview = await this.previewMove({ clear: true });
+        const result = await this.moveToRecycleBin({ previewToken: preview.previewToken });
+        if (!result.success) throw new Error('部分历史受保护或无法确认引用，已保留源记录');
     }
 
     /**
@@ -852,51 +1014,10 @@ class LocalHistoryService {
      * @returns 删除的记录数量
      */
     async deleteOlderThan(days: number): Promise<number> {
-        if (await this.isRemoteEnabled()) {
-            const result = await api.post('/local-history/cleanup', { days });
-            const count = Number(result.deletedCount || 0);
-            if (count > 0) this.emit({ type: 'cleanup' });
-            return count;
-        }
-        const db = await this.open();
-        const cutoffTime = Date.now() - (days * 24 * 60 * 60 * 1000);
-        
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction([STORE_NAME, EDIT_MASK_STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
-            const editMaskStore = transaction.objectStore(EDIT_MASK_STORE_NAME);
-            const index = store.index('createdAt');
-            let deletedCount = 0;
-            
-            // 使用范围查询 createdAt < cutoffTime 的记录
-            const range = IDBKeyRange.upperBound(cutoffTime, true);
-            const request = index.openCursor(range);
-            
-            // 事务完成处理
-            transaction.oncomplete = () => {
-                if (deletedCount > 0) this.emit({ type: 'cleanup' });
-                resolve(deletedCount);
-            };
-            
-            transaction.onerror = () => {
-                reject(transaction.error);
-            };
-            
-            request.onsuccess = (event) => {
-                const cursor = (event.target as IDBRequest).result;
-                if (cursor) {
-                    cursor.delete();
-                    editMaskStore.delete(cursor.primaryKey);
-                    deletedCount++;
-                    cursor.continue();
-                }
-                // 注意：不在这里resolve，等待事务完成
-            };
-            
-            request.onerror = () => {
-                reject(request.error);
-            };
-        });
+        const preview = await this.previewMove({ days });
+        const result = await this.moveToRecycleBin({ previewToken: preview.previewToken });
+        if (!result.success) throw new Error('清理未完全完成：受保护或无法确认引用的历史已保留');
+        return result.completedCount;
     }
 
     /**
@@ -905,53 +1026,10 @@ class LocalHistoryService {
      * @returns 删除的记录数量
      */
     async keepOnly(n: number): Promise<number> {
-        if (await this.isRemoteEnabled()) {
-            const result = await api.post('/local-history/cleanup', { keepCount: n });
-            const count = Number(result.deletedCount || 0);
-            if (count > 0) this.emit({ type: 'cleanup' });
-            return count;
-        }
-        const db = await this.open();
-        
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction([STORE_NAME, EDIT_MASK_STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
-            const editMaskStore = transaction.objectStore(EDIT_MASK_STORE_NAME);
-            const index = store.index('createdAt');
-            let deletedCount = 0;
-            let index_count = 0;
-            
-            // 事务完成处理
-            transaction.oncomplete = () => {
-                if (deletedCount > 0) this.emit({ type: 'cleanup' });
-                resolve(deletedCount);
-            };
-            
-            transaction.onerror = () => {
-                reject(transaction.error);
-            };
-            
-            // 从最新记录开始遍历
-            const request = index.openCursor(null, 'prev');
-            
-            request.onsuccess = (event) => {
-                const cursor = (event.target as IDBRequest).result;
-                if (cursor) {
-                    index_count++;
-                    if (index_count > n) {
-                        cursor.delete();
-                        editMaskStore.delete(cursor.primaryKey);
-                        deletedCount++;
-                    }
-                    cursor.continue();
-                }
-                // 注意：不在这里resolve，等待事务完成
-            };
-            
-            request.onerror = () => {
-                reject(request.error);
-            };
-        });
+        const preview = await this.previewMove({ keepCount: n });
+        const result = await this.moveToRecycleBin({ previewToken: preview.previewToken });
+        if (!result.success) throw new Error('清理未完全完成：受保护或无法确认引用的历史已保留');
+        return result.completedCount;
     }
 
     /**
