@@ -177,7 +177,6 @@ const HistoryCard = React.memo(function HistoryCard({
                     {createdAt}
                 </div>
             </div>
-            <div className="gallery-card-footer truncate px-2 py-2 text-meta text-gray-600 dark:text-gray-300 md:hidden">{createdAt}</div>
         </PressRevealSurface>
     );
 });
@@ -187,7 +186,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     const confirmAction = useConfirmDialog();
     const [upscalingId, setUpscalingId] = useState<string | null>(null);
     const imageDisplay = useMobileImageDisplayPreferences('history');
-    // 与 CSS 768px 断点一致：手机端卡片底部有额外的时间文字行，计入预计高度
+    // 与 CSS 768px 断点一致：手机端改用底部面板与触控控件；图片卡不再追加文字行。
     const [isMobileViewport, setIsMobileViewport] = useState(() => (typeof window === 'undefined' ? false : window.innerWidth < 768));
     useEffect(() => {
         const update = () => setIsMobileViewport(window.innerWidth < 768);
@@ -998,15 +997,15 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     }, [items, browseQuery.sort, language]);
     const selectionFavoritePending = Array.from(selectedIds).some(id => pendingFavoriteIds.has(id));
 
-    // 历史卡预计高度：图片区（列宽 / 图片比例）+ 边框 2px + 列间 12px 间距；手机端另计底部时间行。
+    // 历史卡预计高度：图片区（列宽 / 图片比例）+ 边框 2px + 列间 12px 间距；手机上不再有时间行。
     const estimateHistoryCardHeight = useCallback(
         (item: LocalGenItem, columnWidth: number) => {
-            // 估算高度 = 图区（列宽 / 展示比例）+ 手机底部时间行 + 边框 + 列距；与卡片实测共用同一比例解析
+            // 估算高度 = 图区（列宽 / 展示比例）+ 边框 + 列距；与卡片实测共用同一比例解析
             const ratio = resolveHistoryImageRatio(item, actualImageRatios[item.id]);
             const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
-            return imageHeight + (isMobileViewport ? 34 : 0) + 2 + 12;
+            return imageHeight + 2 + 12;
         },
-        [isMobileViewport, actualImageRatios],
+        [actualImageRatios],
     );
 
     // 卡片回调全部以 item 作参数、useCallback 保持稳定：某一张图加载完成/收藏状态变化时，

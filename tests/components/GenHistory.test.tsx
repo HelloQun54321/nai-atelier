@@ -81,6 +81,15 @@ const setup = async (width = 1280, expectedCount = 2) => {
     return { ...result, notify, navigate, cards: Array.from(result.container.querySelectorAll<HTMLElement>('.mobile-gallery-item')) };
 };
 
+it('手机历史卡片只留图片，封面下方不再追加时间行', async () => {
+    const { container, cards } = await setup(390);
+    expect(container.querySelectorAll('.gallery-card-footer')).toHaveLength(0);
+    for (const card of cards) {
+        expect(card.children).toHaveLength(1);
+        expect(card.firstElementChild?.classList.contains('mobile-gallery-frame')).toBe(true);
+    }
+});
+
 it('足迹带入的画师筛选应用到历史浏览查询', async () => {
     render(<GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={vi.fn()} initialQuery={{ query: { search: 'artist:alpha_artist', sort: 'newest' }, token: 1 }} />);
     await waitFor(() => expect(vi.mocked(localHistory.getBrowseOrder).mock.calls.some(([query]) => query.search === 'artist:alpha_artist')).toBe(true));
