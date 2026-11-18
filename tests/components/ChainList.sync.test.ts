@@ -68,7 +68,10 @@ it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操�
   expect(controls.getAttribute('data-card-action')).toBe('true');
   expect(controls.hasAttribute('data-image-action-left')).toBe(false);
   expect(controls.classList.contains('hover-reveal-md')).toBe(false);
-  expect(within(controls).getByRole('button', { name: '收藏' }).closest('.hover-reveal-md')).toBeNull();
+  // 未收藏的爱心自己按需显露，不能再套一层同名的悬停容器。
+  const heart = within(controls).getByRole('button', { name: '收藏' });
+  expect(heart.classList.contains('hover-reveal-md')).toBe(true);
+  expect(heart.parentElement?.closest('.hover-reveal-md')).toBeNull();
   expect(controls.contains(imageCopy)).toBe(true);
   const buttons = within(controls).getAllByRole('button');
   expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual([
@@ -506,20 +509,23 @@ describe('风格串列表的酒馆筛选交互', () => {
     vi.stubGlobal('innerWidth', 390);
     const p = { ...props(), chains: [{ ...chains[0], previewImage: '/synthetic/cover.png' }] };
     const view = render(React.createElement(ChainList, p));
-    longPress(screen.getByRole('button', { name: '打开风格串：风格 A' }));
-    fireEvent.click(screen.getByRole('button', { name: '删除：风格 A' }));
+    // 长按会同时弹出底部操作面板，按钮查询必须落在卡片内，避免与面板里的同名条目混淆。
+    const card = screen.getByRole('button', { name: '打开风格串：风格 A' });
+    longPress(card);
+    fireEvent.click(within(card).getByRole('button', { name: '删除：风格 A' }));
     expect(confirmAction).toHaveBeenCalledOnce();
-    expect(screen.queryByRole('button', { name: '复制/查看详情：风格 A' })).toBeNull();
+    expect(within(card).queryByRole('button', { name: '复制/查看详情：风格 A' })).toBeNull();
     view.rerender(React.createElement(ChainList, { ...p, isGuest: true }));
-    longPress(screen.getByRole('button', { name: '打开风格串：风格 A' }));
-    expect(screen.queryByRole('button', { name: '删除：风格 A' })).toBeNull();
-    expect(screen.queryByRole('button', { name: /编辑风格串信息/ })).toBeNull();
-    expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
+    const guestCard = screen.getByRole('button', { name: '打开风格串：风格 A' });
+    longPress(guestCard);
+    expect(within(guestCard).queryByRole('button', { name: '删除：风格 A' })).toBeNull();
+    expect(within(guestCard).queryByRole('button', { name: /编辑风格串信息/ })).toBeNull();
+    expect(within(guestCard).getByRole('button', { name: '下载图片' })).toBeTruthy();
+    fireEvent.click(within(guestCard).getByRole('button', { name: '复制图片' }));
     await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/synthetic/cover.png', false));
     view.rerender(React.createElement(ChainList, { ...p, chains: [chains[0]], isGuest: true }));
-    const card = screen.getByRole('button', { name: '打开风格串：风格 A' });
-    expect(card.querySelector('.hover-reveal-md')).toBeNull();
+    const finalCard = screen.getByRole('button', { name: '打开风格串：风格 A' });
+    expect(finalCard.querySelector('.hover-reveal-md')).toBeNull();
     expect(p.onSelect).not.toHaveBeenCalled(); expect(p.onDelete).not.toHaveBeenCalled();
   });
 
