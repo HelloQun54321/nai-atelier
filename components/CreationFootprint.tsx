@@ -3,7 +3,7 @@ import {
   Activity, ArrowRight, BarChart3, Brush, CalendarDays, Download,
   Flame, Footprints, Heart, Image as ImageIcon, Palette, Sparkles,
 } from 'lucide-react';
-import { EmptyState, InlineSpinner, PageSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, InlineSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { MobileOverflowMenu } from './MobileUI';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { collectionRevision, collectionSnapshot, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
@@ -591,7 +591,15 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
       </WorkspaceChrome>
       <div ref={scrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-scroll overscroll-contain p-4 pb-28 md:p-6 md:pb-10">
         <div className="mx-auto w-full max-w-6xl space-y-4">
-          {loading && !stats && <PageSpinner />}
+          {/* 统计与 Key 用量各自返回：统计未到时先铺同形状的首屏骨架，避免上面一块空 spinner 与下面已显示的内容割裂。 */}
+          {!error && !stats && <>
+            <div aria-hidden="true" className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+              {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[120px] animate-pulse rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900" />)}
+            </div>
+            <div className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+              <div className="flex h-[260px] items-center justify-center"><InlineSpinner label={t('正在读取创作记录…')} /></div>
+            </div>
+          </>}
 
           {error && !loading && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
             <div className="flex flex-wrap items-center gap-3"><span className="min-w-0 flex-1">{error}</span><button type="button" onClick={() => setReload(value => value + 1)} className="mobile-touch rounded-lg border border-current px-3 py-1 text-xs font-semibold">{t('重试')}</button><button type="button" onClick={() => onOpenHistory({ sort: 'newest' })} className="mobile-touch text-xs font-semibold underline">{t('打开历史')}</button></div>

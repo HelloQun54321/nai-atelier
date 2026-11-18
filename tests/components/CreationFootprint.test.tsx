@@ -270,6 +270,19 @@ it('摘要沿用资产周期口径，切换周期不重读资产，重新进入�
   expect(signal.aborted).toBe(true);
 });
 
+it('统计未返回时先显示首屏骨架，Key 用量仍可先显示，避免整页空白加载与下方内容割裂', async () => {
+  let finishStats!: (value: UsageStats) => void;
+  mocks.getStats.mockImplementationOnce(() => new Promise(resolve => { finishStats = resolve; }));
+  setup();
+  await waitFor(() => expect(mocks.getStats).toHaveBeenCalled());
+  expect(screen.getByText('正在读取创作记录…')).toBeTruthy();
+  expect(screen.queryByText('作品总数')).toBeNull();
+  expect(screen.getByText('Key 使用量')).toBeTruthy();
+  await act(async () => { finishStats(stats()); });
+  await screen.findByText('作品总数');
+  expect(screen.queryByText('正在读取创作记录…')).toBeNull();
+});
+
 it('收藏与资产独立加载，未就绪不显示零或暂无，成功空资产才显示暂无', async () => {
   let finishAssets!: (value: UsageAssets) => void, finishCollection!: () => void;
   mocks.getAssets.mockImplementationOnce(() => new Promise(resolve => { finishAssets = resolve; }));
