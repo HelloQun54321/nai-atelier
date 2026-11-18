@@ -2167,7 +2167,6 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             <ChainEditorHeader
                 chainId={chain.id}
                 isCharacterMode={isCharacterMode}
-                entityName={chain.name}
                 isOwner={true}
                 isGuest={false}
                 canEdit={true}

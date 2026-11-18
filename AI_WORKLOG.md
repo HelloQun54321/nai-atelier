@@ -7,7 +7,8 @@
 - **DeepSeek Harness (V4.1 Flash)**：实验室角色专属提示词的工具行降重：定位／构图改为无框开关、角色标签去边框留选中色底，删除／添加保留按钮外壳（style: lighten character tool chips）。
 - **DeepSeek Harness (V4.1 Flash)**：热力图格子与图例改用固定 2px 圆角，避免「柔和圆角」预设把 17px 格子放大成圆点（style: keep heatmap cells square at 2px）。
 - **DeepSeek Harness (V4.1 Flash)**：创作足迹统计未返回时改铺同形状骨架（概览卡片 + 热力图占位），Key 用量照常先显示，消除首屏整块 spinner 与下方内容割裂（fix: skeletonize the footprint first paint）。
-- **DeepSeek Harness (V4.1 Flash)**：统一电脑端顶栏骨架：历史补搜索并把条件收进筛选弹层、创作足迹去标题与刷新、法典去刷新、提示词库分段移到搜索右侧、画师库/角色库去竖线、编辑页显示串名（refactor: align desktop page toolbars）。
+- **DeepSeek Harness (V4.1 Flash)**：撤回编辑页顶栏的作品名（用户明确不要）：移除 `ChainEditorModeHeader` / `ChainEditorHeader` 的 `entityName` 与 `ChainEditor` 的传值，返回箭头后直接是模式切换（fix: drop the entity name from the editor toolbar）。
+- **DeepSeek Harness (V4.1 Flash)**：统一电脑端顶栏骨架：历史补搜索并把条件收进筛选弹层、创作足迹去标题与刷新、法典去刷新、提示词库分段移到搜索右侧、画师库/角色库去竖线、编辑页留白对齐（refactor: align desktop page toolbars）。
 - **DeepSeek Harness (V4.1 Flash)**：消耗结算后跳过同批触发的旧余额刷新，避免侧栏预算回跳（fix: keep spent budget from being overwritten）。
 - **DeepSeek Harness (V4.1 Flash)**：清理手机弹层嵌套关闭的历史栈、补齐 7 条缺失译文，并把触屏长按/断点/列宽相关的过期测试断言更新到当前契约（fix: tidy nested mobile layers and missing labels）。
 - **DeepSeek Harness (V4.1 Flash)**：修正「收集模式」按钮文字标签被开关轨道内阴影套中（fix: keep the switch track shadow off toolbar labels）。

@@ -12,8 +12,6 @@ import { ImagePreviewPortal } from '../ImagePreviewPortal';
 export interface ChainEditorHeaderProps {
     chainId: string;
     isCharacterMode: boolean;
-    /** 当前编辑对象名称：电脑端显示在返回箭头旁，实验室不传。 */
-    entityName?: string;
     isOwner: boolean;
     isGuest: boolean;
     canEdit: boolean;
@@ -46,7 +44,6 @@ export interface ChainEditorHeaderProps {
 export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     chainId,
     isCharacterMode,
-    entityName,
     isOwner,
     isGuest,
     canEdit,
@@ -134,7 +131,6 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                 <ChainEditorModeHeader
                     isLaboratory={isPlayground}
                     entityLabel={isCharacterMode ? '自定义角色' : '风格串'}
-                    entityName={entityName}
                     activeMode={activeGenerationMode}
                     onSelectMode={selectGenerationMode}
                     isGenerating={isGenerating}
