@@ -692,8 +692,13 @@ test('prompt agent history inspection returns the real image only to vision mode
 test('prompt agent destructive tools only emit confirmation requests', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   const events = [];
-  let workerCalls = 0;
-  const tools = service.createTools({ basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: {} }, { presets: [], vibes: [] }, event => events.push(event), { requestJson: async () => { workerCalls++; } }, { imageInput: true });
+  const workerCalls = [];
+  const tools = service.createTools({ basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: {} }, { presets: [], vibes: [] }, event => events.push(event), { requestJson: async (path, options) => {
+    workerCalls.push({ path, options });
+    assert.equal(path, '/api/local-history/recycle-bin/preview');
+    assert.deepEqual(options, { method: 'POST', body: { clear: true } });
+    return { previewToken: 'synthetic-preview', expiresAt: Date.now() + 300000, requestedCount: 2, movableCount: 1, skippedCount: 1, skipped: [{ id: 'referenced', reasons: ['favorite'] }] };
+  } }, { imageInput: true });
   const pending = tools.find(item => item.name === 'request_clear_history').execute('call', { reason: 'test' });
   await new Promise(resolve => setImmediate(resolve));
   const request = [...service.pendingConfirmations.values()][0];
@@ -702,9 +707,13 @@ test('prompt agent destructive tools only emit confirmation requests', async () 
   service.pendingConfirmations.clear();
   request.resolve({ accepted: false, result: { success: false, outcome: 'cancelled', code: 'user_cancelled', error: '用户取消了这项操作' } });
   await assert.rejects(() => pending, /取消/);
-  assert.equal(workerCalls, 0);
+  assert.equal(workerCalls.length, 1);
   assert.equal(events.at(-1).action.kind, 'request_project_action');
   assert.equal(events.at(-1).action.patch.action, 'clear_history');
+  assert.equal(events.at(-1).action.patch.payload.previewToken, 'synthetic-preview');
+  assert.equal(events.at(-1).action.patch.payload.movableCount, 1);
+  assert.match(events.at(-1).action.patch.consequence, /不会永久删除/);
+  assert.equal(workerCalls.some(({ path }) => /\/(?:move|purge)$/.test(path)), false);
 });
 
 test('prompt agent keeps advanced generation fields when changing one parameter', async () => {
@@ -960,6 +969,12 @@ test('media thumbnails accept project and st-chatu8 history sources without open
   assert.deepEqual(getValidatedSource('/api/local-history/item-1/image'), {
     type: 'local', source: '/api/local-history/item-1/image',
   });
+  assert.deepEqual(getValidatedSource('/api/local-history/recycle-bin/item-1/image'), {
+    type: 'local', source: '/api/local-history/recycle-bin/item-1/image',
+  });
+  for (const path of ['/api/local-history/recycle-bin/item-1/edit-mask', '/api/local-history/recycle-bin/../image', '/api/local-history/recycle-bin/%2e%2e/image', '/api/local-history/recycle-bin/%252e%252e/image', '/api/local-history/recycle-bin/a%2fb/image']) {
+    assert.throws(() => getValidatedSource(path), /Unsupported image source/);
+  }
   assert.deepEqual(getValidatedSource('/api/character-references/ref-1/thumbnail'), {
     type: 'local', source: '/api/character-references/ref-1/thumbnail',
   });

@@ -272,6 +272,8 @@ it('参数组合聚合保留各项总数，未启用参考与损坏参数不串�
     _local_edit: { operation: 'inpaint' }, characterReferences: { enabled: true, slots: [{}, {}, {}] }, vibes: { enabled: false, slots: [{}] } }) });
   insert('broken', 'owner', TO, 'solo', { params: '{broken' });
   insert('null', 'owner', TO, 'solo', { params: 'null' });
+  await invoke(`/api/local-history/stats?days=all&to=${TO}`);
+  readBytes = 0; // 索引首次回填含参与版本摘要；此处只衡量已有索引后的聚合，不回读12份100KB快照。
   const payload = await (await invoke(`/api/local-history/stats?days=all&to=${TO}`)).json();
   expect(payload.totals.images).toBe(15);
   expect(payload.models).toEqual([{ model: 'nai-diffusion-5-full', images: 12 }, { model: 'nai-diffusion-4-5-full', images: 1 }]);

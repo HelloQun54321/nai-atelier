@@ -1,3 +1,4 @@
+import { ensureHistoryRecycleSchema } from './historyRecycleSchema';
 // Vibe Transfer library + character reference library routes and image helpers.
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
 import { readImageDimensions } from '../imageDimensions.mjs';
@@ -371,6 +372,7 @@ async function validatedVibeSlots(db: D1Database, slots: any[]) {
 const vibeReferenceDocuments = `
   SELECT '风格串' AS source, params AS document, 1 AS requires_json FROM chains
   UNION ALL SELECT '历史', params, 1 FROM local_generation_history
+   UNION ALL SELECT '回收站', params, 1 FROM local_generation_recycle_bin
   UNION ALL SELECT '收藏', params, 1 FROM inspirations
   UNION ALL SELECT '收藏', analysis, 1 FROM inspirations
   UNION ALL SELECT '组合', slots, 1 FROM vibe_groups
@@ -411,7 +413,7 @@ async function deleteUnreferencedFiles(db: D1Database, env: Env, keys: string[])
         SELECT original_key AS object_key FROM vibe_assets UNION ALL SELECT thumbnail_key FROM vibe_assets
         UNION ALL SELECT encoding_key FROM vibe_encodings_all
         UNION ALL SELECT original_key FROM character_reference_assets UNION ALL SELECT thumbnail_key FROM character_reference_assets
-        UNION ALL SELECT image_key FROM local_generation_history UNION ALL SELECT image_key FROM inspirations
+        UNION ALL SELECT image_key FROM local_generation_history UNION ALL SELECT image_key FROM local_generation_recycle_bin UNION ALL SELECT image_key FROM inspirations
       ) SELECT EXISTS(SELECT 1 FROM pointers p, target t WHERE p.object_key = t.object_key) OR
         EXISTS(SELECT 1 FROM documents d WHERE ${malformedVibeReferenceDocument}) OR
         EXISTS(SELECT 1 FROM documents d, json_tree(CASE WHEN json_valid(d.document) THEN d.document ELSE '{}' END) n, target t
@@ -493,6 +495,7 @@ async function permanentlyDeleteCharacterReference(db: D1Database, env: Env, ass
 // Precise/Character Reference image library + Permanent Vibe Transfer library.
 export async function handleVibeRoute(ctx: RouteContext): Promise<Response | null> {
   const { request, env, url, path, method, db } = ctx;
+  if (path.startsWith('/api/vibes') || path.startsWith('/api/character-references')) await ensureHistoryRecycleSchema(db);
 
   // --- Precise/Character Reference image library ---
   if (path.startsWith('/api/character-references')) {

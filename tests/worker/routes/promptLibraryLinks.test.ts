@@ -44,7 +44,7 @@ const fixture = () => {
   const images = new Map<string, Uint8Array>();
   const bucket = {
     put: vi.fn(async (key: string, bytes: ArrayBuffer) => { images.set(key, new Uint8Array(bytes).slice()); }),
-    get: vi.fn(async () => null),
+    get: vi.fn(async (key: string) => images.has(key) ? { body: images.get(key), httpEtag: 'synthetic', writeHttpMetadata() {} } : null),
     delete: vi.fn(async (key: string) => { images.delete(key); }),
   };
   const env = { DB: db, BUCKET: bucket, LOCAL_HISTORY_ENABLED: 'true', PERSONAL_MODE_ENABLED: 'true' } as unknown as Env;
@@ -188,6 +188,7 @@ it('关联分支失败仍等待统计完成，不提前返回保存回执', asyn
 it('多条关联和旧归属清理使用同一批次，写入失败整体回滚', async () => {
   const f = fixture();
   await libraryLinks.ensurePromptLibraryLinkSchema(f.db);
+  addHistory(f,{id:'batch-links',prompt:'silver hair'});
   const entry = (id: string) => ({ id, kind: 'pose', name: id, text: 'silver hair', createdAt: 1 });
   await libraryLinks.writePromptLibraryLinks(f.db, { matches: [entry('old')] }, 'batch-links', 1);
   f.sqlite.exec(`CREATE TRIGGER fail_link BEFORE INSERT ON prompt_library_links
@@ -365,8 +366,9 @@ it('删除历史、删除条目与解除来源都会清掉关联', async () => {
 
   await saveHistory(f, { id: 'img-1', prompt: 'red hair with hairband, arms behind back' });
   expect(linkIds(f, 'img-1')).toEqual(['lib-a', 'lib-b']);
-  expect((await f.invoke('/api/local-history/img-1', 'DELETE')).status).toBe(200);
-  expect(linkCount(f)).toBe(0);
+  expect((await f.invoke('/api/local-history/img-1', 'DELETE')).status).toBe(409);
+  expect(linkCount(f)).toBe(2);
+  await f.invoke('/api/local-history/img-1/unlink','PUT');
 
   await saveHistory(f, { id: 'img-2', prompt: 'red hair with hairband' });
   expect((await f.invoke('/api/chains/lib-a', 'DELETE')).status).toBe(200);
@@ -542,12 +544,17 @@ it('自动封面保留历史原件，删除历史不丢图，最后一个封面�
   const url = `/api/assets/${encodeURIComponent(key)}`;
   expect(coverOf(f, 'lib-a')).toBe(url);
   expect(coverOf(f, 'lib-b')).toBe(url);
-  expect((await f.invoke('/api/local-history/cover-img', 'DELETE')).status).toBe(200);
+  expect((await f.invoke('/api/local-history/cover-img', 'DELETE')).status).toBe(409);
   expect(f.images.has(key)).toBe(true);
   expect(coverOf(f, 'lib-a')).toBe(url);
   expect((await f.invoke('/api/chains/lib-a', 'PUT', { previewImage: '' })).status).toBe(200);
   expect(f.images.has(key)).toBe(true);
   expect((await f.invoke('/api/chains/lib-b', 'DELETE')).status).toBe(200);
+  expect(f.images.has(key)).toBe(true);
+  await f.invoke('/api/local-history/cover-img/unlink','PUT');
+  await f.invoke('/api/local-history/cover-img','DELETE');
+  const bin=await(await f.invoke('/api/local-history/recycle-bin/cover-img')).json();
+  await f.invoke('/api/local-history/recycle-bin/purge','POST',{ids:['cover-img'],expectedVersions:{'cover-img':bin.item.version}});
   expect(f.images.has(key)).toBe(false);
 });
 

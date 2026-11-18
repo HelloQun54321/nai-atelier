@@ -1,3 +1,9 @@
+## 2026-11-18
+- **DeepSeek Harness (gpt-6.2-sol)**：修复宿主机验收中未被引用的历史仍被拦截的问题。旧引用检查超过本地 D1 的复合查询分支限制；预览与原子移入改用同一组 `EXISTS` 判定，保留收藏、创作引用和无法核实资料的保护，技术性导入回执不视为创作引用。新增本地 D1/R2 回归，覆盖移入、恢复、永久删除以及保护路径。版本仍为尚未提交的 1.189.0。
+
+## 2026-11-17
+- **DeepSeek Harness (gpt-6.1-sol)**：实现生成历史回收站（feat: add a recoverable history recycle bin）。新增独立回收站、冻结预览与真实批量回执；历史删除／整理仅移入，有效收藏和创作引用阻止或跳过；恢复保留原图、提示词、参数与编辑资料，永久删除逐次确认并绑定随机移入版本，防止旧授权作用于重新移入的记录。统计读取活动历史加回收站，永久删除沿用旧删除后果，不回退用量账本；补齐共享素材反向保护、无覆盖迁移、只读失败档案和 Agent 读取／恢复／删除能力。纯浏览器环境缺完整引用图时禁用移入；异常中断遗留的数据库写入占用保守阻止重试，不自动抢占。测试临时数据、缓存、日志与构建产物均外置，仅用合成资料：完整 Worker 38 文件 497/497、Node 整合 272/272、历史／回收站／i18n 101/101（最终安全互斥增量 1/1、面板复跑 9/9）、localHistory 服务 15/15、Agent 面板 113/113；Agent 服务 9/10，既有方法白名单断言未包含已有的 saveCreativeDirectPresets，保留报告。TypeScript 无输出检查、前端及 Worker 外置构建通过；改动源码 ESLint 无错误（保留警告）。未运行真实资料迁移、收费生成或浏览器手动验收；遵照用户要求未 commit/push。版本 1.189.0。
+
 ## 2026-11-16
 - **DeepSeek Harness (deepseek-v4.1-flash)**：按用户要求把通知胶囊改为相对工作区居中（fix: center toasts in the workspace area）。`components/Layout.tsx` 的 toast 从根容器（`fixed` 相对整窗 `left-1/2`）移进 `<main class="app-workspace">` 内（`absolute inset-x-0 flex justify-center`），居中轴因此排除左侧栏；实测 1600 宽下胶囊中心 904 = 工作区中心 904，而窗口中心是 800。验证：`Layout` 21 项通过。版本 1.188.21。
 - **DeepSeek Harness (deepseek-v4.1-flash)**：按用户指正把全局成功提示放回顶部居中（fix: restore the centered success toast）。上一轮「取消横条」把 `Layout` 的 toast 一起挪到右下角属于误伤——它是紧凑胶囊通知、不是横跨页面的横条；`components/Layout.tsx` 恢复 `top-4 left-1/2 -translate-x-1/2` 的居中胶囊，报错弹窗保持不变。验证：`Layout` 21 项通过。版本 1.188.20。

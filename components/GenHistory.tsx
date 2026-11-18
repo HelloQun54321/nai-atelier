@@ -2,7 +2,7 @@ import { t, useLanguage, getLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 
 import React, { useCallback, useContext, useMemo, useState, useEffect, useRef } from 'react';
-import { LocalHistoryDateRange, LocalHistoryPage, localHistory } from '../services/localHistory';
+import { LocalHistoryDateRange, LocalHistoryPage, type LocalHistoryMovePreview, type LocalHistoryMoveSelection, localHistory } from '../services/localHistory';
 import { GenerationMode, LocalGenItem, PromptChain, User } from '../types';
 import { PAGINATION_CONFIG } from '../config/pagination';
 import { MobileBottomSheet, useMobileHistoryLayer } from './MobileUI';
@@ -32,6 +32,7 @@ import { NAI_UPSCALE_FACTOR, UPSCALE_MAX_AREA, downloadUpscaledImage, upscaleCos
 import { beginExportTarget } from '../services/exportLocation';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { ListJumpButton } from './ListJumpButton';
+import { RecycleBinPanel, formatHistoryBinReasons } from './RecycleBinPanel';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -111,6 +112,7 @@ const HistoryCard = React.memo(function HistoryCard({
     isSelected,
     selectionMode,
     isFavoritePending,
+    moveDisabled,
     onToggleSelect,
     onOpen,
     onFavorite,
@@ -125,6 +127,7 @@ const HistoryCard = React.memo(function HistoryCard({
     isSelected: boolean;
     selectionMode: boolean;
     isFavoritePending: boolean;
+    moveDisabled: boolean;
     onToggleSelect: (itemId: string) => void;
     onOpen: (item: LocalGenItem) => void;
     onFavorite: (item: LocalGenItem) => Promise<void>;
@@ -169,7 +172,7 @@ const HistoryCard = React.memo(function HistoryCard({
                     <ImageShareActions imageUrl={item.imageUrl} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} filename={getDownloadFilename(item.createdAt)} notify={notify} variant="card" className="flex-col" favorite={favoriteTarget} favoriteActive={Boolean(item.isFavorite)} favoritePending={isFavoritePending} onToggleFavorite={() => onFavorite(item)} />
                 </ImageCardActions>}
                 {!selectionMode && <div data-card-action="true" data-image-action-left className={`absolute left-2 top-2 z-10 ${HISTORY_CARD_HOVER_ACTIONS}`} onPointerDown={event => event.stopPropagation()}>
-                    <button type="button" onClick={e => onDelete(item, e)} className={`${IMAGE_CARD_ACTION_CLASS} ${IMAGE_CARD_ACTION_TONE.delete} inline-flex items-center justify-center`} aria-label={t("删除历史图片")} title={t("删除")}>
+                    <button type="button" disabled={moveDisabled} onClick={e => onDelete(item, e)} className={`${IMAGE_CARD_ACTION_CLASS} ${IMAGE_CARD_ACTION_TONE.delete} inline-flex items-center justify-center`} aria-label={t("移入回收站")} title={t("移入回收站")}>
                         <Trash2 className="h-4 w-4" />
                     </button>
                 </div>}
@@ -230,6 +233,30 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     const changeRequestRef = useRef(0);
     const [migrationProgress, setMigrationProgress] = useState<{ current: number; total: number } | null>(null);
     const [pendingFavoriteIds, setPendingFavoriteIds] = useState<Set<string>>(new Set());
+    const pendingFavoriteIdsRef = useRef<Set<string>>(new Set());
+    const [showRecycleBin, setShowRecycleBin] = useState(false);
+    const [showMigrationArchive, setShowMigrationArchive] = useState(false);
+    const [migrationArchive, setMigrationArchive] = useState<Awaited<ReturnType<typeof localHistory.getBrowserMigrationRecovery>> | null>(null);
+    const [moveCapability, setMoveCapability] = useState<'remote' | 'requires-remote-migration' | null>(null);
+    const readMigrationStatus = async (includeArchive = false) => {
+        try {
+            const capability = await localHistory.getRecycleBinCapabilities();
+            setMoveCapability(capability.move);
+            if (includeArchive || capability.move !== 'remote') {
+                const archive = await localHistory.getBrowserMigrationRecovery();
+                setMigrationArchive(archive);
+                if (!archive.active.length && !archive.bin.length && !archive.error) setShowMigrationArchive(false);
+            }
+        } catch { setMoveCapability(null); }
+    };
+    const retryMigration = async () => {
+        setMigrationProgress({ current: 0, total: 0 });
+        try { await localHistory.prepare(setMigrationProgress); }
+        catch (error) { notify(error instanceof Error ? error.message : t('历史迁移失败'), 'error'); }
+        finally { setMigrationProgress(null); await readMigrationStatus(true); void refreshPageRef.current(1, true); }
+    };
+    const moveBusyRef = useRef(false);
+    const [moveBusy, setMoveBusy] = useState(false);
     // 缓存管理
     const pageCacheRef = useRef<Record<number, LocalGenItem[]>>({});
     const inflightPagesRef = useRef<Record<string, Promise<LocalHistoryPage>>>({});
@@ -244,8 +271,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     const [cleanMode, setCleanMode] = useState<'days' | 'count'>('days');
     const [cleanDays, setCleanDays] = useState<number>(PAGINATION_CONFIG.CLEANUP.DEFAULT_DAYS);
     const [cleanCount, setCleanCount] = useState<number>(PAGINATION_CONFIG.CLEANUP.DEFAULT_COUNT);
-    // 预览数量会写进不可恢复的确认文案：读取中为 null，失败为 'error'，两者都禁止确认，不能伪装成 0。
-    const [cleanPreviewCount, setCleanPreviewCount] = useState<number | null | 'error'>(null);
+    // 确认展示服务端冻结的真实候选；未知或失败时不能伪装成零。
+    const [cleanPreview, setCleanPreview] = useState<LocalHistoryMovePreview | null | 'error'>(null);
     const cleanPreviewSeqRef = useRef(0);
     const [isPreparingImport, setIsPreparingImport] = useState(false);
     const [importMode, setImportMode] = useState<GenerationMode>('text-to-image');
@@ -607,7 +634,10 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     }, [lightbox]);
 
     historyChangeRef.current = change => {
-        if (change.type !== 'add' && change.type !== 'favorite' && !change.external) return;
+        if (change.type === 'migration-failed') { void readMigrationStatus(true); return; }
+        if (change.type === 'remote-takeover') void readMigrationStatus(true);
+        if (!['add', 'favorite', 'move', 'restore'].includes(change.type) && !change.external) return;
+        if (moveBusyRef.current && change.type === 'move') return;
         if (change.type === 'delete' && change.id) { void removeBrowseItems(new Set([change.id])); return; }
         if (change.type === 'favorite' && change.id && typeof change.favorite === 'boolean') {
             if (dateRangeRef.current.favoriteOnly && !change.favorite) { void removeBrowseItems(new Set([change.id])); return; }
@@ -695,6 +725,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                 notify('历史图片迁移失败，浏览器原数据已保留: ' + (e?.message || '未知错误'), 'error');
             } finally {
                 setMigrationProgress(null);
+                void readMigrationStatus(true);
                 void refreshPageRef.current(1, true);
             }
         };
@@ -740,42 +771,46 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
         } finally { setUpscalingId(null); }
     };
 
+    const getProtectedMoveIds = () => {
+        const protectedIds = new Set(pendingFavoriteIdsRef.current);
+        const known = [...itemsRef.current, ...Object.values(pageCacheRef.current).flat(), ...(lightboxRef.current ? [lightboxRef.current] : [])];
+        known.forEach(item => {
+            if (item.isFavorite || collectionTargetActive({ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id })) protectedIds.add(item.id);
+        });
+        return [...protectedIds];
+    };
+    const movePreviewMessage = (preview: LocalHistoryMovePreview) => [
+        t('候选 {0} 张 · 可移入 {1} 张 · 跳过 {2} 张', [preview.requestedCount, preview.movableCount, preview.skippedCount]),
+        ...preview.skipped.map(item => item.id + ': ' + formatHistoryBinReasons(item.reasons)),
+        t('有效收藏与引用会跳过。移入回收站不释放空间，也不会自动过期，可在回收站恢复。'),
+    ].join('\n');
+    const executeMove = async (preview: LocalHistoryMovePreview) => {
+        const result = await localHistory.moveToRecycleBin({ previewToken: preview.previewToken, protectedIds: getProtectedMoveIds() });
+        const completed = new Set(result.completedIds);
+        if (completed.size) await removeBrowseItems(completed);
+        setSelectedIds(previous => new Set([...previous].filter(id => !completed.has(id))));
+        const reasons = [...result.skipped, ...result.failed].map(item => item.id + ': ' + formatHistoryBinReasons(item.reasons));
+        notify([t('已移入回收站 {0} 张 · 跳过 {1} 张 · 失败 {2} 张', [completed.size, result.skippedCount, result.failedCount]), ...reasons, ...result.warnings.map(item => item.id + ': ' + formatHistoryBinReasons(item.reasons))].join('\n'), result.skippedCount || result.failedCount ? 'error' : 'success');
+    };
+    const requestMove = async (selection: LocalHistoryMoveSelection) => {
+        if (moveBusyRef.current) return;
+        if (selection.ids && selection.ids.length > 500) { notify(t('每次最多操作 500 张，请减少选择后重试'), 'error'); return; }
+        if (moveCapability !== 'remote') { notify(t('请先连接本地服务完成浏览器历史迁移，再使用回收站清理。原资料仍可只读浏览与导出。'), 'error'); return; }
+        moveBusyRef.current = true; setMoveBusy(true);
+        try {
+            const preview = await localHistory.previewMove({ ...selection, protectedIds: getProtectedMoveIds() });
+            if (!await confirmAction({ title: t('移入回收站'), message: movePreviewMessage(preview), confirmLabel: t('确认移入回收站'), tone: 'danger' })) return;
+            await executeMove(preview);
+        } catch (error) {
+            notify(error instanceof Error ? error.message : t('移入回收站失败'), 'error');
+        } finally { moveBusyRef.current = false; setMoveBusy(false); }
+    };
     const handleDelete = async (id: string, e?: React.MouseEvent) => {
         e?.stopPropagation();
-        if (await confirmAction({
-            rememberKey: 'history.delete',
-            title: '删除这张历史图片？',
-            message: '图片记录和本地图片文件将被永久删除，此操作无法撤销。',
-            confirmLabel: '确认删除',
-            tone: 'danger',
-        })) {
-            try {
-                await localHistory.delete(id);
-                await removeBrowseItems(new Set([id]));
-            } catch (e: any) {
-                notify('删除失败: ' + (e?.message || '未知错误'), 'error');
-            }
-        }
+        await requestMove({ ids: [id] });
     };
-
     const handleBulkDelete = async () => {
-        if (!selectedIds.size) return;
-        if (!await confirmAction({ rememberKey: 'history.delete-batch', title: `删除选中的 ${selectedIds.size} 张图片？`, message: '这些历史记录和本地图片文件将被永久删除。', confirmLabel: '批量删除', tone: 'danger' })) return;
-        try {
-            const deleted = new Set<string>();
-            try {
-                for (const id of selectedIds) { await localHistory.delete(id); deleted.add(id); }
-            } finally {
-                if (deleted.size) await removeBrowseItems(deleted);
-                setSelectedIds(previous => new Set([...previous].filter(id => !deleted.has(id))));
-            }
-            setSelectionMode(false);
-            setSelectedIds(new Set());
-            notify('选中的历史图片已删除');
-        } catch (e: any) {
-            // 部分删除成功也在此统一处理：选中集不清空，便于用户重试剩余项
-            notify('批量删除失败: ' + (e?.message || '未知错误'), 'error');
-        }
+        if (selectedIds.size) await requestMove({ ids: [...selectedIds] });
     };
 
     const patchFavoriteState = (ids: Set<string>, favorite: boolean) => {
@@ -796,16 +831,15 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     };
 
     const setFavoritePending = (ids: Iterable<string>, pending: boolean) => {
-        setPendingFavoriteIds(previous => {
-            const next = new Set(previous);
-            for (const id of ids) pending ? next.add(id) : next.delete(id);
-            return next;
-        });
+        const next = new Set(pendingFavoriteIdsRef.current);
+        for (const id of ids) pending ? next.add(id) : next.delete(id);
+        pendingFavoriteIdsRef.current = next;
+        setPendingFavoriteIds(next);
     };
 
     const handleFavorite = async (item: LocalGenItem, event?: React.SyntheticEvent) => {
         event?.stopPropagation();
-        if (pendingFavoriteIds.has(item.id)) return;
+        if (moveBusyRef.current || pendingFavoriteIdsRef.current.has(item.id)) return;
         const favoriteTarget = { imageUrl: item.imageUrl, sourceType: 'history' as const, sourceId: item.id };
         const favorite = !(Boolean(item.isFavorite) || collectionTargetActive(favoriteTarget));
         const originalQueryKey = getHistoryQueryKey();
@@ -828,6 +862,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     };
 
     const handleBulkFavorite = async (favorite: boolean) => {
+        if (moveBusyRef.current) return;
         const ids = Array.from(selectedIds);
         if (!ids.length) return;
         setFavoritePending(ids, true);
@@ -872,88 +907,41 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     };
 
     const handleClearAll = async () => {
-        if (await confirmAction({
-            rememberKey: 'history.clear-all',
-            title: '清空全部生成历史？',
-            message: '所有历史记录和本地历史图片都会被永久删除，包括已收藏图片。此操作无法撤销。',
-            confirmLabel: '确认清空',
-            tone: 'danger',
-        })) {
-            try {
-                await localHistory.clear();
-                dateRangeRef.current = { ...dateRangeRef.current, orderIds: [], browseKey: createUuid() };
-                setNewImageCount(0);
-                loadRequestRef.current++;
-                setItems([]);
-                setTotalCount(0);
-                setTotalPages(1);
-                currentPageRef.current = 1;
-                setCurrentPage(1);
-                setCacheState({});
-                inflightPagesRef.current = {};
-                setLightbox(null);
-                setShowCleanMenu(false);
-            } catch (e: any) {
-                notify('清空失败: ' + (e?.message || '未知错误'), 'error');
-            }
-        }
+        setShowCleanMenu(false);
+        await requestMove({ clear: true });
     };
 
-    // 按实际执行的取整值预览；连续输入时只接受最后一次请求的结果，迟到的旧数量不能覆盖。
+    // 连续输入只接纳最后一个冻结预览，旧结果即使迟到也不得覆盖当前条件。
     const refreshCleanPreview = (mode: 'days' | 'count', value: number) => {
         const seq = ++cleanPreviewSeqRef.current;
         const normalized = Math.floor(value);
-        setCleanPreviewCount(null);
+        setCleanPreview(null);
         if (!Number.isFinite(normalized) || normalized < 1) return;
-        const pending = mode === 'days'
-            ? localHistory.countOlderThan(normalized)
-            : localHistory.getCount().then(count => Math.max(0, count - normalized));
-        pending.then(
-            count => { if (seq === cleanPreviewSeqRef.current) setCleanPreviewCount(count); },
-            () => { if (seq === cleanPreviewSeqRef.current) setCleanPreviewCount('error'); },
+        localHistory.previewMove({ ...(mode === 'days' ? { days: normalized } : { keepCount: normalized }), protectedIds: getProtectedMoveIds() }).then(
+            preview => { if (seq === cleanPreviewSeqRef.current) setCleanPreview(preview); },
+            () => { if (seq === cleanPreviewSeqRef.current) setCleanPreview('error'); },
         );
     };
-
-    const cleanPreviewLabel = typeof cleanPreviewCount === 'number' ? cleanPreviewCount : '…';
-
+    const cleanPreviewLabel = cleanPreview && cleanPreview !== 'error' ? cleanPreview.movableCount : '…';
     const handleCleanMenuClick = (mode: 'days' | 'count') => {
-        setCleanMode(mode);
-        setShowCleanMenu(false);
-        setShowCleanModal(true);
+        if (moveCapability !== 'remote') { setShowCleanMenu(false); notify(t('请先连接本地服务完成浏览器历史迁移，再使用回收站清理。原资料仍可只读浏览与导出。'), 'error'); return; }
+        setCleanMode(mode); setShowCleanMenu(false); setShowCleanModal(true);
         refreshCleanPreview(mode, mode === 'days' ? cleanDays : cleanCount);
     };
-
     const handleCleanConfirm = async () => {
+        if (moveBusyRef.current || !cleanPreview || cleanPreview === 'error') return;
+        const normalizedValue = Math.floor(cleanMode === 'days' ? cleanDays : cleanCount);
+        if (!Number.isFinite(normalizedValue) || normalizedValue < 1) return;
+        moveBusyRef.current = true; setMoveBusy(true);
+        const preview = cleanPreview;
         try {
-            const normalizedValue = Math.floor(cleanMode === 'days' ? cleanDays : cleanCount);
-            if (!Number.isFinite(normalizedValue) || normalizedValue < 1) {
-                notify(cleanMode === 'days' ? '请输入有效天数' : '请输入有效保留数量', 'error');
-                return;
-            }
-            if (typeof cleanPreviewCount !== 'number') return;
-
-            if (!await confirmAction({
-                rememberKey: `history.clean-${cleanMode}`, rememberScope: normalizedValue,
-                title: '确认清理历史',
-                message: cleanMode === 'days' ? t('将删除 {0} 天前的 {1} 张图片', [normalizedValue, cleanPreviewCount]) : t('按全部生成历史执行，将删除 {0} 张，只保留最近 {1} 张', [cleanPreviewCount, normalizedValue]),
-                confirmLabel: '确认删除', tone: 'danger',
-            })) return;
-
-            if (cleanMode === 'days') {
-                await localHistory.deleteOlderThan(normalizedValue);
-            } else {
-                await localHistory.keepOnly(normalizedValue);
-            }
-            setShowCleanModal(false);
-            // 清空缓存，强制刷新页面数据和总数
-            setCacheState({});
-            inflightPagesRef.current = {};
-            dateRangeRef.current = { ...browseQuery, browseKey: createUuid() };
-            await goToPage(1, true); // 强制重新加载第一页，刷新总数
-            notify('清理完成');
-        } catch (e: any) {
-            notify('清理失败: ' + e.message, 'error');
-        }
+            if (!await confirmAction({ title: t('移入回收站'), message: movePreviewMessage(preview), confirmLabel: t('确认移入回收站'), tone: 'danger' })) return;
+            await executeMove(preview);
+            cleanPreviewSeqRef.current++; setCleanPreview(null); setShowCleanModal(false);
+        } catch (error) {
+            notify(error instanceof Error ? error.message : t('移入回收站失败'), 'error');
+            refreshCleanPreview(cleanMode, normalizedValue);
+        } finally { moveBusyRef.current = false; setMoveBusy(false); }
     };
 
     const handleImportToLab = async () => {
@@ -1046,6 +1034,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
             isSelected={selectedIds.has(item.id)}
             selectionMode={selectionMode}
             isFavoritePending={pendingFavoriteIds.has(item.id)}
+            moveDisabled={moveBusy || moveCapability !== 'remote'}
             onToggleSelect={handleToggleSelect}
             onOpen={handleOpenHistoryItem}
             onFavorite={handleCardFavorite}
@@ -1055,8 +1044,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
         />
     );
 
-    return (
-        <div className="workspace-canvas flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
+    return (<>
+        <div style={showRecycleBin || showMigrationArchive ? { display: 'none' } : undefined} className="workspace-canvas flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
             <WorkspaceChrome>
 <WorkspaceToolbar>
                 <div className="history-toolbar-shell">
@@ -1068,9 +1057,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                             <ToolbarButton onClick={selectCurrentPage}>{t("全选本页")}</ToolbarButton>
                             <ToolbarButton onClick={invertCurrentPageSelection}>{t("反选本页")}</ToolbarButton>
                             <span aria-hidden="true" className="history-toolbar-divider" />
-                            <ToolbarButton tone="favorite" onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending}>{t("收藏选中")}</ToolbarButton>
-                            <ToolbarButton onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending}>{t("取消收藏")}</ToolbarButton>
-                            <ToolbarButton tone="danger" onClick={() => void handleBulkDelete()} disabled={!selectedIds.size}>{t("删除选中")}</ToolbarButton>
+                            <ToolbarButton tone="favorite" onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending || moveBusy}>{t("收藏选中")}</ToolbarButton>
+                            <ToolbarButton onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending || moveBusy}>{t("取消收藏")}</ToolbarButton>
+                            <ToolbarButton tone="danger" onClick={() => void handleBulkDelete()} disabled={!selectedIds.size || moveBusy || moveCapability !== 'remote'}>{t("移入回收站")}</ToolbarButton>
                             <ToolbarButton onClick={exitSelectionMode}>{t("退出多选")}</ToolbarButton>
                         </div>
                     </> : <>
@@ -1087,6 +1076,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                                 </ToolbarButton>
                                 {showCleanMenu && !isMobileViewport && (
                                     <AnchoredToolbarPopover anchorRef={managementAnchorRef} title={t("历史管理")} width={256} onClose={() => setShowCleanMenu(false)}>
+                                        <button type="button" disabled={moveBusy} onClick={() => { setShowCleanMenu(false); setShowRecycleBin(true); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"><Trash2 className="h-4 w-4" />{t("回收站")}</button>
                                         <button
                                             type="button"
                                             onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }}
@@ -1096,22 +1086,22 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
 
                                         <button
                                             type="button"
-                                            onClick={() => handleCleanMenuClick('days')}
+                                            disabled={moveBusy || moveCapability !== 'remote'} onClick={() => handleCleanMenuClick('days')}
                                             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
                                         >
                                             <Clock3 className="h-4 w-4" />{t("按时间清理历史…")}</button>
                                         <button
                                             type="button"
-                                            onClick={() => handleCleanMenuClick('count')}
+                                            disabled={moveBusy || moveCapability !== 'remote'} onClick={() => handleCleanMenuClick('count')}
                                             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
                                         >
                                             <Layers className="h-4 w-4" />{t("按数量保留最新…")}</button>
                                         <button
                                             type="button"
-                                            onClick={handleClearAll}
+                                            disabled={moveBusy || moveCapability !== 'remote'} onClick={handleClearAll}
                                             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm border-t border-gray-200 mt-2 pt-3 dark:border-gray-800 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
                                         >
-                                            <Trash2 className="h-4 w-4" />{t("清空全部")}</button>
+                                            <Trash2 className="h-4 w-4" />{t("全部移入回收站…")}</button>
                                     </AnchoredToolbarPopover>
                                 )}
                             </div>
@@ -1124,15 +1114,17 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
             <ImagePreviewPortal><MobileBottomSheet open={showCleanMenu && isMobileViewport} title={t("历史管理")} onClose={() => setShowCleanMenu(false)}>
                 <div className="space-y-2">
                             {newImageCount > 0 && <ToolbarButton className="w-full" onClick={() => { setShowCleanMenu(false); showNewImages(); }}>{t("新增 {0} 张图片 · 查看最新", [newImageCount])}</ToolbarButton>}
+                            <button disabled={moveBusy} onClick={() => { setShowCleanMenu(false); setShowRecycleBin(true); }} className="appearance-group mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("回收站")}</button>
                             <button onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-50 px-4 text-left text-sm font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">{t("批量选择图片")}</button>
-                            <button onClick={() => handleCleanMenuClick('days')} className="appearance-group mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("删除指定天数以前的历史")}</button>
+                            <button onClick={() => handleCleanMenuClick('days')} className="appearance-group mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("按时间移入回收站…")}</button>
                             <button onClick={() => handleCleanMenuClick('count')} className="appearance-group mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("只保留最近指定数量")}</button>
-                            <button onClick={handleClearAll} className="mobile-touch w-full rounded-xl bg-red-50 px-4 text-left text-sm font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">{t("清空全部历史")}</button>
+                            <button disabled={moveBusy || moveCapability !== 'remote'} onClick={handleClearAll} className="mobile-touch w-full rounded-xl bg-red-50 px-4 text-left text-sm font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">{t("全部移入回收站…")}</button>
                 </div>
             </MobileBottomSheet></ImagePreviewPortal>
 
             </WorkspaceChrome>
             <div ref={historyScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport flex-1 overflow-y-auto p-4 md:p-6 pb-20">
+                {(moveCapability === 'requires-remote-migration' || migrationArchive?.error) && <div role="status" className="mb-4 space-y-2 text-sm"><p>{t('请先连接本地服务完成浏览器历史迁移，再使用回收站清理。原资料仍可只读浏览与导出。')}</p>{migrationArchive?.error && <p className="break-words">{migrationArchive.error}</p>}<div className="flex flex-wrap gap-2">{migrationArchive && <ToolbarButton onClick={() => setShowMigrationArchive(true)}>{t('浏览器历史只读档案')}</ToolbarButton>}<ToolbarButton disabled={migrationProgress !== null} onClick={() => void retryMigration()}>{t('重试迁移')}</ToolbarButton></div></div>}
                 {loadFailed && <div role="alert" className="mb-4 flex items-center justify-center gap-3 text-sm text-gray-500"><span>{t("历史加载失败")}</span><ToolbarButton onClick={() => void goToPage(currentPageRef.current, true)}>{t("重试")}</ToolbarButton></div>}
                 {isLoading && items.length > 0 && <InlineSpinner label={t('加载中…')} className="mb-4 w-full" />}
                 {isLoading && items.length === 0 ? (
@@ -1168,7 +1160,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                             )}
                           </section>)}
                         </div>
-                        {selectionMode && <div className="appearance-panel appearance-overlay mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><div className="mb-1 text-center text-xs font-bold dark:text-white">{t("多选模式 · 已选 {0} 张", [selectedIds.size])}</div><div className="grid grid-cols-3 gap-2"><button onClick={selectCurrentPage} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("全选")}</button><button onClick={invertCurrentPageSelection} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("反选")}</button><button onClick={exitSelectionMode} className="appearance-group mobile-touch rounded-xl bg-gray-100 text-sm font-bold dark:bg-gray-800">{t("退出")}</button><button onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-500 text-sm font-bold text-white disabled:opacity-40">{t("收藏")}</button><button onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-50 text-sm font-bold text-rose-600 disabled:opacity-40 dark:bg-rose-950/40 dark:text-rose-300">{t("取消收藏")}</button><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-40">{t("删除")}</button></div></div>}
+                        {selectionMode && <div className="appearance-panel appearance-overlay mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><div className="mb-1 text-center text-xs font-bold dark:text-white">{t("多选模式 · 已选 {0} 张", [selectedIds.size])}</div><div className="grid grid-cols-3 gap-2"><button onClick={selectCurrentPage} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("全选")}</button><button onClick={invertCurrentPageSelection} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("反选")}</button><button onClick={exitSelectionMode} className="appearance-group mobile-touch rounded-xl bg-gray-100 text-sm font-bold dark:bg-gray-800">{t("退出")}</button><button onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending || moveBusy} className="mobile-touch rounded-xl bg-rose-500 text-sm font-bold text-white disabled:opacity-40">{t("收藏")}</button><button onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending || moveBusy} className="mobile-touch rounded-xl bg-rose-50 text-sm font-bold text-rose-600 disabled:opacity-40 dark:bg-rose-950/40 dark:text-rose-300">{t("取消收藏")}</button><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size || moveBusy || moveCapability !== 'remote'} className="mobile-touch rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-40">{t("移入回收站")}</button></div></div>}
                         {/* 底部分页信息：跳页已移到顶栏，这里只报当前范围与加载状态。 */}
                         <div className="mt-12 md:mt-16">
                             {totalCount > 0 && <div ref={historyPageSentinelRef} data-history-load-more="true" className="h-1 w-full" aria-hidden="true" />}
@@ -1193,7 +1185,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                 item={lightbox}
                 index={Math.max(0, dateRangeRef.current.orderIds?.indexOf(lightbox.id) ?? 0)}
                 total={totalCount}
-                navigating={isNavigating || isPreparingImport}
+                navigating={isNavigating || isPreparingImport || moveBusy}
+                deleteLabel="移入回收站"
+                deleteDisabled={moveCapability !== 'remote'}
                 favoritePending={pendingFavoriteIds.has(lightbox.id)}
                 detailsOpen={detailsOpen}
                 onDetailsChange={setDetailsOpen}
@@ -1246,12 +1240,13 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         <h3 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><AlertTriangle className="h-5 w-5 text-amber-500" />{t("确认清理")}</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                             {cleanMode === 'days'
-                                ? t("将删除 {0} 天前的 {1} 张图片", [Math.floor(cleanDays), cleanPreviewLabel])
-                                : t("按全部生成历史执行，将删除 {0} 张，只保留最近 {1} 张", [cleanPreviewLabel, Math.floor(cleanCount)])
+                                ? t("将 {0} 天前的 {1} 张图片移入回收站", [Math.floor(cleanDays), cleanPreviewLabel])
+                                : t("保留最近 {1} 张，其余可移入 {0} 张；有效收藏与引用额外保留", [cleanPreviewLabel, Math.floor(cleanCount)])
                             }
                         </p>
-                        {cleanPreviewCount === 'error' && <p role="alert" className="text-xs text-red-500 mb-2">{t("读取失败，请重试")}</p>}
-                        <p className="text-xs text-red-500 mb-4">{t("此操作无法恢复")}</p>
+                        {cleanPreview === 'error' && <p role="alert" className="text-xs text-red-500 mb-2">{t("读取失败，请重试")}</p>}
+                        <p className="text-xs text-gray-500 mb-4">{t("有效收藏与引用会跳过。移入回收站不释放空间，也不会自动过期，可在回收站恢复。")}</p>
+                        {cleanPreview && cleanPreview !== 'error' && <p className="mb-3 whitespace-pre-wrap break-words text-xs">{movePreviewMessage(cleanPreview)}</p>}
                         <div className="mb-4">
                             {cleanMode === 'days' ? (
                                 <div>
@@ -1293,15 +1288,17 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                                 {t("取消")}</button>
                             <button
                                 data-agent-action="business" onClick={handleCleanConfirm}
-                                disabled={typeof cleanPreviewCount !== 'number' || !Number.isFinite(cleanMode === 'days' ? cleanDays : cleanCount) || (cleanMode === 'days' ? cleanDays : cleanCount) < 1}
+                                disabled={moveBusy || !cleanPreview || cleanPreview === 'error' || !Number.isFinite(cleanMode === 'days' ? cleanDays : cleanCount) || (cleanMode === 'days' ? cleanDays : cleanCount) < 1}
                                 className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                {t("确认删除")}</button>
+                                {t("确认移入回收站")}</button>
                         </div>
                     </div>
                 </div>
             </ImagePreviewPortal>)}
 
         </div>
-    );
+        {showMigrationArchive && migrationArchive && <RecycleBinPanel archive={migrationArchive} onRetryMigration={retryMigration} onBack={() => setShowMigrationArchive(false)} notify={notify} />}
+        {showRecycleBin && !showMigrationArchive && <RecycleBinPanel onBack={() => setShowRecycleBin(false)} notify={notify} />}
+    </>);
 };

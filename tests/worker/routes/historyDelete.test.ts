@@ -57,10 +57,8 @@ describe('历史与收藏删除的 R2 容错（仅内存资料）', () => {
     const response = await f.request('/api/local-history');
     expect(response.status).toBe(200); expect(await response.json()).toMatchObject({ deletedCount: 2 });
     expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM local_generation_history').get()?.count).toBe(0);
-    expect(f.attempted).toContain(first); expect(f.attempted).toContain(second); expect(f.attempted).toContain(mask);
-    expect(f.files.has(second)).toBe(false);
-    expect(f.files.has(mask)).toBe(failure === 'mask');
-    expect(f.files.has(first)).toBe(failure === 'original');
+    expect(f.attempted).toEqual([]);
+    expect(f.files.has(second)).toBe(true);expect(f.files.has(mask)).toBe(true);expect(f.files.has(first)).toBe(true);
   });
 
   it.each(['history', 'collection', 'chain', 'promptReference', 'artist', 'sample'])('仍被 %s 引用的同内容原图不能删除', async reference => {
@@ -71,9 +69,9 @@ describe('历史与收藏删除的 R2 容错（仅内存资料）', () => {
       .run('chain', '合成资料', reference === 'chain' ? url : '', JSON.stringify({ _promptLibrary: { references: [{ url }] } }));
     if (reference === 'artist') f.sqlite.prepare('INSERT INTO artists (id,name,image_url) VALUES (?,?,?)').run('artist', '合成画师', url);
     if (reference === 'sample') f.sqlite.prepare('INSERT INTO settings (key,value) VALUES (?,?)').run('artist_sample_v1:synthetic', JSON.stringify({ imageUrl: url }));
-    expect((await f.request('/api/local-history/removed')).status).toBe(200);
+    expect((await f.request('/api/local-history/removed')).status).toBe(409);
     expect(f.files.has(key)).toBe(true); expect(f.attempted).not.toContain(key);
-    expect(f.sqlite.prepare('SELECT id FROM local_generation_history WHERE id = ?').get('removed')).toBeUndefined();
+    expect(f.sqlite.prepare('SELECT id FROM local_generation_history WHERE id = ?').get('removed')?.id).toBe('removed');
   });
 
   it('收藏批量删除遇到 R2 故障仍处理其余项，保留历史引用的原图', async () => {
@@ -91,7 +89,7 @@ describe('历史与收藏删除的 R2 容错（仅内存资料）', () => {
   it('单项历史和收藏删除以已提交的数据库结果为准，R2 故障不改为失败', async () => {
     const f = await fixture(), key = f.addHistory('single'); f.failures.add(key);
     expect((await f.request('/api/local-history/single')).status).toBe(200);
-    f.addInspiration('saved', key);
+    f.addInspiration('saved', 'independent-collection.png');
     expect((await f.request('/api/inspirations/saved')).status).toBe(200);
     expect(f.files.has(key)).toBe(true);
     expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM inspirations').get()?.count).toBe(0);

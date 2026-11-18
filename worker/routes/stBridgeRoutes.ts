@@ -1,3 +1,4 @@
+import { HISTORY_ALL, claimHistoryWrite } from './historyRecycleSchema';
 // SillyTavern / st-chatu8 history bridge.
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
 //
@@ -68,7 +69,7 @@ export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response |
       : [];
     if (!ids.length) return json({ externalIds: [] });
     const placeholders = ids.map(() => '?').join(',');
-    const rows = await db.prepare(`SELECT external_id FROM local_generation_history
+    const rows = await db.prepare(`SELECT external_id FROM ${HISTORY_ALL}
       WHERE user_id = ? AND external_source = 'st-chatu8' AND external_id IN (${placeholders})`)
       .bind(currentUser.id, ...ids).all<{external_id: string}>();
     return json({ externalIds: rows.results.map(row => row.external_id) });
@@ -87,11 +88,15 @@ export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response |
     for (const item of items) {
       const externalId = String(item?.externalId || '').trim();
       if (!/^[a-f0-9]{64}$/i.test(externalId)) { skipped++; continue; }
-      const existing = await db.prepare(`SELECT id FROM local_generation_history
+      const existing = await db.prepare(`SELECT id FROM ${HISTORY_ALL}
         WHERE user_id = ? AND external_source = 'st-chatu8' AND external_id = ?`)
         .bind(currentUser.id, externalId).first<{id: string}>();
       if (existing) { skipped++; continue; }
       const id = `st-chatu8-${externalId.slice(0, 32)}`;
+      const release = await claimHistoryWrite(db,id,currentUser.id,'st-chatu8',externalId);
+      if (!release) { skipped++; continue; }
+      try {
+      if (await db.prepare(`SELECT id FROM ${HISTORY_ALL} WHERE id = ? OR (user_id = ? AND external_source = 'st-chatu8' AND external_id = ?)`).bind(id,currentUser.id,externalId).first()) { skipped++; continue; }
       const result = await db.prepare(`INSERT OR IGNORE INTO local_generation_history (
         id, user_id, image_key, image_type, prompt, negative_prompt, params,
         source_chain_id, source_chain_name, source_chain_type, external_source, external_id, created_at
@@ -103,6 +108,7 @@ export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response |
         ).run();
       // INSERT OR IGNORE 可能因主键冲突静默忽略：按实际写入行数计数，统计才准确
       if ((result.meta?.changes || 0) > 0) imported++; else skipped++;
+      } finally { await release(); }
     }
     return json({ imported, skipped });
   }

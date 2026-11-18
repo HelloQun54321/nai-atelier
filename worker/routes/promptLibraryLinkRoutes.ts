@@ -220,11 +220,11 @@ async function upsertPromptLibraryLink(db: D1Database, historyId: string, entry:
 function preparePromptLibraryLink(db: D1Database, historyId: string, entry: PromptLibraryEntry, createdAt: number) {
   const at = Number.isFinite(Number(createdAt)) && Number(createdAt) > 0 ? Number(createdAt) : Date.now();
   return db.prepare(`INSERT INTO prompt_library_links (history_id, chain_id, kind, chain_name, matched_length, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS(SELECT 1 FROM local_generation_history WHERE id = ?)
     ON CONFLICT(history_id, chain_id) DO UPDATE SET
       kind = excluded.kind, chain_name = excluded.chain_name,
       matched_length = excluded.matched_length, created_at = excluded.created_at`)
-    .bind(historyId, entry.id, entry.kind, entry.name, entry.text.length, at);
+    .bind(historyId, entry.id, entry.kind, entry.name, entry.text.length, at, historyId);
 }
 
 /**

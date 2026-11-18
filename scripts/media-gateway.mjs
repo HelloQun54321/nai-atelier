@@ -2891,6 +2891,15 @@ export const getValidatedSource = value => {  const source = String(value || '')
   if (!source || source.length > SOURCE_LIMIT || /[\r\n]/.test(source)) throw new Error('Invalid image source');
   if (source.startsWith('/api/artist-samples/')) { validateArtistSampleSource(source); return { type: 'artist-sample', source }; }
   if (source.startsWith('/api/assets/')) return { type: 'local', source };
+  if (/^\/api\/local-history\/recycle-bin\//.test(source)) {
+    // 回收站仅开放只读原图；拒绝多次编码、路径穿越及其它管理端点。
+    const path = source.split('?')[0];
+    let decoded;
+    try { decoded = decodeURIComponent(path); } catch { throw new Error('Unsupported image source'); }
+    if (!/^\/api\/local-history\/recycle-bin\/[^/%\\\u0000-\u001f]+\/image$/.test(decoded)
+      || decoded.split('/').some(part => part === '.' || part === '..')) throw new Error('Unsupported image source');
+    return { type: 'local', source };
+  }
   if (/^\/api\/(?:local-history\/[^/]+\/image|inspirations\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail))(?:\?.*)?$/.test(source)) return { type: 'local', source };
   const stChatu8History = source.match(/^\/api\/integrations\/st-chatu8\/history\/([a-f0-9]{64})\/image$/i);
   if (stChatu8History) return { type: 'st-chatu8-history', source, externalId: stChatu8History[1].toLowerCase() };
@@ -3393,7 +3402,7 @@ class ThumbnailCache {
 
   keyFor(source, variant, previewTransform = '') {
     const version = variant === 'thumb-960' && (
-      /^\/api\/local-history\/[^/]+\/image$/i.test(source)
+      /^\/api\/local-history\/(?:recycle-bin\/)?[^/]+\/image$/i.test(source)
       || /^\/api\/integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image$/i.test(source)
     ) ? HISTORY_THUMBNAIL_CACHE_VERSION : CACHE_VERSION;
     return createHash('sha256').update(`${version}|${variant}|${source}${previewTransform ? `|${previewTransform}` : ''}`).digest('hex');

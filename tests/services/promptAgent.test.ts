@@ -49,6 +49,14 @@ it('新会话和模型切换只发送原生会话参数，不再提供预设客�
     .toEqual(['setCreativeDirect', 'setCreativeDirectRules']);
 });
 
+it('历史操作保留完整确认payload与真实partial回执，不把HTTP200提升为成功', async () => {
+  const result = { action: 'purge_history', operation: 'purge', ok: false, success: false, partial: true, outcome: 'partial', requestedCount: 3, completedCount: 1, skippedCount: 1, failedCount: 1, skipped: [{ id: 'changed', reasons: ['source_changed'] }], failed: [{ id: 'broken', reasons: ['io_failure'] }], resultId: 'receipt', partialDetails: true };
+  const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json(result)); vi.stubGlobal('fetch', fetch);
+  const input = { action: 'purge_history', sessionId: 'session', confirmationRequestId: 'confirmation', payload: { ids: ['h'], expectedVersions: { h: 'a'.repeat(64) } } };
+  expect(await promptAgentService.executeProjectAction(input)).toEqual(result);
+  expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toEqual(input);
+});
+
 it('压缩上下文使用同一会话HTTP接口，编码会话ID且原样交付结果', async () => {
   const result = { compacted: true, context: { beforeTokens: 30000, afterTokens: 6000, retainedMessages: 8, contextWindow: 64000 } };
   const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json(result)); vi.stubGlobal('fetch', fetch);

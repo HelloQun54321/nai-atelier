@@ -1,3 +1,4 @@
+import { ensureHistoryRecycleSchema } from './historyRecycleSchema';
 import { readPromptPurposes } from '../../services/promptPurposes.mjs';
 // LAN access, anlas budget, admin endpoints, NAI proxy (generate/upload),
 // chains and artists CRUD.
@@ -216,6 +217,7 @@ function isMissingColumnError(e: any): boolean {
 // Helper: Delete File from R2
 export async function deleteR2File(env: Env, url: string, db: D1Database) {
     if (!env.BUCKET || !url) return;
+    await ensureHistoryRecycleSchema(db);
     // Check if it is a local API asset URL
     if (url.startsWith('/api/assets/')) {
         const key = decodeURIComponent(url.slice('/api/assets/'.length));
@@ -228,14 +230,19 @@ export async function deleteR2File(env: Env, url: string, db: D1Database) {
             WHERE json_extract(CASE WHEN json_valid(r.value) THEN r.value ELSE '{}' END, '$.url') IN (SELECT value FROM asset_urls)) OR
           EXISTS(SELECT 1 FROM inspirations WHERE image_url IN (SELECT value FROM asset_urls) OR image_key = ?) OR
           EXISTS(SELECT 1 FROM local_generation_history WHERE image_key = ?) OR
+           EXISTS(SELECT 1 FROM local_generation_recycle_bin WHERE image_key = ?) OR
+           EXISTS(SELECT 1 FROM local_generation_recycle_bin b WHERE b.params IS NOT NULL AND trim(b.params) <> '' AND NOT json_valid(b.params)) OR
+           EXISTS(SELECT 1 FROM local_generation_recycle_bin b, json_tree(CASE WHEN json_valid(b.params) THEN b.params ELSE '{}' END) n
+             WHERE n.type = 'text' AND EXISTS(SELECT 1 FROM asset_urls u WHERE n.atom = u.value OR
+               (substr(n.atom,1,length(u.value)) = u.value AND substr(n.atom,length(u.value)+1,1) IN ('?','#')))) OR
           EXISTS(SELECT 1 FROM artists WHERE image_url IN (SELECT value FROM asset_urls) OR preview_url IN (SELECT value FROM asset_urls)) OR
           EXISTS(SELECT 1 FROM artists, json_each(CASE WHEN json_valid(benchmarks) THEN benchmarks ELSE '[]' END)
             WHERE json_each.value IN (SELECT value FROM asset_urls)) OR
           EXISTS(SELECT 1 FROM settings WHERE key LIKE 'artist_sample_v1:%' AND
             json_extract(CASE WHEN json_valid(value) THEN value ELSE '{}' END, '$.imageUrl') IN (SELECT value FROM asset_urls)) AS referenced`)
-          .bind(JSON.stringify(assetUrls), key, key)
+          .bind(JSON.stringify(assetUrls), key, key, key)
           .first<{ referenced: number }>();
-        if (!reference || reference.referenced) return;
+        if (!reference || reference.referenced) return 'retained' as const;
         try {
             await env.BUCKET.delete(key);
             console.log(`Deleted old file: ${key}`);

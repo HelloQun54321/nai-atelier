@@ -66,10 +66,14 @@ it('提示词库引用历史原件，删历史仍可用，最后一个库引用�
   const saved = JSON.parse(f.sqlite.prepare("SELECT params FROM chains WHERE id='lib-a'").get()!.params as string);
   expect(saved.seed).toBe(19); expect(saved._promptLibrary.references[0].url).toBe('/api/assets/' + encodeURIComponent(key));
   expect((await f.invoke('/api/chains/lib-b', 'PUT', { params: saved }))?.status).toBe(200);
-  expect((await f.invoke('/api/local-history/ref-history'))?.status).toBe(200);
+  expect((await f.invoke('/api/local-history/ref-history'))?.status).toBe(409);
   expect(f.bucket.delete).not.toHaveBeenCalledWith(key);
   await f.invoke('/api/chains/lib-a'); expect(f.bucket.delete).not.toHaveBeenCalledWith(key);
-  await f.invoke('/api/chains/lib-b'); expect(f.bucket.delete).toHaveBeenCalledWith(key);
+  await f.invoke('/api/chains/lib-b'); expect(f.bucket.delete).not.toHaveBeenCalledWith(key);
+  await f.invoke('/api/local-history/ref-history');
+  const binItem=await (await f.invoke('/api/local-history/recycle-bin/ref-history','GET'))!.json();
+  await f.invoke('/api/local-history/recycle-bin/purge','POST',{ids:['ref-history'],expectedVersions:{'ref-history':binItem.item.version}});
+  expect(f.bucket.delete).toHaveBeenCalledWith(key);
 });
 
 it('提示词库参数保存失败保留旧参考图，非法或已删除的来源不覆盖旧参数', async () => {
@@ -90,7 +94,8 @@ it.each(['history', 'chain', 'artist'])('删除 %s 的数据库写入失败时�
   f.sqlite.exec("INSERT INTO chains (id,user_id,name,preview_image) VALUES ('c','owner','synthetic','/api/assets/cover.png'); INSERT INTO artists (id,name,image_url,preview_url,benchmarks) VALUES ('a','synthetic','/api/assets/original.png','/api/assets/preview.png','[\"/api/assets/old-benchmark.png\"]'); INSERT INTO local_generation_history (id,user_id,image_key,created_at) VALUES ('h','owner','synthetic.png',1)");
   const [table, id, path] = kind === 'history' ? ['local_generation_history', 'h', '/api/local-history/h'] : kind === 'chain' ? ['chains', 'c', '/api/chains/c'] : ['artists', 'a', '/api/artists/a'];
   f.sqlite.exec(`CREATE TRIGGER block_delete BEFORE DELETE ON ${table} BEGIN SELECT RAISE(ABORT, 'synthetic deletion failure'); END`);
-  await expect(f.invoke(path)).rejects.toThrow('synthetic deletion failure');
+  if (kind === 'history') expect(await (await f.invoke(path))!.json()).toMatchObject({failedCount:1});
+  else await expect(f.invoke(path)).rejects.toThrow('synthetic deletion failure');
   expect(f.sqlite.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(id)?.id).toBe(id);
   expect(f.bucket.delete).not.toHaveBeenCalled();
 });
@@ -98,8 +103,8 @@ it.each(['history', 'chain', 'artist'])('删除 %s 的数据库写入失败时�
 it('删除历史保留灵感引用的原图，只清理已删除历史的蒙版', async () => {
   const f = fixture();
   f.sqlite.exec("INSERT INTO local_generation_history (id,user_id,image_key,created_at) VALUES ('h','owner','shared.png',1); INSERT INTO inspirations (id,user_id,title,image_key) VALUES ('i','owner','synthetic','shared.png')");
-  expect((await f.invoke('/api/local-history/h'))?.status).toBe(200);
-  expect(f.bucket.delete.mock.calls).toEqual([['local-history/owner/h.edit-mask']]);
+  expect((await f.invoke('/api/local-history/h'))?.status).toBe(409);
+  expect(f.bucket.delete).not.toHaveBeenCalled();
   expect(f.sqlite.prepare('SELECT id FROM inspirations').get()?.id).toBe('i');
 });
 

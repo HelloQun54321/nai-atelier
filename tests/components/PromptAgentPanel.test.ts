@@ -827,6 +827,41 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     if (!receipt.ok) expect(screen.queryByText('已在你确认后完成该项目操作。')).toBeNull();
   });
 
+  it.each([
+    { action: 'clear_history', label: '移入回收站', receipt: { ok: false, success: false, partial: true, outcome: 'partial', requestedCount: 3, completedCount: 1, skippedCount: 1, failedCount: 1, skipped: [{ id: 'used', reasons: ['referenced'] }], failed: [{ id: 'bad', reasons: ['io_failure'] }] }, text: '历史移入回收站回执：请求 3 条，已完成 1 条，跳过 1 条，失败 1 条。 used：referenced；bad：io_failure' },
+    { action: 'cleanup_history', label: '移入回收站', receipt: { ok: false, success: false, outcome: 'blocked', requestedCount: 1, completedCount: 0, skippedCount: 1, failedCount: 0, skipped: [{ id: 'used', reasons: ['favorite'] }] }, text: '历史移入回收站回执：请求 1 条，已完成 0 条，跳过 1 条，失败 0 条。 used：favorite' },
+    { action: 'restore_history', label: '恢复所选历史', receipt: { ok: true, success: true, outcome: 'success', requestedCount: 2, completedCount: 2, skippedCount: 0, failedCount: 0 }, text: '历史恢复回执：请求 2 条，已完成 2 条，跳过 0 条，失败 0 条。' },
+    { action: 'purge_history', label: '永久删除，无法恢复', receipt: { ok: false, success: false, outcome: 'blocked', requestedCount: 1, completedCount: 0, skippedCount: 1, failedCount: 0, skipped: [{ id: 'changed', reasons: ['source_changed'] }] }, text: '历史永久删除回执：请求 1 条，已完成 0 条，跳过 1 条，失败 0 条。 changed：source_changed' },
+    { action: 'delete_history', label: '移入回收站', receipt: { ok: true, success: true, outcome: 'succeeded' }, text: '未收到完整历史操作回执，请回读实际状态；不要重复执行。' },
+  ])('历史确认与真实计数回执适配：$action / $receipt.outcome', async ({ action, label, receipt, text }) => {
+    stubServices();
+    const execute = vi.spyOn(promptAgentService, 'executeProjectAction').mockResolvedValue({ action, ...receipt });
+    const control = vi.spyOn(promptAgentService, 'control').mockResolvedValue(undefined);
+    const payload = { ids: ['h'], expectedVersions: { h: 'a'.repeat(64) } };
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, onEvent) => {
+      onEvent({ type: 'action', action: { kind: 'request_project_action', patch: { action, requestId: 'history-confirm', title: '固定范围', consequence: '固定风险事实', payload } } });
+    });
+    renderPanel(); const box = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '处理所选历史' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    const button = await screen.findByRole('button', { name: label });
+    expect(within(screen.getByRole('alertdialog')).getByText('固定风险事实')).toBeTruthy();
+    if (action === 'purge_history') expect(within(screen.getByRole('alertdialog')).queryByRole('checkbox')).toBeNull();
+    fireEvent.click(button); await screen.findByText(text);
+    expect(execute).toHaveBeenCalledWith({ action, resourceId: undefined, payload, sessionId: 'session-1', confirmationRequestId: 'history-confirm' });
+    expect(control.mock.calls.some(call => call[1] === 'finalize')).toBe(false);
+    expect(screen.queryByText('已在你确认后完成该项目操作。')).toBeNull();
+  });
+
+  it('永久删除每次单独确认，取消不执行且没有可记住授权', async () => {
+    stubServices(); const execute = vi.spyOn(promptAgentService, 'executeProjectAction'); const control = vi.spyOn(promptAgentService, 'control').mockResolvedValue(undefined);
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, emit) => { emit({ type: 'action', action: { kind: 'request_project_action', patch: { action: 'purge_history', requestId: 'purge', title: '永久删除？', consequence: '删除后无法恢复', payload: { ids: ['h'] } } } }); });
+    renderPanel(); const box = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '永久删除所选条目' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    const dialog = await screen.findByRole('alertdialog'); expect(within(dialog).getByRole('button', { name: '永久删除，无法恢复' })).toBeTruthy(); expect(within(dialog).queryByRole('checkbox')).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' })); await screen.findByText('已取消该项目操作，没有修改数据。');
+    expect(execute).not.toHaveBeenCalled(); expect(control).toHaveBeenCalledWith('session-1', 'confirm', 'purge', { requestId: 'purge', accepted: false });
+  });
+
   it.each([true, false])('实际面板生成回调批准 %s 时发送正确确认与完成顺序', async accepted => {
     stubServices(); const controls: Array<{ action: string; accepted?: boolean; success?: boolean }> = [];
     vi.spyOn(promptAgentService, 'control').mockImplementation(async (_session, action, _message, payload) => { controls.push({ action, ...payload }); });

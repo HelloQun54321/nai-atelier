@@ -1,3 +1,4 @@
+import { HISTORY_ALL, ensureHistoryRecycleSchema } from './historyRecycleSchema';
 import { extractHistoryParticipation, normalizeArtistUsageKey } from '../../services/artistParticipation';
 import type { D1Database, Env } from './types';
 
@@ -8,9 +9,14 @@ export interface ArtistHistorySnapshot {
 const prefix = (user: string, kind: string) => `artist_usage_v1:${encodeURIComponent(user)}:${kind}:`;
 const receiptKey = (user: string, id: string) => prefix(user, 'history') + id;
 const sourceVersion = "json_array(prompt, base_prompt, subject_prompt, CASE WHEN json_valid(params) THEN json_extract(params, '$.characters') END, created_at, source_chain_id, external_source, image_key)";
-const readSource = (db: D1Database, user: string, id: string) => db.prepare(`SELECT id, prompt, base_prompt, subject_prompt, created_at, source_chain_id, external_source,
-  CASE WHEN json_valid(params) THEN json_extract(params, '$.characters') END AS characters, ${sourceVersion} AS version
-  FROM local_generation_history WHERE id = ? AND user_id = ?`).bind(id, user).first<any>();
+const readSource = async (db: D1Database, user: string, id: string) => {
+  await ensureHistoryRecycleSchema(db);
+  const rows = await db.prepare(`SELECT id, prompt, base_prompt, subject_prompt, created_at, source_chain_id, external_source,
+    CASE WHEN json_valid(params) THEN json_extract(params, '$.characters') END AS characters, ${sourceVersion} AS version
+    FROM ${HISTORY_ALL} WHERE id = ? AND user_id = ?`).bind(id, user).all<any>();
+  if (rows.results.length > 1) throw new Error('历史与回收站身份冲突，统计未更新');
+  return rows.results[0] || null;
+};
 const dictionaries = new WeakMap<object, Promise<ReadonlySet<string>>>();
 
 export function loadArtistUsageDictionary(env: Env): Promise<ReadonlySet<string>> {
@@ -46,7 +52,7 @@ export async function recordArtistHistory(db: D1Database, user: string, input: a
     const excluded = sample || Boolean(row.external_source);
     const snapshot: ArtistHistorySnapshot = { ...extractHistoryParticipation(row, known), at: Number(row.created_at) || 0, active: true, excluded, sample };
     const guard = `NOT EXISTS (SELECT 1 FROM settings WHERE key = ?) AND EXISTS
-      (SELECT 1 FROM local_generation_history WHERE id = ? AND user_id = ? AND ${sourceVersion} = ?)`;
+      (SELECT 1 FROM ${HISTORY_ALL} WHERE id = ? AND user_id = ? AND ${sourceVersion} = ?)`;
     const values = [key, row.id, user, row.version];
     const statements = [];
     if (!excluded) for (const name of snapshot.artists) {
@@ -67,12 +73,15 @@ export async function recordArtistHistory(db: D1Database, user: string, input: a
 }
 
 export async function ensureArtistHistoryIndex(db: D1Database, user: string, env: Env) {
+  await ensureHistoryRecycleSchema(db);
+  const conflict = await db.prepare(`SELECT id FROM ${HISTORY_ALL} WHERE user_id = ? GROUP BY id HAVING COUNT(*) > 1 LIMIT 1`).bind(user).first();
+  if (conflict) throw new Error('历史与回收站身份冲突，统计未更新');
   let known: ReadonlySet<string> | undefined;
   for (;;) {
     const rows = await db.prepare(`SELECT h.id, h.prompt, h.base_prompt, h.subject_prompt, h.created_at,
       h.source_chain_id, h.external_source,
       CASE WHEN json_valid(h.params) THEN json_extract(h.params, '$.characters') END AS characters
-      FROM local_generation_history h
+      FROM ${HISTORY_ALL} h
       WHERE h.user_id = ? AND NOT EXISTS (SELECT 1 FROM settings s WHERE s.key = ? || h.id)
       ORDER BY h.id LIMIT 100`).bind(user, prefix(user, 'history')).all<any>();
     if (!rows.results.length) return;
@@ -81,19 +90,22 @@ export async function ensureArtistHistoryIndex(db: D1Database, user: string, env
   }
 }
 
-export async function deactivateArtistHistory(db: D1Database, user: string, rows: { id: string }[], _env: Env) {
+export async function deactivateArtistHistory(db: D1Database, user: string, rows: { id: string; moved_at?: number }[], _env: Env, scope: 'active' | 'bin' = 'active') {
+  const table = scope === 'bin' ? 'local_generation_recycle_bin' : 'local_generation_history';
+  const deletedIds: string[] = [];
   for (const item of rows) {
     let completed = false;
     for (let attempt = 0; attempt < 8; attempt++) {
-      const row = await readSource(db, user, item.id);
+      const row = await db.prepare(`SELECT *, ${sourceVersion} AS version FROM ${table} WHERE id = ? AND user_id = ?`).bind(item.id, user).first<any>();
       if (!row) { completed = true; break; }
       const key = receiptKey(user, row.id);
       const receipt = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
       const snapshot = receipt ? JSON.parse(receipt.value) as ArtistHistorySnapshot : null;
       const receiptGuard = receipt ? 'EXISTS (SELECT 1 FROM settings WHERE key = ? AND value = ?)' : 'NOT EXISTS (SELECT 1 FROM settings WHERE key = ?)';
       const receiptValues = receipt ? [key, receipt.value] : [key];
-      const guard = `${receiptGuard} AND EXISTS (SELECT 1 FROM local_generation_history WHERE id = ? AND user_id = ? AND ${sourceVersion} = ?)`;
-      const values = [...receiptValues, row.id, user, row.version];
+      if (scope === 'bin' && item.moved_at !== undefined && row.moved_at !== item.moved_at) { completed = true; break; }
+      const guard = `${receiptGuard} AND EXISTS (SELECT 1 FROM ${table} WHERE id = ? AND user_id = ? AND ${sourceVersion} = ?${scope === 'bin' ? ' AND moved_at = ?' : ''})`;
+      const values = [...receiptValues, row.id, user, row.version, ...(scope === 'bin' ? [row.moved_at] : [])];
       const statements = [];
       if (snapshot && !snapshot.excluded) for (const name of snapshot.artists) {
         statements.push(db.prepare(`UPDATE settings SET value = json_set(value, '$.images', MAX(0, json_extract(value, '$.images') - 1),
@@ -102,14 +114,15 @@ export async function deactivateArtistHistory(db: D1Database, user: string, rows
           WHERE key = ? AND ${guard}`)
           .bind(prefix(user, 'history'), prefix(user, 'history') + '\uffff', key, name, prefix(user, 'generated') + encodeURIComponent(name), ...values));
       }
-      statements.push(db.prepare(`DELETE FROM local_generation_history WHERE id = ? AND user_id = ? AND ${guard}`).bind(item.id, user, ...values));
+      statements.push(db.prepare(`DELETE FROM ${table} WHERE id = ? AND user_id = ? AND ${guard}`).bind(item.id, user, ...values));
       statements.push(db.prepare(`DELETE FROM settings WHERE key = ? AND ${receiptGuard}
-        AND NOT EXISTS (SELECT 1 FROM local_generation_history WHERE id = ? AND user_id = ?)`).bind(key, ...receiptValues, item.id, user));
+        AND NOT EXISTS (SELECT 1 FROM ${table} WHERE id = ? AND user_id = ?)`).bind(key, ...receiptValues, item.id, user));
       const result = await db.batch(statements);
-      if (Number(result.at(-2)?.meta?.changes)) { completed = true; break; }
+      if (Number(result.at(-2)?.meta?.changes)) { deletedIds.push(item.id); completed = true; break; }
     }
     if (!completed) throw new Error('画师图片删除统计并发更新冲突');
   }
+  return deletedIds;
 }
 
 export async function readArtistHistorySnapshots(db: D1Database, user: string, from: number, to: number) {
