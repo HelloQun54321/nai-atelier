@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { t } from '../services/i18n';
+import { MobileBottomSheet } from './MobileUI';
 
 const COARSE_QUERY = '(hover: none), (pointer: coarse)';
 const MOBILE_UI_QUERY = '(max-width: 767px)';
@@ -93,13 +94,13 @@ function useTouchActions(root: HTMLElement | null, mode: 'sheet' | 'bar') {
   return items;
 }
 
-function ActionIcon({ source }: { source: HTMLButtonElement }) {
+function ActionIcon({ source, className = 'touch-action-icon' }: { source: HTMLButtonElement; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
     const icon = source.querySelector('svg');
     ref.current?.replaceChildren(icon ? icon.cloneNode(true) : '');
   });
-  return <span ref={ref} aria-hidden="true" className="touch-action-icon" />;
+  return <span ref={ref} aria-hidden="true" className={className} />;
 }
 
 function ActionRow({ items, onActivate }: { items: HTMLButtonElement[]; onActivate?: () => void }) {
@@ -124,12 +125,37 @@ function ActionRow({ items, onActivate }: { items: HTMLButtonElement[]; onActiva
   </div>;
 }
 
-/** 长按后贴在屏幕底部、底栏导航之上的一行操作。 */
+function actionDanger(button: HTMLButtonElement) {
+  return /(?:^|\s)(?:text|bg|border)-red-/.test(button.className);
+}
+
+/** 长按后用和其他手机面板同一款的底部弹层，不另画一条黑底胶囊。 */
 export const TouchActionSheet: React.FC<{ root: HTMLElement | null; onDismiss: () => void }> = ({ root, onDismiss }) => {
   const items = useTouchActions(root, 'sheet');
   if (!items.length || typeof document === 'undefined') return null;
   return createPortal(
-    <div data-touch-action-menu className="touch-action-sheet"><ActionRow items={items} onActivate={onDismiss} /></div>,
+    <div data-touch-action-menu>
+      <MobileBottomSheet open title={t('作品操作')} onClose={onDismiss}>
+        <div role="menu" aria-label={t('作品操作')} className="space-y-1">
+          {items.map((button, index) => <button
+            key={`${actionLabel(button)}:${index}`}
+            type="button"
+            role="menuitem"
+            aria-pressed={button.getAttribute('aria-pressed') === 'true' ? true : undefined}
+            className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium transition-colors disabled:opacity-40 ${actionDanger(button) ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'}`}
+            onClick={event => {
+              event.stopPropagation();
+              event.preventDefault();
+              button.click();
+              onDismiss();
+            }}
+          >
+            <ActionIcon source={button} className="flex h-5 w-5 flex-none items-center justify-center [&>svg]:h-[18px] [&>svg]:w-[18px]" />
+            <span className="min-w-0 flex-1 truncate">{actionLabel(button)}</span>
+          </button>)}
+        </div>
+      </MobileBottomSheet>
+    </div>,
     document.body,
   );
 };

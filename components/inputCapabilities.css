@@ -53,7 +53,6 @@
   .press-reveal-surface[data-touch-actions="bar"] button.nai-float-btn:not([data-image-favorite][aria-pressed="true"]) { opacity: 0; pointer-events: none; }
   .press-reveal-surface[data-touch-actions="bar"] :is([data-artist-sample-status], [data-prompt-library-cover-status]) button { opacity: 1 !important; pointer-events: auto !important; }
 }
-.touch-action-sheet { position: fixed; z-index: 2100; left: 0; right: 0; bottom: var(--mobile-bottom-inset, env(safe-area-inset-bottom, 0px)); }
 .touch-action-bar { position: absolute; z-index: 40; left: 0; right: 0; bottom: 0; }
 .touch-action-bar--above-zoom { bottom: 6.5rem; }
 .touch-action-row { display: flex; gap: .5rem; overflow-x: auto; overscroll-behavior-x: contain; padding: .625rem .75rem; background: rgb(17 17 17 / .94); color: #fff; border-top: 1px solid rgb(255 255 255 / .16); touch-action: pan-x; }

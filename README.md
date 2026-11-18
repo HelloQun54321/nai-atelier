@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.195.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.195.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -163,7 +163,7 @@ flowchart LR
 - **轻量安全的 4 位 PIN 码**：局域网设备首次访问只需输入电脑终端/启动日志中打印的 4 位密码即可绑定（30 天内免重复输入），电脑本机免密访问；
 - **单手触控心流适配**：
   - 核心操作区域满足至少 44×44px 舒适触控，避开全面屏防误触手势区；
-  - 列表悬浮辅助按钮在触屏下**长按打开底部操作条**（图标加名称，松手保留）；图上只留已收藏的爱心和已保存的勾。窄于 768px 时鼠标右键等同这次长按，宽屏右键不变。详情和大图把这些操作放在该层底栏；
+  - 列表悬浮辅助按钮在触屏下**长按打开底部面板**（与筛选、目录同一款：圆角、拉手、标题和纵向条目，松手保留）；图上只留已收藏的爱心和已保存的勾。窄于 768px 时鼠标右键等同这次长按，宽屏右键不变。详情和大图把这些操作放在该层底栏；
   - AITag、Pixiv、Danbooru 的作品详情在手机上覆盖当前图库；页面返回与系统返回收起详情并继续原作品位置，多层窗口逐层返回，后台页面保留浏览状态；
   - 实验室四模式在电脑与手机端共用**三段式分区导航**：文生图为「全局／角色／参数」，图片编辑为「底图（画板／画布）／提示／参数」。电脑三分区紧贴主模式顶栏下沿，左右边缘分别对齐「文生图」与「扩图」按钮的选中块边界，三个按钮等宽，选中颜色与顶栏一致；右侧作品预览保留，各分区独立记住本次打开时的滚动位置。
   - 分区内模块采用固定顺序；设置中的「实验室模块默认展开」保留四模式独立的初始展开／收起偏好，电脑与手机均可调整，旧展开设置继续有效。默认全部展开（含 Vibe 与精准参考），设置里的四个实验室页面分组默认展开；已保存过旧偏好的话点「全部默认」即可套用新默认。
