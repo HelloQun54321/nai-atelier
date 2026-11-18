@@ -91,7 +91,10 @@ it('手机界面里鼠标右键打开同一条操作条', () => {
   const { root, action, open } = fixture();
   fireEvent.pointerEnter(root, { pointerType: 'mouse' });
   expect(fireEvent.contextMenu(root, { button: 2 })).toBe(false);
+  expect(root.getAttribute('data-mobile-ui')).toBe('true');
+  expect(root.getAttribute('data-press-revealed')).toBeNull();
   expect(root.getAttribute('data-press-lift')).toBe('true');
+  screen.getByRole('button', { name: '收藏' }).style.pointerEvents = 'none';
   expect(screen.getByRole('menuitem', { name: '收藏' })).toBeTruthy();
   expect(fireEvent.contextMenu(screen.getByRole('textbox'), { button: 2 })).toBe(true);
   fireEvent.click(screen.getByRole('menuitem', { name: '收藏' }));

@@ -115,7 +115,7 @@ function ActionRow({ items, onActivate }: { items: HTMLButtonElement[]; onActiva
       onClick={event => {
         event.stopPropagation();
         event.preventDefault();
-        button.click();
+        activateSource(button, button.closest('.press-reveal-surface'));
         onActivate?.();
       }}
     >
@@ -129,12 +129,27 @@ function actionDanger(button: HTMLButtonElement) {
   return /(?:^|\s)(?:text|bg|border)-red-/.test(button.className);
 }
 
+/** 封面按钮在手机布局里是 pointer-events: none。直接 click 时有的浏览器不会把事件送进 React。 */
+function activateSource(source: HTMLButtonElement, root: HTMLElement | null) {
+  const label = actionLabel(source);
+  const live = source.isConnected ? source : Array.from(root?.querySelectorAll('button') || []).find(button => actionLabel(button) === label) || source;
+  const restore: HTMLElement[] = [];
+  for (let node: HTMLElement | null = live; node && node !== document.body; node = node.parentElement) {
+    if (window.getComputedStyle(node).pointerEvents === 'none') {
+      restore.push(node);
+      node.style.pointerEvents = 'auto';
+    }
+  }
+  live.click();
+  restore.forEach(node => { node.style.pointerEvents = ''; });
+}
+
 /** 长按后用和其他手机面板同一款的底部弹层，不另画一条黑底胶囊。 */
 export const TouchActionSheet: React.FC<{ root: HTMLElement | null; onDismiss: () => void }> = ({ root, onDismiss }) => {
   const items = useTouchActions(root, 'sheet');
   if (!items.length || typeof document === 'undefined') return null;
   return createPortal(
-    <div data-touch-action-menu>
+    <div data-touch-action-menu className="fixed inset-0 z-[2100]" onPointerDown={event => event.stopPropagation()}>
       <MobileBottomSheet open title={t('作品操作')} onClose={onDismiss}>
         <div role="menu" aria-label={t('作品操作')} className="space-y-1">
           {items.map((button, index) => <button
@@ -142,11 +157,11 @@ export const TouchActionSheet: React.FC<{ root: HTMLElement | null; onDismiss: (
             type="button"
             role="menuitem"
             aria-pressed={button.getAttribute('aria-pressed') === 'true' ? true : undefined}
-            className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium transition-colors disabled:opacity-40 ${actionDanger(button) ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'}`}
+            className={`pointer-events-auto relative z-[1] flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium transition-colors disabled:opacity-40 ${actionDanger(button) ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'}`}
+            onPointerDown={event => event.stopPropagation()}
             onClick={event => {
               event.stopPropagation();
-              event.preventDefault();
-              button.click();
+              activateSource(button, root);
               onDismiss();
             }}
           >

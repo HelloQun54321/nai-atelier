@@ -91,9 +91,10 @@ export const PressRevealSurface: React.FC<Props> = ({
   const endPointer = () => { clearTimer(); startRef.current = null; setArmed(false); };
   return <Element {...props} ref={attachRef}
     className={`press-reveal-surface group ${className}`}
-    data-press-revealed={revealed && !pressDisabled ? 'true' : undefined}
+    data-press-revealed={revealed && !pressDisabled && !contextReveal.current ? 'true' : undefined}
     data-press-lift={revealed && !pressDisabled && (input === 'touch' || input === 'pen') ? 'true' : undefined}
     data-press-input={input || undefined}
+    data-mobile-ui={mobileLayout ? 'true' : undefined}
     data-touch-actions={touchActions === 'bar' ? 'bar' : undefined}
     onPointerEnter={event => {
       if (event.pointerType) setInput(event.pointerType);

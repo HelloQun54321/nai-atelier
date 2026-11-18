@@ -1,4 +1,5 @@
 ## 2026-11-18
+- **Grok 4.7**：手机布局关掉悬停圆钮，右键面板改为能点到原操作（fix: keep mobile hover actions hidden and clickable）。
 - **Grok 4.7**：长按作品操作改为共用手机底部面板（fix: show touch actions in the mobile sheet），不再单独画黑底胶囊条。
 - **Grok 4.7**：手机布局下鼠标右键等同触屏长按（feat: open mobile actions with right click），宽屏右键不变。
 - **Grok 4.7**：手机作品操作改为长按底部操作条，详情和大图改为该层底栏；图上只常驻已收藏爱心和已保存勾（feat: open touch image actions in a bottom bar）。

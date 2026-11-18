@@ -60,3 +60,18 @@
 .touch-action-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .touch-action-icon { display: inline-flex; width: 1rem; height: 1rem; flex: none; }
 .touch-action-icon svg { width: 1rem; height: 1rem; }
+/* 手机布局按触屏处理：悬停、右键打开的面板都不能把不常驻圆钮铺回封面上。 */
+.press-reveal-surface[data-mobile-ui='true'] :is(.hover-reveal-md, .hover-reveal-lg, .hover-reveal-touch),
+.press-reveal-surface[data-mobile-ui='true']:hover :is(.hover-reveal-md, .hover-reveal-lg, .hover-reveal-touch),
+.press-reveal-surface[data-mobile-ui='true'][data-press-revealed='true'] :is(.hover-reveal-md, .hover-reveal-lg, .hover-reveal-touch),
+.press-reveal-surface[data-mobile-ui='true']:focus-visible :is(.hover-reveal-md, .hover-reveal-lg, .hover-reveal-touch),
+.press-reveal-surface[data-mobile-ui='true']:has(button:focus-visible) :is(.hover-reveal-md, .hover-reveal-lg, .hover-reveal-touch),
+.press-reveal-surface[data-mobile-ui='true'][data-agent-hover] :is(.hover-reveal-md, .hover-reveal-lg, .hover-reveal-touch) {
+  opacity: 0;
+  pointer-events: none;
+}
+.press-reveal-surface[data-mobile-ui='true'] :is([data-artist-sample-status], [data-prompt-library-cover-status]),
+.press-reveal-surface[data-mobile-ui='true'] :is([data-artist-sample-status], [data-prompt-library-cover-status]) button {
+  opacity: 1;
+  pointer-events: auto;
+}
