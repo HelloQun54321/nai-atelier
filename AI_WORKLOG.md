@@ -1,3 +1,6 @@
+## 2026-11-19
+- **DeepSeek Harness (V4.1 Flash)**：`parseHttpError` 支持展开 NovelAI 的数组／对象形态报错（message／errors／error／detail 嵌套），修复提示词非法时只剩泛化 HTTP 400 或 [object Object]、看不到真实原因的问题（fix: surface upstream validation errors）。
+
 ## 2026-11-18
 - **DeepSeek Harness (V4.1 Flash)**：AITag 在「未保存」筛选下保存作品后，把居中锚点交给同列下一张并等布局落定后居中，避免列表整体上移（fix: keep the AITag list centered after saving）。
 - **DeepSeek Harness (V4.1 Flash)**：并排详情打开时冻结列表列宽采样，避免详情开合触发 5↔4 列重排；覆盖 AITag、法典、Danbooru、收藏库、提示词库、Pixiv，窗口真正变窄时仍按可读列宽收敛（fix: freeze gallery columns while detail is open）。
