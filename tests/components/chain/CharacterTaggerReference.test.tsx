@@ -98,9 +98,9 @@ describe('角色就地粘贴反推', () => {
     vi.mocked(imageTaggerService.getStatus).mockResolvedValue({ model: model.id, downloaded: false, models: [missing], busy: false, downloadingModel: null });
     render(<Harness />);
     const dialog = await openPanel();
-    expect(await within(dialog).findByText('当前反推模型尚未下载，先在下方下载模型才能识别图片。')).toBeTruthy();
+    expect(await within(dialog).findByText('当前反推模型尚未下载，点右上角「反推模型」下载后才能识别图片。')).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: '反推模型' })).toBeTruthy();
     await waitFor(() => expect((within(dialog).getByTitle(/也可在此按 Ctrl\+V/) as HTMLButtonElement).disabled).toBe(true));
-    expect(within(dialog).getByRole('button', { name: /下载/ })).toBeTruthy();
   });
 
   it('识别页面里能直接下载与删除模型', async () => {
@@ -108,10 +108,12 @@ describe('角色就地粘贴反推', () => {
     vi.mocked(imageTaggerService.getStatus).mockResolvedValue({ model: model.id, downloaded: true, models: [model, other], busy: false, downloadingModel: null });
     render(<Harness />);
     const dialog = await openPanel();
-    const download = await within(dialog).findByRole('button', { name: '下载' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '反推模型' }));
+    const modelPanel = await screen.findByRole('dialog', { name: '反推模型' });
+    const download = await within(modelPanel).findByRole('button', { name: '下载' });
     fireEvent.click(download);
     await waitFor(() => expect(imageTaggerService.downloadModel).toHaveBeenCalledWith('second-model'));
-    const remove = within(dialog).getByRole('button', { name: '删除 WD ViT V3' });
+    const remove = within(modelPanel).getByRole('button', { name: '删除 WD ViT V3' });
     fireEvent.click(remove);
     const confirm = await screen.findByRole('alertdialog', { name: /删除 WD ViT V3/ });
     fireEvent.click(within(confirm).getByRole('button', { name: '删除模型' }));

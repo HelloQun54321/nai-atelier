@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ImagePlus, LoaderCircle, SlidersHorizontal, X } from 'lucide-react';
+import { Check, Cpu, ImagePlus, LoaderCircle, SlidersHorizontal, X } from 'lucide-react';
 import { ImageTaggerResult, imageTaggerService } from '../services/imageTaggerService';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { IconButton, ToolbarButton } from './DesignSystem';
@@ -9,6 +9,7 @@ import { MobileIconButton } from './MobileUI';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { taggerProgressText, useImageTaggerStatus } from './useImageTaggerStatus';
 import { ImageTaggerModelManager } from './ImageTaggerModelManager';
+import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { getPastedImageFile, isTextPasteTarget } from '../services/imageClipboard';
 
 interface ImageTaggerPanelProps {
@@ -64,6 +65,8 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
   const [characterThreshold, setCharacterThreshold] = useState(0.85);
   const { status: modelStatus, error: modelStatusError } = useImageTaggerStatus(open);
   const [thresholdModel, setThresholdModel] = useState<string | undefined>('');
+  const [modelOpen, setModelOpen] = useState(false);
+  const modelAnchorRef = useRef<HTMLButtonElement>(null);
   const selectedModel = modelStatus?.models?.find(model => model.id === modelStatus.model);
   const modelReady = Boolean(modelStatus?.downloaded && thresholdModel === modelStatus.model);
   const modelOptions = { threshold, characterThreshold, ...(modelStatus?.model ? { model: modelStatus.model } : {}) };
@@ -203,14 +206,25 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
     <div className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950">
       <header className="flex h-14 flex-none items-center justify-between border-b border-gray-200 px-4 dark:border-gray-800">
         <div><h2 className="text-sm font-black">{contextual ? t("识别图片 Tag") : t("图片反推 Danbooru Tag")}</h2><p className="text-micro text-gray-500">{t("{0} · 本地处理", [t(selectedModel?.label) || 'WD Tagger V3'])}</p></div>
-        <button type="button" disabled={busy} onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800" aria-label={t("关闭")}><X className="h-4 w-4" /></button>
+        <div className="flex flex-none items-center gap-1">
+          <button ref={modelAnchorRef} type="button" aria-label={t("反推模型")} aria-haspopup="dialog" aria-expanded={modelOpen} onClick={() => setModelOpen(!modelOpen)}
+            className="mobile-touch flex h-9 max-w-52 items-center gap-1.5 rounded-xl px-2 text-xs font-semibold text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
+            <Cpu className="h-4 w-4 flex-none" aria-hidden="true" />
+            <span className="truncate">{selectedModel?.label || t("模型")}</span>
+            {modelStatus && !modelStatus.downloaded && <span className="ml-0.5 h-1.5 w-1.5 flex-none rounded-full bg-amber-500" aria-hidden="true" />}
+          </button>
+          <button type="button" disabled={busy} onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800" aria-label={t("关闭")}><X className="h-4 w-4" /></button>
+        </div>
       </header>
+      {modelOpen && <AnchoredToolbarPopover anchorRef={modelAnchorRef} title={t("反推模型")} width={380} allowMobile onClose={() => setModelOpen(false)}>
+        <ImageTaggerModelManager notify={notify} />
+      </AnchoredToolbarPopover>}
       <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[300px_minmax(0,1fr)] md:overflow-hidden">
         <section className="space-y-4 border-b border-gray-200 p-4 dark:border-gray-800 md:overflow-y-auto md:border-b-0 md:border-r">
           <input aria-label={t("上传反推图片")} ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => chooseFile(event.target.files?.[0])} />
           {modelStatusError && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{modelStatusError}</p>}
           {modelStatus && !modelStatus.downloaded && <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200">
-            {t('当前反推模型尚未下载，先在下方下载模型才能识别图片。')}
+            {t('当前反推模型尚未下载，点右上角「反推模型」下载后才能识别图片。')}
           </p>}
           <div
             onDragOver={event => {
@@ -233,9 +247,6 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
             {preview ? <img src={preview} alt={t("待识别图片")} className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 px-4 text-center text-xs"><ImagePlus className="h-8 w-8" /><span>{t("选择图片")}</span><span className="text-micro leading-5 text-gray-500">{t("也可以按 Ctrl+V 粘贴，或把图片拖到这里")}</span></span>}
             {busy && <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-6 text-center text-xs text-white"><LoaderCircle className="h-7 w-7 animate-spin" />{selectedModel && !selectedModel.downloaded ? taggerProgressText(selectedModel) : t("正在本地识别图片…")}{selectedModel && ['downloading', 'verifying'].includes(selectedModel.stage) && <progress aria-label={t("模型下载进度")} max={selectedModel.totalBytes} value={selectedModel.receivedBytes} className="h-1.5 w-full accent-white" />}</span>}
           </button>
-          </div>
-          <div className="rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
-            <ImageTaggerModelManager notify={notify} />
           </div>
           <div className="space-y-3 rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
             <div className="flex items-center gap-2 text-xs font-bold"><SlidersHorizontal className="h-4 w-4" />{t("识别阈值")}</div>

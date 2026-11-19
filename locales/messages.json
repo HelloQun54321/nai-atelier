@@ -41854,5 +41854,7 @@
   "改错了就撤销，恢复校对前的提示词。": ["改錯了就撤銷，恢復校對前的提示詞。", "If something was wrong, undo to restore the prompt from before proofreading.", "違っていたら元に戻し、校正前のプロンプトに戻してください。", "잘못 바뀌었다면 되돌려 교정 전 프롬프트로 복구하세요."],
   "识别图片 Tag 并追加到此角色": ["識別圖片 Tag 並追加到此角色", "Identify tags from an image and append them to this character", "画像から Tag を識別してこのキャラクターに追加", "이미지에서 태그를 인식해 이 캐릭터에 추가"],
   "追加 {count} 个 Tag 到此角色": ["追加 {count} 個 Tag 到此角色", "Append {count} tags to this character", "Tag を {count} 個このキャラクターに追加", "태그 {count}개를 이 캐릭터에 추가"],
-  "当前反推模型尚未下载，先在下方下载模型才能识别图片。": ["目前反推模型尚未下載，先在下方下載模型才能識別圖片。", "The current tagger model is not downloaded yet. Download it below before identifying images.", "現在の反推進モデルは未ダウンロードです。下でモデルをダウンロードしてから画像を識別してください。", "현재 태그 모델이 아직 다운로드되지 않았습니다. 아래에서 모델을 다운로드한 후 이미지를 인식하세요."]
+  "当前反推模型尚未下载，先在下方下载模型才能识别图片。": ["目前反推模型尚未下載，先在下方下載模型才能識別圖片。", "The current tagger model is not downloaded yet. Download it below before identifying images.", "現在の反推進モデルは未ダウンロードです。下でモデルをダウンロードしてから画像を識別してください。", "현재 태그 모델이 아직 다운로드되지 않았습니다. 아래에서 모델을 다운로드한 후 이미지를 인식하세요."],
+  "当前反推模型尚未下载，点右上角「反推模型」下载后才能识别图片。": ["目前反推模型尚未下載，點右上角「反推模型」下載後才能識別圖片。", "The current tagger model is not downloaded yet. Download it from \"Tagger model\" at the top right before identifying images.", "現在の反推モデルは未ダウンロードです。右上の「反推モデル」からダウンロードしてから画像を識別してください。", "현재 태그 모델이 아직 다운로드되지 않았습니다. 오른쪽 위 \"태그 모델\"에서 다운로드한 후 이미지를 인식하세요."],
+  "反推模型": ["反推模型", "Tagger model", "反推モデル", "태그 모델"]
 }
