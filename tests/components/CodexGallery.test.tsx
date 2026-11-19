@@ -245,9 +245,7 @@ it.each(['books', 'community'] as const)('%s 的保存图标一键创建风格�
   await ready();
   const save = screen.getByRole('button', { name: '保存到风格串' });
   expect(save.querySelector('svg.lucide-layers')).toBeTruthy();
-  expect(save.classList.contains('bg-emerald-700')).toBe(true);
-  expect(save.classList.contains('dark:bg-emerald-700/90')).toBe(true);
-  expect(save.classList.contains('text-white')).toBe(true);
+  expect(save.getAttribute('data-tone')).toBe('ghost');
   fireEvent.click(save);
   await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
   const chain = mocks.create.mock.calls[0][0];
@@ -256,7 +254,7 @@ it.each(['books', 'community'] as const)('%s 的保存图标一键创建风格�
   expect(screen.queryByRole('dialog')).toBeNull(); expect(mocks.file).toHaveBeenCalledOnce(); expect(mocks.navigate).not.toHaveBeenCalled();
 });
 
-it.each((['books', 'community'] as const).flatMap(mode => ['图生图', '局部重绘', '扩图'].map(label => [mode, label] as const)))('%s 的第三个紫色按钮投递%s当前页底图，不混入参数', async (mode, label) => {
+it.each((['books', 'community'] as const).flatMap(mode => ['图生图', '局部重绘', '扩图'].map(label => [mode, label] as const)))('%s 的第三个底图按钮投递%s当前页底图，不混入参数', async (mode, label) => {
   vi.stubGlobal('innerWidth', mode === 'books' ? 390 : 1280);
   setup(); await screen.findByRole('button', { name: /合成词条/ });
   if (mode === 'community') chooseSource('共创广场');
@@ -267,8 +265,7 @@ it.each((['books', 'community'] as const).flatMap(mode => ['图生图', '局部�
   expect(within(actions).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['保存到风格串', '导入实验室', '用作底图']);
   expect(actions.classList.contains('ml-auto')).toBe(true);
   expect(actions.parentElement!.classList.contains('flex-wrap')).toBe(true);
-  expect(trigger.classList.contains('bg-purple-600')).toBe(true);
-  expect(trigger.classList.contains('dark:bg-purple-600/90')).toBe(true);
+  expect(trigger.getAttribute('data-tone')).toBe('ghost');
   expect(trigger.querySelector('svg.lucide-image-plus')).toBeTruthy();
   expect(screen.queryByRole('button', { name: label })).toBeNull();
   fireEvent.click(trigger);

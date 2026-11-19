@@ -338,10 +338,10 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
                 <IconButton label={t('下一页')} className="!h-8 !w-8" disabled={page >= selected.images.length - 1} onClick={() => setPages(current => ({ ...current, [mode]: page + 1 }))}><ChevronRight /></IconButton>
               </> : selectedImage ? 'P1' : t('纯文本')}
             </div>
-            <div className="ml-auto flex flex-none items-center gap-2">
-              <IconButton label={t('保存到风格串')} tone="save" disabled={!canImport || reading || saving || currentUser.role === 'guest'} aria-busy={saving} onClick={() => void saveAsChain()}>{saving ? <LoaderCircle className="animate-spin" /> : <Layers />}</IconButton>
-              <IconButton label={t('导入实验室')} tone="primary" disabled={!canImport || reading} aria-busy={reading} onClick={applyImport}>{reading ? <LoaderCircle className="animate-spin" /> : <FlaskConical />}</IconButton>
-              <ToolbarPopover key={`base:${selected.key}:${page}`} label="用作底图" title={t('用作底图')} icon={<ImagePlus />} iconOnly iconTone="edit" disabled={!selectedImage} width={208}>
+            <div className="ml-auto flex flex-none items-center gap-1">
+              <IconButton label={t('保存到风格串')} tone="ghost" className="!text-emerald-600 dark:!text-emerald-400" disabled={!canImport || reading || saving || currentUser.role === 'guest'} aria-busy={saving} onClick={() => void saveAsChain()}>{saving ? <LoaderCircle className="animate-spin" /> : <Layers />}</IconButton>
+              <IconButton label={t('导入实验室')} tone="ghost" disabled={!canImport || reading} aria-busy={reading} onClick={applyImport}>{reading ? <LoaderCircle className="animate-spin" /> : <FlaskConical />}</IconButton>
+              <ToolbarPopover key={`base:${selected.key}:${page}`} label="用作底图" title={t('用作底图')} icon={<ImagePlus />} iconOnly iconTone="ghost" disabled={!selectedImage} width={208}>
                 {close => <>{([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const).map(([operation, label]) => <button key={operation} type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); sendBaseImage(operation); }}><ImagePlus />{t(label)}</button>)}</>}
               </ToolbarPopover>
             </div>

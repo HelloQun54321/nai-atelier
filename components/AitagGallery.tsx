@@ -44,8 +44,8 @@ import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './Mo
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { Check, ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle } from 'lucide-react';
-import { IconButton, InlineSpinner, PageSpinner, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { Check, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle } from 'lucide-react';
+import { IconButton, InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
@@ -1758,8 +1758,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           headerActions={selectedWork && <>
             <IconButton
               label={batchProgress?.workId === selectedWork.id && batchProgress.total > 0 ? t('批量保存风格串 {0}/{1}', [batchProgress.completed, batchProgress.total]) : t('批量保存风格串')}
+              tone="ghost"
               data-appearance={undefined}
-              className="!border-transparent !bg-transparent !text-emerald-600 !shadow-none hover:!bg-transparent dark:!bg-transparent dark:!text-emerald-400 [&>svg]:!h-5 [&>svg]:!w-5"
+              className="!text-emerald-600 hover:!bg-emerald-50 dark:!text-emerald-400 dark:hover:!bg-emerald-950/40 [&>svg]:!h-5 [&>svg]:!w-5"
               disabled={savingImage !== null}
               aria-busy={batchProgress?.workId === selectedWork.id}
               onClick={() => void saveWorkAsArtistChains()}
@@ -1772,8 +1773,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             </IconButton>
             <IconButton
               label={t('保存后跳转')}
+              tone="ghost"
               data-appearance={undefined}
-              className={`!border-transparent !bg-transparent !shadow-none hover:!bg-transparent dark:!bg-transparent [&>svg]:!h-5 [&>svg]:!w-5 ${navigateAfterSave ? '!text-indigo-600 dark:!text-indigo-400' : '!text-gray-400 dark:!text-gray-500'}`}
+              className={`[&>svg]:!h-5 [&>svg]:!w-5 ${navigateAfterSave ? '!text-indigo-600 dark:!text-indigo-400' : '!text-gray-400 dark:!text-gray-500'}`}
               aria-pressed={navigateAfterSave}
               disabled={savingImage !== null}
               onClick={() => {
@@ -1788,7 +1790,13 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
               </svg>
             </IconButton>
           </>}
-          subInfo={selectedWork ? `#${selectedWork.id} · ${getAitagType(selectedWork)}` : undefined}
+          subInfo={selectedWork ? <>
+            {`#${selectedWork.id} · ${getAitagType(selectedWork)}`}
+            <span aria-hidden="true">{' · '}</span>
+            <a href={getAitagUrl(selectedWork)} target="_blank" rel="noreferrer" title={t("aitag 原页")} aria-label={t("aitag 原页")} className="whitespace-nowrap transition hover:text-indigo-600 dark:hover:text-indigo-400">aitag↗</a>
+            <span aria-hidden="true">{' · '}</span>
+            <a href={getPixivUrl(selectedWork)} target="_blank" rel="noreferrer" title={t("Pixiv 原页")} aria-label={t("Pixiv 原页")} className="whitespace-nowrap transition hover:text-indigo-600 dark:hover:text-indigo-400">Pixiv↗</a>
+          </> : undefined}
           onBack={closeMobileDetail}
           onClose={closeMobileDetail}
           bodyRef={detailScrollRef}
@@ -1801,10 +1809,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             <div className="h-full flex items-center justify-center text-sm text-gray-400">{t("加载详情中...")}</div>
           ) : selectedDetail ? (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2">
-                <ToolbarLink href={getAitagUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />{t("aitag 原页")}</ToolbarLink>
-                <ToolbarLink href={getPixivUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />{t("Pixiv 原页")}</ToolbarLink>
-              </div>
               {selectedImages.map(({ image, favorite }, index) => {
                     const promptText = extractAitagPrompt(image);
                     const generationLabels = getAitagGenerationLabels(image);
@@ -1832,10 +1836,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
                                 P{index + 1}{modelLabel ? ` · ${modelLabel}` : ''}
                               </div>
                             </div>
-                            <div className="flex flex-none gap-2">
-                              <IconButton label={t("保存到风格串")} tone="save" disabled={savingImage !== null} aria-busy={savingImage === `${image.work_id}-${image.file_name}`} onClick={() => saveAsArtistChain(image, index)}>{savingImage === `${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Layers />}</IconButton>
-                              <IconButton label={t("导入实验室")} tone="primary" onClick={() => importToPlayground(image)}><FlaskConical /></IconButton>
-                              <ToolbarPopover key={`${image.work_id}-${image.file_name}`} label="用作底图" title={t('用作底图')} icon={<ImagePlus />} iconOnly iconTone="edit" disabled={!buildAitagImageUrl(image)} width={208}>
+                            <div className="flex flex-none gap-1">
+                              <IconButton label={t("保存到风格串")} tone="ghost" className="!text-emerald-600 dark:!text-emerald-400" disabled={savingImage !== null} aria-busy={savingImage === `${image.work_id}-${image.file_name}`} onClick={() => saveAsArtistChain(image, index)}>{savingImage === `${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Layers />}</IconButton>
+                              <IconButton label={t("导入实验室")} tone="ghost" onClick={() => importToPlayground(image)}><FlaskConical /></IconButton>
+                              <ToolbarPopover key={`${image.work_id}-${image.file_name}`} label="用作底图" title={t('用作底图')} icon={<ImagePlus />} iconOnly iconTone="ghost" disabled={!buildAitagImageUrl(image)} width={208}>
                                 {close => <>{([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const).map(([operation, label]) => <button key={operation} type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); sendBaseImage(image, operation); }}><ImagePlus />{t(label)}</button>)}</>}
                               </ToolbarPopover>
                             </div>

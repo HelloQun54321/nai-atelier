@@ -18,8 +18,8 @@ interface DetailSidePanelProps {
   title: string;
   /** 将作品标题接入安全模式的点击显示逻辑 */
   sensitiveTitle?: boolean;
-  /** 标题下的副信息行（尺寸·页数·来源等） */
-  subInfo?: string;
+  /** 标题下的副信息行（尺寸·页数·来源等）。支持传入元素，让来源外链以正文小字形式贴在作品编号旁。 */
+  subInfo?: React.ReactNode;
   /** 原帖入口固定在标题栏，与作品身份相邻，不随正文滚出视野。 */
   sourceUrl?: string;
   headerActions?: React.ReactNode;

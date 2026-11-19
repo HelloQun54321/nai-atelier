@@ -228,11 +228,15 @@ export const IconLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement> & 
 
 export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
-  tone?: 'neutral' | 'primary' | 'save' | 'edit' | 'danger' | 'favorite';
+  tone?: 'neutral' | 'primary' | 'save' | 'edit' | 'danger' | 'favorite' | 'ghost';
 }> = ({ label, tone = 'neutral', className = '', children, ...props }) => {
   useLanguage();
   const toneClass = tone === 'primary'
     ? 'border-indigo-700 bg-indigo-700 text-white shadow-md shadow-indigo-500/15 hover:border-indigo-600 hover:bg-indigo-600 dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:shadow-lg dark:shadow-indigo-950/40 dark:hover:from-indigo-500 dark:hover:to-violet-600'
+    // ghost：只有图标和悬停反馈，不占色块。用于内容区一次性出现多个动作的场合，
+    // 避免一屏出现多个实心色块把"主操作"稀释掉；需要强调时用 className 覆盖前景色。
+    : tone === 'ghost'
+      ? 'border-transparent bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
     : tone === 'save'
       ? 'border-emerald-600 bg-emerald-700 text-white hover:bg-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-700/90 dark:hover:bg-emerald-800'
     : tone === 'edit'

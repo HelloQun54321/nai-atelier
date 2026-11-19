@@ -998,7 +998,7 @@ it('详情请求尚未完成时取消，迟到结果不会重开详情或恢复�
   expect(document.querySelector('aside')!.className).toContain('aitag-detail-panel--closed');
 });
 
-it.each([1280, 390].flatMap(width => ['图生图', '局部重绘', '扩图'].map(label => [width, label] as const)))('%spx 第三个紫色按钮将对应图片送入%s，不取用元数据或自动保存', async (width, label) => {
+it.each([1280, 390].flatMap(width => ['图生图', '局部重绘', '扩图'].map(label => [width, label] as const)))('%spx 第三个底图按钮将对应图片送入%s，不取用元数据或自动保存', async (width, label) => {
   vi.stubGlobal('innerWidth', width);
   mocks.getWork.mockResolvedValue({ work: works[0], images: [works[0].firstImage, {
     ...works[0].firstImage!, id: 12, file_name: 'second.png', prompt_text: '', ai_json: undefined,
@@ -1012,8 +1012,7 @@ it.each([1280, 390].flatMap(width => ['图生图', '局部重绘', '扩图'].map
   });
   const actions = trigger.parentElement!.parentElement!;
   expect(within(actions).getAllByRole('button').slice(0, 3).map(button => button.getAttribute('aria-label'))).toEqual(['保存到风格串', '导入实验室', '用作底图']);
-  expect(trigger.classList.contains('bg-purple-600')).toBe(true);
-  expect(trigger.classList.contains('dark:bg-purple-600/90')).toBe(true);
+  expect(trigger.getAttribute('data-tone')).toBe('ghost');
   expect(trigger.querySelector('svg.lucide-image-plus')).toBeTruthy();
   fireEvent.click(trigger);
   const panel = screen.getByRole('dialog', { name: '用作底图' });
@@ -1034,9 +1033,7 @@ it('用已显示的 JSON 和本地图片保存，立即显示忙碌并阻止连�
   fireEvent.click(card(1));
   const button = await screen.findByRole('button', { name: '保存到风格串' });
   expect(button.querySelector('svg.lucide-layers')).toBeTruthy();
-  expect(button.classList.contains('bg-emerald-700')).toBe(true);
-  expect(button.classList.contains('dark:bg-emerald-700/90')).toBe(true);
-  expect(button.classList.contains('text-white')).toBe(true);
+  expect(button.getAttribute('data-tone')).toBe('ghost');
   await act(async () => {});
   const observersBeforeSaving = [...callbacks];
   fireEvent.click(button); fireEvent.click(button);
