@@ -1,7 +1,7 @@
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, Search } from 'lucide-react';
+import { ImagePlus, RefreshCw, ScanSearch, Search } from 'lucide-react';
 import {
   DanbooruPost,
   DanbooruTagCategory,
@@ -13,16 +13,18 @@ import {
 } from '../services/danbooruService';
 import { db } from '../services/dbService';
 import { copyTagText as copyText, externalImageAnalysis, externalImageDrafts, type ExternalImageTags } from '../services/externalImageTags';
-import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
-import { Inspiration, NAIParams, User } from '../types';
+import { IMPORT_SESSION_KEY, PendingImportData, type BaseImageImport } from '../services/metadataService';
+import { Inspiration, NAIParams, User, type ImageEditOperation } from '../types';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { ListJumpButton } from './ListJumpButton';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { ExternalImageTools } from './ExternalImageTools';
-import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
+import { ImageTaggerPanel } from './ImageTaggerPanel';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { SmartImage } from './SmartImage';
@@ -95,6 +97,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
   const [historyItems, setHistoryItems] = useState<GalleryHistoryItem[]>([]);
   const [items, setItems] = useState<DanbooruPost[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [reverseOpen, setReverseOpen] = useState(false);
   const selectionAnchor = useGallerySelectionAnchor(scrollRef, galleryContentRef, selectedId, active, selectionFocusEnabled);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'danbooru', { skipRestore: selectionAnchor.hasAnchor });
   const [page, setPage] = useState(1);
@@ -430,6 +433,18 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
     onNavigateToPlayground();
   };
 
+  /** 把当前作品图片作为底图送进实验室，与 Pixiv／AITag／法典详情同一套入口。 */
+  const sendBaseImage = (operation: ImageEditOperation) => {
+    if (!selected?.sampleUrl) return;
+    try {
+      const payload: BaseImageImport = { mode: 'base-image', imageEditOperation: operation, baseImageUrl: getMobileOriginalUrl(selected.sampleUrl) };
+      sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(payload));
+      onNavigateToPlayground();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('导入失败'), 'error');
+    }
+  };
+
   const collectionImage = (post: DanbooruPost) => ({ imageUrl: post.sampleUrl, sourceType: 'danbooru' as const, sourceId: String(post.id), sourceUrl: post.postUrl, title: post.tags.character[0] || post.tags.artist[0] || 'Danbooru #' + post.id, prompt: externalImageDrafts.get('danbooru:' + post.id + ':0')?.prompt || danbooruPromptTags(post), analysis: externalImageAnalysis(danbooruAllTags(post), 0, externalImageDrafts.get('danbooru:' + post.id + ':0')) });
 
   const saveReverseTags = async (post: DanbooruPost, reverse?: ExternalImageTags, existing?: Inspiration): Promise<Inspiration> => {
@@ -609,12 +624,26 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
             </DetailImageStage>
             <ExternalImageTools key={`danbooru:${selected.id}`} source="danbooru"
               sourcePrompt={danbooruPromptTags(selected)} sourceCopy={danbooruAllTags(selected).join(', ')} onImport={importToPlayground} notify={notify}
+              trailingAction={<>
+                <ToolbarPopover label="用作底图" title={t('用作底图')} icon={<ImagePlus />} iconOnly iconTone="ghost" width={208} disabled={!selected.sampleUrl}>
+                  {close => <>{([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const).map(([operation, label]) => <button key={operation} type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); sendBaseImage(operation); }}><ImagePlus />{t(label)}</button>)}</>}
+                </ToolbarPopover>
+                <IconButton label={t("反推 Tag")} title={t("用本地模型反推这张图的 Tag")} tone="ghost" disabled={!selected.sampleUrl} onClick={() => setReverseOpen(true)}><ScanSearch /></IconButton>
+              </>}
               sourceTags={<>
                 {(Object.keys(categoryLabels) as DanbooruTagCategory[]).map(category => selected.tags[category].length > 0 && <section key={category}>
               <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black text-gray-700 dark:text-gray-200">{categoryLabels[category]} · {selected.tags[category].length}</h3><button type="button" onClick={() => void copyText(selected.tags[category].join(', ')).then(() => notify(`已复制${categoryLabels[category]} Tag`))} className="text-micro text-gray-500 hover:text-indigo-500">{t("复制")}</button></div>
               <TagChipGroup chips={selected.tags[category].map(tag => ({ label: tag.replaceAll('_', ' '), onClick: () => { setInput(tag); void handleApplyFilter({ inputVal: tag }); } }))} />
                 </section>)}
               </>} />
+            {reverseOpen && <ImagePreviewPortal><ImageTaggerPanel contextual open onClose={() => setReverseOpen(false)} notify={notify}
+              imageUrl={selected.sampleUrl ? getMobileOriginalUrl(selected.sampleUrl) : undefined}
+              onInsert={tags => {
+                void navigator.clipboard.writeText(tags).then(
+                  () => notify(`已复制 ${tags.split(',').length} 个 Tag 到剪贴板`),
+                  () => notify('复制失败，请手动选择复制', 'error'),
+                );
+              }} /></ImagePreviewPortal>}
           </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">{t("选择作品")}</div>}
         </DetailSidePanel>
       </div>

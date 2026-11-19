@@ -19,8 +19,8 @@ interface ExternalImageToolsProps {
 
 /**
  * 外部图站的「原站 Tag」操作区：复制原站标注、把原站 Tag 送往实验室。
- * 图片反推只保留在实验室与提示词库两处——外部站的作品本来就带 Tag，
- * 再跑一遍模型既慢又会把已有标注洗掉。
+ * 操作行由调用方通过 leading / trailingAction 决定内容：Pixiv 与 Danbooru 在这里
+ * 放作者信息与图片级操作（用作底图、反推 Tag），下方正文仍以原站 Tag 为主体。
  */
 export const ExternalImageTools: React.FC<ExternalImageToolsProps> = ({ source, sourcePrompt, sourceCopy = sourcePrompt, onImport, notify, trailingAction, leading, sourceTags }) => {
   useLanguage();

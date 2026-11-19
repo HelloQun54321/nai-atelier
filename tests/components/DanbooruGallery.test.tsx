@@ -166,21 +166,25 @@ it.each(['masonry', 'portrait', 'square', 'history'])('Danbooru %s 卡片沿用 
   cards.forEach(card => expect(card.className).not.toContain('brightness-'));
 });
 
-it('详情只提供原站 Tag 的复制与送往实验室，不再提供图片反推', async () => {
+it('详情提供原站 Tag 的复制与送往实验室，以及用作底图与反推 Tag', async () => {
   search.mockImplementation(async options => result(options?.query, [post]));
   search.mockImplementation(async options => result(options?.query, [{ ...post, sampleUrl: 'https://cdn.donmai.us/original/synthetic.png' }]));
   vi.mocked(importDanbooruCoverAsDataUrl).mockResolvedValue('data:image/png;base64,c3ludGhldGlj');
   vi.mocked(api.post).mockImplementation(async (_path, body) => ({ item: body }));
   await setup(); fireEvent.click(await screen.findByRole('button', { name: /synthetic artist/ }));
-  // 反推入口已收敛到实验室与提示词库两处；外部站作品自带标注，这里不再重复跑模型。
+  // 原站 Tag 仍是正文主体；图片级操作用作底图与反推 Tag 挂在操作行右侧。
   await waitFor(() => expect(screen.getByRole('button', { name: '原站 Tag 送往实验室' })).toBeTruthy());
-  expect(screen.queryByRole('button', { name: '图片反推' })).toBeNull();
+  expect(screen.getByRole('button', { name: '用作底图' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '反推 Tag' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '导入实验室' })).toBeNull();
   const source = screen.getByRole('link', { name: '查看原帖' });
   expect(source.closest('header')).toBeTruthy();
   expect(source.getAttribute('href')).toBe(post.postUrl);
   fireEvent.click(screen.getByRole('button', { name: '原站 Tag 送往实验室' }));
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: 'solo', mode: 'append-prompt' });
+  fireEvent.click(screen.getByRole('button', { name: '用作底图' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '用作底图' })).getByRole('button', { name: '图生图' }));
+  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ mode: 'base-image', imageEditOperation: 'image-to-image' });
   fireEvent.click(screen.getAllByRole('button', { name: '收藏' }).at(-1)!);
   await waitFor(() => expect(toggleCollectionTarget).toHaveBeenCalledWith(expect.objectContaining({ sourceType: 'danbooru', sourceId: String(post.id), prompt: 'solo', analysis: { externalSourceTags: ['synthetic_artist', 'solo'], externalSourcePage: 0 } })));
   expect(screen.queryByRole('button', { name: '加入收藏库' })).toBeNull();
