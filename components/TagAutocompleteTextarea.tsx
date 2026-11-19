@@ -60,7 +60,8 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   libraryField?: PromptLibraryField;
   libraryEnabled?: boolean;
   /** 为 false 时不渲染「使用／收录提示词」（由外层标题旁自行放置，避免 portal 错绑用途）。 */
-  promptLibraryActions?: boolean;
+  /** false 关闭整组库操作；'save' 只留「收录」，取用交给页面上的统一入口。 */
+  promptLibraryActions?: boolean | 'save';
   /** 提供时在工具栏加「整理」：提取画风、清洗格式，结果覆盖原文并可撤销。 */
   promptTidy?: PromptTidyOptions;
   /** 提供时工具栏显示「从图片反推」，把识别结果追加到这一栏。 */
@@ -931,7 +932,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       className={`${slotClass} cursor-text rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--nai-accent)]`} />;
   };
   const libraryAction = personalLibrary && promptLibraryActions !== false
-    ? <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />
+    ? <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} mode={promptLibraryActions === 'save' ? 'save' : 'both'} />
     : null;
   const tidyAction = promptTidy
     ? <PromptTidyActions value={value} disabled={!editable} notify={promptTidy.notify} sample={promptTidy.sample}

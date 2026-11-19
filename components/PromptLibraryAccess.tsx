@@ -174,9 +174,9 @@ export function LibraryDialog({ title, onClose, children, busy = false, wide = f
 const CHOOSER_SECTION_LABELS: Record<'items' | 'saved', string> = { items: '片段', saved: '组合' };
 const MODE_LABELS: Record<PromptApplyMode, string> = { append: '追加', replace: '替换', 'fill-missing': '仅填空白' };
 
-export function PromptLibraryChooser({ value, onText, onClose, field = {}, initialEntry, completion, whole = false, onApplied }: {
+export function PromptLibraryChooser({ value, onText, onClose, field = {}, initialEntry, completion, whole = false, onApplied, headerActions }: {
   value: string; onText: (value: string) => void; onClose: () => void; field?: PromptLibraryField;
-  initialEntry?: PromptChain; completion?: LibraryCompletionEdit; whole?: boolean; onApplied?: () => void;
+  initialEntry?: PromptChain; completion?: LibraryCompletionEdit; whole?: boolean; onApplied?: () => void; headerActions?: React.ReactNode;
 }) {
   const library = usePromptLibrary();
   const workspace = useContext(WorkspaceContext);
@@ -301,7 +301,7 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
     } catch (cause) { setError((cause as Error).message); }
     finally { pending.current = false; setApplying(false); }
   };
-  return <LibraryDialog busy={applying} title="使用提示词" onClose={onClose} caption={onApplied ? undefined : countCaption}>
+  return <LibraryDialog busy={applying} title="使用提示词" onClose={onClose} caption={onApplied ? undefined : countCaption} headerActions={headerActions}>
     <DirectoryStatus />
     {!onApplied && <><div className="flex flex-wrap gap-2" role="tablist" aria-label={t('提示词类型')}>{Object.entries(CHOOSER_SECTION_LABELS).map(([key, label]) => <ToolbarButton key={key} role="tab" active={section === key} aria-selected={section === key} onClick={() => { setSection(key as PromptLibrarySection); setTag(key === 'saved' ? '' : field.purposeId || ''); setEntry(null); }}>{t(label)}</ToolbarButton>)}</div>
     <input type="search" aria-label={t('搜索提示词库')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('搜索名称、标签或提示词')} className={TOOLBAR_FIELD_CLASS} />
@@ -383,7 +383,7 @@ export function PromptLibraryCaptureButton({ text, params }: { text: string; par
 
 const FIELD_ACTION_EVENT = 'nai-prompt-library-field-action';
 
-export function PromptLibraryFieldActions({ value, onText, field, disabled }: { value: string; onText: (text: string) => void; field?: PromptLibraryField; disabled?: boolean }) {
+export function PromptLibraryFieldActions({ value, onText, field, disabled, mode = 'both' }: { value: string; onText: (text: string) => void; field?: PromptLibraryField; disabled?: boolean; mode?: 'both' | 'save' }) {
   const library = usePromptLibrary();
   const [open, setOpen] = useState<'use' | 'save' | null>(null);
   const token = useRef({});
@@ -397,7 +397,7 @@ export function PromptLibraryFieldActions({ value, onText, field, disabled }: { 
     return () => window.removeEventListener(FIELD_ACTION_EVENT, onOther);
   }, [open]);
   if (!library) return null;
-  return <><IconButton label="使用提示词" disabled={disabled} onClick={() => setOpen('use')}><BookOpen className="h-4 w-4" /></IconButton><IconButton label="收录提示词" disabled={disabled || !value.trim()} onClick={() => setOpen('save')}><BookmarkPlus className="h-4 w-4" /></IconButton>
+  return <>{mode !== 'save' && <IconButton label="使用提示词" disabled={disabled} onClick={() => setOpen('use')}><BookOpen className="h-4 w-4" /></IconButton>}<IconButton label="收录提示词" disabled={disabled || !value.trim()} onClick={() => setOpen('save')}><BookmarkPlus className="h-4 w-4" /></IconButton>
     {open === 'use' && <PromptLibraryChooser value={value} onText={onText} field={field} onClose={() => setOpen(null)} />}
     {open === 'save' && <PromptLibrarySaveDialog text={value} field={field} onClose={() => setOpen(null)} />}
   </>;
