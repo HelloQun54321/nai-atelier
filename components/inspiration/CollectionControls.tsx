@@ -45,7 +45,7 @@ export const CollectionFolderPicker: React.FC<{
   onToggle: (id: string, checked: boolean) => void;
   disabled?: boolean; iconOnly?: boolean; label?: string; className?: string;
   loading?: boolean; error?: string; onRetry?: () => void;
-}> = ({ boards, value, mixedIds = [], onToggle, disabled, loading, error, onRetry, iconOnly, label = '管理收藏夹', className = 'mobile-touch h-10 max-w-44 rounded-xl border border-gray-200 px-3 text-xs font-semibold dark:border-gray-800' }) => {
+}> = ({ boards, value, mixedIds = [], onToggle, disabled, loading, error, onRetry, iconOnly, label = '管理收藏夹', className = iconOnly ? 'mobile-touch h-10 w-10 rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white' : 'mobile-touch h-10 max-w-44 rounded-xl border border-gray-200 px-3 text-xs font-semibold dark:border-gray-800' }) => {
   const anchorRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [mobile, setMobile] = useState(() => window.innerWidth < 768);

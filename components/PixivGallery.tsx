@@ -1150,7 +1150,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                   label={bookmarking ? t("正在同步 Pixiv 收藏") : selected.isBookmarked ? t("取消 Pixiv 收藏") : t("收藏到 Pixiv")}
                   aria-pressed={Boolean(selected.isBookmarked)}
                   aria-busy={bookmarking}
-                  tone={selected.isBookmarked ? 'favorite' : undefined}
+                  tone="ghost"
+                  className={selected.isBookmarked ? '!text-rose-600 dark:!text-rose-400' : ''}
                   disabled={bookmarking}
                   onClick={() => void handleToggleBookmark(selected)}
                 >
