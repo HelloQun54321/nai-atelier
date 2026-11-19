@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, symlinkSync, unlinkSync } from 'node:fs';
+import { copyFileSync, existsSync, lstatSync, readdirSync, symlinkSync, unlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createWorkspace, removeWorkspace } from '../tests/support/workspace.mjs';
 import { scanRepository } from './secret-scan.mjs';
 
-/** 门禁范围：minimal 只扫密钥，code 加变化文件的 ESLint，full 再加全量类型检查。 */
+/** 门禁范围：minimal 只扫密钥，code 跑变化文件的 ESLint，full 再扫全量。两者都做增量类型检查。 */
 const SCOPES = ['minimal', 'code', 'full'];
 const CODE_FILE = /\.(?:ts|tsx|js|jsx|mjs|cjs)$/i;
 const CONFIG_FILE = /^(?:package\.json|package-lock\.json|tsconfig[^/]*\.json|vite\.config\.[^/]+|eslint\.config\.[^/]+|vitest\.config\.[^/]+|wrangler\.toml)$/i;
@@ -17,16 +17,30 @@ export const resolveCheckScope = (value = process.env.NAI_CHECK_SCOPE) =>
 export const stagedFiles = (root) => execFileSync('git', ['diff', '--cached', '--name-only', '-z'], { cwd: root, windowsHide: true })
   .toString().split('\0').filter(Boolean);
 
+/** 只动了版本号的 package／lock 不算工程配置变更，不升级全量。 */
+const versionOnly = (root, file) => {
+  const diff = execFileSync('git', ['diff', '--cached', '-U0', '--', file], { cwd: root, windowsHide: true }).toString();
+  const lines = diff.split(/\r?\n/).filter(line => /^[+-]/.test(line) && !/^(?:\+\+\+|---)/.test(line));
+  return lines.length > 0 && lines.every(line => /^[+-]\s*"version":/.test(line));
+};
+
 const run = (root, snapshot, script, args, label) => {
   console.log(`[pre-commit] ${label}（暂存快照）...`);
+  const started = Date.now();
   const result = spawnSync(process.execPath, [join(root, 'node_modules', script), ...args], { cwd: snapshot, stdio: 'inherit', windowsHide: true });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${label} 检查失败：${result.status ?? result.signal}`);
+  console.log(`[pre-commit] ${label} 通过（${((Date.now() - started) / 1000).toFixed(1)}s）`);
 };
+
+/** 复制主仓库的 TypeScript 增量缓存，小改在快照里也能几秒完成类型检查。 */
+const copyBuildInfo = (root, snapshot) => readdirSync(root)
+  .filter(file => file.endsWith('.tsbuildinfo'))
+  .map(file => { copyFileSync(join(root, file), join(snapshot, file)); return file; });
 
 export const checkStaged = (root = fileURLToPath(new URL('../', import.meta.url)), scope = resolveCheckScope()) => {
   const files = stagedFiles(root);
-  const hasConfig = files.some(file => CONFIG_FILE.test(file));
+  const hasConfig = files.some(file => CONFIG_FILE.test(file) && !(/^(?:package\.json|package-lock\.json)$/.test(file) && versionOnly(root, file)));
   // 工程配置改动会改变类型与构建规则，轻量模式一律升级为全量。
   if (scope === 'code' && hasConfig) { console.log('[pre-commit] 暂存区含工程配置，升级为全量检查'); scope = 'full'; }
   console.log(`[pre-commit] 暂存区密钥扫描（范围：${scope}）...`);
@@ -45,9 +59,11 @@ export const checkStaged = (root = fileURLToPath(new URL('../', import.meta.url)
     // 只复制 Git 暂存文件；依赖链接复用，工作区及私人资料不参与检查。
     symlinkSync(join(root, 'node_modules'), dependencyLink, 'junction');
     linked = true;
+    const cached = copyBuildInfo(root, snapshot);
+    if (cached.length) console.log(`[pre-commit] 已带增量缓存：${cached.join(', ')}`);
     if (scope === 'code') {
       run(root, snapshot, 'eslint/bin/eslint.js', [...codeFiles, '--quiet'], 'ESLint（变化文件）');
-      console.log('[pre-commit] 小型改动，已跳过全量 TypeScript 检查');
+      run(root, snapshot, 'typescript/bin/tsc', ['-b'], 'TypeScript（增量）');
     } else {
       run(root, snapshot, 'eslint/bin/eslint.js', ['.', '--quiet'], 'ESLint');
       run(root, snapshot, 'typescript/bin/tsc', ['-b'], 'TypeScript');
