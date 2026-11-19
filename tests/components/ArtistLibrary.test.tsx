@@ -1423,8 +1423,25 @@ it('画师库与 Roll 共用屏蔽名单，失败保持原状，屏蔽后不隐�
   await waitFor(() => expect(cover.getAttribute('data-blocked')).toBe('true'));
   expect(mocks.blockSave).toHaveBeenLastCalledWith(['beta_artist', 'alpha artist']);
   expect(screen.getByRole('button', { name: '选择画师：alpha artist' }).getAttribute('aria-pressed')).toBe('false');
+  // 浮钮不随状态变色，卡片上的状态行与成功提示是用户确认屏蔽已生效的唯一依据。
+  expect(screen.getByText('已屏蔽 · 不参与 Roll')).toBeTruthy();
+  expect(notify).toHaveBeenLastCalledWith('已屏蔽画师：alpha artist', 'success');
   act(() => window.dispatchEvent(new CustomEvent('nai-roll-blocklist-changed', { detail: [] })));
   expect(cover.getAttribute('data-blocked')).toBe('false');
+  expect(screen.queryByText('已屏蔽 · 不参与 Roll')).toBeNull();
+});
+
+it('已屏蔽画师再点一次是取消屏蔽，并明确回报结果', async () => {
+  mocks.blockLoad.mockResolvedValue(['alpha_artist']);
+  const { notify } = setup(); const cover = await screen.findByTestId('cover-alpha artist');
+  await waitFor(() => expect(cover.getAttribute('data-blocked')).toBe('true'));
+  expect(screen.getByText('已屏蔽 · 不参与 Roll')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '屏蔽 alpha artist' }));
+  await waitFor(() => expect(cover.getAttribute('data-blocked')).toBe('false'));
+  expect(mocks.blockSave).toHaveBeenLastCalledWith([]);
+  expect(notify).toHaveBeenLastCalledWith('已取消屏蔽画师：alpha artist', 'success');
+  expect(screen.queryByText('已屏蔽 · 不参与 Roll')).toBeNull();
+  expect(screen.getByText('画师甲')).toBeTruthy();
 });
 
 it('无论选择0/1/多位画师都不显示样张操作入口，单卡版本、偏好与选择仍独立', async () => {

@@ -5,14 +5,14 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PromptTagLibraryInfo } from '../../components/PromptTagLibraryInfo';
 import { ImageActivityContext } from '../../components/SmartImage';
 
-const mocks = vi.hoisted(() => ({ data: vi.fn(), catalog: vi.fn(), supplement: vi.fn(), cover: vi.fn(), remove: vi.fn(), manage: vi.fn(), actions: vi.fn(), history: vi.fn(), index: vi.fn(), generated: [] as any[] }));
+const mocks = vi.hoisted(() => ({ data: vi.fn(), catalog: vi.fn(), supplement: vi.fn(), cover: vi.fn(), remove: vi.fn(), manage: vi.fn(), actions: vi.fn(), history: vi.fn(), index: vi.fn(), blockSave: vi.fn(), generated: [] as any[] }));
 vi.mock('../../services/artistSampleGallery', async original => {
   const actual = await original<typeof import('../../services/artistSampleGallery')>();
   return { indexArtistSampleGallery: (...args: Parameters<typeof actual.indexArtistSampleGallery>) => { mocks.index(...args); return actual.indexArtistSampleGallery(...args); } };
 });
 vi.mock('../../components/MobileUI', () => ({ useMobileHistoryLayer: (open: boolean, close: () => void) => { mocks.history(open); return close; } }));
 vi.mock('../../components/DanbooruCover', () => ({ DanbooruCover: (props: any) => <div data-testid="character" data-tag={props.tag} data-kind={props.kind} /> }));
-vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: (props: any) => { mocks.cover(props); return <><button onClick={() => props.onPackChange('v5')}>switch</button><button disabled={props.pending} onClick={props.onSupplement}>generate</button><span data-testid="own">{props.ownSamples.map((item: any) => item.id).join(',')}</span></>; } }));
+vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: (props: any) => { mocks.cover(props); return <><button onClick={() => props.onPackChange('v5')}>switch</button><button disabled={props.pending} onClick={props.onSupplement}>generate</button><button onClick={props.onBlock}>block artist</button><span data-testid="own">{props.ownSamples.map((item: any) => item.id).join(',')}</span></>; } }));
 vi.mock('../../components/useArtistSampleActions', () => ({
   useArtistSampleActions: (props: any) => { mocks.actions(props); return { requestingTarget: '', supplementSample: mocks.supplement, removeSample: mocks.remove, manageGeneration: mocks.manage, settingsDialog: <div data-testid="settings" /> }; },
   ArtistSampleGenerationStatus: () => <div data-testid="generation-status" />,
@@ -21,10 +21,11 @@ vi.mock('../../services/artistSampleDrafts', () => ({ getArtistSampleData: mocks
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleDictionary: async () => [{ name: 'alpha artist', chinese: '', postCount: 2 }], getArtistSampleStatus: async () => ({ packs: [{ id: 'v45', phase: 'ready', revision: 'one' }, { id: 'v5', phase: 'ready', revision: 'two', model: 'nai-diffusion-5-full' }] }), getArtistSampleCatalog: mocks.catalog }));
 vi.mock('../../services/artistSampleGeneration', () => ({ subscribeArtistSampleGeneration: () => () => {}, artistSampleGenerationRevision: () => 0, getArtistSampleGeneration: () => undefined, getGeneratedArtistSamples: () => mocks.generated, artistSampleGenerationBusy: () => false }));
 vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => [{ sourceType: 'artist', sourceId: 'alpha_artist', archived: false }], ensureCollection: async () => {}, subscribeCollection: () => () => {} }));
-vi.mock('../../services/styleRollApi', () => ({ ROLL_BLOCKLIST_CHANGED: 'block-changed', loadRollBlocklist: async () => ['alpha_artist'], saveRollBlocklist: vi.fn() }));
+vi.mock('../../services/styleRollApi', () => ({ ROLL_BLOCKLIST_CHANGED: 'block-changed', loadRollBlocklist: async () => ['alpha_artist'], saveRollBlocklist: mocks.blockSave }));
 
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); mocks.generated = [];
+  mocks.blockSave.mockImplementation(async (tags: string[]) => tags);
   mocks.data.mockResolvedValue({ templates: {}, samples: [{ id: 'own-one', tag: 'alpha_artist', pack: 'v45', createdAt: 1, params: { model: 'nai-diffusion-4-5-full' } }] });
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, revision: pack === 'v45' ? 'one' : 'two', tags: ['alpha_artist'], ...(pack === 'v5' ? { model: 'nai-diffusion-5-full' } : {}) }));
 });
@@ -104,6 +105,16 @@ it('样张操作沿用已保存的免费步数限制偏好，显式属性仍可�
   await waitFor(() => expect(mocks.actions).toHaveBeenCalledWith(expect.objectContaining({ enforceFreeStepLimit: false, active: true })));
   view.rerender(<PromptTagLibraryInfo target={target} onClose={vi.fn()} enforceFreeStepLimit />);
   expect(mocks.actions.mock.lastCall![0].enforceFreeStepLimit).toBe(true);
+});
+
+it('画师已屏蔽时资料窗给出状态行，取消屏蔽回报结果并收回状态行', async () => {
+  const notify = vi.fn();
+  render(<PromptTagLibraryInfo target={{ kind: 'artist', name: 'alpha artist' }} onClose={vi.fn()} notify={notify} />);
+  expect(await screen.findByText('已屏蔽 · 不参与 Roll')).toBeTruthy();
+  fireEvent.click(screen.getByText('block artist'));
+  await waitFor(() => expect(mocks.blockSave).toHaveBeenCalledWith([]));
+  expect(notify).toHaveBeenCalledWith('已取消屏蔽画师：alpha artist', 'success');
+  await waitFor(() => expect(screen.queryByText('已屏蔽 · 不参与 Roll')).toBeNull());
 });
 
 it('未知作品计数不展示MAX_SAFE_INTEGER占位值', async () => {
