@@ -64,6 +64,20 @@ test('复现日志：重复上下文超过 64k 仍允许继续，保护仅计算
   assert.equal(agentStopInfo(new DOMException('', 'AbortError')).code, 'aborted');
 });
 
+test('长时间无人值守任务按总时长兜底，轮次上限可放宽，0 表示不设时长上限', async () => {
+  const disabled = createAgentRunBudget({ maxTurns: 10_000, maxDurationMs: 0 });
+  assert.equal(disabled.observe({ content: [{ type: 'toolCall' }] }), null);
+  const limited = createAgentRunBudget({ maxTurns: 10_000, maxDurationMs: 1 });
+  assert.equal(limited.observe({ content: [{ type: 'toolCall' }] }), null);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const reason = limited.observe({ content: [{ type: 'toolCall' }] });
+  assert.equal(reason.code, 'time_limit');
+  assert.match(agentStopInfo(reason).message, /分钟/);
+  const roomy = createAgentRunBudget({ maxTurns: 300, maxDurationMs: 0 });
+  for (let index = 0; index < 299; index++) assert.equal(roomy.observe({ content: [{ type: 'toolCall' }] }), null);
+  assert.equal(roomy.observe({ content: [{ type: 'toolCall' }] }).code, 'turn_limit');
+});
+
 test('页面过期直接返回新回执，分页归零且写入不自动重放', async () => {
   const { createAgentPageTools } = await import('../../scripts/agent-page-tools.mjs');
   for (const action of ['read', 'click', 'fill', 'select']) {
@@ -98,6 +112,8 @@ test('长资料、编码与成组结果有界，明确省略且不修改源资�
 });
 test('工具分组只提供能力目录，思考输出预算保留原有边界', () => {
   assert.ok(AGENT_TOOL_GROUPS.creative.includes('update_prompts'));
+  assert.ok(AGENT_TOOL_GROUPS.creative.includes('run_roll_series'));
+  assert.ok(AGENT_TOOL_GROUPS.creative.includes('get_nai_balance'));
   assert.ok(AGENT_TOOL_GROUPS.maintenance.includes('request_clear_history'));
   for (const name of ['list_history_recycle_bin', 'get_history_recycle_bin_item']) {
     assert.ok(AGENT_TOOL_GROUPS.library.includes(name));

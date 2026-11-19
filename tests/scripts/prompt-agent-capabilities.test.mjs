@@ -358,3 +358,20 @@ test('旧收藏夹新增修改排序和确认删除都发布目录刷新事件',
     await execution;
   } finally { removeWorkspace(root); }
 });
+
+test('助手能读取官方点数与 Opus 额度，未连接时明确报错', async () => {
+  const root = createWorkspace('agent-balance-');
+  try {
+    const service = new PromptAgentService({ lanSecret: 'synthetic', configFile: root });
+    const missing = toolsFor(service, { params: {} });
+    await assert.rejects(missing('get_nai_balance'), /未连接官方额度查询/);
+    const call = toolsFor(service, { params: {} }, { readNaiBalance: async () => ({ available: true, source: 'official', points: 9997, subscribedPoints: 10000, purchasedPoints: 0, opus: { percent: 86, isNegative: false } }) });
+    const result = await call('get_nai_balance');
+    assert.equal(result.points, 9997);
+    assert.equal(result.opus.percent, 86);
+    const settings = toolsFor(service, { params: {} }, { requestJson: async () => ({ remaining: 3333 }), readNaiBalance: async () => ({ available: true, points: 9997 }) });
+    const projectSettings = await settings('get_project_settings');
+    assert.equal(projectSettings.naiBalance.points, 9997);
+    assert.equal(projectSettings.anlasBudget.remaining, 3333);
+  } finally { removeWorkspace(root); }
+});

@@ -1818,8 +1818,9 @@ export class PromptAgentService {
     this.auditLogWrites = new Map();
     this.loginFlows = new Map();
     this.runHistory = [];
-    // 单次任务最多连续执行的模型回复轮数。
-    this.agentMaxTurns = 64;
+    // 单次任务最多连续执行的模型回复轮数；长时间无人值守任务另设总时长兜底。
+    this.agentMaxTurns = 512;
+    this.agentMaxRunMinutes = 720;
     // 单次模型调用守卫：无输出空闲时限、总时限与未出字前的瞬时错误重试。
     this.modelIdleTimeoutMs = 180_000;
     this.modelCallTimeoutMs = 600_000;
@@ -4797,7 +4798,9 @@ export class PromptAgentService {
         parameters: Type.Object({}),
         execute: async () => {
           const budget = await readProject('/api/anlas-budget');
-          const result = { anlasBudget: budget, cloudQueue: project.getQueuePreferences?.() || null, client: contextData.clientSettings || {} };
+          // 官方点数与 Opus 额度随设置一起返回，避免每次先单独读一次额度。
+          const naiBalance = project.readNaiBalance ? await project.readNaiBalance().catch(error => ({ available: false, reason: text(error?.message).slice(0, 200) })) : { available: false, reason: '当前运行未连接官方额度查询' };
+          const result = { anlasBudget: budget, naiBalance, cloudQueue: project.getQueuePreferences?.() || null, client: contextData.clientSettings || {} };
           return { content: jsonText(result), details: result };
         },
       },
@@ -5098,6 +5101,39 @@ export class PromptAgentService {
           if (args.generate !== false && this.config.permissionMode === 'read_only') throw new Error('当前为只读权限，不能生成图片');
           const page = await runPageCommand('run_roll_round', { count: clamp(args.count, 1, 24, 1), generate: args.generate !== false, ...(typeof args.sampledOnly === 'boolean' ? { sampledOnly: args.sampledOnly } : {}), agentPermissionMode: this.config.permissionMode }, 'roll');
           return { content: jsonText(page?.result ?? {}), details: page?.result };
+        },
+      },
+      {
+        name: 'run_roll_series',
+        label: '连续 Roll 串',
+        description: '让当前 Roll 记录连续自动 Roll：每轮抽取候选并生成，等本批结束后自动进入下一轮，直到 Opus 额度降到 stopAtPercent（默认 5）或账号点数降到 stopAtPoints（默认 0）或达到 maxRounds。循环由页面后台执行并自行等待，不占用回复轮次；用户明确要求连续 Roll、整夜消耗或无人值守消耗时使用。用 get_nai_balance 或 get_roll_state 读取进度。',
+        parameters: Type.Object({
+          maxRounds: Type.Optional(Type.Integer({ minimum: 1, maximum: 5000 })),
+          stopAtPercent: Type.Optional(Type.Number({ minimum: 0, maximum: 100 })),
+          stopAtPoints: Type.Optional(Type.Integer({ minimum: 0 })),
+          count: Type.Optional(Type.Integer({ minimum: 1, maximum: 24 })),
+        }),
+        execute: async (_id, args) => {
+          if (this.config.permissionMode === 'read_only') throw new Error('当前为只读权限，不能生成图片');
+          const page = await runPageCommand('run_roll_series', {
+            maxRounds: Math.floor(clamp(Number(args.maxRounds) || 500, 1, 5000, 500)),
+            stopAtPercent: clamp(Number.isFinite(Number(args.stopAtPercent)) ? Number(args.stopAtPercent) : 5, 0, 100, 5),
+            stopAtPoints: Math.max(0, Math.floor(clamp(Number(args.stopAtPoints) || 0, 0, 1_000_000_000, 0))),
+            ...(Number.isFinite(Number(args.count)) ? { count: Math.floor(clamp(Number(args.count), 1, 24, 6)) } : {}),
+            agentPermissionMode: this.config.permissionMode,
+          }, 'roll');
+          return { content: jsonText(page?.result ?? {}), details: page?.result };
+        },
+      },
+      {
+        name: 'get_nai_balance',
+        label: '读取点数与 Opus 额度',
+        description: '读取当前 Key 的官方 Anlas 点数余额（订阅赠送 + Paid，就是侧栏 Anlas 行右侧那个数字）和 Opus 免费生成限额百分比。判断真实剩余额度用它；本地预算只是项目记账，不代表官方点数。',
+        parameters: Type.Object({}),
+        execute: async () => {
+          if (!project.readNaiBalance) throw new Error('当前运行未连接官方额度查询');
+          const result = await project.readNaiBalance();
+          return { content: jsonText(result), details: result };
         },
       },
       {
@@ -5574,7 +5610,10 @@ export class PromptAgentService {
           throw error;
         }
       };
-      const runBudget = createAgentRunBudget({ maxTurns: this.agentMaxTurns });
+      const runBudget = createAgentRunBudget({
+        maxTurns: Math.floor(clamp(Number(this.config.agentMaxTurns) || this.agentMaxTurns, 1, 20_000, this.agentMaxTurns)),
+        maxDurationMs: Math.round(clamp(Number(this.config.agentMaxRunMinutes) || this.agentMaxRunMinutes, 0, 48 * 60, this.agentMaxRunMinutes) * 60_000),
+      });
       const loopGuard = createAgentLoopGuard();
       const initialAssembly = assemblePromptContext({
         systemPolicy: policySystemPrompt,

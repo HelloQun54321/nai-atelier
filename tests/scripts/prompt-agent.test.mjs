@@ -835,6 +835,8 @@ test('已中断信号仍接住已创建任务的异步拒绝', () => isolated(as
 }));
 
 test('自动循环上限给出原因并在任务回执持久化，不误报完成', () => isolated(async service => {
+  // 轮数上限可按配置调整；这里用很小的值验证行为，默认值留给长时间任务。
+  service.config.agentMaxTurns = 5;
   await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true }); const session = await service.createSession();
   const previous = globalThis.fetch; const events = []; let calls = 0;
   // 每轮换一个查询，避开重复调用守卫，专门验证轮数上限。
@@ -844,7 +846,7 @@ test('自动循环上限给出原因并在任务回执持久化，不误报完�
   try {
     await service.run({ sessionId: session.id, message: '检查参数', draft: { params: {} } }, e => events.push(e));
     const done = events.find(e => e.type === 'done'), task = await service.getTask(session.id);
-    assert.equal(calls, 64); assert.equal(done.status, 'aborted'); assert.equal(done.stopReason, 'turn_limit'); assert.match(done.error, /连续执行上限/);
+    assert.equal(calls, 5); assert.equal(done.status, 'aborted'); assert.equal(done.stopReason, 'turn_limit'); assert.match(done.error, /连续执行上限/);
     assert.equal(task.stopReason, 'turn_limit'); assert.equal(task.error, done.error); assert.equal(task.finalDraft, null);
   } finally { globalThis.fetch = previous; }
 }));

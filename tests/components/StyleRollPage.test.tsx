@@ -324,6 +324,22 @@ it('向助手登记读取、发起、补齐与保存 Roll 候选的命令', asyn
   expect(state.candidates.length).toBeGreaterThan(0);
 });
 
+it('助手可启动连续 Roll 系列，读取进度并随时停止', async () => {
+  const { container } = await setup();
+  const started = await executeAgentCommand(container, 'run_roll_series', { maxRounds: 12, stopAtPercent: 5, stopAtPoints: 0 }, false) as { running: boolean; maxRounds: number; note: string };
+  expect(started.running).toBe(true);
+  expect(started.maxRounds).toBe(12);
+  const state = await executeAgentCommand(container, 'get_roll_state', {}, true) as { series: { running: boolean; maxRounds: number; rounds: number } };
+  expect(state.series.running).toBe(true);
+  expect(state.series.maxRounds).toBe(12);
+  expect(state.series.rounds).toBe(0);
+  const stopped = await executeAgentCommand(container, 'run_roll_series', { stop: true }, false) as { running: boolean; stopReason: string };
+  expect(stopped.running).toBe(false);
+  expect(stopped.stopReason).toBe('user_stop');
+  const after = await executeAgentCommand(container, 'get_roll_state', {}, true) as { series: { running: boolean } };
+  expect(after.series.running).toBe(false);
+});
+
 it('助手发起 Roll 时保存候选；generate=false 不投递收费生成', async () => {
   const { container } = await setup();
   const before = mocks.save.mock.calls.length;

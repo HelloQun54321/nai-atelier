@@ -461,6 +461,43 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
     void generate(saved.candidates.filter(candidate => created.candidateIds.includes(candidate.id)), saved);
   }, 'generation');
+  // 连续 Roll：页面后台逐轮推进，不占助手回复轮次；每轮等本批结束再进入下一轮。
+  const rollSeriesRef = useRef<{ running: boolean; rounds: number; maxRounds: number; stopAtPercent: number; stopAtPoints: number; stopReason: string; startedAt: number; lastRoundAt: number; lastSignalAt: number }>({ running: false, rounds: 0, maxRounds: 500, stopAtPercent: 5, stopAtPoints: 0, stopReason: '', startedAt: 0, lastRoundAt: 0, lastSignalAt: 0 });
+  const runRoundRef = useRef(runRound);
+  runRoundRef.current = runRound;
+  // Opus 百分比与官方点数与侧栏同源；任一未知都不当作已达标。
+  const seriesOpusPercent = subscription.info?.usage && Number.isFinite(Number(subscription.info.usage.percent)) ? Number(subscription.info.usage.percent) : null;
+  const seriesAccountPoints = (() => {
+    const balance = subscription.info?.trainingStepsLeft;
+    return balance && Number.isFinite(balance.fixedTrainingStepsLeft) && Number.isFinite(balance.purchasedTrainingSteps)
+      ? balance.fixedTrainingStepsLeft + balance.purchasedTrainingSteps : null;
+  })();
+  const seriesSignalRef = useRef({ session, preparing, opusPercent: seriesOpusPercent, points: seriesAccountPoints });
+  seriesSignalRef.current = { session, preparing, opusPercent: seriesOpusPercent, points: seriesAccountPoints };
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const series = rollSeriesRef.current;
+      if (!series.running) return;
+      const state = seriesSignalRef.current;
+      if (series.rounds >= series.maxRounds) { series.running = false; series.stopReason = 'max_rounds'; return; }
+      if (state.opusPercent !== null && state.opusPercent <= series.stopAtPercent) { series.running = false; series.stopReason = 'opus_limit'; return; }
+      if (state.points !== null && state.points <= series.stopAtPoints) { series.running = false; series.stopReason = 'points_limit'; return; }
+      // 长时间没有任何额度变化说明生成反复失败，停止避免无限重试；重新读取额度后可再次启动。
+      if (series.lastSignalAt && Date.now() - series.lastSignalAt > 10 * 60 * 1000) { series.running = false; series.stopReason = 'no_progress'; return; }
+      if (state.session || state.preparing) return;
+      if (Date.now() - series.lastRoundAt < 6000) return;
+      series.lastRoundAt = Date.now();
+      series.lastSignalAt = Date.now();
+      series.rounds += 1;
+      runRoundRef.current();
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    const series = rollSeriesRef.current;
+    if (!series.running) return;
+    if (series.rounds > 0) series.lastSignalAt = Date.now();
+  }, [seriesOpusPercent, seriesAccountPoints]);
   const generatePending = (ids?: string[]) => void perform(async () => {
     if (!experiment || !historyReady || historyLoading || session || generatingRef.current) return;
     let source = experiment;
@@ -734,6 +771,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       session: session ? { scope: session.scope, state: session.state, queued: session.queued, progress: session.progress, awaiting: session.awaiting || null } : null,
       library: { count: library.length, loading: libraryLoading, error: libraryError, sampledOnly, effectiveCount: effectiveLibrary.length, sampledReady: sampledTags !== null },
       count, rules: roundRules, pinnedArtists, chainArtistSource,
+      series: { running: rollSeriesRef.current.running, rounds: rollSeriesRef.current.rounds, maxRounds: rollSeriesRef.current.maxRounds, stopAtPercent: rollSeriesRef.current.stopAtPercent, stopAtPoints: rollSeriesRef.current.stopAtPoints, stopReason: rollSeriesRef.current.stopReason, opusPercent: seriesOpusPercent, points: seriesAccountPoints },
     }),
   });
   useAgentCommand({
@@ -757,6 +795,30 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       const candidates = saved.candidates.filter(candidate => created.candidateIds.includes(candidate.id));
       if (args.generate !== false) void generate(candidates, saved, { skipConfirmation: args.agentPermissionMode === 'full' });
       return { experimentId: saved.id, roundId: created.id, candidateIds: created.candidateIds, generationStarted: args.generate !== false, note: args.generate !== false ? '已发起生成；费用确认由页面处理，进度用 get_generation_status 读取。' : '候选已抽取并保存，尚未消耗 Anlas。' };
+    },
+  });
+  useAgentCommand({
+    name: 'run_roll_series', label: '连续 Roll 串', description: '让当前 Roll 记录连续自动 Roll：每轮抽取并生成，等本批结束后自动进入下一轮，直到 Opus 额度降到 stopAtPercent（默认 5）或点数降到 stopAtPoints（默认 0）或达到 maxRounds。循环在页面后台执行，调用立即返回；用 get_roll_state 读取进度，传 stop 立即停止。', parameters: { type: 'object', properties: { maxRounds: { type: 'number' }, stopAtPercent: { type: 'number' }, stopAtPoints: { type: 'number' }, count: { type: 'number' }, stop: { type: 'boolean' } } }, scope: () => rootRef.current,
+    execute: args => {
+      const series = rollSeriesRef.current;
+      if (args.stop === true) {
+        series.running = false; series.stopReason = 'user_stop';
+        return { running: false, rounds: series.rounds, stopReason: series.stopReason };
+      }
+      if (!experiment) throw new Error('先选择要连续 Roll 的画风记录');
+      if (session || generatingRef.current) throw new Error('已有图片正在生成，请先等待或取消');
+      if (!continuousGenerationEnabled) throw new Error('连续生成已关闭，无法连续 Roll');
+      const requested = Number(args.count);
+      if (Number.isFinite(requested)) setCount(Math.max(1, Math.min(24, Math.floor(requested))));
+      Object.assign(series, {
+        running: true,
+        rounds: 0,
+        maxRounds: Math.max(1, Math.min(5000, Math.floor(Number(args.maxRounds) || 500))),
+        stopAtPercent: Math.max(0, Math.min(100, Number.isFinite(Number(args.stopAtPercent)) ? Number(args.stopAtPercent) : 5)),
+        stopAtPoints: Math.max(0, Math.floor(Number(args.stopAtPoints) || 0)),
+        stopReason: '', startedAt: Date.now(), lastRoundAt: 0, lastSignalAt: Date.now(),
+      });
+      return { running: true, experimentId: experiment.id, maxRounds: series.maxRounds, stopAtPercent: series.stopAtPercent, stopAtPoints: series.stopAtPoints, opusPercent: seriesOpusPercent, points: seriesAccountPoints, note: '已在页面后台启动连续 Roll，每轮结束自动进入下一轮。' };
     },
   });
   useAgentCommand({

@@ -1180,6 +1180,38 @@ export const sanitizeNovelAiSubscription = (payload, gatewayUrl = '') => {
 const novelAiSubscriptions = new Map();
 export const cacheNovelAiSubscription = (authorization, subscription) => subscription
   ? novelAiSubscriptions.set(authorization, subscription) : novelAiSubscriptions.delete(authorization);
+
+/**
+ * 助手读取官方点数与 Opus 额度：与侧栏 Anlas／Opus 行同源，
+ * 用调用方请求头里的 Key 查询，不把 Key 返回给模型。
+ */
+export const readNaiBalanceForRequest = async (req, workerPort, { requestRemote = fetch } = {}) => {
+  const authorization = String(req?.headers?.authorization || '');
+  if (!authorization.startsWith('Bearer ')) return { available: false, reason: '当前请求没有携带 NovelAI Key；请先在全局设置配置 Key 再读取官方点数' };
+  try {
+    const gatewayUrl = await readNaiGatewayUrl(req, workerPort);
+    const upstream = await fetchNovelAiSubscription(authorization, undefined, requestRemote, gatewayUrl);
+    if (!upstream.ok) return { available: false, reason: gatewayUrl ? '网关点数查询失败' : 'NovelAI 订阅信息获取失败', status: upstream.status };
+    const payload = sanitizeNovelAiSubscription(await upstream.json(), gatewayUrl);
+    cacheNovelAiSubscription(authorization, payload);
+    const balance = payload?.trainingStepsLeft;
+    const usage = payload?.usage;
+    return {
+      available: true,
+      source: payload?.source === 'gateway' ? 'gateway' : 'official',
+      tier: payload?.tier ?? null,
+      active: payload?.active === true,
+      points: balance ? balance.fixedTrainingStepsLeft + balance.purchasedTrainingSteps : null,
+      subscribedPoints: balance ? balance.fixedTrainingStepsLeft : null,
+      purchasedPoints: balance ? balance.purchasedTrainingSteps : null,
+      opus: usage && Number.isFinite(Number(usage.percent)) ? { percent: Number(usage.percent), isNegative: usage.isNegative === true, timeUntilNextPercent: usage.timeUntilNextPercent ?? null } : null,
+      note: 'points 是官方账号总点数（订阅赠送 + Paid）；本地预算不随扣费递减，不能当作官方余额。',
+    };
+  } catch (error) {
+    return { available: false, reason: String(error?.message || error).slice(0, 200) };
+  }
+};
+
 const prepareNovelAiBilling = ({ authorization, runtime = getNaiRuntime() }) => {
   const subscription = novelAiSubscriptions.get(authorization);
   return { runtime, subscription, opusSubscriber: subscription?.active === true && subscription.tier >= 3,
@@ -4351,6 +4383,7 @@ const serveDistFile = async (req, res, url) => {
               generationQueue: action => agentGenerationQueue(cloudQueueScope.keyHash, action),
               inspectImageTags: agentInspectImageTags,
               requestJson: (path, options) => requestWorkerJson(path, req, workerPort, options),
+              readNaiBalance: () => readNaiBalanceForRequest(req, workerPort),
               getNaiRuntime,
               getQueuePreferences: () => ({ ...cloudQueueScope.preferences }),
               setQueuePreferences: setAgentQueuePreferences(cloudQueueScope),

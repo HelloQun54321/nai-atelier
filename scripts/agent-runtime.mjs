@@ -71,8 +71,9 @@ export const publicAgentToolContent = content => (content || []).map(part => par
 export const agentOutputLimit = (thinkingLevel = 'medium') => ['high', 'xhigh', 'max'].includes(thinkingLevel) ? 32_768 : ['off', 'minimal', 'low'].includes(thinkingLevel) ? 8_192 : 16_384;
 
 /** 上下文容量由每次请求的装配器控制；循环保护只统计新输出，不重复累计历史输入。 */
-export const createAgentRunBudget = ({ maxTurns = 64, maxOutputTokens = 131_072, maxTruncatedToolTurns = 2 } = {}) => {
+export const createAgentRunBudget = ({ maxTurns = 512, maxOutputTokens = 4_194_304, maxTruncatedToolTurns = 2, maxDurationMs = 0 } = {}) => {
   let turns = 0, outputTokens = 0, truncatedToolTurns = 0;
+  const startedAt = Date.now();
   return {
     observe(message) {
       if (message?.stopReason === 'aborted') return null;
@@ -82,12 +83,18 @@ export const createAgentRunBudget = ({ maxTurns = 64, maxOutputTokens = 131_072,
       if (!message?.content?.some(part => part.type === 'toolCall')) return null;
       // 截断的工具调用由 Pi 回报失败让模型重发；同一上限下连续截断就停止，不反复消耗。
       truncatedToolTurns = message.stopReason === 'length' ? truncatedToolTurns + 1 : 0;
-      const code = turns >= maxTurns ? 'turn_limit' : outputTokens >= maxOutputTokens ? 'output_limit' : truncatedToolTurns >= maxTruncatedToolTurns ? 'output_truncated' : '';
+      // 长时间无人值守任务按总时长兜底，避免一次任务无限占用；轮次与输出仍各自设上限。
+      const elapsed = Date.now() - startedAt;
+      const code = elapsed >= maxDurationMs && maxDurationMs > 0 ? 'time_limit'
+        : turns >= maxTurns ? 'turn_limit'
+          : outputTokens >= maxOutputTokens ? 'output_limit'
+            : truncatedToolTurns >= maxTruncatedToolTurns ? 'output_truncated' : '';
       if (!code) return null;
       return Object.assign(new Error(code === 'turn_limit'
         ? `本次任务已执行 ${turns} 轮模型回复，达到连续执行上限；可以发送“继续”接着处理。`
-        : code === 'output_limit' ? '本次任务的新输出达到连续执行上限；可以发送“继续”接着处理。'
-          : `模型连续 ${truncatedToolTurns} 次在工具调用中途达到输出上限，已停止；可以换用输出上限更大的模型，或发送“继续”重试。`), { name: 'AgentRunLimitError', code, turns, outputTokens });
+        : code === 'time_limit' ? `本次任务已连续执行 ${Math.round(elapsed / 60_000)} 分钟，达到单任务时长上限；可以发送“继续”接着处理。`
+          : code === 'output_limit' ? '本次任务的新输出达到连续执行上限；可以发送“继续”接着处理。'
+            : `模型连续 ${truncatedToolTurns} 次在工具调用中途达到输出上限，已停止；可以换用输出上限更大的模型，或发送“继续”重试。`), { name: 'AgentRunLimitError', code, turns, outputTokens, elapsed });
     },
   };
 };
@@ -230,7 +237,7 @@ export const agentStopInfo = reason => {
 };
 
 export const AGENT_TOOL_GROUPS = {
-  creative: ['get_lab_state', 'reuse_generation_history', 'update_prompts', 'save_tag_translations', 'set_characters', 'set_generation_params', 'request_generation', 'search_tags', 'search_novelai_docs', 'read_novelai_doc', 'read_prompt_guidelines', 'set_prompt_modules', 'set_vibes', 'set_character_references', 'get_generation_status', 'control_generation', 'get_roll_state', 'run_roll_round', 'generate_roll_pending', 'save_roll_candidate', 'get_artist_sample_status', 'generate_artist_sample', 'inspect_image_tags'],
+  creative: ['get_lab_state', 'reuse_generation_history', 'update_prompts', 'save_tag_translations', 'set_characters', 'set_generation_params', 'request_generation', 'search_tags', 'search_novelai_docs', 'read_novelai_doc', 'read_prompt_guidelines', 'set_prompt_modules', 'set_vibes', 'set_character_references', 'get_generation_status', 'control_generation', 'get_roll_state', 'run_roll_round', 'run_roll_series', 'generate_roll_pending', 'save_roll_candidate', 'get_artist_sample_status', 'generate_artist_sample', 'inspect_image_tags', 'get_nai_balance'],
   library: ['list_directories', 'get_directory_members', 'create_directory', 'update_directory', 'set_directory_memberships', 'request_delete_directory', 'get_prompt_library_directories', 'search_prompt_library_items', 'get_project_overview', 'search_project_library', 'get_chain', 'get_inspiration', 'read_project_text', 'list_generation_history', 'list_history_recycle_bin', 'get_history_recycle_bin_item', 'read_history_operation_result', 'inspect_generation_image', 'show_project_image', 'inspect_project_image', 'search_character_catalog', 'search_vibes', 'search_character_references', 'create_chain', 'update_chain', 'create_inspiration', 'update_inspiration', 'list_vibe_groups', 'search_aitag', 'get_aitag_work', 'import_aitag_image', 'create_character_reference_from_history', 'create_vibe_from_history', 'create_vibe_from_local', 'create_character_reference_from_local', 'set_chain_cover_from_history', 'update_vibe', 'update_character_reference', 'save_vibe_group', 'request_vibe_encoding', 'list_inspiration_boards', 'create_inspiration_board', 'update_inspiration_board', 'reorder_inspiration_boards', 'delete_inspiration_board', 'create_prompt_library_item', 'update_prompt_library_item', 'navigate_view'],
   maintenance: ['list_prompt_versions', 'read_prompt_version', 'restore_prompt_version', 'request_user_input', 'get_project_settings', 'get_project_overview', 'get_style_collector_state', 'control_style_collector', 'request_delete_project_item', 'request_clear_history', 'request_cleanup_history', 'request_restore_history', 'request_purge_history', 'set_anlas_budget', 'set_cloud_queue', 'update_tag_dictionary', 'manage_aitag', 'set_client_preferences', 'request_clear_mobile_cache', 'navigate_view', 'open_settings'],
   web: ['web_search', 'read_web_page'],
