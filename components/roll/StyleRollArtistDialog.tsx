@@ -10,7 +10,7 @@ import { ARTIST_SAMPLES_CHANGED, getArtistSampleCatalog, getArtistSampleStatus, 
 import { getArtistSampleData, type ArtistSampleData } from '../../services/artistSampleDrafts';
 import { artistSampleGenerationBusy, artistSampleGenerationRevision, getArtistSampleGeneration, getGeneratedArtistSamples, subscribeArtistSampleGeneration } from '../../services/artistSampleGeneration';
 import { indexArtistSampleGallery } from '../../services/artistSampleGallery';
-import { collectionSnapshot, ensureCollection, subscribeCollection } from '../../services/collectionFavorites';
+import { clearArtistPreference, collectionSnapshot, ensureCollection, subscribeCollection } from '../../services/collectionFavorites';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { useGalleryFrostedCaption } from '../../services/appearancePreferences';
 import { normalizeRollArtistKey } from '../../services/styleRollSeed';
@@ -177,7 +177,11 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
     const key = normalizeRollArtistKey(tag), active = blockedKeys.has(key);
     await onBlockedChange(active ? blocked.filter(value => normalizeRollArtistKey(value) !== key) : [...blocked, tag]);
     if (active) onExcludedChange(excluded.filter(value => normalizeRollArtistKey(value) !== key));
-    else onPinnedChange(pinned.filter(value => normalizeRollArtistKey(value) !== key));
+    else {
+      onPinnedChange(pinned.filter(value => normalizeRollArtistKey(value) !== key));
+      // 屏蔽即取代偏好：只取消这条收藏，取消屏蔽不反向恢复；取消失败不撤销已生效的屏蔽。
+      await clearArtistPreference(tag).catch(() => {});
+    }
   });
   const visibleArtists = useMemo(() => artists.slice(0, limit), [artists, limit]);
   useGalleryLoadMore(gallery, sentinel, !loading && !sampleLoading && !favoritesPending && artists.length > limit, () => setLimit(current => current + 60), '500px', limit);

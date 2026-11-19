@@ -16,8 +16,10 @@ export const IMAGE_CARD_ACTION_CLASS = 'nai-float-btn mobile-touch mobile-size-l
  */
 export const IMAGE_CARD_ACTION_TONE = {
   save: 'hover:!border-emerald-300/70 hover:!bg-emerald-700 focus-visible:!bg-emerald-700 active:!bg-emerald-700',
-  /** 已保存／已收录：状态本身要常驻可见，所以不跟随悬停。 */
+  /** 已保存／已收录／已屏蔽：状态本身要常驻可见，所以不跟随悬停。 */
   saved: '!border-emerald-300/70 !bg-emerald-700 !text-white',
+  /** 已屏蔽画师：和已收藏的玫红爱心同级，常驻红色实底，一眼看出这位不参与 Roll。 */
+  blocked: '!border-red-300/70 !bg-red-600 !text-white',
   delete: 'hover:!border-red-300/70 hover:!bg-red-600 focus-visible:!bg-red-600 active:!bg-red-600',
   /** 普通实心主操作（设为封面等）沿用靛蓝，同样只在悬停时出现。 */
   primary: 'hover:!border-indigo-300/70 hover:!bg-indigo-700 focus-visible:!bg-indigo-700 active:!bg-indigo-700',

@@ -383,10 +383,13 @@ describe('全局外观覆盖审计', () => {
     // 收藏爱心按用户明确要求保持常驻玫红，是唯一允许的例外；画师偏好爱心只染图标，同样保留。
     expect(sources.find(item => item.file === 'components/ImageShareActions.tsx')!.text)
       .toContain("'!border-rose-400 !bg-rose-500 !text-white hover:!bg-rose-400'");
+    // 已屏蔽的画师用常驻红色实底（blocked 档）表达状态，和已保存的翠绿、已收藏的玫红同级。
+    expect(sources.find(item => item.file === 'components/ImageShareActions.tsx')!.text)
+      .toContain("blocked: '!border-red-300/70 !bg-red-600 !text-white'");
     // 触屏没有 hover、键盘没有指针：每档语义色都要同时提供聚焦与按下态，否则手机长按后按钮仍是灰的。
     const shared = sources.find(item => item.file === 'components/ImageShareActions.tsx')!.text;
     const tones = shared.slice(shared.indexOf('export const IMAGE_CARD_ACTION_TONE'), shared.indexOf('} as const'));
-    for (const tone of ['save', 'delete', 'primary']) expect(tones).toContain(`${tone}:`);
+    for (const tone of ['save', 'saved', 'blocked', 'delete', 'primary']) expect(tones).toContain(`${tone}:`);
     for (const state of ['hover:!bg-', 'focus-visible:!bg-', 'active:!bg-']) expect(tones).toContain(state);
   });
   it('图片上的定位点、导入标记与拖入提示保留独立承托，不被中性分组清空', () => {

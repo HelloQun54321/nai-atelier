@@ -20,7 +20,7 @@ import { ImageActivityContext } from '../../components/SmartImage';
 import { IMPORT_SESSION_KEY } from '../../services/metadataService';
 import { clearImageDisplayPageOverride, getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { installPointerEvents, longPress } from '../support/touchEvents';
-const mocks = vi.hoisted(() => ({ ensureCollection: vi.fn(), blockLoad: vi.fn(), blockSave: vi.fn(), status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), begin: vi.fn(), key: 'synthetic-key', confirm: vi.fn(), states: new Map<string, any>(), generationListeners: new Set<() => void>(), generationRevision: 0, generatedSamples: [] as any[], retry: vi.fn(), page: vi.fn(), focus: vi.fn(), control: vi.fn(), usage: vi.fn(), historyListeners: new Set<(change: any) => void>(), historySubscribe: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean; imageUrl?: string }[], collectionListeners: new Set<() => void>() }));
+const mocks = vi.hoisted(() => ({ ensureCollection: vi.fn(), clearPreference: vi.fn(), blockLoad: vi.fn(), blockSave: vi.fn(), status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), begin: vi.fn(), key: 'synthetic-key', confirm: vi.fn(), states: new Map<string, any>(), generationListeners: new Set<() => void>(), generationRevision: 0, generatedSamples: [] as any[], retry: vi.fn(), page: vi.fn(), focus: vi.fn(), control: vi.fn(), usage: vi.fn(), historyListeners: new Set<(change: any) => void>(), historySubscribe: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean; imageUrl?: string }[], collectionListeners: new Set<() => void>() }));
 vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: mocks.usage }));
 vi.mock('../../services/localHistory', async original => {
   const module = await original<typeof import('../../services/localHistory')>();
@@ -37,7 +37,7 @@ vi.mock('../../services/artistSamples', async original => ({ ...await original<t
 vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), getArtistSampleData: mocks.data, prepareArtistSampleImport: mocks.prepare }));
 vi.mock('../../components/ArtistSampleSettingsDialog', () => ({ ArtistSampleSettingsDialog: ({ tag, pack, generateAfterSave, enforceFreeStepLimit, onSaved, onClose }: any) => <div role="dialog" aria-label="补图生成设置" data-free-step-limit={enforceFreeStepLimit}><span>{tag} {pack}</span><button onClick={() => onSaved({ prompt: 'artist:{artist}', negativePrompt: '', params: { model: pack === 'v45' ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full', seed: 1 } })}>{generateAfterSave ? '保存并生成样张' : '保存配置'}</button><button onClick={onClose}>取消</button></div> }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), getArtistDictionaryPage: mocks.page }));
-vi.mock('../../services/collectionFavorites', () => ({ ensureCollection: mocks.ensureCollection, toggleArtistPreference: vi.fn(), collectionSnapshot: () => mocks.collection, subscribeCollection: (listener: () => void) => { mocks.collectionListeners.add(listener); return () => { mocks.collectionListeners.delete(listener); }; } }));
+vi.mock('../../services/collectionFavorites', () => ({ ensureCollection: mocks.ensureCollection, toggleArtistPreference: vi.fn(), clearArtistPreference: mocks.clearPreference, collectionSnapshot: () => mocks.collection, subscribeCollection: (listener: () => void) => { mocks.collectionListeners.add(listener); return () => { mocks.collectionListeners.delete(listener); }; } }));
 vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: ({ blocked, preferred, onBlock, notify, tag, pack, packTag, onPackChange, revision, hasPackSample, ownSamples, sampleStatusText, onSupplement, onGenerate, onImageLoad, imageClassName }: any) => <div data-testid={'cover-' + tag} data-blocked={blocked} data-preferred={preferred} data-pack={pack} data-pack-tag={packTag} data-revision={revision} data-packed={hasPackSample} data-own={ownSamples.length} data-own-ids={ownSamples.map((sample: any) => sample.id).join(',')} data-image-class={imageClassName}>
   <button aria-label={'屏蔽 ' + tag} onClick={event => { event.stopPropagation(); void onBlock().catch((error: Error) => notify(error.message, 'error')); }}>屏蔽</button>
   <div data-card-action="true" onClick={event => event.stopPropagation()}>{['v45', 'v5'].map(value => <button key={value} aria-label={'卡片 ' + value} aria-pressed={pack === value} onClick={() => onPackChange(value)}>{value}</button>)}</div>
@@ -66,6 +66,7 @@ beforeEach(() => {
   mocks.ensureCollection.mockResolvedValue(undefined);
   mocks.historySubscribe.mockImplementation((listener: (change: any) => void) => { mocks.historyListeners.add(listener); return () => { mocks.historyListeners.delete(listener); }; });
   mocks.blockLoad.mockResolvedValue([]); mocks.blockSave.mockImplementation(async tags => tags);
+  mocks.clearPreference.mockResolvedValue(undefined);
   mocks.status.mockResolvedValue(status());
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: pack === 'v45' ? ['alpha_artist'] : ['alpha_artist', 'beta artist'] }));
   mocks.dictionary.mockResolvedValue(entries); mocks.data.mockResolvedValue({ templates: {}, samples: [] });
@@ -1423,24 +1424,24 @@ it('画师库与 Roll 共用屏蔽名单，失败保持原状，屏蔽后不隐�
   await waitFor(() => expect(cover.getAttribute('data-blocked')).toBe('true'));
   expect(mocks.blockSave).toHaveBeenLastCalledWith(['beta_artist', 'alpha artist']);
   expect(screen.getByRole('button', { name: '选择画师：alpha artist' }).getAttribute('aria-pressed')).toBe('false');
-  // 浮钮不随状态变色，卡片上的状态行与成功提示是用户确认屏蔽已生效的唯一依据。
-  expect(screen.getByText('已屏蔽 · 不参与 Roll')).toBeTruthy();
+  // 屏蔽写进名单后，卡片上的状态由常驻红色浮钮表达，成功结果同时用提示回报。
   expect(notify).toHaveBeenLastCalledWith('已屏蔽画师：alpha artist', 'success');
+  // 屏蔽即取代偏好：加入屏蔽时同步取消这条收藏。
+  expect(mocks.clearPreference).toHaveBeenCalledWith('alpha artist');
   act(() => window.dispatchEvent(new CustomEvent('nai-roll-blocklist-changed', { detail: [] })));
   expect(cover.getAttribute('data-blocked')).toBe('false');
-  expect(screen.queryByText('已屏蔽 · 不参与 Roll')).toBeNull();
 });
 
 it('已屏蔽画师再点一次是取消屏蔽，并明确回报结果', async () => {
   mocks.blockLoad.mockResolvedValue(['alpha_artist']);
   const { notify } = setup(); const cover = await screen.findByTestId('cover-alpha artist');
   await waitFor(() => expect(cover.getAttribute('data-blocked')).toBe('true'));
-  expect(screen.getByText('已屏蔽 · 不参与 Roll')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '屏蔽 alpha artist' }));
   await waitFor(() => expect(cover.getAttribute('data-blocked')).toBe('false'));
   expect(mocks.blockSave).toHaveBeenLastCalledWith([]);
   expect(notify).toHaveBeenLastCalledWith('已取消屏蔽画师：alpha artist', 'success');
-  expect(screen.queryByText('已屏蔽 · 不参与 Roll')).toBeNull();
+  // 取消屏蔽不反向恢复收藏，也不去动收藏名单。
+  expect(mocks.clearPreference).not.toHaveBeenCalled();
   expect(screen.getByText('画师甲')).toBeTruthy();
 });
 

@@ -6,7 +6,7 @@ import type { ArtistDictionaryEntry } from '../services/tagDictionary';
 import { getArtistSampleData, type ArtistSampleData } from '../services/artistSampleDrafts';
 import { indexArtistSampleGallery } from '../services/artistSampleGallery';
 import { artistSampleGenerationBusy, artistSampleGenerationRevision, getArtistSampleGeneration, getGeneratedArtistSamples, subscribeArtistSampleGeneration } from '../services/artistSampleGeneration';
-import { collectionSnapshot, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
+import { clearArtistPreference, collectionSnapshot, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
 import { loadRollBlocklist, ROLL_BLOCKLIST_CHANGED, saveRollBlocklist } from '../services/styleRollApi';
 import { normalizeRollArtistKey } from '../services/styleRollSeed';
 import { ArtistSampleCover } from './ArtistSampleCover';
@@ -88,6 +88,8 @@ const ArtistInfo: React.FC<{ target: PromptTagLibraryTarget; notify: Notify; enf
       const current = await loadRollBlocklist(), key = normalizeRollArtistKey(target.name);
       const blocked = current.some(tag => normalizeRollArtistKey(tag) === key);
       setBlocked(await saveRollBlocklist(blocked ? current.filter(tag => normalizeRollArtistKey(tag) !== key) : [...current, target.name]));
+      // 屏蔽即取代偏好：只有加入屏蔽时取消收藏，取消屏蔽不反向恢复。
+      if (!blocked) await clearArtistPreference(target.name).catch(() => { /* 收藏取消失败不回滚已生效的屏蔽。 */ });
       // 浮钮不随屏蔽状态变色，写入结果用一句话说明，避免用户分不清这次点的是屏蔽还是取消屏蔽。
       notify(t(blocked ? '已取消屏蔽画师：{0}' : '已屏蔽画师：{0}', [target.name]), 'success');
     } finally { blockLock.current = false; setBlockPending(false); }
@@ -110,7 +112,6 @@ const ArtistInfo: React.FC<{ target: PromptTagLibraryTarget; notify: Notify; enf
       <ArtistSampleGenerationStatus tag={target.name} pack={pack} generation={generation} busy={busy} hasOwnSamples={own.length > 0} supplementSample={actions.supplementSample} manageGeneration={actions.manageGeneration} />
     </PressRevealSurface>
     {error && <div role="alert" className="flex items-center gap-2 py-2 text-xs text-red-600 dark:text-red-300"><span>{error}</span><button type="button" className="mobile-touch min-h-11 underline" onClick={() => setRefresh(value => value + 1)}>{t('重试')}</button></div>}
-    {blocked.some(tag => normalizeRollArtistKey(tag) === normalizeRollArtistKey(target.name)) && <p data-safe-mode-title="true" className="py-1 text-xs font-semibold text-red-500 dark:text-red-400">{t('已屏蔽 · 不参与 Roll')}</p>}
     {actions.settingsDialog}
   </>;
 };

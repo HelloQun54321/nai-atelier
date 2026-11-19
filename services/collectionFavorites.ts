@@ -491,6 +491,18 @@ export async function toggleArtistPreference(tag: string, imageUrl: string, samp
 
 export interface ArtistPreferenceBatchResult { tags: string[]; added: string[]; existing: string[]; failed: string[]; error?: string }
 
+/**
+ * 屏蔽画师时同步取消偏好：收藏与屏蔽互斥，已屏蔽的画师不应继续留在偏好名单里参与抽中倍率与保底。
+ * 只做单向：取消屏蔽不会把收藏加回来；没有活动收藏时直接返回，不发空写入。
+ */
+export async function clearArtistPreference(tag: string): Promise<void> {
+  await ensureCollection();
+  const key = normalizeRollArtistKey(tag);
+  const active = collectionSnapshot().some(item => item.userId === owner?.id && item.sourceType === 'artist' && !item.archived && item.sourceId && normalizeRollArtistKey(item.sourceId) === key);
+  if (!active) return;
+  await toggleArtistPreference(tag, '', undefined, false);
+}
+
 /** 一串画师批量补进偏好：只加不减，已收藏的原样保留；样张封面写入失败时退回只收藏 Tag。 */
 export async function addArtistPreferences(tags: readonly string[], loadCovers?: () => Promise<(tag: string) => string | undefined>): Promise<ArtistPreferenceBatchResult> {
   await ensureCollection();

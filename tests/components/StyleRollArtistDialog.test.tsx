@@ -12,7 +12,7 @@ import { setMobileImageDisplayPreferences } from '../../services/imageDisplayPre
 import { createDefaultRollTemplate } from '../../services/styleRoll';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 
-const mocks = vi.hoisted(() => ({ ensure: vi.fn(), groupGet: vi.fn(), groupPut: vi.fn(), block: vi.fn(), favorite: vi.fn(), urls: vi.fn(), usage: vi.fn(), data: vi.fn(), status: vi.fn(), catalog: vi.fn(), lookup: vi.fn(), begin: vi.fn(), remove: vi.fn(), confirm: vi.fn(), refresh: undefined as undefined | (() => void), items: [] as any[] }));
+const mocks = vi.hoisted(() => ({ ensure: vi.fn(), groupGet: vi.fn(), groupPut: vi.fn(), block: vi.fn(), favorite: vi.fn(), clearFavorite: vi.fn(), urls: vi.fn(), usage: vi.fn(), data: vi.fn(), status: vi.fn(), catalog: vi.fn(), lookup: vi.fn(), begin: vi.fn(), remove: vi.fn(), confirm: vi.fn(), refresh: undefined as undefined | (() => void), items: [] as any[] }));
 vi.mock('../../services/api', async original => ({ ...await original<typeof import('../../services/api')>(), api: { ...(await original<typeof import('../../services/api')>()).api, get: mocks.groupGet, put: mocks.groupPut } }));
 vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: mocks.usage }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { subscribe: (listener: () => void) => { mocks.refresh = listener; return () => { mocks.refresh = undefined; }; } } }));
@@ -24,7 +24,7 @@ vi.mock('../../services/anlasBudget', async original => ({ ...await original<typ
 vi.mock('../../services/naiUsage', async original => ({ ...await original<typeof import('../../services/naiUsage')>(), useNovelaiUsage: () => ({ info: null, refreshIfStale: async () => {} }) }));
 vi.mock('../../services/naiRuntime', async original => ({ ...await original<typeof import('../../services/naiRuntime')>(), useNaiRuntime: () => DEFAULT_NAI_RUNTIME }));
 vi.mock('../../components/ShortestColumnMasonry', async original => ({ ...await original<typeof import('../../components/ShortestColumnMasonry')>(), ShortestColumnMasonry: ({ items, renderItem, columns }: any) => <div data-testid="masonry" data-columns={columns}>{items.map(renderItem)}</div> }));
-vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => mocks.items, subscribeCollection: () => () => {}, ensureCollection: mocks.ensure, toggleArtistPreference: mocks.favorite }));
+vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => mocks.items, subscribeCollection: () => () => {}, ensureCollection: mocks.ensure, toggleArtistPreference: mocks.favorite, clearArtistPreference: mocks.clearFavorite }));
 vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className, onLoad, previewTransform }: any) => <img src={src} alt={alt} className={className} onLoad={onLoad} data-preview-transform={previewTransform} /> }));
 const ownSample = (tag: string, imageUrl: string, pack: 'v45' | 'v5' = 'v45', id = imageUrl): ArtistOwnSample => ({ ...createDefaultRollTemplate(DEFAULT_NAI_RUNTIME), id, tag, pack, imageUrl, createdAt: 1, params: { ...createDefaultRollTemplate(DEFAULT_NAI_RUNTIME).params, model: pack === 'v5' ? 'nai-diffusion-5-full' : 'nai-diffusion-4-5-full' } });
 beforeEach(() => {
@@ -37,7 +37,7 @@ beforeEach(() => {
   mocks.confirm.mockResolvedValue(true); mocks.remove.mockResolvedValue(undefined); mocks.begin.mockResolvedValue(undefined);
   mocks.lookup.mockImplementation(async (pack, tag) => ({ pack, tag, revision: 'synthetic', imageCount: 2, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined }));
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
-  vi.clearAllMocks(); mocks.usage.mockResolvedValue({ byTag: new Map(), indexed: 0, total: 0 }); localStorage.clear(); mocks.items = []; mocks.urls.mockImplementation(async () => new Map([['alpha', '/api/assets/alpha.png']])); mocks.block.mockResolvedValue(undefined); mocks.favorite.mockResolvedValue(true); vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} })); });
+  vi.clearAllMocks(); mocks.usage.mockResolvedValue({ byTag: new Map(), indexed: 0, total: 0 }); localStorage.clear(); mocks.items = []; mocks.urls.mockImplementation(async () => new Map([['alpha', '/api/assets/alpha.png']])); mocks.block.mockResolvedValue(undefined); mocks.favorite.mockResolvedValue(true); mocks.clearFavorite.mockResolvedValue(undefined); vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} })); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const chooseGroup = async (id: string) => {
@@ -343,17 +343,22 @@ it('样张与缺图空封面同时可见，点击封面只锁定 Tag', async () 
   expect(mocks.block).not.toHaveBeenCalled(); expect(mocks.favorite).not.toHaveBeenCalled();
 });
 
-it('屏蔽成功后卡片留在列表，移除锁定；失败保留原状态', async () => {
+it('屏蔽成功后卡片留在列表，移除锁定并取消偏好；失败保留原状态', async () => {
   render(<Fixture />); await screen.findByAltText('alpha');
   fireEvent.click(screen.getByRole('button', { name: '锁定画师：alpha' }));
   fireEvent.click(screen.getByRole('button', { name: '屏蔽画师：alpha' }));
   await screen.findByRole('button', { name: '取消屏蔽画师：alpha' });
   expect(screen.getByAltText('alpha')).toBeTruthy();
   expect(screen.getByRole('button', { name: '锁定画师：alpha' }).getAttribute('aria-pressed')).toBe('false');
+  // 屏蔽即取代偏好：加入屏蔽时同步取消这条收藏。
+  expect(mocks.clearFavorite).toHaveBeenCalledWith('alpha');
+  mocks.clearFavorite.mockClear();
   mocks.block.mockRejectedValueOnce(new Error('保存屏蔽失败'));
   fireEvent.click(screen.getByRole('button', { name: '取消屏蔽画师：alpha' }));
   await screen.findByText('保存屏蔽失败');
   expect(screen.getByRole('button', { name: '取消屏蔽画师：alpha' })).toBeTruthy();
+  // 取消屏蔽不反向恢复收藏。
+  expect(mocks.clearFavorite).not.toHaveBeenCalled();
 });
 
 it('两个角分别是屏蔽和偏好，缺图也可收藏，用户可改倍率和保底', async () => {

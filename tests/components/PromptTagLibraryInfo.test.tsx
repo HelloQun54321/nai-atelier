@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PromptTagLibraryInfo } from '../../components/PromptTagLibraryInfo';
 import { ImageActivityContext } from '../../components/SmartImage';
 
-const mocks = vi.hoisted(() => ({ data: vi.fn(), catalog: vi.fn(), supplement: vi.fn(), cover: vi.fn(), remove: vi.fn(), manage: vi.fn(), actions: vi.fn(), history: vi.fn(), index: vi.fn(), blockSave: vi.fn(), generated: [] as any[] }));
+const mocks = vi.hoisted(() => ({ data: vi.fn(), catalog: vi.fn(), supplement: vi.fn(), cover: vi.fn(), remove: vi.fn(), manage: vi.fn(), actions: vi.fn(), history: vi.fn(), index: vi.fn(), blockSave: vi.fn(), blockLoad: vi.fn(), clearPreference: vi.fn(), generated: [] as any[] }));
 vi.mock('../../services/artistSampleGallery', async original => {
   const actual = await original<typeof import('../../services/artistSampleGallery')>();
   return { indexArtistSampleGallery: (...args: Parameters<typeof actual.indexArtistSampleGallery>) => { mocks.index(...args); return actual.indexArtistSampleGallery(...args); } };
@@ -20,12 +20,14 @@ vi.mock('../../components/useArtistSampleActions', () => ({
 vi.mock('../../services/artistSampleDrafts', () => ({ getArtistSampleData: mocks.data }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleDictionary: async () => [{ name: 'alpha artist', chinese: '', postCount: 2 }], getArtistSampleStatus: async () => ({ packs: [{ id: 'v45', phase: 'ready', revision: 'one' }, { id: 'v5', phase: 'ready', revision: 'two', model: 'nai-diffusion-5-full' }] }), getArtistSampleCatalog: mocks.catalog }));
 vi.mock('../../services/artistSampleGeneration', () => ({ subscribeArtistSampleGeneration: () => () => {}, artistSampleGenerationRevision: () => 0, getArtistSampleGeneration: () => undefined, getGeneratedArtistSamples: () => mocks.generated, artistSampleGenerationBusy: () => false }));
-vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => [{ sourceType: 'artist', sourceId: 'alpha_artist', archived: false }], ensureCollection: async () => {}, subscribeCollection: () => () => {} }));
-vi.mock('../../services/styleRollApi', () => ({ ROLL_BLOCKLIST_CHANGED: 'block-changed', loadRollBlocklist: async () => ['alpha_artist'], saveRollBlocklist: mocks.blockSave }));
+vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => [{ sourceType: 'artist', sourceId: 'alpha_artist', archived: false }], ensureCollection: async () => {}, subscribeCollection: () => () => {}, clearArtistPreference: mocks.clearPreference }));
+vi.mock('../../services/styleRollApi', () => ({ ROLL_BLOCKLIST_CHANGED: 'block-changed', loadRollBlocklist: mocks.blockLoad, saveRollBlocklist: mocks.blockSave }));
 
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); mocks.generated = [];
+  mocks.blockLoad.mockResolvedValue(['alpha_artist']);
   mocks.blockSave.mockImplementation(async (tags: string[]) => tags);
+  mocks.clearPreference.mockResolvedValue(undefined);
   mocks.data.mockResolvedValue({ templates: {}, samples: [{ id: 'own-one', tag: 'alpha_artist', pack: 'v45', createdAt: 1, params: { model: 'nai-diffusion-4-5-full' } }] });
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, revision: pack === 'v45' ? 'one' : 'two', tags: ['alpha_artist'], ...(pack === 'v5' ? { model: 'nai-diffusion-5-full' } : {}) }));
 });
@@ -107,14 +109,26 @@ it('样张操作沿用已保存的免费步数限制偏好，显式属性仍可�
   expect(mocks.actions.mock.lastCall![0].enforceFreeStepLimit).toBe(true);
 });
 
-it('画师已屏蔽时资料窗给出状态行，取消屏蔽回报结果并收回状态行', async () => {
+it('画师已屏蔽时取消屏蔽回报结果，且不反向恢复收藏', async () => {
   const notify = vi.fn();
   render(<PromptTagLibraryInfo target={{ kind: 'artist', name: 'alpha artist' }} onClose={vi.fn()} notify={notify} />);
-  expect(await screen.findByText('已屏蔽 · 不参与 Roll')).toBeTruthy();
+  await waitFor(() => expect(mocks.cover.mock.lastCall![0].blocked).toBe(true));
   fireEvent.click(screen.getByText('block artist'));
   await waitFor(() => expect(mocks.blockSave).toHaveBeenCalledWith([]));
   expect(notify).toHaveBeenCalledWith('已取消屏蔽画师：alpha artist', 'success');
-  await waitFor(() => expect(screen.queryByText('已屏蔽 · 不参与 Roll')).toBeNull());
+  expect(mocks.clearPreference).not.toHaveBeenCalled();
+  await waitFor(() => expect(mocks.cover.mock.lastCall![0].blocked).toBe(false));
+});
+
+it('从收藏改成屏蔽时同步取消这条收藏', async () => {
+  mocks.blockLoad.mockResolvedValue([]);
+  const notify = vi.fn();
+  render(<PromptTagLibraryInfo target={{ kind: 'artist', name: 'alpha artist' }} onClose={vi.fn()} notify={notify} />);
+  await waitFor(() => expect(mocks.cover.mock.lastCall![0].blocked).toBe(false));
+  fireEvent.click(screen.getByText('block artist'));
+  await waitFor(() => expect(mocks.blockSave).toHaveBeenCalledWith(['alpha artist']));
+  expect(mocks.clearPreference).toHaveBeenCalledWith('alpha artist');
+  expect(notify).toHaveBeenCalledWith('已屏蔽画师：alpha artist', 'success');
 });
 
 it('未知作品计数不展示MAX_SAFE_INTEGER占位值', async () => {

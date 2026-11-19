@@ -18,7 +18,7 @@ export const ArtistPreferenceActions: React.FC<{
   const switchLabel = t('样张版本 {0}，切换为 {1}', [pack === 'v45' ? 'V4.5' : 'V5 Full', nextPack === 'v45' ? 'V4.5' : 'V5 Full']);
   const stop = (event: React.SyntheticEvent) => event.stopPropagation();
   return <>
-    <button type="button" data-card-action="true" data-image-action-left="true" aria-label={t(blocked ? '取消屏蔽画师：{0}' : '屏蔽画师：{0}', [tag])} aria-pressed={blocked} disabled={disabled} onPointerDown={stop} onKeyDown={stop} onClick={event => { stop(event); onBlock(); }} className={`${corner} hover-reveal-md absolute left-2 top-2 z-20 ${blocked ? IMAGE_CARD_ACTION_TONE.delete : ''}`}><Ban className="h-4 w-4" /></button>
+    <button type="button" data-card-action="true" data-image-action-left="true" aria-label={t(blocked ? '取消屏蔽画师：{0}' : '屏蔽画师：{0}', [tag])} aria-pressed={blocked} disabled={disabled} onPointerDown={stop} onKeyDown={stop} onClick={event => { stop(event); onBlock(); }} className={`${corner} absolute left-2 top-2 z-20 ${blocked ? IMAGE_CARD_ACTION_TONE.blocked : 'hover-reveal-md'}`}><Ban className="h-4 w-4" /></button>
     <ImageCardActions singleColumn className="!gap-1" onClick={stop} onPointerDown={stop} onKeyDown={stop}>
       <button type="button" data-card-action="true" aria-label={t(preferred ? '取消偏好画师：{0}' : '偏好画师：{0}', [tag])} aria-pressed={preferred} disabled={disabled} onPointerDown={stop} onKeyDown={stop} onClick={event => { stop(event); onFavorite(); }} className={`${corner} ${preferred ? '!text-rose-400' : 'hover-reveal-md'}`}><Heart className={`h-4 w-4 ${preferred ? 'fill-current' : ''}`} /></button>
       {children}

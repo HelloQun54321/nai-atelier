@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({ lookup: vi.fn(), preference: vi.fn(), observer
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleLookup: mocks.lookup }));
 vi.mock('../../services/collectionFavorites', () => ({ toggleArtistPreference: mocks.preference }));
 vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ eager, previewTransform, ...props }: any) => <img {...props} data-eager={String(eager)} data-preview-transform={previewTransform} /> }));
-vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'h-11 w-11 rounded-full md:h-8 md:w-8', IMAGE_CARD_ACTION_TONE: { save: '', delete: '', primary: '' } }));
+vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'h-11 w-11 rounded-full md:h-8 md:w-8', IMAGE_CARD_ACTION_TONE: { save: '', saved: '', blocked: '!border-red-300/70 !bg-red-600 !text-white', delete: '', primary: '' } }));
 beforeEach(() => {
   vi.clearAllMocks(); mocks.observers.length = 0;
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
@@ -117,6 +117,8 @@ it('封面保留屏蔽、偏好和版本切换；缺图生成沿共用显露规�
   expect(generate.textContent).toBe(''); expect(generate.className).toContain('hover-reveal-md');
   expect(generate.querySelector('.lucide-image-plus')).not.toBeNull(); expect(generate.querySelector('.lucide-refresh-cw')).toBeNull();
   const block = screen.getByRole('button', { name: '屏蔽画师：artist' });
+  // 未屏蔽时屏蔽钮和生成／版本一样按悬停显露。
+  expect(block.className).toContain('hover-reveal-md');
   fireEvent.keyDown(block, { key: 'Enter' }); fireEvent.click(block);
   await waitFor(() => expect(block.hasAttribute('disabled')).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: '偏好画师：artist' }));
@@ -202,7 +204,11 @@ it('有图生成按钮就地叠循环标；翻图后偏好使用当前图片元�
   expect(screen.getByRole('button', { name: '取消偏好画师：artist' }).getAttribute('aria-pressed')).toBe('true');
   view.rerender(<div onClick={select}><ArtistSampleCover {...actions} {...props} preferred blocked pack="v5" hasPackSample={false} /></div>);
   expect(screen.getByRole('button', { name: '取消偏好画师：artist' }).getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByRole('button', { name: '取消屏蔽画师：artist' }).getAttribute('aria-pressed')).toBe('true');
+  // 已屏蔽：屏蔽钮常驻红色实底并脱离悬停显露，和已收藏的爱心同级。
+  const blockedButton = screen.getByRole('button', { name: '取消屏蔽画师：artist' });
+  expect(blockedButton.getAttribute('aria-pressed')).toBe('true');
+  expect(blockedButton.className).toContain('!bg-red-600');
+  expect(blockedButton.className).not.toContain('hover-reveal-md');
   expect(screen.getByRole('button', { name: '补充样张' })).toBeTruthy();
 });
 

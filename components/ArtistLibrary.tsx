@@ -1,6 +1,6 @@
 import { drawLibraryIndices } from '../services/libraryRandom';
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
-import { collectionSnapshot, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
+import { clearArtistPreference, collectionSnapshot, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
 import { localHistory } from '../services/localHistory';
 import { loadRollBlocklist, ROLL_BLOCKLIST_CHANGED, saveRollBlocklist } from '../services/styleRollApi';
 import { normalizeRollArtistKey } from '../services/styleRollSeed';
@@ -88,6 +88,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             const blocked = current.some(value => normalizeRollArtistKey(value) === key);
             const next = blocked ? current.filter(value => normalizeRollArtistKey(value) !== key) : [...current, tag];
             setBlockedArtists(await saveRollBlocklist(next));
+            // 屏蔽即取代偏好：先落地屏蔽名单，再取消这条收藏；取消屏蔽不反向恢复收藏。
+            if (!blocked) await clearArtistPreference(tag).catch(() => { /* 收藏取消失败不撤销已生效的屏蔽，界面会如实显示爱心状态。 */ });
             // 图标本身不随状态变色，写入结果必须用一句话讲清楚，否则同一下点击既可能是“屏蔽”也可能是“取消屏蔽”。
             notify(t(blocked ? '已取消屏蔽画师：{0}' : '已屏蔽画师：{0}', [tag]), 'success');
         } finally { blockSavingRef.current = false; setBlockSaving(false); }
@@ -142,7 +144,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     }, [artistRatios, frostedCaption, cardPacks, samplePack]);
     const renderArtistCard = (artist: (typeof filteredArtists)[number]) => {
                             const isSelected = !!cart.find(c => c.name === artist.name);
-                            const isBlocked = blockedKeys.has(normalizeRollArtistKey(artist.name));
                             const effectivePack = cardPacks[artist.name] || samplePack;
                             const samples = samplesByPack[effectivePack];
                             const artistOwnSamples = samples.ownNames.has(artist.name) ? samples.own.filter(sample => sample.tag === artist.name || (!samples.ownTags.has(artist.name) && normalizeArtistSampleTag(sample.tag) === normalizeArtistSampleTag(artist.name))) : [];
@@ -200,8 +201,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                                     </div>
                                     <div className="gallery-card-caption p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
                                         <div data-safe-mode-title="true" title={artist.name} className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{isSelected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3" strokeWidth={4} />}{artist.name}</div>
-                                        {artist.chinese && !isBlocked && <div data-safe-mode-title="true" className="mt-0.5 truncate text-micro text-gray-400" title={artist.chinese}>{artist.chinese}</div>}
-                                        {isBlocked && <div data-safe-mode-title="true" className="mt-0.5 truncate text-micro font-semibold text-red-500 dark:text-red-400">{t("已屏蔽 · 不参与 Roll")}</div>}
+                                        {artist.chinese && <div data-safe-mode-title="true" className="mt-0.5 truncate text-micro text-gray-400" title={artist.chinese}>{artist.chinese}</div>}
                                         {artist.postCountKnown !== false && Number.isFinite(artist.postCount) && <div className="gallery-card-meta mt-0.5 text-micro font-mono text-gray-500" title={t("Danbooru 关联作品数")}>{t("作品 {0}", [artist.postCount.toLocaleString(getLanguage())])}</div>}
                                         <div className="gallery-card-meta mt-0.5 truncate text-micro tabular-nums text-gray-500" title={usageIndex ? t('收录 {0} 串 · 生成 {1} 张', [artistUsageCount(artist.name, usageIndex, 'chains'), artistUsageCount(artist.name, usageIndex, 'images')]) : usageState.status === 'loading' ? t('正在统计画师使用…') : undefined}>
                                             {usageIndex
