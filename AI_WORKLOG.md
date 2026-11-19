@@ -1,4 +1,5 @@
 ## 2026-11-19
+- **DeepSeek Harness (V4.1 Flash)**：`AGENTS.md` 增加「方案未定不动手（强制）」：位置、形态、布局、信息架构等选择未获用户指定时先给方案与取舍、等明确选定再改，禁止先改再问；已擅自改动的先撤回再讨论。需求推演章节第 3 条同步补上「界面位置、形态、布局、信息架构有多种合理做法且用户未指定」作为必须先讨论的情形（docs: require confirmation before uncertain design changes）。
 - **DeepSeek Harness (V4.1 Flash)**：反推入口统一：`CharacterTaggerReference` 改为打开 `ImageTaggerPanel`（contextual），角色卡不再渲染参考图与识别胶囊；`ImageTaggerPanel` 右上角增加「反推模型」按钮与 `AnchoredToolbarPopover` 浮层（内嵌 `ImageTaggerModelManager`，提供选择／下载／暂停／删除），不再把模型卡片塞进左侧参数栏；未下载模型时提示并禁用取图（`modelReady` 要求当前模型已下载）；新增 4 条五语言文案，测试改为断言共用页面与模型操作（feat: unify tagger entries on one page with model management）。
 - **DeepSeek Harness (V4.1 Flash)**：角色卡头部工具行收拢：`从角色库引用`、`粘贴反推` 改为常驻图标（引用移出「更多」，反推触发器从 sr-only 槽改成可见行内槽），更多菜单只留保存与上移／下移（style: move the character tools into one header row）。
 - **DeepSeek Harness (V4.1 Flash)**：修正 `AGENTS.md` 提交示例缺 `-m` 的坑：非交互执行 `git commit -- <路径>` 会打开 vim 拿不到输入而挂住并残留 `index.lock`（今天两次提交卡死即此因，pre-commit 本身约 50 秒已通过）。示例改为 `git commit -m "<type>: <summary>" -- <路径>`，并写明识别挂起、清理残留锁、区分他人写索引与自身中断两步（docs: require a commit message when committing non-interactively）。
