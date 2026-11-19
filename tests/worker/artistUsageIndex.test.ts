@@ -20,6 +20,22 @@ it('完整本地启动时以网关实际提供的电脑资源词库为准', asyn
       'http://127.0.0.1:9178/tag-data/manifest.json', 'http://127.0.0.1:9178/tag-data/artist-pages/0000.json',
     ]);
     expect(fetchBundled).not.toHaveBeenCalled();
+    // workerd 的 Request 只接受 follow / manual，'error' 会在 Worker 运行时直接抛错。
+    expect(fetchRuntime.mock.calls[0][0].redirect).toBe('manual');
+  } finally { vi.unstubAllGlobals(); }
+});
+
+it('词库请求被重定向时不跟随，按读取失败处理而不是把落地页当成词库', async () => {
+  const fetchRuntime = vi.fn(async (request: Request) => {
+    expect(request.redirect).toBe('manual');
+    return new Response(null, { status: 302, headers: { location: '/index.html' } });
+  });
+  vi.stubGlobal('fetch', fetchRuntime);
+  try {
+    const { env } = fixture();
+    env.TAG_DICTIONARY_LOCAL_ORIGIN = 'http://127.0.0.1:9178';
+    await expect(loadArtistUsageDictionary(env)).rejects.toThrow('画师统计词库读取失败');
+    expect(fetchRuntime).toHaveBeenCalledTimes(1);
   } finally { vi.unstubAllGlobals(); }
 });
 function fixture() {

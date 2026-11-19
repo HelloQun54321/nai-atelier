@@ -27,7 +27,9 @@ export function loadArtistUsageDictionary(env: Env): Promise<ReadonlySet<string>
   let pending = dictionaries.get(cacheKey);
   if (!pending) {
     const read = async (path: string): Promise<unknown> => {
-      const request = new Request(new URL(`/tag-data/${path}`, origin || 'https://atelier.local'), { redirect: 'error' });
+      // workerd 不接受 redirect: 'error'（构造 Request 时直接抛 TypeError，Node 却放行），
+      // 用 manual 保住「被重定向即失败」的原意：不跟随 3xx，交给下面的 !response.ok 兜住。
+      const request = new Request(new URL(`/tag-data/${path}`, origin || 'https://atelier.local'), { redirect: 'manual' });
       // 词库随本机资源目录更新，完整本地启动时从网关读取当前词库。
       const response = origin ? await fetch(request) : await env.ASSETS.fetch(request);
       if (response.status === 404 || (response.ok && response.headers.get('content-type')?.toLowerCase().startsWith('text/html'))) {
