@@ -1,4 +1,5 @@
 ## 2026-11-19
+- **DeepSeek Harness (V4.1 Flash)**：pre-commit 按改动幅度分级：`NAI_CHECK_SCOPE=minimal` 只扫密钥（纯文档）、`code` 只对变化代码文件跑 ESLint 并跳过全量类型检查（小改）、默认 `full` 保持全量；含工程配置时自动升级 full。`AGENTS.md` 提交规则补上选择方式（chore: scale pre-commit checks to the change size）。
 - **DeepSeek Harness (V4.1 Flash)**：`AGENTS.md` 增加「方案未定不动手」：位置、形态、布局等有多种做法或用户还在讨论时，先问、等明确指令再改，禁止先改再问，已改的先撤回（docs: require confirmation before uncertain design changes）。
 - **DeepSeek Harness (V4.1 Flash)**：反推入口统一：`CharacterTaggerReference` 改为打开 `ImageTaggerPanel`（contextual），角色卡不再渲染参考图与识别胶囊；`ImageTaggerPanel` 右上角增加「反推模型」按钮与 `AnchoredToolbarPopover` 浮层（内嵌 `ImageTaggerModelManager`，提供选择／下载／暂停／删除），不再把模型卡片塞进左侧参数栏；未下载模型时提示并禁用取图（`modelReady` 要求当前模型已下载）；新增 4 条五语言文案，测试改为断言共用页面与模型操作（feat: unify tagger entries on one page with model management）。
 - **DeepSeek Harness (V4.1 Flash)**：角色卡头部工具行收拢：`从角色库引用`、`粘贴反推` 改为常驻图标（引用移出「更多」，反推触发器从 sr-only 槽改成可见行内槽），更多菜单只留保存与上移／下移（style: move the character tools into one header row）。
