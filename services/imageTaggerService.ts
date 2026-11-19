@@ -78,4 +78,21 @@ const tagFile = async (file: File, options: { threshold?: number; characterThres
 const control = async (action: 'model' | 'download' | 'pause' | 'delete', model?: string) => {
   await readResponse(await fetch(`/api/image-tagger/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) }));
 };
+
+/**
+ * 助手反推前的就绪检查：把服务端 500／409 的原文换成能照着做的说明。
+ * 只读判断，不下载、不切换模型，也不改变正常反推流程。
+ */
+export const taggerReadinessIssue = (status: ImageTaggerStatus, modelId?: string): string | null => {
+  const current = status.models?.find(model => model.id === status.model);
+  const currentLabel = current?.label || status.model;
+  if (modelId && modelId !== status.model) return `助手不能切换反推模型：当前是「${currentLabel}」，请省略 model 参数改用当前模型。`;
+  if (!current) return `读取不到当前反推模型「${currentLabel}」的状态：请在反推面板里重新选择模型后再试。`;
+  if (current.downloaded) return null;
+  const hint = current.stage === 'downloading' || current.stage === 'verifying' ? '模型正在下载，下载完成后再试'
+    : current.stage === 'paused' ? '模型下载已暂停，请在反推面板右上角「反推模型」里继续下载'
+      : '请在反推面板右上角「反推模型」里下载完成后再试';
+  return `反推模型「${currentLabel}」尚未就绪：${hint}。助手不会自动下载或切换模型。`;
+};
+
 export const imageTaggerService = { getStatus, tagFile, selectModel: (model: string) => control('model', model), downloadModel: (model: string) => control('download', model), pauseDownload: () => control('pause'), deleteModel: (model: string) => control('delete', model) };

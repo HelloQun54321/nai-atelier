@@ -145,7 +145,12 @@ const App = () => {
     name: 'inspect_image_tags', label: '反推图片 Tag', description: '对项目图片或助手已登记的本机图片做本地反推，返回 Danbooru Tag、置信度与中文对照。需要电脑端反推模型已就绪。', parameters: { type: 'object', properties: { source: { enum: ['project', 'local'] }, kind: { enum: ['history', 'inspiration', 'vibe', 'reference', 'chain'] }, id: { type: 'string' }, path: { type: 'string' }, threshold: { type: 'number' }, characterThreshold: { type: 'number' }, model: { type: 'string' } }, required: ['source'] }, readOnly: true,
     scope: agentViewScope,
     execute: async args => {
-      const [{ imageTaggerService }, { promptAgentService }] = await Promise.all([import('./services/imageTaggerService'), import('./services/promptAgent')]);
+      const [{ imageTaggerService, taggerReadinessIssue }, { promptAgentService }] = await Promise.all([import('./services/imageTaggerService'), import('./services/promptAgent')]);
+      // 模型没就绪时助手要拿到能照着做的原因，而不是一句 500 或「正在识别」。
+      const status = await imageTaggerService.getStatus().catch(() => null);
+      if (!status) throw new Error('本地反推服务未连接：请确认工坊电脑端服务正在运行后再试');
+      const issue = taggerReadinessIssue(status, typeof args.model === 'string' && args.model ? args.model : undefined);
+      if (issue) throw new Error(issue);
       let blob: Blob;
       if (args.source === 'local') {
         blob = await promptAgentService.getLocalImage(String(args.path || ''));
