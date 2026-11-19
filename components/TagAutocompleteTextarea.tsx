@@ -180,7 +180,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [editingTag, setEditingTag] = useState<{ id: string; start: number; end: number } | null>(null);
   const [clearActionState, setClearActionState] = useState<'cleared' | 'undone' | null>(null);
   // 清空与整理共用一次性撤销状态，按钮只在对应操作之后显示撤销。
-  const [undoableAction, setUndoableAction] = useState<'clear' | 'tidy'>('clear');
+  const [undoableAction, setUndoableAction] = useState<'clear' | 'tidy' | 'proofread'>('clear');
   const historyRef = useRef({ value, past: [] as string[], future: [] as string[], typedAt: 0 });
   const neutralGroupsRef = useRef({ value, groups: [] as Array<{ start: number; end: number }> });
   const [, refreshHistory] = useState(0);
@@ -475,7 +475,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     setUndoableAction('clear');
     textareaRef.current?.focus();
   };
-  const applyTidy = (next: string) => {
+  const applyPromptChange = (next: string, action: 'tidy' | 'proofread') => {
     if (!editable || next === value) return;
     clearSelection();
     setMutedTags([]);
@@ -485,8 +485,10 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     closeSuggestions();
     commitValue(next);
     setClearActionState('cleared');
-    setUndoableAction('tidy');
+    setUndoableAction(action);
   };
+  const applyTidy = (next: string) => applyPromptChange(next, 'tidy');
+  const applyProofread = (next: string) => applyPromptChange(next, 'proofread');
   const deleteSelected = () => {
     if (!editable || !selectedTokens.length) return;
     commitValue(removePromptTagTokens(value, selectedTokens));
@@ -932,8 +934,9 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     ? <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />
     : null;
   const tidyAction = promptTidy
-    ? <PromptTidyActions value={value} disabled={!editable} notify={promptTidy.notify} sample={promptTidy.sample} onApply={applyTidy}
-      canUndo={clearActionState === 'cleared' && undoableAction === 'tidy'} onUndo={() => { moveHistory(); textareaRef.current?.focus(); }} />
+    ? <PromptTidyActions value={value} disabled={!editable} notify={promptTidy.notify} sample={promptTidy.sample}
+      onApply={applyTidy} onProofread={applyProofread} lastAction={undoableAction === 'proofread' ? 'proofread' : 'tidy'}
+      canUndo={clearActionState === 'cleared'} onUndo={() => { moveHistory(); textareaRef.current?.focus(); }} />
     : null;
   const reverseAction = reverseTag
     ? <button type="button" aria-label={t('从图片反推 Tag 到这一栏')} title={t('上传或粘贴图片，识别后追加到这一栏')} disabled={!editable || reverseTag.disabled} onClick={event => { event.stopPropagation(); reverseTag.onReverse(); }}

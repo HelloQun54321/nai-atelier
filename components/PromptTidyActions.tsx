@@ -1,9 +1,10 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useRef, useState } from 'react';
-import { LoaderCircle, RotateCcw, Sparkles, Trash2, WandSparkles } from 'lucide-react';
+import { LoaderCircle, RotateCcw, SpellCheck, Sparkles, Trash2, WandSparkles } from 'lucide-react';
 import { FilterPill } from './DesignSystem';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { isPromptTidyRewrite, PROMPT_TIDY_INSTRUCTION_LIMIT, resolvePromptTidyMethod, tidyPrompt, type PromptTidyDropped, type PromptTidyKeep, type PromptTidySettings } from '../services/promptTidy';
+import { proofreadPrompt, type PromptProofreadCorrection } from '../services/tagProofread';
 import { addPromptTidyPreset, PROMPT_TIDY_NAME_LIMIT, PROMPT_TIDY_PRESET_LIMIT, removePromptTidyPreset, setPromptTidyDraft, usePromptTidyState } from '../services/promptTidyPresets';
 import type { PromptSampleBridge } from '../services/promptSampleSettings';
 import { PromptSampleButton } from './PromptSampleButton';
@@ -16,7 +17,11 @@ export interface PromptTidyActionsProps extends PromptTidyOptions {
   disabled?: boolean;
   /** 覆盖原提示词并记入撤销历史。 */
   onApply: (next: string) => void;
-  /** 最近一次整理还能撤销时显示撤销按钮。 */
+  /** 校对结果覆盖原文，作为单独一次可撤销动作记录。 */
+  onProofread?: (next: string) => void;
+  /** 最近一次覆盖是可撤销的整理还是校对，决定撤销按钮与改动清单属于谁。 */
+  lastAction?: 'tidy' | 'proofread';
+  /** 最近一次整理或校对还能撤销时显示撤销按钮。 */
   canUndo: boolean;
   onUndo: () => void;
 }
@@ -27,8 +32,8 @@ const HINT_CLASS = 'mt-1 text-micro leading-relaxed text-gray-400';
 const FIELD_CLASS = 'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-800 outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100';
 const CHECK_CLASS = 'flex items-start gap-2 text-xs text-gray-700 dark:text-gray-200';
 
-/** 提示词工具栏里的「整理」：设置面板、自定义快捷按钮与撤销。 */
-export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, disabled = false, notify, sample, onApply, canUndo, onUndo }) => {
+/** 提示词工具栏里的「整理」与「校对」：设置面板、自定义快捷按钮、改动清单与撤销。 */
+export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, disabled = false, notify, sample, onApply, onProofread, lastAction = 'tidy', canUndo, onUndo }) => {
   useLanguage();
   const { draft, presets } = usePromptTidyState();
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -41,6 +46,10 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
   const [dropped, setDropped] = useState<PromptTidyDropped[]>([]);
   const [droppedOpen, setDroppedOpen] = useState(false);
   const droppedRef = useRef<HTMLButtonElement>(null);
+  // 最近一次校对改动的词：同样跟着撤销状态走，撤回或继续编辑后收起。
+  const [proofread, setProofread] = useState<{ corrections: PromptProofreadCorrection[]; punctuation: number } | null>(null);
+  const [proofreadOpen, setProofreadOpen] = useState(false);
+  const proofreadRef = useRef<HTMLButtonElement>(null);
   const keepOptions: Array<{ value: PromptTidyKeep; label: string; hint: string }> = [
     { value: 'style', label: t('画风串'), hint: t('保留画师、画风、线条、质量词等整段配方，去掉人物、场景和光照') },
     { value: 'artists', label: t('只留画师'), hint: t('只保留画师，连同原来的权重') },
@@ -97,10 +106,41 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
     try { addPromptTidyPreset(presetName, draft); setPresetName(''); }
     catch (error) { notify(t((error as Error).message), 'error'); }
   };
+  /**
+   * 校对：规则对齐词库写法、统一英文标点，不删词、不调模型。
+   * 词库未就绪时只统一标点并如实提示，不冒充已校对。
+   */
+  const runProofread = async () => {
+    if (busy || disabled) return;
+    const base = valueRef.current;
+    if (!base.trim()) { notify(t('没有可校对的提示词'), 'error'); return; }
+    setBusy('proofread');
+    try {
+      const result = await proofreadPrompt(base);
+      if (valueRef.current !== base) { notify(t('校对期间提示词有改动，这次结果没有覆盖'), 'error'); return; }
+      if (result.text === base) {
+        notify(result.dictionaryUnavailable ? t('Tag 词库未就绪，没有可校对的词；请先在全局设置更新词库') : t('提示词没有需要校对的地方'), result.dictionaryUnavailable ? 'error' : 'success');
+        return;
+      }
+      setProofread({ corrections: result.corrections, punctuation: result.punctuation });
+      setProofreadOpen(false);
+      (onProofread ?? onApply)(result.text);
+      if (result.dictionaryUnavailable) notify(t('Tag 词库未就绪，只统一了 {0} 处标点', [result.punctuation]), 'error');
+      else if (result.corrections.length && result.punctuation) notify(t('已校对 {0} 个 Tag、{1} 处标点，可以撤销', [result.corrections.length, result.punctuation]), 'success');
+      else if (result.corrections.length) notify(t('已校对 {0} 个 Tag，可以撤销', [result.corrections.length]), 'success');
+      else notify(t('已统一 {0} 处中文标点，可以撤销', [result.punctuation]), 'success');
+    } catch (error) {
+      notify(t((error as Error).message), 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
   const spinner = <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />;
   const full = presets.length >= PROMPT_TIDY_PRESET_LIMIT;
-  const showDropped = canUndo && dropped.length > 0;
+  const showDropped = canUndo && lastAction === 'tidy' && dropped.length > 0;
   const duplicates = dropped.filter(item => item.duplicate).length;
+  const proofreadCount = proofread ? proofread.corrections.length + (proofread.punctuation > 0 ? 1 : 0) : 0;
+  const showProofread = canUndo && lastAction === 'proofread' && proofreadCount > 0;
 
   return <span className="flex items-center gap-1">
     <span ref={anchorRef} className="inline-flex">
@@ -109,13 +149,22 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
         {busy === 'draft' ? spinner : <WandSparkles aria-hidden="true" className="h-4 w-4" />}
       </button>
     </span>
-    {canUndo && <button type="button" disabled={disabled} aria-label={t('撤销整理')} title={t('撤销整理')} onMouseDown={event => event.preventDefault()} onClick={onUndo} className={`${ICON_CLASS} text-[var(--nai-accent)]`}>
+    <button type="button" disabled={disabled || Boolean(busy)} aria-label={t('校对 Tag')} title={t('校对 Tag：对齐词库写法，统一英文标点')}
+      onClick={() => { void runProofread(); }} className={ICON_CLASS}>
+      {busy === 'proofread' ? spinner : <SpellCheck aria-hidden="true" className="h-4 w-4" />}
+    </button>
+    {canUndo && lastAction === 'tidy' && <button type="button" disabled={disabled} aria-label={t('撤销整理')} title={t('撤销整理')} onMouseDown={event => event.preventDefault()} onClick={onUndo} className={`${ICON_CLASS} text-[var(--nai-accent)]`}>
       <RotateCcw aria-hidden="true" className="h-4 w-4" />
     </button>}
     {showDropped && <button ref={droppedRef} type="button" aria-label={t('查看去掉的 {0} 段', [dropped.length])} title={t('查看去掉的 {0} 段', [dropped.length])} aria-haspopup="dialog" aria-expanded={droppedOpen}
       onClick={() => setDroppedOpen(!droppedOpen)}
       className="mobile-touch inline-flex h-7 flex-none items-center rounded px-1.5 text-xs font-medium tabular-nums text-[var(--nai-accent)] transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:bg-gray-700">
       {t('去掉 {0}', [dropped.length])}
+    </button>}
+    {showProofread && <button ref={proofreadRef} type="button" aria-label={t('查看改动的 {0} 处', [proofreadCount])} title={t('查看改动的 {0} 处', [proofreadCount])} aria-haspopup="dialog" aria-expanded={proofreadOpen}
+      onClick={() => setProofreadOpen(!proofreadOpen)}
+      className="mobile-touch inline-flex h-7 flex-none items-center rounded px-1.5 text-xs font-medium tabular-nums text-[var(--nai-accent)] transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:bg-gray-700">
+      {t('改动 {0}', [proofreadCount])}
     </button>}
     {showDropped && droppedOpen && <AnchoredToolbarPopover anchorRef={droppedRef} title={t('这次去掉的内容')} width={340} allowMobile onClose={() => setDroppedOpen(false)}>
       <div className="space-y-3">
@@ -133,6 +182,31 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
             <RotateCcw aria-hidden="true" className="h-4 w-4" />{t('撤销整理')}
           </button>
           <p className={HINT_CLASS}>{t('去错了就撤销，恢复整理前的提示词。')}</p>
+        </div>
+      </div>
+    </AnchoredToolbarPopover>}
+    {showProofread && proofreadOpen && proofread && <AnchoredToolbarPopover anchorRef={proofreadRef} title={t('这次改动的 Tag')} width={360} allowMobile onClose={() => setProofreadOpen(false)}>
+      <div className="space-y-3">
+        <div>
+          <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">{t('这次改动的 Tag')}</div>
+          <p className={HINT_CLASS}>{proofread.corrections.length === 0
+            ? t('没有 Tag 需要改写法，{0} 处中文标点换成英文。', [proofread.punctuation])
+            : proofread.punctuation > 0
+              ? t('按原文顺序共 {0} 个 Tag；另有 {1} 处中文标点换成英文。', [proofread.corrections.length, proofread.punctuation])
+              : t('按原文顺序共 {0} 个 Tag。', [proofread.corrections.length])}</p>
+        </div>
+        {proofread.corrections.length > 0 && <ul aria-label={t('改动的 Tag')} className="space-y-1">{proofread.corrections.map((item, index) => <li key={index}
+          className="flex items-start gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-950">
+          <span className="min-w-0 break-all font-mono text-gray-500 line-through dark:text-gray-400">{item.from}</span>
+          <span aria-hidden="true" className="flex-none text-gray-400">→</span>
+          <span className="min-w-0 break-all font-mono font-semibold text-gray-800 dark:text-gray-100">{item.to}</span>
+        </li>)}</ul>}
+        <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
+          <button type="button" disabled={disabled} onClick={() => { setProofreadOpen(false); onUndo(); }}
+            className="mobile-touch inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+            <RotateCcw aria-hidden="true" className="h-4 w-4" />{t('撤销校对')}
+          </button>
+          <p className={HINT_CLASS}>{t('改错了就撤销，恢复校对前的提示词。')}</p>
         </div>
       </div>
     </AnchoredToolbarPopover>}

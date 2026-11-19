@@ -10,6 +10,8 @@ import type { NAIParams } from '../../types';
 
 const mocks = vi.hoisted(() => ({ tidy: vi.fn() }));
 vi.mock('../../services/promptTidy', async importOriginal => ({ ...await importOriginal<typeof import('../../services/promptTidy')>(), tidyPrompt: mocks.tidy }));
+const proofreadMocks = vi.hoisted(() => ({ run: vi.fn() }));
+vi.mock('../../services/tagProofread', () => ({ proofreadPrompt: proofreadMocks.run }));
 
 const result = (text: string, kept = 1, removed = 1, dropped: PromptTidyResult['dropped'] = []): PromptTidyResult => ({ text, kept, removed, rewritten: false, dropped });
 const Harness: React.FC<{ initial: string; notify: (message: string, type?: 'success' | 'error') => void; sample?: PromptSampleBridge }> = ({ initial, notify, sample }) => {
@@ -26,6 +28,7 @@ beforeEach(() => {
   reloadPromptTidyState();
   reloadPromptSampleSettings();
   mocks.tidy.mockReset();
+  proofreadMocks.run.mockReset();
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => [] }) as unknown as Response));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
@@ -223,4 +226,90 @@ it('勾选整理后生成样张：先覆盖原文，再用整理结果出图', a
   expect(textarea().value).toBe('artist:a');
   expect(sample.generate).toHaveBeenCalledWith('artist:a');
   expect(mocks.tidy).toHaveBeenCalledWith('artist:a, 1girl', { ...DEFAULT_PROMPT_TIDY_SETTINGS, sample: true });
+});
+
+const proofreadResult = (text: string, corrections: Array<{ from: string; to: string }> = [], punctuation = 0, dictionaryUnavailable = false) =>
+  ({ text, corrections, punctuation, dictionaryUnavailable });
+const proofreadButton = () => screen.getByRole('button', { name: '校对 Tag' });
+
+it('校对按钮对齐词库写法与标点，可就地查看改动并撤销', async () => {
+  proofreadMocks.run.mockResolvedValue(proofreadResult('hatsune miku, 1girl', [{ from: 'HatSune_Miku', to: 'hatsune miku' }], 1));
+  const notify = vi.fn();
+  render(<Harness initial="HatSune_Miku，1girl" notify={notify} />);
+  await act(async () => { fireEvent.click(proofreadButton()); });
+  expect(proofreadMocks.run).toHaveBeenCalledWith('HatSune_Miku，1girl');
+  expect(textarea().value).toBe('hatsune miku, 1girl');
+  expect(notify).toHaveBeenCalledWith('已校对 1 个 Tag、1 处标点，可以撤销', 'success');
+  const toggle = screen.getByRole('button', { name: '查看改动的 2 处' });
+  expect(toggle.textContent).toBe('改动 2');
+  fireEvent.click(toggle);
+  const panel = screen.getByRole('dialog', { name: '这次改动的 Tag' });
+  expect(within(panel).getByText('按原文顺序共 1 个 Tag；另有 1 处中文标点换成英文。')).toBeTruthy();
+  expect(within(within(panel).getByRole('list', { name: '改动的 Tag' })).getAllByRole('listitem').map(item => item.textContent)).toEqual(['HatSune_Miku→hatsune miku']);
+  fireEvent.click(within(panel).getByRole('button', { name: '撤销校对' }));
+  expect(textarea().value).toBe('HatSune_Miku，1girl');
+  expect(screen.queryByRole('dialog', { name: '这次改动的 Tag' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /查看改动的/ })).toBeNull();
+  // 重做回来仍是这次校对的结果，清单跟着回来
+  fireEvent.keyDown(textarea(), { key: 'y', ctrlKey: true });
+  expect(screen.getByRole('button', { name: '查看改动的 2 处' })).toBeTruthy();
+});
+
+it('没有需要校对的地方时不覆盖原文、不显示改动按钮，也不出现撤销整理', async () => {
+  proofreadMocks.run.mockResolvedValue(proofreadResult('1girl, solo'));
+  const notify = vi.fn();
+  render(<Harness initial="1girl, solo" notify={notify} />);
+  await act(async () => { fireEvent.click(proofreadButton()); });
+  expect(textarea().value).toBe('1girl, solo');
+  expect(notify).toHaveBeenLastCalledWith('提示词没有需要校对的地方', 'success');
+  expect(screen.queryByRole('button', { name: /查看改动的/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: '撤销整理' })).toBeNull();
+});
+
+it('词库未就绪时只统一标点，如实提示并列出改动', async () => {
+  proofreadMocks.run.mockResolvedValue(proofreadResult('1girl, solo', [], 1, true));
+  const notify = vi.fn();
+  render(<Harness initial="1girl，solo" notify={notify} />);
+  await act(async () => { fireEvent.click(proofreadButton()); });
+  expect(textarea().value).toBe('1girl, solo');
+  expect(notify).toHaveBeenLastCalledWith('Tag 词库未就绪，只统一了 1 处标点', 'error');
+  fireEvent.click(screen.getByRole('button', { name: '查看改动的 1 处' }));
+  const panel = screen.getByRole('dialog', { name: '这次改动的 Tag' });
+  expect(within(panel).getByText('没有 Tag 需要改写法，1 处中文标点换成英文。')).toBeTruthy();
+});
+
+it('提示词为空时如实提示，不调用校对', async () => {
+  const notify = vi.fn();
+  render(<Harness initial="  " notify={notify} />);
+  await act(async () => { fireEvent.click(proofreadButton()); });
+  expect(proofreadMocks.run).not.toHaveBeenCalled();
+  expect(notify).toHaveBeenCalledWith('没有可校对的提示词', 'error');
+});
+
+it('校对与整理的撤销状态互不串：校对后不显示撤销整理与去掉清单', async () => {
+  mocks.tidy.mockResolvedValue(result('artist:a', 1, 1, [{ text: '1girl', duplicate: false }]));
+  proofreadMocks.run.mockResolvedValue(proofreadResult('artist:a, hat', [{ from: 'Artist_A', to: 'artist a' }]));
+  render(<Harness initial="artist:a, 1girl" notify={vi.fn()} />);
+  openPanel();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: '整理并覆盖' })); });
+  expect(screen.getByRole('button', { name: '撤销整理' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '查看去掉的 1 段' })).toBeTruthy();
+  await act(async () => { fireEvent.click(proofreadButton()); });
+  expect(textarea().value).toBe('artist:a, hat');
+  expect(screen.queryByRole('button', { name: '撤销整理' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /查看去掉的/ })).toBeNull();
+  expect(screen.getByRole('button', { name: '查看改动的 1 处' })).toBeTruthy();
+});
+
+it('校对返回前提示词被改动时放弃结果，不覆盖新内容', async () => {
+  let finish!: (value: ReturnType<typeof proofreadResult>) => void;
+  proofreadMocks.run.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const notify = vi.fn();
+  render(<Harness initial="HatSune_Miku" notify={notify} />);
+  await act(async () => { fireEvent.click(proofreadButton()); });
+  fireEvent.change(textarea(), { target: { value: 'HatSune_Miku, smile' } });
+  await act(async () => { finish(proofreadResult('hatsune miku')); });
+  expect(textarea().value).toBe('HatSune_Miku, smile');
+  expect(notify).toHaveBeenLastCalledWith('校对期间提示词有改动，这次结果没有覆盖', 'error');
+  expect(screen.queryByRole('button', { name: /查看改动的/ })).toBeNull();
 });
