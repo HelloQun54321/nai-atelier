@@ -104,11 +104,11 @@ describe('共用图片分享操作', () => {
     await waitFor(() => expect(downloadSharedImage).toHaveBeenCalledWith('/source.png', 'source.png', false, generationData));
     setImageDownloadFormat('png');
   });
-  it('设置为 JSON 但图片没有生成信息时，仍然下载原图', async () => {
+  it('设置为 JSON 时即使没有页面快照也仍然导出生成信息文件', async () => {
     const { setImageDownloadFormat } = await import('../../services/imageSharing');
     setImageDownloadFormat('json');
     render(React.createElement(ImageShareActions, { imageUrl: '/plain.png', filename: 'plain.png' }));
-    fireEvent.click(screen.getByRole('button', { name: '下载图片' }));
+    fireEvent.click(screen.getByRole('button', { name: '下载生成信息' }));
     await waitFor(() => expect(downloadSharedImage).toHaveBeenCalledWith('/plain.png', 'plain.png', false, undefined));
     setImageDownloadFormat('png');
   });

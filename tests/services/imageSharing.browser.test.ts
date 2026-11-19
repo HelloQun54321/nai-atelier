@@ -40,6 +40,19 @@ describe('分享输出与剪贴板', () => {
     expect(await extractNovelAiMetadataFromPng(await original.arrayBuffer())).toContain('private style');
     expect(created).toHaveLength(0);
   });
+  it('下载生成信息时从 PNG 内嵌元数据里导出 JSON，不再回退成图片', async () => {
+    const { setImageDownloadFormat } = await import('../../services/imageSharing');
+    setImageDownloadFormat('json');
+    let saved!: Blob;
+    vi.spyOn(exportLocation, 'saveExportBlob').mockImplementation(async blob => { saved = blob; throw new Error('stop'); });
+    await expect(downloadSharedImage('/image', 'NAI.png', false)).rejects.toThrow('stop');
+    expect(saved.type).toBe('application/json');
+    const payload = JSON.parse(await saved.text());
+    expect(payload.image).toBe('NAI.png');
+    expect(payload.prompt).toContain('private style');
+    expect(payload.metadata).toContain('private style');
+    setImageDownloadFormat('png');
+  });
   it('清洗内容缺省、非法值和读取失败均为全部，关闭清洗保留偏好', () => {
     expect(getSharedImageCleanContent()).toBe('all');
     localStorage.setItem(IMAGE_SHARING_CONTENT_STORAGE_KEY, 'invalid');

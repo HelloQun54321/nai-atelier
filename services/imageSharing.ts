@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { beginImageClipboardCopy, rememberCopiedImage, type ImageGenerationData } from './imageClipboardContext';
-import { extractNovelAiMetadataFromPng, extractNovelAiStealthMetadataFromRgba } from './pngMetadata.mjs';
+import { extractNovelAiMetadataFromPng, extractNovelAiStealthMetadataFromRgba, extractPngMetadata } from './pngMetadata.mjs';
+import { parseNovelAIMetadata } from './metadataService';
 import { normalizeNoiseSchedule } from './naiNoiseSchedule.mjs';
 import { beginExportTarget, saveExportBlob } from './exportLocation';
 
@@ -339,18 +340,39 @@ export const imageSharingFilename = (filename: string, blob: Blob, clean: boolea
 /** 有可复现的生成数据才值得导出 JSON；只有图片的条目仍下载原图。 */
 export const hasImageGenerationData = (data?: ImageGenerationData) => Boolean(data && (data.prompt?.trim() || data.negativePrompt?.trim() || data.params));
 
-export const imageGenerationBlob = (filename: string, data?: ImageGenerationData) => new Blob([JSON.stringify({
+export const imageGenerationBlob = (filename: string, data?: ImageGenerationData, raw?: string) => new Blob([JSON.stringify({
   image: filename,
   prompt: data?.prompt ?? '',
   negativePrompt: data?.negativePrompt ?? '',
   params: data?.params ?? {},
+  ...(raw ? { metadata: raw } : {}),
 }, null, 2)], { type: 'application/json' });
+
+/**
+ * NovelAI 把生成信息写在 PNG 的 iTXt（Comment／Description）或 Alpha 最低位里。
+ * 打开「下载生成信息」时优先读图上自带的这份，线上图库／收藏图没有页面快照也能导出。
+ */
+export const readGenerationFromPng = async (blob: Blob): Promise<{ data: ImageGenerationData; raw: string } | null> => {
+  if (blob.type !== 'image/png') return null;
+  try {
+    const raw = await extractPngMetadata(new Uint8Array(await blob.arrayBuffer()));
+    if (!raw) return null;
+    const parsed = parseNovelAIMetadata(raw);
+    return { data: { prompt: parsed.prompt, negativePrompt: parsed.negativePrompt, params: parsed.params }, raw };
+  } catch {
+    return null;
+  }
+};
 
 export const downloadSharedImage = async (source: string, filename: string, clean = getCleanSharedImages(), data?: ImageGenerationData) => {
   const target = beginExportTarget();
-  if (getImageDownloadFormat() === 'json' && hasImageGenerationData(data)) {
+  if (getImageDownloadFormat() === 'json') {
+    // 选了 JSON 就只导生成信息：页面快照优先，没有就从 PNG 自带元数据里取。
+    const blob = await readImage(source);
+    const fromPng = await readGenerationFromPng(blob);
+    const payload: ImageGenerationData | undefined = fromPng?.data ?? (hasImageGenerationData(data) ? data : undefined);
     const name = filename.replace(/\.[^.]+$/, '') || 'NAI';
-    await saveExportBlob(imageGenerationBlob(filename, data), `${name}.json`, target);
+    await saveExportBlob(imageGenerationBlob(filename, payload, fromPng?.raw), `${name}.json`, target);
     return;
   }
   const blob = await prepareImage(source, clean, false, getSharedImageCustomText(), getSharedImageCleanContent());

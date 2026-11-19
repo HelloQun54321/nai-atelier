@@ -1,7 +1,7 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Copy, Download, Heart, LoaderCircle } from 'lucide-react';
-import { copySharedImage, downloadSharedImage, hasImageGenerationData, useCleanSharedImages, useImageDownloadFormat } from '../services/imageSharing';
+import { copySharedImage, downloadSharedImage, useCleanSharedImages, useImageDownloadFormat } from '../services/imageSharing';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
 import { ImageCardActions } from './ImageCardActions';
 import { collectionRevision, collectionTargetActive, ensureCollection, loadCollection, subscribeCollection, toggleCollectionTarget, type CollectionTarget } from '../services/collectionFavorites';
@@ -46,8 +46,8 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
   useLanguage();
   const clean = useCleanSharedImages();
   const downloadFormat = useImageDownloadFormat();
-  /** 设置选了 JSON 且这件作品确实带生成信息时，下载按钮变成导出生成信息。 */
-  const exportsGenerationData = downloadFormat === 'json' && hasImageGenerationData(generationData);
+  /** 设置选了 JSON 时，下载只导生成信息（图上没有就导空字段，不再悄悄回退成图片）。 */
+  const exportsGenerationData = downloadFormat === 'json';
   const busyRef = useRef(false);
   const favoriteBusyRef = useRef(false);
   const [busy, setBusy] = useState('');
