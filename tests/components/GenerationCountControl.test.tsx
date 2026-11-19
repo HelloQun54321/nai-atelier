@@ -22,10 +22,10 @@ it.each([1280, 390])('%s 宽度生成选项是独立可聚焦按钮，禁用生�
   const main = screen.getByRole('button', { name: /生成.*3 张/ });
   const options = screen.getByRole('button', { name: '生成选项' });
   expect(main.contains(options)).toBe(false);
-  expect(main.nextElementSibling).toBe(options);
+  // 生成选项已从主按钮容器里分离，成为同一行的独立图标按钮。
+  expect(actionSurface(main).contains(options)).toBe(false);
+  expect(actionSurface(main).nextElementSibling).toBe(options);
   expect(options.tabIndex).toBe(0);
-  expect(options.classList.contains('mobile-touch')).toBe(true);
-  expect(options.classList.contains('min-h-10')).toBe(true);
   options.focus(); expect(document.activeElement).toBe(options);
   expect(options.getAttribute('aria-expanded')).toBe('false');
   fireEvent.click(options);
@@ -58,7 +58,11 @@ it.each([1280, 390])('%s 宽度左右小按钮用图片与人物区分分数，�
   const right = screen.getByRole('button', { name: 'Key 排队 2/4' });
   expect(left.querySelector('.lucide-images')).toBeTruthy(); expect(left.textContent).toBe('2/8');
   expect(right.querySelector('.lucide-user-round')).toBeTruthy(); expect(right.textContent).toBe('2/4');
-  expect(left.nextElementSibling).toBe(actionSurface(main)); expect(actionSurface(main).nextElementSibling).toBe(right.parentElement);
+  expect(left.nextElementSibling).toBe(actionSurface(main));
+  // 生成选项是主按钮旁边独立的按钮，右侧排队徽标继续跟在它后面。
+  const options = screen.getByRole('button', { name: '生成选项' });
+  expect(actionSurface(main).nextElementSibling).toBe(options);
+  expect(options.nextElementSibling).toBe(right.parentElement);
   expect(left.classList.contains('lg:right-full')).toBe(true);
   expect(right.parentElement?.classList.contains('lg:left-full')).toBe(true);
   expect(actionSurface(main).parentElement?.classList.contains('lg:max-w-[calc(100%-14rem)]')).toBe(true);

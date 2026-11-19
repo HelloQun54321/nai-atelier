@@ -854,9 +854,9 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              <button type="button" onClick={() => { setSort('popular'); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
            </div>
          </ToolbarPopover>
-         <div className="flex flex-none items-center max-md:hidden">
-           <ToolbarButton aria-label={gachaCards ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={!drawReady || isGachaLoading || drawAvailable <= 0} className="mobile-touch !rounded-r-none !border-r-0" tone="neutral">{isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaCards ? t("再抽一批") : t("随机抽卡")}</span></ToolbarButton>
-           <ToolbarPopover label={t("角色库设置")} title={t("角色库设置")} icon={<ChevronDown />} open={mobileSettingsOpen} onOpenChange={setMobileSettingsOpen} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
+         <div className="flex flex-none items-center gap-2 max-md:hidden">
+           <ToolbarButton aria-label={gachaCards ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={!drawReady || isGachaLoading || drawAvailable <= 0} className="mobile-touch" tone="neutral">{isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaCards ? t("再抽一批") : t("随机抽卡")}</span></ToolbarButton>
+           <ToolbarPopover label={t("角色库设置")} title={t("角色库设置")} icon={<Settings2 />} iconOnly iconTone="ghost" open={mobileSettingsOpen} onOpenChange={setMobileSettingsOpen} width={320}>
              <label className="mobile-touch mb-3 flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={linkVariantFavorites} onChange={event => { const enabled = event.target.checked; if (enabled) { backfillAttempted.current.clear(); backfillFailed.current.clear(); setVariantBackfillError(''); } setLinkVariantFavorites(enabled); localStorage.setItem('nai_character_link_variant_favorites', String(enabled)); }} />{t('同角色变体联动收藏')}</label>
              <p className="mb-3 text-xs text-gray-500">{t('每个变体收藏一张代表封面')}</p>
              {/* 补齐提示占用固定高度槽位，提示以 absolute 叠在槽位内，出现/消失不推动下方抽卡设置 */}

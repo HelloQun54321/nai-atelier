@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Image as ImageIcon, Images, ListEnd, ListStart, Minus, Pause, Play, Plus, Shuffle, Timer, X } from 'lucide-react';
 import { AnchoredToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
-import { ToolbarButton } from './DesignSystem';
+import { ToolbarButton, IconButton } from './DesignSystem';
 import { CloudQueueButton, useCloudQueueEnabled, useCloudQueueStatus } from './CloudQueueStatus';
 import { isCloudQueueTaskActive } from '../services/cloudQueue';
 import { MobileBottomSheet } from './MobileUI';
@@ -194,7 +194,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
       <Images aria-hidden="true" className="h-3.5 w-3.5" />{continuousGenerationEnabled && <span>{saving ? t("正在保存…") : `${completed}/${total}`}</span>}{paused && !queueState?.pausing ? <Play aria-hidden="true" className="h-3.5 w-3.5" /> : <Pause aria-hidden="true" className="h-3.5 w-3.5" />}
     </ToolbarButton>}
     <div ref={anchorRef} role="group" className={'generation-action-button generation-action-button--workbench flex min-w-0 flex-1 items-stretch overflow-hidden rounded-full text-sm font-semibold lg:rounded-xl ' + (dock ? 'generation-action-button--dock !h-11 !min-h-11 !max-h-11 !min-w-0 ' : '') + (showCloudQueue && !dock ? 'max-lg:!min-w-0 ' : '') + (executing ? 'generation-action-button--loading' : '')}>
-    <button type="button" data-agent-action="business" aria-disabled={primaryBlocked}
+      <button type="button" data-agent-action="business" aria-disabled={primaryBlocked}
       {...(dock ? { 'aria-label': primaryTitle, title: primaryTitle } : {})}
       onClick={() => { if (!primaryBlocked) { close(); if (occupied && continuousGenerationEnabled && onQueue) onQueue('end'); else onGenerate?.(); } }}
       onKeyDown={event => { if (hasMenuContent && event.altKey && event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); } }}
@@ -206,8 +206,8 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
         {showPrimaryCost && costLabel && <span className="generation-action-button__cost whitespace-nowrap">{costLabel}</span>}
       </span>
     </button>
-    {hasMenuContent && <button type="button" data-generation-menu aria-label={t("生成选项")} title={t("生成选项")} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(value => !value)} className={'mobile-touch relative z-[1] flex shrink-0 items-center justify-center border-l border-current/15 outline-none hover:bg-current/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ' + (dock ? 'h-11 w-8' : 'min-h-10 w-9') + (open ? ' bg-current/5' : '')}><ChevronDown aria-hidden="true" className={'h-4 w-4 transition-transform ' + (open ? 'rotate-180' : '')} /></button>}
     </div>
+    {hasMenuContent && <IconButton label={t("生成选项")} tone="ghost" aria-haspopup="dialog" aria-expanded={open} className={'!shrink-0 ' + (dock ? '!h-11 !w-11' : '')} onClick={() => setOpen(value => !value)}><ChevronDown aria-hidden="true" className={'h-4 w-4 transition-transform ' + (open ? ' rotate-180' : '')} /></IconButton>}
     {showQueueStatus && !dock && <CloudQueueButton generationProgress={generationProgress} className="lg:absolute lg:inset-y-0 lg:left-full lg:ml-3" />}
     {open && hasMenuContent && (mobile || dock ? <ImagePreviewPortal><MobileBottomSheet open title={t("生成选项")} onClose={close}>{panel}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={t("生成选项")} above compact width={280} onClose={close}>{panel}</AnchoredToolbarPopover>)}
   </div>;

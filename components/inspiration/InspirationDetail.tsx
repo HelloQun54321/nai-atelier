@@ -432,13 +432,13 @@ export const InspirationDetail = React.memo(function InspirationDetail({
           {/* 底部操作条：窄屏换行，分享操作保持可靠触控宽度。 */}
           <footer className="appearance-group flex-none border-t border-gray-200 p-3.5 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/60 backdrop-blur-sm">
             <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-              {/* 导入实验室（带底图模式分流，自适应撑开，居于视觉核心） */}
-              <div className="relative flex-1 min-w-[9rem] flex h-10 rounded-xl bg-indigo-700 shadow-sm shadow-indigo-600/20 hover:bg-indigo-600 transition-colors">
+              {/* 导入实验室：主操作独立成块，底图模式入口是旁边一个分离的图标按钮 */}
+              <div className="relative flex-1 min-w-[9rem] flex h-10 items-center gap-2">
                 <button
                   type="button"
                   disabled={Boolean(busy)}
                   onClick={() => void importToPlayground()}
-                  className="mobile-touch flex flex-1 min-w-0 items-center justify-center gap-1.5 px-2.5 text-xs font-bold text-white whitespace-nowrap sm:gap-2 sm:px-3.5"
+                  className="mobile-touch flex h-10 flex-1 min-w-0 items-center justify-center gap-1.5 rounded-xl bg-indigo-700 px-2.5 text-xs font-bold text-white whitespace-nowrap shadow-sm shadow-indigo-600/20 transition-colors hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 sm:gap-2 sm:px-3.5"
                 >
                   <FlaskConical className="h-4 w-4 shrink-0" />
                   <span className="truncate">{t("导入实验室")}</span>
@@ -450,9 +450,9 @@ export const InspirationDetail = React.memo(function InspirationDetail({
                   onClick={() => { setLabMenuOpen(!labMenuOpen); }}
                   aria-label={t("更多底图模式")} aria-haspopup="dialog" aria-expanded={labMenuOpen}
                   title={t("选择导入模式")}
-                  className="mobile-touch flex items-center justify-center px-2.5 text-white/80 hover:text-white hover:bg-black/15 border-l border-white/15 transition-colors rounded-r-xl sm:px-3"
+                  className="mobile-touch flex h-10 w-10 flex-none items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
                 >
-                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${labMenuOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={`h-4 w-4 transition-transform ${labMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
 
                 {labMenuOpen && (
