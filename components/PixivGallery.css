@@ -12,7 +12,8 @@
 .pixiv-toolbar-primary {
   display: flex;
   min-width: 0;
-  min-height: var(--workspace-toolbar-height);
+  /* 与其它图库顶栏对齐：高度由 40px 控件撑开，不再占用全局顶栏高度变量。 */
+  min-height: 0;
   align-items: center;
   gap: calc(var(--spacing) * 2);
   padding-inline: calc(var(--spacing) * 3);

@@ -6,25 +6,29 @@ import {
   Clock,
   Filter,
   Heart,
+  ImagePlus,
   KeyRound,
   LogIn,
   LoaderCircle,
   RefreshCw,
+  ScanSearch,
   Search,
   Sparkles,
   Unplug,
   X,
 } from 'lucide-react';
 import { db } from '../services/dbService';
-import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
+import { IMPORT_SESSION_KEY, PendingImportData, type BaseImageImport } from '../services/metadataService';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
-import { Inspiration, NAIParams, User } from '../types';
+import { Inspiration, NAIParams, User, type ImageEditOperation } from '../types';
 import { externalImageAnalysis, externalImageDrafts, type ExternalImageTags } from '../services/externalImageTags';
 import { EmptyState, FilterPill, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ExternalImageTools } from './ExternalImageTools';
+import { ImageTaggerPanel } from './ImageTaggerPanel';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { SmartImage } from './SmartImage';
@@ -132,6 +136,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'pixiv', { skipRestore: selectionAnchor.hasAnchor });
   const [selectedPage, setSelectedPage] = useState(0);
   const [zoomPage, setZoomPage] = useState<number | null>(null);
+  const [reverseOpen, setReverseOpen] = useState(false);
   useEffect(() => setZoomPage(null), [selectedId]);
   const [userContext, setUserContext] = useState<{ id: string; name: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -719,8 +724,19 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
     onNavigateToPlayground();
   };
 
-  const collectionImage = (illust: PixivIllust, page: number) => {
-    const reverse = externalImageDrafts.get('pixiv:' + illust.id + ':' + page);
+  /** 把当前页原图作为底图送进实验室，与 AITag／法典详情保持同一套入口。 */
+  const sendBaseImage = (operation: ImageEditOperation) => {
+    if (!selected) return;
+    try {
+      const payload: BaseImageImport = { mode: 'base-image', imageEditOperation: operation, baseImageUrl: getMobileOriginalUrl(buildPixivMediaUrl(selected, selectedPage, 'original')) };
+      sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(payload));
+      onNavigateToPlayground();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('导入失败'), 'error');
+    }
+  };
+
+  const collectionImage = (illust: PixivIllust, page: number) => {    const reverse = externalImageDrafts.get('pixiv:' + illust.id + ':' + page);
     return { imageUrl: getPixivCurrentPageUrl(illust, page), sourceType: 'pixiv' as const, sourceId: illust.id, imageId: String(page), sourceUrl: pixivArtworkUrl(illust), title: illust.title + (pixivPageCount(illust) > 1 ? ' · ' + (page + 1) : ''), prompt: reverse?.prompt || '', analysis: externalImageAnalysis(illust.tags, page, reverse) };
   };
   const collectionGroup = (illust: PixivIllust) => ({ ...collectionImage(illust, 0), groupSize: pixivPageCount(illust), getGroup: async () => Array.from({ length: pixivPageCount(illust) }, (_, page) => collectionImage(illust, page)) });
@@ -1139,24 +1155,30 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-meta text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
                   {t("动图首帧 · 在 Pixiv 查看动画")}</div>
               )}
-              <div className="flex min-w-0 items-center gap-3 text-meta text-gray-500">
-                <span className="flex-none">♥ {formatCount(selected.totalBookmarks)}</span>
-                <span className="flex-none">{t("浏览 {0}", [formatCount(selected.totalViews)])}</span>
-                <button type="button" aria-label={t("查看 {0} 的作者全集", [selected.user.name])} title={t("查看 {0} 的作者全集", [selected.user.name])} onClick={() => openAuthorWorks(selected.user.id, selected.user.name)} className="ml-auto min-h-10 min-w-0 truncate rounded text-right font-semibold text-indigo-600 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-indigo-400 lg:min-h-0">{selected.user.name}</button>
-              </div>
               <ExternalImageTools key={`pixiv:${selected.id}:${selectedPage}`} source="pixiv"
                 sourcePrompt={selected.tags.join(', ')} onImport={importToPlayground} notify={notify}
-                trailingAction={<IconButton
-                  label={bookmarking ? t("正在同步 Pixiv 收藏") : selected.isBookmarked ? t("取消 Pixiv 收藏") : t("收藏到 Pixiv")}
-                  aria-pressed={Boolean(selected.isBookmarked)}
-                  aria-busy={bookmarking}
-                  tone="ghost"
-                  className={selected.isBookmarked ? '!text-rose-600 dark:!text-rose-400' : ''}
-                  disabled={bookmarking}
-                  onClick={() => void handleToggleBookmark(selected)}
-                >
-                  {bookmarking ? <LoaderCircle className="animate-spin" /> : <span className="relative inline-flex h-5 w-5 items-center justify-center"><Heart className={selected.isBookmarked ? 'fill-current' : ''} /><span aria-hidden="true" className="absolute -bottom-1 -right-1 rounded bg-white px-0.5 text-mini font-black leading-3 text-blue-600 dark:bg-gray-900">P</span></span>}
-                </IconButton>}
+                leading={<>
+                  <span className="flex-none text-meta text-gray-500">♥ {formatCount(selected.totalBookmarks)}</span>
+                  <span className="flex-none text-meta text-gray-500">{t("浏览 {0}", [formatCount(selected.totalViews)])}</span>
+                  <button type="button" aria-label={t("查看 {0} 的作者全集", [selected.user.name])} title={t("查看 {0} 的作者全集", [selected.user.name])} onClick={() => openAuthorWorks(selected.user.id, selected.user.name)} className="min-h-10 min-w-0 truncate rounded text-meta font-semibold text-indigo-600 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-indigo-400 lg:min-h-0">{selected.user.name}</button>
+                </>}
+                trailingAction={<>
+                  <IconButton
+                    label={bookmarking ? t("正在同步 Pixiv 收藏") : selected.isBookmarked ? t("取消 Pixiv 收藏") : t("收藏到 Pixiv")}
+                    aria-pressed={Boolean(selected.isBookmarked)}
+                    aria-busy={bookmarking}
+                    tone="ghost"
+                    className={selected.isBookmarked ? '!text-rose-600 dark:!text-rose-400' : ''}
+                    disabled={bookmarking}
+                    onClick={() => void handleToggleBookmark(selected)}
+                  >
+                    {bookmarking ? <LoaderCircle className="animate-spin" /> : <span className="relative inline-flex h-5 w-5 items-center justify-center"><Heart className={selected.isBookmarked ? 'fill-current' : ''} /><span aria-hidden="true" className="absolute -bottom-1 -right-1 rounded bg-white px-0.5 text-mini font-black leading-3 text-blue-600 dark:bg-gray-900">P</span></span>}
+                  </IconButton>
+                  <ToolbarPopover label="用作底图" title={t('用作底图')} icon={<ImagePlus />} iconOnly iconTone="ghost" width={208} disabled={!selected}>
+                    {close => <>{([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const).map(([operation, label]) => <button key={operation} type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); sendBaseImage(operation); }}><ImagePlus />{t(label)}</button>)}</>}
+                  </ToolbarPopover>
+                  <IconButton label={t("反推 Tag")} title={t("用本地模型反推这张图的 Tag")} tone="ghost" onClick={() => setReverseOpen(true)}><ScanSearch /></IconButton>
+                </>}
                 sourceTags={selected.tags.length > 0 ? (
                   <TagChipGroup
                     chips={selected.tags.map(tag => ({
@@ -1168,6 +1190,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                     }))}
                   />
               ) : null} />
+              {reverseOpen && <ImagePreviewPortal><ImageTaggerPanel contextual open onClose={() => setReverseOpen(false)} notify={notify}
+                imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')}
+                onInsert={tags => {
+                  void navigator.clipboard.writeText(tags).then(
+                    () => notify(`已复制 ${tags.split(',').length} 个 Tag 到剪贴板`),
+                    () => notify('复制失败，请手动选择复制', 'error'),
+                  );
+                }} /></ImagePreviewPortal>}
 
               {/* 相关作品推荐（看了又看） */}
               <section className="border-t border-gray-200 pt-3 dark:border-gray-800">
