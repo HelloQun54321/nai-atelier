@@ -683,11 +683,11 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   });
   const selectedSavedChain = selected?.savedChainId && chains.some(chain => chain.id === selected.savedChainId);
   const detailIndex = visible.findIndex(candidate => candidate.id === selectedId);
-  /** 详情页的三个主动作收进标题栏，只留图标；关闭按钮在最右侧。 */
+  /** 详情页的三个主动作收进标题栏，统一用透明底线条图标；已保存的条目用品牌色前景区分。 */
   const detailActions = selected ? <>
-    <IconButton label={t(selectedSavedChain ? '打开风格串' : selectedImage ? '存为风格串' : '生成后可保存')} tone={selectedSavedChain ? 'primary' : 'save'} disabled={busy || loading || (!selectedImage && !selectedSavedChain)} onClick={selectedSavedChain ? () => onOpenChain(selected.savedChainId!) : selectedImage ? () => saveCandidate() : undefined}><Save /></IconButton>
-    <IconButton label={t('送往实验室')} tone="primary" disabled={busy} onClick={() => { try { sendToLab(); } catch (cause) { setError((cause as Error).message); } }}><FlaskConical /></IconButton>
-    <IconButton label={t('新建记录 · 固定这些画师')} disabled={busy || loading || selected.archived} onClick={() => createPinnedRecord(selected)}><CopyPlus /></IconButton>
+    <IconButton label={t(selectedSavedChain ? '打开风格串' : selectedImage ? '存为风格串' : '生成后可保存')} tone="ghost" className={selectedSavedChain ? '!text-indigo-600 dark:!text-indigo-400' : '!text-emerald-600 dark:!text-emerald-400'} disabled={busy || loading || (!selectedImage && !selectedSavedChain)} onClick={selectedSavedChain ? () => onOpenChain(selected.savedChainId!) : selectedImage ? () => saveCandidate() : undefined}><Save /></IconButton>
+    <IconButton label={t('送往实验室')} tone="ghost" disabled={busy} onClick={() => { try { sendToLab(); } catch (cause) { setError((cause as Error).message); } }}><FlaskConical /></IconButton>
+    <IconButton label={t('新建记录 · 固定这些画师')} tone="ghost" disabled={busy || loading || selected.archived} onClick={() => createPinnedRecord(selected)}><CopyPlus /></IconButton>
   </> : null;
   const detail = experiment && selected ? <div className="space-y-4 p-4">
     {selectedImage ? <PressRevealSurface touchActions="bar" className="appearance-group group relative overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-950" data-safe-mode-work="true">
