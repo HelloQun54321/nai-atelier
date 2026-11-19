@@ -266,7 +266,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                 </ToolbarPopover>
                             </div>
                         </div>
-                        <CharacterTaggerReference buttonSlotRef={taggerSlotRef} canEdit={canEdit} onAppend={tags => updateCharacter(idx, { prompt: mergePromptFields(char.prompt, tags) })} />
+                        <CharacterTaggerReference buttonSlotRef={taggerSlotRef} canEdit={canEdit} notify={notify} onAppend={tags => updateCharacter(idx, { prompt: mergePromptFields(char.prompt, tags) })} />
                         <div className="min-w-0 space-y-2">
                                 <div>
                                     <div className="mb-1 flex items-center justify-between gap-2"><label className="text-micro text-gray-500 font-bold">{t('角色提示词')}</label><span ref={positiveSlotRef} /></div>

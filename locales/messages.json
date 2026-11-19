@@ -41851,5 +41851,8 @@
   "没有 Tag 需要改写法，{0} 处中文标点换成英文。": ["沒有 Tag 需要改寫法，{0} 處中文標點換成英文。", "No tags needed respelling; {0} Chinese punctuation marks were converted to English.", "書き方を直す Tag はありません。中文の句読点 {0} か所を英語に変換しました。", "표기를 고칠 태그는 없습니다. 중국어 문장 부호 {0}곳을 영어로 변환했습니다."],
   "改动的 Tag": ["改動的 Tag", "Changed tags", "変更した Tag", "변경된 태그"],
   "撤销校对": ["撤銷校對", "Undo proofreading", "校正を元に戻す", "교정 실행 취소"],
-  "改错了就撤销，恢复校对前的提示词。": ["改錯了就撤銷，恢復校對前的提示詞。", "If something was wrong, undo to restore the prompt from before proofreading.", "違っていたら元に戻し、校正前のプロンプトに戻してください。", "잘못 바뀌었다면 되돌려 교정 전 프롬프트로 복구하세요."]
+  "改错了就撤销，恢复校对前的提示词。": ["改錯了就撤銷，恢復校對前的提示詞。", "If something was wrong, undo to restore the prompt from before proofreading.", "違っていたら元に戻し、校正前のプロンプトに戻してください。", "잘못 바뀌었다면 되돌려 교정 전 프롬프트로 복구하세요."],
+  "识别图片 Tag 并追加到此角色": ["識別圖片 Tag 並追加到此角色", "Identify tags from an image and append them to this character", "画像から Tag を識別してこのキャラクターに追加", "이미지에서 태그를 인식해 이 캐릭터에 추가"],
+  "追加 {count} 个 Tag 到此角色": ["追加 {count} 個 Tag 到此角色", "Append {count} tags to this character", "Tag を {count} 個このキャラクターに追加", "태그 {count}개를 이 캐릭터에 추가"],
+  "当前反推模型尚未下载，先在下方下载模型才能识别图片。": ["目前反推模型尚未下載，先在下方下載模型才能識別圖片。", "The current tagger model is not downloaded yet. Download it below before identifying images.", "現在の反推進モデルは未ダウンロードです。下でモデルをダウンロードしてから画像を識別してください。", "현재 태그 모델이 아직 다운로드되지 않았습니다. 아래에서 모델을 다운로드한 후 이미지를 인식하세요."]
 }

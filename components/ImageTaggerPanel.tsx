@@ -8,6 +8,7 @@ import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { MobileIconButton } from './MobileUI';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { taggerProgressText, useImageTaggerStatus } from './useImageTaggerStatus';
+import { ImageTaggerModelManager } from './ImageTaggerModelManager';
 import { getPastedImageFile, isTextPasteTarget } from '../services/imageClipboard';
 
 interface ImageTaggerPanelProps {
@@ -64,7 +65,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
   const { status: modelStatus, error: modelStatusError } = useImageTaggerStatus(open);
   const [thresholdModel, setThresholdModel] = useState<string | undefined>('');
   const selectedModel = modelStatus?.models?.find(model => model.id === modelStatus.model);
-  const modelReady = Boolean(modelStatus && thresholdModel === modelStatus.model);
+  const modelReady = Boolean(modelStatus?.downloaded && thresholdModel === modelStatus.model);
   const modelOptions = { threshold, characterThreshold, ...(modelStatus?.model ? { model: modelStatus.model } : {}) };
   const [busy, setBusy] = useState(false);
   // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还）。
@@ -208,6 +209,9 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
         <section className="space-y-4 border-b border-gray-200 p-4 dark:border-gray-800 md:overflow-y-auto md:border-b-0 md:border-r">
           <input aria-label={t("上传反推图片")} ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => chooseFile(event.target.files?.[0])} />
           {modelStatusError && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{modelStatusError}</p>}
+          {modelStatus && !modelStatus.downloaded && <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200">
+            {t('当前反推模型尚未下载，先在下方下载模型才能识别图片。')}
+          </p>}
           <div
             onDragOver={event => {
               if (busy || !modelReady || lockImage) return;
@@ -229,6 +233,9 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
             {preview ? <img src={preview} alt={t("待识别图片")} className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 px-4 text-center text-xs"><ImagePlus className="h-8 w-8" /><span>{t("选择图片")}</span><span className="text-micro leading-5 text-gray-500">{t("也可以按 Ctrl+V 粘贴，或把图片拖到这里")}</span></span>}
             {busy && <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-6 text-center text-xs text-white"><LoaderCircle className="h-7 w-7 animate-spin" />{selectedModel && !selectedModel.downloaded ? taggerProgressText(selectedModel) : t("正在本地识别图片…")}{selectedModel && ['downloading', 'verifying'].includes(selectedModel.stage) && <progress aria-label={t("模型下载进度")} max={selectedModel.totalBytes} value={selectedModel.receivedBytes} className="h-1.5 w-full accent-white" />}</span>}
           </button>
+          </div>
+          <div className="rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
+            <ImageTaggerModelManager notify={notify} />
           </div>
           <div className="space-y-3 rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
             <div className="flex items-center gap-2 text-xs font-bold"><SlidersHorizontal className="h-4 w-4" />{t("识别阈值")}</div>

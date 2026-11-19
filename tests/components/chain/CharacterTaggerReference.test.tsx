@@ -1,181 +1,138 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorCharacters } from '../../../components/chain/ChainEditorCharacters';
 import { CharacterTaggerReference } from '../../../components/chain/CharacterTaggerReference';
-import { imageTaggerService, ImageTaggerResult } from '../../../services/imageTaggerService';
+import { ConfirmDialogProvider } from '../../../components/ConfirmDialog';
+import { imageTaggerService, type ImageTaggerResult, type ImageTaggerStatus } from '../../../services/imageTaggerService';
 import { DEFAULT_LAB_PAGE_LAYOUTS } from '../../../services/appearancePreferences';
 import type { CharacterParams, NAIParams } from '../../../types';
 
-vi.mock('../../../services/imageTaggerService', () => ({ imageTaggerService: { tagFile: vi.fn(), getStatus: vi.fn(async () => ({ models: [] })) } }));
+const model = { id: 'SmilingWolf/wd-vit-tagger-v3', label: 'WD ViT V3', description: '轻量均衡', threshold: 0.35, characterThreshold: 0.85, downloaded: true, totalBytes: 378536310, receivedBytes: 378536310, stage: 'ready' as const, error: '' };
+const status: ImageTaggerStatus = { model: model.id, downloaded: true, models: [model], busy: false, downloadingModel: null };
+
+vi.mock('../../../services/imageTaggerService', () => ({ imageTaggerService: {
+  tagFile: vi.fn(),
+  getStatus: vi.fn(),
+  selectModel: vi.fn(),
+  downloadModel: vi.fn(),
+  pauseDownload: vi.fn(),
+  deleteModel: vi.fn(),
+} }));
 vi.mock('../../../components/TagAutocompleteTextarea', () => ({ TagAutocompleteTextarea: ({ value, onValueChange, ...props }: { value: string; onValueChange: (value: string) => void; tagAssistEnabled: boolean }) => {
   const { tagAssistEnabled: _assist, ...attributes } = props;
   return <textarea {...attributes} value={value} onChange={event => onValueChange(event.target.value)} />;
 } }));
 
-const image = new File(['synthetic'], 'clipboard.png', { type: 'image/png' });
-const result: ImageTaggerResult = { model: 'selected-model', threshold: 0.53, characterThreshold: 0.85, rating: null,
+const result: ImageTaggerResult = { model: model.id, threshold: 0.53, characterThreshold: 0.85, rating: null,
   tags: [{ name: 'looking_at_viewer', category: 'general', confidence: 0.9 }, { name: 'sitting', category: 'general', confidence: 0.8 }], general: [], character: [] };
 const initial: CharacterParams[] = [{ id: 'a', prompt: 'blue hair', negativePrompt: 'hat', x: 0.2, y: 0.4 }, { id: 'b', prompt: 'red hair', negativePrompt: 'glasses', x: 0.8, y: 0.6 }];
-const read = vi.fn();
-const originalUrl = URL;
+
 beforeEach(() => {
-  vi.mocked(imageTaggerService.tagFile).mockResolvedValue(result);
-  read.mockResolvedValue([{ types: ['image/png'], getType: async () => image }]);
-  vi.stubGlobal('navigator', { clipboard: { read } });
+  const originalUrl = URL;
   vi.stubGlobal('URL', class extends originalUrl { static createObjectURL = vi.fn(() => 'blob:reference'); static revokeObjectURL = vi.fn(); });
+  vi.mocked(imageTaggerService.tagFile).mockReset().mockResolvedValue(result);
+  vi.mocked(imageTaggerService.getStatus).mockReset().mockResolvedValue(status);
+  vi.mocked(imageTaggerService.downloadModel).mockReset().mockResolvedValue(undefined);
+  vi.mocked(imageTaggerService.deleteModel).mockReset().mockResolvedValue(undefined);
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
-const Harness = ({ scope = 'text-to-image' }: { scope?: string }) => {
+const Harness = ({ scope = 'text-to-image', canEdit = true }: { scope?: string; canEdit?: boolean }) => {
   const [characters, setCharacters] = useState(initial);
   const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', qualityToggle: true, ucPreset: 4, characters } as NAIParams;
-  return <><ChainEditorCharacters params={params} setParams={next => setCharacters(next.characters || [])} characters={characters}
-    canEdit tagAssistEnabled={false} characterPresetSources={{}} markPresetSectionModified={vi.fn()} markChange={vi.fn()}
+  return <ConfirmDialogProvider><ChainEditorCharacters params={params} setParams={next => setCharacters(next.characters || [])} characters={characters}
+    canEdit={canEdit} tagAssistEnabled={false} characterPresetSources={{}} markPresetSectionModified={vi.fn()} markChange={vi.fn()}
     addCharacter={vi.fn()} updateCharacter={(index, patch) => setCharacters(current => current.map((character, i) => i === index ? { ...character, ...patch } : character))}
     removeCharacter={index => setCharacters(current => current.filter((_, i) => i !== index))}
     activeLabLayout={DEFAULT_LAB_PAGE_LAYOUTS['text-to-image']} mobileEditorTab="character" scopeKey={scope} />
-    <output data-testid="characters">{JSON.stringify(characters)}</output></>;
+    <output data-testid="characters">{JSON.stringify(characters)}</output></ConfirmDialogProvider>;
 };
 const rows = () => JSON.parse(screen.getByTestId('characters').textContent!) as CharacterParams[];
-const deferred = () => { let resolve!: (value: ImageTaggerResult) => void; const promise = new Promise<ImageTaggerResult>(done => { resolve = done; }); return { promise, resolve }; };
 const selectCharacter = (name: string | RegExp) => {
   const button = screen.getAllByRole('button', { name }).find(node => node.hasAttribute('aria-pressed'));
   if (!button) throw new Error(`missing character switch ${String(name)}`);
   fireEvent.click(button);
 };
+const openPanel = async () => {
+  fireEvent.click(screen.getByRole('button', { name: '粘贴反推' }));
+  return screen.findByRole('dialog', { name: '识别图片 Tag' });
+};
+const waitReady = async (dialog: HTMLElement) => {
+  await waitFor(() => expect((within(dialog).getByTitle(/也可在此按 Ctrl\+V/) as HTMLButtonElement).disabled).toBe(false));
+};
 
 describe('角色就地粘贴反推', () => {
-  it('反推期间调整角色顺序，参考图和迟到结果仍跟随原角色 ID', async () => {
-    const job = deferred(); vi.mocked(imageTaggerService.tagFile).mockReturnValueOnce(job.promise);
+  it('打开共用识别页面，粘贴图片后勾选结果追加到当前角色，角色卡不残留参考图', async () => {
     render(<Harness />);
     selectCharacter(/角色 2/);
-    fireEvent.click(screen.getByRole('button', { name: '粘贴反推' }));
-    await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole('button', { name: '角色 2 的更多操作' }));
-    fireEvent.click(screen.getByRole('button', { name: '上移角色 2' }));
-    expect(rows().map(character => character.id)).toEqual(['b', 'a']);
-    await act(async () => job.resolve(result));
-    expect(rows()).toEqual([{ ...initial[1], prompt: 'red hair, looking at viewer, sitting' }, initial[0]]);
-    expect(screen.getByAltText('反推参考图')).toBeTruthy();
-    expect(screen.getByAltText('反推参考图').closest('.character-tools')).not.toBeNull();
-    expect(screen.getByRole('button', { name: '粘贴反推' }).closest('.character-tools')).not.toBeNull();
-    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
-  });
-  it('一次点击直接追加到对应角色，保留其他角色、负面词和坐标，沿用模型默认阈值', async () => {
-    render(<Harness />);
-    selectCharacter(/角色 2/);
-    fireEvent.click(screen.getByRole('button', { name: '粘贴反推' }));
-    await waitFor(() => expect(rows()[1].prompt).toBe('red hair, looking at viewer, sitting'));
-    expect(read).toHaveBeenCalledTimes(1);
-    expect(imageTaggerService.tagFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'image/png' }));
-    expect(rows()[0]).toEqual(initial[0]);
-    expect(rows()[1]).toEqual({ ...initial[1], prompt: 'red hair, looking at viewer, sitting' });
-    expect(screen.getByText('已追加 2 个 Tag').getAttribute('role')).toBe('status');
+    const dialog = await openPanel();
+    await waitReady(dialog);
+    const image = new File(['synthetic'], 'clipboard.png', { type: 'image/png' });
+    fireEvent.paste(dialog, { clipboardData: { files: [image], items: [] } });
+    await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalledWith(image, expect.objectContaining({ model: model.id })));
+    const append = await within(dialog).findByRole('button', { name: '追加 2 个 Tag 到此角色' });
+    fireEvent.click(append);
+    expect(rows()).toEqual([initial[0], { ...initial[1], prompt: 'red hair, looking at viewer, sitting' }]);
     expect(screen.queryByRole('dialog')).toBeNull();
-  });
-
-  it('识别期间切走当前角色会丢弃迟到反推，手改提示词仍保留', async () => {
-    const job = deferred(); vi.mocked(imageTaggerService.tagFile).mockReturnValueOnce(job.promise);
-    render(<Harness />);
-    selectCharacter(/角色 2/);
-    fireEvent.click(screen.getByRole('button', { name: '粘贴反推' }));
-    await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalled());
-    fireEvent.change(screen.getByPlaceholderText('角色提示词'), { target: { value: 'new clothes' } });
-    selectCharacter(/角色 1/);
-    fireEvent.click(screen.getByRole('button', { name: '删除角色' }));
-    await act(async () => job.resolve(result));
-    // 横排切换会卸载非当前角色卡，进行中的反推随卸载作废；手改正文保留。
-    expect(rows()).toEqual([{ ...initial[1], prompt: 'new clothes' }]);
-  });
-
-  it('目标角色删除后丢弃迟到结果，不会追加到补位角色', async () => {
-    const job = deferred(); vi.mocked(imageTaggerService.tagFile).mockReturnValueOnce(job.promise);
-    render(<Harness />);
-    fireEvent.click(screen.getAllByRole('button', { name: '粘贴反推' })[0]);
-    await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole('button', { name: '删除角色' }));
-    await act(async () => job.resolve(result));
-    expect(rows()).toEqual([initial[1]]);
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:reference');
-  });
-
-  it('切换模式即使角色 ID 相同，也清掉临时图并拒绝旧模式结果', async () => {
-    const job = deferred(); vi.mocked(imageTaggerService.tagFile).mockReturnValueOnce(job.promise);
-    const { rerender } = render(<Harness />);
-    fireEvent.click(screen.getAllByRole('button', { name: '粘贴反推' })[0]);
-    await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalled());
-    rerender(<Harness scope="outpaint" />);
-    await act(async () => job.resolve(result));
-    expect(rows()).toEqual(initial);
     expect(screen.queryByAltText('反推参考图')).toBeNull();
+    expect(screen.queryByAltText('待识别图片')).toBeNull();
   });
 
-  it('缩略图可放大并独立返回，移除图片保留已追加提示词', async () => {
-    const underlyingEscape = vi.fn(); window.addEventListener('keydown', underlyingEscape);
-    try {
-      render(<Harness />);
-      fireEvent.click(screen.getAllByRole('button', { name: '粘贴反推' })[0]);
-      await waitFor(() => expect(rows()[0].prompt).toContain('sitting'));
-      expect(screen.getByAltText('反推参考图').getAttribute('data-safe-mode-ignore')).toBeNull();
-      fireEvent.click(screen.getByRole('button', { name: '放大反推参考图' }));
-      expect(screen.getByRole('dialog', { name: '反推参考图' })).toBeTruthy();
-      expect(screen.getByAltText('反推参考图大图').getAttribute('data-safe-mode-ignore')).toBe('true');
-      fireEvent.keyDown(window, { key: 'Escape' });
-      expect(screen.queryByRole('dialog')).toBeNull();
-      expect(underlyingEscape).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByRole('button', { name: '放大反推参考图' }));
-      fireEvent.click(screen.getByRole('button', { name: '返回角色编辑' }));
-      const saved = rows();
-      fireEvent.click(screen.getByRole('button', { name: '移除反推参考图' }));
-      expect(rows()).toEqual(saved);
-      expect(screen.queryByAltText('反推参考图')).toBeNull();
-      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:reference');
-    } finally { window.removeEventListener('keydown', underlyingEscape); }
+  it('取消勾选只追加选中的 Tag，其他角色保持不变', async () => {
+    render(<Harness />);
+    const dialog = await openPanel();
+    await waitReady(dialog);
+    const image = new File(['synthetic'], 'clipboard.png', { type: 'image/png' });
+    fireEvent.paste(dialog, { clipboardData: { files: [image], items: [] } });
+    await within(dialog).findByRole('button', { name: /sitting/ });
+    fireEvent.click(within(dialog).getByRole('button', { name: /sitting/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '追加 1 个 Tag 到此角色' }));
+    expect(rows()[0]).toEqual({ ...initial[0], prompt: 'blue hair, looking at viewer' });
+    expect(rows()[1]).toEqual(initial[1]);
   });
 
-  it('按钮上的键盘粘贴不会冒泡成编辑底图导入，普通文字保持原行为', async () => {
-    const pasteBase = vi.fn(), append = vi.fn();
-    render(<div onPaste={pasteBase}><CharacterTaggerReference canEdit onAppend={append} /></div>);
-    const button = screen.getByRole('button', { name: '粘贴反推' });
-    fireEvent.paste(button, { clipboardData: { files: [image] } });
-    await waitFor(() => expect(append).toHaveBeenCalledWith('looking at viewer, sitting'));
-    expect(pasteBase).not.toHaveBeenCalled(); expect(read).not.toHaveBeenCalled();
-    fireEvent.paste(button, { clipboardData: { files: [], items: [{ kind: 'string', type: 'text/plain' }] } });
-    expect(pasteBase).toHaveBeenCalledOnce();
+  it('未下载当前模型时页面提醒先下载，取图入口禁用', async () => {
+    const missing = { ...model, downloaded: false, receivedBytes: 0, stage: 'missing' as const };
+    vi.mocked(imageTaggerService.getStatus).mockResolvedValue({ model: model.id, downloaded: false, models: [missing], busy: false, downloadingModel: null });
+    render(<Harness />);
+    const dialog = await openPanel();
+    expect(await within(dialog).findByText('当前反推模型尚未下载，先在下方下载模型才能识别图片。')).toBeTruthy();
+    await waitFor(() => expect((within(dialog).getByTitle(/也可在此按 Ctrl\+V/) as HTMLButtonElement).disabled).toBe(true));
+    expect(within(dialog).getByRole('button', { name: /下载/ })).toBeTruthy();
   });
 
-  it('无图片与读取权限失败不调用识别，提示对应角色入口', async () => {
-    read.mockResolvedValueOnce([{ types: ['text/plain'] }]);
-    render(<CharacterTaggerReference canEdit onAppend={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: '粘贴反推' }));
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('不能作为反推参考'));
-    read.mockRejectedValueOnce(new DOMException('Denied', 'NotAllowedError'));
-    fireEvent.click(screen.getByRole('button', { name: '粘贴反推' }));
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('在「粘贴反推」按钮上按 Ctrl+V'));
-    expect(imageTaggerService.tagFile).not.toHaveBeenCalled();
+  it('识别页面里能直接下载与删除模型', async () => {
+    const other = { ...model, id: 'second-model', label: 'WD EVA02-Large V3', downloaded: false, receivedBytes: 0, stage: 'missing' as const };
+    vi.mocked(imageTaggerService.getStatus).mockResolvedValue({ model: model.id, downloaded: true, models: [model, other], busy: false, downloadingModel: null });
+    render(<Harness />);
+    const dialog = await openPanel();
+    const download = await within(dialog).findByRole('button', { name: '下载' });
+    fireEvent.click(download);
+    await waitFor(() => expect(imageTaggerService.downloadModel).toHaveBeenCalledWith('second-model'));
+    const remove = within(dialog).getByRole('button', { name: '删除 WD ViT V3' });
+    fireEvent.click(remove);
+    const confirm = await screen.findByRole('alertdialog', { name: /删除 WD ViT V3/ });
+    fireEvent.click(within(confirm).getByRole('button', { name: '删除模型' }));
+    await waitFor(() => expect(imageTaggerService.deleteModel).toHaveBeenCalledWith('SmilingWolf/wd-vit-tagger-v3'));
   });
 
-  it('模型错误显示真实原因，不追加也不自动重试', async () => {
-    vi.mocked(imageTaggerService.tagFile).mockRejectedValueOnce(new Error('模型下载失败：连接超时'));
-    const append = vi.fn(); render(<CharacterTaggerReference canEdit onAppend={append} />);
-    fireEvent.click(screen.getByRole('button', { name: '粘贴反推' }));
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('模型下载失败：连接超时'));
-    expect(append).not.toHaveBeenCalled(); expect(imageTaggerService.tagFile).toHaveBeenCalledOnce();
-    expect(screen.getByAltText('反推参考图')).toBeTruthy();
-  });
-
-  it('读取期间重复点击与编辑禁用后返回的结果不会提交', async () => {
-    const job = deferred(); vi.mocked(imageTaggerService.tagFile).mockReturnValueOnce(job.promise);
-    const append = vi.fn(); const { rerender } = render(<CharacterTaggerReference canEdit onAppend={append} />);
-    fireEvent.click(screen.getByRole('button', { name: '粘贴反推' }));
-    fireEvent.click(screen.getByRole('button', { name: '反推中…' }));
-    await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalledOnce());
-    rerender(<CharacterTaggerReference canEdit={false} onAppend={append} />);
-    await act(async () => job.resolve(result));
-    expect(append).not.toHaveBeenCalled(); expect(read).toHaveBeenCalledOnce();
-    expect(screen.getByRole('status').textContent).toBe('未写入角色提示词');
+  it('只读时反推入口禁用', async () => {
+    render(<Harness canEdit={false} />);
     expect((screen.getByRole('button', { name: '粘贴反推' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('切换模式后旧面板关闭，不追加到新模式', async () => {
+    const { rerender } = render(<Harness />);
+    const dialog = await openPanel();
+    rerender(<Harness scope="outpaint" />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(rows()).toEqual(initial);
+  });
+
+  it('独立渲染也能在无槽位时显示按钮', () => {
+    render(<CharacterTaggerReference canEdit onAppend={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '粘贴反推' })).toBeTruthy();
   });
 });
