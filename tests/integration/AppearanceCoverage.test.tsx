@@ -179,9 +179,9 @@ describe('全局外观覆盖审计', () => {
   it('助手挤窄时不再由 1180px 容器查询强制纵排，字段和生成栏按剩余宽度收纳', () => {
     expect(css).not.toContain('@container workspace (max-width: 1180px)');
     expect(declarations('.chain-editor-model-grid', undefined, css)['grid-template-columns']).toBe('repeat(auto-fit, minmax(min(100%, 18rem), 1fr))');
-    expect(declarations('.chain-editor-param-grid', undefined, css)['grid-template-columns']).toBe('repeat(auto-fit, minmax(min(100%, 10rem), 1fr))');
+    expect(declarations('.chain-editor-param-grid', undefined, css)['grid-template-columns']).toBe('repeat(auto-fit, minmax(min(100%, 7.5rem), 1fr))');
     expect(declarations('.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-body', '(min-width: 1024px)', css)['flex-direction']).toBe('column');
-    expect(declarations('.agent-panel-docked .chain-editor-param-grid', '(min-width: 1024px)', css)['grid-template-columns']).toBe('repeat(auto-fit, minmax(min(100%, 10rem), 1fr))');
+    expect(declarations('.agent-panel-docked .chain-editor-param-grid', '(min-width: 1024px)', css)['grid-template-columns']).toBe('repeat(auto-fit, minmax(min(100%, 7.5rem), 1fr))');
     const count = '.agent-panel-docked .chain-editor-preview .generation-count-control';
     const container = parse(css).nodes.flatMap(node => node.type === 'atrule' ? node.nodes || [] : [])
       .find(node => node.type === 'atrule' && node.name === 'container' && node.params === 'workspace (max-width: 980px)');
