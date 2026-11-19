@@ -1107,7 +1107,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         <div className="history-toolbar-status">
                             <ListJumpButton page={currentPage} totalPages={totalPages} disabled={isLoading} onJump={page => goToPage(page)} />
                             {newImageCount > 0 && <ToolbarButton aria-label={t("新增 {0} 张图片 · 查看最新", [newImageCount])} title={t("新增 {0} 张图片 · 查看最新", [newImageCount])} onClick={showNewImages} className="history-new-image-action !px-2.5"><span className="history-new-image-label">{t("新图")}</span><span className="tabular-nums">+{newImageCount}</span></ToolbarButton>}
-                            <span className="history-result-count">{t("{0} 张", [totalCount])}</span>
+                            <ToolbarButton aria-label={t("回收站")} title={t("回收站")} onClick={openRecycleBin} disabled={moveBusy} className="history-icon-compact">
+                                <Trash2 /><span className="history-button-label">{t("回收站")}</span>
+                            </ToolbarButton>
                             <div ref={managementAnchorRef} className="relative">
                                 <ToolbarButton aria-label={newImageCount ? t("管理，新增 {0} 张图片", [newImageCount]) : t("管理")} title={migrationProgress ? migrationProgress.total > 0 ? t("正在迁移浏览器历史 {0}/{1}，请勿关闭页面…", [migrationProgress.current, migrationProgress.total]) : t("正在检查浏览器历史…") : t("历史管理")} className="history-management-button relative" onClick={() => setShowCleanMenu(value => !value)} disabled={migrationProgress !== null}>
                                     {migrationProgress ? <span role="status" aria-label={t("历史迁移进度")}><LoaderCircle className="animate-spin" /></span> : <ListChecks />}<span className="history-management-label">{t("管理")}</span><ChevronDown className="history-management-chevron" />
@@ -1115,7 +1117,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                                 </ToolbarButton>
                                 {showCleanMenu && !isMobileViewport && (
                                     <AnchoredToolbarPopover anchorRef={managementAnchorRef} title={t("历史管理")} width={256} onClose={() => setShowCleanMenu(false)}>
-                                        <button type="button" disabled={moveBusy} onClick={openRecycleBin} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"><Trash2 className="h-4 w-4" />{t("回收站")}</button>
                                         <button
                                             type="button"
                                             onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }}
@@ -1152,7 +1153,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
             <ImagePreviewPortal><MobileBottomSheet open={showCleanMenu && isMobileViewport} title={t("历史管理")} onClose={() => setShowCleanMenu(false)}>
                 <div className="space-y-2">
                             {newImageCount > 0 && <ToolbarButton className="w-full" onClick={() => { setShowCleanMenu(false); showNewImages(); }}>{t("新增 {0} 张图片 · 查看最新", [newImageCount])}</ToolbarButton>}
-                            <button disabled={moveBusy} onClick={openRecycleBin} className="appearance-group mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("回收站")}</button>
                             <button onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-50 px-4 text-left text-sm font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">{t("批量选择图片")}</button>
                             <button onClick={() => handleCleanMenuClick('days')} className="appearance-group mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("按时间移入回收站…")}</button>
                             <button onClick={() => handleCleanMenuClick('count')} className="appearance-group mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("只保留最近指定数量")}</button>

@@ -122,7 +122,7 @@ export const HistoryBrowseControls: React.FC<Props> = ({ query, options, mobile,
     <div ref={anchor}>
       <ToolbarButton aria-label={t("筛选{0}", [filterCount ? ` ${filterCount}` : ''])} aria-expanded={open} aria-haspopup="dialog" title={t("筛选历史{0}", [filterCount ? ` · ${filterCount}` : ''])} onClick={openPanel} active={filterCount > 0}>
         <SlidersHorizontal /><span className="history-button-label">{t("筛选")}</span>
-        {filterCount > 0 && <span className="text-xs tabular-nums">{filterCount}</span>}<ChevronDown />
+        {filterCount > 0 && <span className="text-xs tabular-nums">{filterCount}</span>}<ChevronDown className="history-filter-chevron" />
       </ToolbarButton>
     </div>
     {open && !mobile && <AnchoredToolbarPopover anchorRef={anchor} title={t("筛选")} width={380} onClose={() => setOpen(false)}>{form}</AnchoredToolbarPopover>}

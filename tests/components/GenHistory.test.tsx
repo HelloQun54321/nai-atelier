@@ -130,12 +130,12 @@ it('历史图片选择器未知数量显示读取，缓存刷新失败保留图�
     expect(await screen.findByText('历史图片读取失败，请重试。')).toBeTruthy(); expect(screen.getAllByRole('img', { name: '历史生成图片' })).toHaveLength(2); expect(screen.queryByText('历史页面中还没有生成图片')).toBeNull();
 });
 
-it('历史仅追加下沿数量小字，原数量与手机浏览控件保留', async () => {
+it('历史数量只在左侧徽标显示一次，顶栏不再重复右侧张数', async () => {
     const { container } = await setup(390);
     const caption = container.querySelector('[data-toolbar-count-badge]');
     expect(caption?.textContent).toBe('2');
     expect(caption?.getAttribute('title')).toBe('已加载 2 / 共 2');
-    expect(container.querySelector('.history-result-count')?.textContent).toBe('2 张');
+    expect(container.querySelector('.history-result-count')).toBeNull();
     expect(screen.getByRole('button', { name: '筛选' })).toBeTruthy();
     expect(container.querySelectorAll('[data-toolbar-count-badge]')).toHaveLength(1);
 });
@@ -741,9 +741,17 @@ describe('历史顶栏状态一致性', () => {
         await setup();
         fireEvent.click(screen.getByRole('button', { name: '管理' }));
         const dialog = within(screen.getByRole('dialog', { name: '历史管理' }));
-        expect(dialog.getAllByRole('button').map(button => button.textContent?.trim())).toEqual(['回收站', '批量选择图片', '按时间清理历史…', '按数量保留最新…', '全部移入回收站…']);
+        expect(dialog.getAllByRole('button').map(button => button.textContent?.trim())).toEqual(['批量选择图片', '按时间清理历史…', '按数量保留最新…', '全部移入回收站…']);
         expect(localHistory.delete).not.toHaveBeenCalled();
         expect(localHistory.keepOnly).not.toHaveBeenCalled();
+    });
+
+    it('回收站是顶栏独立入口，不进管理菜单', async () => {
+        await setup();
+        expect(screen.getByRole('button', { name: '回收站' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: '管理' }));
+        const dialog = within(screen.getByRole('dialog', { name: '历史管理' }));
+        expect(dialog.queryByRole('button', { name: '回收站' })).toBeNull();
     });
 
     it('多选操作替换固定顶栏，退出保留排序、已加载图片和滚动位置', async () => {
@@ -809,10 +817,9 @@ vi.mock('../../services/collectionFavorites', async original => ({
 
 
 describe('回收站管理安全边界', () => {
-    it.each([1280, 390])('宽度 %s 从管理进入独立回收站再返回保留active节点和滚动', async width => {
+    it.each([1280, 390])('宽度 %s 从顶栏独立入口进回收站再返回保留active节点和滚动', async width => {
         const { container, cards } = await setup(width);
         const scroll = container.querySelector<HTMLElement>('.workspace-scroll-viewport')!; scroll.scrollTop = 530;
-        fireEvent.click(screen.getByRole('button', { name: '管理' }));
         fireEvent.click(screen.getByRole('button', { name: '回收站' }));
         await screen.findByLabelText('历史回收站');
         expect(cards[0].isConnected).toBe(true);
@@ -820,38 +827,30 @@ describe('回收站管理安全边界', () => {
         await waitFor(() => expect(screen.queryByLabelText('历史回收站')).toBeNull());
         expect(container.querySelector('[data-history-id]')).toBe(cards[0]); expect(scroll.scrollTop).toBe(530);
     });
-    it('手机管理进入回收站前先退掉管理层，返回一次保留历史卡片和滚动', async () => {
+    it('手机顶栏直达回收站，不经过管理层，返回一次保留历史卡片和滚动', async () => {
         vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.startsWith('(max-width:'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
         const previousState = window.history.state;
         const baseState = { syntheticHistoryPage: true };
         window.history.replaceState(baseState, '');
-        // 延迟旧层的 popstate，模拟浏览器在点击之后才完成返回。
         const back = vi.spyOn(window.history, 'back').mockImplementation(() => {});
         try {
             const { container, cards } = await setup(390);
             const scroll = container.querySelector<HTMLElement>('.workspace-scroll-viewport')!;
             scroll.scrollTop = 530;
-            fireEvent.click(screen.getByRole('button', { name: '管理' }));
-            const management = screen.getByRole('dialog', { name: '历史管理' });
-            expect(management.parentElement?.classList.contains('md:hidden')).toBe(true);
-            expect(window.history.state.__naiMobileLayers).toEqual([expect.stringMatching(/^sheet-/)]);
-            fireEvent.click(within(management).getByRole('button', { name: '回收站' }));
-            expect(back).toHaveBeenCalledOnce();
-            expect(screen.queryByLabelText('历史回收站')).toBeNull();
+            fireEvent.click(screen.getByRole('button', { name: '回收站' }));
+            // 顶栏入口不需要先退出管理层，因此不该再借用浏览器返回。
+            expect(back).not.toHaveBeenCalled();
+            expect(screen.queryByRole('dialog', { name: '历史管理' })).toBeNull();
+            await screen.findByLabelText('历史回收站');
+            expect(window.history.state.__naiMobileLayers).toEqual([expect.stringMatching(/^history-recycle-bin-/)]);
 
             const popToHistory = () => {
                 window.history.replaceState(baseState, '');
                 fireEvent(window, new PopStateEvent('popstate', { state: baseState }));
             };
             popToHistory();
-            await screen.findByLabelText('历史回收站');
-            expect(screen.queryByRole('dialog', { name: '历史管理' })).toBeNull();
-            expect(window.history.state.__naiMobileLayers).toEqual([expect.stringMatching(/^history-recycle-bin-/)]);
-
-            popToHistory();
             expect(screen.queryByLabelText('历史回收站')).toBeNull();
             expect(window.history.state).toEqual(baseState);
-            expect(back).toHaveBeenCalledOnce();
             expect(container.querySelector('[data-history-id]')).toBe(cards[0]);
             expect(scroll.scrollTop).toBe(530);
         } finally {

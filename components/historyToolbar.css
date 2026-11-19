@@ -16,12 +16,10 @@
   white-space: nowrap;
 }
 .history-toolbar-status { margin-left: auto; display: flex; flex: none; align-items: center; gap: calc(var(--spacing) * 3); white-space: nowrap; }
-.history-result-count { font-size: 0.75rem; color: var(--color-gray-500); font-variant-numeric: tabular-nums; }
-.dark .history-result-count { color: var(--color-gray-400); }
 .history-new-image-badge { display: none; }
 .history-selection-actions { min-width: 0; align-items: center; gap: calc(var(--spacing) * 2); overflow-x: auto; white-space: nowrap; }
 @container history-toolbar (max-width: 68.75rem) {
-  .history-result-count, .history-new-image-label { display: none; }
+  .history-new-image-label { display: none; }
 }
 @container history-toolbar (max-width: 56.25rem) {
   .history-button-label, .history-management-label, .history-management-chevron { display: none; }
@@ -32,6 +30,8 @@
   .history-browse-controls { gap: var(--spacing); }
   .history-toolbar-status { gap: var(--spacing); }
   .history-new-image-action { display: none; }
+  /* 最窄顶栏只留图标：筛选已无文字标签，箭头只是装饰，省下的宽度留给搜索框和回收站入口。 */
+  .history-filter-chevron { display: none; }
   .history-new-image-badge { display: block; position: absolute; top: -4px; right: -4px; border-radius: 999px; padding: 0 4px; background: var(--color-indigo-600); color: var(--color-white); font-size: 0.625rem; line-height: 1rem; }
 }
 @media (max-width: 767px) {
