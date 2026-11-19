@@ -91,24 +91,30 @@ export const CharacterTaggerReference: React.FC<CharacterTaggerReferenceProps> =
   const trigger = <button type="button" aria-label={t(busy ? "反推中…" : "粘贴反推")} aria-busy={busy} disabled={!canEdit || busy} onPaste={handlePaste}
       onClick={() => void recognize(() => readClipboardImage({ pasteHint: '在「粘贴反推」按钮上按 Ctrl+V', imagePurpose: '反推参考' }))}
       title={t("识别剪贴板图片并追加到此角色，也可聚焦按钮后按 Ctrl+V")}
-      className="mobile-touch inline-flex shrink-0 items-center justify-center rounded p-1 text-gray-400 outline-none hover:bg-gray-100 hover:text-gray-700 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-700 dark:hover:text-gray-200">
+      className="mobile-touch inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-gray-500 outline-none transition hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-25 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white">
       {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ClipboardPaste className="h-4 w-4" />}
     </button>;
-  return <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
-    {buttonTarget ? createPortal(trigger, buttonTarget) : trigger}
-    {preview && <div className="appearance-media relative h-12 w-16 shrink-0 overflow-hidden rounded border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+  // 参考图、识别进度与入口都放在角色卡头部的工具行里：它们属于这次反推操作的状态，
+  // 不再单独占提示词框上方一行，避免压住正文。
+  const content = <>
+    {trigger}
+    {preview && <div className="appearance-media relative h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
       <button type="button" aria-label={t("放大反推参考图")} title={t("反推参考图，仅作提示词对照")} onClick={() => setExpanded(true)} className="flex h-full w-full items-center justify-center focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500">
-        <img src={preview} alt={t("反推参考图")} className="h-full w-full object-contain" />
+        <img src={preview} alt={t("反推参考图")} className="h-full w-full object-cover" />
       </button>
       <button type="button" aria-label={t("移除反推参考图")} title={t("移除参考图，保留提示词")} onClick={() => { setPreview(''); setExpanded(false); }}
-        className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-indigo-500"><X className="h-3.5 w-3.5" /></button>
+        className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-indigo-500"><X className="h-2.5 w-2.5" /></button>
     </div>}
-    {(error || progress) && <p role={error ? 'alert' : 'status'} title={t(error) || progress} className={`w-full break-words text-right text-micro ${error ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>{t(error) || progress}</p>}
+    {(error || progress) && <p role={error ? 'alert' : 'status'} title={t(error) || progress} className={`max-w-[9rem] truncate text-micro ${error ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>{t(error) || progress}</p>}
     {previewOpen && <ImagePreviewPortal><div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t("反推参考图")}
       className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
       onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget) setExpanded(false); }}>
       <BackButton label={t("返回角色编辑")} onClick={() => setExpanded(false)} className="absolute left-4 top-4 z-10" />
       <img src={preview} alt={t("反推参考图大图")} data-safe-mode-ignore="true" className="max-h-[90dvh] max-w-full object-contain" />
     </div></ImagePreviewPortal>}
-  </div>;
+  </>;
+  if (buttonTarget) return createPortal(content, buttonTarget);
+  // 有槽位但还没挂载完成时先不渲染，避免按钮短暂出现在原位。
+  if (buttonSlotRef) return null;
+  return <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">{content}</div>;
 };

@@ -37,8 +37,8 @@ const clickMoreAction = (name: string | RegExp, index = 1) => {
   openMore(index);
   fireEvent.click(screen.getByRole('button', { name }));
 };
-const openReference = (index = 1) => {
-  clickMoreAction('从角色库引用', index);
+const openReference = () => {
+  fireEvent.click(screen.getByRole('button', { name: '从角色库引用' }));
 };
 beforeEach(() => {
   vi.stubGlobal('matchMedia', vi.fn((media: string) => ({ matches: false, media, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
@@ -108,6 +108,18 @@ describe('共用角色编辑器', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: '启用角色 2' }));
     expect(draft().characters).toEqual([initial.characters![1], { ...initial.characters![0], prompt: 'edited role a', enabled: false }]);
     expect(document.querySelector('[aria-label="random-a"]')?.closest('.lab-character')).toBe(screen.getByRole('checkbox', { name: '启用角色 2' }).closest('.lab-character'));
+  });
+
+  it('角色卡头部直接提供引用入口，更多菜单只留保存与排序', () => {
+    render(<Harness library={{ showCharacterReference: true }} />);
+    const tools = document.querySelector('.character-tools') as HTMLElement;
+    expect(within(tools).getByRole('button', { name: '从角色库引用' })).toBeTruthy();
+    openMore();
+    const menu = screen.getByRole('dialog', { name: '更多' });
+    expect(within(menu).queryByRole('button', { name: '从角色库引用' })).toBeNull();
+    expect(within(menu).queryByRole('button', { name: '粘贴反推' })).toBeNull();
+    expect(within(menu).getByRole('button', { name: '上移角色 1' })).toBeTruthy();
+    expect(within(menu).getByRole('button', { name: '下移角色 1' })).toBeTruthy();
   });
 
   it('页头横排切换角色，一次只显示当前角色', () => {
@@ -273,7 +285,7 @@ describe('共用角色编辑器', () => {
     } else {
       expect(onContentRollForRole).toHaveBeenCalledWith(0);
       selectCharacter(/角色 2/);
-      openReference(2);
+      openReference();
       fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '随机搭配' }));
       expect(onContentRollForRole).toHaveBeenCalledWith(1);
     }

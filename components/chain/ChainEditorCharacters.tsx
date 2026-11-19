@@ -1,7 +1,7 @@
 import { type PromptPurposeId } from '../../services/promptPurposes.mjs';
 import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, ClipboardPaste, LayoutGrid, MapPin, MoreHorizontal, Plus, Save, Trash2, UserRound } from 'lucide-react';
+import { ArrowDown, ArrowUp, LayoutGrid, MapPin, MoreHorizontal, Plus, Save, Trash2, UserRound } from 'lucide-react';
 import { CHAR_TOOL_ACTIVE, CHAR_TOOL_CHIP, CHAR_TOOL_DANGER, CHAR_TOOL_NEUTRAL, CHAR_TOOL_PRIMARY } from './characterToolChips';
 import { CharacterParams, NAIParams, PromptChain } from '../../types';
 import { LabPageLayout } from '../../services/appearancePreferences';
@@ -18,7 +18,7 @@ import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useModalA11y, isTopmostModal } from '../useModalA11y';
 import { SmartImage } from '../SmartImage';
 import { ToolbarPopover, TOOLBAR_MENU_CLASS } from '../ToolbarPopover';
-import { InlineSpinner, PageSpinner, ToolbarSearch } from '../DesignSystem';
+import { InlineSpinner, IconButton, PageSpinner, ToolbarSearch } from '../DesignSystem';
 
 const SUBJECT_PURPOSES: readonly PromptPurposeId[] = ['identity', 'appearance', 'clothing', 'pose', 'expression', 'creature', 'object', 'vehicle'];
 
@@ -252,14 +252,13 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                 {char.enabled === false && <span className="text-gray-400">{t("· 已停用")}</span>}
                             </div>
                             <div className="character-tools ml-auto flex flex-wrap items-center justify-end gap-1">
-                                <span ref={taggerSlotRef} className="sr-only" />
+                                {showCharacterReference && <IconButton label={t('从角色库引用')} tone="ghost" onClick={() => openReference(idx)}><UserRound className="h-4 w-4" aria-hidden="true" /></IconButton>}
+                                <span ref={taggerSlotRef} className="inline-flex items-center" />
                                 <span ref={randomSlotRef} className="hidden" aria-hidden="true">
                                     <PromptLibraryRandomButton roleId={char.id} purposes={SUBJECT_PURPOSES} variant="icon" disabled={!canEdit} fallback={canEdit && onContentRollForRole ? () => onContentRollForRole(idx) : undefined} />
                                 </span>
                                 <ToolbarPopover label={t('角色 {0} 的更多操作', [idx + 1])} title={t('更多')} icon={<MoreHorizontal />} iconOnly width={240} compact>
                                     {close => <>
-                                        {showCharacterReference && <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); openReference(idx); }}><UserRound />{t('从角色库引用')}</button>}
-                                        <button type="button" className={TOOLBAR_MENU_CLASS} disabled={!canEdit} onClick={() => { close(); taggerSlotRef.current?.querySelector('button')?.click(); }}><ClipboardPaste />{t('粘贴反推')}</button>
                                         {canSaveCharacter && onSaveCharacter && <button type="button" className={`${TOOLBAR_MENU_CLASS} disabled:opacity-40`} disabled={(!char.prompt.trim() && !hasCharacterSections(char)) || savingCharacter} onClick={() => { close(); setCharacterName(''); setActiveAction({ kind: 'save', character: char }); }}><Save />{t('保存到角色库')}</button>}
                                         <button type="button" aria-label={t('上移角色 {0}', [idx + 1])} className={`${TOOLBAR_MENU_CLASS} disabled:opacity-40`} disabled={!canEdit || idx === 0} onClick={() => { close(); reorder(idx, -1); }}><ArrowUp />{t('上移')}</button>
                                         <button type="button" aria-label={t('下移角色 {0}', [idx + 1])} className={`${TOOLBAR_MENU_CLASS} disabled:opacity-40`} disabled={!canEdit || idx === characters.length - 1} onClick={() => { close(); reorder(idx, 1); }}><ArrowDown />{t('下移')}</button>
