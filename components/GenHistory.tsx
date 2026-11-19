@@ -1103,9 +1103,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                     </> : <>
                         <ToolbarSearch value={searchDraft} onChange={event => updateSearch(event.target.value)} placeholder={t("搜索标题、提示词或标签")} aria-label={t("搜索历史")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
                         <HistoryBrowseControls query={browseQuery} options={browseOptions} mobile={isMobileViewport} onApply={applyBrowseQuery} />
+                        <ListJumpButton page={currentPage} totalPages={totalPages} disabled={isLoading} onJump={page => goToPage(page)} />
                         {onOpenFootprint && <ToolbarButton aria-label={t('创作足迹')} title={t('创作足迹')} onClick={onOpenFootprint} className="mobile-touch md:hidden !px-2.5"><Footprints /></ToolbarButton>}
                         <div className="history-toolbar-status">
-                            <ListJumpButton page={currentPage} totalPages={totalPages} disabled={isLoading} onJump={page => goToPage(page)} />
                             {newImageCount > 0 && <ToolbarButton aria-label={t("新增 {0} 张图片 · 查看最新", [newImageCount])} title={t("新增 {0} 张图片 · 查看最新", [newImageCount])} onClick={showNewImages} className="history-new-image-action !px-2.5"><span className="history-new-image-label">{t("新图")}</span><span className="tabular-nums">+{newImageCount}</span></ToolbarButton>}
                             <ToolbarButton aria-label={t("回收站")} title={t("回收站")} onClick={openRecycleBin} disabled={moveBusy} className="history-icon-compact">
                                 <Trash2 /><span className="history-button-label">{t("回收站")}</span>
