@@ -832,8 +832,9 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
     <div className="workspace-canvas flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceChrome>
       <WorkspaceToolbar className="pixiv-toolbar" scrollable={false}>
-        <ToolbarCountBadge total={showHistory ? historyItems.length : items.length} />
         <div className="pixiv-toolbar-primary">
+        {/* 计数徽标必须在主行内部：pixiv-toolbar 是纵向布局，放在外层会独占一整行把顶栏撑高。 */}
+        <ToolbarCountBadge total={showHistory ? historyItems.length : items.length} />
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center">
             <ToolbarSearch

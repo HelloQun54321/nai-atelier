@@ -2,7 +2,7 @@ import { t, useLanguage } from '../services/i18n';
 import React from 'react';
 import { Copy, FlaskConical } from 'lucide-react';
 import { copyTagText } from '../services/externalImageTags';
-import { ToolbarButton } from './DesignSystem';
+import { IconButton } from './DesignSystem';
 
 interface ExternalImageToolsProps {
   source: 'danbooru' | 'pixiv';
@@ -34,10 +34,23 @@ export const ExternalImageTools: React.FC<ExternalImageToolsProps> = ({ source, 
       <div className="ml-auto flex flex-none items-center gap-1">{trailingAction}</div>
     </div>}
     <section className={trailingAction ? 'space-y-3 border-t border-gray-200 pt-3 dark:border-gray-800' : 'space-y-3'}>
-      <h3 className="text-xs font-black">{source === 'danbooru' ? t("Danbooru 原站 Tag") : t("Pixiv 原站标签")}</h3>
-      <div className="flex flex-wrap gap-2">
-        <ToolbarButton disabled={!sourceCopy.trim()} onClick={() => void copy(sourceCopy, source === 'danbooru' ? 'Danbooru Tag' : 'Pixiv 标签')} title={source === 'danbooru' ? t("复制完整原站标注，保留全部分类与 Tag 原名") : t("原站标签用于检索，不等于生图提示词")}><Copy />{source === 'danbooru' ? t("复制 Danbooru Tag") : t("复制 Pixiv 标签")}</ToolbarButton>
-        {source === 'danbooru' && <ToolbarButton disabled={!sourcePrompt.trim()} onClick={() => onImport(sourcePrompt)} title={t("追加角色与普通 Tag，不追加画师、作品和元数据")}><FlaskConical />{t("原站 Tag 送往实验室")}</ToolbarButton>}
+      {/* 原站标注的两个动作与原图操作同一套 ghost 图标，按钮语言在详情页里只保留这一种。 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="min-w-0 flex-1 text-xs font-black">{source === 'danbooru' ? t("Danbooru 原站 Tag") : t("Pixiv 原站标签")}</h3>
+        <div className="flex flex-none items-center gap-1">
+          <IconButton
+            label={source === 'danbooru' ? t("复制 Danbooru Tag") : t("复制 Pixiv 标签")}
+            tone="ghost"
+            disabled={!sourceCopy.trim()}
+            onClick={() => void copy(sourceCopy, source === 'danbooru' ? 'Danbooru Tag' : 'Pixiv 标签')}
+          ><Copy /></IconButton>
+          {source === 'danbooru' && <IconButton
+            label={t("原站 Tag 送往实验室")}
+            tone="ghost"
+            disabled={!sourcePrompt.trim()}
+            onClick={() => onImport(sourcePrompt)}
+          ><FlaskConical /></IconButton>}
+        </div>
       </div>
       {sourceTags}
     </section>
