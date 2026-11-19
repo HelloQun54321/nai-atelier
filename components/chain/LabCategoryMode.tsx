@@ -324,7 +324,7 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
               }}
               className={`${CHAR_TOOL_CHIP} ${characterTools.params.useCoords !== true ? CHAR_TOOL_ACTIVE : CHAR_TOOL_NEUTRAL} disabled:cursor-not-allowed disabled:opacity-40`}
             >
-              <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />{t('构图')}
+              <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />{t('自动构图')}
             </button>
           </div>
         ) : (

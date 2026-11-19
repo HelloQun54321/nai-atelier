@@ -1,4 +1,5 @@
 ## 2026-11-19
+- **DeepSeek Harness (V4.1 Flash)**：角色构图开关的可见文案由「构图」改为「自动构图」（`ChainEditorCharacters` 与目录模式 `LabCategoryMode` 同一按钮），与既有 aria-label／title 及 `useCoords !== true` 即自动构图的语义对齐（style: label the character composition toggle 自动构图）。
 - **DeepSeek Harness (V4.1 Flash)**：`parseHttpError` 支持展开 NovelAI 的数组／对象形态报错（message／errors／error／detail 嵌套），修复提示词非法时只剩泛化 HTTP 400 或 [object Object]、看不到真实原因的问题（fix: surface upstream validation errors）。
 
 ## 2026-11-18

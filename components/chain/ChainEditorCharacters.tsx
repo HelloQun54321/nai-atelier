@@ -157,7 +157,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
         className={mobileEditorTab === 'character' ? 'block' : 'hidden'}
     >
         <section className={mobileEditorTab === 'character' ? 'block' : 'hidden'}>
-            {/* 模块标题已在 LabModuleSection：左构图工具、右槽位操作，同款芯片只差色相；短文案 + 完整可访问名。 */}
+            {/* 模块标题已在 LabModuleSection：左构图工具、右槽位操作，同款芯片只差色相；可见文案与可访问名一致。 */}
             <div className="mb-3 flex min-w-0 flex-col gap-2">
                 <PresetSourceBadges sources={characterPresetSources} />
                 <div className="flex min-w-0 flex-nowrap items-center justify-between gap-1.5">
@@ -181,7 +181,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                 }}
                                 className={`${CHAR_TOOL_CHIP} ${params.useCoords !== true ? CHAR_TOOL_ACTIVE : CHAR_TOOL_NEUTRAL} disabled:cursor-not-allowed disabled:opacity-40`}
                             >
-                                <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />{t('构图')}
+                                <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />{t('自动构图')}
                             </button>
                         </div>
                     ) : <span className="min-w-0 flex-1" />}

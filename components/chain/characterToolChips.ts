@@ -1,4 +1,4 @@
-/** 角色页工具：定位／构图是轻量开关，删除／添加保留按钮外壳，避免整行都是描边胶囊。 */
+/** 角色页工具：定位／自动构图是轻量开关，删除／添加保留按钮外壳，避免整行都是描边胶囊。 */
 export const CHAR_TOOL_CHIP =
   'mobile-touch inline-flex h-11 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-lg px-2.5 text-xs font-medium transition';
 
