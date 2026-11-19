@@ -9,7 +9,7 @@ import type { PromptChain } from '../../types';
 
 vi.mock('../../services/api', () => ({ api: { get: vi.fn(), post: vi.fn(), uploadFile: vi.fn() } }));
 vi.mock('../../services/characterReferenceService', () => ({ characterReferenceService: { create: vi.fn() } }));
-vi.mock('../../services/imageSharing', () => ({ prepareImageBlob: vi.fn(async (blob: Blob) => blob), getCleanSharedImages: () => false, getSharedImageCustomText: () => '', getSharedImageCleanContent: () => 'all' }));
+vi.mock('../../services/imageSharing', () => ({ prepareImageBlob: vi.fn(async (blob: Blob) => blob), getCleanSharedImages: () => false, getSharedImageCustomText: () => '', getSharedImageCleanContent: () => 'all', getImageDownloadFormat: () => 'png', setImageDownloadFormat: vi.fn(), useImageDownloadFormat: () => 'png', hasImageGenerationData: () => false, imageGenerationBlob: vi.fn() }));
 const createChain = vi.fn();
 const png = new Uint8Array(24); png.set([137, 80, 78, 71, 13, 10, 26, 10]); new DataView(png.buffer).setUint32(16, 1); new DataView(png.buffer).setUint32(20, 1);
 const options = { allChainIds: ['private-id'], coverMode: 'none' as const, author: '分享者', sourceUrl: 'https://example.org/free', note: '请保留免费来源' };

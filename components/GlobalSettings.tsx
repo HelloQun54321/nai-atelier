@@ -5,7 +5,7 @@ import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
 import { ImageTaggerModelManager } from './ImageTaggerModelManager';
 import { TaggerRemoteAccessSettings } from './TaggerRemoteAccessSettings';
-import { setCleanSharedImages, useCleanSharedImages, setSharedImageCustomText, useSharedImageCustomText, setSharedImageCleanContent, useSharedImageCleanContent } from '../services/imageSharing';
+import { setCleanSharedImages, useCleanSharedImages, setSharedImageCustomText, useSharedImageCustomText, setSharedImageCleanContent, useSharedImageCleanContent, setImageDownloadFormat, useImageDownloadFormat } from '../services/imageSharing';
 import { copyTagText } from '../services/externalImageTags';
 import { InlineSpinner } from './DesignSystem';
 import { DataBackupManager } from './DataBackupManager';
@@ -236,6 +236,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const cleanSharedImages = useCleanSharedImages();
   const sharedImageCustomText = useSharedImageCustomText();
   const sharedImageCleanContent = useSharedImageCleanContent();
+  const imageDownloadFormat = useImageDownloadFormat();
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => getRememberNaiKey());
   const [cloudQueue, setCloudQueue] = useState(getCachedCloudQueuePreferences);
@@ -1550,6 +1551,16 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 }} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
                 <span className="mt-1 block text-xs leading-5 font-normal text-gray-500 dark:text-gray-400">{t("清洗后写入自定义文本，原图与历史保留。")}</span>
               </label>
+              <SettingSwitchRow
+                checked={imageDownloadFormat === 'json'}
+                onChange={next => {
+                  try { setImageDownloadFormat(next ? 'json' : 'png'); }
+                  catch { notify('设置保存失败，请检查浏览器存储权限', 'error'); }
+                }}
+                label="图片悬浮按钮下载生成信息（JSON）"
+                description="开启后，图上的下载按钮导出 prompt、负面提示词与生成参数；图片没有生成信息时仍下载原图。"
+                className="mt-3"
+              />
             </div>}
           </section>
 

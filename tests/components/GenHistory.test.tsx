@@ -343,7 +343,7 @@ describe('历史缩略图就地操作', () => {
             await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(items[1].imageUrl, clean, { prompt: items[1].prompt, negativePrompt: items[1].negativePrompt, params: items[1].params }));
             const download = within(cards[0]).getByRole('button', { name: '下载图片' });
             fireEvent.pointerDown(download); fireEvent.click(download);
-            await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(items[0].imageUrl, 'NAI-2026-10-02-02-30-01.png', clean));
+            await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(items[0].imageUrl, 'NAI-2026-10-02-02-30-01.png', clean, expect.anything()));
             await waitFor(() => expect((download as HTMLButtonElement).disabled).toBe(false));
         }
         expect(timer.mock.calls.some(([, delay]) => delay === 450)).toBe(false);

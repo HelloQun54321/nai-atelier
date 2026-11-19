@@ -133,7 +133,7 @@ it.each([false, true])('足迹=%s：列表和详情使用同一图片，图片�
   fireEvent.click(open);
   const surface = screen.getByRole('img', { name: 'Danbooru #1' }).closest('.press-reveal-surface')!;
   fireEvent.click(within(surface as HTMLElement).getByRole('button', { name: '下载图片' }));
-  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(sampleUrl, expect.stringMatching(/^danbooru-1\./), false));
+  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(sampleUrl, expect.stringMatching(/^danbooru-1\./), false, undefined));
 });
 it.each(['masonry', 'portrait', 'square', 'history'])('Danbooru %s 卡片沿用 AITag 聚焦居中，切换和关闭详情同步恢复', async layout => {
   const posts = [post, { ...post, id: 2, tags: { ...post.tags, artist: ['second_artist'] } }]

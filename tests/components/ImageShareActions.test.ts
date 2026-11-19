@@ -92,7 +92,25 @@ describe('共用图片分享操作', () => {
     await waitFor(() => expect(copySharedImage).toHaveBeenCalledWith('/source.png', true, generationData));
     await waitFor(() => expect((screen.getByRole('button', { name: '下载图片' }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: '下载图片' }));
-    await waitFor(() => expect(downloadSharedImage).toHaveBeenCalledWith('/source.png', 'source.png', true));
+    await waitFor(() => expect(downloadSharedImage).toHaveBeenCalledWith('/source.png', 'source.png', true, generationData));
+  });
+  it('设置选 JSON 且有生成信息时，下载按钮改为导出生成信息', async () => {
+    const { setImageDownloadFormat } = await import('../../services/imageSharing');
+    setImageDownloadFormat('json');
+    const generationData = { prompt: 'source scene', negativePrompt: 'lowres', params: { steps: 28 } };
+    render(React.createElement(ImageShareActions, { imageUrl: '/source.png', filename: 'source.png', generationData }));
+    const download = screen.getByRole('button', { name: '下载生成信息' });
+    fireEvent.click(download);
+    await waitFor(() => expect(downloadSharedImage).toHaveBeenCalledWith('/source.png', 'source.png', false, generationData));
+    setImageDownloadFormat('png');
+  });
+  it('设置为 JSON 但图片没有生成信息时，仍然下载原图', async () => {
+    const { setImageDownloadFormat } = await import('../../services/imageSharing');
+    setImageDownloadFormat('json');
+    render(React.createElement(ImageShareActions, { imageUrl: '/plain.png', filename: 'plain.png' }));
+    fireEvent.click(screen.getByRole('button', { name: '下载图片' }));
+    await waitFor(() => expect(downloadSharedImage).toHaveBeenCalledWith('/plain.png', 'plain.png', false, undefined));
+    setImageDownloadFormat('png');
   });
   it.each(['overlay', 'toolbar', 'compact', 'card'] as const)('%s 收藏始终排在下载与复制之前，复制和下载都跟随设置', async variant => {
     const parentClick = vi.fn();
@@ -108,7 +126,7 @@ describe('共用图片分享操作', () => {
       await waitFor(() => expect(notify).toHaveBeenCalledWith('已复制图片', 'success'));
       await waitFor(() => expect((screen.getByRole('button', { name: '下载图片' }) as HTMLButtonElement).disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: '下载图片' }));
-      await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/original-image', 'NAI.png', clean));
+      await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/original-image', 'NAI.png', clean, undefined));
       await waitFor(() => expect((screen.getByRole('button', { name: '复制图片' }) as HTMLButtonElement).disabled).toBe(false));
     }
     expect(parentClick).not.toHaveBeenCalled();
@@ -143,7 +161,7 @@ describe('共用图片分享操作', () => {
     fireEvent.click(screen.getByRole('button', { name: '下载图片' }));
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', '清洗失败');
     expect(downloadSharedImage).toHaveBeenCalledTimes(1);
-    expect(downloadSharedImage).toHaveBeenCalledWith('/original-image', 'NAI.png', true);
+    expect(downloadSharedImage).toHaveBeenCalledWith('/original-image', 'NAI.png', true, undefined);
     expect((screen.getByRole('button', { name: '复制图片' }) as HTMLButtonElement).disabled).toBe(false);
   });
 

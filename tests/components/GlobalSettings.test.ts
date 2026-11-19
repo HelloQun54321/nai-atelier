@@ -8,7 +8,7 @@ import { downloadFile } from '../../services/fileDownload';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { GlobalSettings } from '../../components/GlobalSettings';
 import { readAgentPage } from '../../services/agentWorkspace';
-import { getCleanSharedImages, getSharedImageCustomText, getSharedImageCleanContent, IMAGE_SHARING_STORAGE_KEY, IMAGE_SHARING_TEXT_STORAGE_KEY, IMAGE_SHARING_CONTENT_STORAGE_KEY } from '../../services/imageSharing';
+import { getCleanSharedImages, getSharedImageCustomText, getSharedImageCleanContent, getImageDownloadFormat, IMAGE_SHARING_STORAGE_KEY, IMAGE_SHARING_TEXT_STORAGE_KEY, IMAGE_SHARING_CONTENT_STORAGE_KEY, IMAGE_DOWNLOAD_FORMAT_STORAGE_KEY } from '../../services/imageSharing';
 import { readActiveNaiKey, REMEMBER_NAI_KEY_STORAGE_KEY, setActiveNaiKey } from '../../services/naiKeyStorage';
 import { naiKeyVault } from '../../services/naiKeyVault';
 import { getImageDisplayPageOverride, getMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
@@ -652,6 +652,16 @@ describe('GlobalSettings', () => {
     render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
     expect((await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement).checked).toBe(true);
     expect(screen.getByText('复制／下载时移除生成信息；原图与历史保留。')).toBeTruthy();
+  });
+  it('图片悬浮按钮的下载格式默认原图，可切到生成信息并写入设置', async () => {
+    render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
+    const toggle = await screen.findByRole('switch', { name: '图片悬浮按钮下载生成信息（JSON）' });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(getImageDownloadFormat()).toBe('png');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(getImageDownloadFormat()).toBe('json');
+    expect(localStorage.getItem(IMAGE_DOWNLOAD_FORMAT_STORAGE_KEY)).toBe('json');
   });
   it('安全模式与图片元数据清洗分属独立板块，自定义文本可保存并在关闭时保留', async () => {
     const view = render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));

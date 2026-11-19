@@ -683,7 +683,7 @@ it('首图操作跟随实际候选，点击和回车不打开详情；详情逐�
   await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/synthetic/1.png', false));
   fireEvent.error(first.querySelector('img')!);
   fireEvent.click(within(first).getByRole('button', { name: '下载图片' }));
-  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/api/assets/aitag/1.png', 'aitag-1-p1.png', false));
+  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/api/assets/aitag/1.png', 'aitag-1-p1.png', false, undefined));
   fireEvent.keyDown(within(first).getByRole('button', { name: '复制图片' }), { key: 'Enter' });
   expect(mocks.getWork).not.toHaveBeenCalled();
   expect(first.getAttribute('aria-pressed')).toBe('false');
@@ -702,7 +702,7 @@ it('首图操作跟随实际候选，点击和回车不打开详情；详情逐�
   expect(prompt.closest('.appearance-group')).toBeTruthy();
   expect(prompt.closest('.appearance-media')).toBeNull();
   fireEvent.click(within(surface as HTMLElement).getByRole('button', { name: '下载图片' }));
-  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/synthetic/detail-2.png', 'aitag-1-p2.png', false));
+  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/synthetic/detail-2.png', 'aitag-1-p2.png', false, undefined));
   expect(first.getAttribute('aria-pressed')).toBe('true');
 });
 const noSelection = () => works.forEach(work => {

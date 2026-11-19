@@ -1,7 +1,7 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Copy, Download, Heart, LoaderCircle } from 'lucide-react';
-import { copySharedImage, downloadSharedImage, useCleanSharedImages } from '../services/imageSharing';
+import { copySharedImage, downloadSharedImage, hasImageGenerationData, useCleanSharedImages, useImageDownloadFormat } from '../services/imageSharing';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
 import { ImageCardActions } from './ImageCardActions';
 import { collectionRevision, collectionTargetActive, ensureCollection, loadCollection, subscribeCollection, toggleCollectionTarget, type CollectionTarget } from '../services/collectionFavorites';
@@ -45,6 +45,9 @@ interface Props {
 export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify, variant = 'toolbar', className = '', generationData, favorite, favoriteActive, favoritePending, onToggleFavorite, onFavoriteChange, revealClassName = 'hover-reveal-md', showFavorite = true, showTransfer = true }) => {
   useLanguage();
   const clean = useCleanSharedImages();
+  const downloadFormat = useImageDownloadFormat();
+  /** 设置选了 JSON 且这件作品确实带生成信息时，下载按钮变成导出生成信息。 */
+  const exportsGenerationData = downloadFormat === 'json' && hasImageGenerationData(generationData);
   const busyRef = useRef(false);
   const favoriteBusyRef = useRef(false);
   const [busy, setBusy] = useState('');
@@ -85,7 +88,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
         else await copySharedImage(imageUrl, clean);
         notify?.('已复制图片', 'success');
       } else {
-        await downloadSharedImage(imageUrl, filename, clean);
+        await downloadSharedImage(imageUrl, filename, clean, generationData);
       }
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === 'AbortError') return;
@@ -102,7 +105,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
     ? 'rounded bg-black/70 px-3 py-1.5 text-xs font-medium leading-4 text-white hover:bg-black/85'
     : 'rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800';
   const actions = [
-    { action: 'download' as const, label: '下载', title: '下载图片', Icon: Download },
+    { action: 'download' as const, label: '下载', title: exportsGenerationData ? '下载生成信息' : '下载图片', Icon: Download },
     { action: 'copy' as const, label: '复制', title: '复制图片', Icon: Copy },
   ];
   return <div data-card-action="true" aria-busy={Boolean(busy) || favoriteBusy} className={`image-share-actions flex flex-wrap ${variant === 'overlay' ? 'items-stretch' : 'items-center'} gap-2 ${className}`} onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>

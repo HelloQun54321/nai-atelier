@@ -117,7 +117,7 @@ it('自定义角色图片操作不选择或打开条目，手机与桌面预览�
   const download = within(card).getByRole('button', { name: '下载图片' });
   expectCustomCardLayout(card, true);
   fireEvent.click(download);
-  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(saved.previewImage, 'character-' + custom.name + '.png', false));
+  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(saved.previewImage, 'character-' + custom.name + '.png', false, undefined));
   fireEvent.click(within(card).getByRole('button', { name: '复制图片' }));
   await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(saved.previewImage, false));
   expect(card.getAttribute('aria-pressed')).toBe('false');

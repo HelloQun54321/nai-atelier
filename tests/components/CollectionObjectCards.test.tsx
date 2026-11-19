@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), post: vi.fn(), upl
 vi.mock('../../services/api', async original => ({ ...await original<typeof import('../../services/api')>(), api: { get: mocks.get, put: mocks.put, post: mocks.post, uploadFile: mocks.upload } }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { getPage: async () => ({ items: [], count: 0 }), subscribe: () => () => {}, setFavorite: vi.fn(), setFavorites: vi.fn() } }));
 vi.mock('../../services/appearancePreferences', () => ({ useGalleryFrostedCaption: () => false }));
-vi.mock('../../services/imageSharing', () => ({ useCleanSharedImages: () => false, copySharedImage: vi.fn(), downloadSharedImage: vi.fn() }));
+vi.mock('../../services/imageSharing', () => ({ useCleanSharedImages: () => false, useImageDownloadFormat: () => 'png', hasImageGenerationData: () => false, copySharedImage: vi.fn(), downloadSharedImage: vi.fn() }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => ({ enabled: false }) }));
 vi.mock('../../services/stChatu8Sync', () => ({ useStChatu8Selection: () => ({ open: false, selecting: false, busy: false, entries: new Map(), available: new Set(), selected: new Set(), accepts: () => true, cancel: vi.fn() }), wisdomEntryLabel: () => '' }));
 vi.mock('../../services/naiRuntime', async original => ({ ...await original<typeof import('../../services/naiRuntime')>(), useNaiRuntime: () => ({}) }));

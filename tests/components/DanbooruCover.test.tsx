@@ -126,7 +126,7 @@ it.each(['artist', 'character'] as const)('%s 分享跟随当前候选和加载�
   await waitFor(() => expect(image().src).toBe(candidate(1).sampleUrl));
   fireEvent.click(screen.getByRole('button', { name: '下一张' }));
   fireEvent.click(screen.getByRole('button', { name: '下载图片' }));
-  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(getMobileOriginalUrl(candidate(2).sampleUrl), kind + '-synthetic-2.png', false));
+  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(getMobileOriginalUrl(candidate(2).sampleUrl), kind + '-synthetic-2.png', false, undefined));
   failImage();
   fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
   await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(getMobileOriginalUrl(candidate(2).previewUrl), false));

@@ -59,7 +59,7 @@ it('多页大图按钮与键盘翻页同步详情页，下载跟随当前页并�
   fireEvent.click(within(dialog).getByRole('button', { name: '下一张图片' }));
   expect(within(dialog).getByText('2 / 2')).toBeTruthy();
   fireEvent.click(within(dialog).getByRole('button', { name: '下载图片' }));
-  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/api/media?source=' + encodeURIComponent(illust.metaPages[1]) + '&variant=original', 'pixiv-100-p2.png', false));
+  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/api/media?source=' + encodeURIComponent(illust.metaPages[1]) + '&variant=original', 'pixiv-100-p2.png', false, undefined));
   fireEvent.keyDown(window, { key: 'ArrowLeft' });
   expect(within(dialog).getByText('1 / 2')).toBeTruthy();
   fireEvent.click(within(dialog).getByRole('button', { name: '返回图片详情' }));
@@ -205,7 +205,7 @@ it.each([false, true])('足迹=%s：卡片取首图且不打开详情，详情�
   expect(surface).toBe(firstSurface);
   expect(surface.hasAttribute('data-press-revealed')).toBe(false);
   fireEvent.click(within(surface as HTMLElement).getByRole('button', { name: '下载图片' }));
-  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/api/media?source=' + encodeURIComponent(illust.metaPages[1]) + '&variant=original', 'pixiv-100-p2.png', false));
+  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/api/media?source=' + encodeURIComponent(illust.metaPages[1]) + '&variant=original', 'pixiv-100-p2.png', false, undefined));
 });
 it('相关推荐沿用首图取用，复制图片不切换当前详情', async () => {
   const related = { ...illust, id: '102', title: 'related synthetic', metaPages: ['https://i.pximg.net/related.png'] };

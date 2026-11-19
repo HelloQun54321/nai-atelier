@@ -10063,6 +10063,24 @@
     "画像共有時に生成情報を除去",
     "이미지 공유 시 생성 정보 제거"
   ],
+  "图片悬浮按钮下载生成信息（JSON）": [
+    "圖片懸浮按鈕下載生成資訊（JSON）",
+    "Floating image button downloads generation data (JSON)",
+    "画像のフローティングボタンで生成情報（JSON）をダウンロード",
+    "이미지 플로팅 버튼으로 생성 정보(JSON) 다운로드"
+  ],
+  "开启后，图上的下载按钮导出 prompt、负面提示词与生成参数；图片没有生成信息时仍下载原图。": [
+    "開啟後，圖上的下載按鈕匯出 prompt、負面提示詞與生成參數；圖片沒有生成資訊時仍下載原圖。",
+    "When on, the download button exports the prompt, negative prompt, and generation settings; images without that data still download as the original image.",
+    "オンにすると、画像上のダウンロードボタンが prompt・ネガティブプロンプト・生成パラメータを書き出します。生成情報がない画像は元画像をダウンロードします。",
+    "켜면 이미지의 다운로드 버튼이 prompt, 네거티브 프롬프트, 생성 파라미터를 내보냅니다. 생성 정보가 없는 이미지는 원본을 다운로드합니다."
+  ],
+  "下载生成信息": [
+    "下載生成資訊",
+    "Download generation data",
+    "生成情報をダウンロード",
+    "생성 정보 다운로드"
+  ],
   "分组": [
     "分組",
     "Groups",

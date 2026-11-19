@@ -6,7 +6,10 @@ import { beginExportTarget, saveExportBlob } from './exportLocation';
 
 export const IMAGE_SHARING_STORAGE_KEY = 'nai_clean_shared_images';
 export const IMAGE_SHARING_TEXT_STORAGE_KEY = 'nai_shared_image_custom_text';
+export const IMAGE_DOWNLOAD_FORMAT_STORAGE_KEY = 'nai_image_download_format';
 export type SharedImageCleanContent = 'all' | 'prompts';
+/** 图上浮钮的下载按钮：原图，或这份作品的生成信息 JSON。 */
+export type ImageDownloadFormat = 'png' | 'json';
 export const IMAGE_SHARING_CONTENT_STORAGE_KEY = 'nai_shared_image_clean_content';
 const CHANGE_EVENT = 'nai-image-sharing-changed';
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
@@ -45,8 +48,31 @@ export const setSharedImageCleanContent = (value: SharedImageCleanContent) => {
   window.dispatchEvent(new Event(CHANGE_EVENT));
 };
 
-export const useSharedImageCleanContent = () => {
-  const [content, setContent] = useState(getSharedImageCleanContent);
+export const getImageDownloadFormat = (): ImageDownloadFormat => {
+  try { return localStorage.getItem(IMAGE_DOWNLOAD_FORMAT_STORAGE_KEY) === 'json' ? 'json' : 'png'; }
+  catch { return 'png'; }
+};
+
+export const setImageDownloadFormat = (value: ImageDownloadFormat) => {
+  localStorage.setItem(IMAGE_DOWNLOAD_FORMAT_STORAGE_KEY, value);
+  window.dispatchEvent(new Event(CHANGE_EVENT));
+};
+
+export const useImageDownloadFormat = () => {
+  const [format, setFormat] = useState(getImageDownloadFormat);
+  useEffect(() => {
+    const update = () => setFormat(getImageDownloadFormat());
+    window.addEventListener(CHANGE_EVENT, update);
+    window.addEventListener('storage', update);
+    return () => {
+      window.removeEventListener(CHANGE_EVENT, update);
+      window.removeEventListener('storage', update);
+    };
+  }, []);
+  return format;
+};
+
+export const useSharedImageCleanContent = () => {  const [content, setContent] = useState(getSharedImageCleanContent);
   useEffect(() => {
     const update = () => setContent(getSharedImageCleanContent());
     window.addEventListener(CHANGE_EVENT, update);
@@ -310,8 +336,23 @@ export const imageSharingFilename = (filename: string, blob: Blob, clean: boolea
   return `${name}${clean ? '-分享版' : ''}.${extension}`;
 };
 
-export const downloadSharedImage = async (source: string, filename: string, clean = getCleanSharedImages()) => {
+/** 有可复现的生成数据才值得导出 JSON；只有图片的条目仍下载原图。 */
+export const hasImageGenerationData = (data?: ImageGenerationData) => Boolean(data && (data.prompt?.trim() || data.negativePrompt?.trim() || data.params));
+
+export const imageGenerationBlob = (filename: string, data?: ImageGenerationData) => new Blob([JSON.stringify({
+  image: filename,
+  prompt: data?.prompt ?? '',
+  negativePrompt: data?.negativePrompt ?? '',
+  params: data?.params ?? {},
+}, null, 2)], { type: 'application/json' });
+
+export const downloadSharedImage = async (source: string, filename: string, clean = getCleanSharedImages(), data?: ImageGenerationData) => {
   const target = beginExportTarget();
+  if (getImageDownloadFormat() === 'json' && hasImageGenerationData(data)) {
+    const name = filename.replace(/\.[^.]+$/, '') || 'NAI';
+    await saveExportBlob(imageGenerationBlob(filename, data), `${name}.json`, target);
+    return;
+  }
   const blob = await prepareImage(source, clean, false, getSharedImageCustomText(), getSharedImageCleanContent());
   await saveExportBlob(blob, imageSharingFilename(filename, blob, clean), target);
 };
