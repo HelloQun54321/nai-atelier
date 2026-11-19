@@ -29,7 +29,7 @@ export const CharacterTaggerReference: React.FC<CharacterTaggerReferenceProps> =
   </button>;
   return <>
     {buttonSlotRef ? (buttonTarget ? createPortal(trigger, buttonTarget) : null) : trigger}
-    {open && <ImagePreviewPortal><ImageTaggerPanel contextual open onClose={() => setOpen(false)} onInsert={onAppend}
+    {open && <ImagePreviewPortal><ImageTaggerPanel contextual open onClose={() => setOpen(false)} onInsert={onAppend} hideSendToLab
       notify={notify ?? (() => {})} actionLabel={t('追加 {count} 个 Tag 到此角色')} /></ImagePreviewPortal>}
   </>;
 };

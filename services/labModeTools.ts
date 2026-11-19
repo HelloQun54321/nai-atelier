@@ -1,4 +1,4 @@
-import { GenerationMode, LabImageEditDraft, NAIParams } from '../types';
+import { GenerationMode, LabImageEditDraft, NAIParams, CharacterParams } from '../types';
 import { mergePromptFields } from './promptUtils';
 import { resolveTransparentWeight } from './transparentBackground.mjs';
 import type { PromptFragmentImport } from './metadataService';
@@ -23,6 +23,35 @@ export function buildPromptFragmentPatch(current: { prompt: string; negativeProm
   if (params !== current.params) patch.params = params;
   return patch;
 }
+
+/**
+ * 把外部反推的 Tag 放进角色槽：空白槽就够了，不碰已写好的角色；
+ * 没有空白槽就在模型允许范围内新建一个；槽位已满时追加到最后一位，
+ * 仍然只追加、不清空任何已有角色提示词。
+ */
+export const placeTagsInCharacterSlot = (
+  characters: CharacterParams[],
+  tags: string,
+  maxCharacters: number,
+  createBlank: () => CharacterParams,
+): { characters: CharacterParams[]; slot: number; created: boolean } => {
+  const trimmed = tags.trim();
+  const blank = characters.findIndex(character => !(character.prompt || '').trim());
+  if (blank >= 0) {
+    const next = [...characters];
+    next[blank] = { ...next[blank], prompt: mergePromptFields(next[blank].prompt, trimmed) };
+    return { characters: next, slot: blank, created: false };
+  }
+  if (characters.length < maxCharacters) {
+    const next = [...characters, { ...createBlank(), prompt: trimmed }];
+    return { characters: next, slot: next.length - 1, created: true };
+  }
+  const last = characters.length - 1;
+  if (last < 0) return { characters, slot: -1, created: false };
+  const next = [...characters];
+  next[last] = { ...next[last], prompt: mergePromptFields(next[last].prompt, trimmed) };
+  return { characters: next, slot: last, created: false };
+};
 
 export const canSaveLabModeToLibrary = (mode: GenerationMode): boolean => mode === 'text-to-image';
 

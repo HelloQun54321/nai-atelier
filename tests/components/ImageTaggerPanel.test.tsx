@@ -81,12 +81,22 @@ describe('图片识别入口与当前图片衔接', () => {
   it('当前图片识别结果可以继续送入实验室，保持追加而非替换', async () => {
     renderPanel(<ImageTaggerAction text imageUrl="/api/media/current.png" notify={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: '识别图片 Tag' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: '送往实验室' }).hasAttribute('disabled')).toBe(false));
-    fireEvent.click(screen.getByRole('button', { name: '送往实验室' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '加进全局正面提示词' }).hasAttribute('disabled')).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: '加进全局正面提示词' }));
     const payload = JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!);
     expect(payload.mode).toBe('append-prompt');
     expect(payload.prompt).toBe('blue hair, long hair');
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('外部图库点名要角色提示词时携带独立目标，不被写进全局正面', async () => {
+    renderPanel(<ImageTaggerAction text imageUrl="/api/media/current.png" notify={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: '识别图片 Tag' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '加进角色提示词' }).hasAttribute('disabled')).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: '加进角色提示词' }));
+    const payload = JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!);
+    expect(payload.mode).toBe('append-character');
+    expect(payload.prompt).toBe('blue hair, long hair');
   });
 
   it('从图片详情打开后位于大图上方，Escape 只关闭识别层', async () => {
@@ -95,7 +105,7 @@ describe('图片识别入口与当前图片衔接', () => {
     try {
       renderPanel(<ImageTaggerAction text imageUrl="/api/media/current.png" notify={vi.fn()} />);
       fireEvent.click(screen.getByRole('button', { name: '识别图片 Tag' }));
-      await waitFor(() => expect(screen.getByRole('button', { name: '送往实验室' }).hasAttribute('disabled')).toBe(false));
+      await waitFor(() => expect(screen.getByRole('button', { name: '加进全局正面提示词' }).hasAttribute('disabled')).toBe(false));
       expect(screen.getByRole('dialog', { name: '识别图片 Tag' }).classList.contains('z-[2000]')).toBe(true);
       fireEvent.keyDown(window, { key: 'Escape' });
       expect(screen.queryByRole('dialog')).toBeNull();

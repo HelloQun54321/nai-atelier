@@ -17,7 +17,8 @@ interface ImageTaggerPanelProps {
   contextual?: boolean;
   open: boolean;
   onClose: () => void;
-  onInsert: (tags: string) => void;
+  /** 提供时主按钮就是这个本地目标（追加到角色／全局正面／当前模式／新建条目）；不提供时主按钮为复制。 */
+  onInsert?: (tags: string) => void;
   notify: (message: string, type?: 'success' | 'error') => void;
   /** 底部按钮文案，{count} 会被替换为选中 Tag 数量 */
   actionLabel?: string;
@@ -27,7 +28,7 @@ interface ImageTaggerPanelProps {
   initialTags?: string;
   /** 图库保留本次勾选结果，复制、关闭或跳转均不丢失。 */
   onResult?: (result: ImageTaggerResult, tags: string) => void;
-  onSendToLab?: (tags: string) => void;
+  onSendToLab?: (target: 'global' | 'character', tags: string) => void;
   /** 提示词库等「结果就该留在当前页」的场景隐藏送往实验室，避免中途跳走。 */
   hideSendToLab?: boolean;
   lockImage?: boolean;
@@ -172,20 +173,39 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
     return next;
   });
 
+  /** 当前勾选 Tag 的逗号串；复制、追加、送往实验室共用同一份，避免三处各拼一遍。 */
+  const selectedTags = () => visibleTags.filter(item => selected.has(item.name)).map(item => item.name.replaceAll('_', ' ')).join(', ');
+
+  // 复制勾选结果：不关闭面板，用户可继续追加或换目标。
+  const copySelected = (close = false) => {
+    if (!selected.size) return;
+    void navigator.clipboard.writeText(selectedTags()).then(
+      () => notify(t('已复制 {0} 个 Tag 到剪贴板', [selected.size])),
+      () => notify(t('复制失败，请手动选择复制'), 'error'),
+    );
+    if (close) onClose();
+  };
+
   const insert = () => {
     if (!selected.size) return;
-    const tags = visibleTags.filter(item => selected.has(item.name)).map(item => item.name.replaceAll('_', ' ')).join(', ');
-    onInsert(tags);
+    if (!onInsert) { copySelected(true); return; }
+    onInsert(selectedTags());
     onClose();
   };
 
-  // 把选中 Tag 直接送往实验室（追加到主体提示词），并自动跳转；任何页面可用。
-  const sendToLab = () => {
+  // 把选中 Tag 带去实验室的某个明确位置，并自动跳转；任何页面可用。
+  const sendToLab = (target: 'global' | 'character') => {
     if (!selected.size) return;
-    const tags = visibleTags.filter(item => selected.has(item.name)).map(item => item.name.replaceAll('_', ' ')).join(', ');
+    const tags = selectedTags();
     try {
-      if (onSendToLab) { onSendToLab(tags); onClose(); return; }
-      const pending: PendingImportData = { prompt: tags, negativePrompt: '', params: { ...TAGGER_DEFAULT_PARAMS }, mode: 'append-prompt' };
+      if (onSendToLab) { onSendToLab(target, tags); onClose(); return; }
+      // 两种目标都只追加：全局正面保留原有提示词，角色优先写空白槽。
+      const pending: PendingImportData = {
+        prompt: tags,
+        negativePrompt: '',
+        params: { ...TAGGER_DEFAULT_PARAMS },
+        mode: target === 'character' ? 'append-character' : 'append-prompt',
+      };
       sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(pending));
       onClose();
       window.dispatchEvent(new CustomEvent('nai-agent-navigate', { detail: { view: 'playground', externalImport: true } }));
@@ -216,7 +236,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
           <button type="button" disabled={busy} onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800" aria-label={t("关闭")}><X className="h-4 w-4" /></button>
         </div>
       </header>
-      {modelOpen && <AnchoredToolbarPopover anchorRef={modelAnchorRef} title={t("反推模型")} width={380} allowMobile onClose={() => setModelOpen(false)}>
+      {modelOpen && <AnchoredToolbarPopover anchorRef={modelAnchorRef} title={t("反推模型")} width={480} allowMobile onClose={() => setModelOpen(false)}>
         <ImageTaggerModelManager notify={notify} />
       </AnchoredToolbarPopover>}
       <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[300px_minmax(0,1fr)] md:overflow-hidden">
@@ -308,9 +328,16 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
           </div>}
         </section>
       </div>
-      <footer className="appearance-content operation-footer flex flex-none items-center justify-end gap-2 border-t border-gray-200 p-3 dark:border-gray-800">
-        <ToolbarButton disabled={!selected.size || busy} onClick={insert} className="mobile-touch">{(actionLabel ?? '追加 {count} 个 Tag 到全局提示词').replace('{count}', String(selected.size))}</ToolbarButton>
-        {!hideSendToLab && <ToolbarButton tone="primary" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch">{t("送往实验室")}</ToolbarButton>}
+      <footer className="appearance-content operation-footer flex flex-none flex-wrap items-center justify-end gap-2 border-t border-gray-200 p-3 dark:border-gray-800">
+        {/* 有本地目标时另给一个纯复制：追加到角色／当前字段只覆盖一处，复制是唯一不改变任何内容的选择。 */}
+        {onInsert && <ToolbarButton disabled={!selected.size || busy} onClick={() => copySelected()} className="mobile-touch">{t("复制 {count} 个 Tag").replace('{count}', String(selected.size))}</ToolbarButton>}
+        <ToolbarButton tone="primary" disabled={!selected.size || busy} onClick={insert} className="mobile-touch">{(actionLabel ?? t(onInsert ? "追加 {count} 个 Tag 到全局提示词" : "复制 {count} 个 Tag")).replace('{count}', String(selected.size))}</ToolbarButton>
+        {/* 目标已在实验室里时不再提供「跳去实验室」，避免从全局正面／角色入口进来又被带走；
+            外部图库要说清落到哪一栏，两种目标都只追加、不覆盖。 */}
+        {!hideSendToLab && <>
+          <ToolbarButton disabled={!selected.size || busy} onClick={() => sendToLab('global')} title={t("跳到实验室，把勾选的 Tag 追加到全局正面提示词，原有内容保留")} className="mobile-touch">{t("加进全局正面提示词")}</ToolbarButton>
+          <ToolbarButton disabled={!selected.size || busy} onClick={() => sendToLab('character')} title={t("跳到实验室，写进空白角色槽；角色都已写满时新增一位，不覆盖已有角色提示词")} className="mobile-touch">{t("加进角色提示词")}</ToolbarButton>
+        </>}
       </footer>
     </div>
   </div></ImagePreviewPortal>;
@@ -333,17 +360,11 @@ interface ImageTaggerActionProps {
 export const ImageTaggerAction: React.FC<ImageTaggerActionProps> = ({ notify, onInsert, actionLabel, className = '', imageUrl, text = false, label = '识别图片 Tag' }) => {
   useLanguage();
   const [open, setOpen] = useState(false);
-  const handleInsert = onInsert ?? ((tags: string) => {
-    void navigator.clipboard.writeText(tags).then(
-      () => notify(`已复制 ${tags.split(',').length} 个 Tag 到剪贴板`),
-      () => notify('复制失败，请手动选择复制', 'error'),
-    );
-  });
   return <>
     {text ? <ToolbarButton onClick={() => setOpen(true)} className={`mobile-touch ${className}`}><ImagePlus />{t(label)}</ToolbarButton> : <>
       <IconButton label={t(label)} onClick={() => setOpen(true)} className={`max-md:hidden ${className}`}><ImagePlus className="h-4 w-4" /></IconButton>
       <MobileIconButton label={t(label)} onClick={() => setOpen(true)} className={`border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden ${className}`}><ImagePlus className="h-5 w-5" /></MobileIconButton>
     </>}
-    {open && <ImagePreviewPortal><ImageTaggerPanel contextual open={open} onClose={() => setOpen(false)} onInsert={handleInsert} notify={notify} actionLabel={actionLabel ?? (onInsert ? t("追加 {count} 个 Tag 到全局提示词") : t("复制 {count} 个 Tag"))} imageUrl={imageUrl} /></ImagePreviewPortal>}
+    {open && <ImagePreviewPortal><ImageTaggerPanel contextual open={open} onClose={() => setOpen(false)} onInsert={onInsert} notify={notify} actionLabel={actionLabel} imageUrl={imageUrl} /></ImagePreviewPortal>}
   </>;
 };

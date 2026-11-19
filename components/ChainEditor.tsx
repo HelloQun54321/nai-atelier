@@ -34,7 +34,7 @@ import { SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
-import { buildImageEditMetadataPatch, buildPromptFragmentPatch, canSaveLabModeToLibrary } from '../services/labModeTools';
+import { buildImageEditMetadataPatch, buildPromptFragmentPatch, canSaveLabModeToLibrary, placeTagsInCharacterSlot } from '../services/labModeTools';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences, type LabPageLayouts } from '../services/appearancePreferences';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
@@ -1274,6 +1274,20 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         }
         if (data.targetMode === 'text-to-image') {
             updateWorkspace(previous => ({ ...previous, activeMode: 'text-to-image' }));
+        }
+        // 外部图库反推后点名要「角色提示词」：空白槽优先，其次新增一位，绝不覆盖已写好的角色。
+        if (data.mode === 'append-character') {
+            const tags = (data.prompt || '').trim();
+            if (!tags) return;
+            const tagCount = tags.split(',').filter(Boolean).length;
+            const placed = placeTagsInCharacterSlot(params.characters || [], tags, activeModelInfo.maxCharacters, createBlankLabCharacter);
+            if (placed.slot < 0) return;
+            setParams({ ...params, characters: placed.characters });
+            markChange();
+            notify(placed.created
+                ? t('已把 {0} 个 Tag 加进新的角色 {1}', [tagCount, placed.slot + 1])
+                : t('已把 {0} 个 Tag 追加到角色 {1} 的提示词', [tagCount, placed.slot + 1]));
+            return;
         }
         if (data.mode === 'prompt-fragments' || data.mode === 'append-prompt') {
             const fragment: PromptFragmentImport = data.mode === 'prompt-fragments' ? data : { mode: 'prompt-fragments', prompt: data.prompt };
@@ -2646,6 +2660,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 contextual
                 open
                 lockImage={Boolean(reverseTagImage)}
+                hideSendToLab
                 imageUrl={reverseTagImage || undefined}
                 onClose={() => { setReverseTagOpen(false); setReverseTagImage(null); }}
                 notify={notify}

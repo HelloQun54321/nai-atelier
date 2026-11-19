@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createLabImageEditDraft } from '../../services/labWorkspace';
-import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildPromptFragmentPatch, canSaveLabModeToLibrary, mergePresetSettings } from '../../services/labModeTools';
+import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildPromptFragmentPatch, canSaveLabModeToLibrary, mergePresetSettings, placeTagsInCharacterSlot } from '../../services/labModeTools';
+import type { CharacterParams } from '../../types';
 
 const params = {
   width: 832,
@@ -60,5 +61,33 @@ describe('编辑页顶部工具路由', () => {
     expect(canSaveLabModeToLibrary('image-to-image')).toBe(false);
     expect(canSaveLabModeToLibrary('inpaint')).toBe(false);
     expect(canSaveLabModeToLibrary('outpaint')).toBe(false);
+  });
+});
+
+describe('外部反推写进角色提示词', () => {
+  const blank = (): CharacterParams => ({ id: 'blank', prompt: '', x: 0.5, y: 0.5 });
+
+  it('优先写空白槽，已写好的角色提示词原样保留', () => {
+    const placed = placeTagsInCharacterSlot([
+      { id: 'a', prompt: 'blue hair', x: 0.2, y: 0.4 },
+      { id: 'b', prompt: '  ', x: 0.8, y: 0.6 },
+    ], 'sitting', 2, blank);
+    expect(placed).toMatchObject({ slot: 1, created: false });
+    expect(placed.characters[0].prompt).toBe('blue hair');
+    expect(placed.characters[1].prompt).toBe('sitting');
+  });
+
+  it('角色都写满时新增一位，不覆盖已有内容', () => {
+    const placed = placeTagsInCharacterSlot([{ id: 'a', prompt: 'blue hair', x: 0.2, y: 0.4 }], 'sitting', 2, blank);
+    expect(placed).toMatchObject({ slot: 1, created: true });
+    expect(placed.characters[0].prompt).toBe('blue hair');
+    expect(placed.characters[1].prompt).toBe('sitting');
+  });
+
+  it('槽位达到模型上限时只追加到最后一位，不删角色也不清空提示词', () => {
+    const placed = placeTagsInCharacterSlot([{ id: 'a', prompt: 'blue hair', x: 0.2, y: 0.4 }], 'sitting', 1, blank);
+    expect(placed).toMatchObject({ slot: 0, created: false });
+    expect(placed.characters).toHaveLength(1);
+    expect(placed.characters[0].prompt).toBe('blue hair, sitting');
   });
 });

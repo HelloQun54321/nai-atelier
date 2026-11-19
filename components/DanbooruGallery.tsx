@@ -637,13 +637,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
                 </section>)}
               </>} />
             {reverseOpen && <ImagePreviewPortal><ImageTaggerPanel contextual open onClose={() => setReverseOpen(false)} notify={notify}
-              imageUrl={selected.sampleUrl ? getMobileOriginalUrl(selected.sampleUrl) : undefined}
-              onInsert={tags => {
-                void navigator.clipboard.writeText(tags).then(
-                  () => notify(`已复制 ${tags.split(',').length} 个 Tag 到剪贴板`),
-                  () => notify('复制失败，请手动选择复制', 'error'),
-                );
-              }} /></ImagePreviewPortal>}
+              imageUrl={selected.sampleUrl ? getMobileOriginalUrl(selected.sampleUrl) : undefined} /></ImagePreviewPortal>}
           </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">{t("选择作品")}</div>}
         </DetailSidePanel>
       </div>

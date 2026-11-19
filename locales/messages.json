@@ -25051,6 +25051,42 @@
     "ラボへ送る",
     "랩으로 보내기"
   ],
+  "加进全局正面提示词": [
+    "加進全域正面提示詞",
+    "Add to global positive prompt",
+    "全体ポジティブプロンプトに追加",
+    "전역 긍정 프롬프트에 추가"
+  ],
+  "加进角色提示词": [
+    "加進角色提示詞",
+    "Add to a character prompt",
+    "キャラクタープロンプトに追加",
+    "캐릭터 프롬프트에 추가"
+  ],
+  "已把 {0} 个 Tag 加进新的角色 {1}": [
+    "已把 {0} 個 Tag 加進新的角色 {1}",
+    "Added {0} tags to new character {1}",
+    "{0} 個の Tag を新しいキャラクター {1} に追加しました",
+    "Tag {0}개를 새 캐릭터 {1}에 추가했습니다"
+  ],
+  "已把 {0} 个 Tag 追加到角色 {1} 的提示词": [
+    "已把 {0} 個 Tag 追加到角色 {1} 的提示詞",
+    "Appended {0} tags to character {1}",
+    "{0} 個の Tag をキャラクター {1} のプロンプトに追記しました",
+    "Tag {0}개를 캐릭터 {1} 프롬프트에 추가했습니다"
+  ],
+  "跳到实验室，把勾选的 Tag 追加到全局正面提示词，原有内容保留": [
+    "跳到實驗室，把勾選的 Tag 追加到全域正面提示詞，原有內容保留",
+    "Jump to the lab and append the selected tags to the global positive prompt, keeping what is already there",
+    "ラボへ移動し、選択した Tag を全体ポジティブプロンプトへ追記します（既存の内容は保持）",
+    "실험실로 이동해 선택한 Tag를 전역 긍정 프롬프트에 추가합니다. 기존 내용은 유지됩니다"
+  ],
+  "跳到实验室，写进空白角色槽；角色都已写满时新增一位，不覆盖已有角色提示词": [
+    "跳到實驗室，寫進空白角色欄位；角色都已寫滿時新增一位，不覆蓋已有角色提示詞",
+    "Jump to the lab and write into a blank character slot, adding a new character when every slot already has text. Existing character prompts are kept",
+    "ラボへ移動し、空のキャラクター枠へ書き込みます。どの枠にも文章がある場合は新しいキャラクターを追加し、既存のキャラクタープロンプトは変更しません",
+    "실험실로 이동해 빈 캐릭터 슬롯에 기록합니다. 모든 슬롯에 내용이 있으면 캐릭터를 새로 추가하며, 기존 캐릭터 프롬프트는 그대로 둡니다"
+  ],
   "送往实验室失败，请重试": [
     "送往實驗室失敗，請重試",
     "Failed to send to the lab. Retry.",

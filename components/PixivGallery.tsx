@@ -1192,13 +1192,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                   />
               ) : null} />
               {reverseOpen && <ImagePreviewPortal><ImageTaggerPanel contextual open onClose={() => setReverseOpen(false)} notify={notify}
-                imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')}
-                onInsert={tags => {
-                  void navigator.clipboard.writeText(tags).then(
-                    () => notify(`已复制 ${tags.split(',').length} 个 Tag 到剪贴板`),
-                    () => notify('复制失败，请手动选择复制', 'error'),
-                  );
-                }} /></ImagePreviewPortal>}
+                imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} /></ImagePreviewPortal>}
 
               {/* 相关作品推荐（看了又看） */}
               <section className="border-t border-gray-200 pt-3 dark:border-gray-800">

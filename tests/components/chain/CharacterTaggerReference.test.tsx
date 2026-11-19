@@ -73,6 +73,10 @@ describe('角色就地粘贴反推', () => {
     fireEvent.paste(dialog, { clipboardData: { files: [image], items: [] } });
     await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalledWith(image, expect.objectContaining({ model: model.id })));
     const append = await within(dialog).findByRole('button', { name: '追加 2 个 Tag 到此角色' });
+    // 角色行本身就是明确落点，不再提供会跳走实验室的目标按钮，只多给一个复制。
+    expect(within(dialog).getByRole('button', { name: '复制 2 个 Tag' })).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: '加进角色提示词' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: '加进全局正面提示词' })).toBeNull();
     fireEvent.click(append);
     expect(rows()).toEqual([initial[0], { ...initial[1], prompt: 'red hair, looking at viewer, sitting' }]);
     expect(screen.queryByRole('dialog')).toBeNull();

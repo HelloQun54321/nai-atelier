@@ -62,7 +62,7 @@ export interface ParsedNAIData {
     params: NAIParams;
 }
 
-export type ImportMode = 'replace' | 'prompt-only' | 'negative-only' | 'params-only' | 'append-prompt' | 'image-edit';
+export type ImportMode = 'replace' | 'prompt-only' | 'negative-only' | 'params-only' | 'append-prompt' | 'append-character' | 'image-edit';
 
 export interface PendingImportData extends ParsedNAIData {
     mode?: ImportMode;
