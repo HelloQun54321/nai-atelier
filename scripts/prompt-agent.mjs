@@ -5106,14 +5106,20 @@ export class PromptAgentService {
       {
         name: 'run_roll_series',
         label: '连续 Roll 串',
-        description: '让当前 Roll 记录连续自动 Roll：每轮抽取候选并生成，等本批结束后自动进入下一轮，直到 Opus 额度降到 stopAtPercent（默认 5）或账号点数降到 stopAtPoints（默认 0）或达到 maxRounds。循环由页面后台执行并自行等待，不占用回复轮次；用户明确要求连续 Roll、整夜消耗或无人值守消耗时使用。用 get_nai_balance 或 get_roll_state 读取进度。',
+        description: '让当前 Roll 记录连续 Roll：每轮抽取并生成，本批结束后进入下一轮，直到 Opus 降到 stopAtPercent（默认 5）、点数降到 stopAtPoints（默认 0）或达到 maxRounds。由 Roll 页面在打开期间执行，不占回复轮次；失败、取消、容量将满或页面关闭即停，不重试不续跑。仅在用户明确要求连续或无人值守消耗时使用；stop=true 立即停止，用 get_roll_state 的 series.stopReason 核对。',
         parameters: Type.Object({
           maxRounds: Type.Optional(Type.Integer({ minimum: 1, maximum: 5000 })),
           stopAtPercent: Type.Optional(Type.Number({ minimum: 0, maximum: 100 })),
           stopAtPoints: Type.Optional(Type.Integer({ minimum: 0 })),
           count: Type.Optional(Type.Integer({ minimum: 1, maximum: 24 })),
+          stop: Type.Optional(Type.Boolean()),
         }),
         execute: async (_id, args) => {
+          // 停止不消耗额度，只读权限也允许，避免无法叫停已经在跑的循环。
+          if (args.stop === true) {
+            const stopped = await runPageCommand('run_roll_series', { stop: true }, 'roll');
+            return { content: jsonText(stopped?.result ?? {}), details: stopped?.result };
+          }
           if (this.config.permissionMode === 'read_only') throw new Error('当前为只读权限，不能生成图片');
           const page = await runPageCommand('run_roll_series', {
             maxRounds: Math.floor(clamp(Number(args.maxRounds) || 500, 1, 5000, 500)),
@@ -5367,7 +5373,7 @@ export class PromptAgentService {
       },
     ].map(tool => ({ ...tool, execute: async (...args) => {
       if (tool.name === 'operate_current_page' && args[1]?.action === 'command' && args[1]?.command === 'restore_prompt_version') throw new Error('恢复旧稿请使用restore_prompt_version业务工具核验本对话版本');
-      const readOnly = isAgentReadTool(tool.name) || ['request_user_input', 'enable_tool_group', 'navigate_view', 'open_settings'].includes(tool.name) || tool.name === 'operate_current_page' && ['navigate', 'scroll', 'hover', 'press', 'click', 'wait', 'command', 'copy_image', 'double_click', 'select'].includes(args[1]?.action) || tool.name === 'request_local_image_folder_access' && args[1]?.access === 'read';
+      const readOnly = isAgentReadTool(tool.name) || ['request_user_input', 'enable_tool_group', 'navigate_view', 'open_settings'].includes(tool.name) || tool.name === 'operate_current_page' && ['navigate', 'scroll', 'hover', 'press', 'click', 'wait', 'command', 'copy_image', 'double_click', 'select'].includes(args[1]?.action) || tool.name === 'request_local_image_folder_access' && args[1]?.access === 'read' || tool.name === 'run_roll_series' && args[1]?.stop === true;
       if (this.config.permissionMode === 'read_only' && !readOnly) throw new Error('当前为只读权限，不能修改项目、生成或保存图片；请由用户在权限菜单切换档位');
       const editsPagePrompt = tool.name === 'operate_current_page' && ['fill', 'press', 'click', 'select', 'check', 'command', 'drag', 'paste_image'].includes(args[1]?.action);
       const editsPrompt = ['update_prompts', 'set_characters', 'set_prompt_modules'].includes(tool.name) || editsPagePrompt;

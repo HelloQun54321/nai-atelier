@@ -7,6 +7,7 @@ import { MobileBottomSheet, MobileOverflowMenu } from './MobileUI';
 import { t, useLanguage } from '../services/i18n';
 import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateToChain, rollExperimentSummary, rollRoundSourceChainIds, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
+import { getRollSeries, nextRollSeriesStep, ROLL_SERIES_STOP_LABELS, rollSeriesWouldOverflow, startRollSeries, stopRollSeries, type RollSeriesStopReason } from '../services/styleRollSeries';
 import { buildRollChainArtistSource } from '../services/styleRollChainArtists';
 import { rollFavoriteMatches, rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
 import { ARTIST_SAMPLES_CHANGED, getArtistSampleLibrary, normalizeArtistSampleTag } from '../services/artistSamples';
@@ -72,6 +73,8 @@ const ROLL_TRIAGE_FILTERS: readonly string[] = ['unsaved', 'favorited'];
 /** 画师库带入的固定画师只消费一次；页面被保活淘汰后重建也不重复建记录。 */
 const artistCountLabel = (rules: RollRules) => rules.minArtists === rules.maxArtists ? String(rules.maxArtists) : `${rules.minArtists}–${rules.maxArtists}`;
 const consumedPinnedTokens = new Set<number>();
+/** 一次出图的结果：连续 Roll 据此决定进入下一轮还是停下。 */
+type RollGenerateOutcome = { ok: true } | { ok: false; reason: 'skipped' | 'error' | 'cancelled' | 'declined' | 'record_full'; error?: string };
 
 /** 候选里的画师收藏按钮：收藏的就是画师库里的同一条记录（收藏库 sourceType='artist'）。 */
 const ArtistFavoriteButton: React.FC<{ tag: string; sampleUrl?: string }> = ({ tag, sampleUrl }) => {
@@ -331,7 +334,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (!mounted.current) return;
     const text = t(parseHttpError(message).message);
     setGenerationError({ experimentId: selectedExperimentRef.current, message: text, tone });
-    alertDialog(text);
+    // 连续 Roll 失败即停并汇总提示一次，不在无人值守时逐轮叠弹窗。
+    if (!getRollSeries().running) alertDialog(text);
   }, [alertDialog]);
   const perform = async (action: () => Promise<void>, source: 'request' | 'generation' = 'request') => {
     if (busyRef.current || loadingRef.current) return;
@@ -401,41 +405,44 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPinned?.token]);
-  const generate = async (candidates: RollCandidate[] = selected ? [selected] : [], target = experiment, options: { skipConfirmation?: boolean } = {}) => {
-    if (!target || target.archived || !candidates.length || candidates.some(candidate => candidate.archived || images.has(candidate.id)) || loadingRef.current || generatingRef.current || session || (target.id === experiment?.id && (historyLoading || !historyReady))) return;
-    if (!continuousGenerationEnabled && candidates.length > 1) { reportGeneration(t('连续生成已关闭，请开启后生成本轮')); return; }
+  const generate = async (candidates: RollCandidate[] = selected ? [selected] : [], target = experiment, options: { skipConfirmation?: boolean } = {}): Promise<RollGenerateOutcome> => {
+    if (!target || target.archived || !candidates.length || candidates.some(candidate => candidate.archived || images.has(candidate.id)) || loadingRef.current || generatingRef.current || session || (target.id === experiment?.id && (historyLoading || !historyReady))) return { ok: false, reason: 'skipped' };
+    if (!continuousGenerationEnabled && candidates.length > 1) { const message = t('连续生成已关闭，请开启后生成本轮'); reportGeneration(message); return { ok: false, reason: 'error', error: message }; }
     const key = readRollApiKey();
-    if (!key) { reportGeneration(t('请先在“全局设置”中配置 NovelAI API Key')); return; }
+    if (!key) { const message = t('请先在“全局设置”中配置 NovelAI API Key'); reportGeneration(message); return { ok: false, reason: 'error', error: message }; }
     generatingRef.current = true; setPreparing(true); setGenerationError(null);
     const reportError = (message: string, tone: 'error' | 'warning' = 'error') => {
-      if (!mounted.current) return;
       const text = t(parseHttpError(message).message);
+      if (!mounted.current) return text;
       if (selectedExperimentRef.current === target.id) setGenerationError({ experimentId: target.id, message: text, tone });
       else notify(t('画风记录 {0}：{1}', [target.name, text]), 'error');
-      // 出图回执里的错误与警告同样用一次弹窗说清楚，候选卡占位区仍保留就地重试。
-      alertDialog(text);
+      // 出图回执里的错误与警告同样用一次弹窗说清楚，候选卡占位区仍保留就地重试；连续 Roll 停下后统一提示一次。
+      if (!getRollSeries().running) alertDialog(text);
+      return text;
     };
     try {
       void subscription.refreshIfStale();
       const eachCost = perUseNaiChannel ? 0 : estimateV45GenerationCost(target.template.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true), totalCost = eachCost * candidates.length;
       if (totalCost > 0 && !options.skipConfirmation && !await confirm({ rememberKey: 'roll.generate', rememberScope: confirmationCostScope(key, eachCost, candidates.length, budget.remaining, target.template.params.model), title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片',
         message: t('本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。', [candidates.length, totalCost, budget.remaining]),
-        confirmLabel: t('消耗 {0} 点并生成', [totalCost]), ...(totalCost > budget.remaining ? { tone: 'danger' as const } : {}) })) return;
+        confirmLabel: t('消耗 {0} 点并生成', [totalCost]), ...(totalCost > budget.remaining ? { tone: 'danger' as const } : {}) })) return { ok: false, reason: 'declined' };
       const started = await beginRollGeneration(target, candidates.length === 1 ? candidates[0] : candidates, key, eachCost, generationStreamPreview && getRuntimeNaiModelInfo(target.template.params.model, runtime).supportsStreamedResponses, currentRollRound(target)?.id, forceEmptySeed);
       const receipt = await started.settle;
-      if (mounted.current) {
-        const warnings: string[] = [];
-        if (started.session.accountingFailed) warnings.push(t('图片已保存，但本地记账异常，请核对额度后再继续') + (started.session.accountingError ? `：${started.session.accountingError}` : ''));
-        if (started.session.cleanupError) warnings.push(t('后台任务清理异常：{0}', [started.session.cleanupError]));
-        if (warnings.length) reportError(warnings.join('；'), 'warning');
-        else if (!receipt.success && receipt.outcome !== 'cancelled') reportError(receipt.error || t('生成失败'));
-        if (selectedExperimentRef.current === target.id) {
-          const saved = started.session.lastSavedItem;
-          if (saved) setHistory(current => [...current.filter(item => item.id !== saved.id), saved]);
-          await refreshHistory(target.id);
-        }
+      const warnings: string[] = [];
+      if (started.session.accountingFailed) warnings.push(t('图片已保存，但本地记账异常，请核对额度后再继续') + (started.session.accountingError ? `：${started.session.accountingError}` : ''));
+      if (started.session.cleanupError) warnings.push(t('后台任务清理异常：{0}', [started.session.cleanupError]));
+      let outcome: RollGenerateOutcome = { ok: true };
+      // 记账或清理异常也要停下连续 Roll：已出的图保住，但不能在额度不明时继续消耗。
+      if (warnings.length) outcome = { ok: false, reason: 'error', error: reportError(warnings.join('；'), 'warning') };
+      else if (receipt.outcome === 'cancelled') outcome = { ok: false, reason: 'cancelled' };
+      else if (!receipt.success) outcome = { ok: false, reason: 'error', error: reportError(receipt.error || t('生成失败')) };
+      if (mounted.current && selectedExperimentRef.current === target.id) {
+        const saved = started.session.lastSavedItem;
+        if (saved) setHistory(current => [...current.filter(item => item.id !== saved.id), saved]);
+        await refreshHistory(target.id);
       }
-    } catch (cause) { reportError((cause as Error).message); }
+      return outcome;
+    } catch (cause) { return { ok: false, reason: 'error', error: reportError((cause as Error).message) }; }
     finally { generatingRef.current = false; if (mounted.current) setPreparing(false); }
   };
   const approve = () => void perform(async () => {
@@ -447,25 +454,46 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (readRollApiKey() !== current.key) throw new Error('NovelAI Key 已变化，请重新发起生成');
     await approveGenerationSeries(current, nextCost);
   }, 'generation');
+  /** 抽取一轮候选并保存记录；手动 Roll、助手单轮与连续 Roll 共用同一份校验与落库。 */
+  const createRound = async (requested: number, useSamples: boolean) => {
+    if (chainArtistSource === undefined && (libraryLoading || libraryError || !library.length)) throw new Error(libraryError || '画师词库尚未就绪，请重新加载');
+    if (useSamples && sampledTags === null) throw new Error('正在读取画师样张，请稍候');
+    if (useSamples && !effectiveLibrary.length && pinnedArtists.length < roundRules.maxArtists) throw new Error('没有可用的有样张画师，请先在画师库下载图包或生成样张');
+    let source = experiment || makeExperiment();
+    if (round && !round.closedAt) source = { ...source, rounds: source.rounds.map(item => item.id === round.id ? { ...item, closedAt: Date.now() } : item) };
+    source = { ...source, artists: artistOverrides, drawPlan: undefined, pinnedArtists, chainArtistSource, rules: roundRules, sampledOnly: useSamples };
+    const next = beginRollRound(source, useSamples ? effectiveLibrary : library, requested, { blockedTags: blocklist, sampledOnly: useSamples, preferredTags: await readPreferredTags() });
+    const saved = await store(next), created = currentRollRound(saved)!;
+    selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
+    return { saved, created, candidates: saved.candidates.filter(candidate => created.candidateIds.includes(candidate.id)) };
+  };
   const runRound = () => void perform(async () => {
     if (session || generatingRef.current) return;
     if (experiment && (!historyReady || historyLoading)) throw new Error('历史暂不可用，请重新加载后再生成。');
     if (!continuousGenerationEnabled && count > 1) throw new Error('连续生成已关闭，请开启后生成本轮');
-    if (chainArtistSource === undefined && (libraryLoading || libraryError || !library.length)) throw new Error(libraryError || '画师词库尚未就绪，请重新加载');
-    if (sampledOnly && sampledTags === null) throw new Error('正在读取画师样张，请稍候');
-    if (sampledOnly && !effectiveLibrary.length && pinnedArtists.length < roundRules.maxArtists) throw new Error('没有可用的有样张画师，请先在画师库下载图包或生成样张');
-    let source = experiment || makeExperiment();
-    if (round && !round.closedAt) source = { ...source, rounds: source.rounds.map(item => item.id === round.id ? { ...item, closedAt: Date.now() } : item) };
-    source = { ...source, artists: artistOverrides, drawPlan: undefined, pinnedArtists, chainArtistSource, rules: roundRules, sampledOnly };
-    const next = beginRollRound(source, sampledOnly ? effectiveLibrary : library, count, { blockedTags: blocklist, sampledOnly, preferredTags: await readPreferredTags() });
-    const saved = await store(next), created = currentRollRound(saved)!;
-    selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
-    void generate(saved.candidates.filter(candidate => created.candidateIds.includes(candidate.id)), saved);
+    const { saved, candidates } = await createRound(count, sampledOnly);
+    void generate(candidates, saved);
   }, 'generation');
-  // 连续 Roll：页面后台逐轮推进，不占助手回复轮次；每轮等本批结束再进入下一轮。
-  const rollSeriesRef = useRef<{ running: boolean; rounds: number; maxRounds: number; stopAtPercent: number; stopAtPoints: number; stopReason: string; startedAt: number; lastRoundAt: number; lastSignalAt: number }>({ running: false, rounds: 0, maxRounds: 500, stopAtPercent: 5, stopAtPoints: 0, stopReason: '', startedAt: 0, lastRoundAt: 0, lastSignalAt: 0 });
-  const runRoundRef = useRef(runRound);
-  runRoundRef.current = runRound;
+  /**
+   * 连续 Roll 的一轮：抽取并等本批出图结束，把结果交回循环判断。
+   * 尚未抽取时遇到忙碌只等待；一旦落了候选，生成未能发起也按失败停下，避免无人值守时攒下空轮。
+   */
+  const runSeriesRound = async (): Promise<RollGenerateOutcome> => {
+    if (busyRef.current || loadingRef.current || generatingRef.current || session || !experiment || !historyReady || historyLoading) return { ok: false, reason: 'skipped' };
+    if (!continuousGenerationEnabled) return { ok: false, reason: 'error', error: t('连续生成已关闭，无法连续 Roll') };
+    if (rollSeriesWouldOverflow(experiment, count)) return { ok: false, reason: 'record_full' };
+    busyRef.current = true; setBusy(true);
+    let created: Awaited<ReturnType<typeof createRound>>;
+    try { created = await createRound(count, sampledOnly); }
+    catch (cause) { return { ok: false, reason: 'error', error: t(parseHttpError((cause as Error).message).message) }; }
+    finally { busyRef.current = false; if (mounted.current) setBusy(false); }
+    const outcome = await generate(created.candidates, created.saved, { skipConfirmation: getRollSeries().skipConfirmation });
+    return !outcome.ok && outcome.reason === 'skipped' ? { ok: false, reason: 'error', error: t('本轮候选已抽取，但生成未能发起') } : outcome;
+  };
+  const runSeriesRoundRef = useRef(runSeriesRound);
+  runSeriesRoundRef.current = runSeriesRound;
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
   // Opus 百分比与官方点数与侧栏同源；任一未知都不当作已达标。
   const seriesOpusPercent = subscription.info?.usage && Number.isFinite(Number(subscription.info.usage.percent)) ? Number(subscription.info.usage.percent) : null;
   const seriesAccountPoints = (() => {
@@ -473,32 +501,37 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     return balance && Number.isFinite(balance.fixedTrainingStepsLeft) && Number.isFinite(balance.purchasedTrainingSteps)
       ? balance.fixedTrainingStepsLeft + balance.purchasedTrainingSteps : null;
   })();
-  const seriesSignalRef = useRef({ session, preparing, opusPercent: seriesOpusPercent, points: seriesAccountPoints });
-  seriesSignalRef.current = { session, preparing, opusPercent: seriesOpusPercent, points: seriesAccountPoints };
+  const seriesSignals = { busy: Boolean(session || preparing || busy || loading || detailLoading || historyLoading || !historyReady), experimentId, opusPercent: seriesOpusPercent, points: seriesAccountPoints };
+  const seriesSignalRef = useRef(seriesSignals);
+  seriesSignalRef.current = seriesSignals;
+  // 连续 Roll：页面打开期间逐轮推进，不占助手回复轮次；每轮等本批结束再进入下一轮，任何失败都停下并提示一次。
   useEffect(() => {
+    const finish = (reason: RollSeriesStopReason, error = '') => {
+      if (!stopRollSeries(reason, error) || !mounted.current) return;
+      const label = t(ROLL_SERIES_STOP_LABELS[reason]);
+      const ended = ['max_rounds', 'opus_limit', 'points_limit'].includes(reason);
+      notifyRef.current(t('连续 Roll 已停止：{0}', [error ? `${label}（${error}）` : label]), ended ? 'success' : 'error');
+    };
     const timer = window.setInterval(() => {
-      const series = rollSeriesRef.current;
-      if (!series.running) return;
-      const state = seriesSignalRef.current;
-      if (series.rounds >= series.maxRounds) { series.running = false; series.stopReason = 'max_rounds'; return; }
-      if (state.opusPercent !== null && state.opusPercent <= series.stopAtPercent) { series.running = false; series.stopReason = 'opus_limit'; return; }
-      if (state.points !== null && state.points <= series.stopAtPoints) { series.running = false; series.stopReason = 'points_limit'; return; }
-      // 长时间没有任何额度变化说明生成反复失败，停止避免无限重试；重新读取额度后可再次启动。
-      if (series.lastSignalAt && Date.now() - series.lastSignalAt > 10 * 60 * 1000) { series.running = false; series.stopReason = 'no_progress'; return; }
-      if (state.session || state.preparing) return;
-      if (Date.now() - series.lastRoundAt < 6000) return;
-      series.lastRoundAt = Date.now();
-      series.lastSignalAt = Date.now();
-      series.rounds += 1;
-      runRoundRef.current();
+      const series = getRollSeries(), step = nextRollSeriesStep(series, seriesSignalRef.current);
+      if (step.action === 'stop') { finish(step.reason); return; }
+      if (step.action !== 'run') return;
+      const runId = series.runId;
+      series.inFlight = true; series.lastRoundAt = Date.now();
+      void runSeriesRoundRef.current()
+        .then(outcome => {
+          if (!series.running || series.runId !== runId) return;
+          if (outcome.ok) { series.rounds += 1; series.lastProgressAt = Date.now(); }
+          else if (outcome.reason !== 'skipped') finish(outcome.reason, outcome.error);
+        })
+        .catch(cause => { if (series.runId === runId) finish('error', (cause as Error).message); })
+        .finally(() => { if (series.runId === runId) series.inFlight = false; });
     }, 2000);
-    return () => window.clearInterval(timer);
+    // 循环属于这个页面：页面卸载或关闭即停，并留下原因；刷新后不续跑。
+    const closed = () => { stopRollSeries('page_closed'); };
+    window.addEventListener('pagehide', closed);
+    return () => { window.clearInterval(timer); window.removeEventListener('pagehide', closed); closed(); };
   }, []);
-  useEffect(() => {
-    const series = rollSeriesRef.current;
-    if (!series.running) return;
-    if (series.rounds > 0) series.lastSignalAt = Date.now();
-  }, [seriesOpusPercent, seriesAccountPoints]);
   const generatePending = (ids?: string[]) => void perform(async () => {
     if (!experiment || !historyReady || historyLoading || session || generatingRef.current) return;
     let source = experiment;
@@ -772,54 +805,50 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       session: session ? { scope: session.scope, state: session.state, queued: session.queued, progress: session.progress, awaiting: session.awaiting || null } : null,
       library: { count: library.length, loading: libraryLoading, error: libraryError, sampledOnly, effectiveCount: effectiveLibrary.length, sampledReady: sampledTags !== null },
       count, rules: roundRules, pinnedArtists, chainArtistSource,
-      series: { running: rollSeriesRef.current.running, rounds: rollSeriesRef.current.rounds, maxRounds: rollSeriesRef.current.maxRounds, stopAtPercent: rollSeriesRef.current.stopAtPercent, stopAtPoints: rollSeriesRef.current.stopAtPoints, stopReason: rollSeriesRef.current.stopReason, opusPercent: seriesOpusPercent, points: seriesAccountPoints },
+      series: (() => { const series = getRollSeries(); return { running: series.running, experimentId: series.experimentId, rounds: series.rounds, maxRounds: series.maxRounds, stopAtPercent: series.stopAtPercent, stopAtPoints: series.stopAtPoints, stopReason: series.stopReason, stopLabel: series.stopReason ? ROLL_SERIES_STOP_LABELS[series.stopReason] : '', lastError: series.lastError, roundInFlight: series.inFlight, opusPercent: seriesOpusPercent, points: seriesAccountPoints }; })(),
     }),
   });
   useAgentCommand({
     name: 'run_roll_round', label: '发起 Roll 一轮', description: '按当前规则抽取候选并保存；generate 为真时按权限直接生成或等待页面费用确认。', parameters: { type: 'object', properties: { count: { type: 'number' }, generate: { type: 'boolean' }, sampledOnly: { type: 'boolean' } } }, scope: () => rootRef.current,
     execute: async args => {
       if (session || generatingRef.current) throw new Error('已有图片正在生成，请先等待或取消');
+      if (getRollSeries().running) throw new Error('连续 Roll 正在进行，请先停止');
       if (args.generate !== false && !readRollApiKey()) throw new Error('请先在全局设置中配置 NovelAI API Key');
       if (args.generate !== false && experiment && (!historyReady || historyLoading)) throw new Error('历史暂不可用，请重新加载后再生成');
       const requested = Math.max(1, Math.min(24, Math.floor(Number(args.count) || count)));
       if (!continuousGenerationEnabled && requested > 1) throw new Error('连续生成已关闭，本次只能生成 1 张');
-      if (chainArtistSource === undefined && (libraryLoading || libraryError || !library.length)) throw new Error(libraryError || '画师词库尚未就绪，请重新加载');
       const useSamples = typeof args.sampledOnly === 'boolean' ? args.sampledOnly : sampledOnly;
-      if (useSamples && sampledTags === null) throw new Error('正在读取画师样张，请稍候');
-      if (useSamples && !effectiveLibrary.length && pinnedArtists.length < roundRules.maxArtists) throw new Error('没有可用的有样张画师');
-      let source = experiment || makeExperiment();
-      if (round && !round.closedAt) source = { ...source, rounds: source.rounds.map(item => item.id === round.id ? { ...item, closedAt: Date.now() } : item) };
-      source = { ...source, artists: artistOverrides, drawPlan: undefined, pinnedArtists, chainArtistSource, rules: roundRules, sampledOnly: useSamples };
-      const next = beginRollRound(source, useSamples ? effectiveLibrary : library, requested, { blockedTags: blocklist, sampledOnly: useSamples, preferredTags: await readPreferredTags() });
-      const saved = await store(next), created = currentRollRound(saved)!;
-      selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
-      const candidates = saved.candidates.filter(candidate => created.candidateIds.includes(candidate.id));
+      const { saved, created, candidates } = await createRound(requested, useSamples);
       if (args.generate !== false) void generate(candidates, saved, { skipConfirmation: args.agentPermissionMode === 'full' });
       return { experimentId: saved.id, roundId: created.id, candidateIds: created.candidateIds, generationStarted: args.generate !== false, note: args.generate !== false ? '已发起生成；费用确认由页面处理，进度用 get_generation_status 读取。' : '候选已抽取并保存，尚未消耗 Anlas。' };
     },
   });
   useAgentCommand({
-    name: 'run_roll_series', label: '连续 Roll 串', description: '让当前 Roll 记录连续自动 Roll：每轮抽取并生成，等本批结束后自动进入下一轮，直到 Opus 额度降到 stopAtPercent（默认 5）或点数降到 stopAtPoints（默认 0）或达到 maxRounds。循环在页面后台执行，调用立即返回；用 get_roll_state 读取进度，传 stop 立即停止。', parameters: { type: 'object', properties: { maxRounds: { type: 'number' }, stopAtPercent: { type: 'number' }, stopAtPoints: { type: 'number' }, count: { type: 'number' }, stop: { type: 'boolean' } } }, scope: () => rootRef.current,
+    name: 'run_roll_series', label: '连续 Roll 串', description: '让当前 Roll 记录连续 Roll：每轮抽取并生成，等本批结束后进入下一轮，直到 Opus 额度降到 stopAtPercent（默认 5）、点数降到 stopAtPoints（默认 0）或达到 maxRounds。任何一轮失败、取消、未确认费用、记录容量将满、切换记录或页面关闭都会立即停止且不重试；循环只在 Roll 页面打开期间运行，刷新后不续跑。调用立即返回；用 get_roll_state 的 series 读取进度与 stopReason，传 stop 立即停止。', parameters: { type: 'object', properties: { maxRounds: { type: 'number' }, stopAtPercent: { type: 'number' }, stopAtPoints: { type: 'number' }, count: { type: 'number' }, stop: { type: 'boolean' } } }, scope: () => rootRef.current,
     execute: args => {
-      const series = rollSeriesRef.current;
       if (args.stop === true) {
-        series.running = false; series.stopReason = 'user_stop';
-        return { running: false, rounds: series.rounds, stopReason: series.stopReason };
+        stopRollSeries('user_stop');
+        const series = getRollSeries();
+        return { running: series.running, rounds: series.rounds, stopReason: series.stopReason };
       }
       if (!experiment) throw new Error('先选择要连续 Roll 的画风记录');
+      if (getRollSeries().running) throw new Error('连续 Roll 已在进行，请先停止');
       if (session || generatingRef.current) throw new Error('已有图片正在生成，请先等待或取消');
       if (!continuousGenerationEnabled) throw new Error('连续生成已关闭，无法连续 Roll');
+      if (!readRollApiKey()) throw new Error('请先在全局设置中配置 NovelAI API Key');
       const requested = Number(args.count);
-      if (Number.isFinite(requested)) setCount(Math.max(1, Math.min(24, Math.floor(requested))));
-      Object.assign(series, {
-        running: true,
-        rounds: 0,
+      const roundSize = Number.isFinite(requested) ? Math.max(1, Math.min(24, Math.floor(requested))) : count;
+      if (rollSeriesWouldOverflow(experiment, roundSize)) throw new Error(ROLL_SERIES_STOP_LABELS.record_full);
+      if (roundSize !== count) setCount(roundSize);
+      const series = startRollSeries({
+        experimentId: experiment.id,
         maxRounds: Math.max(1, Math.min(5000, Math.floor(Number(args.maxRounds) || 500))),
         stopAtPercent: Math.max(0, Math.min(100, Number.isFinite(Number(args.stopAtPercent)) ? Number(args.stopAtPercent) : 5)),
         stopAtPoints: Math.max(0, Math.floor(Number(args.stopAtPoints) || 0)),
-        stopReason: '', startedAt: Date.now(), lastRoundAt: 0, lastSignalAt: Date.now(),
+        // 完全访问沿用已授权的费用；标准权限每轮仍走页面费用确认，未确认即停。
+        skipConfirmation: args.agentPermissionMode === 'full',
       });
-      return { running: true, experimentId: experiment.id, maxRounds: series.maxRounds, stopAtPercent: series.stopAtPercent, stopAtPoints: series.stopAtPoints, opusPercent: seriesOpusPercent, points: seriesAccountPoints, note: '已在页面后台启动连续 Roll，每轮结束自动进入下一轮。' };
+      return { running: true, experimentId: experiment.id, maxRounds: series.maxRounds, stopAtPercent: series.stopAtPercent, stopAtPoints: series.stopAtPoints, opusPercent: seriesOpusPercent, points: seriesAccountPoints, note: '已在 Roll 页面启动连续 Roll，每轮结束自动进入下一轮；任何失败都会停止，请用 get_roll_state 核对 stopReason。' };
     },
   });
   useAgentCommand({

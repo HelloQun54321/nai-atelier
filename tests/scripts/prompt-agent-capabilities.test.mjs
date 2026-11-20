@@ -375,3 +375,23 @@ test('助手能读取官方点数与 Opus 额度，未连接时明确报错', as
     assert.equal(projectSettings.anlasBudget.remaining, 3333);
   } finally { removeWorkspace(root); }
 });
+
+test('连续 Roll 工具可在只读权限下停止循环，启动仍需生成权限', async () => {
+  const root = createWorkspace('agent-roll-series-');
+  try {
+    const service = new PromptAgentService({ lanSecret: 'synthetic', configFile: root });
+    const commands = [];
+    const project = { requestUI: async request => {
+      if (request.action === 'read') return { view: 'roll', snapshotId: 'snap', commands: [{ name: 'run_roll_series' }] };
+      if (request.action === 'command') { commands.push(request.args); return { result: { running: false, stopReason: 'user_stop' } }; }
+      return {};
+    } };
+    service.config.permissionMode = 'read_only';
+    const call = toolsFor(service, { params: {} }, project);
+    const stopped = await call('run_roll_series', { stop: true });
+    assert.equal(stopped.stopReason, 'user_stop');
+    assert.deepEqual(commands, [{ stop: true }]);
+    await assert.rejects(call('run_roll_series', { maxRounds: 3 }), /只读权限/);
+    assert.equal(commands.length, 1);
+  } finally { removeWorkspace(root); }
+});

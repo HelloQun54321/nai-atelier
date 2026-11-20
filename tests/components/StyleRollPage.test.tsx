@@ -340,6 +340,38 @@ it('助手可启动连续 Roll 系列，读取进度并随时停止', async () =
   expect(after.series.running).toBe(false);
 });
 
+type SeriesState = { series: { running: boolean; rounds: number; stopReason: string; lastError: string } };
+const readSeries = async (container: HTMLElement) => (await executeAgentCommand(container, 'get_roll_state', {}, true) as SeriesState).series;
+
+it('连续 Roll 任一轮失败即停，只汇总提示一次且不逐轮弹窗', async () => {
+  mocks.generate.mockResolvedValue({ session: {}, settle: Promise.resolve({ success: false, error: '合成上游失败' }) });
+  const { container, props } = await setup();
+  await executeAgentCommand(container, 'run_roll_series', { maxRounds: 50, count: 1 }, false);
+  await waitFor(async () => expect(await readSeries(container)).toMatchObject({ running: false, stopReason: 'error', rounds: 0 }), { timeout: 5000 });
+  expect((await readSeries(container)).lastError).toMatch(/合成上游失败/);
+  expect(mocks.generate).toHaveBeenCalledTimes(1);
+  expect(mocks.alert).not.toHaveBeenCalled();
+  expect(props.notify).toHaveBeenCalledWith(expect.stringMatching(/连续 Roll 已停止/), 'error');
+});
+
+it('连续 Roll 成功一轮后计数，页面卸载即停并留下原因', async () => {
+  const { container, unmount } = await setup();
+  await executeAgentCommand(container, 'run_roll_series', { maxRounds: 5, count: 1 }, false);
+  await waitFor(async () => expect((await readSeries(container)).rounds).toBe(1), { timeout: 5000 });
+  expect((await readSeries(container)).running).toBe(true);
+  unmount();
+  const { getRollSeries } = await import('../../services/styleRollSeries');
+  expect(getRollSeries()).toMatchObject({ running: false, stopReason: 'page_closed', rounds: 1 });
+});
+
+it('连续 Roll 在记录容量将满时拒绝启动', async () => {
+  // 合成一条逼近单行上限的记录：只撑大公共正文，不渲染海量候选。
+  experiment.template = { ...experiment.template, prompt: `{style}, ${'x'.repeat(1_850_000)}` };
+  const { container } = await setup();
+  await expect(executeAgentCommand(container, 'run_roll_series', { maxRounds: 5, count: 6 }, false)).rejects.toThrow(/容量将满/);
+  expect((await readSeries(container)).running).toBe(false);
+});
+
 it('助手发起 Roll 时保存候选；generate=false 不投递收费生成', async () => {
   const { container } = await setup();
   const before = mocks.save.mock.calls.length;
