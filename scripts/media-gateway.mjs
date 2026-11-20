@@ -979,6 +979,8 @@ export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExha
 
 /** 唯一凭据只在本次成功产物内复用；只补交本地事务，不重试生图或恢复旧账。 */
 const commitNaiAccounting = async (req, workerPort, input) => {
+  // 生图完成后立即标记该 Key 的额度缓存为待刷新，确保下次 Key 池选 Key 拿到最新剩余额度。
+  if (req?.headers?.authorization) novelAiSubscriptionFetchedAt.set(req.headers.authorization, 0);
   const body = { receiptId: randomUUID(), ...input };
   for (let attempt = 0; ; attempt++) {
     try {
@@ -1228,8 +1230,51 @@ export const sanitizeNovelAiSubscription = (payload, gatewayUrl = '', gatewayQuo
 
 // 复用界面正常查询的订阅；普通生成不额外联网，也不等待官方常量同步。
 const novelAiSubscriptions = new Map();
-export const cacheNovelAiSubscription = (authorization, subscription) => subscription
-  ? novelAiSubscriptions.set(authorization, subscription) : novelAiSubscriptions.delete(authorization);
+const novelAiSubscriptionFetchedAt = new Map();
+export const cacheNovelAiSubscription = (authorization, subscription) => {
+  if (subscription) {
+    novelAiSubscriptions.set(authorization, subscription);
+    novelAiSubscriptionFetchedAt.set(authorization, Date.now());
+  } else {
+    novelAiSubscriptions.delete(authorization);
+    novelAiSubscriptionFetchedAt.delete(authorization);
+  }
+};
+
+/** 后台批量任务逐张轮询选 Key（与前端满圈率优先口径一致，同分优先轮换避开刚用过的 Key）。 */
+export const selectBackendPoolMember = (candidates, lastAuthorization = '', { requireOpusQuota = true } = {}) => {
+  const valid = candidates.filter(item => item?.entry && item.entry.billingMode !== 'per-use' && String(item.entry.key || '').trim());
+  if (!valid.length) return { ok: false, code: 'pool_empty', message: 'Key 池中还没有可用密钥，请先在全局设置中选择入池密钥或关闭 Key 池' };
+  let hadExhausted = false;
+  const eligible = [];
+  valid.forEach((item, order) => {
+    const info = item.info;
+    if (!info || info.active !== true || Number(info.tier) < 3) return;
+    const usage = info.usage;
+    const rawPercent = Number(usage?.percent);
+    const remaining = usage && !usage.isNegative && Number.isFinite(rawPercent) ? Math.max(0, rawPercent) : 0;
+    const rawCap = Number(usage?.capacity);
+    const scale = Number.isFinite(rawCap) && rawCap > 0 ? rawCap : 100;
+    const fillRatio = Math.min(100, (remaining / scale) * 100);
+    if (requireOpusQuota && (!usage || usage.isNegative === true || remaining <= 0)) {
+      hadExhausted = true;
+      return;
+    }
+    const authorization = `Bearer ${String(item.entry.key).trim()}`;
+    eligible.push({ entry: item.entry, info, authorization, fillRatio, remaining, order, isLast: authorization === lastAuthorization });
+  });
+  if (!eligible.length) {
+    if (hadExhausted) return { ok: false, code: 'pool_exhausted', message: 'Key 池中所有可用密钥的 Opus 额度均已耗尽，已停止后续生成（未消耗 Anlas）' };
+    return { ok: false, code: 'pool_unavailable', message: 'Key 池中当前没有可用的 Opus 密钥，已停止后续生成' };
+  }
+  eligible.sort((a, b) => {
+    if (Math.abs(b.fillRatio - a.fillRatio) > 1e-6) return b.fillRatio - a.fillRatio;
+    if (Math.abs(b.remaining - a.remaining) > 1e-6) return b.remaining - a.remaining;
+    if (a.isLast !== b.isLast) return a.isLast ? 1 : -1;
+    return a.order - b.order;
+  });
+  return { ok: true, ...eligible[0] };
+};
 
 /**
  * 助手读取官方点数与 Opus 额度：与侧栏 Anlas／Opus 行同源，
@@ -2419,8 +2464,11 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
   } : {};
 
   try {
-    if (queuePreferences.generationIntervalSeconds !== undefined) tasks.setInterval(keyHash, queuePreferences.generationIntervalSeconds, queuePreferences.generationIntervalJitterPercent);
-    finishGeneration = tasks.enter(keyHash, String(req.headers['x-nai-generation-task'] || ''));
+    const taskOwnerHeader = isLoopbackIp(req.socket?.remoteAddress) ? String(req.headers['x-nai-task-owner'] || '').trim() : '';
+    const taskKeyHash = /^[a-f0-9]{64}$/.test(taskOwnerHeader) ? taskOwnerHeader : keyHash;
+    // Key 池批内切 Key 时保留批任务原主 Key 的间隔配置，不因副 Key 未配间隔而覆写。
+    if (taskKeyHash === keyHash && queuePreferences.generationIntervalSeconds !== undefined) tasks.setInterval(taskKeyHash, queuePreferences.generationIntervalSeconds, queuePreferences.generationIntervalJitterPercent);
+    finishGeneration = tasks.enter(taskKeyHash, String(req.headers['x-nai-generation-task'] || ''));
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
     let payload;
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
@@ -2630,8 +2678,11 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
   };
 
   try {
-    if (queuePreferences.generationIntervalSeconds !== undefined) tasks.setInterval(keyHash, queuePreferences.generationIntervalSeconds, queuePreferences.generationIntervalJitterPercent);
-    finishGeneration = tasks.enter(keyHash, String(req.headers['x-nai-generation-task'] || ''));
+    const taskOwnerHeader = isLoopbackIp(req.socket?.remoteAddress) ? String(req.headers['x-nai-task-owner'] || '').trim() : '';
+    const taskKeyHash = /^[a-f0-9]{64}$/.test(taskOwnerHeader) ? taskOwnerHeader : keyHash;
+    // Key 池批内切 Key 时保留批任务原主 Key 的间隔配置，不因副 Key 未配间隔而覆写。
+    if (taskKeyHash === keyHash && queuePreferences.generationIntervalSeconds !== undefined) tasks.setInterval(taskKeyHash, queuePreferences.generationIntervalSeconds, queuePreferences.generationIntervalJitterPercent);
+    finishGeneration = tasks.enter(taskKeyHash, String(req.headers['x-nai-generation-task'] || ''));
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
     let payload;
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
@@ -3776,21 +3827,98 @@ const serveDistFile = async (req, res, url) => {
   };
   const generationJobs = createDesktopGenerationJobs({
     tasks, workerPort, gatewayUrl: () => `http://127.0.0.1:${server.address().port}`,
-    readQueue: job => job.lastQueueTaskId ? cloudQueue.get(job.key, job.lastQueueTaskId) : null,
-    readCleanup: job => job.lastQueueTaskId ? cloudQueue.get(job.key, job.lastQueueTaskId)?.cleanupError : undefined,
+    readQueue: job => job.lastQueueTaskId ? cloudQueue.get(job.executionKeyHash || job.key, job.lastQueueTaskId) : null,
+    readCleanup: job => job.lastQueueTaskId ? cloudQueue.get(job.executionKeyHash || job.key, job.lastQueueTaskId)?.cleanupError : undefined,
     estimate: async (job, fresh) => {
+      const payload = job.descriptor.payload, p = payload.parameters;
+      const priced = { ...payload, parameters: { ...p,
+        ...(p._local_character_references?.enabled ? { director_reference_images_cached: p._local_character_references.slots } : {}),
+        ...(p._local_vibes?.enabled ? { reference_image_multiple_cached: p._local_vibes.slots } : {}),
+      } };
+      // 开启 Key 池时，批内每张生成前均按满圈率优先动态选 Key（支持 Roll 串／批量生图逐张轮询）。
+      let pool = null;
+      try {
+        const poolRes = await requestWorkerJson('/api/nai-key-vault/pool', internalWorkerRequest, workerPort);
+        if (poolRes?.pool?.enabled === true && Array.isArray(poolRes.pool.memberIds) && poolRes.pool.memberIds.length > 0) {
+          pool = poolRes.pool;
+        }
+      } catch { /* 旧 Worker 或测试未提供 pool 路由时沿用单 Key 模式 */ }
+      if (pool) {
+        const baseCost = estimateNovelAiGenerationCost(priced, false, true);
+        if (baseCost > 0) {
+          throw Object.assign(new Error('Key 池模式仅用于 Opus 免费额度生成，当前参数需要消耗 Anlas，已停止后续生成。'), { code: 'pool_paid_blocked', status: 400 });
+        }
+        const vaultRes = await requestWorkerJson('/api/nai-key-vault', internalWorkerRequest, workerPort);
+        const entries = Array.isArray(vaultRes?.entries) ? vaultRes.entries : [];
+        const byId = new Map(entries.filter(entry => entry.billingMode !== 'per-use').map(entry => [entry.id, entry]));
+        const members = pool.memberIds.map(id => byId.get(id)).filter(Boolean);
+        const lastAuth = job.executionAuthorization || (job.historyIds.length > 0 ? job.context.authorization : '');
+        const now = Date.now();
+        const refreshed = new Set();
+        const probeMember = async entry => {
+          const auth = `Bearer ${String(entry.key).trim()}`;
+          refreshed.add(auth);
+          const gwUrl = String(entry.gatewayUrl || '').trim();
+          const [upstream, gatewayQuota] = await Promise.all([
+            fetchNovelAiSubscription(auth, AbortSignal.timeout(30_000), remoteFetch, gwUrl),
+            fetchGatewayMemberQuota(auth, AbortSignal.timeout(5_000), remoteFetch, gwUrl),
+          ]);
+          if (upstream.ok) {
+            cacheNovelAiSubscription(auth, sanitizeNovelAiSubscription(await upstream.json(), gwUrl, gatewayQuota));
+          } else if (isSubscriptionUnsupported(gwUrl, upstream.status)) {
+            cacheNovelAiSubscription(auth, null);
+          }
+        };
+        await Promise.allSettled(members.map(async entry => {
+          const auth = `Bearer ${String(entry.key).trim()}`;
+          const fetchedAt = novelAiSubscriptionFetchedAt.get(auth) || 0;
+          const mustRefresh = (fresh && auth === lastAuth) || !novelAiSubscriptions.has(auth) || (now - fetchedAt > 30_000);
+          if (!mustRefresh) return;
+          await probeMember(entry);
+        }));
+        const requireOpusQuota = getNaiRuntime().usageLimitedModels.includes(payload.model);
+        let picked = selectBackendPoolMember(
+          members.map(entry => ({ entry, info: novelAiSubscriptions.get(`Bearer ${String(entry.key).trim()}`) || null })),
+          lastAuth,
+          { requireOpusQuota },
+        );
+        // 准备宣告全池耗尽前，再复核一次本轮未刷新的成员，避免旧 0% 缓存误停。
+        if (!picked.ok && picked.code === 'pool_exhausted') {
+          const unrefreshed = members.filter(entry => !refreshed.has(`Bearer ${String(entry.key).trim()}`));
+          if (unrefreshed.length) {
+            await Promise.allSettled(unrefreshed.map(probeMember));
+            picked = selectBackendPoolMember(
+              members.map(entry => ({ entry, info: novelAiSubscriptions.get(`Bearer ${String(entry.key).trim()}`) || null })),
+              lastAuth,
+              { requireOpusQuota },
+            );
+          }
+        }
+        if (!picked.ok) {
+          throw Object.assign(new Error(picked.message), { code: picked.code, status: picked.code === 'pool_unavailable' ? 503 : 400 });
+        }
+        job.executionAuthorization = picked.authorization;
+        job.executionKeyHash = keyHashFromAuthorization(picked.authorization);
+        return estimateNovelAiGenerationCost(priced, picked.info.usage?.isNegative === true, picked.info.active === true && picked.info.tier >= 3);
+      }
+
       const authorization = job.context.authorization;
+      job.executionAuthorization = authorization;
+      job.executionKeyHash = job.key;
       let subscriptionUnsupported = false;
       if (fresh) {
         try {
           const gatewayUrl = await readNaiGatewayUrl({ ...internalWorkerRequest, headers: { authorization } }, workerPort);
-          const response = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(30_000), remoteFetch, gatewayUrl);
+          const [response, gatewayQuota] = await Promise.all([
+            fetchNovelAiSubscription(authorization, AbortSignal.timeout(30_000), remoteFetch, gatewayUrl),
+            fetchGatewayMemberQuota(authorization, AbortSignal.timeout(5_000), remoteFetch, gatewayUrl),
+          ]);
           if (isSubscriptionUnsupported(gatewayUrl, response.status)) {
             subscriptionUnsupported = true;
             // 接口明确缺失后，旧免费权益不能继续当成当前额度，也不能用于本次结算。
             cacheNovelAiSubscription(authorization, null);
           } else if (!response.ok) throw new Error('账号额度刷新失败');
-          else cacheNovelAiSubscription(authorization, sanitizeNovelAiSubscription(await response.json(), gatewayUrl));
+          else cacheNovelAiSubscription(authorization, sanitizeNovelAiSubscription(await response.json(), gatewayUrl, gatewayQuota));
         } catch {
           throw Object.assign(new Error('无法核实当前额度，已停止后续生成'), { code: 'quota_refresh_failed', status: 503 });
         }
@@ -3798,11 +3926,6 @@ const serveDistFile = async (req, res, url) => {
       const subscription = novelAiSubscriptions.get(authorization);
       if (!subscription && !fresh) return job.approvedCost;
       if (!subscription && !subscriptionUnsupported) throw Object.assign(new Error('无法核实当前额度，已停止后续生成'), { code: 'quota_refresh_failed', status: 503 });
-      const payload = job.descriptor.payload, p = payload.parameters;
-      const priced = { ...payload, parameters: { ...p,
-        ...(p._local_character_references?.enabled ? { director_reference_images_cached: p._local_character_references.slots } : {}),
-        ...(p._local_vibes?.enabled ? { reference_image_multiple_cached: p._local_vibes.slots } : {}),
-      } };
       // 网关不提供额度接口时降级而不中止：按“无 Opus 免费档”的保守价估算，超过已确认费用仍会请求确认。
       if (!subscription) return estimateNovelAiGenerationCost(priced, false, false);
       return estimateNovelAiGenerationCost(priced, subscription.usage?.isNegative === true, subscription.active === true && subscription.tier >= 3);

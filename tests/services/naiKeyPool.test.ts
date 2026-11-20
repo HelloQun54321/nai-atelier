@@ -47,27 +47,29 @@ describe('Key 池自动轮询（满圈率优先）', () => {
     }
   });
 
-  it('满圈率差值在 1% 防抖阈值内保留当前 Key，超出阈值才切换；平局优先绝对剩余更高', () => {
+  it('严格按满圈率优先切换；同满圈率且同绝对剩余时自动轮换避开刚用过的 Key，平局优先绝对剩余更高', () => {
     const k1 = entry('1', '车位1', 'STA1N-1', { gatewayUrl: 'https://g1.example' });
     const k2 = entry('2', '车位2', 'STA1N-2', { gatewayUrl: 'https://g2.example' });
-    const keepCurrent = selectBestPoolMember([
-      { entry: k1, info: { source: 'gateway', active: true, tier: 3, usage: { percent: 24.8, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } } }, // 99.2%
-      { entry: k2, info: { source: 'gateway', active: true, tier: 3, usage: { percent: 25.0, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } } }, // 100%
+    // k1 用掉一点后（99.2%），立即切到仍满血的 k2（100%），让两把 Key 同时开始回血
+    const rotateToFull = selectBestPoolMember([
+      { entry: k1, info: { source: 'gateway', active: true, tier: 3, usage: { percent: 24.8, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } } },
+      { entry: k2, info: { source: 'gateway', active: true, tier: 3, usage: { percent: 25.0, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } } },
     ], k1.key);
-    expect(keepCurrent.ok).toBe(true);
-    if (keepCurrent.ok) {
-      expect(keepCurrent.entry.id).toBe('1');
-      expect(keepCurrent.switched).toBe(false);
+    expect(rotateToFull.ok).toBe(true);
+    if (rotateToFull.ok) {
+      expect(rotateToFull.entry.id).toBe('2');
+      expect(rotateToFull.switched).toBe(true);
     }
 
-    const switchBetter = selectBestPoolMember([
-      { entry: k1, info: { source: 'gateway', active: true, tier: 3, usage: { percent: 24.0, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } } }, // 96%
-      { entry: k2, info: { source: 'gateway', active: true, tier: 3, usage: { percent: 25.0, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } } }, // 100%
+    // 两把同为 25%/25% 时，自动轮换避开刚用过的 k1
+    const tieRotate = selectBestPoolMember([
+      { entry: k1, info: { source: 'gateway', active: true, tier: 3, usage: { percent: 25.0, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } } },
+      { entry: k2, info: { source: 'gateway', active: true, tier: 3, usage: { percent: 25.0, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } } },
     ], k1.key);
-    expect(switchBetter.ok).toBe(true);
-    if (switchBetter.ok) {
-      expect(switchBetter.entry.id).toBe('2');
-      expect(switchBetter.switched).toBe(true);
+    expect(tieRotate.ok).toBe(true);
+    if (tieRotate.ok) {
+      expect(tieRotate.entry.id).toBe('2');
+      expect(tieRotate.switched).toBe(true);
     }
 
     // 同为 100% 满圈时，优先绝对剩余百分比更高者

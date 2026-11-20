@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { once } from 'node:events';
 import { normalizeNaiGatewayUrl, resolveNaiGatewayUrl, validateNaiApiKey } from '../../worker/naiConnection.mjs';
-import { fetchGatewayMemberQuota, fetchNovelAiSubscription, readNaiGatewayUrl, sanitizeNovelAiSubscription, createMediaGateway, toCachedPreciseReferenceParameters, isSubscriptionUnsupported, getVibeCacheSecretKey, cacheNovelAiSubscription, estimateNovelAiGenerationCost } from '../../scripts/media-gateway.mjs';
+import { fetchGatewayMemberQuota, fetchNovelAiSubscription, readNaiGatewayUrl, sanitizeNovelAiSubscription, selectBackendPoolMember, createMediaGateway, toCachedPreciseReferenceParameters, isSubscriptionUnsupported, getVibeCacheSecretKey, cacheNovelAiSubscription, estimateNovelAiGenerationCost } from '../../scripts/media-gateway.mjs';
 import sharp from 'sharp';
 import { MockAgent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 
@@ -275,5 +275,160 @@ test('拼车成员网关探测 /api/me/quota 剥离 /v1 前缀，透传个人额
     await Promise.all([server && new Promise(resolve => server.close(resolve)), new Promise(resolve => worker.close(resolve))]);
     setGlobalDispatcher(originalDispatcher); await mock.close();
     cacheNovelAiSubscription('Bearer STA1N-carpool', null);
+  }
+});
+
+test('批量生图（如 Roll 串多张）在开启 Key 池时逐张按满圈率轮询切 Key，全池耗尽立即停止', async () => {
+  // 纯函数验证：满圈率优先 + 同分避开刚用过的 Key
+  const e1 = { id: 'p1', name: '车位1', key: 'STA1N-batch-1', gatewayUrl: 'https://g1.example/v1' };
+  const e2 = { id: 'p2', name: '车位2', key: 'STA1N-batch-2', gatewayUrl: 'https://g2.example/v1' };
+  const tieRotate = selectBackendPoolMember([
+    { entry: e1, info: { source: 'gateway', active: true, tier: 3, usage: { percent: 25, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } } },
+    { entry: e2, info: { source: 'gateway', active: true, tier: 3, usage: { percent: 25, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } } },
+  ], 'Bearer STA1N-batch-1');
+  assert.equal(tieRotate.ok, true);
+  assert.equal(tieRotate.entry.id, 'p2');
+
+  // 真实后台批量任务联调（使用与 Roll 串相同的 sequence 多张配方）：
+  // 1) 3 张：第 1 张走车位1（25%->24.5%），第 2 张切车位2（25%->0%），第 3 张切回车位1（24.5%->24%）
+  // 2) 全池耗尽：第 1 张耗尽车位1、第 2 张耗尽车位2，第 3 张前立即以 pool_exhausted 停止且不发起第 3 次生图
+  const originalDispatcher = getGlobalDispatcher(), mock = new MockAgent();
+  mock.disableNetConnect(); mock.enableNetConnect(host => host.startsWith('127.0.0.1:'));
+  setGlobalDispatcher(mock);
+  const quotas = { 'STA1N-batch-1': 25, 'STA1N-batch-2': 25 };
+  let drainBoth = false;
+  const usedKeys = [];
+  const accountedAuths = [];
+  const savedCount = { n: 0 };
+  const pngBuffer = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#10b981' } }).png().toBuffer();
+  const JSZip = (await import('jszip')).default;
+  const zip = new JSZip();
+  zip.file('image_0.png', pngBuffer);
+  const zipBody = await zip.generateAsync({ type: 'nodebuffer' });
+
+  for (const [host, key] of [['https://g1.example', 'STA1N-batch-1'], ['https://g2.example', 'STA1N-batch-2']]) {
+    const pool = mock.get(host);
+    pool.intercept({ path: '/v1/user/subscription', method: 'GET' }).reply(200, () => JSON.stringify({
+      active: true, tier: 3,
+      usage: { percent: quotas[key], isNegative: quotas[key] <= 0, timeUntilNextPercent: 0 },
+      trainingStepsLeft: { fixedTrainingStepsLeft: 2500, purchasedTrainingSteps: 0 },
+    }), { headers: { 'content-type': 'application/json' } }).persist();
+    pool.intercept({ path: '/api/me/quota', method: 'GET' }).reply(200, () => JSON.stringify({
+      fairQuota: { enabled: true, member: true, v5Capacity: 25 },
+    }), { headers: { 'content-type': 'application/json' } }).persist();
+    pool.intercept({ path: '/v1/ai/generate-image', method: 'POST' }).reply(200, () => {
+      usedKeys.push(key);
+      quotas[key] = drainBoth || key === 'STA1N-batch-2' ? 0 : Math.max(0, quotas[key] - 0.5);
+      return zipBody;
+    }, { headers: { 'content-type': 'application/zip' } }).persist();
+  }
+
+  const worker = createServer(async (req, res) => {
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/api/nai-key-vault/pool') return res.end(JSON.stringify({ pool: { enabled: true, memberIds: ['p1', 'p2'] } }));
+    if (req.url === '/api/nai-key-vault') return res.end(JSON.stringify({ entries: [e1, e2] }));
+    if (req.url === '/api/nai-key-vault/connection') {
+      const auth = req.headers.authorization;
+      return res.end(JSON.stringify({ gatewayUrl: auth === 'Bearer STA1N-batch-2' ? 'https://g2.example/v1' : 'https://g1.example/v1' }));
+    }
+    if (req.url === '/api/nai-accounting') {
+      const chunks = []; for await (const chunk of req) chunks.push(chunk);
+      const body = JSON.parse(Buffer.concat(chunks));
+      accountedAuths.push(body.keyHash);
+      return res.end(JSON.stringify({ receiptId: body.receiptId, budget: { remaining: 2500 } }));
+    }
+    res.end('{}');
+  });
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  // 历史保存只替换存储边界，验证真实 multipart 与 PNG，避免 MockAgent 跨版本 FormData 流阻塞。
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, options) => {
+    if (String(input) === `http://127.0.0.1:${worker.address().port}/api/local-history`) {
+      assert.ok(options.body instanceof FormData);
+      assert.ok((await options.body.get('image').arrayBuffer()).byteLength > 8);
+      const id = `hist-${++savedCount.n}`;
+      return new Response(JSON.stringify({ item: { id, imageUrl: `/api/files/${id}.png`, prompt: 'test', params: {} } }));
+    }
+    return originalFetch(input, options);
+  };
+  let server;
+  try {
+    server = await createMediaGateway({ port: 0, workerPort: worker.address().port });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const localReq = (path, method = 'GET', body, extra = {}) => new Promise((resolve, reject) => {
+      const payloadText = body === undefined ? undefined : JSON.stringify(body);
+      const req = httpRequest(base + path, {
+        method,
+        headers: {
+          authorization: 'Bearer STA1N-batch-1',
+          'content-type': 'application/json',
+          ...(payloadText === undefined ? {} : { 'content-length': Buffer.byteLength(payloadText) }),
+          ...extra,
+        },
+      }, res => {
+        const chunks = [];
+        res.on('data', chunk => chunks.push(chunk));
+        res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) }));
+      });
+      req.on('error', reject);
+      if (payloadText !== undefined) req.write(payloadText);
+      req.end();
+    });
+    const waitDone = async token => {
+      let snap;
+      for (let i = 0; i < 120; i++) {
+        snap = (await localReq(`/api/generation-job?token=${token}`)).body;
+        if (['succeeded', 'failed', 'cancelled'].includes(snap.state)) return snap;
+        await new Promise(r => setTimeout(r, 25));
+      }
+      assert.fail('后台批量任务超时未收束：' + JSON.stringify(snap));
+    };
+
+    assert.equal((await localReq('/api/generation-queue/preferences', 'PUT', { generationIntervalSeconds: 0 })).status, 200);
+    const makeEntry = prompt => ({
+      payload: { model: 'nai-diffusion-5-full-medium', action: 'generate', input: prompt, parameters: { width: 832, height: 1216, steps: 14, n_samples: 1 } },
+      history: { prompt, params: { model: 'nai-diffusion-5-full-medium', width: 832, height: 1216, steps: 14 } },
+      approvedCost: 0,
+      stream: false,
+    });
+    const seq3 = [makeEntry('roll-1'), makeEntry('roll-2'), makeEntry('roll-3')];
+    const token1 = 'poolbatchtoken1234567890';
+    const started1 = await localReq('/api/generation-job', 'POST', { ...seq3[0], sequence: seq3 }, {
+      'x-nai-generation-task': token1, 'x-nai-generation-count': '3',
+    });
+    assert.equal(started1.status, 200, JSON.stringify(started1));
+    const done1 = await waitDone(token1);
+    assert.equal(done1.state, 'succeeded', JSON.stringify(done1));
+    assert.equal(done1.completedCount, 3);
+    const sha256 = text => createHash('sha256').update(text).digest('hex');
+    assert.deepEqual(usedKeys, ['STA1N-batch-1', 'STA1N-batch-2', 'STA1N-batch-1']);
+    assert.deepEqual(accountedAuths, [sha256('STA1N-batch-1'), sha256('STA1N-batch-2'), sha256('STA1N-batch-1')]);
+
+    // 场景 2：中途全池耗尽立即以 pool_exhausted 停止，不消耗 Anlas 也不发起第 3 次请求
+    usedKeys.length = 0;
+    accountedAuths.length = 0;
+    quotas['STA1N-batch-1'] = 25;
+    quotas['STA1N-batch-2'] = 25;
+    cacheNovelAiSubscription('Bearer STA1N-batch-1', null);
+    cacheNovelAiSubscription('Bearer STA1N-batch-2', null);
+    drainBoth = true;
+    const token2 = 'poolbatchtoken2234567890';
+    const started2 = await localReq('/api/generation-job', 'POST', { ...seq3[0], sequence: seq3 }, {
+      'x-nai-generation-task': token2, 'x-nai-generation-count': '3',
+    });
+    assert.equal(started2.status, 200, JSON.stringify(started2));
+    const done2 = await waitDone(token2);
+    assert.equal(done2.state, 'failed', JSON.stringify(done2));
+    assert.equal(done2.code, 'pool_exhausted');
+    assert.equal(done2.completedCount, 2);
+    assert.equal(usedKeys.length, 2);
+    assert.equal(new Set(usedKeys).size, 2, '耗尽前应先轮询用完两把不同的 Key');
+  } finally {
+    server?.closeAllConnections(); worker.closeAllConnections();
+    await Promise.all([server && new Promise(resolve => server.close(resolve)), new Promise(resolve => worker.close(resolve))]);
+    globalThis.fetch = originalFetch;
+    setGlobalDispatcher(originalDispatcher); await mock.close();
+    cacheNovelAiSubscription('Bearer STA1N-batch-1', null);
+    cacheNovelAiSubscription('Bearer STA1N-batch-2', null);
   }
 });

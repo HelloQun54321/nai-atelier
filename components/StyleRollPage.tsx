@@ -454,7 +454,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       // 记账或清理异常也要停下连续 Roll：已出的图保住，但不能在额度不明时继续消耗。
       if (warnings.length) outcome = { ok: false, reason: 'error', error: reportError(warnings.join('；'), 'warning') };
       else if (receipt.outcome === 'cancelled') outcome = { ok: false, reason: 'cancelled' };
-      else if (!receipt.success) outcome = { ok: false, reason: 'error', error: reportError(receipt.error || t('生成失败')) };
+      else if (!receipt.success) outcome = { ok: false, reason: receipt.code === 'pool_exhausted' && getRollSeries().running ? 'opus_limit' : 'error', error: reportError(receipt.error || t('生成失败')) };
       if (mounted.current && selectedExperimentRef.current === target.id) {
         const saved = started.session.lastSavedItem;
         if (saved) setHistory(current => [...current.filter(item => item.id !== saved.id), saved]);

@@ -17,10 +17,12 @@ export function createDesktopGenerationJobs({ tasks, gatewayUrl, workerPort, est
     },
     generate: async (job, payload, onPreview, onFinal) => {
       const queueTaskId = job.lastQueueTaskId = crypto.randomUUID();
+      const authorization = job.executionAuthorization || job.context.authorization;
       const response = await fetch(`${gatewayUrl()}/api/generate${job.descriptor.stream ? '-stream' : ''}`, {
         method: 'POST', headers: {
-          'Content-Type': 'application/json', Authorization: job.context.authorization,
+          'Content-Type': 'application/json', Authorization: authorization,
           'X-Nai-Generation-Task': job.token, 'X-Nai-Queue-Task-Id': queueTaskId,
+          ...(authorization !== job.context.authorization ? { 'X-Nai-Task-Owner': job.key } : {}),
           'X-Nai-Generation-Response': 'events',
           cookie: job.context.cookie,
         }, body: JSON.stringify(payload),

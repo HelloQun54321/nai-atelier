@@ -94,9 +94,10 @@ export interface PoolGenerationCheck {
 
 const POOL_STORAGE_KEY = 'nai_key_pool_v1';
 export const NAI_KEY_POOL_CHANGED = 'nai-key-pool-changed';
-const POOL_SNAPSHOT_TTL = 45 * 1000;
+const POOL_SNAPSHOT_TTL = 30 * 1000;
+const ACTIVE_KEY_PRE_PICK_TTL = 2 * 1000;
 const POOL_POLL_INTERVAL = 60 * 1000;
-const DEFAULT_HYSTERESIS = 1.0;
+const DEFAULT_HYSTERESIS = 0;
 
 const isBrowser = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 
@@ -198,14 +199,20 @@ export const selectBestPoolMember = (
     };
   }
 
-  eligible.sort((a, b) =>
-    (b.fillRatio - a.fillRatio)
-    || (b.remainingPercent - a.remainingPercent)
-    || (a.order - b.order));
+  eligible.sort((a, b) => {
+    if (Math.abs(b.fillRatio - a.fillRatio) > 1e-6) return b.fillRatio - a.fillRatio;
+    if (Math.abs(b.remainingPercent - a.remainingPercent) > 1e-6) return b.remainingPercent - a.remainingPercent;
+    if (hysteresis <= 0 && normalizedActive) {
+      const aIsCurrent = a.entry.key === normalizedActive;
+      const bIsCurrent = b.entry.key === normalizedActive;
+      if (aIsCurrent !== bIsCurrent) return aIsCurrent ? 1 : -1;
+    }
+    return a.order - b.order;
+  });
 
   const best = eligible[0];
   const current = normalizedActive ? eligible.find(item => item.entry.key === normalizedActive) : undefined;
-  if (current && best.fillRatio - current.fillRatio <= hysteresis) {
+  if (hysteresis > 0 && current && best.fillRatio - current.fillRatio <= hysteresis) {
     return {
       ok: true,
       entry: current.entry,
@@ -326,13 +333,13 @@ const refreshSingleMember = async (entry: NaiKeyEntry, force: boolean): Promise<
   }
 };
 
-export const refreshKeyPoolSnapshots = async (force = false): Promise<PoolMemberStatus[]> => {
+export const refreshKeyPoolSnapshots = async (force = false, refreshKeys?: Set<string>): Promise<PoolMemberStatus[]> => {
   const [config, vault] = await Promise.all([naiKeyPoolService.get(), naiKeyVault.list()]);
   cachedVaultEntries = vault;
   cachedPoolConfig = sanitizePoolConfig(config, vault);
   const members = currentPoolMembers(cachedPoolConfig, cachedVaultEntries);
   if (members.length) {
-    await Promise.allSettled(members.map(entry => refreshSingleMember(entry, force)));
+    await Promise.allSettled(members.map(entry => refreshSingleMember(entry, force || Boolean(refreshKeys?.has(entry.key.trim())))));
   }
   emitChange();
   return buildMemberStatuses();
@@ -383,8 +390,12 @@ export const prepareGenerationWithPool = async (check: PoolGenerationCheck): Pro
     };
   }
 
-  const statuses = await refreshKeyPoolSnapshots(false);
   const activeKey = readActiveNaiKey().trim();
+  const activeState = activeKey ? memberStates.get(activeKey) : undefined;
+  const forceActive = activeKey && (!activeState || Date.now() - activeState.fetchedAt >= ACTIVE_KEY_PRE_PICK_TTL)
+    ? new Set([activeKey])
+    : undefined;
+  const statuses = await refreshKeyPoolSnapshots(false, forceActive);
   const picked = selectBestPoolMember(
     statuses.map(item => ({
       entry: item.entry,
@@ -505,11 +516,13 @@ const onUsageSnapshot = (event: Event) => {
   emitChange();
 };
 
+let lastPoolRefreshBroadcastAt = 0;
 const onUsageRefresh = () => {
   if (!cachedPoolConfig?.enabled) return;
-  const activeKey = readActiveNaiKey().trim();
-  const activeEntry = currentPoolMembers().find(entry => entry.key === activeKey);
-  if (activeEntry) void refreshSingleMember(activeEntry, true);
+  const now = Date.now();
+  if (now - lastPoolRefreshBroadcastAt < 2_500) return;
+  lastPoolRefreshBroadcastAt = now;
+  void refreshKeyPoolSnapshots(true);
 };
 
 const onVaultChanged = () => {
