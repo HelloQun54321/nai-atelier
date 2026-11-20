@@ -162,6 +162,20 @@ const usageSnapshotCache = new Map<string, { info: NovelaiSubscriptionInfo; fetc
 export const getCachedNovelaiSubscription = (apiKey: string): NovelaiSubscriptionInfo | null =>
   usageSnapshotCache.get(apiKey.trim())?.info || null;
 
+/** 读取包含同步时间的订阅快照，供 Key 池复用缓存。 */
+export const getCachedNovelaiSubscriptionSnapshot = (apiKey: string): { info: NovelaiSubscriptionInfo; fetchedAt: number } | null =>
+  usageSnapshotCache.get(apiKey.trim()) || null;
+
+/** 写入并广播某个 Key 的订阅快照，使 Key 池轮询与界面共用同一份缓存。 */
+export const rememberNovelaiSubscriptionSnapshot = (apiKey: string, info: NovelaiSubscriptionInfo, fetchedAt = Date.now()) => {
+  const normalized = apiKey.trim();
+  if (!normalized) return;
+  usageSnapshotCache.set(normalized, { info, fetchedAt });
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_SNAPSHOT_EVENT, { detail: { apiKey: normalized, info } }));
+  }
+};
+
 /**
  * 模块级共享订阅驱动：多个 keep-alive 页面各自 useNovelaiUsage 时只维护
  * 一个 interval 与一份事件监听（引用计数：首个订阅启动、末个卸载停止），
@@ -257,10 +271,11 @@ export const useNovelaiUsage = () => {
     const apiKey = (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim();
     if (activeKeyRef.current !== apiKey) {
       activeKeyRef.current = apiKey;
-      infoRef.current = null;
-      fetchedAtRef.current = 0;
-      setInfo(null);
-      setFetchedAt(0);
+      const cached = apiKey ? usageSnapshotCache.get(apiKey) : undefined;
+      infoRef.current = cached?.info || null;
+      fetchedAtRef.current = cached?.fetchedAt || 0;
+      setInfo(cached?.info || null);
+      setFetchedAt(cached?.fetchedAt || 0);
       setError(null);
     }
     if (!apiKey) {

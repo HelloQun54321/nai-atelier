@@ -22,7 +22,13 @@ export interface NaiKeyEntry {
   billingMode?: string;
 }
 
+export interface NaiKeyPoolConfig {
+  enabled: boolean;
+  memberIds: string[];
+}
+
 const VAULT_SETTINGS_KEY = 'nai_key_vault';
+const POOL_SETTINGS_KEY = 'nai_key_pool';
 
 /** 把响应体解析为普通对象；非 JSON / 非对象一律视为空对象。 */
 const readJsonBody = async (request: Request): Promise<Record<string, unknown>> => {
@@ -71,6 +77,36 @@ const writeVault = async (db: D1Database, entries: NaiKeyEntry[]) => {
     .run();
 };
 
+const sanitizeKeyPool = (raw: unknown, vault: NaiKeyEntry[]): NaiKeyPoolConfig => {
+  const rec = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const eligibleIds = new Set(vault.filter(entry => entry.billingMode !== NAI_BILLING_PER_USE).map(entry => entry.id));
+  const memberIds: string[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(rec.memberIds)) {
+    for (const item of rec.memberIds) {
+      if (typeof item === 'string' && eligibleIds.has(item) && !seen.has(item)) {
+        seen.add(item);
+        memberIds.push(item);
+      }
+    }
+  }
+  return { enabled: rec.enabled === true && memberIds.length > 0, memberIds };
+};
+
+export const readKeyPool = async (db: D1Database, vault?: NaiKeyEntry[]): Promise<NaiKeyPoolConfig> => {
+  const entries = vault ?? await readVault(db);
+  const row = await db.prepare('SELECT value FROM settings WHERE key = ?')
+    .bind(POOL_SETTINGS_KEY)
+    .first<{ value: string }>();
+  return sanitizeKeyPool(parseStoredJson(row?.value, null), entries);
+};
+
+const writeKeyPool = async (db: D1Database, pool: NaiKeyPoolConfig) => {
+  await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
+    .bind(POOL_SETTINGS_KEY, JSON.stringify(pool))
+    .run();
+};
+
 export async function handleNaiKeyVaultRoute(ctx: RouteContext): Promise<Response | null> {
   const { db, path, method, request } = ctx;
 
@@ -83,6 +119,18 @@ export async function handleNaiKeyVaultRoute(ctx: RouteContext): Promise<Respons
     if (!authorization.startsWith('Bearer ')) return error('缺少 NovelAI API Key', 401);
     try { return json({ gatewayUrl: resolveNaiGatewayUrl(authorization, await readVault(db)) }); }
     catch (cause) { return error(cause instanceof Error ? cause.message : '密钥接入配置无效', 400); }
+  }
+
+  if (path === '/api/nai-key-vault/pool' && method === 'GET') {
+    return json({ pool: await readKeyPool(db) });
+  }
+
+  if (path === '/api/nai-key-vault/pool' && method === 'PUT') {
+    const body = await readJsonBody(request);
+    const vault = await readVault(db);
+    const pool = sanitizeKeyPool(body, vault);
+    await writeKeyPool(db, pool);
+    return json({ pool });
   }
 
   // 单条新增：接入地址与 Key 一次校验、保存。
@@ -176,6 +224,10 @@ export async function handleNaiKeyVaultRoute(ctx: RouteContext): Promise<Respons
     const next = vault.filter(entry => entry.id !== id);
     if (next.length === vault.length) return error('密钥不存在或已被删除', 404);
     await writeVault(db, next);
+    const existingPool = await readKeyPool(db, vault);
+    if (existingPool.memberIds.includes(id)) {
+      await writeKeyPool(db, sanitizeKeyPool(existingPool, next));
+    }
     return json({ entries: next });
   }
 

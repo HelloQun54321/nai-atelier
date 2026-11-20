@@ -2,6 +2,7 @@ import { t, useLanguage, getLanguage } from '../services/i18n';
 import React from 'react';
 import { RefreshCw } from 'lucide-react';
 import { isNovelaiSubscriptionInactive, NOVELAI_USAGE_REFRESH_EVENT, usageRefillStatus, usageRemainingImages, usageRemainingPercent, usageRingPercent, useNovelaiUsage } from '../services/naiUsage';
+import { useNaiKeyPool } from '../services/naiKeyPool';
 import { useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 
 interface OpusUsageBarProps {
@@ -36,11 +37,14 @@ const formatRefillDuration = (seconds: number): string => {
 export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetails = false, showSyncTime = true }) => {
   useLanguage();
   const { info, usage, loading, error, fetchedAt, refresh } = useNovelaiUsage();
+  const keyPool = useNaiKeyPool();
+  const poolActive = keyPool.config.enabled && keyPool.members.length > 0;
   const gateway = info?.source === 'gateway';
   const quotaLabel = !info ? '生成额度' : 'Opus 额度';
   const runtime = useNaiRuntime();
   const refreshAll = () => {
     void refresh();
+    if (poolActive) void keyPool.refresh();
     // 与 Anlas 行同源刷新；同 Key 的多个视图由共享驱动合并查询。
     window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
   };
@@ -128,6 +132,17 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
     : health?.missed?.length
       ? `常量同步部分失效：未命中 ${health.missed.join('、')}（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString(getLanguage()) : ''} 同步）`
       : `常量同步正常（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString(getLanguage()) : t('等待首次同步')}）`);
+  const poolTooltipLine = poolActive
+    ? t('Key 池（满圈率优先）：{0}', [keyPool.members.map(member => {
+      const cap = member.info?.source === 'gateway' && typeof member.info.usage?.capacity === 'number' && member.info.usage.capacity > 0
+        ? `/${member.info.usage.capacity.toFixed(1)}%`
+        : '';
+      const pct = member.remainingPercent !== null
+        ? `${member.info?.source === 'gateway' ? member.remainingPercent.toFixed(1) : member.remainingPercent}%${cap}`
+        : member.error ? t('同步失败') : t('同步中');
+      return `${member.entry.name} ${pct}`;
+    }).join(' · ')])
+    : '';
   const title = !info
     ? `${error ? t('额度未知：{0}', [t(error)]) : t('正在同步…')}\n${syncSummary}`
     : gateway
@@ -136,6 +151,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
             : hasCapacity ? t('Opus 额度：{0}% / {1}%（约 {2} 张），按官方规则估算', [displayPercent, displayCapacity, images])
               : t('Opus 额度：{0}%（约 {1} 张），按官方规则估算', [displayPercent, images]),
           ...(refillTooltipLine ? [refillTooltipLine] : []),
+          ...(poolTooltipLine ? [poolTooltipLine] : []),
           t('成员分配额度与实际扣费以网关为准；点击刷新'),
           syncSummary,
         ].join('\n')
@@ -146,6 +162,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
               ? t('Opus 额度已用尽：所有生图将消耗 Anlas，额度恢复后自动回到免费生成')
               : t('Opus 额度：剩余 {0}%（约 {1} 张）', [percent, images])} · ${t('仅 V5 等新模型受限，V4.5 及以下不限')}`,
           ...(refillTooltipLine ? [refillTooltipLine] : []),
+          ...(poolTooltipLine ? [poolTooltipLine] : []),
           t('拼车账号额度全员共享，每分钟自动同步，点击立即刷新'),
           syncSummary,
         ].join('\n');
@@ -195,12 +212,34 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
       className={`group relative min-h-14 w-full cursor-pointer select-none text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:hover:bg-gray-800 ${showDetails && !collapsed ? 'appearance-group rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70' : `flex items-center border-b border-gray-200 dark:border-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}`}
     >
       {showDetails && !collapsed ? <>
-        <span className="flex items-center justify-between gap-2 text-xs font-medium text-gray-600 dark:text-gray-300"><span>{t(quotaLabel)}</span><RefreshCw aria-hidden="true" className={`h-3.5 w-3.5 text-gray-500 dark:text-gray-400 ${loading ? 'animate-spin' : ''}`} /></span>
+        <span className="flex items-center justify-between gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">
+          <span className="flex items-center gap-1.5">
+            <span>{t(quotaLabel)}</span>
+            {poolActive && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-tiny font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">{t('池 {0}', [keyPool.members.length])}</span>}
+          </span>
+          <RefreshCw aria-hidden="true" className={`h-3.5 w-3.5 text-gray-500 dark:text-gray-400 ${loading ? 'animate-spin' : ''}`} />
+        </span>
         <span className="mt-3 grid grid-cols-2 items-center gap-3">
           <span className="flex min-w-0 items-center gap-2">{ring}<span className="text-micro text-gray-500 dark:text-gray-400">{t("剩余额度")}</span></span>
           <span className="min-w-0 border-l border-gray-200 pl-3 dark:border-gray-700"><span className="block text-micro text-gray-500 dark:text-gray-400">{t("估算可生成")}</span><span className="mt-1 block break-words text-lg font-semibold leading-6 tabular-nums text-gray-800 dark:text-gray-100">{usage ? t("≈{0} 张", [images]) : '—'}</span></span>
         </span>
         {refillDetailLine && <span className="mt-2 block text-micro tabular-nums text-gray-500 dark:text-gray-400">{refillDetailLine}</span>}
+        {poolActive && (
+          <span className="mt-2 flex flex-wrap gap-1.5 text-micro tabular-nums text-gray-500 dark:text-gray-400">
+            {keyPool.members.map(member => {
+              const isCurrent = keyPool.activeMember?.entry.id === member.entry.id;
+              const pct = member.remainingPercent !== null
+                ? `${member.info?.source === 'gateway' ? member.remainingPercent.toFixed(1) : member.remainingPercent}%`
+                : member.error ? t('失败') : '…';
+              return (
+                <span key={member.entry.id} className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 ${isCurrent ? 'border-emerald-300 bg-emerald-50/80 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-gray-200 bg-white/70 dark:border-gray-700 dark:bg-gray-900/50'}`}>
+                  <span className="max-w-[7rem] truncate">{member.entry.name}</span>
+                  <span className="font-semibold">{pct}</span>
+                </span>
+              );
+            })}
+          </span>
+        )}
         <span className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-micro text-gray-500 dark:text-gray-400">
           <span>{runtimeSyncBroken ? t("计费规则同步异常，张数换算可能过期") : syncPending ? t("计费规则正在同步") : t("V5 等受限模型共用额度")}</span>
           {showSyncTime && fetchedAt > 0 && <span>{t("最近同步 {0}", [new Date(fetchedAt).toLocaleTimeString(getLanguage(), { hour12: false })])}</span>}
@@ -210,7 +249,10 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
       </> : <>
       {ring}
       {!collapsed && <span className="min-w-0 flex-1">
-        <span className="block text-xs font-medium text-gray-600 dark:text-gray-300">{t(quotaLabel)}</span>
+        <span className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
+          <span className="truncate">{t(quotaLabel)}</span>
+          {poolActive && <span className="flex-none rounded-full bg-emerald-100 px-1.5 py-0.25 text-tiny font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">{t('池 {0}', [keyPool.members.length])}</span>}
+        </span>
         <span className={`mt-0.5 block truncate text-micro font-normal tabular-nums ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
           {error ? t("同步失败，点击重试") : usage ? refillCompactSuffix ? `${t("≈{0} 张", [images])} · ${refillCompactSuffix}` : t("≈{0} 张", [images]) : t("正在同步…")}
         </span>

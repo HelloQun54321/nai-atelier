@@ -247,6 +247,12 @@ export const naiKeyVault = {
     setActiveNaiKey(entry.key, remember);
   },
 
+  /** 清空内存快照缓存，下次 list() 强制重新读取。 */
+  invalidateCache() {
+    vaultSnapshot = null;
+    vaultSnapshotAt = 0;
+  },
+
   /** 清空当前密钥（删除激活条目时使用）。 */
   clearActive() {
     setActiveNaiKey('');

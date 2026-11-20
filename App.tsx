@@ -10,6 +10,7 @@ import { ImageActivityProvider } from './components/SmartImage';
 import { db } from './services/dbService';
 import { collectionRevision, collectionSnapshot, subscribeCollection } from './services/collectionFavorites';
 import { api, NAI_ACCOUNTING_ERROR_EVENT } from './services/api';
+import { naiKeyPoolService } from './services/naiKeyPool';
 import { PROMPT_LIBRARY_COVER_CHANGED } from './services/promptLibraryCoverTemplate';
 import { readChainFolders } from './services/chainFolders';
 import { saveChainFolders } from './services/useChainFolders';
@@ -308,6 +309,9 @@ const App = () => {
   const toastTimerRef = useRef<number | null>(null);
   useEffect(() => () => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+  }, []);
+  useEffect(() => {
+    void naiKeyPoolService.get();
   }, []);
   const accountingWarningUntilRef = useRef(0);
   // useCallback 保持稳定引用：notify 被多处 effect 依赖，每次渲染新建会导致监听反复重挂。

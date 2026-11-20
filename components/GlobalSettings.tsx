@@ -36,6 +36,7 @@ import { useNaiChannelMode } from '../services/naiChannel';
 import { OpusUsageBar } from './OpusUsageBar';
 import { getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
+import { useNaiKeyPool } from '../services/naiKeyPool';
 import { readActiveNaiKey, getRememberNaiKey, setRememberNaiKey, NAI_KEY_REMEMBER_CHANGED } from '../services/naiKeyStorage';
 import { PromptAgentSettings } from './PromptAgentSettings';
 import { getCloudQueueGenerationUrl } from '../worker/cloudQueueTarget.mjs';
@@ -456,6 +457,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [keyVaultLoading, setKeyVaultLoading] = useState(false);
   const [keyVaultLoadError, setKeyVaultLoadError] = useState('');
   const keyVaultLoadedRef = useRef(false);
+  const keyPool = useNaiKeyPool({ loadRemote: open && activeSection === 'novelai' && keyVaultLoaded });
   const activeGateway = keyVault.find(entry => entry.key === apiKey)?.gatewayUrl;
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyValue, setNewKeyValue] = useState('');
@@ -499,11 +501,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
   const activateKeyEntry = (entry: NaiKeyEntry) => {
     if (entry.key === readApiKey()) return;
+    const disablePool = keyPool.config.enabled && !keyPool.config.memberIds.includes(entry.id);
+    if (disablePool) void keyPool.setEnabled(false);
     naiKeyVault.activate(entry, rememberApiKey);
     setApiKey(entry.key);
     // 切走后不再保留上一条的明文回显。
     setRevealedKeyId('');
-    notify(`已切换到「${entry.name}」`, 'success');
+    notify(disablePool ? `已切换到「${entry.name}」（已关闭 Key 池）` : `已切换到「${entry.name}」`, 'success');
   };
 
   const addKeyEntry = async () => {
@@ -1304,9 +1308,42 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               {keyVaultLoaded && keyVault.length === 0 && (
                 <p className="rounded-lg border border-dashed border-gray-300 px-3 py-4 text-center text-xs text-gray-500 dark:border-gray-600 dark:text-gray-400">{t("还没有保存的密钥，在下方添加第一把。")}</p>
               )}
+              {(() => {
+                const eligiblePoolKeys = keyVault.filter(entry => entry.billingMode !== 'per-use');
+                const showPoolControls = keyVaultLoaded && (eligiblePoolKeys.length >= 2 || keyPool.config.enabled || keyPool.config.memberIds.length > 0);
+                if (!showPoolControls) return null;
+                return (
+                  <div className="appearance-group rounded-xl border border-gray-200 bg-gray-50/80 p-3 dark:border-gray-700 dark:bg-gray-800/60">
+                    <SettingSwitchRow
+                      checked={keyPool.config.enabled}
+                      onChange={enabled => {
+                        const memberIds = enabled && keyPool.config.memberIds.length === 0
+                          ? eligiblePoolKeys.map(item => item.id)
+                          : keyPool.config.memberIds;
+                        void keyPool.setConfig({ enabled, memberIds }).then(saved => {
+                          notify(saved.enabled ? t('已开启 Key 池自动轮询（共 {0} 把密钥）', [saved.memberIds.length]) : t('已关闭 Key 池自动轮询'), 'success');
+                        });
+                      }}
+                      label="Key 池自动轮询"
+                      description="按满圈率优先自动选用池内 Opus 额度最充足的密钥；全池耗尽或需付费时直接停止提示。"
+                      className="!text-xs"
+                    />
+                    {keyPool.config.enabled && (
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200/80 pt-2 text-micro text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                        <span>{t('已入池 {0} 把密钥 · 满圈率优先（按次渠道不参与）', [keyPool.members.length])}</span>
+                        <button type="button" data-appearance="control" data-tone="neutral" onClick={() => void keyPool.refresh()} className={SETTING_INLINE_CLASS}>{t('刷新池额度')}</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               {keyVault.map(entry => {
                 const active = entry.key === apiKey;
                 const revealed = entry.id === revealedKeyId;
+                const eligibleForPool = entry.billingMode !== 'per-use';
+                const inPool = keyPool.config.memberIds.includes(entry.id);
+                const showPoolButton = eligibleForPool && (keyVault.filter(item => item.billingMode !== 'per-use').length >= 2 || inPool);
+                const poolStatus = keyPool.config.enabled && inPool ? keyPool.members.find(item => item.entry.id === entry.id) : null;
                 // 只对「当前使用」的 key 显示订阅健康（复用轮询结果，不额外探测）；
                 // 加载中/请求失败时不妄断订阅过期，避免误标。
                 const activeKeySubscription = active
@@ -1339,11 +1376,16 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       />
                     ) : (
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <span className="truncate text-sm font-bold text-gray-800 dark:text-gray-100" title={entry.name}>{entry.name}</span>
                           {entry.billingMode === 'per-use'
                             ? <span className="flex-none rounded-full bg-emerald-100 px-1.5 py-0.5 text-micro font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" title={entry.gatewayUrl}>{t("按次")}</span>
                             : entry.gatewayUrl && <span className="flex-none rounded-full bg-indigo-100 px-1.5 py-0.5 text-micro font-bold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300" title={entry.gatewayUrl}>{t("网关")}</span>}
+                          {poolStatus && (
+                            <span className={`flex-none rounded-full px-1.5 py-0.5 text-micro font-bold tabular-nums ${poolStatus.error ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300' : poolStatus.availableForOpus ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : poolStatus.loading ? 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300' : 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300'}`}>
+                              {poolStatus.loading && !poolStatus.info ? t('同步中') : poolStatus.error && !poolStatus.info ? t('同步失败') : poolStatus.remainingPercent !== null ? `${entry.gatewayUrl ? poolStatus.remainingPercent.toFixed(1) : poolStatus.remainingPercent}%` : t('不可用')}
+                            </span>
+                          )}
                           {!entry.gatewayUrl && !entry.key.startsWith('pst-') && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title={t("NovelAI Key 应以 pst- 开头")}>{t("格式可疑")}</span>}
                           {keyExpired && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title={t(entry.gatewayUrl ? '成员分配额度与实际扣费以网关为准；点击刷新' : "免费权益已过期；Paid Anlas 可付费生成。")}>{t(entry.gatewayUrl ? '网关权益不可用' : "订阅过期")}</span>}
                           {keyNonOpus && !entry.gatewayUrl && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title={t("当前订阅不是 Opus 档，无免费生成额度，按 Anlas 扣费生成")}>{t("非 Opus")}</span>}
@@ -1352,6 +1394,19 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       </div>
                     )}
                     <div className="flex flex-none flex-wrap items-center justify-end gap-1">
+                      {renamingKeyId !== entry.id && showPoolButton && (
+                        <button
+                          type="button"
+                          aria-pressed={inPool}
+                          aria-label={t(inPool ? '移出 Key 池：{0}' : '加入 Key 池：{0}', [entry.name])}
+                          data-appearance="control"
+                          data-tone={inPool ? 'primary' : 'neutral'}
+                          onClick={() => void keyPool.toggleMember(entry.id)}
+                          className={`mobile-touch rounded-lg border px-2 py-1 text-xs font-bold transition ${inPool ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-gray-200 bg-white text-gray-500 hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400'}`}
+                        >
+                          {inPool ? t('已入池') : t('入池')}
+                        </button>
+                      )}
                       {renamingKeyId !== entry.id && <button type="button" aria-pressed={revealed} data-appearance="control" data-tone="neutral" onClick={() => setRevealedKeyId(revealed ? '' : entry.id)} aria-label={revealed ? t("隐藏完整 Key") : t("显示完整 Key")} title={revealed ? t("隐藏完整 Key") : t("显示完整 Key")} className="mobile-touch rounded-lg px-2 py-1 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700">{revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</button>}
                       {renamingKeyId !== entry.id && <button type="button" data-appearance="control" data-tone="neutral" onClick={() => void copyTagText(entry.key).then(() => notify(`已复制「${entry.name}」的完整 Key`), () => notify('复制失败，请点眼睛图标后手动选择复制', 'error'))} aria-label={t("复制完整 Key")} title={t("复制完整 Key")} className="mobile-touch rounded-lg px-2 py-1 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"><Copy className="h-3.5 w-3.5" /></button>}
                       <button type="button" data-appearance="control" data-tone="neutral" onClick={() => { setRenamingKeyId(entry.id); setRenameValue(entry.name); }} aria-label={t("修改备注名")} className="mobile-touch rounded-lg px-2 py-1 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700" title={t("修改备注名")}><Pencil className="h-3.5 w-3.5" /></button>

@@ -65,3 +65,24 @@ it('按次渠道缺少生成地址时拒绝保存，普通网关不写入计费�
   expect(await entries()).toMatchObject([{ key: 'STA1N-gateway', gatewayUrl: 'https://gateway.example/v1' }]);
   expect((await entries())[0].billingMode).toBeUndefined();
 });
+
+it('Key 池配置持久化到 settings，自动过滤按次渠道与无效 ID，删除密钥时同步清理', async () => {
+  const k1 = ((await (await invoke('POST', '/api/nai-key-vault', { name: '主号', key: 'pst-pool-1' })).json()) as { entry: { id: string } }).entry.id;
+  const k2 = ((await (await invoke('POST', '/api/nai-key-vault', { name: '车位2', key: 'STA1N-pool-2', gatewayUrl: 'https://g.example/v1' })).json()) as { entry: { id: string } }).entry.id;
+  const perUse = ((await (await invoke('POST', '/api/nai-key-vault', { name: '按次', key: 'sk-pay', gatewayUrl: 'https://pay.example', billingMode: 'per-use' })).json()) as { entry: { id: string } }).entry.id;
+
+  const initial = await (await invoke('GET', '/api/nai-key-vault/pool')).json() as { pool: { enabled: boolean; memberIds: string[] } };
+  expect(initial.pool).toEqual({ enabled: false, memberIds: [] });
+
+  const saved = await (await invoke('PUT', '/api/nai-key-vault/pool', { enabled: true, memberIds: [k1, k2, perUse, 'ghost-id', k1] })).json() as { pool: { enabled: boolean; memberIds: string[] } };
+  expect(saved.pool).toEqual({ enabled: true, memberIds: [k1, k2] });
+
+  // 删除池中某把密钥后自动移出池子；只剩 1 把仍保持有效，全删完自动关闭。
+  await invoke('DELETE', `/api/nai-key-vault/${k1}`);
+  const afterOne = await (await invoke('GET', '/api/nai-key-vault/pool')).json() as { pool: { enabled: boolean; memberIds: string[] } };
+  expect(afterOne.pool).toEqual({ enabled: true, memberIds: [k2] });
+
+  await invoke('DELETE', `/api/nai-key-vault/${k2}`);
+  const afterAll = await (await invoke('GET', '/api/nai-key-vault/pool')).json() as { pool: { enabled: boolean; memberIds: string[] } };
+  expect(afterAll.pool).toEqual({ enabled: false, memberIds: [] });
+});

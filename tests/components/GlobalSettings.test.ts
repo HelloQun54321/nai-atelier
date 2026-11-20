@@ -11,6 +11,7 @@ import { readAgentPage } from '../../services/agentWorkspace';
 import { getCleanSharedImages, getSharedImageCustomText, getSharedImageCleanContent, getImageDownloadFormat, IMAGE_SHARING_STORAGE_KEY, IMAGE_SHARING_TEXT_STORAGE_KEY, IMAGE_SHARING_CONTENT_STORAGE_KEY, IMAGE_DOWNLOAD_FORMAT_STORAGE_KEY } from '../../services/imageSharing';
 import { readActiveNaiKey, REMEMBER_NAI_KEY_STORAGE_KEY, setActiveNaiKey } from '../../services/naiKeyStorage';
 import { naiKeyVault } from '../../services/naiKeyVault';
+import { naiKeyPoolService } from '../../services/naiKeyPool';
 import { getImageDisplayPageOverride, getMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 const themeFixture = vi.hoisted(() => ({ presets: null as import('../../services/appearancePreferences').AppearancePreset[] | null, fail: false }));
 const platformFixture = vi.hoisted(() => ({ android: false }));
@@ -371,6 +372,7 @@ describe('GlobalSettings', () => {
     subscriptionFixture.refresh.mockClear();
 
     sessionStorage.clear(); localStorage.clear();
+    naiKeyPoolService._resetForTests();
     vi.stubGlobal('__APP_VERSION__', '1.0.0');
     vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
       matches: false,
@@ -755,6 +757,30 @@ describe('GlobalSettings', () => {
     expect(screen.queryByRole('spinbutton', { name: '可支配 Anlas 点数' })).toBeNull();
     expect(screen.queryByRole('button', { name: '恢复 1666' })).toBeNull();
     expect(screen.getByText('网关余额').nextElementSibling?.textContent).toBe('2,500 点');
+  });
+
+  it('有多把非按次密钥时可开启 Key 池并逐条控制入池，按次渠道不显示入池按钮', async () => {
+    subscriptionFixture.entries = [
+      { id: 'pool-a', name: '车位A', key: 'STA1N-pool-a', gatewayUrl: 'https://a.example', createdAt: 1 },
+      { id: 'pool-b', name: '车位B', key: 'STA1N-pool-b', gatewayUrl: 'https://b.example', createdAt: 2 },
+      { id: 'pool-pay', name: '按次站', key: 'sk-per-use', gatewayUrl: 'https://pay.example', billingMode: 'per-use', createdAt: 3 },
+    ];
+    sessionStorage.setItem('nai_api_key', 'STA1N-pool-a');
+    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    const poolSwitch = await screen.findByRole('switch', { name: /Key 池自动轮询/ });
+    expect(screen.getByRole('button', { name: '加入 Key 池：车位A' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '加入 Key 池：车位B' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Key 池：按次站/ })).toBeNull();
+
+    // 一键开启时自动把非按次密钥全部入池
+    fireEvent.click(poolSwitch);
+    await waitFor(() => expect(poolSwitch.getAttribute('aria-checked')).toBe('true'));
+    expect(await screen.findByRole('button', { name: '移出 Key 池：车位A' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '移出 Key 池：车位B' })).toBeTruthy();
+
+    // 单独将车位B移出池
+    fireEvent.click(screen.getByRole('button', { name: '移出 Key 池：车位B' }));
+    await screen.findByRole('button', { name: '加入 Key 池：车位B' });
   });
 
   it('NovelAI 设置不再展示低消耗开关', async () => {

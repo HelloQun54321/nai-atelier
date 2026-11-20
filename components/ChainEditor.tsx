@@ -40,6 +40,7 @@ import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { applyNaiModelSettings, getRuntimeNaiModelInfo, getSelectableNaiModels, isNaiMediumModel } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
+import { prepareGenerationWithPool, reportPoolKeyCooldown } from '../services/naiKeyPool';
 import { useNaiChannelMode } from '../services/naiChannel';
 import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createBlankLabCharacter, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, mergePromptSections, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
@@ -1641,28 +1642,32 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
 
     /** 提交一次有限后台任务：POST 一次后只观察后端状态与结果，本页不再逐张请求或落库。 */
     const runBackgroundJob = async (descriptor: GenerationJobDescriptor, count: number,
-        options?: { agent?: boolean; autoApproveCost?: boolean; onApproved?: () => Promise<void>; placement?: GenerationPlacement; onCompleted?: (item: LocalGenItem) => void | Promise<void> }): Promise<PromptAgentGenerationResult> => {
+        options?: { agent?: boolean; autoApproveCost?: boolean; onApproved?: () => Promise<void>; placement?: GenerationPlacement; onCompleted?: (item: LocalGenItem) => void | Promise<void>; keyOverride?: string }): Promise<PromptAgentGenerationResult> => {
+        const submitKey = options?.keyOverride || apiKey;
         // 描述符构建与批准回调都是异步的：提交前必须确认 Key 仍是本轮开始时的 Key，不能把旧任务投给新 Key。
         const assertSubmitKey = () => {
             const storedKey = sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
-            if (latestGenerationStateRef.current.apiKey !== apiKey || storedKey !== apiKey) throw agentOperationError('NovelAI Key 已变化，已取消本次生成', 'key_changed');
+            if (storedKey !== submitKey || (!options?.keyOverride && latestGenerationStateRef.current.apiKey !== submitKey)) throw agentOperationError('NovelAI Key 已变化，已取消本次生成', 'key_changed');
         };
         try {
             validateGenerationCount(count);
             validateGenerationPlacement(options?.placement);
             assertGenerationPreference(count, options?.placement);
-            if (!apiKey) throw agentOperationError('请先在“全局设置”中配置 NovelAI API Key', 'missing_key');
+            if (!submitKey) throw agentOperationError('请先在“全局设置”中配置 NovelAI API Key', 'missing_key');
             if (!options?.placement && (generationSeriesRef.current || isGenerating)) throw agentOperationError('已有图片正在生成，请等待完成', 'generation_busy');
             assertSubmitKey();
             await options?.onApproved?.();
             assertSubmitKey();
             // 确认或准备期间关闭偏好后，不再投递尚未提交的多张/排队任务。
             assertGenerationPreference(count, options?.placement);
-            const { session, settle } = beginGenerationSeries({ scope: chain.id, key: apiKey, count, agent: Boolean(options?.agent), placement: options?.placement, descriptor: { ...descriptor, ...(options?.autoApproveCost ? { autoApproveCost: true } : {}) } });
+            const { session, settle } = beginGenerationSeries({ scope: chain.id, key: submitKey, count, agent: Boolean(options?.agent), placement: options?.placement, descriptor: { ...descriptor, ...(options?.autoApproveCost ? { autoApproveCost: true } : {}) } });
             const sampleTargetId = !descriptor.history.edit ? artistSampleTarget?.id : undefined;
             if (sampleTargetId) artistSampleJobsRef.current.set(session.token, sampleTargetId);
             if (!options?.placement) generationSeriesRef.current = session;
             const result = await settle;
+            if (!result.success && result.outcome !== 'cancelled' && /429|502|503|限流|并发|超时/.test(String(result.error || ''))) {
+                reportPoolKeyCooldown(submitKey);
+            }
             if (sampleTargetId && mountedRef.current) setArtistSampleTarget(current => current?.id === sampleTargetId
                 ? { ...current, historyIds: [...new Set([...current.historyIds, ...(result.historyIds || [])])] } : current);
             artistSampleJobsRef.current.delete(session.token);
@@ -1710,7 +1715,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     };
 
     const submitTextToImageJob = async (draft: { basePrompt: string; subjectPrompt: string; negativePrompt: string; modules: PromptModule[]; params: NAIParams }, count: number, approvedCost: number,
-        options?: { agent?: boolean; autoApproveCost?: boolean; onApproved?: () => Promise<void>; placement?: GenerationPlacement }): Promise<PromptAgentGenerationResult> => {
+        options?: { agent?: boolean; autoApproveCost?: boolean; onApproved?: () => Promise<void>; placement?: GenerationPlacement; keyOverride?: string }): Promise<PromptAgentGenerationResult> => {
         generationInFlightRef.current = true;
         try {
             const streamSupported = getRuntimeNaiModelInfo(applyNaiModelSettings(draft.params, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).supportsStreamedResponses;
@@ -1733,21 +1738,37 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             return false;
         }
         if (!placement && (generationSeriesRef.current || generationInFlightRef.current || isGenerating || externalGenerationBusy)) return false;
-        if (!apiKey) {
+        const draft = structuredClone(sampleDraft ?? { basePrompt, subjectPrompt, negativePrompt,
+            modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })), params });
+        const count = sampleDraft ? 1 : validateGenerationCount(effectiveGenerationCount);
+        let submitKey = apiKey;
+        let freshSubscription = novelaiSubscription;
+        const poolCheck = await prepareGenerationWithPool({
+            model: draft.params.model,
+            estimatedCostWithOpus: estimateV45GenerationCost(draft.params, true, false),
+            preserveActiveKey: Boolean(placement),
+        });
+        if (poolCheck.pooled) {
+            if (!poolCheck.ok) {
+                setErrorMsg(poolCheck.message);
+                notify(poolCheck.message, 'error');
+                return false;
+            }
+            submitKey = poolCheck.key;
+            freshSubscription = poolCheck.info;
+        } else {
+            void refreshUsageIfStale();
+        }
+        if (!submitKey) {
             const message = '请先在“全局设置”中配置 NovelAI API Key';
             setErrorMsg(message);
             notify(message, 'error');
             return false;
         }
-        const draft = structuredClone(sampleDraft ?? { basePrompt, subjectPrompt, negativePrompt,
-            modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })), params });
-        const count = sampleDraft ? 1 : validateGenerationCount(effectiveGenerationCount);
-        const freshSubscription = novelaiSubscription;
-        void refreshUsageIfStale();
-        const cost = perUseChannel ? 0 : estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
+        const cost = perUseChannel && !poolCheck.pooled ? 0 : estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
         const totalCost = cost * count;
-        if (!perUseChannel && (count > 1 || placement)) {
-            if (!await confirmAction({ rememberKey: 'generation.text-series', rememberScope: confirmationCostScope(apiKey, cost, count, anlasBudget.remaining, [draft.params.model, placement]),
+        if ((!perUseChannel || poolCheck.pooled) && (count > 1 || placement)) {
+            if (!await confirmAction({ rememberKey: 'generation.text-series', rememberScope: confirmationCostScope(submitKey, cost, count, anlasBudget.remaining, [draft.params.model, placement]),
                 title: placement ? placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
                 message: `使用本轮固定的提示词与参数，逐张生成并保存 ${count} 张图片。${cost > 0 ? `\n每张预计 ${cost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
                 confirmLabel: cost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
@@ -1755,19 +1776,19 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             })) return false;
         } else if (!perUseChannel && cost > 0 && anlasBudget.remaining <= 0) {
             // 本地 Anlas 预算已用尽但仍需扣费：红色警告，由用户确认后才继续。
-            if (!await confirmAction({ rememberKey: 'generation.text-budget', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, draft.params.model),
+            if (!await confirmAction({ rememberKey: 'generation.text-budget', rememberScope: confirmationCostScope(submitKey, cost, 1, anlasBudget.remaining, draft.params.model),
                 title: 'Anlas 预算已用尽',
                 message: `本地预算已扣到 0，本次生成仍需消耗 ${cost} Anlas（共享账号额度），继续将透支你手动设定的预算线。\n\n若预算数字过期，可先到全局设置校准。`,
                 confirmLabel: `仍要消耗 ${cost} 点生成`,
                 tone: 'danger',
             })) return false;
-        } else if (!perUseChannel && cost > 0 && !await confirmAction({ rememberKey: 'generation.text', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, draft.params.model),
+        } else if (!perUseChannel && cost > 0 && !await confirmAction({ rememberKey: 'generation.text', rememberScope: confirmationCostScope(submitKey, cost, 1, anlasBudget.remaining, draft.params.model),
             title: '确认生成图片',
             message: `当前参数预计消耗 ${cost} Anlas${draft.params.characterReferences?.enabled && draft.params.characterReferences.slots.length ? `\n其中精准参考：${draft.params.characterReferences.slots.length} × ${(naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} = ${draft.params.characterReferences.slots.length * (naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} Anlas` : ''}${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
             confirmLabel: `消耗 ${cost} 点并生成`,
         })) return false;
         try {
-            return (await submitTextToImageJob(draft, count, cost, { placement })).success;
+            return (await submitTextToImageJob(draft, count, cost, { placement, keyOverride: poolCheck.pooled ? submitKey : undefined })).success;
         } catch (error) {
             const message = error instanceof Error ? error.message : '图片生成失败';
             if (mountedRef.current) { setErrorMsg(message); notify(message, 'error'); }
@@ -1804,19 +1825,11 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         if (!continuousGenerationEnabledRef.current && (count > 1 || options?.placement)) {
             return stop('连续生成与排队已关闭，请在设置中开启后再请求多张或排队', 'continuous_generation_disabled');
         }
-        if (!apiKey) {
-            const message = '请先在“全局设置”中配置 NovelAI API Key';
-            setErrorMsg(message);
-            notify(message, 'error');
-            return stop(message, 'missing_key');
-        }
         if (!options?.placement && (generationSeriesRef.current || generationInFlightRef.current || isGenerating)) return stop('此 Key 正在生成，请等待当前任务完成', 'generation_busy');
         const permissionMode = options?.agent ? (await promptAgentService.getConfig()).permissionMode : undefined;
         if (permissionMode === 'read_only') return stop('当前为只读权限，不能生成图片', 'agent_read_only');
         const fullAccess = permissionMode === 'full';
         const editParamsSource = options?.params || request.params || activeEditDraft?.params || params;
-        const freshSubscription = latestGenerationStateRef.current.subscription.info;
-        void refreshUsageIfStale();
         let preparedEdit: PreparedImageEdit;
         try {
             preparedEdit = await prepareImageEdit({
@@ -1831,7 +1844,36 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             return stop(message, 'invalid_base_image');
         }
         const { sourceWidth, sourceHeight } = preparedEdit;
-        const editCost = perUseChannel ? 0 : estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), isActiveOpusSubscription(freshSubscription) ? freshSubscription!.tier : 0, freshSubscription?.usage?.isNegative ?? true, {
+        let submitKey = apiKey;
+        let freshSubscription = latestGenerationStateRef.current.subscription.info;
+        const poolCheck = await prepareGenerationWithPool({
+            model: editParamsSource.model,
+            estimatedCostWithOpus: estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), 3, false, {
+                width: sourceWidth,
+                height: sourceHeight,
+                focusedRect: request.focusedRect,
+                minimumContextArea: request.minimumContextArea,
+            }),
+            preserveActiveKey: Boolean(options?.placement),
+        });
+        if (poolCheck.pooled) {
+            if (!poolCheck.ok) {
+                setErrorMsg(poolCheck.message);
+                notify(poolCheck.message, 'error');
+                return stop(poolCheck.message, poolCheck.code);
+            }
+            submitKey = poolCheck.key;
+            freshSubscription = poolCheck.info;
+        } else {
+            void refreshUsageIfStale();
+        }
+        if (!submitKey) {
+            const message = '请先在“全局设置”中配置 NovelAI API Key';
+            setErrorMsg(message);
+            notify(message, 'error');
+            return stop(message, 'missing_key');
+        }
+        const editCost = perUseChannel && !poolCheck.pooled ? 0 : estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), isActiveOpusSubscription(freshSubscription) ? freshSubscription!.tier : 0, freshSubscription?.usage?.isNegative ?? true, {
             width: sourceWidth,
             height: sourceHeight,
             focusedRect: request.focusedRect,
@@ -1840,16 +1882,16 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         const syncWarning = runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : '';
         const totalCost = editCost * count;
         // 标准权限只确认一次，完全访问沿用授权；提交后由后端费用状态机继续裁决。
-        if (!perUseChannel && !fullAccess && (count > 1 || options?.placement)) {
-            if (!await confirmAction({ rememberKey: 'generation.edit-series', rememberScope: confirmationCostScope(apiKey, editCost, count, anlasBudget.remaining, [request.operation, options?.placement]),
+        if ((!perUseChannel || poolCheck.pooled) && !fullAccess && (count > 1 || options?.placement)) {
+            if (!await confirmAction({ rememberKey: 'generation.edit-series', rememberScope: confirmationCostScope(submitKey, editCost, count, anlasBudget.remaining, [request.operation, options?.placement]),
                 title: options?.placement ? options.placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
                 message: `使用本轮固定的提示词、参数与底图，逐张生成并保存 ${count} 张图片。${editCost > 0 ? `\n每张预计 ${editCost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${syncWarning}`,
                 confirmLabel: editCost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
                 ...(totalCost > anlasBudget.remaining || runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}),
             })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
         } else if (!perUseChannel && !fullAccess && editCost > 0 && anlasBudget.remaining <= 0) {
-            if (!await confirmAction({ rememberKey: 'generation.edit-budget', rememberScope: confirmationCostScope(apiKey, editCost, 1, anlasBudget.remaining, request.operation), title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。${syncWarning}`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
-        } else if (!perUseChannel && !fullAccess && (editCost > 0 || options?.agent) && !await confirmAction({ rememberKey: 'generation.edit', rememberScope: confirmationCostScope(apiKey, editCost, 1, anlasBudget.remaining, request.operation), title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。${editCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${syncWarning}`, confirmLabel: editCost > 0 ? `消耗 ${editCost} 点并生成` : '仍要生成', ...(runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}) })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
+            if (!await confirmAction({ rememberKey: 'generation.edit-budget', rememberScope: confirmationCostScope(submitKey, editCost, 1, anlasBudget.remaining, request.operation), title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。${syncWarning}`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
+        } else if (!perUseChannel && !fullAccess && (editCost > 0 || options?.agent) && !await confirmAction({ rememberKey: 'generation.edit', rememberScope: confirmationCostScope(submitKey, editCost, 1, anlasBudget.remaining, request.operation), title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。${editCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${syncWarning}`, confirmLabel: editCost > 0 ? `消耗 ${editCost} 点并生成` : '仍要生成', ...(runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}) })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
         generationInFlightRef.current = true;
         if (mountedRef.current) {
             setIsGenerating(true);
@@ -1866,7 +1908,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             const maskSave = flushMaskSave(request.operation).catch(error => console.warn('生成前保存编辑蒙版失败:', error));
             const job = await buildGenerationJobDescriptor({
                 operation: request.operation, prompt: request.prompt, negative: request.negativePrompt, params: editParams,
-                stream: generationStreamPreview && streamSupported, forceEmptySeed, apiKey, estimatedCost: editCost, approvedCost: editCost,
+                stream: generationStreamPreview && streamSupported, forceEmptySeed, apiKey: submitKey, estimatedCost: editCost, approvedCost: editCost,
                 history: {
                     basePrompt, subjectPrompt,
                     modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
@@ -1889,6 +1931,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             const result = await runBackgroundJob(job, count, {
                 agent: options?.agent, autoApproveCost: fullAccess, placement: options?.placement, onApproved: options?.onApproved,
                 onCompleted: persistEditResultAsset,
+                keyOverride: poolCheck.pooled ? submitKey : undefined,
             });
             if (result.success && !options?.agent) notify('图片编辑完成，结果已保存为新的历史图片', 'success');
             return result;
@@ -2007,34 +2050,46 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                     ? normalizeAgentGenerationResult({ success: true, historySaved: true, outcome: 'succeeded' })
                     : agentGenerationFailure(agentOperationError('图片编辑未返回生成回执', 'generation_failed', 'failed'));
             }
-            const freshSubscription = novelaiSubscription;
-            void refreshUsageIfStale();
-            const cost = perUseChannel ? 0 : estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
-            const totalCost = cost * count;
             const permissionMode = (await promptAgentService.getConfig()).permissionMode;
             if (permissionMode === 'read_only') throw agentOperationError('当前为只读权限，不能生成图片', 'agent_read_only');
+            let submitKey = apiKey;
+            let freshSubscription = novelaiSubscription;
+            const poolCheck = await prepareGenerationWithPool({
+                model: draft.params.model,
+                estimatedCostWithOpus: estimateV45GenerationCost(draft.params, true, false),
+                preserveActiveKey: Boolean(placement),
+            });
+            if (poolCheck.pooled) {
+                if (!poolCheck.ok) throw agentOperationError(poolCheck.message, poolCheck.code);
+                submitKey = poolCheck.key;
+                freshSubscription = poolCheck.info;
+            } else {
+                void refreshUsageIfStale();
+            }
+            const cost = perUseChannel && !poolCheck.pooled ? 0 : estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
+            const totalCost = cost * count;
             const fullAccess = permissionMode === 'full';
             // 完全访问已授权生图费用，其他权限仍逐轮确认。
             if (!fullAccess && cost > 0 && anlasBudget.remaining <= 0) {
-                if (!await confirmAction({ rememberKey: 'agent.generation-budget', rememberScope: confirmationCostScope(apiKey, cost, count, anlasBudget.remaining, draft.params.model),
+                if (!await confirmAction({ rememberKey: 'agent.generation-budget', rememberScope: confirmationCostScope(submitKey, cost, count, anlasBudget.remaining, draft.params.model),
                     title: 'Anlas 预算已用尽',
                     message: `${reason ? `${reason}\n\n` : ''}本地预算已扣到 0，本次生成仍需消耗 ${cost} Anlas（共享账号额度），继续将透支你手动设定的预算线。`,
                     confirmLabel: `仍要消耗 ${cost} 点生成`,
                     tone: 'danger',
                 })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
-            } else if (!perUseChannel && !fullAccess && (count > 1 || placement)) {
-                if (!await confirmAction({ rememberKey: 'agent.generation-series', rememberScope: confirmationCostScope(apiKey, cost, count, anlasBudget.remaining, [draft.params.model, placement]),
+            } else if ((!perUseChannel || poolCheck.pooled) && !fullAccess && (count > 1 || placement)) {
+                if (!await confirmAction({ rememberKey: 'agent.generation-series', rememberScope: confirmationCostScope(submitKey, cost, count, anlasBudget.remaining, [draft.params.model, placement]),
                     title: placement ? placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
                     message: `${reason ? `${reason}\n\n` : ''}使用本轮固定的提示词与参数，逐张生成并保存 ${count} 张图片。${cost > 0 ? `\n每张预计 ${cost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
                     confirmLabel: cost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
                     ...(totalCost > anlasBudget.remaining || runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}),
                 })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
-            } else if (!fullAccess && !await confirmAction({ rememberKey: 'agent.generation', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, draft.params.model),
+            } else if (!fullAccess && !await confirmAction({ rememberKey: 'agent.generation', rememberScope: confirmationCostScope(submitKey, cost, 1, anlasBudget.remaining, draft.params.model),
                 title: '助手已准备好生图',
                 message: `${reason ? `${reason}\n\n` : ''}预计本次${formatGenerationCostLabel(cost, draft.params.model)}。确认后才会提交给 NovelAI。${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
                 confirmLabel: cost > 0 ? `消耗 ${cost} 点并生成` : '确认生成一张',
             })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
-            return await submitTextToImageJob(structuredClone(draft), count, cost, { agent: true, autoApproveCost: fullAccess, placement, onApproved: approve });
+            return await submitTextToImageJob(structuredClone(draft), count, cost, { agent: true, autoApproveCost: fullAccess, placement, onApproved: approve, keyOverride: poolCheck.pooled ? submitKey : undefined });
         };
         try {
             return await execute();

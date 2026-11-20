@@ -20,6 +20,7 @@ import { beginRollGeneration, readRollApiKey } from '../services/styleRollGenera
 import { api, notifyLanAccessRequired, parseErrorResponse } from '../services/api';
 import { parseHttpError } from '../services/httpErrors.mjs';
 import { applyEstimatorRuntime, estimateV45GenerationCost, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
+import { getPoolMaxOpusPercent, prepareGenerationWithPool, reportPoolKeyCooldown, useNaiKeyPool } from '../services/naiKeyPool';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
@@ -74,7 +75,7 @@ const ROLL_TRIAGE_FILTERS: readonly string[] = ['unsaved', 'favorited'];
 const artistCountLabel = (rules: RollRules) => rules.minArtists === rules.maxArtists ? String(rules.maxArtists) : `${rules.minArtists}–${rules.maxArtists}`;
 const consumedPinnedTokens = new Set<number>();
 /** 一次出图的结果：连续 Roll 据此决定进入下一轮还是停下。 */
-type RollGenerateOutcome = { ok: true } | { ok: false; reason: 'skipped' | 'error' | 'cancelled' | 'declined' | 'record_full'; error?: string };
+type RollGenerateOutcome = { ok: true } | { ok: false; reason: 'skipped' | 'error' | 'cancelled' | 'declined' | 'record_full' | 'opus_limit'; error?: string };
 
 /** 候选里的画师收藏按钮：收藏的就是画师库里的同一条记录（收藏库 sourceType='artist'）。 */
 const ArtistFavoriteButton: React.FC<{ tag: string; sampleUrl?: string }> = ({ tag, sampleUrl }) => {
@@ -408,8 +409,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const generate = async (candidates: RollCandidate[] = selected ? [selected] : [], target = experiment, options: { skipConfirmation?: boolean } = {}): Promise<RollGenerateOutcome> => {
     if (!target || target.archived || !candidates.length || candidates.some(candidate => candidate.archived || images.has(candidate.id)) || loadingRef.current || generatingRef.current || session || (target.id === experiment?.id && (historyLoading || !historyReady))) return { ok: false, reason: 'skipped' };
     if (!continuousGenerationEnabled && candidates.length > 1) { const message = t('连续生成已关闭，请开启后生成本轮'); reportGeneration(message); return { ok: false, reason: 'error', error: message }; }
-    const key = readRollApiKey();
-    if (!key) { const message = t('请先在“全局设置”中配置 NovelAI API Key'); reportGeneration(message); return { ok: false, reason: 'error', error: message }; }
     generatingRef.current = true; setPreparing(true); setGenerationError(null);
     const reportError = (message: string, tone: 'error' | 'warning' = 'error') => {
       const text = t(parseHttpError(message).message);
@@ -421,13 +420,33 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       return text;
     };
     try {
-      void subscription.refreshIfStale();
-      const eachCost = perUseNaiChannel ? 0 : estimateV45GenerationCost(target.template.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true), totalCost = eachCost * candidates.length;
+      let key = readRollApiKey();
+      let activeSub = subscription.info;
+      const poolCheck = await prepareGenerationWithPool({
+        model: target.template.params.model,
+        estimatedCostWithOpus: estimateV45GenerationCost(target.template.params, true, false),
+        minPercent: getRollSeries().running ? getRollSeries().stopAtPercent : 0,
+      });
+      if (poolCheck.pooled) {
+        if (!poolCheck.ok) {
+          const text = reportError(poolCheck.message);
+          return { ok: false, reason: poolCheck.code === 'pool_exhausted' && getRollSeries().running ? 'opus_limit' : 'error', error: text };
+        }
+        key = poolCheck.key;
+        activeSub = poolCheck.info;
+      } else {
+        void subscription.refreshIfStale();
+      }
+      if (!key) { const message = t('请先在“全局设置”中配置 NovelAI API Key'); reportGeneration(message); return { ok: false, reason: 'error', error: message }; }
+      const eachCost = perUseNaiChannel && !poolCheck.pooled ? 0 : estimateV45GenerationCost(target.template.params, isActiveOpusSubscription(activeSub), activeSub?.usage?.isNegative ?? true), totalCost = eachCost * candidates.length;
       if (totalCost > 0 && !options.skipConfirmation && !await confirm({ rememberKey: 'roll.generate', rememberScope: confirmationCostScope(key, eachCost, candidates.length, budget.remaining, target.template.params.model), title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片',
         message: t('本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。', [candidates.length, totalCost, budget.remaining]),
         confirmLabel: t('消耗 {0} 点并生成', [totalCost]), ...(totalCost > budget.remaining ? { tone: 'danger' as const } : {}) })) return { ok: false, reason: 'declined' };
       const started = await beginRollGeneration(target, candidates.length === 1 ? candidates[0] : candidates, key, eachCost, generationStreamPreview && getRuntimeNaiModelInfo(target.template.params.model, runtime).supportsStreamedResponses, currentRollRound(target)?.id, forceEmptySeed);
       const receipt = await started.settle;
+      if (!receipt.success && receipt.outcome !== 'cancelled' && /429|502|503|限流|并发|超时/.test(String(receipt.error || ''))) {
+        reportPoolKeyCooldown(key);
+      }
       const warnings: string[] = [];
       if (started.session.accountingFailed) warnings.push(t('图片已保存，但本地记账异常，请核对额度后再继续') + (started.session.accountingError ? `：${started.session.accountingError}` : ''));
       if (started.session.cleanupError) warnings.push(t('后台任务清理异常：{0}', [started.session.cleanupError]));
@@ -494,8 +513,12 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   runSeriesRoundRef.current = runSeriesRound;
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
-  // Opus 百分比与官方点数与侧栏同源；任一未知都不当作已达标。
-  const seriesOpusPercent = subscription.info?.usage && Number.isFinite(Number(subscription.info.usage.percent)) ? Number(subscription.info.usage.percent) : null;
+  const keyPool = useNaiKeyPool();
+  // Opus 百分比与官方点数与侧栏同源；池模式下取全池可用最高百分比，任一未知都不当作已达标。
+  const poolMaxOpus = keyPool.config.enabled ? getPoolMaxOpusPercent() : null;
+  const seriesOpusPercent = poolMaxOpus !== null
+    ? poolMaxOpus
+    : (subscription.info?.usage && Number.isFinite(Number(subscription.info.usage.percent)) ? Number(subscription.info.usage.percent) : null);
   const seriesAccountPoints = (() => {
     const balance = subscription.info?.trainingStepsLeft;
     return balance && Number.isFinite(balance.fixedTrainingStepsLeft) && Number.isFinite(balance.purchasedTrainingSteps)

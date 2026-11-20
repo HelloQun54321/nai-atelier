@@ -14,6 +14,7 @@ import {
   promptLibraryCoverGenerationRevision, type PromptLibraryCoverGeneration,
 } from '../services/promptLibraryCoverGeneration';
 import { applyEstimatorRuntime, estimateV45GenerationCost, useAnlasBudget } from '../services/anlasBudget';
+import { prepareGenerationWithPool } from '../services/naiKeyPool';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { confirmationCostScope } from '../services/dailyConfirmation';
@@ -60,15 +61,26 @@ export function usePromptLibraryCoverActions({ active, notify }: {
   const generateCover = async (chain: PromptChain, value: PromptLibraryCoverTemplate, regenerate = false, options: { skipConfirmation?: boolean } = {}) => {
     if (requesting.current || promptLibraryCoverGenerationBusy(getPromptLibraryCoverGeneration(chain.id))) return;
     if (!promptLibraryCoverContent(chain)) { notify(t('这条记录还没有正文，无法生成封面'), 'error'); return; }
-    const key = readPromptLibraryCoverApiKey();
-    if (!key) { notify(t('请先在“全局设置”中配置 NovelAI API Key'), 'error'); return; }
     requesting.current = true;
     setRequestingTarget(chain.id);
     const snapshot = structuredClone(value);
     try {
       validatePromptLibraryCoverTemplate(snapshot);
-      void subscription.refreshIfStale();
-      const cost = perUseNaiChannel ? 0 : estimateV45GenerationCost(snapshot.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true);
+      let key = readPromptLibraryCoverApiKey();
+      let activeSub = subscription.info;
+      const poolCheck = await prepareGenerationWithPool({
+        model: snapshot.params.model,
+        estimatedCostWithOpus: estimateV45GenerationCost(snapshot.params, true, false),
+      });
+      if (poolCheck.pooled) {
+        if (!poolCheck.ok) { notify(t(poolCheck.message), 'error'); return; }
+        key = poolCheck.key;
+        activeSub = poolCheck.info;
+      } else {
+        void subscription.refreshIfStale();
+      }
+      if (!key) { notify(t('请先在“全局设置”中配置 NovelAI API Key'), 'error'); return; }
+      const cost = perUseNaiChannel && !poolCheck.pooled ? 0 : estimateV45GenerationCost(snapshot.params, isActiveOpusSubscription(activeSub), activeSub?.usage?.isNegative ?? true);
       if (cost > 0 && !options.skipConfirmation && !await confirm({
         rememberKey: 'prompt-library-cover.generate',
         rememberScope: confirmationCostScope(key, cost, 1, budget.remaining, snapshot.params.model),

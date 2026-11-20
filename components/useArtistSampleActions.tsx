@@ -6,6 +6,7 @@ import type { ArtistSamplePack, ArtistSampleRemoval, ArtistSampleTemplate } from
 import { deleteArtistSample, validateArtistSampleTemplate, type ArtistSampleData } from '../services/artistSampleDrafts';
 import { artistSampleGenerationBusy, beginArtistSampleGeneration, getArtistSampleGeneration, readArtistSampleApiKey, removeCachedArtistSample, retryArtistSampleSave, type ArtistSampleGeneration } from '../services/artistSampleGeneration';
 import { applyEstimatorRuntime, estimateV45GenerationCost, useAnlasBudget } from '../services/anlasBudget';
+import { prepareGenerationWithPool } from '../services/naiKeyPool';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { confirmationCostScope } from '../services/dailyConfirmation';
@@ -49,14 +50,25 @@ export function useArtistSampleActions({ active, data, setData, notify, enforceF
   };
   const generateSample = async (tag: string, pack: ArtistSamplePack, template: ArtistSampleTemplate, regenerate = false, options: { skipConfirmation?: boolean } = {}) => {
     if (requesting.current || artistSampleGenerationBusy(getArtistSampleGeneration(tag, pack))) return;
-    const key = readArtistSampleApiKey();
-    if (!key) { notify(t('请先在“全局设置”中配置 NovelAI API Key'), 'error'); return; }
     requesting.current = true; setRequestingTarget(pack + ':' + tag);
     const snapshot = structuredClone(template);
     try {
       validateArtistSampleTemplate(pack, snapshot);
-      void subscription.refreshIfStale();
-      const cost = perUseNaiChannel ? 0 : estimateV45GenerationCost(snapshot.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true);
+      let key = readArtistSampleApiKey();
+      let activeSub = subscription.info;
+      const poolCheck = await prepareGenerationWithPool({
+        model: snapshot.params.model,
+        estimatedCostWithOpus: estimateV45GenerationCost(snapshot.params, true, false),
+      });
+      if (poolCheck.pooled) {
+        if (!poolCheck.ok) { notify(t(poolCheck.message), 'error'); return; }
+        key = poolCheck.key;
+        activeSub = poolCheck.info;
+      } else {
+        void subscription.refreshIfStale();
+      }
+      if (!key) { notify(t('请先在“全局设置”中配置 NovelAI API Key'), 'error'); return; }
+      const cost = perUseNaiChannel && !poolCheck.pooled ? 0 : estimateV45GenerationCost(snapshot.params, isActiveOpusSubscription(activeSub), activeSub?.usage?.isNegative ?? true);
       if (cost > 0 && !options.skipConfirmation && !await confirm({ rememberKey: 'artist-sample.generate', rememberScope: confirmationCostScope(key, cost, 1, budget.remaining, snapshot.params.model), title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片', message: t('本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。', [1, cost, budget.remaining]), confirmLabel: t('消耗 {0} 点并生成', [cost]), ...(cost > budget.remaining ? { tone: 'danger' as const } : {}) })) return;
       if (!activeRef.current) return;
       if (readArtistSampleApiKey() !== key) throw new Error('NovelAI Key 已变化，请重新发起生成');

@@ -3,6 +3,8 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_NAI_RUNTIME, NAI_RUNTIME_REFRESH_EVENT, refreshNaiRuntimeConfig } from '../../services/naiRuntime';
+import { naiKeyPoolService } from '../../services/naiKeyPool';
+import { naiKeyVault } from '../../services/naiKeyVault';
 import { OpusUsageBar } from '../../components/OpusUsageBar';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 
@@ -52,6 +54,7 @@ describe('OpusUsageBar', () => {
   afterEach(() => {
     cleanup();
     setLanguage('zh-CN');
+    naiKeyPoolService._resetForTests();
     vi.unstubAllGlobals();
   });
   it.each([
@@ -157,6 +160,44 @@ describe('OpusUsageBar', () => {
     await screen.findByRole('status', { name: 'Opus 额度 25.0%' });
     expect(screen.getByText('≈433 张')).toBeTruthy();
     expect(screen.queryByText(/后满/)).toBeNull();
+  });
+
+  it('开启 Key 池后侧栏与详情展示池数量角标与成员额度摘要', async () => {
+    naiKeyVault.invalidateCache();
+    sessionStorage.setItem('nai_api_key', 'STA1N-ui-pool-1');
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const jsonResponse = (payload: unknown) => new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } });
+      if (url.startsWith('/api/novelai-runtime')) return jsonResponse({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } });
+      if (url === '/api/nai-key-vault') {
+        return jsonResponse({
+          entries: [
+            { id: 'u1', name: '车位1', key: 'STA1N-ui-pool-1', gatewayUrl: 'https://g1.example', createdAt: 1 },
+            { id: 'u2', name: '车位2', key: 'STA1N-ui-pool-2', gatewayUrl: 'https://g2.example', createdAt: 2 },
+          ],
+        });
+      }
+      if (url === '/api/nai-key-vault/pool') {
+        if (init?.method === 'PUT') return jsonResponse({ pool: JSON.parse(String(init.body)) });
+        return jsonResponse({ pool: { enabled: true, memberIds: ['u1', 'u2'] } });
+      }
+      const auth = (init?.headers as Record<string, string>)?.Authorization;
+      if (auth === 'Bearer STA1N-ui-pool-2') {
+        return jsonResponse({ source: 'gateway', gatewayManagedWallet: true, tier: 3, active: true, usage: { percent: 18.5, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } });
+      }
+      return jsonResponse({ source: 'gateway', gatewayManagedWallet: true, tier: 3, active: true, usage: { percent: 25, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } });
+    }));
+    await naiKeyPoolService.set({ enabled: true, memberIds: ['u1', 'u2'] });
+    const view = render(React.createElement(OpusUsageBar, { collapsed: false }));
+    const card = await screen.findByRole('status', { name: 'Opus 额度 25.0%' });
+    expect(await screen.findByText('池 2')).toBeTruthy();
+    expect(card.title).toContain('Key 池（满圈率优先）');
+    expect(card.title).toContain('车位1');
+    expect(card.title).toContain('车位2');
+
+    view.rerender(React.createElement(OpusUsageBar, { collapsed: false, showDetails: true }));
+    expect(screen.getByText('车位1')).toBeTruthy();
+    expect(screen.getByText('车位2')).toBeTruthy();
   });
   it('详情把额度与估算张数放入等宽两列，同步信息另起公共行，显式提示刷新', async () => {
     sessionStorage.setItem('nai_api_key', 'opus-details-synthetic-key');
