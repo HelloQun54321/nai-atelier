@@ -3,9 +3,9 @@ import { createHash } from 'node:crypto';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { afterEach, beforeEach, vi } from 'vitest';
-import { ANLAS_BUDGET_CHANGED_EVENT, applyEstimatorRuntime, estimateImageEditCost, estimateV45GenerationCost, formatGenerationCostLabel, hashNaiApiKey, isOpusUsageLimitedModel, usageForCostEstimate, useAnlasBudget } from '../../services/anlasBudget';
+import { ANLAS_BUDGET_CHANGED_EVENT, applyEstimatorRuntime, estimateImageEditCost, estimateV45GenerationCost, formatGenerationCostLabel, gatewayManagedAnlasBalance, hashNaiApiKey, isOpusUsageLimitedModel, usageForCostEstimate, useAnlasBudget } from '../../services/anlasBudget';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
-import { isActiveOpusSubscription, NOVELAI_USAGE_REFRESH_EVENT } from '../../services/naiUsage';
+import { isActiveOpusSubscription, NOVELAI_USAGE_REFRESH_EVENT, NOVELAI_USAGE_SNAPSHOT_EVENT } from '../../services/naiUsage';
 
 const responseFor = (payload: unknown) => ({
   ok: true,
@@ -98,6 +98,36 @@ describe('useAnlasBudget', () => {
     });
     expect(hook.result.current.remaining).toBe(795);
     expect(fetchBudget).toHaveBeenCalledTimes(initialRequests);
+    hook.unmount();
+  });
+
+  it('成员网关托管独立钱包时直接使用网关点数并标记 managedByGateway，切回普通 Key 恢复本地预算', async () => {
+    const memberKey = 'STA1N-managed-wallet';
+    const officialKey = 'pst-official-wallet';
+    vi.stubGlobal('fetch', vi.fn(async () => responseFor({ remaining: 1666, personal: {} })));
+    sessionStorage.setItem('nai_api_key', memberKey);
+    const hook = renderHook(() => useAnlasBudget());
+    await waitFor(() => expect(hook.result.current.remaining).toBe(1666));
+    expect(hook.result.current.managedByGateway).toBe(false);
+
+    expect(gatewayManagedAnlasBalance({ source: 'gateway', gatewayManagedWallet: true, active: true, tier: 3, trainingStepsLeft: { fixedTrainingStepsLeft: 2400, purchasedTrainingSteps: 100 } })).toBe(2500);
+    expect(gatewayManagedAnlasBalance({ source: 'gateway', active: true, tier: 3, trainingStepsLeft: { fixedTrainingStepsLeft: 2400, purchasedTrainingSteps: 100 } })).toBeNull();
+    expect(gatewayManagedAnlasBalance({ gatewayManagedWallet: true, active: true, tier: 3, trainingStepsLeft: { fixedTrainingStepsLeft: 2400, purchasedTrainingSteps: 100 } })).toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_SNAPSHOT_EVENT, {
+        detail: { apiKey: memberKey, info: { source: 'gateway', gatewayManagedWallet: true, active: true, tier: 3, trainingStepsLeft: { fixedTrainingStepsLeft: 2400, purchasedTrainingSteps: 100 } } },
+      }));
+    });
+    expect(hook.result.current.remaining).toBe(2500);
+    expect(hook.result.current.managedByGateway).toBe(true);
+
+    await act(async () => {
+      sessionStorage.setItem('nai_api_key', officialKey);
+      window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: officialKey }));
+    });
+    await waitFor(() => expect(hook.result.current.managedByGateway).toBe(false));
+    expect(hook.result.current.remaining).toBe(1666);
     hook.unmount();
   });
 });

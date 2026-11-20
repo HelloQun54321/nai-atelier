@@ -7,6 +7,7 @@ import {
   isNovelaiSubscriptionInactive,
   NOVELAI_USAGE_REFRESH_EVENT,
   requestNovelaiSubscription,
+  usageRingPercent,
   useNovelaiUsage,
 } from '../../services/naiUsage';
 
@@ -51,6 +52,15 @@ describe('订阅健康判定', () => {
     // 低档位 active 不是 Opus
     expect(isActiveOpusSubscription({ active: true, tier: 2 })).toBe(false);
     expect(isActiveOpusSubscription(null)).toBe(false);
+  });
+
+  it('usageRingPercent 按成员分配上限映射满圈，无上限按 100 计且夹紧到 0–100', () => {
+    expect(usageRingPercent({ percent: 25, isNegative: false, timeUntilNextPercent: 0 })).toBe(25);
+    expect(usageRingPercent({ percent: 196, isNegative: false, timeUntilNextPercent: 0 })).toBe(100);
+    expect(usageRingPercent({ percent: 25, capacity: 25, isNegative: false, timeUntilNextPercent: 0 })).toBe(100);
+    expect(usageRingPercent({ percent: 12.5, capacity: 25, isNegative: false, timeUntilNextPercent: 0 })).toBe(50);
+    expect(usageRingPercent({ percent: 30, capacity: 25, isNegative: false, timeUntilNextPercent: 0 })).toBe(100);
+    expect(usageRingPercent({ percent: 5, capacity: 25, isNegative: true, timeUntilNextPercent: 0 })).toBe(0);
   });
 });
 

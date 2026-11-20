@@ -16,11 +16,15 @@ export interface NovelaiUsageState {
   isNegative: boolean;
   /** 恢复 1% 额度所需的秒数。 */
   timeUntilNextPercent: number;
+  /** 成员网关分配的个人额度上限（如 4 人车为 25）；缺省按 100 计。 */
+  capacity?: number;
 }
 
 export interface NovelaiSubscriptionInfo {
   /** 缺省为官方；成员网关的余额不是上游账号总钱包。 */
   source?: 'gateway';
+  /** 成员网关自身维护独立个人钱包（如 /api/me/quota 成员账本），无需本地默认 1666 预算。 */
+  gatewayManagedWallet?: boolean;
   /** 订阅等级：0 Paper / 1 Tablet / 2 Scroll / 3 Opus（兼容 1~4 序号）。 */
   tier: number;
   active: boolean;
@@ -59,11 +63,20 @@ export const usageRemainingPercent = (usage: NovelaiUsageState): number => {
   return usage.isNegative || !Number.isFinite(percent) ? 0 : Math.max(0, percent);
 };
 
+/** 圆环填充百分比（0–100）：成员网关返回个人分配上限时以该上限为满圈，其余按 100 计。 */
+export const usageRingPercent = (usage: NovelaiUsageState): number => {
+  const remaining = usageRemainingPercent(usage);
+  const cap = Number(usage.capacity);
+  const scale = Number.isFinite(cap) && cap > 0 ? cap : 100;
+  return Math.min(100, (remaining / scale) * 100);
+};
+
 /** 剩余可生成张数 ≈ 系数 × 官方真实百分比（系数由网关自动同步）。 */
 export const usageRemainingImages = (usage: NovelaiUsageState, imagesPerPercent = 17.3): number =>
   Math.round(imagesPerPercent * usageRemainingPercent(usage));
 
 export const NOVELAI_USAGE_REFRESH_EVENT = 'nai-novelai-usage-refresh';
+export const NOVELAI_USAGE_SNAPSHOT_EVENT = 'nai-novelai-usage-snapshot';
 
 /**
  * 拼车共享账号：其他成员的生图也会消耗同一份额度，轮询需要比单账号更勤，
@@ -77,6 +90,10 @@ export const USAGE_SNAPSHOT_TTL = 15 * 1000;
 /** 同一把 Key 的并发刷新共用一个请求，避免切换事件与多个组件重复打到订阅接口。 */
 const inFlightUsageRequests = new Map<string, Promise<NovelaiSubscriptionInfo>>();
 const usageSnapshotCache = new Map<string, { info: NovelaiSubscriptionInfo; fetchedAt: number }>();
+
+/** 读取当前 Key 最近一次拉取到的订阅快照，供本地预算等模块感知网关托管钱包。 */
+export const getCachedNovelaiSubscription = (apiKey: string): NovelaiSubscriptionInfo | null =>
+  usageSnapshotCache.get(apiKey.trim())?.info || null;
 
 /**
  * 模块级共享订阅驱动：多个 keep-alive 页面各自 useNovelaiUsage 时只维护
@@ -207,6 +224,7 @@ export const useNovelaiUsage = () => {
       infoRef.current = next;
       fetchedAtRef.current = Date.now();
       usageSnapshotCache.set(apiKey, { info: next, fetchedAt: fetchedAtRef.current });
+      window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_SNAPSHOT_EVENT, { detail: { apiKey, info: next } }));
       setInfo(next);
       setFetchedAt(fetchedAtRef.current);
       setError(null);

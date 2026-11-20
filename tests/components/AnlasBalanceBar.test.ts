@@ -37,6 +37,32 @@ describe('Anlas 预算／余额布局', () => {
     expect(screen.getByRole('button').title).toContain('网关实际扣费');
     expect(screen.getByText('本地预算 ≠ 网关余额')).toBeTruthy();
   });
+  it('成员网关独立钱包不显示本地 1666 预算，展开、收起与详情均直接展示网关点数并支持五语', () => {
+    const account = subscription(2500);
+    account.info!.source = 'gateway';
+    account.info!.gatewayManagedWallet = true;
+    const view = render(React.createElement(AnlasBalanceBar, { budget, subscription: account }));
+    const bar = screen.getByRole('button', { name: /账号剩余点数 2,500 点/ });
+    expect(screen.getByText('2500')).toBeTruthy();
+    expect(screen.queryByText('1666')).toBeNull();
+    expect(screen.queryByText('/')).toBeNull();
+    expect(bar.title).not.toContain('个人剩余预算');
+
+    view.rerender(React.createElement(AnlasBalanceBar, { collapsed: true, budget, subscription: account }));
+    expect(screen.getByText('2500')).toBeTruthy();
+    expect(screen.queryByText('1666')).toBeNull();
+
+    view.rerender(React.createElement(AnlasBalanceBar, { variant: 'details', budget, subscription: account }));
+    expect(screen.getByText('网关余额').nextElementSibling?.textContent).toBe('2,500 点');
+    expect(screen.queryByText('本地预算')).toBeNull();
+    expect(screen.getByText('成员网关已独立分配可用点数，无需本地 1666 预算')).toBeTruthy();
+    for (const language of LANGUAGES) {
+      act(() => setLanguage(language.code));
+      const refresh = screen.getByRole('button');
+      expect(refresh.title).toContain(t('网关余额为当前成员分配额度；官方费用估算不代表网关实际扣费。'));
+      if (language.code === 'en') expect(refresh.title).not.toMatch(/[\u3400-\u9fff]/);
+    }
+  });
   it('成员余额的五语详情与悬停完整翻译，保留分配值', () => {
     const account = subscription(200); account.info!.source = 'gateway';
     render(React.createElement(AnlasBalanceBar, { variant: 'details', budget, subscription: account }));

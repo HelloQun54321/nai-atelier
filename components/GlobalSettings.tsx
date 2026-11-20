@@ -1445,11 +1445,15 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <AnlasBalanceBar variant="details" budget={anlasBudget} subscription={novelaiSubscription} />
                 <OpusUsageBar collapsed={false} showDetails />
               </div>
+              {novelaiSubscription.info?.source === 'gateway' && novelaiSubscription.info?.gatewayManagedWallet === true ? (
+                <p className="mt-3 text-meta leading-5 text-gray-500 dark:text-gray-400">{t("当前成员网关已独立分配并管理你的可用点数，无需手动设置本地 1666 预算。")}</p>
+              ) : <>
               <div className="mt-3 flex gap-2">
                 <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900" aria-label={t("可支配 Anlas 点数")} />
                 <button type="button" data-appearance="control" data-tone="primary" onClick={async () => { const next = await anlasBudgetService.set(Number(anlasInput)); setAnlasInput(String(next.remaining)); notify('Anlas 预算已更新'); }} className={SETTING_PRIMARY_CLASS}>{t("保存")}</button>
               </div>
               <div className="mt-2 flex items-start justify-between gap-3 text-meta leading-5 text-gray-500 dark:text-gray-400"><button type="button" data-appearance="control" data-tone="neutral" onClick={async () => { const next = await anlasBudgetService.set(DEFAULT_ANLAS_BUDGET); setAnlasInput(String(next.remaining)); }} className={`${SETTING_INLINE_CLASS} flex-shrink-0`}>{t("恢复 1666")}</button></div>
+              </>}
               <div className="appearance-group mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-bold text-gray-500 dark:text-gray-400" title={t("仅统计本机操作，按 Key 累计")}>{t("个人使用统计（当前密钥）")}</span>

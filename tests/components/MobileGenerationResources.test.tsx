@@ -82,6 +82,30 @@ describe('手机实验室账户资源', () => {
     expect(screen.getByText('网关成员')).toBeTruthy();
     expect(screen.queryByText('官方余额')).toBeNull();
   });
+  it('成员网关带个人上限与独立钱包时，底栏与 Dock 不显示 1666，圆环按分配上限满圈且中心保留真实数字', () => {
+    fixture.subscription!.info = {
+      source: 'gateway',
+      gatewayManagedWallet: true,
+      active: true,
+      tier: 3,
+      trainingStepsLeft: { fixedTrainingStepsLeft: 2500, purchasedTrainingSteps: 0 },
+    };
+    fixture.subscription!.usage = { percent: 25, capacity: 25, isNegative: false, timeUntilNextPercent: 0 };
+
+    const view = render(<MobileGenerationResources {...props('STA1N-mobile-managed')} variant="footer" />);
+    const footer = screen.getByRole('button', { name: /查看账户资源：余额 2500 · 成员额度 25\.0%/ });
+    expect(footer.textContent).toBe('Anlas 2500成员额度 25.0%');
+    expect(footer.textContent).not.toContain('1666');
+
+    view.rerender(<MobileGenerationResources {...props('STA1N-mobile-managed')} variant="dock" />);
+    const dock = screen.getByRole('button', { name: /查看账户资源：余额 2500 · 成员额度 25\.0%/ });
+    expect(dock.textContent).toContain('2500');
+    expect(dock.textContent).not.toContain('1666');
+    expect(dock.textContent).toContain('25.0');
+    const circles = dock.querySelectorAll('circle');
+    expect(Number(circles[1]?.getAttribute('stroke-dashoffset'))).toBeCloseTo(0, 4);
+    expect(circles[1]?.getAttribute('class')).toContain('text-emerald-500');
+  });
   it.each([false, true])('成员小数额度在底栏、摘要和详情统一保留一位，刷新失败=%s', failed => {
     fixture.subscription!.info!.source = 'gateway';
     fixture.subscription!.usage!.percent = 12.7773534897032;

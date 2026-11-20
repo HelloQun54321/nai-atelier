@@ -40,11 +40,11 @@ vi.mock('../../services/sharedAppearancePresets', () => ({ sharedAppearancePrese
     themeFixture.presets = themeFixture.presets!.filter(p => p.id !== id); return [...themeFixture.presets];
   }),
 } }));
-const subscriptionFixture = vi.hoisted(() => ({ entries: [] as import('../../services/naiKeyVault').NaiKeyEntry[], expired: false, balance: undefined as { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number } | undefined, usage: undefined as import('../../services/naiUsage').NovelaiUsageState | undefined, refresh: vi.fn(async () => null) }));
+const subscriptionFixture = vi.hoisted(() => ({ entries: [] as import('../../services/naiKeyVault').NaiKeyEntry[], source: undefined as 'gateway' | undefined, gatewayManagedWallet: false, expired: false, balance: undefined as { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number } | undefined, usage: undefined as import('../../services/naiUsage').NovelaiUsageState | undefined, refresh: vi.fn(async () => null) }));
 vi.mock('../../services/fileDownload', () => ({ downloadFile: vi.fn(async () => ({ saved: true, cancelled: false, browserDownload: true })) }));
 vi.mock('../../services/naiUsage', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/naiUsage')>(),
-  useNovelaiUsage: () => ({ info: subscriptionFixture.expired || subscriptionFixture.balance || subscriptionFixture.usage ? { active: !subscriptionFixture.expired, tier: 3, trainingStepsLeft: subscriptionFixture.balance } : null, usage: subscriptionFixture.usage, loading: false, error: null, fetchedAt: 0, refresh: subscriptionFixture.refresh }),
+  useNovelaiUsage: () => ({ info: subscriptionFixture.expired || subscriptionFixture.balance || subscriptionFixture.usage || subscriptionFixture.source ? { ...(subscriptionFixture.source ? { source: subscriptionFixture.source } : {}), ...(subscriptionFixture.gatewayManagedWallet ? { gatewayManagedWallet: true } : {}), active: !subscriptionFixture.expired, tier: 3, trainingStepsLeft: subscriptionFixture.balance } : null, usage: subscriptionFixture.usage, loading: false, error: null, fetchedAt: 0, refresh: subscriptionFixture.refresh }),
 }));
 
 vi.mock('../../services/mobileImageCache', () => ({
@@ -363,6 +363,8 @@ describe('GlobalSettings', () => {
     subscriptionFixture.entries = [];
     vi.mocked(naiKeyVault.add).mockReset();
     vi.mocked(naiKeyVault.activate).mockReset();
+    subscriptionFixture.source = undefined;
+    subscriptionFixture.gatewayManagedWallet = false;
     subscriptionFixture.expired = false;
     subscriptionFixture.balance = undefined;
     subscriptionFixture.usage = undefined;
@@ -741,6 +743,18 @@ describe('GlobalSettings', () => {
     fireEvent.click(balanceRow);
     expect(subscriptionFixture.refresh).toHaveBeenCalledTimes(1);
     expect((screen.getByRole('spinbutton', { name: '可支配 Anlas 点数' }) as HTMLInputElement).value).toBe('1666');
+  });
+
+  it('成员网关独立管理点数时隐藏手动 1666 本地预算输入与恢复按钮', async () => {
+    subscriptionFixture.source = 'gateway';
+    subscriptionFixture.gatewayManagedWallet = true;
+    subscriptionFixture.balance = { fixedTrainingStepsLeft: 2500, purchasedTrainingSteps: 0 };
+    sessionStorage.setItem('nai_api_key', 'STA1N-settings-managed');
+    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    await screen.findByText('当前成员网关已独立分配并管理你的可用点数，无需手动设置本地 1666 预算。');
+    expect(screen.queryByRole('spinbutton', { name: '可支配 Anlas 点数' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '恢复 1666' })).toBeNull();
+    expect(screen.getByText('网关余额').nextElementSibling?.textContent).toBe('2,500 点');
   });
 
   it('NovelAI 设置不再展示低消耗开关', async () => {

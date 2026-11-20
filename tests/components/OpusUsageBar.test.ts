@@ -73,6 +73,29 @@ describe('OpusUsageBar', () => {
     expect(card.title).toContain(`成员额度：${visible}%（约 ${images} 张）`);
     if (!props.collapsed) expect(screen.getByText(`≈${images} 张`)).toBeTruthy();
   });
+
+  it('成员网关带个人分配上限时按分配上限显示满圈与低额阈值，中心数字与张数仍保留真实值', async () => {
+    const cases = [
+      { percent: 25, capacity: 25, expectedVisible: '25.0%', expectedOffset: 0, expectedColor: 'text-emerald-500', expectedImages: 433 },
+      { percent: 12.5, capacity: 25, expectedVisible: '12.5%', expectedOffset: Math.PI * 16, expectedColor: 'text-emerald-500', expectedImages: 216 },
+      { percent: 5, capacity: 25, expectedVisible: '5.0%', expectedOffset: 2 * Math.PI * 16 * 0.8, expectedColor: 'text-amber-500', expectedImages: 87 },
+    ];
+    for (const item of cases) {
+      cleanup();
+      sessionStorage.setItem('nai_api_key', `STA1N-cap-${item.percent}-${item.capacity}`);
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+        ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } })
+        : responseFor({ source: 'gateway', gatewayManagedWallet: true, tier: 3, active: true, usage: { percent: item.percent, capacity: item.capacity, isNegative: false, timeUntilNextPercent: 0 } })));
+      const { container } = render(React.createElement(OpusUsageBar, { collapsed: false }));
+      const card = await screen.findByRole('status', { name: `成员生成额度 ${item.expectedVisible}` });
+      expect(screen.getByText(item.expectedVisible)).toBeTruthy();
+      expect(screen.getByText(`≈${item.expectedImages} 张`)).toBeTruthy();
+      expect(card.title).toContain(`成员额度：${item.expectedVisible} / 25.0%（约 ${item.expectedImages} 张）`);
+      expect(screen.getByText(item.expectedVisible).parentElement?.className).toContain(item.expectedColor);
+      const offset = Number(container.querySelectorAll('circle')[1]?.getAttribute('stroke-dashoffset'));
+      expect(offset).toBeCloseTo(item.expectedOffset, 4);
+    }
+  });
   it('详情把额度与估算张数放入等宽两列，同步信息另起公共行，显式提示刷新', async () => {
     sessionStorage.setItem('nai_api_key', 'opus-details-synthetic-key');
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')

@@ -1,7 +1,7 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React from 'react';
 import { RefreshCw } from 'lucide-react';
-import { isNovelaiSubscriptionInactive, NOVELAI_USAGE_REFRESH_EVENT, usageRemainingImages, usageRemainingPercent, useNovelaiUsage } from '../services/naiUsage';
+import { isNovelaiSubscriptionInactive, NOVELAI_USAGE_REFRESH_EVENT, usageRemainingImages, usageRemainingPercent, usageRingPercent, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 
 interface OpusUsageBarProps {
@@ -55,11 +55,13 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
   if (!usage && !loading && !error) return null;
   const percent = usage ? usageRemainingPercent(usage) : 0;
   const displayPercent = gateway ? percent.toFixed(1) : percent;
-  // 活动加成可能让真实额度超过 100%；圆环保持满圈，数字和张数保留真实值。
-  const ringPercent = Math.min(100, percent);
+  const hasCapacity = gateway && typeof usage?.capacity === 'number' && Number.isFinite(usage.capacity) && usage.capacity > 0;
+  const displayCapacity = hasCapacity ? usage!.capacity!.toFixed(1) : '';
+  // 活动加成可能让真实额度超过 100%；成员网关有个人分配上限时按该上限为满圈，数字和张数保留真实值。
+  const ringPercent = usage ? usageRingPercent(usage) : 0;
   const images = usage ? usageRemainingImages(usage, runtime.imagesPerPercent) : 0;
   const negative = usage?.isNegative === true;
-  const low = !negative && percent <= 20;
+  const low = !negative && ringPercent <= 20;
   // 同步健康度：提取失效或超过 48 小时未更新时，直接用红色圆环和叉号示警，
   // 避免「项目能跑但常量早已过期」的静默失效。
   const health = runtime.health;
@@ -86,7 +88,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
     : health?.missed?.length
       ? `常量同步部分失效：未命中 ${health.missed.join('、')}（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString(getLanguage()) : ''} 同步）`
       : `常量同步正常（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString(getLanguage()) : t('等待首次同步')}）`);
-  const title = !info ? `${error ? t('额度未知：{0}', [t(error)]) : t('正在同步…')}\n${syncSummary}` : gateway ? `${!usage ? error ? t('额度未知：{0}', [t(error)]) : t('正在同步…') : t('成员额度：{0}%（约 {1} 张），按官方规则估算', [displayPercent, images])}\n${t('成员分配额度与实际扣费以网关为准；点击刷新')}\n${syncSummary}` : `${t(!usage
+  const title = !info ? `${error ? t('额度未知：{0}', [t(error)]) : t('正在同步…')}\n${syncSummary}` : gateway ? `${!usage ? error ? t('额度未知：{0}', [t(error)]) : t('正在同步…') : hasCapacity ? t('成员额度：{0}% / {1}%（约 {2} 张），按官方规则估算', [displayPercent, displayCapacity, images]) : t('成员额度：{0}%（约 {1} 张），按官方规则估算', [displayPercent, images])}\n${t('成员分配额度与实际扣费以网关为准；点击刷新')}\n${syncSummary}` : `${t(!usage
     ? error ? 'Opus 限额同步失败，点击立即重试' : '正在同步 Opus 限额'
     : negative
     ? 'Opus 限额已用尽：所有生图将消耗 Anlas，额度恢复后自动回到免费生成'

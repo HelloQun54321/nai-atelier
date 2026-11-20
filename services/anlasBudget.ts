@@ -7,12 +7,22 @@ import { applyNaiModelSettings, DEFAULT_NAI_MODEL } from './naiModels';
 import { DEFAULT_NAI_RUNTIME, NaiRuntimeConfig } from './naiRuntime';
 import { imageEditRequestDimensions } from './imageEdit';
 import type { NovelaiSubscriptionInfo, NovelaiUsageState } from './naiUsage';
-import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
+import { getCachedNovelaiSubscription, NOVELAI_USAGE_REFRESH_EVENT, NOVELAI_USAGE_SNAPSHOT_EVENT } from './naiUsage';
 import { getNaiChannelMode, resolveNaiChannelMode } from './naiChannel';
 import { estimateNaiBilling } from '../worker/naiBilling.mjs';
 
 export const DEFAULT_ANLAS_BUDGET = 1666;
 export const ANLAS_BUDGET_CHANGED_EVENT = 'nai-anlas-budget-changed';
+
+/** 成员网关自身已维护独立个人钱包时，直接返回网关可用点数，不再回退默认 1666 本地预算。 */
+export const gatewayManagedAnlasBalance = (info: NovelaiSubscriptionInfo | null | undefined): number | null => {
+  if (info?.source !== 'gateway' || info.gatewayManagedWallet !== true) return null;
+  const balance = info.trainingStepsLeft;
+  if (!balance || !Number.isFinite(balance.fixedTrainingStepsLeft) || balance.fixedTrainingStepsLeft < 0
+    || !Number.isFinite(balance.purchasedTrainingSteps) || balance.purchasedTrainingSteps < 0) return null;
+  const total = balance.fixedTrainingStepsLeft + balance.purchasedTrainingSteps;
+  return Number.isFinite(total) ? total : null;
+};
 
 export interface AnlasPersonalUsage {
   /** 本机在该账号上累计花费的 Anlas（估算口径与本地预算扣减一致）。 */
@@ -135,6 +145,8 @@ export const useAnlasBudget = () => {
   const [state, setState] = useState<AnlasBudgetState>({ remaining: DEFAULT_ANLAS_BUDGET });
   const [personal, setPersonal] = useState<AnlasPersonalUsage | null>(null);
   const [loading, setLoading] = useState(true);
+  const readActiveKey = () => (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim();
+  const [managedBalance, setManagedBalance] = useState<number | null>(() => gatewayManagedAnlasBalance(getCachedNovelaiSubscription(readActiveKey())));
   // 刚收到结算预算时，不要再被同一次消耗触发的官方余额刷新覆盖成旧值。
   const lastBudgetEventRef = useRef<{ keyHash: string; at: number } | null>(null);
   const refresh = useCallback(async () => {
@@ -180,8 +192,14 @@ export const useAnlasBudget = () => {
       lastBudgetEventRef.current = null;
       setState({ remaining: DEFAULT_ANLAS_BUDGET });
       setPersonal(null);
+      setManagedBalance(gatewayManagedAnlasBalance(getCachedNovelaiSubscription(readActiveKey())));
       setLoading(true);
       void refresh();
+    };
+    const onUsageSnapshot = (event: Event) => {
+      const detail = (event as CustomEvent<{ apiKey?: string; info?: NovelaiSubscriptionInfo }>).detail;
+      if (!detail || detail.apiKey !== readActiveKey()) return;
+      setManagedBalance(gatewayManagedAnlasBalance(detail.info));
     };
     // 生图与编码结算都在后台扣减预算，完成后统一派发这个事件；
     // 不在这里重读，侧栏就会一直停在生成前的剩余预算上。
@@ -197,13 +215,15 @@ export const useAnlasBudget = () => {
     window.addEventListener('nai-project-data-changed', refreshProjectChange);
     window.addEventListener('nai-api-key-changed', refreshKeyChange);
     window.addEventListener(NOVELAI_USAGE_REFRESH_EVENT, refreshAfterSpend);
+    window.addEventListener(NOVELAI_USAGE_SNAPSHOT_EVENT, onUsageSnapshot);
     return () => {
       window.removeEventListener(ANLAS_BUDGET_CHANGED_EVENT, update);
       window.removeEventListener('nai-project-data-changed', refreshProjectChange);
       window.removeEventListener('nai-api-key-changed', refreshKeyChange);
       window.removeEventListener(NOVELAI_USAGE_REFRESH_EVENT, refreshAfterSpend);
+      window.removeEventListener(NOVELAI_USAGE_SNAPSHOT_EVENT, onUsageSnapshot);
     };
   }, [refresh]);
 
-  return { ...state, personal, loading, refresh };
+  return { ...state, remaining: managedBalance !== null ? managedBalance : state.remaining, managedByGateway: managedBalance !== null, personal, loading, refresh };
 };

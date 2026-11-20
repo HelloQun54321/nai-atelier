@@ -2,7 +2,7 @@ import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronUp, Gem, LoaderCircle } from 'lucide-react';
 import type { useAnlasBudget } from '../services/anlasBudget';
-import { isActiveOpusSubscription, usageRemainingPercent, type useNovelaiUsage } from '../services/naiUsage';
+import { isActiveOpusSubscription, usageRemainingPercent, usageRingPercent, type useNovelaiUsage } from '../services/naiUsage';
 import { useNaiChannelMode } from '../services/naiChannel';
 import { describeNaiRuntimeSyncProblem, isNaiRuntimeSyncUnhealthy, type NaiRuntimeConfig } from '../services/naiRuntime';
 import { naiKeyVault } from '../services/naiKeyVault';
@@ -62,8 +62,10 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
   const gateway = info?.source === 'gateway';
   const quotaName = gateway ? '成员额度' : 'Opus';
   const percent = usage ? usageRemainingPercent(usage) : 0;
+  const ringPercent = usage ? usageRingPercent(usage) : 0;
   const displayPercent = gateway ? percent.toFixed(1) : percent;
   const total = officialAnlasBalance(info);
+  const gatewayManaged = gateway && info?.gatewayManagedWallet === true;
   const runtimeBroken = isNaiRuntimeSyncUnhealthy(runtime);
   const opusText = info?.active === false ? gateway ? '网关权益不可用' : '订阅过期'
     : error ? isActiveOpusSubscription(info) && usage ? `${quotaName} ${displayPercent}% · 旧值` : '额度查询失败'
@@ -72,7 +74,9 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
           : info?.active === true ? '非 Opus' : '额度未知';
   const balanceText = total === null ? loading ? '…' : t('未知') : `${compactPoints(total)}${error ? t('（旧值）') : ''}`;
   const summary = !apiKey ? t('未配置 Key')
-    : t('预算 {0} · 余额 {1} · {2}{3}', [budget.loading ? '…' : compactPoints(budget.remaining), balanceText, t(opusText), runtimeBroken ? t(' · 规则异常') : '']);
+    : gatewayManaged
+      ? t('余额 {0} · {1}{2}', [balanceText, t(opusText), runtimeBroken ? t(' · 规则异常') : ''])
+      : t('预算 {0} · 余额 {1} · {2}{3}', [budget.loading ? '…' : compactPoints(budget.remaining), balanceText, t(opusText), runtimeBroken ? t(' · 规则异常') : '']);
   // 收起时只保留两组标签和数值；旧值／过期／失败用颜色与符号标记，说明放入详情。
   const footerBudget = !apiKey ? '—' : budget.loading ? '…' : compactPoints(budget.remaining);
   const footerBalance = !apiKey || total === null ? '—' : compactPoints(total);
@@ -80,7 +84,7 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
   const warning = Boolean(apiKey && (error || runtimeBroken || info?.active === false));
   const footerTone = warning ? 'text-amber-600 dark:text-amber-400'
     : usage?.isNegative ? 'text-red-600 dark:text-red-400'
-      : usage && percent <= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400';
+      : usage && ringPercent <= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400';
   const openSettings = () => {
     const navigate = () => {
       settingsAfterBackRef.current = null;
@@ -97,8 +101,6 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
   };
   // 按次渠道没有点数与额度可看，手机底部只保留生成相关操作。
   if (naiChannelMode === 'per-use') return null;
-  const percentNum = usage ? usageRemainingPercent(usage) : 0;
-  const ringPercent = Math.min(100, percentNum);
   const AccountIcon = budget.loading || loading ? LoaderCircle : Gem;
   const sheet = <ImagePreviewPortal>
     <MobileBottomSheet open={open} title={t("账户资源")} onClose={() => setOpen(false)} footer={<button type="button" onClick={openSettings} className="mobile-touch w-full rounded-xl bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-4 text-sm font-semibold text-white">{t("账户设置")}</button>}>
@@ -123,16 +125,20 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
         className={`appearance-group mobile-touch inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-1.5 dark:border-gray-700 dark:bg-gray-900/80 ${footerTone}`}>
         <span className="flex w-9 flex-col items-center gap-0.5" aria-hidden="true">
           <AccountIcon className={`h-3 w-3 text-indigo-600 dark:text-indigo-300 ${budget.loading || loading ? 'animate-spin' : ''}`} />
-          <span className="text-tiny font-bold leading-none tabular-nums text-indigo-600 dark:text-indigo-300">{footerBudget}</span>
-          <span className="h-px w-5 bg-gray-300 dark:bg-gray-600" />
-          <span className="text-tiny leading-none tabular-nums text-gray-500 dark:text-gray-400">{footerBalance}</span>
+          {gatewayManaged ? (
+            <span className="text-tiny font-bold leading-none tabular-nums text-indigo-600 dark:text-indigo-300">{footerBalance}</span>
+          ) : <>
+            <span className="text-tiny font-bold leading-none tabular-nums text-indigo-600 dark:text-indigo-300">{footerBudget}</span>
+            <span className="h-px w-5 bg-gray-300 dark:bg-gray-600" />
+            <span className="text-tiny leading-none tabular-nums text-gray-500 dark:text-gray-400">{footerBalance}</span>
+          </>}
         </span>
         <span className={`relative flex h-8 w-8 items-center justify-center ${footerTone}`} aria-hidden="true">
           <svg viewBox="0 0 24 24" className="absolute inset-0 h-full w-full -rotate-90">
             <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-200 dark:text-gray-700" />
             <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
               strokeDasharray={OPUS_RING} strokeDashoffset={OPUS_RING * (1 - ringPercent / 100)}
-              className={usage?.isNegative || error ? 'text-red-500' : percentNum <= 20 ? 'text-amber-500' : 'text-emerald-500'} />
+              className={usage?.isNegative || error ? 'text-red-500' : ringPercent <= 20 ? 'text-amber-500' : 'text-emerald-500'} />
           </svg>
           <span className="relative text-tiny font-bold tabular-nums">{error ? '!' : footerQuota === '—' ? '—' : footerQuota.replace('%', '')}</span>
         </span>
@@ -145,7 +151,7 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
     <button type="button" aria-label={t("查看账户资源：{0}", [summary])} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}
       style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + env(safe-area-inset-bottom))` } : undefined}
       className="mobile-touch group fixed inset-x-0 bottom-[env(safe-area-inset-bottom)] z-[900] mx-auto inline-flex h-11 w-max max-w-[calc(100vw-2rem)] cursor-pointer items-end justify-center gap-3 rounded-md border-0 bg-transparent px-2 pb-1 text-meta leading-4 shadow-none outline-none transition-opacity active:opacity-60 focus-visible:ring-2 focus-visible:ring-indigo-500 md:hidden">
-      <span className={`whitespace-nowrap tabular-nums underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current ${footerTone}`}>Anlas {footerBudget}/{footerBalance}</span>
+      <span className={`whitespace-nowrap tabular-nums underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current ${footerTone}`}>Anlas {gatewayManaged ? footerBalance : `${footerBudget}/${footerBalance}`}</span>
       <span className={`inline-flex items-center gap-1 whitespace-nowrap tabular-nums ${footerTone}`}><span className="underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current">{t(!info ? '生成额度' : gateway ? '成员额度' : "Opus额度 ")}{(!info || gateway) && ' '}{footerQuota}{warning && <span aria-hidden="true" className="ml-1">!</span>}</span><ChevronUp aria-hidden="true" className="h-3 w-3 shrink-0" /></span>
     </button>
     {sheet}

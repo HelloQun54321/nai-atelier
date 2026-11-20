@@ -1147,13 +1147,40 @@ export const readNaiGatewayUrl = async (req, workerPort) => {
   return connection.gatewayUrl || '';
 };
 
+export const fetchGatewayMemberQuota = async (authorization, signal = AbortSignal.timeout(5_000), requestRemote = fetch, gatewayUrl = '') => {
+  const base = String(gatewayUrl || '').trim().replace(/\/+$/, '').replace(/\/v1$/i, '');
+  if (!base) return null;
+  try {
+    const response = await requestRemote(`${base}/api/me/quota`, {
+      method: 'GET',
+      headers: { 'Authorization': authorization },
+      signal,
+      redirect: 'error',
+    });
+    if (!response?.ok) return null;
+    const data = await response.json();
+    const fairQuota = data?.fairQuota;
+    if (!fairQuota || typeof fairQuota !== 'object') return null;
+    const rawCapacity = Number(fairQuota.v5Capacity);
+    const capacity = Number.isFinite(rawCapacity) && rawCapacity > 0 && rawCapacity <= 100 ? rawCapacity : undefined;
+    const managedWallet = fairQuota.enabled === true && fairQuota.member === true;
+    if (capacity === undefined && !managedWallet) return null;
+    return {
+      ...(capacity !== undefined ? { capacity } : {}),
+      ...(managedWallet ? { managedWallet: true } : {}),
+    };
+  } catch {
+    return null;
+  }
+};
+
 /**
  * 只保留前端需要的订阅字段，剥离 paymentProcessorData 等敏感/冗余数据，
  * usage 三个字段与 NovelAI Web 应用的 Opus 限额映射一一对应。
  * 过期或非 Opus 订阅不派发 usage；过期后官方仍可能返回数字，但不能作为免费权益。
  * Paid Anlas 余额独立保留，订阅过期不等于密钥失效。
  */
-export const sanitizeNovelAiSubscription = (payload, gatewayUrl = '') => {
+export const sanitizeNovelAiSubscription = (payload, gatewayUrl = '', gatewayQuota = null) => {
   const usage = payload?.usage;
   const percent = Number(usage?.percent);
   const timeUntilNextPercent = Number(usage?.timeUntilNextPercent);
@@ -1163,8 +1190,12 @@ export const sanitizeNovelAiSubscription = (payload, gatewayUrl = '') => {
   const balance = payload?.trainingStepsLeft;
   const balanceKnown = balance && Number.isFinite(balance.fixedTrainingStepsLeft) && balance.fixedTrainingStepsLeft >= 0
     && Number.isFinite(balance.purchasedTrainingSteps) && balance.purchasedTrainingSteps >= 0;
+  const rawCapacity = gatewayUrl ? Number(gatewayQuota?.capacity ?? usage?.capacity) : NaN;
+  const capacity = Number.isFinite(rawCapacity) && rawCapacity > 0 && rawCapacity <= 100 ? rawCapacity : undefined;
+  const gatewayManagedWallet = Boolean(gatewayUrl && (gatewayQuota?.managedWallet === true || payload?.gatewayManagedWallet === true));
   return {
     ...(gatewayUrl ? { source: 'gateway' } : {}),
+    ...(gatewayManagedWallet ? { gatewayManagedWallet: true } : {}),
     tier,
     active,
     ...(balanceKnown ? { trainingStepsLeft: { fixedTrainingStepsLeft: balance.fixedTrainingStepsLeft, purchasedTrainingSteps: balance.purchasedTrainingSteps } } : {}),
@@ -1172,6 +1203,7 @@ export const sanitizeNovelAiSubscription = (payload, gatewayUrl = '') => {
       percent,
       isNegative: usage.isNegative === true,
       timeUntilNextPercent: Number.isFinite(timeUntilNextPercent) ? timeUntilNextPercent : 0,
+      ...(capacity !== undefined ? { capacity } : {}),
     } : undefined,
   };
 };
@@ -1190,22 +1222,33 @@ export const readNaiBalanceForRequest = async (req, workerPort, { requestRemote 
   if (!authorization.startsWith('Bearer ')) return { available: false, reason: '当前请求没有携带 NovelAI Key；请先在全局设置配置 Key 再读取官方点数' };
   try {
     const gatewayUrl = await readNaiGatewayUrl(req, workerPort);
-    const upstream = await fetchNovelAiSubscription(authorization, undefined, requestRemote, gatewayUrl);
+    const [upstream, gatewayQuota] = await Promise.all([
+      fetchNovelAiSubscription(authorization, undefined, requestRemote, gatewayUrl),
+      fetchGatewayMemberQuota(authorization, undefined, requestRemote, gatewayUrl),
+    ]);
     if (!upstream.ok) return { available: false, reason: gatewayUrl ? '网关点数查询失败' : 'NovelAI 订阅信息获取失败', status: upstream.status };
-    const payload = sanitizeNovelAiSubscription(await upstream.json(), gatewayUrl);
+    const payload = sanitizeNovelAiSubscription(await upstream.json(), gatewayUrl, gatewayQuota);
     cacheNovelAiSubscription(authorization, payload);
     const balance = payload?.trainingStepsLeft;
     const usage = payload?.usage;
     return {
       available: true,
       source: payload?.source === 'gateway' ? 'gateway' : 'official',
+      ...(payload?.gatewayManagedWallet ? { gatewayManagedWallet: true } : {}),
       tier: payload?.tier ?? null,
       active: payload?.active === true,
       points: balance ? balance.fixedTrainingStepsLeft + balance.purchasedTrainingSteps : null,
       subscribedPoints: balance ? balance.fixedTrainingStepsLeft : null,
       purchasedPoints: balance ? balance.purchasedTrainingSteps : null,
-      opus: usage && Number.isFinite(Number(usage.percent)) ? { percent: Number(usage.percent), isNegative: usage.isNegative === true, timeUntilNextPercent: usage.timeUntilNextPercent ?? null } : null,
-      note: 'points 是官方账号总点数（订阅赠送 + Paid）；本地预算不随扣费递减，不能当作官方余额。',
+      opus: usage && Number.isFinite(Number(usage.percent)) ? {
+        percent: Number(usage.percent),
+        isNegative: usage.isNegative === true,
+        timeUntilNextPercent: usage.timeUntilNextPercent ?? null,
+        ...(usage.capacity !== undefined ? { capacity: usage.capacity } : {}),
+      } : null,
+      note: payload?.gatewayManagedWallet
+        ? 'points 是成员网关独立分配的可用点数，无需额外维护本地 1666 预算。'
+        : 'points 是官方账号总点数（订阅赠送 + Paid）；本地预算不随扣费递减，不能当作官方余额。',
     };
   } catch (error) {
     return { available: false, reason: String(error?.message || error).slice(0, 200) };
@@ -4630,12 +4673,15 @@ const serveDistFile = async (req, res, url) => {
       if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
       try {
         const gatewayUrl = await readNaiGatewayUrl(req, workerPort);
-        const upstream = await fetchNovelAiSubscription(authorization, undefined, remoteFetch, gatewayUrl);
+        const [upstream, gatewayQuota] = await Promise.all([
+          fetchNovelAiSubscription(authorization, undefined, remoteFetch, gatewayUrl),
+          fetchGatewayMemberQuota(authorization, undefined, remoteFetch, gatewayUrl),
+        ]);
         if (!upstream.ok) {
           return sendJson(res, 502, { error: gatewayUrl ? '网关余额查询失败' : 'NovelAI 订阅信息获取失败', upstreamStatus: upstream.status });
         }
         const payload = await upstream.json();
-        const sanitized = sanitizeNovelAiSubscription(payload, gatewayUrl);
+        const sanitized = sanitizeNovelAiSubscription(payload, gatewayUrl, gatewayQuota);
         cacheNovelAiSubscription(authorization, sanitized);
         return sendJson(res, 200, sanitized);
       } catch (error) {

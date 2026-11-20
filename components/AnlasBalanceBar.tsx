@@ -38,10 +38,11 @@ export const AnlasBalanceBar: React.FC<AnlasBalanceBarProps> = ({ collapsed = fa
   // 只有两种余额都明确有效时才显示总数，字段缺失不能默认成 0。
   const total = officialAnlasBalance(info);
   const balanceKnown = total !== null;
+  const gatewayManaged = gateway && info?.gatewayManagedWallet === true;
   const fullBudget = budget.loading ? '…' : String(budget.remaining);
   const fullBalance = total === null ? loading ? '…' : '—' : String(total);
   // 极大数值在窄侧栏保留单位；完整数值始终可从悬停说明和辅助标签读取。
-  const compact = collapsed || fullBudget.length + fullBalance.length > 12;
+  const compact = collapsed || (gatewayManaged ? fullBalance.length > 7 : fullBudget.length + fullBalance.length > 12);
   const budgetText = budget.loading ? '…' : compact ? compactPoints(budget.remaining) : fullBudget;
   const balanceText = total === null ? fullBalance : compact ? compactPoints(total) : fullBalance;
   const balanceState = t(error
@@ -51,14 +52,14 @@ export const AnlasBalanceBar: React.FC<AnlasBalanceBarProps> = ({ collapsed = fa
   const budgetSummary = budget.loading ? t('加载中') : t('{0} 点', [budget.remaining.toLocaleString(getLanguage())]);
   const balanceSummary = total === null ? t('未知') : t('{0} 点', [total.toLocaleString(getLanguage())]);
   const title = [
-    `个人剩余预算：${t(budgetSummary)}（本地）`,
+    ...(!gatewayManaged ? [`个人剩余预算：${t(budgetSummary)}（本地）`] : []),
     `账号剩余点数：${t(balanceSummary)}（${!info ? '来源待同步' : gateway ? '网关成员' : '官方'}）`,
     ...(balanceKnown ? [t(gateway ? '成员分配：{0} 点；付费余额：{1} 点' : '订阅赠送：{0} 点；Paid Anlas：{1} 点', [balance!.fixedTrainingStepsLeft.toLocaleString(getLanguage()), balance!.purchasedTrainingSteps.toLocaleString(getLanguage())])] : []),
     ...(info?.active === false ? [gateway ? '网关免费权益不可用，权限与余额以网关响应为准。' : '订阅已过期，免费权益不可用；保留点数的使用权限以官方响应为准。'] : []),
     balanceState,
     ...(error ? [`刷新失败原因：${error}`] : []),
     ...(fetchedAt > 0 ? [`最近成功同步：${new Date(fetchedAt).toLocaleString(getLanguage(), { hour12: false })}`] : []),
-    gateway ? '网关余额为当前成员分配额度，不覆盖本地预算；官方费用估算不代表网关实际扣费。' : '账号余额不会覆盖个人预算；共享账号余额不等于个人可支配点数。',
+    gatewayManaged ? '网关余额为当前成员分配额度；官方费用估算不代表网关实际扣费。' : gateway ? '网关余额为当前成员分配额度，不覆盖本地预算；官方费用估算不代表网关实际扣费。' : '账号余额不会覆盖个人预算；共享账号余额不等于个人可支配点数。',
     '点击刷新账号余额',
   ].map(message => t(message)).join('\n');
   const refreshAll = () => {
@@ -66,29 +67,37 @@ export const AnlasBalanceBar: React.FC<AnlasBalanceBarProps> = ({ collapsed = fa
     // 同一次查询同步所有额度／余额视图；共享驱动会合并同 Key 的并发请求。
     window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
   };
-  const refreshLabel = `刷新 Anlas 余额：个人剩余预算 ${t(budgetSummary)} / 账号剩余点数 ${t(balanceSummary)}；${balanceState}`;
+  const refreshLabel = gatewayManaged
+    ? t('刷新 Anlas 余额：账号剩余点数 {0}；{1}', [balanceSummary, balanceState])
+    : t(`刷新 Anlas 余额：个人剩余预算 ${t(budgetSummary)} / 账号剩余点数 ${t(balanceSummary)}；${balanceState}`);
   if (variant === 'details') return (
     <section aria-label={t("Anlas 点数")} className={`appearance-group rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70 ${className}`}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300"><Gem className="h-4 w-4 text-indigo-600 dark:text-indigo-300" aria-hidden="true" />Anlas</span>
-        <button type="button" onClick={refreshAll} disabled={loading} title={title} aria-label={t(refreshLabel)} aria-busy={loading}
+        <button type="button" onClick={refreshAll} disabled={loading} title={title} aria-label={refreshLabel} aria-busy={loading}
           className="mobile-touch -my-2 -mr-2 flex w-11 shrink-0 items-center justify-center rounded-lg text-gray-500 outline-none transition hover:bg-gray-200 hover:text-indigo-600 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-wait dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-indigo-300">
           <RefreshCw aria-hidden="true" className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
-      <dl className="grid grid-cols-2 gap-3">
-        <div className="min-w-0"><dt className="text-micro text-gray-500 dark:text-gray-400">{t("本地预算")}</dt><dd className="mt-1 break-all text-lg font-bold leading-6 tabular-nums text-indigo-600 dark:text-indigo-300">{t(budgetSummary)}</dd></div>
-        <div className="min-w-0 border-l border-gray-200 pl-3 dark:border-gray-700"><dt className="text-micro text-gray-500 dark:text-gray-400">{t(balanceLabel)}</dt><dd className={`mt-1 break-all text-lg font-semibold leading-6 tabular-nums ${error ? 'text-amber-600 dark:text-amber-400' : 'text-gray-800 dark:text-gray-100'}`}>{t(balanceSummary)}</dd></div>
-      </dl>
+      {gatewayManaged ? (
+        <dl>
+          <div className="min-w-0"><dt className="text-micro text-gray-500 dark:text-gray-400">{t(balanceLabel)}</dt><dd className={`mt-1 break-all text-lg font-bold leading-6 tabular-nums ${error ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-600 dark:text-indigo-300'}`}>{t(balanceSummary)}</dd></div>
+        </dl>
+      ) : (
+        <dl className="grid grid-cols-2 gap-3">
+          <div className="min-w-0"><dt className="text-micro text-gray-500 dark:text-gray-400">{t("本地预算")}</dt><dd className="mt-1 break-all text-lg font-bold leading-6 tabular-nums text-indigo-600 dark:text-indigo-300">{t(budgetSummary)}</dd></div>
+          <div className="min-w-0 border-l border-gray-200 pl-3 dark:border-gray-700"><dt className="text-micro text-gray-500 dark:text-gray-400">{t(balanceLabel)}</dt><dd className={`mt-1 break-all text-lg font-semibold leading-6 tabular-nums ${error ? 'text-amber-600 dark:text-amber-400' : 'text-gray-800 dark:text-gray-100'}`}>{t(balanceSummary)}</dd></div>
+        </dl>
+      )}
       {balanceKnown && <dl className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-micro text-gray-500 dark:text-gray-400"><dt>{t(gateway ? '成员分配 / Paid' : "订阅赠送 / Paid")}</dt><dd className="tabular-nums">{balance!.fixedTrainingStepsLeft.toLocaleString(getLanguage())} / {balance!.purchasedTrainingSteps.toLocaleString(getLanguage())}</dd></dl>}
-      <p className="mt-2 text-micro text-gray-500 dark:text-gray-400">{t(!info ? '本地预算 ≠ 账号余额' : gateway ? "本地预算 ≠ 网关余额" : "本地预算 ≠ 官方余额")}</p>
+      <p className="mt-2 text-micro text-gray-500 dark:text-gray-400">{gatewayManaged ? t('成员网关已独立分配可用点数，无需本地 1666 预算') : t(!info ? '本地预算 ≠ 账号余额' : gateway ? "本地预算 ≠ 网关余额" : "本地预算 ≠ 官方余额")}</p>
       {error && <p role="status" className="mt-2 break-words text-xs text-amber-600 dark:text-amber-400">{total === null ? t("余额未知") : t("显示上次余额")}：{t(error)}</p>}
     </section>
   );
   const AccountIcon = loading ? LoaderCircle : Gem;
   return (
     <button type="button" onClick={refreshAll} disabled={loading} title={title}
-      aria-label={t(refreshLabel)}
+      aria-label={refreshLabel}
       aria-busy={loading}
       className={`flex w-full cursor-pointer select-none items-center border-b border-gray-200 text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 disabled:cursor-wait dark:border-gray-800/80 dark:hover:bg-gray-800/70 ${collapsed ? 'h-[60px] justify-center px-0' : 'h-11 justify-between gap-2 px-3'} ${className}`}>
       <span className={collapsed ? 'flex min-w-0 flex-col items-center gap-1' : 'contents'} aria-hidden="true">
@@ -99,13 +108,19 @@ export const AnlasBalanceBar: React.FC<AnlasBalanceBarProps> = ({ collapsed = fa
           </span>
           {!collapsed && <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Anlas</span>}
         </span>
-        <span className={`flex shrink-0 tabular-nums ${collapsed ? 'w-11 flex-col items-center' : 'items-baseline gap-1'}`}>
-          <span className={`font-bold leading-none text-indigo-600 dark:text-indigo-300 ${compact ? 'text-xs' : 'text-sm'}`}>{budgetText}</span>
-          {collapsed
-            ? <span className="my-0.5 h-px w-8 bg-gray-300 dark:bg-gray-600" />
-            : <span className="text-xs leading-none text-gray-400 dark:text-gray-500">/</span>}
-          <span className={`leading-none ${compact ? 'text-micro' : 'text-xs'} ${error ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>{balanceText}</span>
-        </span>
+        {gatewayManaged ? (
+          <span className={`flex shrink-0 tabular-nums ${collapsed ? 'w-11 flex-col items-center' : 'items-baseline'}`}>
+            <span className={`font-bold leading-none ${error ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-600 dark:text-indigo-300'} ${compact ? 'text-xs' : 'text-sm'}`}>{balanceText}</span>
+          </span>
+        ) : (
+          <span className={`flex shrink-0 tabular-nums ${collapsed ? 'w-11 flex-col items-center' : 'items-baseline gap-1'}`}>
+            <span className={`font-bold leading-none text-indigo-600 dark:text-indigo-300 ${compact ? 'text-xs' : 'text-sm'}`}>{budgetText}</span>
+            {collapsed
+              ? <span className="my-0.5 h-px w-8 bg-gray-300 dark:bg-gray-600" />
+              : <span className="text-xs leading-none text-gray-400 dark:text-gray-500">/</span>}
+            <span className={`leading-none ${compact ? 'text-micro' : 'text-xs'} ${error ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>{balanceText}</span>
+          </span>
+        )}
       </span>
     </button>
   );

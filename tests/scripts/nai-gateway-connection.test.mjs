@@ -4,7 +4,7 @@ import test from 'node:test';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { normalizeNaiGatewayUrl, resolveNaiGatewayUrl, validateNaiApiKey } from '../../worker/naiConnection.mjs';
-import { fetchNovelAiSubscription, readNaiGatewayUrl, sanitizeNovelAiSubscription, createMediaGateway, toCachedPreciseReferenceParameters, isSubscriptionUnsupported, getVibeCacheSecretKey, cacheNovelAiSubscription, estimateNovelAiGenerationCost } from '../../scripts/media-gateway.mjs';
+import { fetchGatewayMemberQuota, fetchNovelAiSubscription, readNaiGatewayUrl, sanitizeNovelAiSubscription, createMediaGateway, toCachedPreciseReferenceParameters, isSubscriptionUnsupported, getVibeCacheSecretKey, cacheNovelAiSubscription, estimateNovelAiGenerationCost } from '../../scripts/media-gateway.mjs';
 import sharp from 'sharp';
 import { MockAgent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 
@@ -201,4 +201,62 @@ test('只有第三方网关明确没有额度接口时才视为额度未知，�
   for (const status of [404, 405, 501, '404']) assert.equal(isSubscriptionUnsupported('https://gateway.example/v1', status), true);
   for (const status of [200, 401, 403, 429, 500, 502, 503]) assert.equal(isSubscriptionUnsupported('https://gateway.example/v1', status), false);
   assert.equal(isSubscriptionUnsupported('', 404), false);
+});
+
+test('拼车成员网关探测 /api/me/quota 剥离 /v1 前缀，透传个人额度上限与独立钱包，失败静默降级', async () => {
+  const seen = [];
+  const quota = await fetchGatewayMemberQuota('Bearer STA1N-carpool', undefined, async (url, options) => {
+    seen.push({ url, auth: options.headers.Authorization, redirect: options.redirect });
+    return new Response(JSON.stringify({ fairQuota: { enabled: true, member: true, v5Capacity: 25, anlasAvailable: 2500 } }));
+  }, 'https://gateway.example/v1/');
+  assert.deepEqual(quota, { capacity: 25, managedWallet: true });
+  assert.deepEqual(seen, [{ url: 'https://gateway.example/api/me/quota', auth: 'Bearer STA1N-carpool', redirect: 'error' }]);
+
+  // 官方 Key 不探测；不支持 /api/me/quota、404 或未启用公平额度时静默返回 null。
+  assert.equal(await fetchGatewayMemberQuota('Bearer pst-official', undefined, async () => { throw new Error('should not fetch'); }, ''), null);
+  assert.equal(await fetchGatewayMemberQuota('Bearer STA1N-404', undefined, async () => new Response('', { status: 404 }), 'https://gateway.example/v1'), null);
+  assert.equal(await fetchGatewayMemberQuota('Bearer STA1N-off', undefined, async () => new Response(JSON.stringify({ fairQuota: { enabled: false, member: false } })), 'https://gateway.example'), null);
+
+  const raw = { active: true, tier: 3, usage: { percent: 25, isNegative: false, timeUntilNextPercent: 0 }, trainingStepsLeft: { fixedTrainingStepsLeft: 2500, purchasedTrainingSteps: 0 } };
+  const memberClean = sanitizeNovelAiSubscription(raw, 'https://gateway.example/v1', quota);
+  assert.equal(memberClean.source, 'gateway');
+  assert.equal(memberClean.gatewayManagedWallet, true);
+  assert.equal(memberClean.usage.capacity, 25);
+  assert.equal(memberClean.usage.percent, 25);
+
+  // 官方连接绝不附加成员上限或托管钱包标记。
+  const officialClean = sanitizeNovelAiSubscription(raw, '', quota);
+  assert.equal(officialClean.source, undefined);
+  assert.equal(officialClean.gatewayManagedWallet, undefined);
+  assert.equal(officialClean.usage.capacity, undefined);
+
+  // 完整 HTTP 入口联调：/api/novelai-subscription 并行合并 /v1/user/subscription 与根路径 /api/me/quota。
+  const originalDispatcher = getGlobalDispatcher(), mock = new MockAgent();
+  mock.disableNetConnect(); mock.enableNetConnect(host => host.startsWith('127.0.0.1:'));
+  setGlobalDispatcher(mock);
+  const member = mock.get('https://gateway.example');
+  member.intercept({ path: '/v1/user/subscription', method: 'GET' }).reply(200, JSON.stringify(raw), { headers: { 'content-type': 'application/json' } });
+  member.intercept({ path: '/api/me/quota', method: 'GET' }).reply(200, JSON.stringify({ fairQuota: { enabled: true, member: true, v5Capacity: 25 } }), { headers: { 'content-type': 'application/json' } });
+  const worker = createServer((req, res) => {
+    if (req.url === '/api/nai-key-vault/connection') return res.end('{"gatewayUrl":"https://gateway.example/v1"}');
+    res.writeHead(404); res.end();
+  });
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  let server;
+  try {
+    server = await createMediaGateway({ port: 0, workerPort: worker.address().port });
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/novelai-subscription`, { headers: { Authorization: 'Bearer STA1N-carpool' } });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.source, 'gateway');
+    assert.equal(body.gatewayManagedWallet, true);
+    assert.equal(body.usage.percent, 25);
+    assert.equal(body.usage.capacity, 25);
+    mock.assertNoPendingInterceptors();
+  } finally {
+    server?.closeAllConnections(); worker.closeAllConnections();
+    await Promise.all([server && new Promise(resolve => server.close(resolve)), new Promise(resolve => worker.close(resolve))]);
+    setGlobalDispatcher(originalDispatcher); await mock.close();
+    cacheNovelAiSubscription('Bearer STA1N-carpool', null);
+  }
 });
