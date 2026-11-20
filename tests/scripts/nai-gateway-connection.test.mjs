@@ -297,6 +297,7 @@ test('批量生图（如 Roll 串多张）在开启 Key 池时逐张按满圈率
   setGlobalDispatcher(mock);
   const quotas = { 'STA1N-batch-1': 25, 'STA1N-batch-2': 25 };
   const quotaEndpointCalls = { 'STA1N-batch-1': 0, 'STA1N-batch-2': 0 };
+  const subEndpointCalls = { 'STA1N-batch-1': 0, 'STA1N-batch-2': 0 };
   let drainBoth = false;
   const usedKeys = [];
   const accountedAuths = [];
@@ -310,11 +311,14 @@ test('批量生图（如 Roll 串多张）在开启 Key 池时逐张按满圈率
 
   for (const [host, key] of [['https://g1.example', 'STA1N-batch-1'], ['https://g2.example', 'STA1N-batch-2']]) {
     const pool = mock.get(host);
-    pool.intercept({ path: '/v1/user/subscription', method: 'GET' }).reply(200, () => JSON.stringify({
-      active: true, tier: 3,
-      usage: { percent: quotas[key], isNegative: quotas[key] <= 0, timeUntilNextPercent: 0 },
-      trainingStepsLeft: { fixedTrainingStepsLeft: 2500, purchasedTrainingSteps: 0 },
-    }), { headers: { 'content-type': 'application/json' } }).persist();
+    pool.intercept({ path: '/v1/user/subscription', method: 'GET' }).reply(200, () => {
+      subEndpointCalls[key] += 1;
+      return JSON.stringify({
+        active: true, tier: 3,
+        usage: { percent: quotas[key], isNegative: quotas[key] <= 0, timeUntilNextPercent: 0 },
+        trainingStepsLeft: { fixedTrainingStepsLeft: 2500, purchasedTrainingSteps: 0 },
+      });
+    }, { headers: { 'content-type': 'application/json' } }).persist();
     pool.intercept({ path: '/api/me/quota', method: 'GET' }).reply(200, () => {
       quotaEndpointCalls[key] += 1;
       return JSON.stringify({ fairQuota: { enabled: true, member: true, v5Capacity: 25 } });
@@ -434,6 +438,38 @@ test('批量生图（如 Roll 串多张）在开启 Key 池时逐张按满圈率
     assert.equal(done2.completedCount, 2);
     assert.equal(usedKeys.length, 2);
     assert.equal(new Set(usedKeys).size, 2, '耗尽前应先轮询用完两把不同的 Key');
+
+    // 场景 3：单张发车前零阻塞（复用干净缓存直接出图），成图后后台静默刷新并在下次点击时自动切 Key
+    usedKeys.length = 0;
+    drainBoth = false;
+    quotas['STA1N-batch-1'] = 25;
+    quotas['STA1N-batch-2'] = 25;
+    cacheNovelAiSubscription('Bearer STA1N-batch-1', { source: 'gateway', active: true, tier: 3, usage: { percent: 25, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } });
+    cacheNovelAiSubscription('Bearer STA1N-batch-2', { source: 'gateway', active: true, tier: 3, usage: { percent: 25, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } });
+    const subBeforeSingle = subEndpointCalls['STA1N-batch-1'] + subEndpointCalls['STA1N-batch-2'];
+    const token3 = 'poolbatchtoken3234567890';
+    const started3 = await localReq('/api/generation-job', 'POST', makeEntry('single-1'), {
+      'x-nai-generation-task': token3, 'x-nai-generation-count': '1',
+    });
+    assert.equal(started3.status, 200, JSON.stringify(started3));
+    const done3 = await waitDone(token3);
+    assert.equal(done3.state, 'succeeded', JSON.stringify(done3));
+    assert.deepEqual(usedKeys, ['STA1N-batch-1']);
+    // 等待成图后的后台静默刷新落盘（把 STA1N-batch-1 更新为 24.5%）
+    for (let i = 0; i < 40; i++) {
+      if (subEndpointCalls['STA1N-batch-1'] + subEndpointCalls['STA1N-batch-2'] > subBeforeSingle) break;
+      await new Promise(r => setTimeout(r, 15));
+    }
+    assert.ok(subEndpointCalls['STA1N-batch-1'] + subEndpointCalls['STA1N-batch-2'] > subBeforeSingle, '成图后应在后台异步刷新刚用过的 Key');
+    // 下一张单图点击：零等待直接切到满圈率更高的 STA1N-batch-2
+    const token4 = 'poolbatchtoken4234567890';
+    const started4 = await localReq('/api/generation-job', 'POST', makeEntry('single-2'), {
+      'x-nai-generation-task': token4, 'x-nai-generation-count': '1',
+    });
+    assert.equal(started4.status, 200, JSON.stringify(started4));
+    const done4 = await waitDone(token4);
+    assert.equal(done4.state, 'succeeded', JSON.stringify(done4));
+    assert.deepEqual(usedKeys, ['STA1N-batch-1', 'STA1N-batch-2']);
   } finally {
     server?.closeAllConnections(); worker.closeAllConnections();
     await Promise.all([server && new Promise(resolve => server.close(resolve)), new Promise(resolve => worker.close(resolve))]);

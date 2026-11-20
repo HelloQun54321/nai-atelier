@@ -96,6 +96,8 @@ const POOL_STORAGE_KEY = 'nai_key_pool_v1';
 export const NAI_KEY_POOL_CHANGED = 'nai-key-pool-changed';
 const POOL_SNAPSHOT_TTL = 60 * 1000;
 const POOL_POLL_INTERVAL = 60 * 1000;
+/** 候选最高剩余百分比高于该安全线时直接零阻塞发车，成图后再后台异步刷新。 */
+const POOL_LOW_QUOTA_SYNC_THRESHOLD = 1.0;
 const DEFAULT_HYSTERESIS = 0;
 
 const isBrowser = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined';
@@ -404,15 +406,22 @@ export const prepareGenerationWithPool = async (check: PoolGenerationCheck): Pro
     activeKey,
     pickOptions,
   );
-  // 池缓存有效且已有可用 Opus 密钥时直接起步（零阻塞），由后端 estimate 在发往上游前精确核对刚用过的密钥。
-  const now = Date.now();
+  // 快路径：只要缓存里存在高于 1% 安全线的可用 Opus 密钥，就直接秒选发车（即便看图超过 60 秒或有副 Key 上次失败也不卡住）；
+  // 仅在冷启动完全无缓存、缓存显示全池耗尽、或最高余额跌入 ≤ 1% 低额警戒区时才发车前同步联网核对。
   const cachedStatuses = cachedVaultEntries.length ? buildMemberStatuses() : [];
-  const allWarm = cachedStatuses.length > 0 && cachedStatuses.every(
-    item => item.fetchedAt > 0 && (now - item.fetchedAt < POOL_SNAPSHOT_TTL),
+  const cachedPicked = cachedStatuses.length > 0 ? pickFrom(cachedStatuses) : null;
+  const safeFastStart = Boolean(
+    cachedPicked?.ok
+    && (!pickOptions.requireOpusQuota || cachedPicked.remainingPercent > POOL_LOW_QUOTA_SYNC_THRESHOLD),
   );
-  let picked = allWarm ? pickFrom(cachedStatuses) : null;
+  let picked = safeFastStart ? cachedPicked : null;
   if (!picked || !picked.ok) {
-    const statuses = await refreshKeyPoolSnapshots(false);
+    // 处于低额警戒区（≤ 1%）或缓存显示全池耗尽时，强制实时刷新核对，不受 60 秒 TTL 缓存跳过影响。
+    const needsForceVerify = Boolean(
+      cachedStatuses.length > 0
+      && (!cachedPicked?.ok || (pickOptions.requireOpusQuota && cachedPicked.remainingPercent <= POOL_LOW_QUOTA_SYNC_THRESHOLD)),
+    );
+    const statuses = await refreshKeyPoolSnapshots(needsForceVerify);
     picked = pickFrom(statuses);
   }
   if (!picked.ok) {

@@ -5,7 +5,7 @@ const REQUEST_LIMIT = 60 * 1024 * 1024;
 const error = (message, code, status) => Object.assign(new Error(message), { code, status });
 
 /** 通过同一电脑网关生图、既有 Worker 历史接口保存，不另建存储或绕过准入。 */
-export function createDesktopGenerationJobs({ tasks, gatewayUrl, workerPort, estimate, readCleanup, readQueue }) {
+export function createDesktopGenerationJobs({ tasks, gatewayUrl, workerPort, estimate, readCleanup, readQueue, onImageGenerated }) {
   return new GenerationJobs({
     tasks, estimate, readCleanup, readQueue,
     validate: descriptor => {
@@ -28,6 +28,8 @@ export function createDesktopGenerationJobs({ tasks, gatewayUrl, workerPort, est
         }, body: JSON.stringify(payload),
       });
       const output = await readGenerationResponse(response, onPreview, output => onFinal({ ...output, queueTaskId }));
+      // 成图且收齐回执后立即触发后台异步额度刷新（不阻塞保存与下一张发车）。
+      try { onImageGenerated?.(job, authorization); } catch { /* 后台刷新调度异常不影响成图 */ }
       return { ...output, queueTaskId };
     },
     save: async (job, output, metadata) => {

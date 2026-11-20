@@ -8,7 +8,7 @@ import {
   selectBestPoolMember,
 } from '../../services/naiKeyPool';
 import { readActiveNaiKey, setActiveNaiKey } from '../../services/naiKeyStorage';
-import type { NaiKeyEntry } from '../../services/naiKeyVault';
+import { naiKeyVault, type NaiKeyEntry } from '../../services/naiKeyVault';
 
 const responseFor = (payload: unknown) => ({
   ok: true,
@@ -24,6 +24,7 @@ describe('Key 池自动轮询（满圈率优先）', () => {
   beforeEach(() => {
     sessionStorage.clear();
     localStorage.clear();
+    naiKeyVault.invalidateCache();
     naiKeyPoolService._resetForTests();
   });
 
@@ -152,13 +153,16 @@ describe('Key 池自动轮询（满圈率优先）', () => {
     }
     expect(getPoolMaxOpusPercent()).toBe(25);
 
-    // 5) 缓存仍在有效期内时再次发起生成：直接复用池缓存零网络阻塞起步
+    // 5) 缓存高于 1% 安全线时再次发起生成（哪怕看图已超过 60 秒）：直接复用池缓存零网络阻塞起步
     const subCallsBeforeWarm = fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/novelai-subscription')).length;
+    const realNow = Date.now;
+    vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 5 * 60_000);
     const warmPicked = await prepareGenerationWithPool({ model: 'nai-diffusion-5-full', estimatedCostWithOpus: 0 });
     expect(warmPicked.pooled).toBe(true);
     if (warmPicked.pooled) expect(warmPicked.ok).toBe(true);
     const subCallsAfterWarm = fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/novelai-subscription')).length;
     expect(subCallsAfterWarm).toBe(subCallsBeforeWarm);
+    vi.restoreAllMocks();
 
     // 6) k2 进入限流冷却后，下次生成自动退避改选 k1
     reportPoolKeyCooldown('STA1N-pool-2', 60_000);
@@ -169,5 +173,38 @@ describe('Key 池自动轮询（满圈率优先）', () => {
       expect(readActiveNaiKey()).toBe('STA1N-pool-1');
     }
     expect(getPoolMaxOpusPercent()).toBe(10);
+  });
+
+  it('低额警戒区（≤ 1%）时发车前强制同步核实一次实时额度，防止误扣 Anlas', async () => {
+    let livePercent = 0.8;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/nai-key-vault') {
+        return responseFor({ entries: [entry('k1', '低额号', 'STA1N-low-1', { gatewayUrl: 'https://g1.example' })] });
+      }
+      if (url === '/api/nai-key-vault/pool') {
+        if (init?.method === 'PUT') return responseFor({ pool: JSON.parse(String(init.body)) });
+        return responseFor({ pool: { enabled: true, memberIds: ['k1'] } });
+      }
+      if (url.startsWith('/api/novelai-subscription')) {
+        return responseFor({
+          source: 'gateway', active: true, tier: 3,
+          usage: { percent: livePercent, capacity: 25, isNegative: livePercent <= 0, timeUntilNextPercent: 0 },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    setActiveNaiKey('STA1N-low-1');
+    await naiKeyPoolService.set({ enabled: true, memberIds: ['k1'] });
+    const first = await prepareGenerationWithPool({ model: 'nai-diffusion-5-full', estimatedCostWithOpus: 0 });
+    expect(first.pooled && first.ok).toBe(true);
+    // 远端耗尽且时间推进使 TTL 过期 → 因处于 ≤ 1% 警戒区，发车前必须同步核实并拦截
+    livePercent = 0;
+    const realNow = Date.now;
+    vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 90_000);
+    const blocked = await prepareGenerationWithPool({ model: 'nai-diffusion-5-full', estimatedCostWithOpus: 0 });
+    expect(blocked).toMatchObject({ pooled: true, ok: false, code: 'pool_exhausted' });
+    vi.restoreAllMocks();
   });
 });

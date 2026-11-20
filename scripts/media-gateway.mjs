@@ -979,8 +979,11 @@ export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExha
 
 /** 唯一凭据只在本次成功产物内复用；只补交本地事务，不重试生图或恢复旧账。 */
 const commitNaiAccounting = async (req, workerPort, input) => {
-  // 生图完成后立即标记该 Key 的额度缓存为待刷新，确保下次 Key 池选 Key 拿到最新剩余额度。
-  if (req?.headers?.authorization) novelAiSubscriptionFetchedAt.set(req.headers.authorization, 0);
+  // 生图完成后标记该 Key 为待后台刷新（在成图后异步更新，避免阻塞下次点击发车）。
+  if (req?.headers?.authorization) {
+    novelAiSubscriptionFetchedAt.set(req.headers.authorization, 0);
+    novelAiSubscriptionDirty.add(req.headers.authorization);
+  }
   const body = { receiptId: randomUUID(), ...input };
   for (let attempt = 0; ; attempt++) {
     try {
@@ -1231,8 +1234,12 @@ export const sanitizeNovelAiSubscription = (payload, gatewayUrl = '', gatewayQuo
 // 复用界面正常查询的订阅；普通生成不额外联网，也不等待官方常量同步。
 const GATEWAY_QUOTA_CACHE_TTL = 10 * 60_000;
 const SUBSCRIPTION_FAILURE_COOLDOWN_MS = 10_000;
+/** 候选最高余额不高于该百分比时（约 17 张 V5 图以内），发车前强制同步核实一次，防意外跌穿 0% 扣 Anlas。 */
+const POOL_LOW_QUOTA_SYNC_THRESHOLD = 1.0;
+const POOL_IDLE_BG_REFRESH_TTL = 5 * 60_000;
 const novelAiSubscriptions = new Map();
 const novelAiSubscriptionFetchedAt = new Map();
+const novelAiSubscriptionDirty = new Set();
 const novelAiGatewayQuotaCache = new Map();
 const novelAiSubscriptionFailedAt = new Map();
 const novelAiSubscriptionInFlight = new Map();
@@ -1240,10 +1247,12 @@ export const cacheNovelAiSubscription = (authorization, subscription) => {
   if (subscription) {
     novelAiSubscriptions.set(authorization, subscription);
     novelAiSubscriptionFetchedAt.set(authorization, Date.now());
+    novelAiSubscriptionDirty.delete(authorization);
     novelAiSubscriptionFailedAt.delete(authorization);
   } else {
     novelAiSubscriptions.delete(authorization);
     novelAiSubscriptionFetchedAt.delete(authorization);
+    novelAiSubscriptionDirty.delete(authorization);
     novelAiGatewayQuotaCache.delete(authorization);
     novelAiSubscriptionFailedAt.delete(authorization);
     for (const key of novelAiSubscriptionInFlight.keys()) {
@@ -3921,13 +3930,35 @@ const serveDistFile = async (req, res, url) => {
     tasks, workerPort, gatewayUrl: () => `http://127.0.0.1:${server.address().port}`,
     readQueue: job => job.lastQueueTaskId ? cloudQueue.get(job.executionKeyHash || job.key, job.lastQueueTaskId) : null,
     readCleanup: job => job.lastQueueTaskId ? cloudQueue.get(job.executionKeyHash || job.key, job.lastQueueTaskId)?.cleanupError : undefined,
+    onImageGenerated: (job, usedAuthorization) => {
+      if (!job.poolEnabled || !Array.isArray(job.poolMembers) || !job.poolMembers.length) return;
+      const now = Date.now();
+      // 成图后后台静默刷新：立刻刷新刚用过的 Key，并顺带更新超过 5 分钟未刷新的成员，完全不阻塞看图与下一张发车。
+      for (const entry of job.poolMembers) {
+        const auth = `Bearer ${String(entry.key).trim()}`;
+        const fetchedAt = novelAiSubscriptionFetchedAt.get(auth) || 0;
+        const failedAt = novelAiSubscriptionFailedAt.get(auth) || 0;
+        if (failedAt > 0 && now - failedAt < SUBSCRIPTION_FAILURE_COOLDOWN_MS) continue;
+        const isUsed = auth === usedAuthorization;
+        if (!isUsed && novelAiSubscriptions.has(auth) && now - fetchedAt < POOL_IDLE_BG_REFRESH_TTL) continue;
+        const gwUrl = String(entry.gatewayUrl || '').trim();
+        void probeNovelAiSubscription(auth, {
+          gatewayUrl: gwUrl,
+          requestRemote: remoteFetch,
+          includeGatewayQuota: !novelAiGatewayQuotaCache.has(auth),
+          forceGatewayQuota: false,
+          subTimeoutMs: 15_000,
+          quotaTimeoutMs: 2_500,
+        }).catch(() => {});
+      }
+    },
     estimate: async (job, fresh) => {
       const payload = job.descriptor.payload, p = payload.parameters;
       const priced = { ...payload, parameters: { ...p,
         ...(p._local_character_references?.enabled ? { director_reference_images_cached: p._local_character_references.slots } : {}),
         ...(p._local_vibes?.enabled ? { reference_image_multiple_cached: p._local_vibes.slots } : {}),
       } };
-      // 开启 Key 池时，批内每张生成前均按满圈率优先动态选 Key（支持 Roll 串／批量生图逐张轮询）。
+      // 开启 Key 池时，批内每张生成前均按满圈率优先动态选 Key；优先复用干净缓存零阻塞发车，成图后再后台异步刷新。
       let pool = null;
       try {
         const poolRes = await requestWorkerJson('/api/nai-key-vault/pool', internalWorkerRequest, workerPort);
@@ -3936,6 +3967,7 @@ const serveDistFile = async (req, res, url) => {
         }
       } catch { /* 旧 Worker 或测试未提供 pool 路由时沿用单 Key 模式 */ }
       if (pool) {
+        job.poolEnabled = true;
         const baseCost = estimateNovelAiGenerationCost(priced, false, true);
         if (baseCost > 0) {
           throw Object.assign(new Error('Key 池模式仅用于 Opus 免费额度生成，当前参数需要消耗 Anlas，已停止后续生成。'), { code: 'pool_paid_blocked', status: 400 });
@@ -3944,6 +3976,7 @@ const serveDistFile = async (req, res, url) => {
         const entries = Array.isArray(vaultRes?.entries) ? vaultRes.entries : [];
         const byId = new Map(entries.filter(entry => entry.billingMode !== 'per-use').map(entry => [entry.id, entry]));
         const members = pool.memberIds.map(id => byId.get(id)).filter(Boolean);
+        job.poolMembers = members;
         const lastAuth = job.executionAuthorization || (job.historyIds.length > 0 ? job.context.authorization : '');
         const now = Date.now();
         const refreshed = new Set();
@@ -3951,7 +3984,7 @@ const serveDistFile = async (req, res, url) => {
           const auth = `Bearer ${String(entry.key).trim()}`;
           refreshed.add(auth);
           const gwUrl = String(entry.gatewayUrl || '').trim();
-          // 静态车位上限（v5Capacity）走 10 分钟缓存，批内不再每张图都阻塞等待 /api/me/quota。
+          // 静态车位上限（v5Capacity）走 10 分钟缓存，不阻塞等待 /api/me/quota。
           await probeNovelAiSubscription(auth, {
             gatewayUrl: gwUrl,
             requestRemote: remoteFetch,
@@ -3961,42 +3994,74 @@ const serveDistFile = async (req, res, url) => {
             quotaTimeoutMs: 2_500,
           });
         };
-        await Promise.allSettled(members.map(async entry => {
-          const auth = `Bearer ${String(entry.key).trim()}`;
-          const fetchedAt = novelAiSubscriptionFetchedAt.get(auth) || 0;
-          const failedAt = novelAiSubscriptionFailedAt.get(auth) || 0;
-          const recentlyFailed = failedAt > 0 && (now - failedAt < SUBSCRIPTION_FAILURE_COOLDOWN_MS);
-          const mustRefresh = (fresh && auth === lastAuth)
-            || (!novelAiSubscriptions.has(auth) && !recentlyFailed)
-            || (novelAiSubscriptions.has(auth) && now - fetchedAt > 60_000);
-          if (!mustRefresh) return;
-          await probeMember(entry);
-        }));
         const requireOpusQuota = getNaiRuntime().usageLimitedModels.includes(payload.model);
-        let picked = selectBackendPoolMember(
-          members.map(entry => ({ entry, info: novelAiSubscriptions.get(`Bearer ${String(entry.key).trim()}`) || null })),
-          lastAuth,
-          { requireOpusQuota },
+        const pickCleanCached = () => {
+          const cleanCandidates = members
+            .filter(entry => {
+              const auth = `Bearer ${String(entry.key).trim()}`;
+              return novelAiSubscriptions.has(auth) && !novelAiSubscriptionDirty.has(auth);
+            })
+            .map(entry => ({ entry, info: novelAiSubscriptions.get(`Bearer ${String(entry.key).trim()}`) || null }));
+          return cleanCandidates.length ? selectBackendPoolMember(cleanCandidates, lastAuth, { requireOpusQuota }) : null;
+        };
+
+        // 1) 快路径：优先从干净缓存（后台刷新已完成或尚未动用的密钥）直接选 Key，余额高于 1% 安全线则零阻塞秒发车。
+        let picked = pickCleanCached();
+        const safeFastStart = Boolean(
+          picked?.ok
+          && (!requireOpusQuota || picked.remaining > POOL_LOW_QUOTA_SYNC_THRESHOLD),
         );
-        // 准备宣告全池耗尽前，再复核一次本轮未刷新的成员，避免旧 0% 缓存误停。
-        if (!picked.ok && picked.code === 'pool_exhausted') {
-          const unrefreshed = members.filter(entry => !refreshed.has(`Bearer ${String(entry.key).trim()}`));
-          if (unrefreshed.length) {
-            await Promise.allSettled(unrefreshed.map(probeMember));
-            picked = selectBackendPoolMember(
-              members.map(entry => ({ entry, info: novelAiSubscriptions.get(`Bearer ${String(entry.key).trim()}`) || null })),
-              lastAuth,
-              { requireOpusQuota },
-            );
+        if (safeFastStart) {
+          // 若池里还有从未拉取过的成员，顺手在后台预热，不阻塞本次发车。
+          for (const entry of members) {
+            const auth = `Bearer ${String(entry.key).trim()}`;
+            const failedAt = novelAiSubscriptionFailedAt.get(auth) || 0;
+            if (!novelAiSubscriptions.has(auth) && !(failedAt > 0 && now - failedAt < SUBSCRIPTION_FAILURE_COOLDOWN_MS)) {
+              void probeMember(entry).catch(() => {});
+            }
+          }
+        } else {
+          // 2) 同步核对路径：仅在冷启动无缓存、无干净可用密钥、或剩余额度跌入 ≤ 1% 低额警戒区时才同步联网核实。
+          await Promise.allSettled(members.map(async entry => {
+            const auth = `Bearer ${String(entry.key).trim()}`;
+            const failedAt = novelAiSubscriptionFailedAt.get(auth) || 0;
+            const recentlyFailed = failedAt > 0 && (now - failedAt < SUBSCRIPTION_FAILURE_COOLDOWN_MS);
+            const isDirty = novelAiSubscriptionDirty.has(auth);
+            const info = novelAiSubscriptions.get(auth);
+            const rawPercent = Number(info?.usage?.percent);
+            const lowQuota = !info || !info.usage || info.usage.isNegative === true || !Number.isFinite(rawPercent) || rawPercent <= POOL_LOW_QUOTA_SYNC_THRESHOLD;
+            const mustRefresh = isDirty
+              || (!info && !recentlyFailed)
+              || (lowQuota && !recentlyFailed);
+            if (!mustRefresh) return;
+            await probeMember(entry);
+          }));
+          picked = selectBackendPoolMember(
+            members.map(entry => ({ entry, info: novelAiSubscriptions.get(`Bearer ${String(entry.key).trim()}`) || null })),
+            lastAuth,
+            { requireOpusQuota },
+          );
+          // 准备宣告全池耗尽前，再复核一次本轮未刷新的成员，避免旧 0% 缓存误停。
+          if (!picked.ok && picked.code === 'pool_exhausted') {
+            const unrefreshed = members.filter(entry => !refreshed.has(`Bearer ${String(entry.key).trim()}`));
+            if (unrefreshed.length) {
+              await Promise.allSettled(unrefreshed.map(probeMember));
+              picked = selectBackendPoolMember(
+                members.map(entry => ({ entry, info: novelAiSubscriptions.get(`Bearer ${String(entry.key).trim()}`) || null })),
+                lastAuth,
+                { requireOpusQuota },
+              );
+            }
           }
         }
-        if (!picked.ok) {
-          throw Object.assign(new Error(picked.message), { code: picked.code, status: picked.code === 'pool_unavailable' ? 503 : 400 });
+        if (!picked || !picked.ok) {
+          throw Object.assign(new Error(picked?.message || 'Key 池中当前没有可用的 Opus 密钥，已停止后续生成'), { code: picked?.code || 'pool_unavailable', status: picked?.code === 'pool_unavailable' ? 503 : 400 });
         }
         job.executionAuthorization = picked.authorization;
         job.executionKeyHash = keyHashFromAuthorization(picked.authorization);
         return estimateNovelAiGenerationCost(priced, picked.info.usage?.isNegative === true, picked.info.active === true && picked.info.tier >= 3);
       }
+      job.poolEnabled = false;
 
       const authorization = job.context.authorization;
       job.executionAuthorization = authorization;
