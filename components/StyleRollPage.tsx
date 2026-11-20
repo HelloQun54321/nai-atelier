@@ -5,7 +5,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, CopyPlus, Folder, Heart, Layers
 import type { LocalGenItem, PromptChain } from '../types';
 import { MobileBottomSheet, MobileOverflowMenu } from './MobileUI';
 import { t, useLanguage } from '../services/i18n';
-import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateToChain, rollExperimentSummary, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
+import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateToChain, rollExperimentSummary, rollRoundSourceChainIds, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
 import { buildRollChainArtistSource } from '../services/styleRollChainArtists';
 import { rollFavoriteMatches, rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
@@ -926,12 +926,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
                 const snapshot = scopedRound.snapshot!;
                 setRoundRules({ ...snapshot.rules, maxArtists: Math.max(snapshot.rules.maxArtists, snapshot.pinnedArtists?.length ?? 0) });
                 setPinnedArtists(snapshot.pinnedArtists ?? []);
-                // 旧快照内联了当时的画师清单；新快照只存来源串 ID，按现有风格串重新提取。
+                // 旧快照内联了当时的画师清单；新快照只存来源串 ID（或指向记录级集合），按现有风格串重新提取。
+                const sourceChainIds = rollRoundSourceChainIds(snapshot, experiment?.sourceChainSets);
                 if (snapshot.chainArtistSource) setChainArtistSource(snapshot.chainArtistSource);
-                else if (snapshot.sourceChainIds) {
-                  if (!snapshot.sourceChainIds.length) setChainArtistSource({ chainIds: [], artists: [] });
+                else if (sourceChainIds) {
+                  if (!sourceChainIds.length) setChainArtistSource({ chainIds: [], artists: [] });
                   else {
-                    const restored = buildRollChainArtistSource(chains.filter(chain => snapshot.sourceChainIds!.includes(chain.id)), knownArtists);
+                    const restored = buildRollChainArtistSource(chains.filter(chain => sourceChainIds.includes(chain.id)), knownArtists);
                     setChainArtistSource(restored.artists.length ? restored : undefined);
                     if (!restored.artists.length) notify(t('这轮使用的来源风格串已删除'), 'error');
                   }

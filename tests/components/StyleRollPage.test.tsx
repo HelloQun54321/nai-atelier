@@ -1315,6 +1315,23 @@ it.each([false, true])('提取来源经页面/Agent保存到记录与轮次，�
   expect(restoredSource?.artists.map((artist: any) => artist.tag).sort()).toEqual(['beta', 'delta', 'epsilon', 'gamma']);
 });
 
+it('沿用轮次条件时按记录级来源集合还原来源串', async () => {
+  experiment.rules = { ...experiment.rules, minArtists: 2, maxArtists: 2 };
+  experiment.sourceChainSets = [{ id: 'cset', chainIds: ['source-chain', 'source-two'] }];
+  experiment.rounds = [{ id: 'source-round', candidateIds: ['a'], createdAt: 1, snapshot: { rules: experiment.rules, pinnedArtists: [], sourceChainSetId: 'cset' } }];
+  const sourceChains = [
+    { id: 'source-chain', type: 'style', name: '来源一', description: '', tags: [], basePrompt: 'beta, gamma', negativePrompt: '', modules: [], params: experiment.template.params, variableValues: { subject: '' }, createdAt: 1, updatedAt: 1 },
+    { id: 'source-two', type: 'style', name: '来源二', description: '', tags: [], basePrompt: 'delta, epsilon', negativePrompt: '', modules: [], params: experiment.template.params, variableValues: { subject: '' }, createdAt: 1, updatedAt: 1 },
+  ] as unknown as PromptChain[];
+  const view = await setup({ chains: sourceChains });
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  fireEvent.change(screen.getByRole('combobox', { name: '查看轮次' }), { target: { value: 'source-round' } });
+  fireEvent.click(screen.getByRole('button', { name: '沿用这轮条件' }));
+  const restored = (await executeAgentCommand(view.container, 'get_roll_state', {}, true) as any).chainArtistSource;
+  expect(restored?.chainIds).toEqual(['source-chain', 'source-two']);
+  expect(restored?.artists.map((artist: any) => artist.tag).sort()).toEqual(['beta', 'delta', 'epsilon', 'gamma']);
+});
+
 it.each([false, true])('已有提取来源不依赖全词库成功，仍显示词库错误且UI/Agent可抽取，Agent=%s', async agent => {
   experiment.candidates = []; experiment.rules = { ...experiment.rules, minArtists: 1, maxArtists: 1 };
   experiment.chainArtistSource = { chainIds: ['saved-source'], artists: [{ tag: 'outside dictionary', count: 1 }] };

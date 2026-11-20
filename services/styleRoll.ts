@@ -37,16 +37,20 @@ export interface RollRoundSnapshot {
   rules: RollRules;
   /** 旧格式：完整内联当时的来源画师清单，保留读取兼容，不再写入。 */
   chainArtistSource?: RollChainArtistSource;
-  /**
-   * 新格式：只记当时的来源串 ID。
-   * 每轮内联整份来源清单会让记录随轮次线性膨胀（约 2000 条来源串 ≈ 155 KB/轮），
-   * 「沿用这轮条件」时再按 ID 从风格串重新提取画师。
-   */
+  /** 内联格式：只记当时的来源串 ID。重复的来源集合仍然逐轮复制，保存时会提升为记录级集合。 */
   sourceChainIds?: string[];
+  /**
+   * 引用格式：指向 `RollExperiment.sourceChainSets` 里的来源串 ID 集合。
+   * 2000 条来源串约 88 KB，逐轮复制会让记录随轮次线性膨胀并最终撞上本地 D1 的单行上限，
+   * 所以相同集合在一份记录里只存一份；「沿用这轮条件」时按 ID 从风格串重新提取画师。
+   */
+  sourceChainSetId?: string;
   mode?: LegacyRollDrawPlan['mode'];
   pinnedArtists?: string[];
   sampledOnly?: boolean;
 }
+/** 一份被多个轮次复用的来源串 ID 集合；ID 由内容决定，相同列表只存一份。 */
+export interface RollSourceChainSet { id: string; chainIds: string[] }
 export interface RollCandidate {
   id: string;
   tags: RollTag[];
@@ -77,6 +81,8 @@ export interface RollExperiment {
   pinnedArtists?: string[];
   chainArtistSource?: RollChainArtistSource;
   drawPlan?: LegacyRollDrawPlan;
+  /** 轮次快照引用的来源串集合；没有引用格式的轮次时不出现。 */
+  sourceChainSets?: RollSourceChainSet[];
   /** 只从有样张的画师中抽取；不影响已锁定的覆盖项。 */
   sampledOnly?: boolean;
   candidates: RollCandidate[];
@@ -261,6 +267,84 @@ export function validateRollSourceChainIds(value: unknown): asserts value is str
   if (!Array.isArray(value) || value.some(id => typeof id !== 'string' || !id || id.length > 100) || new Set(value).size !== value.length) throw new Error('画风轮次资料无效');
 }
 
+/** 稳定序列化：对象键排序后比较，轮次条件不受字面书写顺序影响。 */
+export const stableJson = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(item => stableJson(item)).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).filter(key => record[key] !== undefined).sort()
+      .map(key => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+};
+
+/** 集合 ID 由内容决定：同一份来源串列表在任何一次保存里都落到同一个 ID。 */
+const fnv1a = (text: string): string => {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36);
+};
+const chainSetContent = (chainIds: string[]) => chainIds.join('\u0000');
+export const rollSourceChainSetId = (chainIds: string[]): string => `c${fnv1a(chainSetContent(chainIds))}`;
+
+/** 读取轮次当时的来源串 ID；内联与引用两种写法都认，未记录时返回 undefined。 */
+export function rollRoundSourceChainIds(snapshot: RollRoundSnapshot | undefined, sets: RollSourceChainSet[] | undefined): string[] | undefined {
+  if (!snapshot) return undefined;
+  if (snapshot.sourceChainIds !== undefined) return snapshot.sourceChainIds;
+  if (snapshot.sourceChainSetId === undefined) return undefined;
+  return sets?.find(set => set.id === snapshot.sourceChainSetId)?.chainIds;
+}
+
+/**
+ * 把轮次里的内联来源串列表提升为记录级集合，同一份列表只保留一份。
+ * 幂等：已经引用集合的记录原样返回；旧记录在下一次保存时自动变瘦，不需要单独迁移。
+ */
+export function compactRollExperiment(experiment: RollExperiment): RollExperiment {
+  const sets: RollSourceChainSet[] = [];
+  const contents = new Map<string, string>();
+  for (const set of experiment.sourceChainSets ?? []) {
+    if (contents.has(set.id)) continue;
+    contents.set(set.id, chainSetContent(set.chainIds));
+    sets.push({ id: set.id, chainIds: [...set.chainIds] });
+  }
+  let changed = false;
+  const rounds = experiment.rounds.map(round => {
+    const inline = round.snapshot?.sourceChainIds;
+    if (!round.snapshot || inline === undefined) return round;
+    changed = true;
+    const { sourceChainIds, ...rest } = round.snapshot;
+    // 空来源本身很小，直接内联，免得为一个空集合建表项。
+    if (!inline.length) return { ...round, snapshot: { ...rest, sourceChainIds: [] } };
+    const content = chainSetContent(inline);
+    let id = rollSourceChainSetId(inline);
+    // 极罕见的哈希碰撞：换一个确定性后缀，避免两份不同列表共用同一个集合。
+    if (contents.has(id) && contents.get(id) !== content) {
+      let suffix = 2;
+      while (contents.has(`${id}-${suffix}`)) suffix += 1;
+      id = `${id}-${suffix}`;
+    }
+    if (!contents.has(id)) { contents.set(id, content); sets.push({ id, chainIds: [...inline] }); }
+    return { ...round, snapshot: { ...rest, sourceChainSetId: id } };
+  });
+  if (!changed) return experiment;
+  const next: RollExperiment = { ...experiment, rounds };
+  if (sets.length) next.sourceChainSets = sets; else delete next.sourceChainSets;
+  return next;
+}
+
+/** 比较轮次条件用：先把内联与引用解析成同一份来源串 ID，再稳定序列化。 */
+export function rollRoundConditionKey(snapshot: RollRoundSnapshot | undefined, sets: RollSourceChainSet[] | undefined): string {
+  if (!snapshot) return '';
+  const { sourceChainIds, sourceChainSetId, ...rest } = snapshot;
+  return stableJson({ ...rest, sourceChainIds: rollRoundSourceChainIds(snapshot, sets) ?? null });
+}
+
+/** 本地 D1 单行约 2.1 MB（实测 2,199,995 字符），压缩后仍逼近上限时提前拒绝，避免落库报 SQLITE_TOOBIG。 */
+export const ROLL_EXPERIMENT_MAX_CHARS = 1_900_000;
+
 /** 显式空列表可清除旧记录的锁定；旧权重与旧候选保持原样。 */
 export function getRollPinnedArtists(experiment: Pick<RollExperiment, 'artists' | 'drawPlan' | 'pinnedArtists'>): string[] {
   if (experiment.pinnedArtists !== undefined) return experiment.pinnedArtists;
@@ -321,6 +405,16 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
       (candidate.savedChainId !== undefined && !validId(candidate.savedChainId))) throw new Error('候选串资料无效');
     ids.add(candidate.id);
   }
+  // 来源集合是轮次的引用目标，读取快照前先确认它自洽：ID 合法、不重复、内容可校验。
+  const sourceChainSets = new Set<string>();
+  if (e.sourceChainSets !== undefined) {
+    if (!Array.isArray(e.sourceChainSets)) throw new Error('画风来源集合资料无效');
+    for (const set of e.sourceChainSets) {
+      if (!set || typeof set !== 'object' || !validId(set.id) || sourceChainSets.has(set.id)) throw new Error('画风来源集合资料无效');
+      validateRollSourceChainIds(set.chainIds);
+      sourceChainSets.add(set.id);
+    }
+  }
   const rounds = new Set<string>();
   if (!Array.isArray(e.rounds)) throw new Error('画风轮次资料无效');
   for (const round of e.rounds) {
@@ -332,7 +426,11 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
       if (!snapshot || typeof snapshot !== 'object') throw new Error('画风轮次资料无效');
       validateRuleRanges(snapshot.rules);
       if (snapshot.chainArtistSource !== undefined) validateRollChainArtistSource(snapshot.chainArtistSource);
-      if (snapshot.sourceChainIds !== undefined) validateRollSourceChainIds(snapshot.sourceChainIds);
+      if (snapshot.sourceChainIds !== undefined) {
+        // 两种写法互斥：内联与引用同时出现时无从判断哪份才是当时的条件。
+        if (snapshot.sourceChainSetId !== undefined) throw new Error('画风轮次资料无效');
+        validateRollSourceChainIds(snapshot.sourceChainIds);
+      } else if (snapshot.sourceChainSetId !== undefined && !sourceChainSets.has(snapshot.sourceChainSetId)) throw new Error('画风轮次资料无效');
       if (snapshot.mode !== undefined) validateLegacyRollPlan({ mode: snapshot.mode, pinnedArtists: snapshot.pinnedArtists }, snapshot.rules);
       else {
         validateRollPinnedArtists(snapshot.pinnedArtists ?? []);

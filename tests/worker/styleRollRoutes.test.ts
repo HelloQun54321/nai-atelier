@@ -4,7 +4,7 @@ import { handleStyleRollRoute } from '../../worker/routes/styleRollRoutes';
 import { INIT_SQL, type D1Database, type RouteContext } from '../../worker/routes/types';
 import { candidateFixture, rollFixture } from '../fixtures/styleRoll';
 import { beginRollRound } from '../../services/styleRollWorkflow';
-import { ROLL_MAX_ARTISTS, type RollPreset } from '../../services/styleRoll';
+import { ROLL_MAX_ARTISTS, rollRoundSourceChainIds, type RollPreset } from '../../services/styleRoll';
 
 const databases: DatabaseSync[] = [];
 afterEach(() => { databases.splice(0).forEach(db => db.close()); });
@@ -36,13 +36,14 @@ it('超过单图人数的提取来源完整保存，清除当前来源不改历�
   const second = await f.invoke(next); expect(second!.status).toBe(200);
   const { experiment: withRound } = await second!.json() as any;
   expect(withRound.chainArtistSource).toEqual(e.chainArtistSource);
-  // 轮次快照只记来源串 ID，不再每轮复制整份画师清单。
-  expect(withRound.rounds[0].snapshot.sourceChainIds).toEqual(e.chainArtistSource.chainIds);
-  const changed = structuredClone(withRound); changed.rounds[0].snapshot.sourceChainIds.push('source-c');
+  // 轮次快照引用记录级来源集合：同一份来源列表在一条记录里只存一份。
+  expect(withRound.sourceChainSets).toHaveLength(1);
+  expect(rollRoundSourceChainIds(withRound.rounds[0].snapshot, withRound.sourceChainSets)).toEqual(e.chainArtistSource.chainIds);
+  const changed = structuredClone(withRound); changed.sourceChainSets[0].chainIds.push('source-c');
   expect((await f.invoke(changed))!.status).toBe(400);
   const { experiment: cleared } = await (await f.invoke({ ...withRound, chainArtistSource: undefined }))!.json() as any;
   expect(cleared.chainArtistSource).toBeUndefined();
-  expect(cleared.rounds[0].snapshot.sourceChainIds).toEqual(e.chainArtistSource.chainIds);
+  expect(rollRoundSourceChainIds(cleared.rounds[0].snapshot, cleared.sourceChainSets)).toEqual(e.chainArtistSource.chainIds);
   expect((await f.invoke({ ...cleared, chainArtistSource: { chainIds: [], artists: [] } }))!.status).toBe(200);
   const restored = await f.readExperiment(e.id);
   expect(restored.chainArtistSource).toEqual({ chainIds: [], artists: [] });
@@ -299,6 +300,40 @@ it('记录体积与候选数量都不设上限：超过旧的 240 上限且记�
   const restored = await f.readExperiment(e.id);
   expect(restored.candidates).toHaveLength(count);
   expect(JSON.stringify(restored).length).toBeGreaterThan(1_000_000);
+});
+
+it('旧记录逐轮内联的来源串在保存时归一化，重复集合只存一份且明显变小', async () => {
+  const f = fixture(), e = { ...rollFixture(), revision: 0 };
+  const sourceChains = Array.from({ length: 300 }, (_, index) => `source-chain-${index}`);
+  e.candidates = Array.from({ length: 20 }, (_, index) => candidateFixture(`candidate-${index}`));
+  e.rounds = Array.from({ length: 20 }, (_, index) => ({ id: `round-${index}`, candidateIds: [`candidate-${index}`], createdAt: index,
+    snapshot: { rules: { ...e.rules }, pinnedArtists: [], sourceChainIds: [...sourceChains] } }));
+  const raw = JSON.stringify(e);
+  const response = await f.invoke(e);
+  expect(response!.status).toBe(200);
+  const { experiment: saved } = await response!.json() as any;
+  expect(saved.sourceChainSets).toHaveLength(1);
+  expect(saved.sourceChainSets[0].chainIds).toEqual(sourceChains);
+  expect(JSON.stringify(saved).length).toBeLessThan(raw.length / 5);
+  const stored = f.sqlite.prepare('SELECT value FROM settings').get()?.value as string;
+  expect(stored.length).toBeLessThan(raw.length / 5);
+  const restored = await f.readExperiment(e.id);
+  for (const round of restored.rounds) expect(rollRoundSourceChainIds(round.snapshot, restored.sourceChainSets)).toEqual(sourceChains);
+  // 归一化不算改写：同一份记录再次保存仍然通过。
+  expect((await f.invoke({ ...restored, name: '改名' }))!.status).toBe(200);
+});
+
+it('归一化后仍超过本地数据库单行上限时提前拒绝，不落库也不抛 D1 错误', async () => {
+  const f = fixture(), e = { ...rollFixture(), revision: 0 };
+  e.candidates = Array.from({ length: 400 }, (_, index) => ({
+    id: `candidate-${index}`, createdAt: index, archived: false,
+    tags: Array.from({ length: ROLL_MAX_ARTISTS }, (_, slot) => ({ tag: `artist ${index} slot ${slot} ${'x'.repeat(80)}`, weight: 1 })),
+  }));
+  expect(JSON.stringify(e).length).toBeGreaterThan(2_000_000);
+  const response = await f.invoke(e);
+  expect(response!.status).toBe(413);
+  expect(await response!.json()).toMatchObject({ error: expect.stringContaining('单条上限') });
+  expect(f.sqlite.prepare('SELECT count(*) AS n FROM settings').get()?.n).toBe(0);
 });
 
 it('旧记录的轮次快照继续读取内联来源清单，新快照只记来源串 ID', async () => {

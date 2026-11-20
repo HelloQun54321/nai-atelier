@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidateFixture, rollFixture, seededRandom } from '../fixtures/styleRoll';
-import { createDefaultRollTemplate, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, formatRollStyle, ROLL_MAX_ARTISTS, getRollPinnedArtists, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollPreset, validateRollTemplate, type RollExperiment } from '../../services/styleRoll';
+import { createDefaultRollTemplate, compactRollExperiment, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, formatRollStyle, ROLL_MAX_ARTISTS, getRollPinnedArtists, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidates, rollCandidateToChain, rollPrompt, rollRoundConditionKey, rollRoundSourceChainIds, rollSignature, rollSourceChainSetId, validateRollExperiment, validateRollPreset, validateRollTemplate, type RollExperiment } from '../../services/styleRoll';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 
 it('推荐模板工厂沿用当前默认值且各次结果独立', () => {
@@ -297,5 +297,59 @@ describe('候选删除与记录容量', () => {
     // 丢弃即删除：未归档的候选同样可以直接删掉。
     expect(removeRollCandidates(e, ['keep']).candidates.map(item => item.id)).toEqual(['drop']);
     expect(removeRollCandidates(e, [])).toBe(e);
+  });
+});
+
+describe('来源串集合去重', () => {
+  const chainIds = ['source-a', 'source-b', 'source-c'];
+  const experimentWithRounds = (ids: string[], rounds = 3) => {
+    const e = rollFixture();
+    e.candidates = [candidateFixture('one')];
+    e.rounds = Array.from({ length: rounds }, (_, index) => ({ id: `round-${index}`, candidateIds: ['one'], createdAt: index, snapshot: { rules: { ...e.rules }, pinnedArtists: [], sourceChainIds: [...ids] } }));
+    return e;
+  };
+
+  it('同一份来源列表只保留一份，轮次改引用后记录明显变小', () => {
+    const many = Array.from({ length: 200 }, (_, index) => `source-chain-${index}`);
+    const e = experimentWithRounds(many, 40);
+    const before = JSON.stringify(e).length;
+    const compacted = compactRollExperiment(e);
+    expect(compacted.sourceChainSets).toHaveLength(1);
+    expect(compacted.sourceChainSets![0].chainIds).toEqual(many);
+    expect(compacted.sourceChainSets![0].id).toBe(rollSourceChainSetId(many));
+    expect(new Set(compacted.rounds.map(round => round.snapshot!.sourceChainSetId)).size).toBe(1);
+    expect(compacted.rounds.every(round => round.snapshot!.sourceChainIds === undefined)).toBe(true);
+    expect(JSON.stringify(compacted).length).toBeLessThan(before / 5);
+    expect(() => validateRollExperiment(compacted)).not.toThrow();
+    for (const round of compacted.rounds) expect(rollRoundSourceChainIds(round.snapshot, compacted.sourceChainSets)).toEqual(many);
+  });
+
+  it('不同来源各自建集合，空来源保持内联，重复压缩幂等', () => {
+    const e = experimentWithRounds(chainIds, 2);
+    e.rounds.push({ id: 'empty', candidateIds: ['one'], createdAt: 5, snapshot: { rules: { ...e.rules }, pinnedArtists: [], sourceChainIds: [] } });
+    e.rounds.push({ id: 'other', candidateIds: ['one'], createdAt: 6, snapshot: { rules: { ...e.rules }, pinnedArtists: [], sourceChainIds: ['source-z'] } });
+    const compacted = compactRollExperiment(e);
+    expect(compacted.sourceChainSets).toHaveLength(2);
+    expect(compacted.rounds.find(round => round.id === 'empty')!.snapshot!.sourceChainIds).toEqual([]);
+    expect(rollRoundSourceChainIds(compacted.rounds.find(round => round.id === 'empty')!.snapshot, compacted.sourceChainSets)).toEqual([]);
+    expect(JSON.stringify(compactRollExperiment(compacted))).toBe(JSON.stringify(compacted));
+    expect(() => validateRollExperiment(compacted)).not.toThrow();
+  });
+
+  it('悬空引用与内联、引用并存都按坏资料拒绝', () => {
+    const compacted = compactRollExperiment(experimentWithRounds(chainIds, 1));
+    expect(() => validateRollExperiment({ ...compacted, sourceChainSets: [] })).toThrow('画风轮次资料无效');
+    const both = structuredClone(compacted);
+    both.rounds[0].snapshot!.sourceChainIds = [...chainIds];
+    expect(() => validateRollExperiment(both)).toThrow('画风轮次资料无效');
+  });
+
+  it('内联与引用解析成同一份条件，归一化不会被误判成改写', () => {
+    const e = experimentWithRounds(chainIds, 1);
+    const compacted = compactRollExperiment(e);
+    expect(rollRoundConditionKey(e.rounds[0].snapshot, undefined)).toBe(rollRoundConditionKey(compacted.rounds[0].snapshot, compacted.sourceChainSets));
+    const changed = structuredClone(compacted);
+    changed.sourceChainSets![0].chainIds.push('source-d');
+    expect(rollRoundConditionKey(changed.rounds[0].snapshot, changed.sourceChainSets)).not.toBe(rollRoundConditionKey(compacted.rounds[0].snapshot, compacted.sourceChainSets));
   });
 });

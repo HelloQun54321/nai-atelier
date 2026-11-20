@@ -1,4 +1,4 @@
-import { rollExperimentSummary, rollPrompt, rollSourceId, rollCandidateModuleId, validateRollBlocklist, validateRollExperiment, validateRollPreset, type RollExperiment, type RollPreset } from '../../services/styleRoll';
+import { compactRollExperiment, rollExperimentSummary, rollPrompt, rollRoundConditionKey, rollSourceId, rollCandidateModuleId, ROLL_EXPERIMENT_MAX_CHARS, validateRollBlocklist, validateRollExperiment, validateRollPreset, type RollExperiment, type RollPreset } from '../../services/styleRoll';
 import { error, json, type RouteContext } from './types';
 import { ensureHistoryRecycleSchema, newRollReferenceConflict, rollExperimentKeyPrefix } from './historyRecycleSchema';
 
@@ -137,11 +137,18 @@ export async function handleStyleRollRoute({ path, method, request, db, currentU
     } catch { return error('Roll 串资料读取失败，请保留资料并检查备份', 500); }
   }
   if (method !== 'PUT') return error('Method not allowed', 405);
-  // 不再限制记录体积：候选与轮次数量上限已经约束了单条记录能装多少内容，体积不应成为 Roll 的门槛。
   const raw = await request.text();
   let experiment: RollExperiment;
   try { const value: unknown = JSON.parse(raw); validateRollExperiment(value); experiment = value; }
   catch (cause) { return error(cause instanceof Error ? cause.message : 'Roll 串资料无效', 400); }
+  /**
+   * 来源串集合归一化：轮次原本各自内联一整份来源 ID，来源不变时每轮完全重复，
+   * 记录会随轮次线性膨胀并最终撞上本地 D1 的单行上限（实测约 2.1 MB 字节）。
+   * 归一化后同一份列表只存一次，旧记录在下一次保存时自动变瘦，无需单独迁移。
+   */
+  experiment = compactRollExperiment(experiment);
+  const sizeProbe = JSON.stringify({ ...experiment, revision: experiment.revision + 1 });
+  if (sizeProbe.length > ROLL_EXPERIMENT_MAX_CHARS) return error('这条画风记录已达本地数据库单条上限，请归档后新建记录再继续', 413);
   const key = prefix + experiment.id;
   const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
   let previous: RollExperiment | undefined;
@@ -161,8 +168,10 @@ export async function handleStyleRollRoute({ path, method, request, db, currentU
     const next = experiment.rounds.find(item => item.id === round.id);
     // 候选删光后空轮随之移除，所以轮次允许被删除；已记录的轮次内容与关闭时间仍不可改写。
     if (!next) continue;
+    // 内联与引用两种写法解析成同一份来源串条件后再比较，避免归一化被误判成改写。
+    const sameRound = round.createdAt === next.createdAt &&
+      rollRoundConditionKey(round.snapshot, previous?.sourceChainSets) === rollRoundConditionKey(next.snapshot, experiment.sourceChainSets);
     // 删除候选时轮次的 candidateIds 会跟着收缩，这不算改写；只允许减少，不允许新增或换人。
-    const sameRound = JSON.stringify({ ...round, candidateIds: [], closedAt: undefined }) === JSON.stringify({ ...next, candidateIds: [], closedAt: undefined });
     const onlyRemoved = next.candidateIds.every(id => round.candidateIds.includes(id));
     if (!sameRound || !onlyRemoved || (round.closedAt !== undefined && next.closedAt !== round.closedAt)) return error('已有画风轮次不可改写', 400);
   }
