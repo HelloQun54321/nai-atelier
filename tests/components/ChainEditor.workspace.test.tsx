@@ -1300,7 +1300,8 @@ it.each(['playground', chain.id])('%s 局部重绘重置后默认聚焦，图生
   saveLabWorkspaceSession(id, session);
   const view = setup({ ...chain, id });
   expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe('false');
-  await act(async () => fireEvent.click(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '重置当前模式' })));
+  fireEvent.click(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '更多操作' }));
+  await act(async () => fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: '重置当前模式' })));
   await waitFor(() => expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe('true'));
   for (const label of ['图生图', '扩图']) {
     await switchTo(label);
@@ -1460,7 +1461,8 @@ describe('自由实验室图片只保留本次打开', () => {
     expect(screen.getByLabelText('编辑结果').textContent).toBe('/synthetic/old-0.png');
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '移除编辑历史' })));
     expect(state.unlinkHistory).toHaveBeenCalledWith('old-0');
-    await act(async () => fireEvent.click(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '重置当前模式' })));
+    fireEvent.click(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '更多操作' }));
+    await act(async () => fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: '重置当前模式' })));
     expect(screen.getByLabelText('编辑底图').textContent).toBe('');
     expect(screen.getByLabelText('编辑结果').textContent).toBe('');
     await switchTo('文生图');
@@ -1790,7 +1792,8 @@ describe('统一工作台真实状态链路', () => {
     const view = setup();
     await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.change(textPrompt(), { target: { value: 'temporary change' } });
-    await act(async () => { fireEvent.click(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '重置当前模式' })); });
+    fireEvent.click(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '更多操作' }));
+    await act(async () => { fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: '重置当前模式' })); });
     expect(textPrompt().value).toBe('saved style, subject');
     expect(loadLabWorkspaceSession('playground', fallback()).textToImage.basePrompt).toBe('private playground draft');
     expect(view.props.onUpdateChain).not.toHaveBeenCalled();

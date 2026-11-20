@@ -63,4 +63,17 @@ describe('实验室顶栏的反推入口', () => {
     fireEvent.click(screen.getByRole('button', { name: /从图片反推 Tag/ }));
     expect(onReverseTag).toHaveBeenCalledOnce();
   });
+
+  it('桌面端将破坏性的重置当前模式收入更多操作，保存使用绿色 save 语义，Tag 辅助以激活态表达', () => {
+    const handleReset = vi.fn();
+    render(<ChainEditorHeader {...baseProps({ handleReset, tagAssistEnabled: true })} />);
+    expect(screen.queryByRole('button', { name: '重置当前模式' })).toBeNull();
+    expect(screen.getByRole('button', { name: '保存到库' }).getAttribute('data-tone')).toBe('save');
+    const tagButton = screen.getByRole('button', { name: '关闭 Tag 辅助' });
+    expect(tagButton.getAttribute('data-active')).toBe('true');
+    expect(tagButton.textContent).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    fireEvent.click(screen.getByRole('button', { name: '重置当前模式' }));
+    expect(handleReset).toHaveBeenCalledOnce();
+  });
 });

@@ -208,43 +208,32 @@ it('手机父搭配与子使用层逐次返回只关闭一层，不越过搭配�
   }
 });
 
-it('统一浏览收录与搭配仅局部设为手机44桌面40，不改变顶栏与把手尺寸', () => {
-  render(<ContentLibraryPage section="items" onSectionChange={vi.fn()} rollOpen={false} onRollOpenChange={vi.fn()} onCapture={async () => {}}
+it('统一浏览只常驻搭配、粘贴收录与更多操作，不改变顶栏尺寸', () => {
+  render(<ContentLibraryPage section="items" onSectionChange={vi.fn()} rollOpen={false} onRollOpenChange={vi.fn()} onCapture={async () => {}} onExtractSave={vi.fn()}
     browse={slot => <Tools slot={slot} label="统一搜索" />} items={() => null} saved={() => null} roll={() => null} />);
-  for (const name of ['粘贴收录', '搭配']) {
-    const button = screen.getByRole('button', { name });
-    expect(button.classList.contains('!h-11')).toBe(true);
-    expect(button.classList.contains('md:!h-10')).toBe(true);
-    expect(button.classList.contains('!w-11')).toBe(true);
-  }
+  expect(screen.getByRole('button', { name: '粘贴收录' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '搭配' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '更多操作' })).toBeTruthy();
+  // 低频动作「图片反推 Tag」「AI 提取分类」收进「更多操作」，不平铺在顶栏。
+  expect(screen.queryByRole('button', { name: '图片反推 Tag' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'AI 提取分类' })).toBeNull();
   const toolbar = screen.getByRole('banner');
   expect(toolbar.classList.contains('!h-11')).toBe(false);
   expect(toolbar.classList.contains('md:!h-10')).toBe(false);
 });
 
 
-it('统一浏览保留搜索与紧凑 AI 提取入口，隐藏页面释放提取层且不恢复旧分区', async () => {
-  const props = { section: 'items' as const, onSectionChange: vi.fn(), rollOpen: false, onRollOpenChange: vi.fn(), onExtractSave: vi.fn(),
+it('统一浏览从更多操作打开 AI 提取与图片反推，隐藏页面释放提取层且不恢复旧分区', async () => {
+  const props = { section: 'items' as const, onSectionChange: vi.fn(), rollOpen: false, onRollOpenChange: vi.fn(), onCapture: vi.fn(), onExtractSave: vi.fn(),
     browse: (slot: HTMLElement | null) => <Tools slot={slot} label="统一搜索" />, items: () => null, saved: () => null, roll: () => null };
   const view = render(<ContentLibraryPage {...props} />);
-  const entry = screen.getByRole('button', { name: 'AI 提取分类' });
-  expect(entry.classList.contains('!w-11')).toBe(true);
-  expect(entry.classList.contains('md:!h-10')).toBe(true);
   expect(screen.getByRole('textbox', { name: '统一搜索' })).toBeTruthy();
   expect(screen.queryByRole('tablist')).toBeNull();
-  fireEvent.click(entry);
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+  const menu = screen.getByRole('dialog', { name: '更多操作' });
+  expect(within(menu).getByRole('button', { name: /图片反推 Tag/ })).toBeTruthy();
+  fireEvent.click(within(menu).getByRole('button', { name: 'AI 提取分类' }));
   expect(screen.getByRole('dialog', { name: 'AI 提取分类' })).toBeTruthy();
   view.rerender(<ContentLibraryPage {...props} active={false} />);
   expect(screen.queryByRole('dialog', { name: 'AI 提取分类' })).toBeNull();
-});
-
-it('统一浏览将窄屏提取交给现有筛选入口，打开的仍是共用提取窗口', async () => {
-  render(<ContentLibraryPage section="items" onSectionChange={vi.fn()} rollOpen={false} onRollOpenChange={vi.fn()} onExtractSave={vi.fn()}
-    browse={(_slot, actions) => <button onClick={actions?.onExtract}>从筛选打开提取</button>} items={() => null} saved={() => null} roll={() => null} />);
-  const toolbarEntry = screen.getByRole('button', { name: 'AI 提取分类' });
-  expect(toolbarEntry.classList.contains('!hidden')).toBe(true);
-  expect(toolbarEntry.classList.contains('md:!inline-flex')).toBe(true);
-  expect(screen.queryByRole('dialog')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '从筛选打开提取' }));
-  expect(await screen.findByRole('dialog', { name: 'AI 提取分类' })).toBeTruthy();
 });

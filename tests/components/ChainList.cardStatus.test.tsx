@@ -104,7 +104,7 @@ describe('风格串卡片的待实测状态', () => {
     const callbacks = props([chain('cached', '已读风格', false)]);
     const view = render(<ChainList {...callbacks} isLoading />);
     expect(screen.getByRole('button', { name: '打开风格串：已读风格' })).toBeTruthy();
-    expect(screen.getByText('加载中…')).toBeTruthy();
+    expect(screen.getByRole('status', { name: '加载中…' })).toBeTruthy();
     view.rerender(<ChainList {...callbacks} loadError="风格串列表加载失败，请稍后重试" />);
     expect(screen.getByRole('button', { name: '打开风格串：已读风格' })).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toContain('风格串列表加载失败');

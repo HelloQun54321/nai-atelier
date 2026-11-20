@@ -3,7 +3,7 @@ import {
   Activity, ArrowRight, BarChart3, Brush, CalendarDays, Download,
   Flame, Footprints, Heart, Image as ImageIcon, Palette, Sparkles,
 } from 'lucide-react';
-import { EmptyState, InlineSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { BackButton, EmptyState, InlineSpinner, SegmentedControl, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { MobileOverflowMenu } from './MobileUI';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { collectionRevision, collectionSnapshot, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
@@ -569,18 +569,22 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
     <div className="workspace-canvas flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       <WorkspaceChrome>
 <WorkspaceToolbar>
-        <span aria-hidden="true" className="flex h-8 w-8 flex-none items-center justify-center rounded-xl bg-indigo-50 text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-300"><Footprints className="h-4 w-4" /></span>
-        <div className="appearance-group flex max-w-[52vw] flex-none items-center gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-950 md:max-w-none">
-          {GRANULARITIES.map(item => <button key={item.id} type="button" aria-pressed={granularity === item.id} onClick={() => setGranularity(item.id)} className={`appearance-group mobile-touch whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold transition ${granularity === item.id ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>{t(item.label)}</button>)}
-        </div>
+        <BackButton label="返回生成历史" onClick={() => onOpenHistory({ sort: 'newest' })} className="mobile-touch md:hidden" />
+        <SegmentedControl
+          mode="buttons"
+          ariaLabel={t('统计粒度')}
+          value={granularity}
+          onChange={setGranularity}
+          options={GRANULARITIES.map(item => ({ value: item.id, label: item.label }))}
+        />
         <div className="ml-auto flex flex-none items-center gap-2">
           <ToolbarButton aria-label={t('导出 CSV')} title={t('导出 CSV')} onClick={exportCsv} disabled={!stats || eventsLoading || Boolean(eventsError)} className="max-md:hidden !px-2.5">
-            <Download /><span className="hidden xl:inline">CSV</span>
+            <Download /><span className="toolbar-responsive-label hidden xl:inline">CSV</span>
           </ToolbarButton>
-          <ToolbarButton onClick={() => onOpenHistory({ sort: 'newest' })} className="max-md:hidden !px-2.5">
-            <CalendarDays /><span className="hidden sm:inline">{t('打开历史')}</span>
+          <ToolbarButton aria-label={t('打开历史')} title={t('打开历史')} onClick={() => onOpenHistory({ sort: 'newest' })} className="max-md:hidden !px-2.5">
+            <CalendarDays /><span className="toolbar-responsive-label hidden md:inline">{t('打开历史')}</span>
           </ToolbarButton>
-          {/* 手机顶栏保留图标与周/月/年，其余工具收进「更多」。 */}
+          {/* 手机顶栏保留返回、周/月/年与更多，不横滑。 */}
           <MobileOverflowMenu className="md:hidden" items={[
             { label: '导出 CSV', icon: <Download />, disabled: !stats || eventsLoading || Boolean(eventsError), onClick: exportCsv },
             { label: '打开历史', icon: <CalendarDays />, onClick: () => onOpenHistory({ sort: 'newest' }) },

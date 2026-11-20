@@ -372,29 +372,24 @@ it.each(['standard', 'full', 'read_only'] as const)('通用Roll命令不能通�
   expect(mocks.generate).toHaveBeenCalledTimes(permissionMode === 'full' ? 1 : 0);
 });
 
-it('手机390px工具栏禁止横滑，主操作固定在左侧区外并保持触控尺寸，菜单通过Portal显示且预览不单独放大', async () => {
+it('手机390px工具栏禁止横滑，主操作与更多可达并保持触控尺寸，设置通过Portal显示且预览不单独放大', async () => {
   mocks.mobile = true; vi.stubGlobal('innerWidth', 390);
   const { container } = await setup();
-  const scroller = container.querySelector<HTMLElement>('[data-roll-toolbar-scroll]')!;
-  expect(scroller.classList.contains('min-w-0')).toBe(true);
-  expect(scroller.classList.contains('overflow-hidden')).toBe(true);
-  expect(scroller.classList.contains('overflow-x-auto')).toBe(false);
-  expect(scroller.closest('header')).toBeTruthy();
+  const header = container.querySelector<HTMLElement>('header')!;
+  expect(header).toBeTruthy();
   const roll = screen.getByRole('button', { name: '再 Roll 一轮' });
-  const settings = screen.getByRole('button', { name: '设置' });
-  expect(scroller.contains(roll)).toBe(false); expect(scroller.contains(settings)).toBe(false);
-  expect(scroller.closest('header')!.contains(roll)).toBe(true); expect(scroller.closest('header')!.contains(settings)).toBe(true);
-  expect(roll.className).toMatch(/!h-10/);
-  expect(roll.className).toMatch(/!w-10/);
+  expect(header.contains(roll)).toBe(true);
   expect(roll.className).not.toContain('!h-7');
   // 手机不再常驻英文 “Roll” 短标签；完整文案仅在 md+ 的隐藏跨度里保留无障碍名称。
   expect([...roll.querySelectorAll('span')].some(span => span.textContent === 'Roll')).toBe(false);
   const preview = screen.getByAltText('候选 1');
   expect(preview.classList.contains('object-contain')).toBe(true);
   expect(preview.className).not.toMatch(/(?:group-hover:|hover:)scale/);
-  fireEvent.click(settings);
+  // 手机端设置统一收进「更多操作」，避免顶栏右侧并排出现两个菜单图标。
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: '设置' }));
   const menu = screen.getByRole('dialog', { name: '设置' });
-  expect(scroller.contains(menu)).toBe(false);
+  expect(header.contains(menu)).toBe(false);
   expect(menu.closest('[data-roll-page]')).toBeNull();
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '0.7');
   expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '1.4');

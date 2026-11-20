@@ -19,7 +19,7 @@ export const GalleryActiveStateBanner: React.FC<GalleryActiveStateBannerProps> =
   isLoading = false,
   showDrawAgain = true,
 }) => (
-  <div className="flex h-9 flex-none items-center justify-between border-b border-indigo-100 bg-indigo-50/70 px-4 text-xs dark:border-indigo-900/40 dark:bg-indigo-950/30">
+  <div className="workspace-sub-bar flex h-9 flex-none items-center justify-between border-b border-indigo-100 bg-indigo-50/70 px-4 text-xs dark:border-indigo-900/40 dark:bg-indigo-950/30">
     <span className="flex items-center gap-1.5 font-medium text-indigo-700 dark:text-indigo-300">
       {isLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Dice5 className="h-3.5 w-3.5" />}
       {t("正在浏览随机抽取的 ")}{count} {t(" 位")}{entityName}

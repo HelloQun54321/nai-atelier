@@ -520,7 +520,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
         </div>
         </ToolbarPopover>
         <ListJumpButton page={page} disabled={loading} onJump={target => { void load(queryRef.current, target); }} />
-        <ToolbarButton aria-label={t("浏览足迹")} onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : 'neutral'} className="mobile-touch border-l"><Clock /><span className="hidden sm:inline">{t("足迹")}</span></ToolbarButton>
+        <ToolbarButton aria-label={t("浏览足迹")} onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : 'neutral'} className="mobile-touch !px-2.5 md:!px-3"><Clock /><span className="toolbar-responsive-label hidden md:inline">{t("足迹")}</span></ToolbarButton>
       </WorkspaceToolbar>
 
       </WorkspaceChrome>

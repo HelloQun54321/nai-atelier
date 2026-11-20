@@ -14,7 +14,7 @@ import { ImageActivityContext, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Footprints, Heart, Layers, ListChecks, LoaderCircle, Maximize2, Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Clock3, Footprints, Heart, HeartOff, Layers, ListChecks, LoaderCircle, Maximize2, MoreVertical, Save, Trash2, X } from 'lucide-react';
 import { CloseButton, EmptyState, IconButton, InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -1089,17 +1089,17 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                 <div className="history-toolbar-shell">
                 {!isLoading && !loadFailed && <ToolbarCountBadge total={totalCount} loaded={items.length} />}
                     {selectionMode ? <>
-                        <span className="flex-1 whitespace-nowrap text-sm font-semibold md:hidden">{t("已选 {0} 张", [selectedIds.size])}</span>
-                        <ToolbarButton onClick={exitSelectionMode} className="md:hidden">{t("完成")}</ToolbarButton>
+                        <span className="flex-1 whitespace-nowrap text-sm font-semibold tabular-nums md:hidden">{t("已选 {0} 张", [selectedIds.size])}</span>
                         <div className="history-selection-actions hidden flex-1 md:flex">
-                            <span className="mr-auto flex-none text-xs font-semibold text-gray-600 dark:text-gray-300">{t("多选模式 · 已选 {0} 张", [selectedIds.size])}</span>
-                            <ToolbarButton onClick={selectCurrentPage}>{t("全选本页")}</ToolbarButton>
-                            <ToolbarButton onClick={invertCurrentPageSelection}>{t("反选本页")}</ToolbarButton>
-                            <ToolbarButton tone="favorite" onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending || moveBusy}>{t("收藏选中")}</ToolbarButton>
-                            <ToolbarButton onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending || moveBusy}>{t("取消收藏")}</ToolbarButton>
-                            <ToolbarButton tone="danger" onClick={() => void handleBulkDelete()} disabled={!selectedIds.size || moveBusy || moveCapability !== 'remote'}>{t("移入回收站")}</ToolbarButton>
-                            <ToolbarButton onClick={exitSelectionMode}>{t("退出多选")}</ToolbarButton>
+                            <span className="flex-none text-xs font-semibold tabular-nums text-gray-600 dark:text-gray-300">{t("多选模式 · 已选 {0} 张", [selectedIds.size])}</span>
+                            <ToolbarButton onClick={selectCurrentPage} className="!px-2.5">{t("全选本页")}</ToolbarButton>
+                            <ToolbarButton onClick={invertCurrentPageSelection} className="!px-2.5">{t("反选本页")}</ToolbarButton>
+                            <ToolbarButton onClick={() => setSelectedIds(new Set())} disabled={!selectedIds.size} className="!px-2.5">{t("清空选择")}</ToolbarButton>
+                            <ToolbarButton tone="favorite" aria-label={t("收藏选中")} title={t("收藏选中")} onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending || moveBusy} className="!px-2.5"><Heart /><span className="toolbar-responsive-label hidden lg:inline">{t("收藏选中")}</span></ToolbarButton>
+                            <ToolbarButton aria-label={t("取消收藏")} title={t("取消收藏")} onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending || moveBusy} className="!px-2.5"><HeartOff /><span className="toolbar-responsive-label hidden lg:inline">{t("取消收藏")}</span></ToolbarButton>
+                            <ToolbarButton tone="danger" aria-label={t("移入回收站")} title={t("移入回收站")} onClick={() => void handleBulkDelete()} disabled={!selectedIds.size || moveBusy || moveCapability !== 'remote'} className="ml-auto !px-2.5"><Trash2 /><span className="toolbar-responsive-label hidden lg:inline">{t("移入回收站")}</span></ToolbarButton>
                         </div>
+                        <ToolbarButton aria-label={t("退出多选")} title={t("退出多选")} onClick={exitSelectionMode} className="mobile-touch !px-2.5"><X /><span className="toolbar-responsive-label hidden md:inline">{t("退出多选")}</span></ToolbarButton>
                     </> : <>
                         <ToolbarSearch value={searchDraft} onChange={event => updateSearch(event.target.value)} placeholder={t("搜索标题、提示词或标签")} aria-label={t("搜索历史")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
                         <HistoryBrowseControls query={browseQuery} options={browseOptions} mobile={isMobileViewport} onApply={applyBrowseQuery} />
@@ -1111,8 +1111,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                                 <Trash2 /><span className="history-button-label">{t("回收站")}</span>
                             </ToolbarButton>
                             <div ref={managementAnchorRef} className="relative">
-                                <ToolbarButton aria-label={newImageCount ? t("管理，新增 {0} 张图片", [newImageCount]) : t("管理")} title={migrationProgress ? migrationProgress.total > 0 ? t("正在迁移浏览器历史 {0}/{1}，请勿关闭页面…", [migrationProgress.current, migrationProgress.total]) : t("正在检查浏览器历史…") : t("历史管理")} className="history-management-button relative" onClick={() => setShowCleanMenu(value => !value)} disabled={migrationProgress !== null}>
-                                    {migrationProgress ? <span role="status" aria-label={t("历史迁移进度")}><LoaderCircle className="animate-spin" /></span> : <ListChecks />}<span className="history-management-label">{t("管理")}</span><ChevronDown className="history-management-chevron" />
+                                <ToolbarButton active={showCleanMenu} aria-label={newImageCount ? t("管理，新增 {0} 张图片", [newImageCount]) : t("管理")} title={migrationProgress ? migrationProgress.total > 0 ? t("正在迁移浏览器历史 {0}/{1}，请勿关闭页面…", [migrationProgress.current, migrationProgress.total]) : t("正在检查浏览器历史…") : t("历史管理")} className="history-management-button relative" onClick={() => setShowCleanMenu(value => !value)} disabled={migrationProgress !== null}>
+                                    {migrationProgress ? <span role="status" aria-label={t("历史迁移进度")}><LoaderCircle className="animate-spin" /></span> : <MoreVertical />}<span className="history-management-label">{t("管理")}</span>
                                     {newImageCount > 0 && <span aria-hidden="true" className="history-new-image-badge">{newImageCount > 99 ? '99+' : '+' + newImageCount}</span>}
                                 </ToolbarButton>
                                 {showCleanMenu && !isMobileViewport && (

@@ -7,7 +7,7 @@ import type { PromptChain } from '../types';
 import { t, useLanguage } from '../services/i18n';
 import { FRAGMENT_LABELS, isPromptLibraryCharacterProjection, projectCustomCharacterAsCombination, promptLibraryEntryLabel, type PromptFragmentKind } from '../services/promptLibraryEntries';
 import { filterPromptBrowseEntries, normalizeBrowseText, promptBrowseEntries, promptBrowseSummary, type PromptBrowseScope } from '../services/promptLibraryBrowse';
-import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch } from './DesignSystem';
+import { EmptyState, PageSpinner, SegmentedControl, ToolbarButton, ToolbarSearch } from './DesignSystem';
 import { PromptLibraryReadStatus, usePromptLibrary, type PromptLibraryReadState } from './PromptLibraryAccess';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { ToolbarCountBadge } from './ToolbarCountBadge';
@@ -239,7 +239,6 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   const setScope = (scope: PromptBrowseScope) => updateMemory({ ...memory, scope }, false);
   const directoryScope = memory.scope === 'items';
   const selectedDirectoryPath = favoritesSelected ? t('收藏') : memory.scope === 'saved' ? (memory.combinationCategory === null ? null : categoryLabel(memory.combinationCategory)) ?? t(memory.combinationUnclassified ? '未归类' : '全部') : memory.allDirectories ? t('全部') : memory.unclassified ? t('未归类') : memory.directoryIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).filter(Boolean).join('、');
-  const filterIconOnly = mobile || !wide;
   const remove = async (chain: PromptChain) => {
     if (!onDelete || deleting.current) return;
     deleting.current = true; setDeletingId(chain.id);
@@ -257,26 +256,16 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     callback?.();
   };
   const toolbar = <>
-    <div className={!mobile && wide ? "prompt-library-navigation-tools flex shrink-0 items-center gap-1" : "contents"}>
-    <ToolbarButton data-agent-action="browse" aria-label={t(navigationExpanded ? '收起目录' : '展开目录')} title={[t(navigationExpanded ? '收起目录' : '展开目录'), selectedDirectoryPath || t('全部目录')].filter(Boolean).join(' · ')} aria-expanded={navigationExpanded} aria-controls={navigationId} active={navigationExpanded || favoritesSelected || (directoryScope ? !memory.allDirectories || memory.unclassified : memory.combinationCategory !== null || memory.combinationUnclassified)} onClick={toggleDirectories} className="!h-11 !w-11 !gap-0 !px-0 md:!h-10 md:!w-auto md:!gap-2 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{selectedDirectoryPath || t('全部目录')}</span></ToolbarButton>
+    <ToolbarButton data-agent-action="browse" aria-label={t(navigationExpanded ? '收起目录' : '展开目录')} title={[t(navigationExpanded ? '收起目录' : '展开目录'), selectedDirectoryPath || t('全部目录')].filter(Boolean).join(' · ')} aria-expanded={navigationExpanded} aria-controls={navigationId} active={navigationExpanded || favoritesSelected || (directoryScope ? !memory.allDirectories || memory.unclassified : memory.combinationCategory !== null || memory.combinationUnclassified)} onClick={toggleDirectories} className="mobile-touch !px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{selectedDirectoryPath || t('全部目录')}</span></ToolbarButton>
     {!countsPending && <ToolbarCountBadge total={scopeTotal} loaded={shown.length} />}
-    </div>
     <ToolbarSearch value={query} aria-label={t('搜索名称、正文或标签')} placeholder={t(wide ? '搜索名称、正文或标签' : '搜索')}
-      onChange={event => { setQuery(event.target.value); resetScroll(); }} className="!h-11 md:!h-10 max-[360px]:!pl-2" containerClassName="min-w-0 flex-1 md:max-w-none! max-[360px]:[&>svg]:hidden" />
-    {!mobile && wide && <div role="tablist" aria-label={t('提示词库分区')} className="appearance-segmented flex h-11 min-w-0 flex-none gap-0.5 rounded-xl p-0.5 md:h-10">
-      {SCOPES.map(([scope, label], index) => <button key={scope} type="button" role="tab" aria-selected={memory.scope === scope} tabIndex={memory.scope === scope ? 0 : -1}
-        onClick={() => setScope(scope)} onKeyDown={event => {
-          const next = event.key === 'ArrowRight' ? (index + 1) % SCOPES.length : event.key === 'ArrowLeft' ? (index + SCOPES.length - 1) % SCOPES.length : event.key === 'Home' ? 0 : event.key === 'End' ? SCOPES.length - 1 : -1;
-          if (next < 0) return;
-          event.preventDefault(); setScope(SCOPES[next][0]);
-          event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('button')[next]?.focus();
-        }} className={`appearance-segmented min-w-0 flex-1 whitespace-nowrap rounded-lg px-2 text-sm font-semibold ${memory.scope === scope ? 'bg-white text-indigo-600 dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{t(label)}</button>)}
-    </div>}
+      onChange={event => { setQuery(event.target.value); resetScroll(); }} className="max-[360px]:!pl-2" containerClassName="min-w-0 flex-1 md:max-w-none! max-[360px]:[&>svg]:hidden" />
+    {!mobile && wide && <SegmentedControl ariaLabel={t('提示词库分区')} value={memory.scope} onChange={setScope} options={SCOPES.map(([scope, label]) => ({ value: scope, label }))} />}
     {!mobile && !wide && <select aria-label={t('提示词库范围')} value={memory.scope} onChange={event => setScope(event.target.value as PromptBrowseScope)}
-      className="appearance-input mobile-touch h-11 w-24 shrink-0 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700 md:h-10">
+      className="appearance-input mobile-touch h-10 w-24 shrink-0 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700">
       {SCOPES.map(([scope, label]) => <option key={scope} value={scope}>{t(label)}</option>)}
     </select>}
-    <ToolbarPopover label="筛选" title={t(memory.scope === 'saved' ? '筛选组合' : '筛选提示词库')} width={320} count={tags.length} iconOnly={filterIconOnly} iconTone={tags.length ? 'primary' : 'neutral'} className={`[&>button]:!h-11 md:[&>button]:!h-10 ${filterIconOnly ? '[&>button]:!w-11' : ''}`}>
+    <ToolbarPopover label="筛选" title={t(memory.scope === 'saved' ? '筛选组合' : '筛选提示词库')} width={320} count={tags.length}>
       {(close, mobile) => <>
       {mobile && <label className="block text-xs font-semibold text-gray-500">{t('提示词库范围')}<select aria-label={t('提示词库范围')} value={memory.scope} onChange={event => setScope(event.target.value as PromptBrowseScope)} className={TOOLBAR_FIELD_CLASS}>{SCOPES.map(([scope, label]) => <option key={scope} value={scope}>{t(label)}</option>)}</select></label>}
       <div className="mt-4 space-y-2">

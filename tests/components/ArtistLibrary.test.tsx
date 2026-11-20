@@ -1198,8 +1198,8 @@ it.each([390, 1280])('宽度%s顶栏仅一个画师库设置齿轮，两版模�
   expect(screen.queryByRole('button', { name: '抽卡设置' })).toBeNull();
   expect(screen.getAllByRole('button', { name: '画师库设置' })).toHaveLength(1);
   const gear = screen.getByRole('button', { name: '画师库设置' });
-  expect(within(gear).getByText('画师库设置')).toBeTruthy();
-  expect(gear.parentElement?.className).toContain('[&_button>span]:!inline');
+  expect(gear.getAttribute('data-control-kind')).toBe('icon');
+  expect(gear.getAttribute('data-tone')).toBe('ghost');
   expect(gear.parentElement).not.toBe(screen.getByRole('button', { name: '随机选画师' }).parentElement);
   for (const version of ['V4.5', 'V5']) {
     gear.focus(); fireEvent.click(gear);

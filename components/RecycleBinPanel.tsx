@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ListChecks, MoreHorizontal, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ListChecks, MoreVertical, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
 import { localHistory, type LocalHistoryRecycleBinItem } from '../services/localHistory';
 import { getLanguage, t, useLanguage } from '../services/i18n';
 import { EmptyState, InlineSpinner, PageSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
@@ -231,7 +231,7 @@ export const RecycleBinPanel: React.FC<Props> = ({ onBack, notify, archive, onRe
                 void onRetryMigration?.().finally(() => { busyRef.current = false; if (mounted.current) setBusy(false); });
             }, busy) : <>
                 <output aria-label={selectedLabel} title={selectedLabel} className="shrink-0 text-xs tabular-nums">{compactCount(selected.size)}</output>
-                {mobile ? <ToolbarPopover label="更多操作" title={t('更多操作')} icon={<MoreHorizontal />} iconOnly disabled={busy}>
+                {mobile ? <ToolbarPopover label="更多操作" title={t('更多操作')} icon={<MoreVertical />} iconOnly disabled={busy}>
                     {close => secondaryActions.map(({ label, Icon, disabled, action }) => <button key={label} type="button" disabled={busy || disabled}
                         className={`${TOOLBAR_MENU_CLASS} disabled:opacity-40`} onClick={() => { close(); action(); }}><Icon />{t(label)}</button>)}
                 </ToolbarPopover> : <div className="flex items-center gap-1">{secondaryActions.map(({ label, Icon, disabled, action }) =>

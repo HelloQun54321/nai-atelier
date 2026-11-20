@@ -1,14 +1,20 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useContext, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, X, MoreHorizontal } from 'lucide-react';
+import { ArrowLeft, X, MoreVertical } from 'lucide-react';
 import { useModalA11y } from './useModalA11y';
 import { ImageActivityContext } from './SmartImage';
 
 export const MobileIconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
-}> = ({ label, className = '', children, ...props }) => (
+  tone?: 'neutral' | 'primary';
+  active?: boolean;
+}> = ({ label, tone = 'neutral', active = false, className = '', children, ...props }) => (
   <button
+    data-appearance="control"
+    data-control-kind="icon"
+    data-tone={tone}
+    data-active={active || undefined}
     type="button"
     aria-label={t(label)}
     title={t(label)}
@@ -31,7 +37,7 @@ export type ToolbarOverflowItem = {
 
 /**
  * 手机顶栏的「更多」入口：顶栏只留搜索、主操作和它，其余低频操作收进底部弹层。
- * 每行 44px 且带文字，替代原先挤在顶栏里的纯图标按钮。
+ * 全站统一使用竖三点（MoreVertical），并接入全局外观控件材质。
  */
 export const MobileOverflowMenu: React.FC<{
   items: ToolbarOverflowItem[];
@@ -45,15 +51,19 @@ export const MobileOverflowMenu: React.FC<{
   return (
     <>
       <button
+        data-appearance="control"
+        data-control-kind="icon"
+        data-tone="neutral"
+        data-active={open || undefined}
         type="button"
         aria-label={t(label)}
         title={t(label)}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(true)}
-        className={`appearance-group mobile-touch inline-flex h-11 w-11 flex-none items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 ${className}`}
+        className={`mobile-touch inline-flex h-11 w-11 flex-none items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 ${className}`}
       >
-        <MoreHorizontal className="h-5 w-5" />
+        <MoreVertical className="h-5 w-5" />
       </button>
       {/* 顶栏带玻璃滤镜会创建定位包含块，弹层必须挂到 body，否则会被困在 56px 高的顶栏里。 */}
       {typeof document === 'undefined' ? null : createPortal(

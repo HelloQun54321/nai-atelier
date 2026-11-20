@@ -499,6 +499,13 @@ html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-them
     border-width: 1px;
     border-radius: var(--nai-panel-radius, 24px);
   }
+  html[data-theme-material='glass'] .workspace-sub-bar {
+    margin: 0 var(--nai-chrome-inset, 8px) var(--nai-chrome-inset, 8px);
+    border-width: 1px;
+    border-radius: var(--workspace-control-radius, 12px);
+    -webkit-backdrop-filter: blur(var(--nai-glass-blur, 18px)) saturate(var(--nai-glass-saturation, 125%));
+    backdrop-filter: blur(var(--nai-glass-blur, 18px)) saturate(var(--nai-glass-saturation, 125%));
+  }
   html[data-theme-material='glass'] :is(.settings-dialog, .operation-dialog) .workspace-command-bar { margin: 0; border-width: 0 0 1px; border-radius: 0; }
   /* 电脑侧栏导航项统一压矮，经典实色与液态玻璃疏密一致；触屏仍用下方 44px 底线。 */
   .app-sidebar nav button { height: max(34px, var(--nai-control-height, 36px)); }

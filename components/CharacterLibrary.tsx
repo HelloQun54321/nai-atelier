@@ -844,10 +844,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 <WorkspaceToolbar>
          {groups.toolbar}
          {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountBadge total={!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length} loaded={visibleCards.length} />}
-         <div className="relative min-w-0 flex-1">
-           <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="min-w-0 md:max-w-none!" className="pr-9" />
-           {!customSource && isLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
-         </div>
+         <ToolbarSearch value={searchTerm} loading={!customSource && isLoading} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
          <ToolbarPopover title={t("筛选角色")} count={Number(sort !== 'popular')}>
            <div className="space-y-3">
              <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("角色排序")} value={sort} onChange={event => { setSort(event.target.value as CharacterDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="popular">{searchTerm.trim() ? t("相关性优先 · 热度高") : t("热度从高到低")}</option><option value="least">{searchTerm.trim() ? t("相关性优先 · 热度低") : t("热度从低到高")}</option><option value="name-asc">{t("名称 A → Z")}</option><option value="name-desc">{t("名称 Z → A")}</option></select></label>
@@ -855,7 +852,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
            </div>
          </ToolbarPopover>
          <div className="flex flex-none items-center gap-2 max-md:hidden">
-           <ToolbarButton aria-label={gachaCards ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={!drawReady || isGachaLoading || drawAvailable <= 0} className="mobile-touch" tone="neutral">{isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaCards ? t("再抽一批") : t("随机抽卡")}</span></ToolbarButton>
+           <ToolbarButton aria-label={gachaCards ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={!drawReady || isGachaLoading || drawAvailable <= 0} className="mobile-touch" tone="neutral">{isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="toolbar-responsive-label hidden md:inline">{gachaCards ? t("再抽一批") : t("随机抽卡")}</span></ToolbarButton>
            <ToolbarPopover label={t("角色库设置")} title={t("角色库设置")} icon={<Settings2 />} iconOnly iconTone="ghost" open={mobileSettingsOpen} onOpenChange={setMobileSettingsOpen} width={320}>
              <label className="mobile-touch mb-3 flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={linkVariantFavorites} onChange={event => { const enabled = event.target.checked; if (enabled) { backfillAttempted.current.clear(); backfillFailed.current.clear(); setVariantBackfillError(''); } setLinkVariantFavorites(enabled); localStorage.setItem('nai_character_link_variant_favorites', String(enabled)); }} />{t('同角色变体联动收藏')}</label>
              <p className="mb-3 text-xs text-gray-500">{t('每个变体收藏一张代表封面')}</p>
@@ -868,7 +865,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              </div>
            </ToolbarPopover>
          </div>
-         <ToolbarButton tone="primary" aria-label={t("新建自定义角色")} onClick={() => setShowCreate(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("新建角色")}</span></ToolbarButton>
+         <ToolbarButton tone="primary" aria-label={t("新建自定义角色")} onClick={() => setShowCreate(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="toolbar-responsive-label hidden md:inline">{t("新建角色")}</span></ToolbarButton>
        {/* 手机顶栏只留搜索、筛选与新建；抽卡与角色库设置收进「更多」。 */}
           <MobileOverflowMenu className="md:hidden" items={[
             { label: gachaCards ? '再抽一批' : '随机抽卡', icon: <Dice5 />, onClick: () => void drawGacha(), disabled: !drawReady || isGachaLoading || drawAvailable <= 0 },

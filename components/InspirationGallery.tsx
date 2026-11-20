@@ -2,9 +2,10 @@ import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { t, useLanguage } from '../services/i18n';
 import React, { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { ArrowDownUp, Folder, GripVertical, ListChecks, Plus, Sparkles, Tags, Trash2, X } from 'lucide-react';
+import { Folder, GripVertical, ListChecks, Plus, Sparkles, Tags, Trash2, X } from 'lucide-react';
 import { db } from '../services/dbService';
-import { MobileOverflowMenu } from './MobileUI';
+import { MobileBottomSheet, MobileOverflowMenu } from './MobileUI';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { DirectoryTreeNavigation } from './DirectoryTreeNavigation';
 import { DirectoryNodeDialog } from './DirectoryNodeDialog';
 import { getDirectoryDescendantIds, getDirectoryPath } from '../services/directoryTree.mjs';
@@ -12,7 +13,7 @@ import { Inspiration, InspirationBoard, InspirationSourceType, PromptChain, User
 import { createUuid } from '../services/id';
 import { COLLECTION_SORT_LABELS, CollectionSort, collectionGroupKey, getCollectionBoardIds, getCollectionTags, groupCollectionItems, normalizeInspirationTags, rememberCollectionFolder, sortCollectionGroups, sourceLabel } from '../services/inspirationUtils';
 import { useConfirmDialog } from './ConfirmDialog';
-import { EmptyState, InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { SearchFilterChips } from './SearchFilterChips';
 import { ToolbarCountBadge } from './ToolbarCountBadge';
@@ -67,11 +68,20 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const [tagsError, setTagsError] = useState('');
   const navigationId = useId();
   const [navigationExpanded, setNavigationExpanded] = useState(() => { try { return localStorage.getItem('nai-collection-navigation-expanded') === 'true'; } catch { return false; } });
-  const toggleNavigation = () => setNavigationExpanded(previous => {
-    const next = !previous;
-    try { localStorage.setItem('nai-collection-navigation-expanded', String(next)); } catch { /* 本端偏好不可写时仍可收展。 */ }
-    return next;
-  });
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [mobileBulkTagOpen, setMobileBulkTagOpen] = useState(false);
+  const isMobileViewport = () => typeof window !== 'undefined' && window.innerWidth < 768;
+  const toggleNavigation = () => {
+    if (isMobileViewport()) {
+      setMobileNavigationOpen(previous => !previous);
+      return;
+    }
+    setNavigationExpanded(previous => {
+      const next = !previous;
+      try { localStorage.setItem('nai-collection-navigation-expanded', String(next)); } catch { /* 本端偏好不可写时仍可收展。 */ }
+      return next;
+    });
+  };
   const [collection, setCollection] = useState<SmartCollection>('all');
   const [boardId, setBoardId] = useState('');
   const [search, setSearch] = useState('');
@@ -386,7 +396,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     finally { deletingRef.current = false; setBusy(''); }
   }, [busy, items, currentUser, confirmAction, onRefresh, notify]);
 
-  // 收藏夹是"归属"不是"筛选"：选中文件夹不参与筛选计数，只在树与空状态里体现。
+  // 收藏夹是"归属"不是"筛选"：选中文件夹与排序偏好均不参与筛选计数，只在文件夹按钮高亮与空状态里体现。
   const categoryActive = collection !== 'all' || Boolean(boardId);
   const activeFilterCount = Number(Boolean(sourceFilter)) + tagFilter.length;
   const tagChips = tagFilter.map(tag => ({ key: tag, label: `#${tag}`, onRemove: () => setTagFilter(previous => previous.filter(value => value !== tag)) }));
@@ -418,22 +428,21 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         const target = siblings[siblings.findIndex(candidate => candidate.id === board.id) + (event.key === 'ArrowUp' ? -1 : 1)];
         if (target) void reorderBoard(board.id, target.id);
       }}><GripVertical className="h-3.5 w-3.5" /></button>;
-  const renderNavigation = () => <div data-collection-folders="true" className="min-h-0 md:flex md:h-full md:flex-col">
+  const renderNavigation = (onPicked?: () => void) => <div data-collection-folders="true" className="min-h-0 md:flex md:h-full md:flex-col">
     <DirectoryTreeNavigation label={t('收藏夹目录')} title={t('自定义收藏夹')} nodes={boards} expanded embedded preferenceKey="nai-collection-tree-branches" selectedId={boardId || (collection === 'unorganized' ? '' : '*')}
       selectedIds={sourceFilter ? [] : undefined} createLabel={t('新建收藏夹')} renameLabel={t('编辑收藏夹')} deleteLabel={t('删除收藏夹')}
       actionDisabled={boardsLoading || Boolean(boardsError)} counts={inspirationsData === null ? undefined : boardCounts} totalCount={inspirationsData === null ? undefined : counts.all} unclassifiedCount={inspirationsData === null ? undefined : counts.unorganized} allLabel={t('全部')} unclassifiedLabel={t('未整理')} disabled={Boolean(busy)}
-      onSelect={id => { setBoardId(id === '*' || !id ? '' : id); setCollection(id === '' ? 'unorganized' : 'all'); }}
+      onSelect={id => { setBoardId(id === '*' || !id ? '' : id); setCollection(id === '' ? 'unorganized' : 'all'); onPicked?.(); }}
       onMove={currentUser.role === 'guest' ? undefined : (id, parentId) => { void moveBoard(id, parentId); }}
       onCreate={currentUser.role === 'guest' ? undefined : parentId => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length], parentId })}
       onRename={currentUser.role === 'guest' ? undefined : id => { const board = boards.find(board => board.id === id); if (board) setBoardEditor({ id, name: board.name, color: board.color || '#6366f1', parentId: board.parentId || null }); }}
       onDelete={currentUser.role === 'guest' ? undefined : id => { const board = boards.find(board => board.id === id); if (board) void deleteBoard(board); }}
       nodeLeading={id => { const board = boards.find(board => board.id === id); return board ? renderBoardHandle(board) : undefined; }}
       nodeProps={id => { const board = boards.find(board => board.id === id); return board ? { ...folderDropProps(id), 'data-collection-folder': id, 'aria-label': t('选择收藏夹：{0}', [board.name]), 'aria-pressed': boardId === id, style: { '--collection-folder-color': board.color || '#6366f1' } as React.CSSProperties, className: `[&>svg]:[color:var(--collection-folder-color)] ${boardDrag?.id === id ? 'opacity-50' : ''} ${boardDrag?.targetId === id && boardDrag.id !== id ? 'ring-2 ring-indigo-500' : ''} ${dropTarget === id ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 dark:bg-indigo-950' : ''}` } : { 'aria-label': id === '*' ? `${t('全部')} ${counts.all}` : `${t('未整理')} ${counts.unorganized}`, 'aria-pressed': id === '*' ? collection === 'all' && !boardId && !sourceFilter : collection === 'unorganized' }; }}
-      header={<>{boardsLoading && !boards.length && <InlineSpinner label={t('正在读取…')} className="mb-2 text-xs" />}{boardsError && <p role="alert" className="mb-2 text-xs text-red-500">{t(boardsError)} <button type="button" onClick={() => void loadBoards()} className="underline">{t('重试')}</button></p>}<p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('来源')}</p><div className="mb-4 space-y-1">{availableSources.map(source => { const Icon = sourceIcon(source); return <CollectionButton key={source} active={sourceFilter === source} count={sourceCounts[source] || 0} icon={<Icon />} label={t(sourceLabel(source))} onClick={() => { setSourceFilter(source); setBoardId(''); setCollection('all'); }} />; })}</div></>} />
+      header={<>{boardsLoading && !boards.length && <InlineSpinner label={t('正在读取…')} className="mb-2 text-xs" />}{boardsError && <p role="alert" className="mb-2 text-xs text-red-500">{t(boardsError)} <button type="button" onClick={() => void loadBoards()} className="underline">{t('重试')}</button></p>}<p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('来源')}</p><div className="mb-4 space-y-1">{availableSources.map(source => { const Icon = sourceIcon(source); return <CollectionButton key={source} active={sourceFilter === source} count={sourceCounts[source] || 0} icon={<Icon />} label={t(sourceLabel(source))} onClick={() => { setSourceFilter(source); setBoardId(''); setCollection('all'); onPicked?.(); }} />; })}</div></>} />
   </div>;
-  const renderFilterControls = (mobile: boolean, onManageTags: () => void) => <div className="grid grid-cols-2 gap-3">
-    {mobile && <div className="col-span-2" role="group" aria-label={t('收藏筛选')}>{renderNavigation()}</div>}
-    {mobile && <label className="col-span-2 text-sm font-bold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('收藏排序')} value={sort} onChange={event => setSort(event.target.value as CollectionSort)} className={TOOLBAR_FIELD_CLASS}>{Object.entries(COLLECTION_SORT_LABELS).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label>}
+  const renderFilterControls = (_mobile: boolean, onManageTags: () => void) => <div className="grid grid-cols-2 gap-3">
+    <label className="col-span-2 text-xs font-semibold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('收藏排序')} value={sort} onChange={event => setSort(event.target.value as CollectionSort)} className={TOOLBAR_FIELD_CLASS}>{Object.entries(COLLECTION_SORT_LABELS).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label>
     <section className="col-span-2 min-w-0 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('标签（同时满足）')}</h3>
@@ -475,31 +484,33 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     notify={notify} onOpen={openGroup} onToggle={toggleSelected} onDelete={deleteCollected} onImageRatio={updateImageRatio}
     onDragStart={startCardDrag} onDragEnd={endCardDrag} />;
 
+  const navOpen = isMobileViewport() ? mobileNavigationOpen : navigationExpanded;
   return <div {...fileDropProps} data-collection-file-dropzone="true" className="workspace-canvas relative flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-950">
     <WorkspaceChrome>
 <WorkspaceToolbar>
-      <ToolbarButton data-agent-action="browse" aria-label={t(navigationExpanded ? '收起收藏分类' : '展开收藏分类')} aria-expanded={navigationExpanded} aria-controls={navigationId}
-        title={[t(navigationExpanded ? '收起收藏分类' : '展开收藏分类'), boardId ? boards.find(board => board.id === boardId)?.name || t('收藏夹') : sourceFilter ? t(sourceLabel(sourceFilter)) : t(collection === 'unorganized' ? '未整理' : '全部')].join(' · ')}
-        active={navigationExpanded || collection !== 'all' || Boolean(boardId) || Boolean(sourceFilter)} onClick={toggleNavigation} className="hidden md:inline-flex"><Folder /><span className="max-w-24 truncate">{boardId ? boards.find(board => board.id === boardId)?.name || t('收藏夹') : sourceFilter ? sourceLabel(sourceFilter) : collection === 'unorganized' ? t('未整理') : t('全部')}</span></ToolbarButton>
+      <ToolbarButton data-agent-action="browse" aria-label={t(navOpen ? '收起收藏分类' : '展开收藏分类')} aria-expanded={navOpen} aria-controls={navigationId}
+        title={[t(navOpen ? '收起收藏分类' : '展开收藏分类'), boardId ? boards.find(board => board.id === boardId)?.name || t('收藏夹') : sourceFilter ? t(sourceLabel(sourceFilter)) : t(collection === 'unorganized' ? '未整理' : '全部')].join(' · ')}
+        active={navOpen || collection !== 'all' || Boolean(boardId) || Boolean(sourceFilter)} onClick={toggleNavigation} className={`mobile-touch !px-2.5 md:!px-3 ${selectionMode ? 'hidden md:inline-flex' : ''}`}><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{boardId ? boards.find(board => board.id === boardId)?.name || t('收藏夹') : sourceFilter ? sourceLabel(sourceFilter) : collection === 'unorganized' ? t('未整理') : t('全部')}</span></ToolbarButton>
       {inspirationsData !== null && <ToolbarCountBadge total={groups.length} loaded={Math.min(visibleCount, groups.length)} />}
       {selectionMode ? <>
-        <div role="group" aria-label={t("收藏批量操作")} className="flex h-full min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden whitespace-nowrap">
+        <div role="group" aria-label={t("收藏批量操作")} className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-x-clip whitespace-nowrap">
           <b className="flex-none text-xs font-semibold tabular-nums text-gray-600 dark:text-gray-300" title={t("已选 {0} 个作品，共 {1} 页", [selectedWorks, selectedItems.length])}><span className="md:hidden">{selectedWorks}</span><span className="hidden md:inline">{t("已选 {0} 个作品，共 {1} 页", [selectedWorks, selectedItems.length])}</span></b>
           <ToolbarButton aria-label={t("全选筛选结果")} title={t("全选筛选结果")} disabled={Boolean(busy)} onClick={() => selectFiltered()} className="mobile-touch !px-2.5 max-md:hidden">{t("全选筛选结果")}</ToolbarButton>
           <ToolbarButton aria-label={t("反选筛选结果")} title={t("反选筛选结果")} disabled={Boolean(busy)} onClick={() => selectFiltered(true)} className="mobile-touch !px-2.5 max-md:hidden">{t("反选筛选结果")}</ToolbarButton>
           <ToolbarButton aria-label={t("清空选择")} title={t("清空选择")} disabled={Boolean(busy) || !selectedIds.size} onClick={() => setSelectedIds(new Set())} className="mobile-touch !px-2.5 max-md:hidden">{t("清空选择")}</ToolbarButton>
           {renderFolderPicker(selectedItems)}
           <div className="appearance-group flex flex-none overflow-hidden rounded-xl border border-gray-200 bg-white max-md:hidden dark:border-gray-800 dark:bg-gray-900"><CollectionTagInput aria-label={t("添加标签")} onPick={setBulkTag} disabled={Boolean(busy) || !selectedIds.size} value={bulkTag} suggestions={allTags.map(([tag]) => tag)} onChange={event => setBulkTag(event.target.value)} placeholder={t("添加标签")} className="mobile-touch h-10 w-28 bg-transparent px-2 text-xs outline-none" /><button type="button" disabled={Boolean(busy) || !selectedIds.size || !bulkTag.trim()} onClick={() => void addBulkTags()} className="mobile-touch border-l border-gray-200 px-2 text-xs font-bold text-indigo-600 disabled:opacity-40 dark:border-gray-800 dark:text-indigo-300">{t("添加")}</button></div>
-          <ToolbarButton tone="danger" aria-label={t("取消收藏")} title={t("取消收藏")} disabled={Boolean(busy) || !selectedIds.size} onClick={() => void deleteCollected(Array.from(selectedIds))} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span className="hidden md:inline">{t("取消收藏")}</span></ToolbarButton>
+          <ToolbarButton tone="danger" aria-label={t("取消收藏")} title={t("取消收藏")} disabled={Boolean(busy) || !selectedIds.size} onClick={() => void deleteCollected(Array.from(selectedIds))} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span className="toolbar-responsive-label hidden md:inline">{t("取消收藏")}</span></ToolbarButton>
         </div>
         <MobileOverflowMenu className="md:hidden" items={[
+          { label: '添加标签', icon: <Tags />, disabled: Boolean(busy) || !selectedIds.size, onClick: () => setMobileBulkTagOpen(true) },
           { label: '全选筛选结果', disabled: Boolean(busy), onClick: () => selectFiltered() },
           { label: '反选筛选结果', disabled: Boolean(busy), onClick: () => selectFiltered(true) },
           { label: '清空选择', disabled: Boolean(busy) || !selectedIds.size, onClick: () => setSelectedIds(new Set()) },
         ]} />
-        <ToolbarButton aria-label={t("退出多选")} title={t("退出多选")} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden md:inline">{t("退出多选")}</span></ToolbarButton>
+        <ToolbarButton aria-label={t("退出多选")} title={t("退出多选")} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="toolbar-responsive-label hidden md:inline">{t("退出多选")}</span></ToolbarButton>
       </> : <>
-      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="h-11 min-w-0 flex-1 md:h-10 md:max-w-none!" className="h-full! min-h-0!">
+      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="min-w-0 flex-1 md:max-w-none!">
         <SearchFilterChips chips={tagChips} expanded={showFilters} onMore={() => setShowFilters(true)} />
       </ToolbarSearch>
       <ToolbarPopover title={t("筛选收藏")} open={showFilters} onOpenChange={setShowFilters} count={activeFilterCount} width={360}>
@@ -508,10 +519,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
           flushSync(close); setTagManagerOpen(true);
         })}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); setBoardId(''); setCollection('all'); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 text-sm font-bold text-white">{t("确认")}</button></div></div>}
       </ToolbarPopover>
-      <ToolbarSelect label="收藏排序" icon={<ArrowDownUp />} value={sort} containerClassName="max-md:hidden" className="w-auto!" onChange={event => setSort(event.target.value as CollectionSort)}>{Object.entries(COLLECTION_SORT_LABELS).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</ToolbarSelect>
-      <ToolbarButton aria-label={t('批量选择图片')} title={t('批量选择图片')} disabled={Boolean(busy) || !filtered.some(item => editableIds.has(item.id))} onClick={() => { if (workGroup) closeGroup(); setSelectedIds(new Set()); setSelectionMode(true); }} className="mobile-touch !px-2.5 max-md:hidden md:!px-3"><ListChecks /><span className="hidden sm:inline">{t('多选')}</span></ToolbarButton>
-      <ToolbarButton tone="primary" aria-label={t("加入收藏库")} disabled={currentUser.role === 'guest' || Boolean(busy)} onClick={() => openImport()} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("加入收藏库")}</span></ToolbarButton>
-      {/* 手机顶栏保留搜索、筛选与「加入收藏库」，多选收进「更多」。 */}
+      <ToolbarButton aria-label={t('批量选择图片')} title={t('批量选择图片')} disabled={Boolean(busy) || !filtered.some(item => editableIds.has(item.id))} onClick={() => { if (workGroup) closeGroup(); setSelectedIds(new Set()); setSelectionMode(true); }} className="mobile-touch !px-2.5 max-md:hidden md:!px-3"><ListChecks /><span className="toolbar-responsive-label hidden md:inline">{t('多选')}</span></ToolbarButton>
+      <ToolbarButton tone="primary" aria-label={t("加入收藏库")} disabled={currentUser.role === 'guest' || Boolean(busy)} onClick={() => openImport()} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="toolbar-responsive-label hidden md:inline">{t("加入收藏库")}</span></ToolbarButton>
+      {/* 手机顶栏保留文件夹、搜索、筛选与「加入收藏库」，多选收进「更多」。 */}
       <MobileOverflowMenu className="md:hidden" items={[
         { label: '批量选择图片', icon: <ListChecks />, disabled: Boolean(busy) || !filtered.some(item => editableIds.has(item.id)), onClick: () => { if (workGroup) closeGroup(); setSelectedIds(new Set()); setSelectionMode(true); } },
       ]} />
@@ -519,6 +529,17 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     </WorkspaceToolbar>
 
     </WorkspaceChrome>
+    <ImagePreviewPortal>
+      <MobileBottomSheet open={mobileNavigationOpen} title={t('收藏分类')} onClose={() => setMobileNavigationOpen(false)}>
+        {renderNavigation()}
+      </MobileBottomSheet>
+      <MobileBottomSheet open={mobileBulkTagOpen} title={t('批量添加标签')} onClose={() => setMobileBulkTagOpen(false)}>
+        <div className="space-y-3">
+          <CollectionTagInput aria-label={t("添加标签")} onPick={setBulkTag} disabled={Boolean(busy) || !selectedIds.size} value={bulkTag} suggestions={allTags.map(([tag]) => tag)} onChange={event => setBulkTag(event.target.value)} placeholder={t("输入或选择标签，多个用逗号分隔")} className="mobile-touch h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm outline-none dark:border-gray-700 dark:bg-gray-900" />
+          <ToolbarButton tone="primary" className="w-full" disabled={Boolean(busy) || !selectedIds.size || !bulkTag.trim()} onClick={async () => { await addBulkTags(); setMobileBulkTagOpen(false); }}>{t('添加')}</ToolbarButton>
+        </div>
+      </MobileBottomSheet>
+    </ImagePreviewPortal>
     <div data-workspace-body className="flex min-h-0 flex-1">
       <aside id={navigationId} hidden={!navigationExpanded} aria-label={t('收藏分类')} className={navigationExpanded ? "workspace-fixed-pane workspace-category-navigation appearance-panel min-h-0 hidden w-52 flex-none overflow-hidden border-r border-gray-200 p-3 dark:border-gray-800 md:flex md:flex-col" : "hidden"}>
         {navigationExpanded && renderNavigation()}

@@ -2207,7 +2207,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 onSectionedPromptChange={onSectionedPromptChange && activeGenerationMode === 'text-to-image' ? turnSectioned : undefined}
             />
 
-            {activeGenerationMode === 'text-to-image' && artistSampleTarget && <div className="mb-2 flex min-w-0 items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50/80 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-200">
+            {activeGenerationMode === 'text-to-image' && artistSampleTarget && <div className="workspace-sub-bar flex min-w-0 items-center justify-between gap-3 border-b border-sky-200 bg-sky-50/80 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-200 md:px-5">
                 <span className="min-w-0 truncate" title={artistSampleTarget.tag}>{t('补充自建样张：{0} · {1}', [artistSampleTarget.tag, artistSampleTarget.pack === 'v45' ? 'V4.5' : 'V5'])}</span>
                 <button type="button" className="mobile-touch shrink-0 underline" onClick={() => setArtistSampleTarget(null)}>{t('结束补图')}</button>
             </div>}

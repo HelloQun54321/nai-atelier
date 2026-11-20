@@ -163,7 +163,7 @@ export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ child
       aria-label={collapsed ? t('展开顶栏') : t('收起顶栏')}
       title={collapsed ? t('展开顶栏') : t('收起顶栏')}
       onClick={() => toggleTopbarCollapsed()}
-      className={`group ${collapsed ? 'absolute left-0 top-0' : 'self-start'} z-40 flex h-11 min-h-11 w-11 min-w-11 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-[var(--nai-toolbar-surface)] px-2 text-micro font-semibold leading-none text-gray-600 shadow-sm backdrop-blur-[18px] backdrop-saturate-125 transition-all duration-150 max-lg:hidden hover:border-indigo-500 hover:bg-indigo-600 hover:text-white focus-visible:border-indigo-500 focus-visible:bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 dark:border-gray-800/80 dark:text-gray-100 dark:hover:border-indigo-400 dark:hover:bg-indigo-600 md:absolute md:left-1/2 md:top-0 md:h-5 md:min-h-0 md:w-auto md:-translate-x-1/2`}
+      className={`group ${collapsed ? 'absolute left-0 top-0' : 'self-start'} z-40 flex h-11 min-h-11 w-11 min-w-11 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-[var(--nai-toolbar-surface)] px-2 text-micro font-semibold leading-none text-gray-600 shadow-sm backdrop-blur-[18px] backdrop-saturate-125 transition-all duration-150 max-lg:hidden hover:border-indigo-500 hover:bg-indigo-600 hover:text-white focus-visible:border-indigo-500 focus-visible:bg-indigo-700 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 dark:border-gray-800/80 dark:text-gray-100 dark:hover:border-indigo-400 dark:hover:bg-indigo-600 md:absolute md:left-1/2 md:top-0 md:h-5 md:min-h-0 md:w-auto md:-translate-x-1/2`}
     >
       {/* 矢量箭头：顶栏展开时指上（收起），收起后指下（展开）；不用 CSS border 三角以免叠影。 */}
       {collapsed
@@ -191,7 +191,8 @@ export const WorkspaceToolbar: React.FC<{
 
 export const ToolbarSearch: React.FC<React.InputHTMLAttributes<HTMLInputElement> & {
   containerClassName?: string;
-}> = ({ containerClassName = '', className = '', type = 'search', children, ...props }) => {
+  loading?: boolean;
+}> = ({ containerClassName = '', className = '', type = 'search', loading = false, children, ...props }) => {
   // 容器一律用 div：外观预设按元素类型区分 .appearance-group（div 去掉边框、label 变透明），
   // 带筛选标签的页面之前用 div、其它页面用 label，同一主题下边框和材质都对不上。
   // 点击框内空白仍聚焦输入，替代 label 的隐式聚焦；点筛选标签和按钮时不抢焦点。
@@ -215,8 +216,14 @@ export const ToolbarSearch: React.FC<React.InputHTMLAttributes<HTMLInputElement>
       {...props}
       className={`h-10 min-w-0 flex-1 border-0 bg-transparent px-2 text-sm text-gray-900 outline-none transition dark:bg-transparent dark:text-gray-100 ${className}`}
     />
+    {loading && <span role="status" aria-label={t('加载中…')} className="pointer-events-none flex flex-none items-center pr-2 text-gray-400"><LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" /></span>}
   </div>;
 };
+
+/** 顶栏功能分组分隔竖线：仅用于需要明确区分职责组与防误触隔离的顶栏（如编辑器右侧动作排）。 */
+export const ToolbarDivider: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <span aria-hidden="true" className={`mx-0.5 h-5 w-px flex-none bg-gray-200 dark:bg-gray-700/80 ${className}`} />
+);
 
 const ICON_CONTROL_CLASS = 'inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl border outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0';
 const ICON_NEUTRAL_CLASS = 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-white';
@@ -229,7 +236,8 @@ export const IconLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement> & 
 export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
   tone?: 'neutral' | 'primary' | 'save' | 'edit' | 'danger' | 'favorite' | 'ghost';
-}> = ({ label, tone = 'neutral', className = '', children, ...props }) => {
+  active?: boolean;
+}> = ({ label, tone = 'neutral', active = false, className = '', children, ...props }) => {
   useLanguage();
   const toneClass = tone === 'primary'
     ? 'border-indigo-700 bg-indigo-700 text-white shadow-md shadow-indigo-500/15 hover:border-indigo-600 hover:bg-indigo-600 dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:shadow-lg dark:shadow-indigo-950/40 dark:hover:from-indigo-500 dark:hover:to-violet-600'
@@ -245,9 +253,11 @@ export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
       ? 'border-rose-500 bg-rose-500 text-white hover:bg-rose-400 dark:border-rose-500 dark:bg-rose-500 dark:text-white'
     : tone === 'danger'
       ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300'
-      : ICON_NEUTRAL_CLASS;
+      : active
+        ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/60'
+        : ICON_NEUTRAL_CLASS;
   return (
-    <button data-appearance="control" data-control-kind="icon" data-tone={tone} type="button" aria-label={t(label)} title={t(label)} className={`${ICON_CONTROL_CLASS} ${toneClass} ${className}`} {...props}>
+    <button data-appearance="control" data-control-kind="icon" data-tone={tone} data-active={active || undefined} type="button" aria-label={t(label)} title={t(label)} className={`${ICON_CONTROL_CLASS} ${toneClass} ${className}`} {...props}>
       {children}
     </button>
   );
@@ -336,6 +346,8 @@ export interface SegmentedControlProps<T extends string = string> {
   className?: string;
   size?: 'sm' | 'md';
   ariaLabel?: string;
+  /** tabs：用于关联面板的页签切换；buttons：用于粒度/版本等互斥筛选切换组。 */
+  mode?: 'tabs' | 'buttons';
 }
 
 export const SegmentedControl = <T extends string = string>({
@@ -345,25 +357,37 @@ export const SegmentedControl = <T extends string = string>({
   className = '',
   size = 'md',
   ariaLabel,
+  mode = 'tabs',
 }: SegmentedControlProps<T>) => (
   <div
-    role="tablist"
+    role={mode === 'tabs' ? 'tablist' : 'group'}
     aria-label={ariaLabel}
-    className={`inline-flex items-center rounded-xl border border-gray-200/60 bg-gray-100/90 p-1 dark:border-gray-800/80 dark:bg-gray-900/90 ${className}`}
+    className={`appearance-segmented inline-flex flex-none items-center gap-0.5 rounded-xl border border-gray-200/60 bg-gray-100/90 p-0.5 dark:border-gray-800/80 dark:bg-gray-900/90 ${className}`}
   >
-    {options.map(option => {
+    {options.map((option, index) => {
       const active = option.value === value;
-      const sizeClass = size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-xs';
+      const sizeClass = size === 'sm' ? 'h-8 px-2 text-xs' : 'h-9 px-3 text-xs';
       return (
         <button
           key={option.value}
           data-appearance="control"
           type="button"
-          role="tab"
-          aria-selected={active}
+          role={mode === 'tabs' ? 'tab' : undefined}
+          aria-selected={mode === 'tabs' ? active : undefined}
+          aria-pressed={mode === 'buttons' ? active : undefined}
+          tabIndex={mode === 'tabs' ? (active ? 0 : -1) : undefined}
           title={option.title}
           onClick={() => onChange(option.value)}
-          className={`flex items-center gap-1.5 rounded-lg font-bold transition-colors select-none whitespace-nowrap ${sizeClass} ${
+          onKeyDown={mode === 'tabs' ? event => {
+            const next = event.key === 'ArrowRight' ? (index + 1) % options.length
+              : event.key === 'ArrowLeft' ? (index + options.length - 1) % options.length
+                : event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : -1;
+            if (next < 0) return;
+            event.preventDefault();
+            onChange(options[next].value);
+            event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+          } : undefined}
+          className={`appearance-segmented mobile-touch flex items-center justify-center gap-1.5 rounded-lg font-bold transition-colors select-none whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${sizeClass} ${
             active
               ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300'
               : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'

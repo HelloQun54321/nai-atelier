@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useRef, useState } from 'react';
-import { CalendarDays, ChevronDown, Shuffle, SlidersHorizontal } from 'lucide-react';
+import { Filter, Shuffle } from 'lucide-react';
 import { HISTORY_SORT_LABELS, type HistoryBrowseOrder, type HistoryBrowseQuery, type HistorySort } from '../services/historyBrowse';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
 import { createUuid } from '../services/id';
@@ -120,9 +120,9 @@ export const HistoryBrowseControls: React.FC<Props> = ({ query, options, mobile,
   </form>;
   return <div className="history-browse-controls">
     <div ref={anchor}>
-      <ToolbarButton aria-label={t("筛选{0}", [filterCount ? ` ${filterCount}` : ''])} aria-expanded={open} aria-haspopup="dialog" title={t("筛选历史{0}", [filterCount ? ` · ${filterCount}` : ''])} onClick={openPanel} active={filterCount > 0}>
-        <SlidersHorizontal /><span className="history-button-label">{t("筛选")}</span>
-        {filterCount > 0 && <span className="text-xs tabular-nums">{filterCount}</span>}<ChevronDown className="history-filter-chevron" />
+      <ToolbarButton aria-label={t("筛选{0}", [filterCount ? ` ${filterCount}` : ''])} aria-expanded={open} aria-haspopup="dialog" title={t("筛选历史{0}", [filterCount ? ` · ${filterCount}` : ''])} onClick={openPanel} active={filterCount > 0} className="mobile-touch !px-2.5 md:!px-3">
+        <Filter /><span className="history-button-label">{t("筛选")}</span>
+        {filterCount > 0 && <span className="text-xs tabular-nums">{filterCount}</span>}
       </ToolbarButton>
     </div>
     {open && !mobile && <AnchoredToolbarPopover anchorRef={anchor} title={t("筛选")} width={380} onClose={() => setOpen(false)}>{form}</AnchoredToolbarPopover>}

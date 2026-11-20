@@ -1,7 +1,7 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { flushSync } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, CopyPlus, Folder, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CopyPlus, Folder, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { MobileBottomSheet, MobileOverflowMenu } from './MobileUI';
 import { t, useLanguage } from '../services/i18n';
@@ -141,6 +141,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   // 画风记录：桌面用可折叠左栏（与其他资料页同构），手机用底部面板承载同一份列表。
   const [recordsExpanded, setRecordsExpanded] = useState(() => { try { return localStorage.getItem('nai-roll-records-expanded') === 'true'; } catch { return false; } });
   const [mobileRecordMenuOpen, setMobileRecordMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const toggleRecords = () => setRecordsExpanded(current => {
     const next = !current;
     try { localStorage.setItem('nai-roll-records-expanded', String(next)); } catch { /* 本端偏好不可写时仍可展开。 */ }
@@ -878,16 +879,16 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     <WorkspaceChrome>
 <WorkspaceToolbar>
       {selecting ? <>
-        <div role="group" aria-label={t('候选批量操作')} className="flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap">
-          <b aria-live="polite" className="shrink-0 text-xs tabular-nums text-gray-600 dark:text-gray-300" title={savingProgress ? t('正在保存 {0}/{1}', [savingProgress.completed, savingProgress.total]) : t('已选 {0} 个候选', [chosen.length])}>{savingProgress ? <><span className="md:hidden">{savingProgress.completed}/{savingProgress.total}</span><span className="hidden md:inline">{t('正在保存 {0}/{1}', [savingProgress.completed, savingProgress.total])}</span></> : <><span className="md:hidden">{chosen.length}</span><span className="hidden md:inline">{t('已选 {0} 个候选', [chosen.length])}</span></>}</b>
-          <ToolbarButton tone="primary" aria-label={t('保存所选')} title={t('保存所选')} disabled={frozen || !historyReady || !saveable.length} onClick={() => saveChosen()} className="!px-2.5"><Save /><span className="hidden md:inline">{t('保存所选')}</span></ToolbarButton>
-          {!!selectedPending.length && <ToolbarButton data-agent-action="business" aria-label={`${t('生成所选')} · ${Math.min(selectedPending.length, continuousGenerationEnabled ? 24 : 1)}`} title={!continuousGenerationEnabled && selectedPending.length > 1 ? t('连续生成已关闭，本次只生成 1 张，剩余 {0} 张', [selectedPending.length]) : t('生成所选')} disabled={frozen || working || !historyReady} onClick={() => generatePending(selectedPending.map(candidate => candidate.id))} className="!px-2.5"><ImagePlus /><span className="hidden md:inline">{t('生成所选')} · {Math.min(selectedPending.length, continuousGenerationEnabled ? 24 : 1)}</span><span className="md:hidden tabular-nums">{Math.min(selectedPending.length, continuousGenerationEnabled ? 24 : 1)}</span></ToolbarButton>}
-          <ToolbarButton tone="danger" aria-label={t('删除所选')} title={t('删除所选')} disabled={frozen || !chosen.length} onClick={() => deleteCandidates(chosen.map(candidate => candidate.id))} className="!px-2.5"><Trash2 /><span className="hidden md:inline">{t('删除所选')}</span></ToolbarButton>
+        <div role="group" aria-label={t('候选批量操作')} className="flex min-w-0 flex-1 items-center gap-1.5 whitespace-nowrap">
+          <b aria-live="polite" className="shrink-0 text-xs font-semibold tabular-nums text-gray-600 dark:text-gray-300" title={savingProgress ? t('正在保存 {0}/{1}', [savingProgress.completed, savingProgress.total]) : t('已选 {0} 个候选', [chosen.length])}>{savingProgress ? <><span className="md:hidden">{savingProgress.completed}/{savingProgress.total}</span><span className="hidden md:inline">{t('正在保存 {0}/{1}', [savingProgress.completed, savingProgress.total])}</span></> : <><span className="md:hidden">{chosen.length}</span><span className="hidden md:inline">{t('已选 {0} 个候选', [chosen.length])}</span></>}</b>
           <ToolbarButton aria-label={t('全选筛选结果')} title={t('全选筛选结果')} disabled={frozen} onClick={() => setSelectedIds(new Set(visible.map(candidate => candidate.id)))} className="!px-2.5 max-md:hidden">{t('全选筛选结果')}</ToolbarButton>
           <ToolbarButton aria-label={t('反选筛选结果')} title={t('反选筛选结果')} disabled={frozen} onClick={() => setSelectedIds(new Set(visible.filter(candidate => !selectedIds.has(candidate.id)).map(candidate => candidate.id)))} className="!px-2.5 max-md:hidden">{t('反选筛选结果')}</ToolbarButton>
           <ToolbarButton aria-label={t('选择已收藏图片')} title={t('选择已收藏图片')} disabled={frozen || !visibleFavorited.length} onClick={() => setSelectedIds(new Set(visibleFavorited.map(candidate => candidate.id)))} className="!px-2.5 max-md:hidden">{t('选择已收藏图片')}</ToolbarButton>
           <ToolbarButton aria-label={t('选择未收藏图片')} title={t('选择未收藏图片')} disabled={frozen || !visibleUnfavorited.length} onClick={() => setSelectedIds(new Set(visibleUnfavorited.map(candidate => candidate.id)))} className="!px-2.5 max-md:hidden">{t('选择未收藏图片')}</ToolbarButton>
           <ToolbarButton aria-label={t('清空选择')} title={t('清空选择')} disabled={frozen || !chosen.length} onClick={() => setSelectedIds(new Set())} className="!px-2.5 max-md:hidden">{t('清空选择')}</ToolbarButton>
+          <ToolbarButton tone="primary" aria-label={t('保存所选')} title={t('保存所选')} disabled={frozen || !historyReady || !saveable.length} onClick={() => saveChosen()} className="!px-2.5"><Save /><span className="toolbar-responsive-label hidden md:inline">{t('保存所选')}</span></ToolbarButton>
+          {!!selectedPending.length && <ToolbarButton data-agent-action="business" aria-label={`${t('生成所选')} · ${Math.min(selectedPending.length, continuousGenerationEnabled ? 24 : 1)}`} title={!continuousGenerationEnabled && selectedPending.length > 1 ? t('连续生成已关闭，本次只生成 1 张，剩余 {0} 张', [selectedPending.length]) : t('生成所选')} disabled={frozen || working || !historyReady} onClick={() => generatePending(selectedPending.map(candidate => candidate.id))} className="!px-2.5"><ImagePlus /><span className="toolbar-responsive-label hidden md:inline">{t('生成所选')} · {Math.min(selectedPending.length, continuousGenerationEnabled ? 24 : 1)}</span><span className="toolbar-responsive-compact md:hidden tabular-nums">{Math.min(selectedPending.length, continuousGenerationEnabled ? 24 : 1)}</span></ToolbarButton>}
+          <ToolbarButton tone="danger" aria-label={t('删除所选')} title={t('删除所选')} disabled={frozen || !chosen.length} onClick={() => deleteCandidates(chosen.map(candidate => candidate.id))} className="ml-auto !px-2.5"><Trash2 /><span className="toolbar-responsive-label hidden md:inline">{t('删除所选')}</span></ToolbarButton>
         </div>
         <MobileOverflowMenu className="md:hidden" items={[
           { label: '全选筛选结果', disabled: frozen, onClick: () => setSelectedIds(new Set(visible.map(candidate => candidate.id))) },
@@ -896,25 +897,22 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           { label: '选择未收藏图片', disabled: frozen || !visibleUnfavorited.length, onClick: () => setSelectedIds(new Set(visibleUnfavorited.map(candidate => candidate.id))) },
           { label: '清空选择', disabled: frozen || !chosen.length, onClick: () => setSelectedIds(new Set()) },
         ]} />
-        <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={frozen} onClick={() => { setSelecting(false); setSelectedIds(new Set()); }} className="!px-2.5"><X /><span className="hidden md:inline">{t('退出多选')}</span></ToolbarButton>
-      </> : <div data-roll-toolbar-scroll="true" className="flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-        {/* 左侧：画风记录只有这一个入口——桌面按钮开合左栏（收起时只显示当前记录名），手机打开同一份列表的底部面板。 */}
-        <div className="appearance-group flex shrink-0 items-center gap-1 rounded-xl border border-gray-200/80 bg-gray-100/60 p-0.5 dark:border-gray-800 dark:bg-gray-800/40">
-          {isMobile
-            ? <ToolbarButton className="!h-10 !w-10 !min-w-10 !gap-0 !px-0 focus-visible:ring-inset" aria-label={t('切换画风记录')} title={[t('切换画风记录'), currentRecordName || t('新画风记录')].join(' · ')} aria-haspopup="dialog" aria-expanded={mobileRecordMenuOpen} disabled={frozen || preparing} onClick={() => setMobileRecordMenuOpen(true)}>
-              <Folder className="opacity-80" />
-            </ToolbarButton>
-            : /* 记录切换只留左栏一处：顶栏这个按钮就是开关，不再另开一个下拉，避免两套并列。 */ <ToolbarButton data-active="true" className="!h-8 !min-w-0 !max-w-32 !justify-start !gap-1.5 !border-transparent !bg-transparent !px-2 focus-visible:ring-inset sm:!max-w-48 lg:!max-w-72" aria-label={t('切换画风记录')} aria-expanded={recordsExpanded} disabled={frozen || preparing} onClick={toggleRecords}>
-              <Folder className="opacity-80" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
-              <ChevronDown className={`opacity-60 transition-transform ${recordsExpanded ? 'rotate-180' : ''}`} />
-            </ToolbarButton>}
-        </div>
+        <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={frozen} onClick={() => { setSelecting(false); setSelectedIds(new Set()); }} className="!px-2.5"><X /><span className="toolbar-responsive-label hidden md:inline">{t('退出多选')}</span></ToolbarButton>
+      </> : <>
+        {/* 左侧：画风记录入口，与其他列表页的文件夹按钮等高同款；桌面开合左栏，手机打开底部面板。 */}
+        {isMobile
+          ? <ToolbarButton className="mobile-touch !px-2.5" aria-label={t('切换画风记录')} title={[t('切换画风记录'), currentRecordName || t('新画风记录')].join(' · ')} aria-haspopup="dialog" aria-expanded={mobileRecordMenuOpen} active={mobileRecordMenuOpen} disabled={frozen || preparing} onClick={() => setMobileRecordMenuOpen(true)}>
+            <Folder className="h-4 w-4" />
+          </ToolbarButton>
+          : <ToolbarButton active={recordsExpanded} className="!min-w-0 !max-w-36 !justify-start !px-3 sm:!max-w-48 lg:!max-w-64" aria-label={t('切换画风记录')} title={[t('切换画风记录'), currentRecordName || t('新画风记录')].join(' · ')} aria-expanded={recordsExpanded} disabled={frozen || preparing} onClick={toggleRecords}>
+            <Folder className="h-4 w-4" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
+          </ToolbarButton>}
         {experiment && <ToolbarCountBadge total={round && roundPending.length > 0 ? round.candidateIds.length : visible.length} loaded={round && roundPending.length > 0 ? round.candidateIds.filter(id => images.has(id)).length : undefined} />}
 
         {/* 中间：搜索吃剩余宽度，手机不设保底以免挤出右侧主操作。 */}
-        <ToolbarSearch value={query} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师、中文名或编号')} placeholder={t('搜索画师、中文名或编号')} containerClassName="min-w-0 flex-1 !max-w-none md:!max-w-none mx-0.5 md:mx-2" disabled={!experiment} />
+        <ToolbarSearch value={query} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师、中文名或编号')} placeholder={t('搜索画师、中文名或编号')} containerClassName="min-w-0 flex-1 !max-w-none md:!max-w-none" disabled={!experiment} />
 
-        {/* 右侧集群：筛选贴搜索，主 CTA 在滚动区外。 */}
+        {/* 右侧集群：筛选、多选、主 CTA、设置与更多。 */}
         <div className="flex shrink-0 items-center gap-1.5 md:gap-2">
           <ToolbarPopover title={t('筛选与排序')} label={t('筛选')} count={Number(filter !== 'all') + Number(Boolean(roundId)) + Number(sort !== 'new')} disabled={!experiment}>
             {close => <div className="space-y-4">
@@ -945,16 +943,11 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
             </div>}
           </ToolbarPopover>
 
-          <ToolbarButton className="max-md:hidden" aria-label={t('批量选择候选')} title={t('多选')} disabled={frozen || !experiment} onClick={() => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); }}><ListChecks /><span className="hidden xl:inline">{t('多选')}</span></ToolbarButton>
-        </div>
-      </div>}
-
-      {/* 主 CTA 固定在左侧区外，窄屏始终可见；张数与费用在确认框里给出。 */}
-      {!selecting && <div className="ml-1 flex shrink-0 items-center gap-1.5 md:gap-2">
-        {!working && roundPending.length > 0 && <ToolbarButton className="max-md:hidden" aria-label={t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])} title={t('本轮还有 {0} 张没出，点击后确认费用', [roundPending.length])} data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus /><span className="hidden xl:inline">{t(continuousGenerationEnabled ? '补齐剩余 {0} 张' : '生成本轮 1 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])}</span><span className="xl:hidden tabular-nums">{continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1}</span></ToolbarButton>}
-        <div className="flex shrink-0 items-center gap-2">
-          <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} title={t('本轮将生成 {0} 张，点击后确认费用', [count])} data-agent-action="business" tone="primary" disabled={!canStart} className="!h-10 !w-10 !min-w-10 !gap-0 !px-0 font-bold shadow-sm transition-transform active:scale-95 md:!h-10 md:!w-auto md:!min-w-0 md:!gap-2 md:!px-3" onClick={() => runRound()}><Dice5 className="h-4 w-4" /><span className="hidden md:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
-          <ToolbarPopover label={t('设置')} title={t('设置')} icon={<Settings2 />} iconOnly iconTone="ghost" disabled={frozen || working} width={360} onOpenChange={open => { if (open) void loadQueueInterval(); }}>
+          <ToolbarButton className="max-md:hidden" aria-label={t('批量选择候选')} title={t('多选')} disabled={frozen || !experiment} onClick={() => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); }}><ListChecks /><span className="toolbar-responsive-label hidden xl:inline">{t('多选')}</span></ToolbarButton>
+          {!working && roundPending.length > 0 && <ToolbarButton className="max-md:hidden" aria-label={t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])} title={t('本轮还有 {0} 张没出，点击后确认费用', [roundPending.length])} data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus /><span className="toolbar-responsive-label hidden xl:inline">{t(continuousGenerationEnabled ? '补齐剩余 {0} 张' : '生成本轮 1 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])}</span><span className="toolbar-responsive-compact xl:hidden tabular-nums">{continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1}</span></ToolbarButton>}
+          <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} title={t('本轮将生成 {0} 张，点击后确认费用', [count])} data-agent-action="business" tone="primary" disabled={!canStart} className="mobile-touch !px-2.5 font-bold shadow-sm transition-transform active:scale-95 md:!px-3" onClick={() => runRound()}><Dice5 className="h-4 w-4" /><span className="toolbar-responsive-label hidden md:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
+          <div className="flex flex-none items-center max-md:hidden">
+          <ToolbarPopover label={t('设置')} title={t('设置')} icon={<Settings2 />} iconOnly iconTone="ghost" disabled={frozen || working} width={360} open={settingsOpen} onOpenChange={open => { setSettingsOpen(open); if (open) void loadQueueInterval(); }}>
             {close => <div className="space-y-4">
               <section className="space-y-3">
                 <p className="text-micro font-bold text-gray-500 dark:text-gray-400">{t('本轮')}</p>
@@ -992,14 +985,16 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               </section>
             </div>}
           </ToolbarPopover>
-          {/* 手机顶栏只留画风记录、搜索、筛选与 Roll；记录面板由记录名按钮直接打开，多选与提取画师收进「更多」。 */}
+          </div>
+          {/* 手机顶栏只留画风记录、搜索、筛选、Roll 与更多；设置、多选与提取收进「更多」。 */}
           <MobileOverflowMenu className="md:hidden" items={[
+            { label: '设置', icon: <Settings2 />, disabled: frozen || working, onClick: () => { setSettingsOpen(true); void loadQueueInterval(); } },
             ...(roundPending.length > 0 ? [{ label: t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1]), icon: <ImagePlus />, disabled: frozen || working || !historyReady, onClick: () => generatePending() }] : []),
             { label: '批量选择候选', icon: <ListChecks />, disabled: frozen || !experiment, onClick: () => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); } },
             { label: chainArtistSource ? `已选 ${chainArtistSource.chainIds.length} 串` : '从风格串提取', icon: <Layers />, disabled: frozen || working || libraryLoading, onClick: () => setChainTarget(experimentId) },
           ]} />
         </div>
-      </div>}
+      </>}
     </WorkspaceToolbar>
     </WorkspaceChrome>
     <div className="flex min-h-0 min-w-0 flex-1">

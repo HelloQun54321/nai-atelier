@@ -11,7 +11,7 @@ export function WisdomSyncToolbar({ sync, filteredIds }: { sync: WisdomSyncSelec
   const verified = sync.lastSnapshotAt ? new Date(sync.lastSnapshotAt).toLocaleString(getLanguage(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   const canSelectFiltered = filteredIds.some(id => sync.available.has(id) && !sync.selected.has(id));
   const canClearFiltered = filteredIds.some(id => sync.selected.has(id));
-  return <div className="appearance-group flex-none border-b border-gray-200 bg-white/80 px-3 py-1.5 dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
+  return <div className="workspace-sub-bar appearance-group flex-none border-b border-gray-200 bg-white/80 px-3 py-1.5 dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
     {/* 桌面按内容连续排布；窄屏才换行，不用占位将操作推到两端。 */}
     <div role="toolbar" aria-label={t("智慧姬同步操作")} className="flex flex-wrap items-center gap-x-3 gap-y-2">
       <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto">

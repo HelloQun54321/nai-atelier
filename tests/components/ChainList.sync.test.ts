@@ -117,7 +117,7 @@ it.each([390, 1280])('宽度 %s：标签管理紧邻筛选标签，先关闭筛�
   vi.stubGlobal('innerWidth', width);
   vi.stubGlobal('matchMedia', () => ({ matches: width < 1280, addEventListener() {}, removeEventListener() {} }));
   render(React.createElement(ChainList, { ...props(), chains: [{ ...chains[0], tags: ['我的分类', '待实测', '__角色目录__'] }] }));
-  const trigger = screen.getByRole('button', { name: width < 768 ? '筛选与排序' : '筛选' });
+  const trigger = screen.getByRole('button', { name: '筛选' });
   trigger.focus(); fireEvent.click(trigger);
   const filter = screen.getByRole('dialog', { name: '筛选与排序' });
   const heading = within(filter).getByText('自定义标签');
@@ -208,7 +208,7 @@ it.each([390, 1280])('宽度 %s：直达多选进入原位批量选择，四个�
   await beginBulkSelection();
   expect(view.container.querySelector('header')).toBe(header);
   expect([...view.container.querySelectorAll('.mobile-gallery-frame')]).toEqual(frames);
-  expect(within(header).getByRole('group', { name: '风格串批量操作' }).classList.contains('overflow-hidden')).toBe(true);
+  expect(within(header).getByRole('group', { name: '风格串批量操作' }).classList.contains('overflow-x-clip')).toBe(true);
   expect(within(header).getByRole('group', { name: '风格串批量操作' }).classList.contains('overflow-x-auto')).toBe(false);
   expect(screen.queryByPlaceholderText('搜索我的风格串')).toBeNull();
   for (const item of chains) {
@@ -368,7 +368,7 @@ const clickOverflowItem = async (name: RegExp, scope: 'desktop' | 'mobile' = 'de
 describe('风格串列表的酒馆筛选交互', () => {
   it.each(['desktop', 'mobile'])('Agent 在 %s 从大量卡片打开真实筛选浮层，读取选项并选中 V5 后实际过滤列表', async surface => {
     render(React.createElement('main', { 'data-agent-view': 'list' }, React.createElement(ChainList, { ...props(), chains: [...Array.from({ length: 40 }, (_, i) => chain(`old-${i}`, `旧风格${i}`)), chain('v5', 'V5 作品', 'nai-diffusion-5-full')] })));
-    const page = readAgentPage({ query: '筛选' }), trigger = page.controls.find(item => item.label === (surface === 'desktop' ? '筛选' : '筛选与排序'))!;
+    const page = readAgentPage({ query: '筛选' }), trigger = page.controls.find(item => item.label === '筛选')!;
     let operation!: ReturnType<typeof operateAgentPage>;
     act(() => { operation = operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: trigger.id, expect: { label: '模型筛选' } }); });
     await operation;
@@ -400,7 +400,7 @@ describe('风格串列表的酒馆筛选交互', () => {
       { ...chain('role', '角色'), type: 'character' as const, tags: ['角色专用分类'] },
     ];
     render(React.createElement(ChainList, { ...props(), chains: items }));
-    fireEvent.click(screen.getByRole('button', { name: surface === 'desktop' ? '筛选' : '筛选与排序' }));
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     const filter = within(screen.getByRole('dialog', { name: '筛选与排序' }));
     for (const tag of ['aitag', 'NAI', '待实测', '角色专用分类']) expect(filter.queryByRole('button', { name: tag })).toBeNull();
     fireEvent.click(filter.getByRole('button', { name: '星空' }));
@@ -550,6 +550,7 @@ describe('风格串列表的酒馆筛选交互', () => {
   });
 
   it.each(['desktop', 'mobile'])('%s 的组合筛选真正缩小结果，重置保留搜索且两种面板共享状态', async surface => {
+    vi.stubGlobal('innerWidth', surface === 'mobile' ? 390 : 1280);
     localStorage.setItem('nai_chain_favs', JSON.stringify(['a', 'v5']));
     const items = [
       { ...chain('a', '共同 A'), tags: ['标签甲', '待实测'], createdAt: 1, updatedAt: 3 },
@@ -561,7 +562,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     fireEvent.change(screen.getByPlaceholderText('搜索我的风格串'), { target: { value: '共同' } });
     fireEvent.click(screen.getByRole('button', { name: '展开文件夹' }));
     await waitFor(() => expectDirectoryCount('收藏', '2'));
-    fireEvent.click(screen.getByRole('button', { name: surface === 'desktop' ? '筛选' : '筛选与排序' }));
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     const dialog = screen.getByRole('dialog', { name: '筛选与排序' });
     const filter = within(dialog);
     expect(filter.getByText('自定义标签')).toBeTruthy();
@@ -583,7 +584,9 @@ describe('风格串列表的酒馆筛选交互', () => {
     if (surface === 'desktop') fireEvent.keyDown(document, { key: 'Escape' });
     else fireEvent.click(filter.getByRole('button', { name: '关闭' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '筛选与排序' })).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: surface === 'desktop' ? '筛选与排序' : '筛选 1' }));
+    vi.stubGlobal('innerWidth', surface === 'desktop' ? 390 : 1280);
+    fireEvent(window, new Event('resize'));
+    fireEvent.click(screen.getByRole('button', { name: '筛选 1' }));
     const other = within(screen.getByRole('dialog', { name: '筛选与排序' }));
     expect(other.getByRole('button', { name: '只看待实测' }).getAttribute('aria-pressed')).toBe('true');
     expect((other.getByRole('combobox', { name: '排序' }) as HTMLSelectElement).value).toBe('created_desc');

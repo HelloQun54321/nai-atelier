@@ -5,7 +5,7 @@ import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { PromptChain, ChainType } from '../types';
-import { MobileBottomSheet, MobileIconButton, MobileOverflowMenu, type ToolbarOverflowItem } from './MobileUI';
+import { MobileOverflowMenu, type ToolbarOverflowItem } from './MobileUI';
 import { ToolbarOverflowMenu } from './ToolbarOverflowMenu';
 import { SmartImage } from './SmartImage';
 import { IMAGE_CARD_ACTION_CLASS, IMAGE_CARD_ACTION_TONE, ImageShareActions } from './ImageShareActions';
@@ -14,7 +14,7 @@ import type { ChainSimilaritySession } from './chain/ChainSimilarityDialog';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, EyeOff, FileOutput, Filter, FlaskConical, FolderDown, Heart, Image, Link2, ListChecks, Package, Pencil, Plus, ScanSearch, Sparkles, Tags, Trash2, User, X } from 'lucide-react';
+import { Check, EyeOff, FileOutput, FlaskConical, FolderDown, Heart, Image, Link2, ListChecks, Package, Pencil, Plus, ScanSearch, Sparkles, Tags, Trash2, User, X } from 'lucide-react';
 import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
 import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { GalleryModelBadge } from './GalleryModelBadge';
@@ -36,7 +36,7 @@ import { ChainTagManager } from './chain/ChainTagManager';
 import { getCustomChainTags } from '../services/chainTags';
 import { chainReferenceSummary } from '../services/chainReferenceBadges';
 import { useConfirmDialog } from './ConfirmDialog';
-import { AnchoredToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
+import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { useChainFolders } from '../services/useChainFolders';
 import { folderContains, getChainFolderIds, updateChainFolderMemberships } from '../services/chainFolders';
@@ -127,10 +127,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [favoritesReady, setFavoritesReady] = useState(false);
   const [favoritesError, setFavoritesError] = useState('');
   const [favoritesRetry, setFavoritesRetry] = useState(0);
-  const [showMobileFilters, setShowMobileFilters] = useState(false);
-  const [showDesktopFilters, setShowDesktopFilters] = useState(false);
-  const filterAnchorRef = useRef<HTMLDivElement>(null);
-  const mobileFilterTriggerRef = useRef<HTMLButtonElement>(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const filterHostRef = useRef<HTMLDivElement>(null);
   const [visibleCount, setVisibleCount] = useState(RENDER_BATCH_SIZE);
   const syncPreferences = useStChatu8Preferences(!isGuest && type === 'style');
   const canSync = !isGuest && type === 'style' && syncPreferences.enabled;
@@ -254,14 +252,13 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     if (next.has(tag)) next.delete(tag); else next.add(tag);
     return next;
   });
-  const openTagManager = async () => {
-    const mobile = showMobileFilters;
+  const openTagManager = async (close: () => void, mobile: boolean) => {
     // 手机筛选关闭会异步返回上一层，先等返回完成再登记管理层。
     const returned = mobile && window.history.state?.__naiMobileLayer?.startsWith('sheet-')
       ? new Promise<void>(resolve => window.addEventListener('popstate', () => resolve(), { once: true })) : null;
-    flushSync(() => { setShowDesktopFilters(false); setShowMobileFilters(false); });
+    flushSync(close);
     if (returned) await returned;
-    (mobile ? mobileFilterTriggerRef.current : filterAnchorRef.current?.querySelector('button'))?.focus({ preventScroll: true });
+    filterHostRef.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true });
     setTagManagerOpen(true);
   };
 
@@ -321,7 +318,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   };
   const beginSelection = () => {
     if (isGuest || type !== 'style' || syncSelection.busy || !onBulkDelete) return;
-    syncSelection.cancel(); setShowDesktopFilters(false); setShowMobileFilters(false); setInfoChain(null);
+    syncSelection.cancel(); setShowFilters(false); setInfoChain(null);
     setSelectedIds(new Set()); setSelectionMode(true);
   };
   const deleteSelected = async () => {
@@ -524,7 +521,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     ...(canSync ? [{ label: '智慧姬同步', hint: syncSelection.savedCount > 0 ? `待同步 ${syncSelection.savedCount}` : '', icon: <Link2 />, onClick: syncSelection.open ? syncSelection.cancel : syncSelection.begin, disabled: syncSelection.busy && !syncSelection.open }] : []),
   ];
   // 桌面弹层与手机抽屉共享筛选内容，切换视图也保持同一份筛选状态。
-  const filterContent = <div className="space-y-4">
+  const renderFilterContent = (close: () => void, mobile: boolean) => <div className="space-y-4">
     <div className="flex items-center justify-between"><span className="text-xs text-gray-500 dark:text-gray-400">{filterCount > 0 ? t("{0} 项筛选已启用", [filterCount]) : t("全部资料")}</span>{filtersActive && <button type="button" onClick={resetFilters} className="mobile-touch px-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>}</div>
     <div className="grid grid-cols-2 gap-3">
       <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t("排序")}<select aria-label={t("排序")} value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="mobile-touch mt-2 h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-xs font-normal outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"><option value="updated_desc">{t("最近更新")}</option><option value="updated_asc">{t("最早更新")}</option><option value="created_desc">{t("最近创建")}</option><option value="created_asc">{t("最早创建")}</option></select></label>
@@ -537,7 +534,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       <button type="button" aria-pressed={characterRefsOnly} onClick={() => setCharacterRefsOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${characterRefsOnly ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'} ${type === 'style' && !isGuest ? 'col-span-2 sm:col-span-1' : ''}`}><ScanSearch className="h-4 w-4" />{t("有精准参考")}</button>
     </div>
     <div>
-      <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t("自定义标签")}</span><div className="flex items-center gap-1">{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="mobile-touch px-2 text-xs text-gray-500 dark:text-gray-400">{t("清除标签筛选")}</button>}{!isGuest && <button type="button" disabled={syncSelection.busy} onClick={() => void openTagManager()} className="mobile-touch inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"><Tags className="h-3.5 w-3.5" />{t('管理标签')}</button>}</div></div>
+      <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t("自定义标签")}</span><div className="flex items-center gap-1">{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="mobile-touch px-2 text-xs text-gray-500 dark:text-gray-400">{t("清除标签筛选")}</button>}{!isGuest && <button type="button" disabled={syncSelection.busy} onClick={() => void openTagManager(close, mobile)} className="mobile-touch inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"><Tags className="h-3.5 w-3.5" />{t('管理标签')}</button>}</div></div>
       {customTagOptions.length > 12 && <input aria-label={t("搜索自定义标签")} placeholder={t("搜索标签")} value={tagSearch} onChange={event => setTagSearch(event.target.value)} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !mb-2 text-xs`} />}
       {customTagOptions.length === 0 ? (isLoading ? <InlineSpinner label={t('加载中…')} className="text-xs" /> : <p className="text-xs text-gray-400">{loadError ? t(loadError) : t("暂无自定义标签，可在卡片铅笔中添加")}</p>) : <div className="max-h-40 overflow-y-auto"><div className="flex flex-wrap gap-1.5">{visibleTagOptions.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => toggleTag(tag)} className={`mobile-touch max-w-full break-words rounded-full border px-3 py-1.5 text-xs ${selectedTags.has(tag) ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-transparent bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{tag}</button>)}</div>{visibleTagOptions.length === 0 && <p className="py-1 text-xs text-gray-400">{t("没有匹配的标签")}</p>}</div>}
       {selectedTags.size > 1 && <p className="mt-2 text-xs text-gray-400">{t("同时包含所选标签")}</p>}
@@ -550,46 +547,38 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         <WorkspaceChrome>
 <WorkspaceToolbar>
           {selecting ? <>
-            <div role="group" aria-label={t('风格串批量操作')} className="flex h-full min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden whitespace-nowrap">
+            <div role="group" aria-label={t('风格串批量操作')} className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-x-clip whitespace-nowrap">
               <b aria-live="polite" className="flex-none text-xs font-semibold tabular-nums text-gray-600 dark:text-gray-300" title={deleteProgress ? t('正在删除 {0}/{1}', [deleteProgress.completed, deleteProgress.total]) : t('已选 {0} 条', [selectedChains.length])}>{deleteProgress ? <><span className="md:hidden">{deleteProgress.completed}/{deleteProgress.total}</span><span className="hidden md:inline">{t('正在删除 {0}/{1}', [deleteProgress.completed, deleteProgress.total])}</span></> : <><span className="md:hidden">{selectedChains.length}</span><span className="hidden md:inline">{t('已选 {0} 条', [selectedChains.length])}</span></>}</b>
               <ToolbarButton aria-label={t('全选筛选结果')} title={t('全选筛选结果')} disabled={bulkDeleteBusy} onClick={() => setSelectedIds(new Set(filteredChains.map(chain => chain.id)))} className="mobile-touch !px-2.5 max-md:hidden">{t('全选筛选结果')}</ToolbarButton>
               <ToolbarButton aria-label={t('反选筛选结果')} title={t('反选筛选结果')} disabled={bulkDeleteBusy} onClick={() => setSelectedIds(previous => new Set(filteredChains.filter(chain => !previous.has(chain.id)).map(chain => chain.id)))} className="mobile-touch !px-2.5 max-md:hidden">{t('反选筛选结果')}</ToolbarButton>
               <ToolbarButton aria-label={t('清空选择')} title={t('清空选择')} disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setSelectedIds(new Set())} className="mobile-touch !px-2.5 max-md:hidden">{t('清空选择')}</ToolbarButton>
-              <ToolbarButton aria-label={t('导出已选')} title={t('导出已选')} disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setBundleScope('selected')} className="mobile-touch !px-2.5"><FileOutput /><span className="hidden md:inline">{t('导出已选')}</span></ToolbarButton>
-              <ToolbarButton aria-label={t('设置文件夹')} title={t('设置文件夹')} disabled={bulkDeleteBusy || folderStore.busy || !folderStore.ready || Boolean(folderStore.error) || !selectedChains.length} onClick={() => setMoveIds(selectedChains.map(chain => chain.id))} className="mobile-touch !px-2.5"><FolderInput /><span className="hidden md:inline">{t('设置文件夹')}</span></ToolbarButton>
-              <ToolbarButton tone="danger" aria-label={t('删除')} title={t('删除')} disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => void deleteSelected()} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span className="hidden md:inline">{t('删除')}</span></ToolbarButton>
+              <ToolbarButton aria-label={t('导出已选')} title={t('导出已选')} disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setBundleScope('selected')} className="mobile-touch !px-2.5"><FileOutput /><span className="toolbar-responsive-label hidden md:inline">{t('导出已选')}</span></ToolbarButton>
+              <ToolbarButton aria-label={t('设置文件夹')} title={t('设置文件夹')} disabled={bulkDeleteBusy || folderStore.busy || !folderStore.ready || Boolean(folderStore.error) || !selectedChains.length} onClick={() => setMoveIds(selectedChains.map(chain => chain.id))} className="mobile-touch !px-2.5"><FolderInput /><span className="toolbar-responsive-label hidden md:inline">{t('设置文件夹')}</span></ToolbarButton>
+              <ToolbarButton tone="danger" aria-label={t('删除')} title={t('删除')} disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => void deleteSelected()} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span className="toolbar-responsive-label hidden md:inline">{t('删除')}</span></ToolbarButton>
             </div>
             <MobileOverflowMenu className="md:hidden" items={[
               { label: '全选筛选结果', disabled: bulkDeleteBusy, onClick: () => setSelectedIds(new Set(filteredChains.map(chain => chain.id))) },
               { label: '反选筛选结果', disabled: bulkDeleteBusy, onClick: () => setSelectedIds(previous => new Set(filteredChains.filter(chain => !previous.has(chain.id)).map(chain => chain.id))) },
               { label: '清空选择', disabled: bulkDeleteBusy || !selectedChains.length, onClick: () => setSelectedIds(new Set()) },
             ]} />
-            <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden md:inline">{t('退出多选')}</span></ToolbarButton>
+            <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="toolbar-responsive-label hidden md:inline">{t('退出多选')}</span></ToolbarButton>
           </> : <>
           {!isGuest && type === 'style' && <ToolbarButton data-agent-action="browse" aria-label={t(foldersExpanded ? '收起文件夹' : '展开文件夹')} title={[t(foldersExpanded ? '收起文件夹' : '展开文件夹'), activeFolderLabel].join(' · ')} aria-expanded={foldersExpanded} active={foldersExpanded || activeFolder !== '*'} disabled={folderStore.busy} onClick={toggleFolders} className="!px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{activeFolderLabel}</span></ToolbarButton>}
           {!isGuest && type === 'style' && onOpenRoll && <ToolbarButton data-agent-action="browse" aria-label={t('Roll 串')} title={t('Roll 串')} onClick={onOpenRoll} className="mobile-touch md:hidden !px-2.5"><Dice5 className="h-4 w-4" /></ToolbarButton>}
-          {!loadError && (isLoading && filteredChains.length > 0 ? <InlineSpinner label={t('加载中…')} className="text-xs" /> : !isLoading && <ToolbarCountBadge total={filteredChains.length} loaded={Math.min(visibleCount, filteredChains.length)} />)}
-          <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t("搜索{0}", [title])} containerClassName="min-w-0 flex-1 md:max-w-none!" />
-          <div className="hidden flex-none items-center gap-2 md:flex">
-            <div ref={filterAnchorRef} className="relative flex-none">
-              <ToolbarButton active={filtersActive} onClick={() => setShowDesktopFilters(value => !value)} title={t("筛选与排序")} aria-label={t("筛选{0}", [filterCount > 0 ? ` ${filterCount}` : ''])} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" /><span className="hidden xl:inline">{t("筛选{0}", [filterCount > 0 ? ` ${filterCount}` : ''])}</span></ToolbarButton>
-              {showDesktopFilters && <AnchoredToolbarPopover anchorRef={filterAnchorRef} title={t("筛选与排序")} onClose={() => setShowDesktopFilters(false)}>{filterContent}</AnchoredToolbarPopover>}
-            </div>
-          </div>
-          <div className="flex flex-none gap-1 md:hidden">
-              <MobileIconButton label={t("筛选与排序")} onClick={event => { mobileFilterTriggerRef.current = event.currentTarget; setShowMobileFilters(true); }} className={`border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${filtersActive ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-600 dark:text-gray-300'}`}><Filter className="h-5 w-5" /></MobileIconButton>
+          {!loadError && !isLoading && <ToolbarCountBadge total={filteredChains.length} loaded={Math.min(visibleCount, filteredChains.length)} />}
+          {!loadError && isLoading && filteredChains.length > 0 && <ToolbarCountBadge total={filteredChains.length} loaded={Math.min(visibleCount, filteredChains.length)} />}
+          <ToolbarSearch value={searchTerm} loading={isLoading && filteredChains.length > 0} onChange={event => setSearchTerm(event.target.value)} placeholder={t("搜索{0}", [title])} containerClassName="min-w-0 flex-1 md:max-w-none!" />
+          <div ref={filterHostRef} className="flex-none">
+            <ToolbarPopover title={t("筛选与排序")} count={filterCount} active={filtersActive} open={showFilters} onOpenChange={setShowFilters}>
+              {(close, mobile) => renderFilterContent(close, mobile)}
+            </ToolbarPopover>
           </div>
           {!isGuest && type === 'style' && onBulkDelete && <ToolbarButton className="max-md:hidden" aria-label={t('批量选择风格串')} title={t('批量选择风格串')} disabled={syncSelection.busy} onClick={beginSelection}>
-            <ListChecks className="h-4 w-4" /><span className="hidden xl:inline">{t('多选')}</span>
+            <ListChecks className="h-4 w-4" /><span className="toolbar-responsive-label hidden xl:inline">{t('多选')}</span>
           </ToolbarButton>}
           {!isGuest && <div className="flex flex-none items-center gap-1 md:gap-2">
             {type === 'style' && <div className="flex max-md:hidden"><StyleCollectorControl onSaved={onRefresh} notify={notify} /></div>}
-            <div className="hidden items-center gap-2 md:flex">
-              <ToolbarButton tone="primary" onClick={() => setIsModalOpen(true)} aria-label={t(createLabel)} title={t(createLabel)}><Plus className="h-4 w-4" /><span className="hidden xl:inline">{t(createLabel)}</span></ToolbarButton>
-            </div>
-            <div className="flex gap-1 md:hidden">
-              <MobileIconButton label={t(createLabel)} onClick={() => setIsModalOpen(true)} className="bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white"><Plus className="h-5 w-5" /></MobileIconButton>
-            </div>
+            <ToolbarButton tone="primary" onClick={() => setIsModalOpen(true)} aria-label={t(createLabel)} title={t(createLabel)} className="mobile-touch !px-2.5 md:!px-3"><Plus className="h-4 w-4" /><span className="toolbar-responsive-label hidden xl:inline">{t(createLabel)}</span></ToolbarButton>
             <ToolbarOverflowMenu className="max-md:hidden" items={desktopOverflowItems} />
           </div>}
           {/* 手机顶栏只留文件夹、搜索、筛选、新建；其余低频操作收进「更多」，不再挤出屏幕。 */}
@@ -604,8 +593,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         </WorkspaceToolbar>
 
         {!selecting && canSync && syncSelection.open && <WisdomSyncToolbar sync={syncSelection} filteredIds={filteredChains.map(chain => chain.id)} />}
-
-        <ImagePreviewPortal><MobileBottomSheet open={showMobileFilters} title={t("筛选与排序")} onClose={() => setShowMobileFilters(false)}>{filterContent}</MobileBottomSheet></ImagePreviewPortal>
 
         </WorkspaceChrome>
         <div data-workspace-body className="flex min-h-0 flex-1 flex-col md:flex-row">

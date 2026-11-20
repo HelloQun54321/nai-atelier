@@ -75,8 +75,15 @@ describe('工具栏弹层位置与连续操作', () => {
     vi.stubGlobal('innerWidth', 390);
     render(<ToolbarPopover title="筛选资料" count={2}><div /></ToolbarPopover>);
     const trigger = screen.getByRole('button', { name: '筛选 2' });
-    expect(trigger.querySelector('span.sm\\:hidden')?.textContent).toBe('2');
-    expect(trigger.querySelector('span.hidden')?.className).toContain('sm:inline');
+    expect(trigger.querySelector('span.md\\:hidden')?.textContent).toBe('2');
+    expect(trigger.querySelector('span.hidden')?.className).toContain('md:inline');
+  });
+
+  it('纯图标模式在存在计数时仍保留数量徽标与无障碍名称', () => {
+    render(<ToolbarPopover label="筛选" title="筛选资料" iconOnly count={3}><div /></ToolbarPopover>);
+    const trigger = screen.getByRole('button', { name: '筛选 3' });
+    expect(trigger.getAttribute('data-active')).toBe('true');
+    expect(trigger.textContent).toBe('3');
   });
   it('次级选项可沿用紧凑图标触发，保留名称、焦点与 Escape 关闭', () => {
     render(<ToolbarPopover label="更多操作" title="更多操作" iconOnly icon={<svg />}><button>次级操作</button></ToolbarPopover>);

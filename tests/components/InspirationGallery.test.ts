@@ -188,13 +188,13 @@ it.each([390, 1280])('宽度 %s：共用目录树父夹含任意深度后代，�
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: data, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
   await screen.findByRole('button', { name: '选择收藏夹：根夹' });
   if (width < 768) {
-    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    const filter = screen.getByRole('dialog', { name: '筛选收藏' });
-    fireEvent.click(within(filter).getByRole('button', { name: '选择目录' }));
+    fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+    const navSheet = screen.getByRole('dialog', { name: '收藏分类' });
+    fireEvent.click(within(navSheet).getByRole('button', { name: '选择目录' }));
     const picker = screen.getByRole('dialog', { name: '选择目录' });
     expect(within(picker).getByRole('option', { name: '根夹 / 子夹 / 孙夹 (1)' })).toBeTruthy();
     fireEvent.click(within(picker).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === 'root' }));
-    fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
+    fireEvent.click(within(navSheet).getByRole('button', { name: '关闭' }));
   } else fireEvent.click(screen.getByRole('button', { name: '选择收藏夹：根夹' }));
   expect(screen.getByText('跨层作品')).toBeTruthy(); expect(screen.getByText('子夹作品')).toBeTruthy(); expect(screen.queryByText('其他作品')).toBeNull();
   expect(screen.getByRole('button', { name: '选择收藏夹：根夹' }).textContent).toContain('2');
@@ -396,9 +396,9 @@ it.each([390, 1280])('宽度 %s：同一收藏命中多个夹，批量部分选�
   expect(getCollectionBoardIds(data[0])).toEqual(['two']); expect(getCollectionBoardIds(data[1])).toEqual(['two']); expect(getCollectionBoardIds(data[2])).toEqual([]);
   fireEvent.click(within(screen.getByRole('dialog', { name: '管理收藏夹' })).getByRole('button', { name: '完成' }));
   fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
-  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  fireEvent.click((width < 768 ? within(screen.getByRole('dialog', { name: '筛选收藏' })) : screen).getByRole('button', { name: /未整理\s+1/ }));
-  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '确认' }));
+  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+  fireEvent.click((width < 768 ? within(screen.getByRole('dialog', { name: '收藏分类' })) : screen).getByRole('button', { name: /未整理\s+1/ }));
+  if (width < 768) fireEvent.click(within(screen.getByRole('dialog', { name: '收藏分类' })).getByRole('button', { name: '关闭' }));
   expect(screen.getByText('未归属作品')).toBeTruthy(); expect(screen.queryByText('多夹作品')).toBeNull();
   vi.mocked(db.bulkUpdateInspirations).mockReset().mockResolvedValue(undefined);
 });
@@ -565,38 +565,46 @@ it.each(['masonry', 'portrait', 'square'])('%s 布局按作品组排序，保持
   const view = render(React.createElement(InspirationGallery, props));
   const order = () => [...view.container.querySelectorAll('article h3')].map(element => element.textContent);
   expect(order()).toEqual(['作品2', '作品10', '作品1']);
-  const sorter = screen.getByRole('combobox', { name: '收藏排序' });
-  // 排序选择器只在宽屏出现：手机用 max-md:hidden 隐藏，避免 Tailwind 的 inline-flex 把它重新撑开。
-  expect(sorter.parentElement!.className).toContain('max-md:hidden');
-  expect(sorter.className).toContain('w-auto!');
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const sorter = within(screen.getByRole('dialog', { name: '筛选收藏' })).getByRole('combobox', { name: '收藏排序' });
   fireEvent.change(sorter, { target: { value: 'oldest' } }); expect(order()).toEqual(['作品1', '作品10', '作品2']);
   fireEvent.change(sorter, { target: { value: 'name' } }); expect(order()).toEqual(['作品1', '作品2', '作品10']);
+  fireEvent.click(within(screen.getByRole('dialog', { name: '筛选收藏' })).getByRole('button', { name: '确认' }));
   const card = within(view.container).getByText('作品2').closest('article')!;
   expect(within(card).getByRole('img').getAttribute('src')).toBe('/p0');
   fireEvent.click(within(card).getByRole('img').closest('button')!);
   const detail = screen.getByRole('complementary', { name: '作品2' });
   expect(within(detail).getAllByRole('img').map(image => image.getAttribute('src'))).toEqual(['/p0', '/p1']);
   fireEvent.click(within(detail).getByRole('button', { name: '关闭' }));
-  fireEvent.change(sorter, { target: { value: 'nameDesc' } }); expect(order()).toEqual(['作品10', '作品2', '作品1']);
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.change(within(screen.getByRole('dialog', { name: '筛选收藏' })).getByRole('combobox', { name: '收藏排序' }), { target: { value: 'nameDesc' } });
+  expect(order()).toEqual(['作品10', '作品2', '作品1']);
+  fireEvent.click(within(screen.getByRole('dialog', { name: '筛选收藏' })).getByRole('button', { name: '确认' }));
   enterCollectionSelection(); expect(screen.queryByRole('combobox', { name: '收藏排序' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
-  expect((screen.getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('nameDesc');
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  expect((within(screen.getByRole('dialog', { name: '筛选收藏' })).getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('nameDesc');
   view.unmount(); render(React.createElement(InspirationGallery, props));
-  expect((screen.getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('nameDesc');
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  expect((within(screen.getByRole('dialog', { name: '筛选收藏' })).getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('nameDesc');
   expect(db.updateInspiration).not.toHaveBeenCalled(); expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
 });
 
-it('手机排序收在现有筛选面板，重置筛选与跨分类不重置排序，坏偏好回退默认', async () => {
+it('排序收在筛选面板，重置筛选与跨分类不重置排序，坏偏好回退默认', async () => {
   vi.stubGlobal('innerWidth', 390); localStorage.setItem('nai-collection-sort', 'constructor');
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
-  expect((screen.getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('newest');
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   const panel = screen.getByRole('dialog', { name: '筛选收藏' });
+  expect((within(panel).getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('newest');
   fireEvent.change(within(panel).getByRole('combobox', { name: '收藏排序' }), { target: { value: 'oldest' } });
   fireEvent.click(within(panel).getByRole('button', { name: '重置筛选' }));
   expect((within(panel).getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('oldest');
-  fireEvent.click(within(panel).getByRole('button', { name: /^生成历史/ }));
-  expect((within(panel).getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('oldest');
+  fireEvent.click(within(panel).getByRole('button', { name: '确认' }));
+  fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '收藏分类' })).getByRole('button', { name: /^生成历史/ }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '收藏分类' })).getByRole('button', { name: '关闭' }));
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  expect((within(screen.getByRole('dialog', { name: '筛选收藏' })).getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('oldest');
   expect(localStorage.getItem('nai-collection-sort')).toBe('oldest');
 });
 
@@ -719,7 +727,7 @@ it('收藏分类默认收起无导航节点，桌面入口记住独立展开偏�
   const view = render(React.createElement(InspirationGallery, props));
   const toggle = screen.getByRole('button', { name: '展开收藏分类' });
   const navigation = document.getElementById(toggle.getAttribute('aria-controls')!)!;
-  expect(toggle.className).toContain('hidden md:inline-flex');
+  expect(toggle.className).not.toContain('hidden md:inline-flex');
   expect(toggle.getAttribute('aria-expanded')).toBe('false');
   expect(navigation.hidden).toBe(true);
   expect(navigation.className).toBe('hidden');
@@ -855,10 +863,13 @@ it.each([390, 1280])('宽度 %s：旧来源 Tag 不进入卡片、搜索或标�
   expect(within(filter).queryByRole('button', { name: '#Pixiv' })).toBeNull();
   expect(within(filter).queryByRole('button', { name: '#生成历史' })).toBeNull();
   expect(within(filter).getByRole('button', { name: '#风景' })).toBeTruthy();
-  fireEvent.click(within(width < 768 ? filter : document.querySelector('aside')!).getByRole('button', { name: /生成历史\s+1/ }));
+  fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
+  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+  const navRoot = width < 768 ? screen.getByRole('dialog', { name: '收藏分类' }) : document.querySelector('aside')!;
+  fireEvent.click(within(navRoot).getByRole('button', { name: /生成历史\s+1/ }));
   expect(screen.getByText('已整理角色图')).toBeTruthy();
   expect(screen.queryByText('Pixiv 收藏图')).toBeNull();
-  fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
+  if (width < 768) fireEvent.click(within(navRoot).getByRole('button', { name: '关闭' }));
   fireEvent.change(screen.getByPlaceholderText('搜索标题、提示词或标签…'), { target: { value: '生成历史' } });
   await waitFor(() => expect(screen.getByText('无匹配结果')).toBeTruthy());
 });
@@ -965,17 +976,17 @@ describe('InspirationGallery 来源筛选与未整理心智', () => {
     expect((screen.getByPlaceholderText('搜索标题、提示词或标签…') as HTMLInputElement).value).toBe('带有标签');
   });
 
-  it('手机筛选保留分类入口，并与桌面共用条件', () => {
+  it('手机顶栏文件夹按钮直达分类面板，并与桌面共用条件', () => {
     vi.stubGlobal('innerWidth', 390);
     render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
-    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    const filter = screen.getByRole('dialog', { name: '筛选收藏' });
-    fireEvent.click(within(filter).getByRole('button', { name: /未整理\s+2/ }));
+    fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+    const navSheet = screen.getByRole('dialog', { name: '收藏分类' });
+    fireEvent.click(within(navSheet).getByRole('button', { name: /未整理\s+2/ }));
     expect(screen.queryByText('已整理角色图')).toBeNull();
     expect(screen.getByText('未整理带有标签的图')).toBeTruthy();
     // 收藏夹属于"归属"而不是筛选条件，选中它不会让筛选计数 +1。
-    expect(screen.getByRole('button', { name: /^筛选/ })).toBeTruthy();
-    fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
+    expect(screen.getByRole('button', { name: '筛选' })).toBeTruthy();
+    fireEvent.click(within(navSheet).getByRole('button', { name: '关闭' }));
     vi.stubGlobal('innerWidth', 1280); fireEvent(window, new Event('resize'));
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     expect(screen.getByText('未整理带有标签的图')).toBeTruthy();
@@ -1014,8 +1025,8 @@ it.each([390, 1280])('宽度 %s 的收藏夹使用标题加号和同色文件夹
   vi.stubGlobal('innerWidth', width);
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
-  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  const root = width < 768 ? screen.getByRole('dialog', { name: '筛选收藏' }) : screen.getByRole('complementary', { name: '收藏分类' });
+  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+  const root = width < 768 ? screen.getByRole('dialog', { name: '收藏分类' }) : screen.getByRole('complementary', { name: '收藏分类' });
   const create = within(root).getByRole('button', { name: '新建收藏夹' });
   expect(create.textContent).toBe('');
   expect(create.querySelector('svg.lucide-plus')).toBeTruthy();
@@ -1044,20 +1055,20 @@ it('实际新建收藏夹窗口和颜色选择可被 Agent 读取', async () => 
   expect(page.controls.filter(item => item.pressed !== undefined)).not.toHaveLength(0);
 });
 
-it('手机管理当前收藏夹可修改名称与颜色，编辑焦点正确，关闭后回到原筛选面板', async () => {
+it('手机管理当前收藏夹可修改名称与颜色，编辑焦点正确，关闭后回到原分类面板', async () => {
   vi.stubGlobal('innerWidth', 390);
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
-  fireEvent.click(screen.getByRole('button', { name: '筛选' })); const filter = screen.getByRole('dialog', { name: '筛选收藏' });
-  fireEvent.click(within(filter).getByRole('button', { name: '选择收藏夹：角色设计' }));
-  fireEvent.click(within(filter).getByRole('button', { name: '编辑收藏夹' }));
+  fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' })); const navSheet = screen.getByRole('dialog', { name: '收藏分类' });
+  fireEvent.click(within(navSheet).getByRole('button', { name: '选择收藏夹：角色设计' }));
+  fireEvent.click(within(navSheet).getByRole('button', { name: '编辑收藏夹' }));
   const editor = screen.getByRole('dialog', { name: '编辑收藏夹' }); const input = within(editor).getByRole('textbox');
   expect(document.activeElement).toBe(input);
   fireEvent.change(input, { target: { value: '新名称' } }); fireEvent.click(within(editor).getByRole('button', { name: '颜色 #ec4899' }));
   fireEvent.click(within(editor).getByRole('button', { name: '保存' }));
   await waitFor(() => expect(db.updateInspirationBoard).toHaveBeenCalledWith('board-1', { name: '新名称', color: '#ec4899', parentId: null }));
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑收藏夹' })).toBeNull());
-  expect(screen.getByRole('dialog', { name: '筛选收藏' })).toBe(filter);
+  expect(screen.getByRole('dialog', { name: '收藏分类' })).toBe(navSheet);
 });
 
 it('共用收藏夹编辑窗口保存中锁定字段和颜色，Esc、关闭与遮罩不能退出或重复提交', async () => {
@@ -1078,22 +1089,22 @@ it('共用收藏夹编辑窗口保存中锁定字段和颜色，Esc、关闭与�
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑收藏夹' })).toBeNull());
 });
 
-it('手机筛选内的共用收藏夹编辑返回只关闭最上层，不关闭筛选或写入资料', async () => {
+it('手机分类面板内的共用收藏夹编辑返回只关闭最上层，不关闭分类面板或写入资料', async () => {
   vi.stubGlobal('innerWidth', 390);
   vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query === '(max-width: 1279px)', media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   window.history.replaceState({}, '');
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
-  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  const filter = screen.getByRole('dialog', { name: '筛选收藏' });
-  fireEvent.click(within(filter).getByRole('button', { name: '选择目录' }));
+  fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+  const navSheet = screen.getByRole('dialog', { name: '收藏分类' });
+  fireEvent.click(within(navSheet).getByRole('button', { name: '选择目录' }));
   fireEvent.click(within(screen.getByRole('dialog', { name: '选择目录' })).getByRole('option', { name: (_, element) => element.getAttribute('data-value') === 'board-1' }));
   await waitFor(() => expect(window.history.state.__naiMobileLayers).toHaveLength(1));
   const parentState = window.history.state;
-  fireEvent.click(within(filter).getByRole('button', { name: '编辑收藏夹' }));
+  fireEvent.click(within(navSheet).getByRole('button', { name: '编辑收藏夹' }));
   await waitFor(() => expect(window.history.state.__naiMobileLayers).toHaveLength(2));
   act(() => { window.history.replaceState(parentState, ''); window.dispatchEvent(new PopStateEvent('popstate', { state: parentState })); });
-  expect(screen.queryByRole('dialog', { name: '编辑收藏夹' })).toBeNull(); expect(screen.getByRole('dialog', { name: '筛选收藏' })).toBe(filter);
+  expect(screen.queryByRole('dialog', { name: '编辑收藏夹' })).toBeNull(); expect(screen.getByRole('dialog', { name: '收藏分类' })).toBe(navSheet);
   expect(db.updateInspirationBoard).not.toHaveBeenCalled(); window.history.replaceState({}, '');
 });
 it.each([390, 1280])('宽度 %s 的收藏夹删除可发现且必须确认，取消不删除，确认后回到未整理语义', async width => {
@@ -1102,7 +1113,7 @@ it.each([390, 1280])('宽度 %s 的收藏夹删除可发现且必须确认，取
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
   let root: HTMLElement = document.body;
   if (width < 768) {
-    fireEvent.click(screen.getByRole('button', { name: '筛选' })); root = screen.getByRole('dialog', { name: '筛选收藏' });
+    fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' })); root = screen.getByRole('dialog', { name: '收藏分类' });
     fireEvent.click(within(root).getByRole('button', { name: '选择收藏夹：角色设计' }));
   }
   if (width >= 768) fireEvent.click(within(root).getByRole('button', { name: '选择收藏夹：角色设计' }));
@@ -1211,12 +1222,12 @@ it.each([390, 1280])('宽度 %s 只有全局、来源和自定义收藏夹导航
   const props = { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() };
   const view = render(React.createElement(InspirationGallery, props));
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
-  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  const root = width < 768 ? screen.getByRole('dialog', { name: '筛选收藏' }) : document.body;
+  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+  const root = width < 768 ? screen.getByRole('dialog', { name: '收藏分类' }) : document.body;
   const sections = ['来源', '自定义收藏夹'].map(text => within(root).getByText(text));
   expect(sections[0].compareDocumentPosition(sections[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(within(root).queryByRole('button', { name: /已归档|已置顶|最近使用/ })).toBeNull();
-  if (width < 768) fireEvent.click(within(root).getByRole('button', { name: '确认' }));
+  if (width < 768) fireEvent.click(within(root).getByRole('button', { name: '关闭' }));
   selectCollectionCard(screen.getByText(mockInspirations[0].title).closest('article')!);
   fireEvent.click(screen.getByRole('button', { name: '取消收藏' }));
   await waitFor(() => expect(db.bulkDeleteInspirations).toHaveBeenCalledWith(['insp-1']));
@@ -1247,11 +1258,12 @@ it.each([390, 1280])('宽度 %s 来源和收藏夹直接切换，多个标签仍
   ];
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: items, onRefresh: vi.fn(), notify: vi.fn() }));
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
-  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  const root = width < 768 ? screen.getByRole('dialog', { name: '筛选收藏' }) : document.body;
+  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+  const root = width < 768 ? screen.getByRole('dialog', { name: '收藏分类' }) : document.body;
   fireEvent.click(within(root).getByRole('button', { name: '选择收藏夹：角色设计' }));
   fireEvent.click(within(root).getByRole('button', { name: /Pixiv\s+4/ }));
-  if (width >= 768) fireEvent.click(screen.getByRole('button', { name: '筛选 1' }));
+  if (width < 768) fireEvent.click(within(root).getByRole('button', { name: '关闭' }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选 1' }));
   const filter = screen.getByRole('dialog', { name: '筛选收藏' });
   const input = within(filter).getByRole('searchbox', { name: '搜索标签' });
   expect(input.hasAttribute('list')).toBe(false);
@@ -1274,8 +1286,8 @@ it.each([390, 1280])('宽度 %s 来源和收藏夹直接切换，多个标签仍
   expect(rain.getAttribute('aria-pressed')).toBe('false');
   expect(screen.getByText('缺少雨天')).toBeTruthy();
   fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
-  if (width < 768) fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-  const navigation = width < 768 ? screen.getByRole('dialog', { name: '筛选收藏' }) : document.body;
+  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+  const navigation = width < 768 ? screen.getByRole('dialog', { name: '收藏分类' }) : document.body;
   fireEvent.click(within(navigation).getByRole('button', { name: '选择收藏夹：角色设计' }));
   // 切换收藏夹不会清掉已选的来源筛选：两者是不同的维度，互不重置。
   expect(screen.queryByText('其他来源')).toBeNull(); expect(screen.queryByText('其他收藏夹')).toBeNull();
@@ -1363,9 +1375,16 @@ it.each([390, 1280])('宽度 %s：多选只替换原顶栏，不向列表插入�
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '图' } });
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 260)); });
+  if (width < 768) {
+    fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+    const navSheet = screen.getByRole('dialog', { name: '收藏分类' });
+    fireEvent.click(within(navSheet).getByRole('button', { name: '选择收藏夹：角色设计' }));
+    fireEvent.click(within(navSheet).getByRole('button', { name: '关闭' }));
+  } else {
+    fireEvent.click(within(view.container.querySelector('aside')!).getByRole('button', { name: '选择收藏夹：角色设计' }));
+  }
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   const filter = screen.getByRole('dialog', { name: '筛选收藏' });
-  fireEvent.click(within(width < 768 ? filter : view.container.querySelector('aside')!).getByRole('button', { name: '选择收藏夹：角色设计' }));
   fireEvent.click(within(filter).getByRole('button', { name: '#原创' }));
   fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
   const header = screen.getByRole('banner'); const main = view.container.querySelector('main')!;
@@ -1375,7 +1394,7 @@ it.each([390, 1280])('宽度 %s：多选只替换原顶栏，不向列表插入�
   expect(screen.getByRole('banner')).toBe(header); expect(view.container.querySelectorAll('header')).toHaveLength(1);
   const batch = within(header).getByRole('group', { name: '收藏批量操作' });
   expect(batch.classList.contains('flex-nowrap')).toBe(true); expect(batch.classList.contains('flex-wrap')).toBe(false);
-  expect(batch.classList.contains('overflow-hidden')).toBe(true);
+  expect(batch.classList.contains('overflow-x-clip')).toBe(true);
   expect(batch.classList.contains('overflow-x-auto')).toBe(false);
   expect(within(header).getByRole('button', { name: '管理收藏夹' })).toBeTruthy();
   expect(within(header).getByRole('textbox', { name: '添加标签' })).toBeTruthy();
@@ -1467,8 +1486,8 @@ it.each([[1280, 'mouse'], [390, 'touch']] as const)('宽度 %s：%s 拖动收藏
   const props = { currentUser: mockUser, inspirationsData: mockInspirations, notify: vi.fn(), onRefresh: vi.fn(async () => {}) };
   const view = render(React.createElement(InspirationGallery, props));
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
-  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  const root = width < 768 ? screen.getByRole('dialog', { name: '筛选收藏' }) : view.container.querySelector('aside')!;
+  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+  const root = width < 768 ? screen.getByRole('dialog', { name: '收藏分类' }) : view.container.querySelector('aside')!;
   prepareFolderPointers(root);
   fireEvent.click(within(root).getByRole('button', { name: '选择收藏夹：角色设计' }));
   const handle = within(root).getByRole('button', { name: '排序收藏夹：角色设计' });
@@ -1615,17 +1634,17 @@ it('访客的文件导入入口禁用，拖入本地文件不写入且阻止浏�
   expect(extractMetadata).not.toHaveBeenCalled(); expect(api.uploadFile).not.toHaveBeenCalled();
 });
 
-it('筛选窗口内拖入文件不叠加导入窗口，保留原筛选且阻止文件导航', async () => {
+it('分类窗口内拖入文件不叠加导入窗口，保留原分类且阻止文件导航', async () => {
   vi.stubGlobal('innerWidth', 390);
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
-  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  const filter = screen.getByRole('dialog', { name: '筛选收藏' });
-  const folder = within(filter).getByRole('button', { name: '选择收藏夹：角色设计' }).closest('[data-collection-folder]')!;
+  fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+  const navSheet = screen.getByRole('dialog', { name: '收藏分类' });
+  const folder = within(navSheet).getByRole('button', { name: '选择收藏夹：角色设计' }).closest('[data-collection-folder]')!;
   const dataTransfer = { ...dragData(), types: ['Files'], files: [new File(['A'], 'local.png', { type: 'image/png' })] };
   expect(fireEvent.dragOver(folder, { dataTransfer })).toBe(false); expect(dataTransfer.dropEffect).toBe('none');
   expect(fireEvent.drop(folder, { dataTransfer })).toBe(false);
-  expect(screen.getByRole('dialog', { name: '筛选收藏' })).toBe(filter);
+  expect(screen.getByRole('dialog', { name: '收藏分类' })).toBe(navSheet);
   expect(screen.queryByRole('dialog', { name: '加入收藏库' })).toBeNull();
   expect(api.uploadFile).not.toHaveBeenCalled();
 });

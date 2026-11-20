@@ -283,7 +283,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
   return <div className="flex h-full min-h-0 flex-col" data-agent-page-scope="codex" data-agent-page-title={t('法典')}>
     <WorkspaceChrome>
 <WorkspaceToolbar>
-      <ToolbarPopover label={sourceLabel} title={t('法典来源')} icon={<BookOpen />} width={440} className="[&>button>span]:inline [&>button>span]:max-w-20 sm:[&>button>span]:max-w-40 [&>button>span]:truncate [&>button>svg]:hidden sm:[&>button>svg]:block">
+      <ToolbarPopover label={sourceLabel} title={t('法典来源')} icon={<BookOpen />} width={440} className="[&>button>span]:inline [&>button>span]:max-w-20 sm:[&>button>span]:max-w-40 [&>button>span]:truncate">
         {close => <div className="space-y-2">
           <button type="button" className={TOOLBAR_MENU_CLASS} aria-pressed={mode === 'community'} onClick={() => { setMode('community'); setVisibleLimit(120); close(); }}>{t('共创广场')}</button>
           <button type="button" className={TOOLBAR_MENU_CLASS} aria-pressed={mode === 'books' && filter.scope === 'all'} onClick={() => { setMode('books'); if (filters.books.scope !== 'all') changeFilter({ scope: 'all', path: '', update: '' }, 'books'); close(); }}>{t('全部书目')}</button>
@@ -291,8 +291,6 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
           {boot?.books.filter(book => [book.title, book.author, bookKinds[book.type]].join(' ').toLocaleLowerCase().includes(bookSearch.trim().toLocaleLowerCase())).map(book => <button type="button" key={book.id} aria-pressed={mode === 'books' && filter.scope === 'book' && book.id === bookId} className={`block w-full rounded-lg p-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800 ${mode === 'books' && filter.scope === 'book' && book.id === bookId ? 'text-indigo-600 dark:text-indigo-300' : ''}`} onClick={() => { close(); selectBook(book.id); }}><span>{book.title}</span><span className="mt-1 block text-xs text-gray-500">{t(bookKinds[book.type] || '法典')} · {book.entryCount} · {book.version}</span></button>)}
         </div>}
       </ToolbarPopover>
-      {result && !loading && <ToolbarCountBadge total={filtered.length} loaded={Math.min(visibleLimit, filtered.length)} />}
-      <ToolbarSearch value={filter.query} onChange={event => changeFilter({ query: event.target.value })} placeholder={t('标题、提示词、作者或说明')} containerClassName="min-w-0 md:max-w-none!" />
       {mode === 'books' && <ToolbarPopover label={filter.path.split('/').at(-1) || '目录'} title={filter.path || t('目录')} icon={<FolderTree />} width={360} active={Boolean(filter.path)} className="[&>button>span]:max-w-24 [&>button>span]:truncate">
         {close => <div className="space-y-2">
           <ToolbarSearch aria-label={t('搜索目录')} value={directorySearch} onChange={event => setDirectorySearch(event.target.value)} placeholder={t('搜索目录')} />
@@ -300,6 +298,8 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
           {paths.filter(path => path.toLocaleLowerCase().includes(directorySearch.trim().toLocaleLowerCase())).map(path => <button type="button" key={path} title={path} aria-label={path} aria-pressed={filter.path === path} className={`${TOOLBAR_MENU_CLASS} ${filter.path === path ? '!text-indigo-600 dark:!text-indigo-300' : ''}`} style={{ paddingLeft: `${12 + (path.split('/').length - 1) * 12}px` }} onClick={() => { changeFilter({ path }); close(); }}>{directorySearch ? path : path.split('/').at(-1)}</button>)}
         </div>}
       </ToolbarPopover>}
+      {result && !loading && <ToolbarCountBadge total={filtered.length} loaded={Math.min(visibleLimit, filtered.length)} />}
+      <ToolbarSearch value={filter.query} loading={loading} onChange={event => changeFilter({ query: event.target.value })} placeholder={t('标题、提示词、作者或说明')} containerClassName="min-w-0 md:max-w-none!" />
       <ToolbarPopover title={t('法典筛选')} width={400} count={filterCount}>
         {close => <div className="space-y-4">
           {mode === 'books' ? select('内容更新', 'update', [['', '全部'], ['latest', '最近更新'], ...updates.map(update => [update, update] as [string, string])]) : select('分类', 'category', [['', '全部'], ...categories.map(category => [category, category] as [string, string])])}
@@ -310,7 +310,6 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
           <div className="flex justify-between"><ToolbarButton onClick={clearFilters}>{t('重置')}</ToolbarButton><ToolbarButton tone="primary" onClick={close}>{t('确认')}</ToolbarButton></div>
         </div>}
       </ToolbarPopover>
-      {loading && <span role="status" aria-label={t('读取中…')} className="flex-none text-xs text-gray-500"><LoaderCircle className="h-4 w-4 animate-spin" /></span>}
     </WorkspaceToolbar>
     </WorkspaceChrome>
     <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>

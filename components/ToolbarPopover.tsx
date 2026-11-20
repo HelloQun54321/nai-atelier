@@ -112,9 +112,14 @@ export const ToolbarPopover: React.FC<{
   }, [mobile, setOpen]);
   const content = typeof children === 'function' ? children(close, mobile) : children;
   const countValue = typeof count === 'function' ? count(mobile) : count;
+  const triggerActive = active ?? countValue > 0;
+  const accessibleLabel = `${t(label)}${countValue > 0 ? ` ${countValue}` : ''}`;
   return <div ref={anchorRef} className={`flex-none ${className}`}>
-    {iconOnly ? <IconButton data-agent-action="browse" label={label} tone={iconTone} disabled={disabled} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="dialog">{icon}</IconButton> : <ToolbarButton data-agent-action="browse" disabled={disabled} active={active ?? countValue > 0} onClick={() => setOpen(!open)} aria-label={`${t(label)}${countValue > 0 ? ` ${countValue}` : ''}`} aria-expanded={open} aria-haspopup="dialog" title={title} className="mobile-touch !px-2.5 md:!px-3">
-      {icon}<span className="hidden sm:inline">{t(label)}{countValue > 0 ? ` ${countValue}` : ''}</span>{countValue > 0 && <span className="sm:hidden">{countValue}</span>}
+    {iconOnly ? <IconButton data-agent-action="browse" label={accessibleLabel} title={title} tone={iconTone} active={triggerActive} disabled={disabled} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="dialog" className={countValue > 0 ? 'relative' : ''}>
+      {icon}
+      {countValue > 0 && <span aria-hidden="true" className="absolute -right-1 -top-1 flex min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-mini font-bold leading-4 text-white tabular-nums">{countValue}</span>}
+    </IconButton> : <ToolbarButton data-agent-action="browse" disabled={disabled} active={triggerActive} onClick={() => setOpen(!open)} aria-label={accessibleLabel} aria-expanded={open} aria-haspopup="dialog" title={title} className="mobile-touch !px-2.5 md:!px-3">
+      {icon}<span className="toolbar-responsive-label hidden md:inline">{t(label)}{countValue > 0 ? ` ${countValue}` : ''}</span>{countValue > 0 && <span className="toolbar-responsive-compact md:hidden tabular-nums">{countValue}</span>}
     </ToolbarButton>}
     {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={title} zIndex={zIndex} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={title} width={width} above={above} compact={compact} zIndex={zIndex} onClose={close}>{content}</AnchoredToolbarPopover>)}
   </div>;

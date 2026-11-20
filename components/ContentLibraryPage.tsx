@@ -2,6 +2,7 @@ import { t, useLanguage } from '../services/i18n';
 import React, { Suspense, useEffect, useId, useState } from 'react';
 import { ClipboardPaste, Dice5, ImagePlus, Sparkles, X } from 'lucide-react';
 import { IconButton, PageSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { ToolbarOverflowMenu } from './ToolbarOverflowMenu';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { PromptCaptureDialog } from './PromptCaptureDialog';
@@ -9,7 +10,7 @@ import { PromptExtractDialog } from './PromptExtractDialog';
 import { ImageTaggerPanel } from './ImageTaggerPanel';
 import type { ExtractedEntryDraft } from '../services/extractedPromptEntry';
 import type { PromptLibraryTreeState } from '../services/promptLibraryTree.mjs';
-import { useMobileHistoryLayer } from './MobileUI';
+import { useMobileHistoryLayer, type ToolbarOverflowItem } from './MobileUI';
 
 export type ContentLibrarySection = 'items' | 'saved' | 'originals';
 
@@ -95,6 +96,10 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
   const pane = (key: ContentLibrarySection, node: () => React.ReactNode) => mounted.has(key)
     ? <div role="tabpanel" hidden={section !== key} id={`${id}-${key}-panel`} aria-labelledby={`${id}-${key}-tab`} data-content-library-pane={key} className={section === key ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><Suspense fallback={<Loading />}>{node()}</Suspense></div>
     : null;
+  const browseOverflowItems: ToolbarOverflowItem[] = [
+    ...(onCapture ? [{ label: '图片反推 Tag', hint: '从图片反推 Tag 并新建条目', icon: <ImagePlus />, onClick: () => setReverseOpen(true) }] : []),
+    ...(onExtractSave ? [{ label: 'AI 提取分类', icon: <Sparkles />, onClick: () => setExtractOpen(true) }] : []),
+  ];
   return <div className="content-library workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
     <WorkspaceChrome>
       <WorkspaceToolbar scrollable={false} className={`content-library-toolbar ${browse ? '!flex-nowrap !gap-2' : ''}`}>
@@ -115,15 +120,21 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
           </button>)}
         </div>}
         <div ref={setToolbarSlot} className={`content-library-tools flex min-w-0 flex-1 items-center gap-2 ${browse ? '!order-none !basis-0 !gap-2' : ''}`} />
-        {onCapture && <ToolbarButton className={browse ? 'mobile-touch !hidden md:!inline-flex !h-11 md:!h-10 !w-11 !gap-0 !px-0 xl:!w-auto xl:!gap-2 xl:!px-3' : ''} onClick={() => setReverseOpen(true)} aria-label={t('图片反推 Tag')} title={t('从图片反推 Tag 并新建条目')} aria-haspopup="dialog"><ImagePlus /><span className={browse ? 'hidden xl:inline' : 'hidden sm:inline'}>{t('图片反推')}</span></ToolbarButton>}
-        {onExtractSave && <ToolbarButton className={browse ? 'mobile-touch !hidden md:!inline-flex !h-11 md:!h-10 !w-11 !gap-0 !px-0 xl:!w-auto xl:!gap-2 xl:!px-3' : ''} onClick={() => setExtractOpen(true)} aria-label={t('AI 提取分类')} aria-haspopup="dialog"><Sparkles /><span className={browse ? 'hidden xl:inline' : 'hidden sm:inline'}>{t('AI 提取分类')}</span></ToolbarButton>}
-        {onCapture && <ToolbarButton tone={browse ? 'primary' : undefined} className={browse ? 'mobile-touch !h-11 md:!h-10 !w-11 !gap-0 !px-0 xl:!w-auto xl:!gap-2 xl:!px-3' : ''} onClick={() => setCaptureOpen(true)} aria-label={t('粘贴收录')} aria-haspopup="dialog"><ClipboardPaste /><span className={browse ? 'hidden xl:inline' : 'hidden sm:inline'}>{t('粘贴收录')}</span></ToolbarButton>}
-        <ToolbarButton tone={browse ? undefined : 'primary'} className={browse ? 'mobile-touch !h-11 md:!h-10 !w-11 !gap-0 !px-0 xl:!w-auto xl:!gap-2 xl:!px-3' : 'content-library-roll-action mobile-touch !h-11 !w-11 !gap-0 !px-0 md:!h-10 md:!w-auto md:!gap-2 md:!px-3'} onClick={() => onRollOpenChange(true)} aria-label={t(rollLabel)} title={t(rollLabel)} aria-haspopup="dialog"><Dice5 /><span className={browse ? 'hidden xl:inline' : 'hidden md:inline'}>{t(rollLabel)}</span></ToolbarButton>
+        {browse ? <>
+          <ToolbarButton className="mobile-touch !px-2.5 md:!px-3" onClick={() => onRollOpenChange(true)} aria-label={t(rollLabel)} title={t(rollLabel)} aria-haspopup="dialog"><Dice5 /><span className="toolbar-responsive-label hidden xl:inline">{t(rollLabel)}</span></ToolbarButton>
+          {onCapture && <ToolbarButton tone="primary" className="mobile-touch !px-2.5 md:!px-3" onClick={() => setCaptureOpen(true)} aria-label={t('粘贴收录')} title={t('粘贴收录')} aria-haspopup="dialog"><ClipboardPaste /><span className="toolbar-responsive-label hidden xl:inline">{t('粘贴收录')}</span></ToolbarButton>}
+          <ToolbarOverflowMenu items={browseOverflowItems} />
+        </> : <>
+          {onCapture && <ToolbarButton onClick={() => setReverseOpen(true)} aria-label={t('图片反推 Tag')} title={t('从图片反推 Tag 并新建条目')} aria-haspopup="dialog"><ImagePlus /><span className="hidden sm:inline">{t('图片反推')}</span></ToolbarButton>}
+          {onExtractSave && <ToolbarButton onClick={() => setExtractOpen(true)} aria-label={t('AI 提取分类')} aria-haspopup="dialog"><Sparkles /><span className="hidden sm:inline">{t('AI 提取分类')}</span></ToolbarButton>}
+          {onCapture && <ToolbarButton onClick={() => setCaptureOpen(true)} aria-label={t('粘贴收录')} aria-haspopup="dialog"><ClipboardPaste /><span className="hidden sm:inline">{t('粘贴收录')}</span></ToolbarButton>}
+          <ToolbarButton tone="primary" className="content-library-roll-action mobile-touch !h-11 !w-11 !gap-0 !px-0 md:!h-10 md:!w-auto md:!gap-2 md:!px-3" onClick={() => onRollOpenChange(true)} aria-label={t(rollLabel)} title={t(rollLabel)} aria-haspopup="dialog"><Dice5 /><span className="hidden md:inline">{t(rollLabel)}</span></ToolbarButton>
+        </>}
       </WorkspaceToolbar>
     </WorkspaceChrome>
     {/* 滚动由嵌入分区自己的 workspace-scroll-viewport 承担，这里只负责留出顶栏高度。 */}
     <div className="content-library-body flex min-h-0 flex-1 flex-col">
-      {browse ? browse(toolbarSlot, { onExtract: onExtractSave ? () => setExtractOpen(true) : undefined }) : <>{items && pane('items', () => items(section === 'items' ? toolbarSlot : null))}
+      {browse ? browse(toolbarSlot, {}) : <>{items && pane('items', () => items(section === 'items' ? toolbarSlot : null))}
       {saved && pane('saved', () => saved(section === 'saved' ? toolbarSlot : null))}</>}
     </div>
     {rollMounted && <ImagePreviewPortal><RollDialog title={rollLabel} open={active && rollOpen} onClose={() => onRollOpenChange(false)}>{roll}</RollDialog></ImagePreviewPortal>}
