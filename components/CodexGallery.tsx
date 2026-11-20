@@ -298,7 +298,6 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
           {paths.filter(path => path.toLocaleLowerCase().includes(directorySearch.trim().toLocaleLowerCase())).map(path => <button type="button" key={path} title={path} aria-label={path} aria-pressed={filter.path === path} className={`${TOOLBAR_MENU_CLASS} ${filter.path === path ? '!text-indigo-600 dark:!text-indigo-300' : ''}`} style={{ paddingLeft: `${12 + (path.split('/').length - 1) * 12}px` }} onClick={() => { changeFilter({ path }); close(); }}>{directorySearch ? path : path.split('/').at(-1)}</button>)}
         </div>}
       </ToolbarPopover>}
-      {result && !loading && <ToolbarCountBadge total={filtered.length} loaded={Math.min(visibleLimit, filtered.length)} />}
       <ToolbarPopover title={t('法典筛选')} width={400} count={filterCount}>
         {close => <div className="space-y-4">
           {mode === 'books' ? select('内容更新', 'update', [['', '全部'], ['latest', '最近更新'], ...updates.map(update => [update, update] as [string, string])]) : select('分类', 'category', [['', '全部'], ...categories.map(category => [category, category] as [string, string])])}
@@ -309,7 +308,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
           <div className="flex justify-between"><ToolbarButton onClick={clearFilters}>{t('重置')}</ToolbarButton><ToolbarButton tone="primary" onClick={close}>{t('确认')}</ToolbarButton></div>
         </div>}
       </ToolbarPopover>
-      <ToolbarSearch value={filter.query} loading={loading} onChange={event => changeFilter({ query: event.target.value })} placeholder={t('标题、提示词、作者或说明')} containerClassName="min-w-0 md:max-w-none!" />
+      <ToolbarSearch value={filter.query} loading={loading} trailing={result && !loading && <ToolbarCountBadge inline total={filtered.length} loaded={Math.min(visibleLimit, filtered.length)} />} onChange={event => changeFilter({ query: event.target.value })} placeholder={t('标题、提示词、作者或说明')} containerClassName="min-w-0 md:max-w-none!" />
     </WorkspaceToolbar>
     </WorkspaceChrome>
     <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>

@@ -764,7 +764,6 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const listToolbarContent = (
     <>
       {categoryToggle}
-      {chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountBadge total={items.length} loaded={shown.length} />}
       <ToolbarPopover title={t('筛选{0}', [t(config.title)])} count={selectedTags.size} width={320} zIndex={dynamicDirectories ? 1960 : undefined}>
         <div className="space-y-3">
           <label className="block text-xs font-semibold text-gray-500">{t('排序')}
@@ -821,6 +820,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       <div className="relative min-w-0 flex-1">
         <ToolbarSearch
           value={query}
+          trailing={chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountBadge inline total={items.length} loaded={shown.length} />}
           onChange={event => { setQuery(event.target.value); resetScroll(); }}
           aria-label={t('搜索名称、标签或提示词')}
           placeholder={t('搜索{0}名称、标签或提示词', [t(config.itemNoun)])}

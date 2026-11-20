@@ -257,7 +257,6 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   };
   const toolbar = <>
     <ToolbarButton data-agent-action="browse" aria-label={t(navigationExpanded ? '收起目录' : '展开目录')} title={[t(navigationExpanded ? '收起目录' : '展开目录'), selectedDirectoryPath || t('全部目录')].filter(Boolean).join(' · ')} aria-expanded={navigationExpanded} aria-controls={navigationId} active={navigationExpanded || favoritesSelected || (directoryScope ? !memory.allDirectories || memory.unclassified : memory.combinationCategory !== null || memory.combinationUnclassified)} onClick={toggleDirectories} className="mobile-touch !px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{selectedDirectoryPath || t('全部目录')}</span></ToolbarButton>
-    {!countsPending && <ToolbarCountBadge total={scopeTotal} loaded={shown.length} />}
     {!mobile && wide && <SegmentedControl ariaLabel={t('提示词库分区')} value={memory.scope} onChange={setScope} options={SCOPES.map(([scope, label]) => ({ value: scope, label }))} />}
     {!mobile && !wide && <select aria-label={t('提示词库范围')} value={memory.scope} onChange={event => setScope(event.target.value as PromptBrowseScope)}
       className="appearance-input mobile-touch h-10 w-24 shrink-0 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700">
@@ -281,7 +280,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
         {mobile && onExtract && <ToolbarButton onClick={() => void openFromFilter(close, mobile, onExtract)}>{t('AI 提取分类')}</ToolbarButton>}</div>
       </>}
     </ToolbarPopover>
-    <ToolbarSearch value={query} aria-label={t('搜索名称、正文或标签')} placeholder={t(wide ? '搜索名称、正文或标签' : '搜索')}
+    <ToolbarSearch value={query} trailing={!countsPending && <ToolbarCountBadge inline total={scopeTotal} loaded={shown.length} />} aria-label={t('搜索名称、正文或标签')} placeholder={t(wide ? '搜索名称、正文或标签' : '搜索')}
       onChange={event => { setQuery(event.target.value); resetScroll(); }} className="max-[360px]:!pl-2" containerClassName="min-w-0 flex-1 md:max-w-none! max-[360px]:[&>svg]:hidden" />
   </>;
   return <>{toolbarSlot && createPortal(toolbar, toolbarSlot)}<div data-workspace-body className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row" style={{ '--workspace-chrome-height': '0px' } as React.CSSProperties}>

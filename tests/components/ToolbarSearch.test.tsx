@@ -51,3 +51,12 @@ it('增删框内标签不重建搜索输入，保留文字、选区和焦点', (
   expect(document.activeElement).toBe(input); expect(input.value).toBe('关键词');
   expect(input.selectionStart).toBe(1); expect(input.selectionEnd).toBe(2);
 });
+
+it('尾部计数槽位位于输入框之后，点击回显区域仍聚焦搜索输入', () => {
+  render(<ToolbarSearch aria-label="列表搜索" trailing={<span data-testid="trailing-count">12/24</span>} />);
+  const input = screen.getByRole('searchbox', { name: '列表搜索' });
+  const trailing = screen.getByTestId('trailing-count');
+  expect(input.compareDocumentPosition(trailing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(trailing);
+  expect(document.activeElement).toBe(input);
+});

@@ -464,7 +464,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
     <div className="workspace-canvas flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceChrome>
 <WorkspaceToolbar>
-        {loadedRef.current && <ToolbarCountBadge total={showHistory ? historyItems.length : rating !== 'all' || ratio !== 'all' || soloOnly ? Math.min(items.length, displayedItems.length) : items.length} loaded={showHistory ? undefined : items.length} />}
         <ToolbarPopover title={t("Danbooru 筛选")} count={Number(sort !== 'rank') + Number(rating !== 'all') + Number(ratio !== 'all') + Number(soloOnly)}>
         <div className="space-y-4">
           <button type="button" onClick={() => void handleApplyFilter({ sort: 'rank', rating: 'all', ratio: 'all', soloOnly: false })} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
@@ -519,7 +518,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
         </div>
         </ToolbarPopover>
         <ListJumpButton page={page} disabled={loading} onJump={target => { void load(queryRef.current, target); }} />
-        <form onSubmit={submitSearch} className="min-w-0 flex-1"><ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder={t("输入中文或英文 Tag，回车搜索")} aria-label={t("搜索 Danbooru")} containerClassName="md:max-w-none!" /></form>
+        <form onSubmit={submitSearch} className="min-w-0 flex-1"><ToolbarSearch value={input} trailing={loadedRef.current && <ToolbarCountBadge inline total={showHistory ? historyItems.length : rating !== 'all' || ratio !== 'all' || soloOnly ? Math.min(items.length, displayedItems.length) : items.length} loaded={showHistory ? undefined : items.length} />} onChange={event => setInput(event.target.value)} placeholder={t("输入中文或英文 Tag，回车搜索")} aria-label={t("搜索 Danbooru")} containerClassName="md:max-w-none!" /></form>
         <ToolbarButton aria-label={t("浏览足迹")} onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : 'neutral'} className="mobile-touch !px-2.5 md:!px-3"><Clock /><span className="toolbar-responsive-label hidden md:inline">{t("足迹")}</span></ToolbarButton>
       </WorkspaceToolbar>
 

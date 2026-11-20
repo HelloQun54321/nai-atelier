@@ -723,7 +723,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             <WorkspaceChrome>
 <WorkspaceToolbar>
                 {groups.toolbar}
-            {statusReady && (!localCatalogBrowse || !sampleLoading && !sampleError) && (!groupBrowse || groups.ready && !groups.error) && !isCatalogLoading && !catalogError && !searchError && !(onlySamples && currentSampleError) && ((!onlySamples && !gachaArtists) || !sampleLoading) && <ToolbarCountBadge total={gachaArtists ? undefined : hasSearch || onlySamples || localCatalogBrowse ? matchedArtists.length : hasMoreUnionCatalog ? undefined : artistCatalogCount + packOnlyArtists.length} loaded={gachaArtists ? filteredArtists.length : localCatalogBrowse && !(groupBrowse || usageFiltersActive || statusBrowse) ? visibleCatalogArtists.length : filteredArtists.length} />}
                 <SegmentedControl
                     mode="buttons"
                     ariaLabel={t('画师样张模型')}
@@ -750,7 +749,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                         <button type="button" onClick={() => { setArtistSort('popular'); setChainUsageFilter('all'); setImageUsageFilter('all'); setStatusFilter('all'); updateOnlySamples(true); setSampleLimit(100); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
                     </div>
                 </ToolbarPopover>
-                <ToolbarSearch value={searchTerm} loading={isCatalogLoading} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索画师，多个词用逗号分隔")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
+                <ToolbarSearch value={searchTerm} loading={isCatalogLoading} trailing={statusReady && (!localCatalogBrowse || !sampleLoading && !sampleError) && (!groupBrowse || groups.ready && !groups.error) && !isCatalogLoading && !catalogError && !searchError && !(onlySamples && currentSampleError) && ((!onlySamples && !gachaArtists) || !sampleLoading) && <ToolbarCountBadge inline total={gachaArtists ? undefined : hasSearch || onlySamples || localCatalogBrowse ? matchedArtists.length : hasMoreUnionCatalog ? undefined : artistCatalogCount + packOnlyArtists.length} loaded={gachaArtists ? filteredArtists.length : localCatalogBrowse && !(groupBrowse || usageFiltersActive || statusBrowse) ? visibleCatalogArtists.length : filteredArtists.length} />} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索画师，多个词用逗号分隔")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
                 <ToolbarButton aria-label={gachaArtists ? t("再选一批") : t("随机选画师")} title={gachaPool.length ? undefined : t(groupBrowse ? '没有匹配的画师样张' : '先下载样张图包或生成样张')} onClick={() => void drawGacha()} disabled={isGachaLoading || gachaPool.length <= 0} className="mobile-touch max-md:hidden" tone="neutral">
                         {isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="toolbar-responsive-label hidden md:inline">{gachaArtists ? t("再选一批") : t("随机选画师")}</span>
                 </ToolbarButton>

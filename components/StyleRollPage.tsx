@@ -907,7 +907,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           : <ToolbarButton active={recordsExpanded} className="!min-w-0 !max-w-36 !justify-start !px-3 sm:!max-w-48 lg:!max-w-64" aria-label={t('切换画风记录')} title={[t('切换画风记录'), currentRecordName || t('新画风记录')].join(' · ')} aria-expanded={recordsExpanded} disabled={frozen || preparing} onClick={toggleRecords}>
             <Folder className="h-4 w-4" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
           </ToolbarButton>}
-        {experiment && <ToolbarCountBadge total={round && roundPending.length > 0 ? round.candidateIds.length : visible.length} loaded={round && roundPending.length > 0 ? round.candidateIds.filter(id => images.has(id)).length : undefined} />}
         <ToolbarPopover title={t('筛选与排序')} label={t('筛选')} count={Number(filter !== 'all') + Number(Boolean(roundId)) + Number(sort !== 'new')} disabled={!experiment}>
           {close => <div className="space-y-4">
             <div role="group" aria-label={t('候选筛选')} className="grid grid-cols-2 gap-2">
@@ -938,7 +937,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         </ToolbarPopover>
 
         {/* 中间：以搜索框为界，左侧浏览筛选、右侧管理与执行操作。 */}
-        <ToolbarSearch value={query} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师、中文名或编号')} placeholder={t('搜索画师、中文名或编号')} containerClassName="min-w-0 flex-1 !max-w-none md:!max-w-none" disabled={!experiment} />
+        <ToolbarSearch value={query} trailing={experiment && <ToolbarCountBadge inline total={round && roundPending.length > 0 ? round.candidateIds.length : visible.length} loaded={round && roundPending.length > 0 ? round.candidateIds.filter(id => images.has(id)).length : undefined} />} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师、中文名或编号')} placeholder={t('搜索画师、中文名或编号')} containerClassName="min-w-0 flex-1 !max-w-none md:!max-w-none" disabled={!experiment} />
 
         {/* 右侧集群：多选、主 CTA、设置与更多。 */}
         <div className="flex shrink-0 items-center gap-1.5 md:gap-2">

@@ -192,7 +192,8 @@ export const WorkspaceToolbar: React.FC<{
 export const ToolbarSearch: React.FC<React.InputHTMLAttributes<HTMLInputElement> & {
   containerClassName?: string;
   loading?: boolean;
-}> = ({ containerClassName = '', className = '', type = 'search', loading = false, children, ...props }) => {
+  trailing?: React.ReactNode;
+}> = ({ containerClassName = '', className = '', type = 'search', loading = false, trailing, children, ...props }) => {
   // 容器一律用 div：外观预设按元素类型区分 .appearance-group（div 去掉边框、label 变透明），
   // 带筛选标签的页面之前用 div、其它页面用 label，同一主题下边框和材质都对不上。
   // 点击框内空白仍聚焦输入，替代 label 的隐式聚焦；点筛选标签和按钮时不抢焦点。
@@ -217,6 +218,7 @@ export const ToolbarSearch: React.FC<React.InputHTMLAttributes<HTMLInputElement>
       className={`h-10 min-w-0 flex-1 border-0 bg-transparent px-2 text-sm text-gray-900 outline-none transition dark:bg-transparent dark:text-gray-100 ${className}`}
     />
     {loading && <span role="status" aria-label={t('加载中…')} className="pointer-events-none flex flex-none items-center pr-2 text-gray-400"><LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" /></span>}
+    {trailing}
   </div>;
 };
 

@@ -564,14 +564,12 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="toolbar-responsive-label hidden md:inline">{t('退出多选')}</span></ToolbarButton>
           </> : <>
           {!isGuest && type === 'style' && <ToolbarButton data-agent-action="browse" aria-label={t(foldersExpanded ? '收起文件夹' : '展开文件夹')} title={[t(foldersExpanded ? '收起文件夹' : '展开文件夹'), activeFolderLabel].join(' · ')} aria-expanded={foldersExpanded} active={foldersExpanded || activeFolder !== '*'} disabled={folderStore.busy} onClick={toggleFolders} className="!px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{activeFolderLabel}</span></ToolbarButton>}
-          {!loadError && !isLoading && <ToolbarCountBadge total={filteredChains.length} loaded={Math.min(visibleCount, filteredChains.length)} />}
-          {!loadError && isLoading && filteredChains.length > 0 && <ToolbarCountBadge total={filteredChains.length} loaded={Math.min(visibleCount, filteredChains.length)} />}
           <div ref={filterHostRef} className="flex-none">
             <ToolbarPopover title={t("筛选与排序")} count={filterCount} active={filtersActive} open={showFilters} onOpenChange={setShowFilters}>
               {(close, mobile) => renderFilterContent(close, mobile)}
             </ToolbarPopover>
           </div>
-          <ToolbarSearch value={searchTerm} loading={isLoading && filteredChains.length > 0} onChange={event => setSearchTerm(event.target.value)} placeholder={t("搜索{0}", [title])} containerClassName="min-w-0 flex-1 md:max-w-none!" />
+          <ToolbarSearch value={searchTerm} loading={isLoading && filteredChains.length > 0} trailing={!loadError && (!isLoading || filteredChains.length > 0) && <ToolbarCountBadge inline total={filteredChains.length} loaded={Math.min(visibleCount, filteredChains.length)} />} onChange={event => setSearchTerm(event.target.value)} placeholder={t("搜索{0}", [title])} containerClassName="min-w-0 flex-1 md:max-w-none!" />
           {!isGuest && type === 'style' && onOpenRoll && <ToolbarButton data-agent-action="browse" aria-label={t('Roll 串')} title={t('Roll 串')} onClick={onOpenRoll} className="mobile-touch md:hidden !px-2.5"><Dice5 className="h-4 w-4" /></ToolbarButton>}
           {!isGuest && type === 'style' && onBulkDelete && <ToolbarButton className="max-md:hidden" aria-label={t('批量选择风格串')} title={t('批量选择风格串')} disabled={syncSelection.busy} onClick={beginSelection}>
             <ListChecks className="h-4 w-4" /><span className="toolbar-responsive-label hidden xl:inline">{t('多选')}</span>

@@ -1087,7 +1087,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
             <WorkspaceChrome>
 <WorkspaceToolbar>
                 <div className="history-toolbar-shell">
-                {!isLoading && !loadFailed && <ToolbarCountBadge total={totalCount} loaded={items.length} />}
                     {selectionMode ? <>
                         <span className="flex-1 whitespace-nowrap text-sm font-semibold tabular-nums md:hidden">{t("已选 {0} 张", [selectedIds.size])}</span>
                         <div className="history-selection-actions hidden flex-1 md:flex">
@@ -1103,7 +1102,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                     </> : <>
                         <HistoryBrowseControls query={browseQuery} options={browseOptions} mobile={isMobileViewport} onApply={applyBrowseQuery} />
                         <ListJumpButton page={currentPage} totalPages={totalPages} disabled={isLoading} onJump={page => goToPage(page)} />
-                        <ToolbarSearch value={searchDraft} onChange={event => updateSearch(event.target.value)} placeholder={t("搜索标题、提示词或标签")} aria-label={t("搜索历史")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
+                        <ToolbarSearch value={searchDraft} trailing={!isLoading && !loadFailed && <ToolbarCountBadge inline total={totalCount} loaded={items.length} />} onChange={event => updateSearch(event.target.value)} placeholder={t("搜索标题、提示词或标签")} aria-label={t("搜索历史")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
                         {onOpenFootprint && <ToolbarButton aria-label={t('创作足迹')} title={t('创作足迹')} onClick={onOpenFootprint} className="mobile-touch md:hidden !px-2.5"><Footprints /></ToolbarButton>}
                         <div className="history-toolbar-status">
                             {newImageCount > 0 && <ToolbarButton aria-label={t("新增 {0} 张图片 · 查看最新", [newImageCount])} title={t("新增 {0} 张图片 · 查看最新", [newImageCount])} onClick={showNewImages} className="history-new-image-action !px-2.5"><span className="history-new-image-label">{t("新图")}</span><span className="tabular-nums">+{newImageCount}</span></ToolbarButton>}

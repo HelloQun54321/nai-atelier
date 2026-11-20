@@ -154,7 +154,10 @@ describe('资料目录工具栏行为', () => {
     assertLeftOfSearch(screen.getByRole('button', { name: /^筛选/ }), screen.getByRole('searchbox', { name: '搜索 Danbooru' }), screen.getByRole('button', { name: '浏览足迹' }));
     danbooru.unmount();
 
-    render(<GenHistory chains={[]} currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} notify={vi.fn()} />);
-    assertLeftOfSearch(screen.getByRole('button', { name: /^筛选/ }), screen.getByRole('searchbox', { name: '搜索历史' }), screen.getByRole('button', { name: '管理' }));
+    const history = render(<GenHistory chains={[]} currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} notify={vi.fn()} />);
+    const historySearch = screen.getByRole('searchbox', { name: '搜索历史' });
+    assertLeftOfSearch(screen.getByRole('button', { name: /^筛选/ }), historySearch, screen.getByRole('button', { name: '管理' }));
+    await waitFor(() => expect(history.container.querySelector('[data-toolbar-count-badge]')).toBeTruthy());
+    expect(history.container.querySelector('[data-toolbar-count-badge]')?.closest('.toolbar-search-field')).toBe(historySearch.closest('.toolbar-search-field'));
   });
 });
