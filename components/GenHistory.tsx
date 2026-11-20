@@ -1105,24 +1105,20 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         <ToolbarSearch value={searchDraft} trailing={!isLoading && !loadFailed && <ToolbarCountBadge inline total={totalCount} loaded={items.length} />} onChange={event => updateSearch(event.target.value)} placeholder={t("搜索标题、提示词或标签")} aria-label={t("搜索历史")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
                         {onOpenFootprint && <ToolbarButton aria-label={t('创作足迹')} title={t('创作足迹')} onClick={onOpenFootprint} className="mobile-touch md:hidden !px-2.5"><Footprints /></ToolbarButton>}
                         <div className="history-toolbar-status">
+                            <ToolbarButton aria-label={t("批量选择图片")} title={t("批量选择图片")} onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }} disabled={migrationProgress !== null} className="history-icon-compact max-md:hidden">
+                                <ListChecks /><span className="history-button-label">{t("多选")}</span>
+                            </ToolbarButton>
                             {newImageCount > 0 && <ToolbarButton aria-label={t("新增 {0} 张图片 · 查看最新", [newImageCount])} title={t("新增 {0} 张图片 · 查看最新", [newImageCount])} onClick={showNewImages} className="history-new-image-action !px-2.5"><span className="history-new-image-label">{t("新图")}</span><span className="tabular-nums">+{newImageCount}</span></ToolbarButton>}
                             <ToolbarButton aria-label={t("回收站")} title={t("回收站")} onClick={openRecycleBin} disabled={moveBusy} className="history-icon-compact">
                                 <Trash2 /><span className="history-button-label">{t("回收站")}</span>
                             </ToolbarButton>
                             <div ref={managementAnchorRef} className="relative">
-                                <ToolbarButton active={showCleanMenu} aria-label={newImageCount ? t("管理，新增 {0} 张图片", [newImageCount]) : t("管理")} title={migrationProgress ? migrationProgress.total > 0 ? t("正在迁移浏览器历史 {0}/{1}，请勿关闭页面…", [migrationProgress.current, migrationProgress.total]) : t("正在检查浏览器历史…") : t("历史管理")} className="history-management-button relative" onClick={() => setShowCleanMenu(value => !value)} disabled={migrationProgress !== null}>
-                                    {migrationProgress ? <span role="status" aria-label={t("历史迁移进度")}><LoaderCircle className="animate-spin" /></span> : <MoreVertical />}<span className="history-management-label">{t("管理")}</span>
+                                <IconButton active={showCleanMenu} label={newImageCount ? t("更多操作，新增 {0} 张图片", [newImageCount]) : t("更多操作")} title={migrationProgress ? migrationProgress.total > 0 ? t("正在迁移浏览器历史 {0}/{1}，请勿关闭页面…", [migrationProgress.current, migrationProgress.total]) : t("正在检查浏览器历史…") : t("更多操作")} className="history-management-button relative" onClick={() => setShowCleanMenu(value => !value)} disabled={migrationProgress !== null} aria-expanded={showCleanMenu} aria-haspopup="dialog">
+                                    {migrationProgress ? <span role="status" aria-label={t("历史迁移进度")}><LoaderCircle className="animate-spin" /></span> : <MoreVertical />}
                                     {newImageCount > 0 && <span aria-hidden="true" className="history-new-image-badge">{newImageCount > 99 ? '99+' : '+' + newImageCount}</span>}
-                                </ToolbarButton>
+                                </IconButton>
                                 {showCleanMenu && !isMobileViewport && (
-                                    <AnchoredToolbarPopover anchorRef={managementAnchorRef} title={t("历史管理")} width={256} onClose={() => setShowCleanMenu(false)}>
-                                        <button
-                                            type="button"
-                                            onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }}
-                                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
-                                        >
-                                            <ListChecks className="h-4 w-4" />{t("批量选择图片")}</button>
-
+                                    <AnchoredToolbarPopover anchorRef={managementAnchorRef} title={t("更多操作")} width={256} onClose={() => setShowCleanMenu(false)}>
                                         <button
                                             type="button"
                                             disabled={moveBusy || moveCapability !== 'remote'} onClick={() => handleCleanMenuClick('days')}
@@ -1149,7 +1145,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                 </div>
             </WorkspaceToolbar>
 
-            <ImagePreviewPortal><MobileBottomSheet open={showCleanMenu && isMobileViewport} title={t("历史管理")} onClose={() => setShowCleanMenu(false)}>
+            <ImagePreviewPortal><MobileBottomSheet open={showCleanMenu && isMobileViewport} title={t("更多操作")} onClose={() => setShowCleanMenu(false)}>
                 <div className="space-y-2">
                             {newImageCount > 0 && <ToolbarButton className="w-full" onClick={() => { setShowCleanMenu(false); showNewImages(); }}>{t("新增 {0} 张图片 · 查看最新", [newImageCount])}</ToolbarButton>}
                             <button onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-50 px-4 text-left text-sm font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">{t("批量选择图片")}</button>

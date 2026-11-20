@@ -222,7 +222,7 @@ describe('历史缩略图就地操作', () => {
     });
     it.each([1280, 390])('宽度 %s 清理确认脱离工作区，取消不删除历史', async width => {
         const { container } = await setup(width);
-        fireEvent.click(screen.getByRole('button', { name: '管理' }));
+        fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
         fireEvent.click(screen.getByRole('button', { name: width === 1280 ? '按时间清理历史…' : '按时间移入回收站…' }));
         const dialog = screen.getByRole('dialog', { name: '确认清理历史' });
         expect(dialog.parentElement).toBe(container.firstElementChild);
@@ -236,7 +236,7 @@ describe('历史缩略图就地操作', () => {
 
     it('清理参数表单保留，最终确认按清理类型与实际参数隔离，取消不删除', async () => {
         await setup();
-        fireEvent.click(screen.getByRole('button', { name: '管理' }));
+        fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
         fireEvent.click(screen.getByRole('button', { name: '按时间清理历史…' }));
         const dialog = screen.getByRole('dialog', { name: '确认清理历史' });
         fireEvent.change(within(dialog).getByRole('spinbutton'), { target: { value: '7' } });
@@ -254,7 +254,7 @@ describe('历史缩略图就地操作', () => {
         await setup(390);
         const skipped = Array.from({ length: 80 }, (_, index) => ({ id: `protected-image-${index}`, reasons: [index === 79 ? 'reference_check_failed' : 'chain'] }));
         vi.mocked(localHistory.previewMove).mockImplementation(async selection => ({ previewToken: `token-${selection.keepCount}`, expiresAt: Date.now() + 60000, requestedCount: 82, movableCount: 2, skippedCount: 80, skipped }));
-        fireEvent.click(screen.getByRole('button', { name: '管理' }));
+        fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
         fireEvent.click(screen.getByRole('button', { name: '只保留最近指定数量' }));
         const dialog = screen.getByRole('dialog', { name: '确认清理历史' });
         const count = within(dialog).getByRole('spinbutton');
@@ -279,7 +279,7 @@ describe('历史缩略图就地操作', () => {
         await setup();
         const pending = new Map<number, (count: number) => void>();
         vi.mocked(localHistory.previewMove).mockImplementation(selection => new Promise(resolve => { pending.set(selection.days!, count => resolve({ previewToken: 'token-' + selection.days, expiresAt: Date.now() + 60000, requestedCount: count, movableCount: count, skippedCount: 0, skipped: [] })); }));
-        fireEvent.click(screen.getByRole('button', { name: '管理' }));
+        fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
         fireEvent.click(screen.getByRole('button', { name: '按时间清理历史…' }));
         const dialog = screen.getByRole('dialog', { name: '确认清理历史' });
         const confirm = within(dialog).getByRole('button', { name: '确认移入回收站' }) as HTMLButtonElement;
@@ -402,7 +402,6 @@ describe('历史缩略图就地操作', () => {
 
     it('多选时隐藏所有单图操作，点击卡片只选择图片', async () => {
         const { cards } = await setup();
-        fireEvent.click(screen.getByRole('button', { name: '管理' }));
         fireEvent.click(screen.getByRole('button', { name: '批量选择图片' }));
         expect(within(cards[0]).queryAllByRole('button')).toHaveLength(0);
         fireEvent.click(cards[0]);
@@ -689,8 +688,8 @@ describe('历史连续浏览会话', () => {
         expect(cards[0].getAttribute('data-press-revealed')).toBe('true');
         expect(screen.queryByRole('dialog', { name: '历史图片查看器' })).toBeNull();
         expect(screen.queryByText(/多选模式/)).toBeNull();
-        fireEvent.click(screen.getByRole('button', { name: '管理' }));
-        fireEvent.click(screen.getByRole('button', { name: '批量选择图片' }));
+        fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+        fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: '批量选择图片' }));
         fireEvent.click(cards[0]);
         expect(screen.getByText('已选 1 张')).toBeTruthy();
     });
@@ -737,20 +736,22 @@ describe('历史连续浏览会话', () => {
 });
 
 describe('历史顶栏状态一致性', () => {
-    it('桌面管理按维护顺序排列，清空全部放最后，打开菜单不执行删除', async () => {
+    it('桌面多选与回收站直出顶栏，更多菜单仅保留按维护顺序排列的清理项', async () => {
         await setup();
-        fireEvent.click(screen.getByRole('button', { name: '管理' }));
-        const dialog = within(screen.getByRole('dialog', { name: '历史管理' }));
-        expect(dialog.getAllByRole('button').map(button => button.textContent?.trim())).toEqual(['批量选择图片', '按时间清理历史…', '按数量保留最新…', '全部移入回收站…']);
+        expect(screen.queryByRole('button', { name: '管理' })).toBeNull();
+        expect(screen.getByRole('button', { name: '批量选择图片' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+        const dialog = within(screen.getByRole('dialog', { name: '更多操作' }));
+        expect(dialog.getAllByRole('button').map(button => button.textContent?.trim())).toEqual(['按时间清理历史…', '按数量保留最新…', '全部移入回收站…']);
         expect(localHistory.delete).not.toHaveBeenCalled();
         expect(localHistory.keepOnly).not.toHaveBeenCalled();
     });
 
-    it('回收站是顶栏独立入口，不进管理菜单', async () => {
+    it('回收站是顶栏独立入口，不进更多菜单', async () => {
         await setup();
         expect(screen.getByRole('button', { name: '回收站' })).toBeTruthy();
-        fireEvent.click(screen.getByRole('button', { name: '管理' }));
-        const dialog = within(screen.getByRole('dialog', { name: '历史管理' }));
+        fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+        const dialog = within(screen.getByRole('dialog', { name: '更多操作' }));
         expect(dialog.queryByRole('button', { name: '回收站' })).toBeNull();
     });
 
@@ -764,7 +765,6 @@ describe('历史顶栏状态一致性', () => {
         const scroll = container.querySelector<HTMLElement>('.overflow-y-auto.p-4')!;
         scroll.scrollTop = 600;
         const requests = vi.mocked(localHistory.getPage).mock.calls.length;
-        fireEvent.click(screen.getByRole('button', { name: '管理' }));
         fireEvent.click(screen.getByRole('button', { name: '批量选择图片' }));
         const header = within(container.querySelector('header')!);
         expect(header.queryByRole('combobox', { name: '历史排序' })).toBeNull();
@@ -780,18 +780,18 @@ describe('历史顶栏状态一致性', () => {
         expect(vi.mocked(localHistory.getPage).mock.calls.length).toBe(requests);
     });
 
-    it('手机新图提示可从管理角标进入查看最新，日期始终在更多筛选中可达', async () => {
+    it('手机新图提示可从更多菜单角标进入查看最新，日期始终在更多筛选中可达', async () => {
         const data = browseFixture(8);
         const { container } = await setup(360, 8);
         expect(screen.queryByRole('button', { name: /^时间范围：/ })).toBeNull();
         container.querySelector<HTMLElement>('.overflow-y-auto.p-4')!.scrollTop = 600;
         data.unshift({ ...data[0], id: 'mobile-new', imageUrl: '/synthetic/new.png', createdAt: Date.now() });
         await act(async () => emit({ type: 'add', id: 'mobile-new' }));
-        fireEvent.click(await screen.findByRole('button', { name: '管理，新增 1 张图片' }));
-        const dialog = within(screen.getByRole('dialog', { name: '历史管理' }));
+        fireEvent.click(await screen.findByRole('button', { name: '更多操作，新增 1 张图片' }));
+        const dialog = within(screen.getByRole('dialog', { name: '更多操作' }));
         fireEvent.click(dialog.getByRole('button', { name: '新增 1 张图片 · 查看最新' }));
         await waitFor(() => expect(cardById(container, 'mobile-new')).toBeTruthy());
-        expect(screen.queryByRole('dialog', { name: '历史管理' })).toBeNull();
+        expect(screen.queryByRole('dialog', { name: '更多操作' })).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: '筛选' }));
         expect(screen.getByLabelText('开始日期')).toBeTruthy();
         expect(screen.getByLabelText('结束日期')).toBeTruthy();
@@ -840,7 +840,7 @@ describe('回收站管理安全边界', () => {
             fireEvent.click(screen.getByRole('button', { name: '回收站' }));
             // 顶栏入口不需要先退出管理层，因此不该再借用浏览器返回。
             expect(back).not.toHaveBeenCalled();
-            expect(screen.queryByRole('dialog', { name: '历史管理' })).toBeNull();
+            expect(screen.queryByRole('dialog', { name: '更多操作' })).toBeNull();
             await screen.findByLabelText('历史回收站');
             expect(window.history.state.__naiMobileLayers).toEqual([expect.stringMatching(/^history-recycle-bin-/)]);
 
@@ -873,12 +873,12 @@ describe('回收站管理安全边界', () => {
         };
         try {
             await setup(390);
-            fireEvent.click(screen.getByRole('button', { name: '管理' }));
-            fireEvent.click(within(screen.getByRole('dialog', { name: '历史管理' })).getByRole('button', { name: action }));
+            fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+            fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: action }));
             expect(back).toHaveBeenCalledOnce();
             expect(localHistory.previewMove).not.toHaveBeenCalled();
             popToHistory();
-            expect(screen.queryByRole('dialog', { name: '历史管理' })).toBeNull();
+            expect(screen.queryByRole('dialog', { name: '更多操作' })).toBeNull();
             if (form) {
                 await screen.findByRole('dialog', { name: '确认清理历史' });
                 expect(window.history.state.__naiMobileLayers).toEqual([expect.stringMatching(/^history-clean-/)]);
@@ -897,7 +897,7 @@ describe('回收站管理安全边界', () => {
     it('全部移动使用冻结预览，部分成功只移除completedIds并保留失败项选择', async () => {
         const { cards } = await setup(); confirmAction.mockResolvedValue(true);
         vi.mocked(localHistory.moveToRecycleBin).mockResolvedValue({ operation: 'move', requestedCount: 2, completedCount: 1, completedIds: [items[0].id], skippedCount: 0, failedCount: 1, movedCount: 1, restoredCount: 0, purgedCount: 0, warnings: [], skipped: [], failed: [{ id: items[1].id, reasons: ['write_conflict'] }], success: false, ok: false, outcome: 'partial', partial: true, deletedCount: 1 });
-        fireEvent.click(screen.getByRole('button', { name: '管理' })); fireEvent.click(screen.getByRole('button', { name: '批量选择图片' }));
+        fireEvent.click(screen.getByRole('button', { name: '批量选择图片' }));
         fireEvent.click(cards[0]); fireEvent.click(cards[1]);
         fireEvent.click(within(screen.getByRole('banner')).getByRole('button', { name: '移入回收站' }));
         await waitFor(() => expect(cards[0].isConnected).toBe(false));
@@ -909,7 +909,7 @@ describe('回收站管理安全边界', () => {
         const { container } = await setup(); confirmAction.mockResolvedValue(true);
         vi.mocked(localHistory.previewMove).mockResolvedValue({ previewToken: 'all-token', expiresAt: Date.now() + 60000, requestedCount: 2, movableCount: 0, skippedCount: 2, skipped: [{ id: items[0].id, reasons: ['chain'] }, { id: items[1].id, reasons: ['favorite'] }] });
         vi.mocked(localHistory.moveToRecycleBin).mockResolvedValue({ operation: 'move', requestedCount: 2, completedCount: 0, completedIds: [], skippedCount: 2, failedCount: 0, movedCount: 0, restoredCount: 0, purgedCount: 0, warnings: [], skipped: [], failed: [], success: false, ok: false, outcome: 'blocked', partial: false, deletedCount: 0 });
-        fireEvent.click(screen.getByRole('button', { name: '管理' })); fireEvent.click(screen.getByRole('button', { name: '全部移入回收站…' }));
+        fireEvent.click(screen.getByRole('button', { name: '更多操作' })); fireEvent.click(screen.getByRole('button', { name: '全部移入回收站…' }));
         await waitFor(() => expect(localHistory.previewMove).toHaveBeenCalledWith({ clear: true, protectedIds: [] }));
         await waitFor(() => expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('候选 2 张 · 可移入 0 张 · 跳过 2 张') })));
         expect(confirmAction.mock.calls[0][0].message).toContain('创作配方仍在引用');
@@ -952,7 +952,7 @@ it('移动确认在途时批量收藏入口禁用，不能在执行后补发收�
     const { cards } = await setup();
     let resolve!: (value: boolean) => void;
     confirmAction.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
-    fireEvent.click(screen.getByRole('button', { name: '管理' })); fireEvent.click(screen.getByRole('button', { name: '批量选择图片' }));
+    fireEvent.click(screen.getByRole('button', { name: '批量选择图片' }));
     fireEvent.click(cards[0]);
     const toolbar = screen.getByRole('banner');
     fireEvent.click(within(toolbar).getByRole('button', { name: '移入回收站' }));

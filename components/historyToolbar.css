@@ -22,8 +22,8 @@
   .history-new-image-label { display: none; }
 }
 @container history-toolbar (max-width: 56.25rem) {
-  .history-button-label, .history-management-label, .history-management-chevron { display: none; }
-  .history-icon-compact, .history-management-button { width: calc(var(--spacing) * 10); padding-inline: 0 !important; }
+  .history-button-label { display: none; }
+  .history-icon-compact { width: calc(var(--spacing) * 10); padding-inline: 0 !important; }
   .history-toolbar-status { gap: calc(var(--spacing) * 2); }
 }
 @container history-toolbar (max-width: 23.75rem) {
