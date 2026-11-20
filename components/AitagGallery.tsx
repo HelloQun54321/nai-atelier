@@ -1640,9 +1640,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
 <WorkspaceToolbar>
           <span role="status" aria-label={isAitagConnected ? t("aitag.win 连接正常") : t("aitag.win 暂时不可用")} title={isAitagConnected ? t("aitag.win 连接正常") : t("aitag.win 暂时不可用")} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]' : 'bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.14)]'}`} />
           {hasLoadedRef.current && !isOfflineCache && <ToolbarCountBadge total={total} loaded={visibleItems.length} />}
-          <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) handleSearch(); }} aria-label={t('搜索 AITag 作品')} placeholder={t("作品、作者、标题或标签，回车检索")} containerClassName="min-w-0 flex-1 md:max-w-none!">
-            <SearchFilterChips chips={activeChips} expanded={showFilters} onMore={() => setShowFilters(true)} />
-          </ToolbarSearch>
           <ToolbarPopover title={t("AITag 筛选")} count={activeFilterCount} width={544} open={showFilters} onOpenChange={setShowFilters}>
             {(close, mobile) => <div className="space-y-4">
               {renderActiveFilters()}
@@ -1661,6 +1658,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             </div>}
           </ToolbarPopover>
           <ListJumpButton page={page} totalPages={totalPages} disabled={isLoading} onJump={goToPage} />
+          <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) handleSearch(); }} aria-label={t('搜索 AITag 作品')} placeholder={t("作品、作者、标题或标签，回车检索")} containerClassName="min-w-0 flex-1 md:max-w-none!">
+            <SearchFilterChips chips={activeChips} expanded={showFilters} onMore={() => setShowFilters(true)} />
+          </ToolbarSearch>
       </WorkspaceToolbar>
       </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selectedWork ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>

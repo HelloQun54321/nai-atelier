@@ -133,4 +133,28 @@ describe('资料目录工具栏行为', () => {
     expect(screen.queryByRole('dialog', { name: '历史管理' })).toBeNull();
     expect(within(screen.getByRole('banner')).getByText(/多选模式 · 已选/)).toBeTruthy();
   });
+
+  it('以搜索框为界：筛选位于搜索框左侧，管理与执行操作位于搜索框右侧', async () => {
+    const assertLeftOfSearch = (filterBtn: HTMLElement, search: HTMLElement, rightAction?: HTMLElement) => {
+      expect(filterBtn.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      if (rightAction) expect(search.compareDocumentPosition(rightAction) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    };
+
+    const artist = render(<ArtistLibrary notify={vi.fn()} />);
+    await waitFor(() => expect(getArtistDictionaryPage).toHaveBeenCalled());
+    assertLeftOfSearch(screen.getByRole('button', { name: /^筛选/ }), screen.getByRole('searchbox'), screen.getByRole('button', { name: '画师库设置' }));
+    artist.unmount();
+
+    const character = render(<CharacterLibrary chains={[]} onCreate={vi.fn()} onDelete={vi.fn()} onUpdateChain={vi.fn()} onNavigateToPlayground={vi.fn()} notify={vi.fn()} onSelect={vi.fn()} />);
+    await waitFor(() => expect(getCharacterDictionaryPage).toHaveBeenCalled());
+    assertLeftOfSearch(screen.getByRole('button', { name: /^筛选/ }), screen.getByRole('searchbox'), screen.getByRole('button', { name: '新建自定义角色' }));
+    character.unmount();
+
+    const danbooru = render(<DanbooruGallery active={false} currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+    assertLeftOfSearch(screen.getByRole('button', { name: /^筛选/ }), screen.getByRole('searchbox', { name: '搜索 Danbooru' }), screen.getByRole('button', { name: '浏览足迹' }));
+    danbooru.unmount();
+
+    render(<GenHistory chains={[]} currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} notify={vi.fn()} />);
+    assertLeftOfSearch(screen.getByRole('button', { name: /^筛选/ }), screen.getByRole('searchbox', { name: '搜索历史' }), screen.getByRole('button', { name: '管理' }));
+  });
 });

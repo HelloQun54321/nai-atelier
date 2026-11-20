@@ -510,15 +510,15 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         ]} />
         <ToolbarButton aria-label={t("退出多选")} title={t("退出多选")} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="toolbar-responsive-label hidden md:inline">{t("退出多选")}</span></ToolbarButton>
       </> : <>
-      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="min-w-0 flex-1 md:max-w-none!">
-        <SearchFilterChips chips={tagChips} expanded={showFilters} onMore={() => setShowFilters(true)} />
-      </ToolbarSearch>
       <ToolbarPopover title={t("筛选收藏")} open={showFilters} onOpenChange={setShowFilters} count={activeFilterCount} width={360}>
         {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile, () => {
           // 先卸载筛选层并归还焦点，再打开标签管理，避免两层抢焦点和返回操作。
           flushSync(close); setTagManagerOpen(true);
         })}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); setBoardId(''); setCollection('all'); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 text-sm font-bold text-white">{t("确认")}</button></div></div>}
       </ToolbarPopover>
+      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="min-w-0 flex-1 md:max-w-none!">
+        <SearchFilterChips chips={tagChips} expanded={showFilters} onMore={() => setShowFilters(true)} />
+      </ToolbarSearch>
       <ToolbarButton aria-label={t('批量选择图片')} title={t('批量选择图片')} disabled={Boolean(busy) || !filtered.some(item => editableIds.has(item.id))} onClick={() => { if (workGroup) closeGroup(); setSelectedIds(new Set()); setSelectionMode(true); }} className="mobile-touch !px-2.5 max-md:hidden md:!px-3"><ListChecks /><span className="toolbar-responsive-label hidden md:inline">{t('多选')}</span></ToolbarButton>
       <ToolbarButton tone="primary" aria-label={t("加入收藏库")} disabled={currentUser.role === 'guest' || Boolean(busy)} onClick={() => openImport()} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="toolbar-responsive-label hidden md:inline">{t("加入收藏库")}</span></ToolbarButton>
       {/* 手机顶栏保留文件夹、搜索、筛选与「加入收藏库」，多选收进「更多」。 */}

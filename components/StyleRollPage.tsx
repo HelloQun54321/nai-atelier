@@ -908,40 +908,40 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
             <Folder className="h-4 w-4" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
           </ToolbarButton>}
         {experiment && <ToolbarCountBadge total={round && roundPending.length > 0 ? round.candidateIds.length : visible.length} loaded={round && roundPending.length > 0 ? round.candidateIds.filter(id => images.has(id)).length : undefined} />}
+        <ToolbarPopover title={t('筛选与排序')} label={t('筛选')} count={Number(filter !== 'all') + Number(Boolean(roundId)) + Number(sort !== 'new')} disabled={!experiment}>
+          {close => <div className="space-y-4">
+            <div role="group" aria-label={t('候选筛选')} className="grid grid-cols-2 gap-2">
+              {(['all', 'unsaved', 'pending', 'favorited'] as const).map(value => <ToolbarButton key={value} aria-label={t(ROLL_FILTER_LABELS[value])} active={filter === value} onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}>{t(ROLL_FILTER_LABELS[value])}<span className="ml-auto text-xs opacity-60">{value === 'favorited' && (!collectionSettled || !historyReady) ? '—' : experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }, undefined, favoriteIds).length : 0}</span></ToolbarButton>)}
+            </div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{`${t('第 {0} 轮', [(experiment?.rounds.indexOf(item) ?? 0) + 1])}${roundConditionLabel(item) ? ` · ${roundConditionLabel(item)}` : ` · ${item.candidateIds.length}`}`}</option>)}</select></label>
+            {scopedRound?.snapshot && <ToolbarButton className="w-full" onClick={() => {
+              const snapshot = scopedRound.snapshot!;
+              setRoundRules({ ...snapshot.rules, maxArtists: Math.max(snapshot.rules.maxArtists, snapshot.pinnedArtists?.length ?? 0) });
+              setPinnedArtists(snapshot.pinnedArtists ?? []);
+              // 旧快照内联了当时的画师清单；新快照只存来源串 ID（或指向记录级集合），按现有风格串重新提取。
+              const sourceChainIds = rollRoundSourceChainIds(snapshot, experiment?.sourceChainSets);
+              if (snapshot.chainArtistSource) setChainArtistSource(snapshot.chainArtistSource);
+              else if (sourceChainIds) {
+                if (!sourceChainIds.length) setChainArtistSource({ chainIds: [], artists: [] });
+                else {
+                  const restored = buildRollChainArtistSource(chains.filter(chain => sourceChainIds.includes(chain.id)), knownArtists);
+                  setChainArtistSource(restored.artists.length ? restored : undefined);
+                  if (!restored.artists.length) notify(t('这轮使用的来源风格串已删除'), 'error');
+                }
+              } else setChainArtistSource(undefined);
+              setSampledOnly(Boolean(snapshot.sampledOnly));
+              close();
+            }}><RotateCcw />{t('沿用这轮条件')}</ToolbarButton>}
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('候选排序')} value={sort} onChange={event => setSort(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="new">{t('最新生成')}</option><option value="old">{t('最早优先')}</option></select></label>
+            <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setFilter('all'); setRoundId(''); setSort('new'); setQuery(''); close(); }}>{t('重置筛选')}</button>
+          </div>}
+        </ToolbarPopover>
 
-        {/* 中间：搜索吃剩余宽度，手机不设保底以免挤出右侧主操作。 */}
+        {/* 中间：以搜索框为界，左侧浏览筛选、右侧管理与执行操作。 */}
         <ToolbarSearch value={query} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师、中文名或编号')} placeholder={t('搜索画师、中文名或编号')} containerClassName="min-w-0 flex-1 !max-w-none md:!max-w-none" disabled={!experiment} />
 
-        {/* 右侧集群：筛选、多选、主 CTA、设置与更多。 */}
+        {/* 右侧集群：多选、主 CTA、设置与更多。 */}
         <div className="flex shrink-0 items-center gap-1.5 md:gap-2">
-          <ToolbarPopover title={t('筛选与排序')} label={t('筛选')} count={Number(filter !== 'all') + Number(Boolean(roundId)) + Number(sort !== 'new')} disabled={!experiment}>
-            {close => <div className="space-y-4">
-              <div role="group" aria-label={t('候选筛选')} className="grid grid-cols-2 gap-2">
-                {(['all', 'unsaved', 'pending', 'favorited'] as const).map(value => <ToolbarButton key={value} aria-label={t(ROLL_FILTER_LABELS[value])} active={filter === value} onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}>{t(ROLL_FILTER_LABELS[value])}<span className="ml-auto text-xs opacity-60">{value === 'favorited' && (!collectionSettled || !historyReady) ? '—' : experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }, undefined, favoriteIds).length : 0}</span></ToolbarButton>)}
-              </div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{`${t('第 {0} 轮', [(experiment?.rounds.indexOf(item) ?? 0) + 1])}${roundConditionLabel(item) ? ` · ${roundConditionLabel(item)}` : ` · ${item.candidateIds.length}`}`}</option>)}</select></label>
-              {scopedRound?.snapshot && <ToolbarButton className="w-full" onClick={() => {
-                const snapshot = scopedRound.snapshot!;
-                setRoundRules({ ...snapshot.rules, maxArtists: Math.max(snapshot.rules.maxArtists, snapshot.pinnedArtists?.length ?? 0) });
-                setPinnedArtists(snapshot.pinnedArtists ?? []);
-                // 旧快照内联了当时的画师清单；新快照只存来源串 ID（或指向记录级集合），按现有风格串重新提取。
-                const sourceChainIds = rollRoundSourceChainIds(snapshot, experiment?.sourceChainSets);
-                if (snapshot.chainArtistSource) setChainArtistSource(snapshot.chainArtistSource);
-                else if (sourceChainIds) {
-                  if (!sourceChainIds.length) setChainArtistSource({ chainIds: [], artists: [] });
-                  else {
-                    const restored = buildRollChainArtistSource(chains.filter(chain => sourceChainIds.includes(chain.id)), knownArtists);
-                    setChainArtistSource(restored.artists.length ? restored : undefined);
-                    if (!restored.artists.length) notify(t('这轮使用的来源风格串已删除'), 'error');
-                  }
-                } else setChainArtistSource(undefined);
-                setSampledOnly(Boolean(snapshot.sampledOnly));
-                close();
-              }}><RotateCcw />{t('沿用这轮条件')}</ToolbarButton>}
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('候选排序')} value={sort} onChange={event => setSort(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="new">{t('最新生成')}</option><option value="old">{t('最早优先')}</option></select></label>
-              <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setFilter('all'); setRoundId(''); setSort('new'); setQuery(''); close(); }}>{t('重置筛选')}</button>
-            </div>}
-          </ToolbarPopover>
 
           <ToolbarButton className="max-md:hidden" aria-label={t('批量选择候选')} title={t('多选')} disabled={frozen || !experiment} onClick={() => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); }}><ListChecks /><span className="toolbar-responsive-label hidden xl:inline">{t('多选')}</span></ToolbarButton>
           {!working && roundPending.length > 0 && <ToolbarButton className="max-md:hidden" aria-label={t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])} title={t('本轮还有 {0} 张没出，点击后确认费用', [roundPending.length])} data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus /><span className="toolbar-responsive-label hidden xl:inline">{t(continuousGenerationEnabled ? '补齐剩余 {0} 张' : '生成本轮 1 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])}</span><span className="toolbar-responsive-compact xl:hidden tabular-nums">{continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1}</span></ToolbarButton>}

@@ -844,13 +844,13 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 <WorkspaceToolbar>
          {groups.toolbar}
          {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountBadge total={!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length} loaded={visibleCards.length} />}
-         <ToolbarSearch value={searchTerm} loading={!customSource && isLoading} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
          <ToolbarPopover title={t("筛选角色")} count={Number(sort !== 'popular')}>
            <div className="space-y-3">
              <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("角色排序")} value={sort} onChange={event => { setSort(event.target.value as CharacterDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="popular">{searchTerm.trim() ? t("相关性优先 · 热度高") : t("热度从高到低")}</option><option value="least">{searchTerm.trim() ? t("相关性优先 · 热度低") : t("热度从低到高")}</option><option value="name-asc">{t("名称 A → Z")}</option><option value="name-desc">{t("名称 Z → A")}</option></select></label>
              <button type="button" onClick={() => { setSort('popular'); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
            </div>
          </ToolbarPopover>
+         <ToolbarSearch value={searchTerm} loading={!customSource && isLoading} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
          <div className="flex flex-none items-center gap-2 max-md:hidden">
            <ToolbarButton aria-label={gachaCards ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={!drawReady || isGachaLoading || drawAvailable <= 0} className="mobile-touch" tone="neutral">{isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="toolbar-responsive-label hidden md:inline">{gachaCards ? t("再抽一批") : t("随机抽卡")}</span></ToolbarButton>
            <ToolbarPopover label={t("角色库设置")} title={t("角色库设置")} icon={<Settings2 />} iconOnly iconTone="ghost" open={mobileSettingsOpen} onOpenChange={setMobileSettingsOpen} width={320}>

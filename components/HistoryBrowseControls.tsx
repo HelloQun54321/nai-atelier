@@ -120,9 +120,9 @@ export const HistoryBrowseControls: React.FC<Props> = ({ query, options, mobile,
   </form>;
   return <div className="history-browse-controls">
     <div ref={anchor}>
-      <ToolbarButton aria-label={t("筛选{0}", [filterCount ? ` ${filterCount}` : ''])} aria-expanded={open} aria-haspopup="dialog" title={t("筛选历史{0}", [filterCount ? ` · ${filterCount}` : ''])} onClick={openPanel} active={filterCount > 0} className="mobile-touch !px-2.5 md:!px-3">
+      <ToolbarButton aria-label={t("筛选{0}", [filterCount ? ` ${filterCount}` : ''])} aria-expanded={open} aria-haspopup="dialog" title={t("筛选历史{0}", [filterCount ? ` · ${filterCount}` : ''])} onClick={openPanel} active={filterCount > 0} className="mobile-touch relative !px-2.5 md:!px-3">
         <Filter /><span className="history-button-label">{t("筛选")}</span>
-        {filterCount > 0 && <span className="text-xs tabular-nums">{filterCount}</span>}
+        {filterCount > 0 && <span aria-hidden="true" data-filter-count={filterCount} className="pointer-events-none absolute -right-1 -top-1 flex min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-mini font-bold leading-4 text-white ring-2 ring-white tabular-nums dark:ring-gray-900">{filterCount}</span>}
       </ToolbarButton>
     </div>
     {open && !mobile && <AnchoredToolbarPopover anchorRef={anchor} title={t("筛选")} width={380} onClose={() => setOpen(false)}>{form}</AnchoredToolbarPopover>}
