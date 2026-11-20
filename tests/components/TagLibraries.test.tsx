@@ -395,16 +395,20 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
       '更多操作',
     ]);
     if (kind === 'artist') {
-      // 画师样张模型是一组无 aria-label 的切换按钮，按分组语义与按下态验证。
-      const packs = within(toolbar.getByRole('group', { name: '画师样张模型' }));
+      // 画师样张模型收进「筛选画师」弹层顶部，桌面与手机共用，不占顶栏。
+      expect(toolbar.queryByRole('group', { name: '画师样张模型' })).toBeNull();
+      const filterTrigger = toolbar.getByRole('button', { name: '筛选' });
+      fireEvent.click(filterTrigger);
+      const packs = within(screen.getByRole('dialog', { name: '筛选画师' }).querySelector('[aria-label="画师样张模型"]') as HTMLElement);
       expect(packs.getAllByRole('button')).toHaveLength(2);
       expect(packs.getAllByRole('button').filter(button => button.getAttribute('aria-pressed') === 'true')).toHaveLength(1);
+      fireEvent.click(filterTrigger);
     }
     // 「更多操作」里的动作必须与顶栏可用入口一致，手机端才不是功能缩水。
     fireEvent.click(toolbar.getByRole('button', { name: '更多操作' }));
     const overflow = screen.getByRole('dialog', { name: '更多操作' });
     const overflowNames = kind === 'artist'
-      ? [/V4\.5 样张/, /V5 Full 样张/, new RegExp(kindLabels(kind).draw), new RegExp('画师库设置')]
+      ? [new RegExp(kindLabels(kind).draw), new RegExp('画师库设置')]
       : [new RegExp(kindLabels(kind).draw), new RegExp('角色库设置')];
     for (const name of overflowNames) expect(within(overflow).getByRole('button', { name })).toBeTruthy();
     fireEvent.click(within(overflow).getByRole('button', { name: '关闭' }));
@@ -437,14 +441,15 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     renderLibrary(kind);
     await screen.findByTestId(`cover-${entry.name}`);
     fireEvent.click(screen.getByRole('button', { name: kindLabels(kind).draw }));
-    await screen.findByText(/正在浏览随机抽取的 2 位/);
+    await screen.findByRole('button', { name: '返回完整目录' });
+    expect(document.querySelector('[data-toolbar-count-badge]')?.textContent).toBe('2');
     // 「再抽一批」仍是常规操作，不抢主操作的强调色。
     expect(screen.getByRole('button', { name: kindLabels(kind).redraw }).getAttribute('data-tone')).toBe('neutral');
     if (kind === 'artist') expect(getArtistDictionaryEntriesAt).not.toHaveBeenCalled();
     else expect(vi.mocked(getEntriesFor(kind)).mock.calls.at(-1)?.[0]).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     chooseFavorites(kind);
-    expect(screen.queryByText(/正在浏览随机抽取/)).toBeNull();
+    expect(screen.queryByRole('button', { name: '返回完整目录' })).toBeNull();
     expect(screen.getAllByTestId(/^cover-/)).toHaveLength(1);
     expect(screen.getByTestId(`cover-${entry.name}`)).toBeTruthy();
     chooseFavorites(kind, false);
@@ -477,7 +482,7 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     if (kind === 'character') await act(async () => { resolve([entriesFor(kind)[0]]); });
     await waitFor(() => expect(screen.getAllByTestId(/^cover-/)).toHaveLength(1));
     expect(screen.getByTestId(`cover-${entriesFor(kind)[1].name}`)).toBeTruthy();
-    expect(screen.queryByText(/正在浏览随机抽取/)).toBeNull();
+    expect(screen.queryByRole('button', { name: '返回完整目录' })).toBeNull();
     expect(screen.getByRole('button', { name: kindLabels(kind).draw })).toBeTruthy();
   });
 });
@@ -498,7 +503,8 @@ it('角色目录小池被近期批次覆盖后仍随机换批，不固定抽热�
   expect(within(catalogCard).queryByText('Tag 词库')).toBeNull();
   expect(within(catalogCard).getByTestId('cover-small_pool_character_0').getAttribute('data-show-source-badge')).toBe('false');
   fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
-  await screen.findByText(/正在浏览随机抽取的 12 位角色/);
+  await screen.findByRole('button', { name: '返回完整目录' });
+  expect(document.querySelector('[data-toolbar-count-badge]')?.textContent).toBe('12');
   const randomCard = screen.getAllByRole('button', { name: /选择角色：small_pool_character_/ })[0];
   expect(within(randomCard).getByText('Danbooru')).toBeTruthy();
   expect(within(randomCard).queryByText('Tag 词库')).toBeNull();
@@ -523,7 +529,8 @@ it('角色目录为空时仍能抽取自定义角色，不生成预览', async (
   fireEvent.change(screen.getByRole('combobox', { name: '抽卡范围' }), { target: { value: 'custom' } });
   fireEvent.keyDown(window, { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
-  await screen.findByText(/正在浏览随机抽取的 1 位角色/);
+  await screen.findByRole('button', { name: '返回完整目录' });
+  expect(document.querySelector('[data-toolbar-count-badge]')?.textContent).toBe('1');
   expect(getCharacterDictionaryEntriesAt).not.toHaveBeenCalled();
   expect(screen.queryByRole('button', { name: '生成预览' })).toBeNull();
   const card = screen.getByRole('button', { name: `选择角色：${custom.name}` });
@@ -637,7 +644,8 @@ it('自定义角色抽卡卡片和已打开的大图随最新封面一起更新'
   fireEvent.change(screen.getByRole('combobox', { name: '抽卡范围' }), { target: { value: 'custom' } });
   fireEvent.keyDown(window, { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
-  await screen.findByText(/正在浏览随机抽取的 1 位角色/);
+  await screen.findByRole('button', { name: '返回完整目录' });
+  expect(document.querySelector('[data-toolbar-count-badge]')?.textContent).toBe('1');
   const card = screen.getByRole('button', { name: `选择角色：${custom.name}` });
   fireEvent.click(card.querySelector('button.h-full.w-full')!);
   const viewer = screen.getByRole('dialog', { name: '图片预览' });
@@ -732,7 +740,8 @@ it('删除抽卡中的自定义角色后，父级刷新移除抽卡卡片且不�
   fireEvent.change(screen.getByRole('combobox', { name: '抽卡范围' }), { target: { value: 'custom' } });
   fireEvent.keyDown(window, { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
-  await screen.findByText(/正在浏览随机抽取的 1 位角色/);
+  await screen.findByRole('button', { name: '返回完整目录' });
+  expect(document.querySelector('[data-toolbar-count-badge]')?.textContent).toBe('1');
   p.onDelete.mockImplementation(async () => {
     p.rerender(<CharacterLibrary chains={[]} onCreate={p.onCreate} onSelect={p.onSelect} onDelete={p.onDelete} onUpdateChain={p.onUpdateChain} onNavigateToPlayground={p.navigate} notify={p.notify} />);
   });

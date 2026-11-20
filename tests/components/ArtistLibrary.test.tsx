@@ -83,6 +83,18 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo); else delete (HTMLElement.prototype as Partial<HTMLElement>).scrollTo; });
 const publishGeneration = () => act(() => { mocks.generationRevision++; mocks.generationListeners.forEach(listener => listener()); });
 const setup = () => { const notify = vi.fn(), navigate = vi.fn(); const view = render(<ArtistLibrary notify={notify} onNavigateToPlayground={navigate} />); return { ...view, notify, navigate }; };
+const switchPack = (label: 'V4.5' | 'V5 Full') => {
+  const trigger = screen.getByRole('button', { name: /^筛选/ });
+  fireEvent.click(trigger);
+  fireEvent.click(within(screen.getByRole('dialog', { name: '筛选画师' })).getByRole('button', { name: label }));
+  fireEvent.click(trigger);
+};
+const expectPackSelected = (label: 'V4.5' | 'V5 Full') => {
+  const trigger = screen.getByRole('button', { name: /^筛选/ });
+  fireEvent.click(trigger);
+  expect(within(screen.getByRole('dialog', { name: '筛选画师' })).getByRole('button', { name: label }).getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(trigger);
+};
 
 it('加载状态：普通画师目录分页未完成不能显示不可用，真实失败仍可重试', async () => {
   localStorage.setItem('nai_artist_only_samples', 'false');
@@ -348,7 +360,7 @@ it('分组收展保留选择，随机只抽当前组样张，切组退出随机�
   expect(screen.queryByRole('button', { name: '再选一批' })).toBeNull();
   expect(screen.getByTestId('cover-beta artist')).toBeTruthy();
   pickDirectoryOption('选择分组', 'g1');
-  fireEvent.click(screen.getByRole('button', { name: 'V4.5' }));
+  switchPack('V4.5');
   expect(screen.getByTestId('cover-alpha artist')).toBeTruthy();
   expect(screen.queryByTestId('cover-beta artist')).toBeNull();
 });
@@ -358,7 +370,7 @@ it.each([undefined, 'nai-diffusion-5-curated'])('V5 Full 不将模型来源%s的
   const legacy = status(); legacy.packs[1].model = model; mocks.status.mockResolvedValue(legacy);
   setup(); await screen.findByText('当前图包未确认为 V5 Full，原文件已保留');
   expect(sampleCards()).toHaveLength(0); expect(mocks.catalog.mock.calls.some(call => call[0] === 'v5')).toBe(false);
-  expect(screen.getByRole('button', { name: 'V5 Full' }).getAttribute('aria-pressed')).toBe('true');
+  expectPackSelected('V5 Full');
 });
 
 it('V5 Full 状态与目录都须确认Full，自建Curated与缓存Curated不进入当前浏览且原资料保留', async () => {
@@ -571,7 +583,7 @@ it('排除名单迟到时不覆盖切换版本后的目录', async () => {
   let resolve!: () => void;
   mocks.ensureCollection.mockImplementationOnce(() => new Promise<void>(done => { resolve = done; }));
   fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
-  fireEvent.click(screen.getByRole('button', { name: 'V5 Full' }));
+  switchPack('V5 Full');
   await screen.findByTestId('cover-beta artist');
   await act(async () => resolve());
   expect(screen.queryByRole('button', { name: '返回完整目录' })).toBeNull();
@@ -763,7 +775,7 @@ it('完整目录分页保留全部词库画师并追加两包独有名称，切�
   fireEvent.click(screen.getByRole('button', { name: '选择画师：v5_exclusive' }));
   switchCard('v5_exclusive', 'v5');
   expect(screen.getByTestId('cover-v5_exclusive').getAttribute('data-packed')).toBe('true');
-  fireEvent.click(screen.getByRole('button', { name: 'V5 Full' }));
+  switchPack('V5 Full');
   expect(sampleCards()).toHaveLength(104);
   expect(screen.getByRole('button', { name: '选择画师：v45_exclusive' }).getAttribute('aria-pressed')).toBe('true');
   expect(screen.getByTestId('cover-v45_exclusive').getAttribute('data-packed')).toBe('false');
@@ -851,15 +863,15 @@ it.each([390, 1280])('宽度%s下单卡切到缺图版本保留卡片、选择�
   expect(within(alpha).getByRole('button', { name: '补充样张' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '选择画师：beta artist' })).toBe(beta);
   expect(screen.getByTestId('cover-beta artist').getAttribute('data-pack')).toBe('v45');
-  expect(screen.getByRole('button', { name: 'V4.5' }).getAttribute('aria-pressed')).toBe('true');
-  fireEvent.click(screen.getByRole('button', { name: 'V4.5' }));
+  expectPackSelected('V4.5');
+  switchPack('V4.5');
   expect(screen.getByTestId('cover-alpha artist').getAttribute('data-pack')).toBe('v45');
   expect(alpha.getAttribute('aria-pressed')).toBe('true');
   switchCard('beta artist', 'v5');
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'beta' } });
   fireEvent.click(beta);
-  fireEvent.click(screen.getByRole('button', { name: 'V5 Full' }));
-  fireEvent.click(screen.getByRole('button', { name: 'V4.5' }));
+  switchPack('V5 Full');
+  switchPack('V4.5');
   expect(screen.getByTestId('cover-beta artist').getAttribute('data-pack')).toBe('v45');
   expect(beta.getAttribute('aria-pressed')).toBe('true');
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('beta');
@@ -891,7 +903,7 @@ it('单卡缺模板配置固定该卡画师与版本，后续全页切换不会�
   fireEvent.click(within(cover).getByRole('button', { name: '补充样张' }));
   expect(screen.getByRole('dialog').textContent).toContain('missing artist v5');
   expect(mocks.prepare).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'V5 Full' }));
+  switchPack('V5 Full');
   fireEvent.click(screen.getByRole('button', { name: '保存并生成样张' }));
   await waitFor(() => expect(mocks.begin).toHaveBeenLastCalledWith('missing artist', 'v5', expect.objectContaining({ params: expect.objectContaining({ model: 'nai-diffusion-5-full' }) }), 'synthetic-key', 3, true, false, expect.any(Function)));
   expect(navigate).not.toHaveBeenCalled();
@@ -1015,8 +1027,8 @@ it.each([390, 1280])('宽度 %s 当前包图包独有画师也显示样张，mod
   const extra = screen.getByRole('button', { name: '选择画师：unknown archive key' });
   expect(screen.getByTestId('cover-unknown archive key').getAttribute('data-packed')).toBe('true');
   expect(within(extra).queryByText('作品 0')).toBeNull();
-  const model = screen.getByRole('group', { name: '画师样张模型' }); expect(container.querySelector('header')!.contains(model)).toBe(true);
-  expect(screen.getByRole('button', { name: 'V4.5' }).getAttribute('aria-pressed')).toBe('true');
+  expect(container.querySelector('header')!.querySelector('[aria-label="画师样张模型"]')).toBeNull();
+  expectPackSelected('V4.5');
   expect(mocks.dictionary).toHaveBeenCalledOnce(); expect(mocks.catalog).toHaveBeenCalledWith('v45');
 });
 
@@ -1028,12 +1040,12 @@ it('来源切换保留搜索、选中Tag与focus，选择保存本端，匹配�
   fireEvent.click(screen.getByRole('button', { name: '选择画师：alpha artist' }));
   fireEvent.click(screen.getByRole('button', { name: '选择画师：alpha artist' }));
   expect(mocks.focus).toHaveBeenLastCalledWith('alpha artist');
-  fireEvent.click(screen.getByRole('button', { name: 'V5 Full' }));
+  switchPack('V5 Full');
   await waitFor(() => expect(screen.getByTestId('cover-alpha artist').getAttribute('data-pack')).toBe('v5'));
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('alpha');
   expect(screen.getByRole('button', { name: '选择画师：alpha artist' }).getAttribute('aria-pressed')).toBe('true');
   expect(mocks.focus).toHaveBeenLastCalledWith('alpha artist'); expect(localStorage.getItem('nai_artist_sample_pack')).toBe('v5');
-  unmount(); setup(); expect(screen.getByRole('button', { name: 'V5 Full' }).getAttribute('aria-pressed')).toBe('true');
+  unmount(); setup(); expectPackSelected('V5 Full');
 });
 
 it.each([390, 1280])('宽度%s时图包样张和自建样张点击都选择画师，分享控件不选择，抽卡列表仍可选择', async width => {
@@ -1078,7 +1090,7 @@ it('没有模板首次配置后带入准确目标，打开和取消不自动生�
   fireEvent.click(within(await screen.findByTestId('cover-missing artist')).getByRole('button', { name: '补充样张' }));
   expect(screen.getByRole('dialog', { name: '补图生成设置' })).toBeTruthy();
   expect(notify).not.toHaveBeenCalled(); expect(mocks.prepare).not.toHaveBeenCalled(); expect(navigate).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'V5 Full' }));
+  switchPack('V5 Full');
   fireEvent.click(screen.getByRole('button', { name: '保存并生成样张' }));
   await waitFor(() => expect(mocks.begin).toHaveBeenCalledWith('missing artist', 'v45', expect.objectContaining({ params: expect.objectContaining({ model: 'nai-diffusion-4-5-full' }) }), 'synthetic-key', 3, true, false, expect.any(Function)));
   expect(navigate).not.toHaveBeenCalled();

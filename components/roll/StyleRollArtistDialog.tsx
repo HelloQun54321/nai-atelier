@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Check, SlidersHorizontal, X } from 'lucide-react';
+import { Check, FolderPlus, SlidersHorizontal, X } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import type { ArtistDictionaryEntry } from '../../services/tagDictionary';
 import { matchesArtistSearch, parseArtistSearchTerms } from '../../services/tagLibrary';
@@ -209,6 +209,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
       <header data-toolbar-caption-host="true" className="relative flex shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800 lg:px-5">
         <h2 className="min-w-0 flex-1 text-base font-semibold tracking-tight sm:flex-none">{t('管理画师与偏好')}</h2>
         {groups.toolbar}
+        <ToolbarButton aria-label={t('设置分组')} title={t('设置分组')} disabled={!groups.canAssign} onClick={groups.openAssignDialog}><FolderPlus /></ToolbarButton>
         <ToolbarSearch containerClassName="order-last basis-full !max-w-none sm:order-none sm:basis-0" aria-label={t('搜索画师')} placeholder={t('搜索画师，多个词用逗号分隔')} value={query} onChange={event => { setQuery(event.target.value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} />
         <div ref={settingsAnchor} className="shrink-0"><ToolbarButton aria-label={t('抽取设置')} aria-expanded={settingsOpen} aria-haspopup="dialog" active={settingsOpen} onClick={() => { setUsageOpen(false); setSettingsOpen(value => !value); }}><SlidersHorizontal /><span className="hidden sm:inline">{t('抽取设置')}</span></ToolbarButton></div>
         <ToolbarButton tone="primary" disabled={busy} onClick={close}>{t('完成')}</ToolbarButton>

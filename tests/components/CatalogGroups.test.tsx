@@ -19,7 +19,7 @@ function Harness({ selected = ['artist:a', 'artist:b'], active = true, scope = '
 function Browser({ selected, scope, kind, catalogKeys }: { selected: string[]; scope: string; kind: CatalogGroupKind; catalogKeys?: readonly string[] }) {
   const groups = useCatalogGroupBrowser(kind, selected, mocks.notify, scope, catalogKeys);
   const [draft, setDraft] = useState('草稿');
-  return <><header>{groups.toolbar}</header>{groups.navigation}{['artist:a', 'artist:b', 'artist:c', 'catalog:same', 'custom:same'].map(key => <article key={key} data-testid={key} {...groups.cardDragProps(key)}>{key}</article>)}<input aria-label="业务草稿" value={draft} onChange={event => setDraft(event.target.value)} /><output>{groups.activeGroup}</output><span data-testid="matches">{String(groups.matches('artist:a'))}/{String(groups.matches('artist:b'))}</span></>;
+  return <><header>{groups.toolbar}</header>{groups.navigation}<button type="button" disabled={!groups.canAssign} onClick={groups.openAssignDialog}>设置分组</button>{['artist:a', 'artist:b', 'artist:c', 'catalog:same', 'custom:same'].map(key => <article key={key} data-testid={key} {...groups.cardDragProps(key)}>{key}</article>)}<input aria-label="业务草稿" value={draft} onChange={event => setDraft(event.target.value)} /><output>{groups.activeGroup}</output><span data-testid="matches">{String(groups.matches('artist:a'))}/{String(groups.matches('artist:b'))}</span></>;
 }
 beforeEach(() => {
   localStorage.clear(); mocks.save.mockReset(); mocks.reload.mockReset(); mocks.notify.mockReset(); mocks.ready = true; mocks.error = '';
@@ -61,9 +61,10 @@ it('新增归属可扩展到关联成员，移除只处理明确选中项并保�
     const groups = useCatalogGroupBrowser('artist', ['artist:a'], mocks.notify, 'artist', completeKeys, {
       resolveMembershipKeys: () => ['artist:a', 'artist:b'],
     });
-    return <>{groups.toolbar}</>;
+    return <><header>{groups.toolbar}</header><button type="button" disabled={!groups.canAssign} onClick={groups.openAssignDialog}>设置分组</button></>;
   }
-  render(<RelatedBrowser />);
+  const { container } = render(<RelatedBrowser />);
+  expect(container.querySelector('header')?.querySelector('button[aria-label="设置分组"]')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '设置分组' }));
   expect(screen.getByText('已选 2 项')).toBeTruthy();
   fireEvent.click(screen.getByRole('checkbox', { name: '组一' }));

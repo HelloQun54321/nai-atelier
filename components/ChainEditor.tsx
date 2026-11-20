@@ -2207,11 +2207,15 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 onSectionedPromptChange={onSectionedPromptChange && activeGenerationMode === 'text-to-image' ? turnSectioned : undefined}
             />
 
-            {activeGenerationMode === 'text-to-image' && artistSampleTarget && <div className="workspace-sub-bar flex min-w-0 items-center justify-between gap-3 border-b border-sky-200 bg-sky-50/80 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-200 md:px-5">
-                <span className="min-w-0 truncate" title={artistSampleTarget.tag}>{t('补充自建样张：{0} · {1}', [artistSampleTarget.tag, artistSampleTarget.pack === 'v45' ? 'V4.5' : 'V5'])}</span>
-                <button type="button" className="mobile-touch shrink-0 underline" onClick={() => setArtistSampleTarget(null)}>{t('结束补图')}</button>
-            </div>}
             </WorkspaceChrome>
+            {activeGenerationMode === 'text-to-image' && artistSampleTarget && (
+                <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom)+0.75rem)] z-[55] flex justify-center px-4 md:bottom-6">
+                    <div role="status" className="appearance-panel appearance-overlay pointer-events-auto flex max-w-full items-center gap-2.5 rounded-full border border-sky-200/80 bg-white/95 px-3.5 py-1.5 text-xs text-sky-800 shadow-lg backdrop-blur dark:border-sky-800/70 dark:bg-gray-900/95 dark:text-sky-200">
+                        <span className="min-w-0 truncate font-medium" title={artistSampleTarget.tag}>{t('补充自建样张：{0} · {1}', [artistSampleTarget.tag, artistSampleTarget.pack === 'v45' ? 'V4.5' : 'V5'])}</span>
+                        <button type="button" className="shrink-0 font-semibold text-sky-600 hover:underline dark:text-sky-300" onClick={() => setArtistSampleTarget(null)}>{t('结束补图')}</button>
+                    </div>
+                </div>
+            )}
 
             <PromptAgentOverlayController
                 chainId={chain.id}

@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Folder, FolderPlus, X } from 'lucide-react';
+import { Folder, X } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import { createUuid } from '../services/id';
 import { readCatalogGroups, removeCatalogGroup, updateCatalogGroupMemberships, type CatalogGroupKind, type CatalogGroupState } from '../services/catalogGroups';
@@ -122,9 +122,9 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
   };
   return {
     ...data, activeGroup, selectGroup, expanded,
-    matches, cardDragProps,
+    matches, cardDragProps, canAssign: selectedKeys.length > 0 && data.ready && !data.busy && !data.error, openAssignDialog: () => { if (selectedKeys.length > 0 && data.ready && !data.busy && !data.error) setDialog({ scope, keys: [...new Set(selectedKeys)] }); },
     toolbar: <><ToolbarButton data-agent-action="browse" aria-label={t('分组导航')} title={[t(expanded ? '收起分类' : '展开分类'), label, navigationOptions?.activeFilterLabel].filter(Boolean).join(' · ')} aria-controls={navigationId} aria-expanded={expanded} active={expanded || activeGroup !== '*' || Boolean(navigationOptions?.activeFilterLabel)} onClick={() => update({ expanded: !expanded })} className="!px-2.5 md:!px-3"><Folder /><span className="hidden max-w-24 truncate md:inline">{label}</span></ToolbarButton>
-      {selectedKeys.length > 0 && <ToolbarButton aria-label={t('设置分组')} title={t('设置分组')} disabled={!data.ready || data.busy || Boolean(data.error)} onClick={() => setDialog({ scope, keys: [...new Set(selectedKeys)] })}><FolderPlus /></ToolbarButton>}
+
       {dialog?.scope === scope && <GroupDialog key={dialog.editing ?? 'members'} keys={dialog.keys} resolveMembershipKeys={navigationOptions?.resolveMembershipKeys} editing={dialog.editing} parentId={dialog.parentId} state={data.state} save={data.save} busy={data.busy} onClose={() => setDialog(null)} onSaved={selectGroup} notify={notify} />}</>,
     navigation: <DirectoryTreeNavigation id={navigationId} label={t('分组导航')} title={t('分组')} nodes={data.state.groups} selectedId={activeGroup} onSelect={selectGroup} expanded={expanded}
       preferenceKey={`nai_catalog_group_branches_${scope}`} counts={navigationCounts} virtualNodes={virtualGroups}

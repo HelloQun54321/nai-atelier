@@ -36,7 +36,6 @@ import { useModalA11y } from './useModalA11y';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { DanbooruCover } from './DanbooruCover';
-import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 import { TagSelectionBar } from './TagSelectionBar';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
@@ -844,10 +843,13 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 <WorkspaceToolbar>
          {groups.toolbar}
          <ToolbarPopover title={t("筛选角色")} count={Number(sort !== 'popular')}>
-           <div className="space-y-3">
+           {close => <div className="space-y-3">
              <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("角色排序")} value={sort} onChange={event => { setSort(event.target.value as CharacterDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="popular">{searchTerm.trim() ? t("相关性优先 · 热度高") : t("热度从高到低")}</option><option value="least">{searchTerm.trim() ? t("相关性优先 · 热度低") : t("热度从低到高")}</option><option value="name-asc">{t("名称 A → Z")}</option><option value="name-desc">{t("名称 Z → A")}</option></select></label>
-             <button type="button" onClick={() => { setSort('popular'); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
-           </div>
+             <div className="flex items-center justify-between gap-2">
+               <button type="button" onClick={() => { setSort('popular'); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
+               {gachaCards && <button type="button" onClick={() => { leaveGacha(); close(); }} className="text-xs font-semibold text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">{t("返回完整目录")}</button>}
+             </div>
+           </div>}
          </ToolbarPopover>
          <ToolbarSearch value={searchTerm} loading={!customSource && isLoading} trailing={(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountBadge inline total={!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length} loaded={visibleCards.length} />} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
          <div className="flex flex-none items-center gap-2 max-md:hidden">
@@ -872,8 +874,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
           ]} />
        </WorkspaceToolbar>
 
-       {gachaCards && <GalleryActiveStateBanner count={groupCards.length} entityName={t("角色")} showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => leaveGacha()} isLoading={isGachaLoading} />}
-
       </WorkspaceChrome>
       <div data-workspace-body className="flex min-h-0 flex-1 flex-col md:flex-row">{groups.navigation}
       <div ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="workspace-scroll-viewport relative min-w-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
@@ -893,6 +893,11 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         </div>
         )}
 
+        {gachaCards && (
+          <div className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">
+            <ToolbarButton onClick={() => leaveGacha()}>{t('返回完整目录')}</ToolbarButton>
+          </div>
+        )}
         {!gachaCards && (
           <div ref={sentinelRef} className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">
             {isLoadingMore ? <InlineSpinner label={t("正在加载更多角色…")} /> : loadMoreError ? <span role="alert">{t(loadMoreError)}<button type="button" onClick={() => void loadMore()}>{t("重试")}</button></span> : hasMoreVisible ? <button onClick={() => void loadMore()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t("加载更多")}</button> : catalogTotal ? t("已加载完整角色目录") : null}
@@ -918,7 +923,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       </div>
 
       </div>
-      <TagSelectionBar count={selectedCards.length} unit={t("个角色")} onClear={clearSelection} onCopy={copyAllSelected} onImport={importAllSelected} />
+      <TagSelectionBar count={selectedCards.length} unit={t("个角色")} onClear={clearSelection} onGroup={groups.openAssignDialog} groupDisabled={!groups.canAssign} onCopy={copyAllSelected} onImport={importAllSelected} />
 
        <ImagePreviewPortal>{desktopPreview && lightbox?.previewImage && (
          <ImageLightbox src={lightbox.previewImage} alt={lightbox.name} filename={`character-${lightbox.name}.png`} favorite={{ imageUrl: lightbox.previewImage, sourceType: 'character', sourceId: lightbox.chain?.id || lightbox.tagName || lightbox.key, title: lightbox.name, prompt: lightbox.chain?.basePrompt, negativePrompt: lightbox.chain?.negativePrompt, params: lightbox.chain?.params }} notify={notify} onClose={() => setLightbox(null)}>

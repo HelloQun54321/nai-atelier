@@ -212,14 +212,15 @@ it('随机浏览折叠族成员时只展开本批抽中的身份', async () => {
   fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
   await screen.findByRole('button', { name: '再抽一批' });
   expect(draw).toHaveBeenCalledOnce();
-  expect(screen.getByText(/正在浏览随机抽取的 6 位角色/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: '返回完整目录' })).toBeTruthy();
+  expect(document.querySelector('[data-toolbar-count-badge]')?.getAttribute('title')).toContain('共 6');
   const family = screen.getByRole('group', { name: '角色变体：胡滕' });
   expect(itemKeys(family)).toEqual([`catalog:${baseTag}`]);
   fireEvent.click(within(family).getByRole('button', { name: '展开角色变体：胡滕' }));
   expect(itemKeys(family)).toEqual([`catalog:${baseTag}`, `catalog:${maidTag}`]);
-  expect(screen.getByText(/正在浏览随机抽取的 6 位角色/)).toBeTruthy();
+  expect(document.querySelector('[data-toolbar-count-badge]')?.getAttribute('title')).toContain('共 6');
   fireEvent.click(within(family).getByRole('button', { name: '收起角色变体：胡滕' }));
-  expect(screen.getByText(/正在浏览随机抽取的 6 位角色/)).toBeTruthy();
+  expect(document.querySelector('[data-toolbar-count-badge]')?.getAttribute('title')).toContain('共 6');
   expect(screen.queryByRole('button', { name: '选择角色：胡滕（点火）' })).toBeNull();
   expect(within(family).queryByRole('button', { name: '选择角色：独立角色' })).toBeNull();
   expect(screen.getByRole('button', { name: '选择角色：独立角色' })).toBeTruthy();
