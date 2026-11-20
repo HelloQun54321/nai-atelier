@@ -60,23 +60,22 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
 
   const { info, usage, loading, error, fetchedAt } = subscription;
   const gateway = info?.source === 'gateway';
-  const quotaName = gateway ? '成员额度' : 'Opus';
   const percent = usage ? usageRemainingPercent(usage) : 0;
   const ringPercent = usage ? usageRingPercent(usage) : 0;
   const displayPercent = gateway ? percent.toFixed(1) : percent;
   const total = officialAnlasBalance(info);
   const gatewayManaged = gateway && info?.gatewayManagedWallet === true;
   const runtimeBroken = isNaiRuntimeSyncUnhealthy(runtime);
-  const opusText = info?.active === false ? gateway ? '网关权益不可用' : '订阅过期'
-    : error ? isActiveOpusSubscription(info) && usage ? `${quotaName} ${displayPercent}% · 旧值` : '额度查询失败'
-      : loading ? '额度同步中'
-        : isActiveOpusSubscription(info) ? usage ? usage.isNegative ? `${quotaName} 已用尽` : `${quotaName} ${displayPercent}%` : '额度未知'
-          : info?.active === true ? '非 Opus' : '额度未知';
+  const opusText = info?.active === false ? t(gateway ? '网关权益不可用' : '订阅过期')
+    : error ? isActiveOpusSubscription(info) && usage ? t('Opus 额度 {0}% · 旧值', [displayPercent]) : t('额度查询失败')
+      : loading ? t('额度同步中')
+        : isActiveOpusSubscription(info) ? usage ? usage.isNegative ? t('Opus 额度已用尽') : t('Opus 额度 {0}%', [displayPercent]) : t('额度未知')
+          : info?.active === true ? t('非 Opus') : t('额度未知');
   const balanceText = total === null ? loading ? '…' : t('未知') : `${compactPoints(total)}${error ? t('（旧值）') : ''}`;
   const summary = !apiKey ? t('未配置 Key')
     : gatewayManaged
-      ? t('余额 {0} · {1}{2}', [balanceText, t(opusText), runtimeBroken ? t(' · 规则异常') : ''])
-      : t('预算 {0} · 余额 {1} · {2}{3}', [budget.loading ? '…' : compactPoints(budget.remaining), balanceText, t(opusText), runtimeBroken ? t(' · 规则异常') : '']);
+      ? t('余额 {0} · {1}{2}', [balanceText, opusText, runtimeBroken ? t(' · 规则异常') : ''])
+      : t('预算 {0} · 余额 {1} · {2}{3}', [budget.loading ? '…' : compactPoints(budget.remaining), balanceText, opusText, runtimeBroken ? t(' · 规则异常') : '']);
   // 收起时只保留两组标签和数值；旧值／过期／失败用颜色与符号标记，说明放入详情。
   const footerBudget = !apiKey ? '—' : budget.loading ? '…' : compactPoints(budget.remaining);
   const footerBalance = !apiKey || total === null ? '—' : compactPoints(total);
@@ -152,7 +151,7 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
       style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + env(safe-area-inset-bottom))` } : undefined}
       className="mobile-touch group fixed inset-x-0 bottom-[env(safe-area-inset-bottom)] z-[900] mx-auto inline-flex h-11 w-max max-w-[calc(100vw-2rem)] cursor-pointer items-end justify-center gap-3 rounded-md border-0 bg-transparent px-2 pb-1 text-meta leading-4 shadow-none outline-none transition-opacity active:opacity-60 focus-visible:ring-2 focus-visible:ring-indigo-500 md:hidden">
       <span className={`whitespace-nowrap tabular-nums underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current ${footerTone}`}>Anlas {gatewayManaged ? footerBalance : `${footerBudget}/${footerBalance}`}</span>
-      <span className={`inline-flex items-center gap-1 whitespace-nowrap tabular-nums ${footerTone}`}><span className="underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current">{t(!info ? '生成额度' : gateway ? '成员额度' : "Opus额度 ")}{(!info || gateway) && ' '}{footerQuota}{warning && <span aria-hidden="true" className="ml-1">!</span>}</span><ChevronUp aria-hidden="true" className="h-3 w-3 shrink-0" /></span>
+      <span className={`inline-flex items-center gap-1 whitespace-nowrap tabular-nums ${footerTone}`}><span className="underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current">{t(!info ? '生成额度' : 'Opus 额度')} {footerQuota}{warning && <span aria-hidden="true" className="ml-1">!</span>}</span><ChevronUp aria-hidden="true" className="h-3 w-3 shrink-0" /></span>
     </button>
     {sheet}
   </>;

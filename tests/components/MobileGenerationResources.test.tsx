@@ -57,7 +57,7 @@ describe('手机实验室账户资源', () => {
     for (const language of LANGUAGES) {
       act(() => setLanguage(language.code));
       const footer = screen.getByRole('button');
-      expect(footer.textContent).toContain(t('成员额度'));
+      expect(footer.textContent).toContain(t('Opus 额度'));
       expect(footer.textContent).toContain(state === '耗尽' ? '0.0%' : '196.0%');
       if (language.code === 'en') expect(footer.getAttribute('aria-label')).not.toMatch(/[\u3400-\u9fff]/);
     }
@@ -71,12 +71,11 @@ describe('手机实验室账户资源', () => {
     expect(screen.getByText('账号余额')).toBeTruthy();
     expect(screen.queryByText('官方余额')).toBeNull();
   });
-  it('成员 Key 摘要和详情都显示成员来源', async () => {
+  it('成员 Key 统一显示 Opus 额度，详情保留成员来源', async () => {
     fixture.subscription!.info!.source = 'gateway';
     render(<MobileGenerationResources {...props('STA1N-mobile-member')} />);
-    const footer = screen.getByRole('button', { name: /成员额度 196\.0%/ });
-    expect(footer.textContent).toContain('成员额度 196.0%');
-    expect(footer.textContent).not.toContain('Opus');
+    const footer = screen.getByRole('button', { name: /Opus 额度 196\.0%/ });
+    expect(footer.textContent).toContain('Opus 额度 196.0%');
     openPanel();
     expect(await screen.findByText('网关余额')).toBeTruthy();
     expect(screen.getByText('网关成员')).toBeTruthy();
@@ -93,12 +92,12 @@ describe('手机实验室账户资源', () => {
     fixture.subscription!.usage = { percent: 25, capacity: 25, isNegative: false, timeUntilNextPercent: 0 };
 
     const view = render(<MobileGenerationResources {...props('STA1N-mobile-managed')} variant="footer" />);
-    const footer = screen.getByRole('button', { name: /查看账户资源：余额 2500 · 成员额度 25\.0%/ });
-    expect(footer.textContent).toBe('Anlas 2500成员额度 25.0%');
+    const footer = screen.getByRole('button', { name: /查看账户资源：余额 2500 · Opus 额度 25\.0%/ });
+    expect(footer.textContent).toBe('Anlas 2500Opus 额度 25.0%');
     expect(footer.textContent).not.toContain('1666');
 
     view.rerender(<MobileGenerationResources {...props('STA1N-mobile-managed')} variant="dock" />);
-    const dock = screen.getByRole('button', { name: /查看账户资源：余额 2500 · 成员额度 25\.0%/ });
+    const dock = screen.getByRole('button', { name: /查看账户资源：余额 2500 · Opus 额度 25\.0%/ });
     expect(dock.textContent).toContain('2500');
     expect(dock.textContent).not.toContain('1666');
     expect(dock.textContent).toContain('25.0');
@@ -111,23 +110,23 @@ describe('手机实验室账户资源', () => {
     fixture.subscription!.usage!.percent = 12.7773534897032;
     if (failed) fixture.subscription!.error = '合成网络断开';
     render(<MobileGenerationResources {...props('STA1N-mobile-decimal')} />);
-    const footer = screen.getByRole('button', { name: /成员额度 12\.8%/ });
-    expect(footer.textContent).toContain('成员额度 12.8%');
+    const footer = screen.getByRole('button', { name: /Opus 额度 12\.8%/ });
+    expect(footer.textContent).toContain('Opus 额度 12.8%');
     expect(footer.getAttribute('aria-label')).not.toContain('12.7773534897032');
     openPanel();
     if (failed) expect(screen.getByText('上次额度 12.8%（≈221 张）：合成网络断开')).toBeTruthy();
     else {
       expect(screen.getByText('12.8%')).toBeTruthy();
-      expect(screen.getByRole('status').title).toContain('成员额度：12.8%（约 221 张）');
+      expect(screen.getByRole('status').title).toContain('Opus 额度：12.8%（约 221 张）');
     }
     expect(fixture.subscription!.usage!.percent).toBe(12.7773534897032);
   });
   it('摘要紧凑显示来源，触屏展开保留完整点数、196% 真实额度、张数、备注、同步时间与刷新', async () => {
     render(<MobileGenerationResources {...props()} />);
-    const entry = screen.getByRole('button', { name: /预算 1666 · 余额 6.84万 · Opus 196%/ });
+    const entry = screen.getByRole('button', { name: /预算 1666 · 余额 6.84万 · Opus 额度 196%/ });
     expect(entry.className).toContain('md:hidden');
     expect(entry.className.split(' ')).not.toContain('hidden');
-    expect(entry.textContent).toBe('Anlas 1666/6.84万Opus额度 196%');
+    expect(entry.textContent).toBe('Anlas 1666/6.84万Opus 额度 196%');
     expect(entry.querySelector('svg')?.classList.contains('lucide-chevron-up')).toBe(true);
     expect(entry.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
     expect(entry.className).not.toContain('appearance-panel');
@@ -164,9 +163,9 @@ describe('手机实验室账户资源', () => {
     fixture.subscription!.info!.trainingStepsLeft = { fixedTrainingStepsLeft: 0, purchasedTrainingSteps: 0 };
     fixture.subscription!.usage = { percent: -3, isNegative: true, timeUntilNextPercent: 100 };
     render(<MobileGenerationResources {...props()} budget={{ remaining: 0, loading: false }} />);
-    const entry = screen.getByRole('button', { name: /预算 0 · 余额 0 · Opus 已用尽/ });
+    const entry = screen.getByRole('button', { name: /预算 0 · 余额 0 · Opus 额度已用尽/ });
     expect(entry.querySelector('span')?.className).toContain('text-red-600');
-    expect(entry.textContent).toBe('Anlas 0/0Opus额度 0%');
+    expect(entry.textContent).toBe('Anlas 0/0Opus 额度 0%');
     openPanel();
     expect(screen.getAllByText('0 点')).toHaveLength(2);
     expect(screen.getByText('额度已用尽，生成将消耗 Anlas')).toBeTruthy();
@@ -175,8 +174,8 @@ describe('手机实验室账户资源', () => {
     fixture.subscription!.error = '合成网络断开';
     fixture.runtime!.health = { ok: false, reason: 'extract-failed', missed: ['freeMaxSteps'] };
     render(<MobileGenerationResources {...props()} />);
-    const entry = screen.getByRole('button', { name: /余额 6.84万（旧值）.*Opus 196% · 旧值 · 规则异常/ });
-    expect(entry.textContent).toBe('Anlas 1666/6.84万Opus额度 196%!');
+    const entry = screen.getByRole('button', { name: /余额 6.84万（旧值）.*Opus 额度 196% · 旧值 · 规则异常/ });
+    expect(entry.textContent).toBe('Anlas 1666/6.84万Opus 额度 196%!');
     openPanel();
     expect(screen.getByText('显示上次余额：合成网络断开')).toBeTruthy();
     expect(screen.getByText('上次额度 196%（≈3391 张）：合成网络断开')).toBeTruthy();
@@ -200,7 +199,7 @@ describe('手机实验室账户资源', () => {
     fixture.subscription!.info!.active = false;
     render(<MobileGenerationResources {...props()} />);
     expect(screen.getByRole('button', { name: /余额 6.84万 · 订阅过期/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^查看账户资源/ }).textContent).toBe('Anlas 1666/6.84万Opus额度 —!');
+    expect(screen.getByRole('button', { name: /^查看账户资源/ }).textContent).toBe('Anlas 1666/6.84万Opus 额度 —!');
     openPanel();
     expect(screen.queryByText('196%')).toBeNull();
     expect(screen.getByRole('status', { name: /订阅已过期 · Paid Anlas：68,320 点/ })).toBeTruthy();
@@ -261,7 +260,7 @@ describe('手机实验室账户资源', () => {
     fixture.subscription!.usage!.percent = 100;
     const view = render(<MobileGenerationResources {...props()} />);
     const entry = screen.getByRole('button', { name: /^查看账户资源/ });
-    expect(entry.textContent).toBe('Anlas 1666/9985Opus额度 100%');
+    expect(entry.textContent).toBe('Anlas 1666/9985Opus 额度 100%');
     for (const token of ['fixed', 'inset-x-0', 'mx-auto', 'w-max', 'justify-center', 'gap-3', 'text-meta']) expect(entry.className.split(' ')).toContain(token);
     expect(entry.className).not.toContain('justify-between');
     expect(entry.style.bottom).toBe('');

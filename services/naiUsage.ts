@@ -18,6 +18,12 @@ export interface NovelaiUsageState {
   timeUntilNextPercent: number;
   /** 成员网关分配的个人额度上限（如 4 人车为 25）；缺省按 100 计。 */
   capacity?: number;
+  /** 成员网关返回的当前日恢复百分比（%/天）。 */
+  refillPerDay?: number;
+  /** 成员网关返回的精确预计回满剩余秒数（0 表示已满）。 */
+  fullRefillSeconds?: number;
+  /** 成员网关标记当前恢复受限（例如源账号余额不足或存在待抵扣透支）。 */
+  refillLimited?: boolean;
 }
 
 export interface NovelaiSubscriptionInfo {
@@ -74,6 +80,67 @@ export const usageRingPercent = (usage: NovelaiUsageState): number => {
 /** 剩余可生成张数 ≈ 系数 × 官方真实百分比（系数由网关自动同步）。 */
 export const usageRemainingImages = (usage: NovelaiUsageState, imagesPerPercent = 17.3): number =>
   Math.round(imagesPerPercent * usageRemainingPercent(usage));
+
+export interface UsageRefillStatus {
+  kind: 'full' | 'paused_above_full' | 'recharging' | 'limited' | 'unknown';
+  /** 预计回满剩余秒数（recharging 时 > 0，已满为 0，其余为 null）。 */
+  secondsToFull: number | null;
+  /** 每日恢复百分比（%/天，仅明确大于 0 时返回）。 */
+  refillPerDay: number | null;
+}
+
+const positiveFinite = (value: unknown): number | null => {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? num : null;
+};
+
+/**
+ * 统一解析 Opus 额度的恢复状态与预计回满时间，按渠道分别处理：
+ * - 拼车成员网关（/api/me/quota）：直接使用网关计算的精确 fullRefillSeconds / refillPerDay / refillLimited；
+ * - 官方直连：按官方 100% 上限与 timeUntilNextPercent 线性估算，超 100% 时按官方规则暂停恢复；
+ * - 普通第三方网关（无 /api/me/quota）：未知个人上限时不猜测回满时间，仅在有速率字段时返回日恢复率。
+ */
+export const usageRefillStatus = (usage: NovelaiUsageState, gateway = false): UsageRefillStatus => {
+  const explicitRate = gateway ? positiveFinite(usage.refillPerDay) : null;
+  const fallbackRate = positiveFinite(usage.timeUntilNextPercent)
+    ? 86400 / Number(usage.timeUntilNextPercent)
+    : null;
+  const refillPerDay = explicitRate ?? fallbackRate;
+  const remaining = usageRemainingPercent(usage);
+  const cap = gateway && positiveFinite(usage.capacity) ? Number(usage.capacity) : 100;
+
+  if (gateway && usage.refillLimited === true) {
+    if (typeof usage.fullRefillSeconds === 'number' && Number.isFinite(usage.fullRefillSeconds) && usage.fullRefillSeconds === 0) {
+      return { kind: 'full', secondsToFull: 0, refillPerDay };
+    }
+    return { kind: 'limited', secondsToFull: null, refillPerDay };
+  }
+
+  if (gateway && typeof usage.fullRefillSeconds === 'number' && Number.isFinite(usage.fullRefillSeconds) && usage.fullRefillSeconds >= 0) {
+    if (usage.fullRefillSeconds <= 0) return { kind: 'full', secondsToFull: 0, refillPerDay };
+    return { kind: 'recharging', secondsToFull: Math.ceil(usage.fullRefillSeconds), refillPerDay };
+  }
+
+  if (!gateway && !usage.isNegative && remaining > 100) {
+    return { kind: 'paused_above_full', secondsToFull: 0, refillPerDay: null };
+  }
+
+  if (!usage.isNegative && remaining >= cap - 1e-6) {
+    return { kind: 'full', secondsToFull: 0, refillPerDay };
+  }
+
+  if (gateway && !positiveFinite(usage.capacity)) {
+    return { kind: 'unknown', secondsToFull: null, refillPerDay };
+  }
+
+  const secPerPercent = positiveFinite(usage.timeUntilNextPercent);
+  if (!secPerPercent) return { kind: 'unknown', secondsToFull: null, refillPerDay };
+  const deficit = Math.max(0, cap - (usage.isNegative ? 0 : remaining));
+  const secondsToFull = Math.ceil(deficit * secPerPercent);
+  return secondsToFull > 0
+    ? { kind: 'recharging', secondsToFull, refillPerDay }
+    : { kind: 'full', secondsToFull: 0, refillPerDay };
+};
 
 export const NOVELAI_USAGE_REFRESH_EVENT = 'nai-novelai-usage-refresh';
 export const NOVELAI_USAGE_SNAPSHOT_EVENT = 'nai-novelai-usage-snapshot';

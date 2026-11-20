@@ -1164,10 +1164,18 @@ export const fetchGatewayMemberQuota = async (authorization, signal = AbortSigna
     const rawCapacity = Number(fairQuota.v5Capacity);
     const capacity = Number.isFinite(rawCapacity) && rawCapacity > 0 && rawCapacity <= 100 ? rawCapacity : undefined;
     const managedWallet = fairQuota.enabled === true && fairQuota.member === true;
-    if (capacity === undefined && !managedWallet) return null;
+    const rawRefillPerDay = fairQuota.v5RefillPerDay !== null && fairQuota.v5RefillPerDay !== undefined ? Number(fairQuota.v5RefillPerDay) : NaN;
+    const refillPerDay = Number.isFinite(rawRefillPerDay) && rawRefillPerDay >= 0 ? rawRefillPerDay : undefined;
+    const rawFullRefillSeconds = fairQuota.v5FullRefillSeconds !== null && fairQuota.v5FullRefillSeconds !== undefined ? Number(fairQuota.v5FullRefillSeconds) : NaN;
+    const fullRefillSeconds = Number.isFinite(rawFullRefillSeconds) && rawFullRefillSeconds >= 0 ? rawFullRefillSeconds : undefined;
+    const refillLimited = fairQuota.v5RefillLimited === true;
+    if (capacity === undefined && !managedWallet && refillPerDay === undefined && fullRefillSeconds === undefined && !refillLimited) return null;
     return {
       ...(capacity !== undefined ? { capacity } : {}),
       ...(managedWallet ? { managedWallet: true } : {}),
+      ...(refillPerDay !== undefined ? { refillPerDay } : {}),
+      ...(fullRefillSeconds !== undefined ? { fullRefillSeconds } : {}),
+      ...(refillLimited ? { refillLimited: true } : {}),
     };
   } catch {
     return null;
@@ -1192,6 +1200,13 @@ export const sanitizeNovelAiSubscription = (payload, gatewayUrl = '', gatewayQuo
     && Number.isFinite(balance.purchasedTrainingSteps) && balance.purchasedTrainingSteps >= 0;
   const rawCapacity = gatewayUrl ? Number(gatewayQuota?.capacity ?? usage?.capacity) : NaN;
   const capacity = Number.isFinite(rawCapacity) && rawCapacity > 0 && rawCapacity <= 100 ? rawCapacity : undefined;
+  const refillPerDaySource = gatewayQuota?.refillPerDay ?? usage?.refillPerDay;
+  const rawRefillPerDay = gatewayUrl && refillPerDaySource !== null && refillPerDaySource !== undefined ? Number(refillPerDaySource) : NaN;
+  const refillPerDay = Number.isFinite(rawRefillPerDay) && rawRefillPerDay >= 0 ? rawRefillPerDay : undefined;
+  const fullRefillSource = gatewayQuota?.fullRefillSeconds ?? usage?.fullRefillSeconds;
+  const rawFullRefillSeconds = gatewayUrl && fullRefillSource !== null && fullRefillSource !== undefined ? Number(fullRefillSource) : NaN;
+  const fullRefillSeconds = Number.isFinite(rawFullRefillSeconds) && rawFullRefillSeconds >= 0 ? rawFullRefillSeconds : undefined;
+  const refillLimited = Boolean(gatewayUrl && (gatewayQuota?.refillLimited === true || usage?.refillLimited === true));
   const gatewayManagedWallet = Boolean(gatewayUrl && (gatewayQuota?.managedWallet === true || payload?.gatewayManagedWallet === true));
   return {
     ...(gatewayUrl ? { source: 'gateway' } : {}),
@@ -1204,6 +1219,9 @@ export const sanitizeNovelAiSubscription = (payload, gatewayUrl = '', gatewayQuo
       isNegative: usage.isNegative === true,
       timeUntilNextPercent: Number.isFinite(timeUntilNextPercent) ? timeUntilNextPercent : 0,
       ...(capacity !== undefined ? { capacity } : {}),
+      ...(refillPerDay !== undefined ? { refillPerDay } : {}),
+      ...(fullRefillSeconds !== undefined ? { fullRefillSeconds } : {}),
+      ...(refillLimited ? { refillLimited: true } : {}),
     } : undefined,
   };
 };
@@ -1245,6 +1263,9 @@ export const readNaiBalanceForRequest = async (req, workerPort, { requestRemote 
         isNegative: usage.isNegative === true,
         timeUntilNextPercent: usage.timeUntilNextPercent ?? null,
         ...(usage.capacity !== undefined ? { capacity: usage.capacity } : {}),
+        ...(usage.refillPerDay !== undefined ? { refillPerDay: usage.refillPerDay } : {}),
+        ...(usage.fullRefillSeconds !== undefined ? { fullRefillSeconds: usage.fullRefillSeconds } : {}),
+        ...(usage.refillLimited ? { refillLimited: true } : {}),
       } : null,
       note: payload?.gatewayManagedWallet
         ? 'points 是成员网关独立分配的可用点数，无需额外维护本地 1666 预算。'

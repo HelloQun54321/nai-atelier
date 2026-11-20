@@ -7,6 +7,7 @@ import {
   isNovelaiSubscriptionInactive,
   NOVELAI_USAGE_REFRESH_EVENT,
   requestNovelaiSubscription,
+  usageRefillStatus,
   usageRingPercent,
   useNovelaiUsage,
 } from '../../services/naiUsage';
@@ -61,6 +62,32 @@ describe('订阅健康判定', () => {
     expect(usageRingPercent({ percent: 12.5, capacity: 25, isNegative: false, timeUntilNextPercent: 0 })).toBe(50);
     expect(usageRingPercent({ percent: 30, capacity: 25, isNegative: false, timeUntilNextPercent: 0 })).toBe(100);
     expect(usageRingPercent({ percent: 5, capacity: 25, isNegative: true, timeUntilNextPercent: 0 })).toBe(0);
+  });
+
+  it('usageRefillStatus 按渠道分别处理官方、拼车成员网关与普通第三方网关', () => {
+    // 官方直连：按 100% 与 timeUntilNextPercent 线性估算；满额与超 100% 区分表达。
+    expect(usageRefillStatus({ percent: 75, isNegative: false, timeUntilNextPercent: 6048 }, false)).toMatchObject({
+      kind: 'recharging', secondsToFull: 25 * 6048,
+    });
+    expect(usageRefillStatus({ percent: 100, isNegative: false, timeUntilNextPercent: 6048 }, false)).toMatchObject({ kind: 'full', secondsToFull: 0 });
+    expect(usageRefillStatus({ percent: 196, isNegative: false, timeUntilNextPercent: 0 }, false)).toEqual({ kind: 'paused_above_full', secondsToFull: 0, refillPerDay: null });
+    expect(usageRefillStatus({ percent: 80, isNegative: false, timeUntilNextPercent: 0 }, false)).toEqual({ kind: 'unknown', secondsToFull: null, refillPerDay: null });
+
+    // 拼车成员网关：优先使用网关返回的精确回满秒数、日恢复速率与受限标记。
+    expect(usageRefillStatus({ percent: 18.5, capacity: 25, fullRefillSeconds: 100800, refillPerDay: 5.5, isNegative: false, timeUntilNextPercent: 0 }, true)).toEqual({
+      kind: 'recharging', secondsToFull: 100800, refillPerDay: 5.5,
+    });
+    expect(usageRefillStatus({ percent: 25, capacity: 25, fullRefillSeconds: 0, refillPerDay: 0, isNegative: false, timeUntilNextPercent: 0 }, true)).toEqual({
+      kind: 'full', secondsToFull: 0, refillPerDay: null,
+    });
+    expect(usageRefillStatus({ percent: 12, capacity: 25, refillLimited: true, isNegative: false, timeUntilNextPercent: 6048 }, true)).toMatchObject({
+      kind: 'limited', secondsToFull: null,
+    });
+
+    // 普通第三方网关（无 /api/me/quota 上限与精确回满秒数）：不按 100% 盲猜回满时间。
+    expect(usageRefillStatus({ percent: 25, isNegative: false, timeUntilNextPercent: 6048 }, true)).toMatchObject({
+      kind: 'unknown', secondsToFull: null,
+    });
   });
 });
 

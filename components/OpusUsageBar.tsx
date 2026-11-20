@@ -1,7 +1,7 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React from 'react';
 import { RefreshCw } from 'lucide-react';
-import { isNovelaiSubscriptionInactive, NOVELAI_USAGE_REFRESH_EVENT, usageRemainingImages, usageRemainingPercent, usageRingPercent, useNovelaiUsage } from '../services/naiUsage';
+import { isNovelaiSubscriptionInactive, NOVELAI_USAGE_REFRESH_EVENT, usageRefillStatus, usageRemainingImages, usageRemainingPercent, usageRingPercent, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 
 interface OpusUsageBarProps {
@@ -14,15 +14,30 @@ interface OpusUsageBarProps {
 
 const OPUS_RING_CIRCUMFERENCE = 2 * Math.PI * 16;
 
+const formatRefillDuration = (seconds: number): string => {
+  if (seconds < 60) return t('不到 1 分钟');
+  const totalMinutes = Math.round(seconds / 60);
+  if (totalMinutes < 60) return t('{0}分钟', [totalMinutes]);
+  if (totalMinutes < 24 * 60) {
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return minutes > 0 ? t('{0}小时{1}分', [hours, minutes]) : t('{0}小时', [hours]);
+  }
+  const totalHours = Math.round(seconds / 3600);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return hours > 0 ? t('{0}天{1}小时', [days, hours]) : t('{0}天', [days]);
+};
+
 /**
- * NovelAI Opus 免费生成限额（V5 起生效），展示在侧栏 Anlas 预算下方。
+ * NovelAI Opus 免费生成额度（V5 起生效），展示在侧栏 Anlas 预算下方。
  * 活跃非 Opus 订阅不显示用量条；过期订阅改为展示 Paid Anlas 状态。
  */
 export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetails = false, showSyncTime = true }) => {
   useLanguage();
   const { info, usage, loading, error, fetchedAt, refresh } = useNovelaiUsage();
   const gateway = info?.source === 'gateway';
-  const quotaLabel = !info ? '生成额度' : gateway ? '成员额度' : 'Opus 限额';
+  const quotaLabel = !info ? '生成额度' : 'Opus 额度';
   const runtime = useNaiRuntime();
   const refreshAll = () => {
     void refresh();
@@ -60,6 +75,31 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
   // 活动加成可能让真实额度超过 100%；成员网关有个人分配上限时按该上限为满圈，数字和张数保留真实值。
   const ringPercent = usage ? usageRingPercent(usage) : 0;
   const images = usage ? usageRemainingImages(usage, runtime.imagesPerPercent) : 0;
+  const refill = usage ? usageRefillStatus(usage, gateway) : null;
+  const refillDuration = refill?.kind === 'recharging' && refill.secondsToFull !== null ? formatRefillDuration(refill.secondsToFull) : '';
+  const refillEtaAt = refill?.kind === 'recharging' && refill.secondsToFull !== null
+    ? new Date((fetchedAt > 0 ? fetchedAt : Date.now()) + refill.secondsToFull * 1000).toLocaleString(getLanguage(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+    : '';
+  const refillRateText = refill?.refillPerDay !== null && refill?.refillPerDay !== undefined
+    ? t('每日恢复 +{0}%（约 {1} 张）', [refill.refillPerDay.toFixed(1), Math.round(refill.refillPerDay * runtime.imagesPerPercent)])
+    : '';
+  const refillCompactSuffix = refill?.kind === 'recharging'
+    ? t('{0}后满', [refillDuration])
+    : refill?.kind === 'limited'
+      ? t('恢复受限')
+      : '';
+  const refillDetailLine = !refill ? ''
+    : refill.kind === 'recharging'
+      ? `${t('预计 {0} 后回满（{1}）', [refillDuration, refillEtaAt])}${refillRateText ? ` · ${refillRateText}` : ''}`
+      : refill.kind === 'limited'
+        ? t('当前恢复受限，暂无法预计回满时间')
+        : refill.kind === 'paused_above_full'
+          ? t('超过 100% 时暂停自动恢复')
+          : refill.kind === 'unknown' && refillRateText
+            ? refillRateText
+            : '';
+  const refillTooltipLine = refillDetailLine
+    || (refill?.kind === 'full' ? `${t('当前已满')}${refillRateText ? ` · ${refillRateText}` : ''}` : '');
   const negative = usage?.isNegative === true;
   const low = !negative && ringPercent <= 20;
   // 同步健康度：提取失效或超过 48 小时未更新时，直接用红色圆环和叉号示警，
@@ -80,7 +120,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
     ? 'text-red-700 dark:text-red-400'
     : low ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400';
   const syncSummary = t(error
-    ? t(!info ? '额度同步失败：{0}' : gateway ? '成员额度同步失败：{0}' : 'Opus 限额同步失败：{0}', [t(error)])
+    ? t(!info ? '额度同步失败：{0}' : 'Opus 额度同步失败：{0}', [t(error)])
     : syncPending
     ? '官方常量同步进行中，稍后自动重试'
     : runtimeSyncBroken
@@ -88,11 +128,27 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
     : health?.missed?.length
       ? `常量同步部分失效：未命中 ${health.missed.join('、')}（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString(getLanguage()) : ''} 同步）`
       : `常量同步正常（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString(getLanguage()) : t('等待首次同步')}）`);
-  const title = !info ? `${error ? t('额度未知：{0}', [t(error)]) : t('正在同步…')}\n${syncSummary}` : gateway ? `${!usage ? error ? t('额度未知：{0}', [t(error)]) : t('正在同步…') : hasCapacity ? t('成员额度：{0}% / {1}%（约 {2} 张），按官方规则估算', [displayPercent, displayCapacity, images]) : t('成员额度：{0}%（约 {1} 张），按官方规则估算', [displayPercent, images])}\n${t('成员分配额度与实际扣费以网关为准；点击刷新')}\n${syncSummary}` : `${t(!usage
-    ? error ? 'Opus 限额同步失败，点击立即重试' : '正在同步 Opus 限额'
-    : negative
-    ? 'Opus 限额已用尽：所有生图将消耗 Anlas，额度恢复后自动回到免费生成'
-    : `Opus 免费生成限额：剩余 ${percent}%（约 ${images} 张）`)} · ${t('仅 V5 等新模型受限，V4.5 及以下不限')}\n${t('拼车账号额度全员共享，每分钟自动同步，点击立即刷新')}\n${syncSummary}`;
+  const title = !info
+    ? `${error ? t('额度未知：{0}', [t(error)]) : t('正在同步…')}\n${syncSummary}`
+    : gateway
+      ? [
+          !usage ? error ? t('额度未知：{0}', [t(error)]) : t('正在同步…')
+            : hasCapacity ? t('Opus 额度：{0}% / {1}%（约 {2} 张），按官方规则估算', [displayPercent, displayCapacity, images])
+              : t('Opus 额度：{0}%（约 {1} 张），按官方规则估算', [displayPercent, images]),
+          ...(refillTooltipLine ? [refillTooltipLine] : []),
+          t('成员分配额度与实际扣费以网关为准；点击刷新'),
+          syncSummary,
+        ].join('\n')
+      : [
+          `${!usage
+            ? t(error ? 'Opus 额度同步失败，点击立即重试' : '正在同步 Opus 额度')
+            : negative
+              ? t('Opus 额度已用尽：所有生图将消耗 Anlas，额度恢复后自动回到免费生成')
+              : t('Opus 额度：剩余 {0}%（约 {1} 张）', [percent, images])} · ${t('仅 V5 等新模型受限，V4.5 及以下不限')}`,
+          ...(refillTooltipLine ? [refillTooltipLine] : []),
+          t('拼车账号额度全员共享，每分钟自动同步，点击立即刷新'),
+          syncSummary,
+        ].join('\n');
   const ring = <span className={`relative flex flex-none items-center justify-center rounded-full ${showDetails && !collapsed ? 'h-11 w-11' : 'h-9 w-9'} ${ringClass}`}>
         <svg viewBox="0 0 36 36" className="absolute inset-0 h-full w-full -rotate-90" aria-hidden="true">
           <circle cx="18" cy="18" r="16" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-gray-200 dark:text-gray-700" />
@@ -110,7 +166,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
           />
         </svg>
         {loading && (
-          <svg viewBox="0 0 36 36" className="absolute inset-0 h-full w-full animate-spin" aria-label={t(!info ? '正在同步' : gateway ? '正在刷新成员额度' : "正在刷新 Opus 限额")}>
+          <svg viewBox="0 0 36 36" className="absolute inset-0 h-full w-full animate-spin" aria-label={t(!info ? '正在同步' : '正在刷新 Opus 额度')}>
             <circle
               cx="18"
               cy="18"
@@ -135,7 +191,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
       onClick={refreshAll}
       title={collapsed ? title : t("{0}（点击立即刷新）", [title])}
       aria-busy={loading}
-      aria-label={t(!info ? '生成额度 {0}' : gateway ? '成员生成额度 {0}' : "Opus 生成限额 {0}", [syncBroken ? t('同步失败') : !usage ? t('正在同步') : negative ? t('已用尽') : `${displayPercent}%`]) + (runtimeSyncBroken ? ` · ${t('计费规则同步异常')}` : '')}
+      aria-label={t(!info ? '生成额度 {0}' : 'Opus 额度 {0}', [syncBroken ? t('同步失败') : !usage ? t('正在同步') : negative ? t('已用尽') : `${displayPercent}%`]) + (runtimeSyncBroken ? ` · ${t('计费规则同步异常')}` : '')}
       className={`group relative min-h-14 w-full cursor-pointer select-none text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:hover:bg-gray-800 ${showDetails && !collapsed ? 'appearance-group rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70' : `flex items-center border-b border-gray-200 dark:border-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}`}
     >
       {showDetails && !collapsed ? <>
@@ -144,18 +200,19 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
           <span className="flex min-w-0 items-center gap-2">{ring}<span className="text-micro text-gray-500 dark:text-gray-400">{t("剩余额度")}</span></span>
           <span className="min-w-0 border-l border-gray-200 pl-3 dark:border-gray-700"><span className="block text-micro text-gray-500 dark:text-gray-400">{t("估算可生成")}</span><span className="mt-1 block break-words text-lg font-semibold leading-6 tabular-nums text-gray-800 dark:text-gray-100">{usage ? t("≈{0} 张", [images]) : '—'}</span></span>
         </span>
+        {refillDetailLine && <span className="mt-2 block text-micro tabular-nums text-gray-500 dark:text-gray-400">{refillDetailLine}</span>}
         <span className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-micro text-gray-500 dark:text-gray-400">
           <span>{runtimeSyncBroken ? t("计费规则同步异常，张数换算可能过期") : syncPending ? t("计费规则正在同步") : t("V5 等受限模型共用额度")}</span>
           {showSyncTime && fetchedAt > 0 && <span>{t("最近同步 {0}", [new Date(fetchedAt).toLocaleTimeString(getLanguage(), { hour12: false })])}</span>}
         </span>
         {error && <span className="mt-2 block break-words text-micro text-red-500 dark:text-red-400">{usage ? t("上次额度 {0}%（≈{1} 张）：{2}", [displayPercent, images, t(error)]) : t("额度未知：{0}", [t(error)])}</span>}
-        {negative && <span className="mt-2 block text-micro text-red-500 dark:text-red-400">{t(gateway ? '成员额度已用尽，请核对网关余额与策略' : "额度已用尽，生成将消耗 Anlas")}</span>}
+        {negative && <span className="mt-2 block text-micro text-red-500 dark:text-red-400">{t(gateway ? 'Opus 额度已用尽，请核对网关余额与策略' : "额度已用尽，生成将消耗 Anlas")}</span>}
       </> : <>
       {ring}
       {!collapsed && <span className="min-w-0 flex-1">
         <span className="block text-xs font-medium text-gray-600 dark:text-gray-300">{t(quotaLabel)}</span>
-        <span className={`mt-0.5 block text-micro font-normal tabular-nums ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
-          {error ? t("同步失败，点击重试") : usage ? t("≈{0} 张", [images]) : t("正在同步…")}
+        <span className={`mt-0.5 block truncate text-micro font-normal tabular-nums ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
+          {error ? t("同步失败，点击重试") : usage ? refillCompactSuffix ? `${t("≈{0} 张", [images])} · ${refillCompactSuffix}` : t("≈{0} 张", [images]) : t("正在同步…")}
         </span>
       </span>}
       </>}

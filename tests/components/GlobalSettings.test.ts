@@ -724,7 +724,7 @@ describe('GlobalSettings', () => {
     subscriptionFixture.usage = { percent: 196, isNegative: false, timeUntilNextPercent: 0 };
     sessionStorage.setItem('nai_api_key', 'settings-opus-fixture');
     render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
-    const quota = await screen.findByRole('status', { name: /Opus 生成限额 196%/ });
+    const quota = await screen.findByRole('status', { name: /Opus 额度 196%/ });
     expect(screen.getByText('≈3391 张')).toBeTruthy();
     expect(screen.getByText('V5 等受限模型共用额度')).toBeTruthy();
     const columns = screen.getByText('剩余额度').parentElement?.parentElement;

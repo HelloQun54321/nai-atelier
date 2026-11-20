@@ -37,10 +37,10 @@ describe('OpusUsageBar', () => {
       : responseFor({ source: 'gateway', tier: 3, active, trainingStepsLeft: { fixedTrainingStepsLeft: 0, purchasedTrainingSteps: 20 },
         ...(active ? { usage: { percent: 0, isNegative: true, timeUntilNextPercent: 0 } } : {}) })));
     render(React.createElement(OpusUsageBar, { collapsed: false, showDetails: true }));
-    const card = await screen.findByRole('status', { name: active ? /成员生成额度/ : /网关权益不可用/ });
+    const card = await screen.findByRole('status', { name: active ? /Opus 额度/ : /网关权益不可用/ });
     expect(card.title).toContain('实际扣费以网关为准');
     expect(card.title).not.toContain('权限与扣费以官方响应为准');
-    if (active) expect(screen.getByText('成员额度已用尽，请核对网关余额与策略')).toBeTruthy();
+    if (active) expect(screen.getByText('Opus 额度已用尽，请核对网关余额与策略')).toBeTruthy();
     else expect(screen.queryByText('订阅已过期')).toBeNull();
     expect(screen.queryByText('额度已用尽，生成将消耗 Anlas')).toBeNull();
   });
@@ -68,9 +68,9 @@ describe('OpusUsageBar', () => {
       ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } })
       : responseFor({ source: 'gateway', tier: 3, active: true, usage: { percent, isNegative: false, timeUntilNextPercent: 0 } })));
     render(React.createElement(OpusUsageBar, props));
-    const card = await screen.findByRole('status', { name: `成员生成额度 ${visible}%` });
+    const card = await screen.findByRole('status', { name: `Opus 额度 ${visible}%` });
     expect(screen.getByText(`${visible}%`)).toBeTruthy();
-    expect(card.title).toContain(`成员额度：${visible}%（约 ${images} 张）`);
+    expect(card.title).toContain(`Opus 额度：${visible}%（约 ${images} 张）`);
     if (!props.collapsed) expect(screen.getByText(`≈${images} 张`)).toBeTruthy();
   });
 
@@ -87,14 +87,76 @@ describe('OpusUsageBar', () => {
         ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } })
         : responseFor({ source: 'gateway', gatewayManagedWallet: true, tier: 3, active: true, usage: { percent: item.percent, capacity: item.capacity, isNegative: false, timeUntilNextPercent: 0 } })));
       const { container } = render(React.createElement(OpusUsageBar, { collapsed: false }));
-      const card = await screen.findByRole('status', { name: `成员生成额度 ${item.expectedVisible}` });
+      const card = await screen.findByRole('status', { name: `Opus 额度 ${item.expectedVisible}` });
+      expect(screen.getByText('Opus 额度')).toBeTruthy();
       expect(screen.getByText(item.expectedVisible)).toBeTruthy();
       expect(screen.getByText(`≈${item.expectedImages} 张`)).toBeTruthy();
-      expect(card.title).toContain(`成员额度：${item.expectedVisible} / 25.0%（约 ${item.expectedImages} 张）`);
+      expect(card.title).toContain(`Opus 额度：${item.expectedVisible} / 25.0%（约 ${item.expectedImages} 张）`);
       expect(screen.getByText(item.expectedVisible).parentElement?.className).toContain(item.expectedColor);
       const offset = Number(container.querySelectorAll('circle')[1]?.getAttribute('stroke-dashoffset'));
       expect(offset).toBeCloseTo(item.expectedOffset, 4);
     }
+  });
+
+  it('按渠道在侧栏次行、详情与悬停展示预计回满时间：满额保持简洁，受限与普通中转不误报', async () => {
+    // 1) 官方直连未满：侧栏合并显示回满时间，详情与悬停显示完整回满与日恢复速率
+    sessionStorage.setItem('nai_api_key', 'pst-refill-official');
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } })
+      : responseFor({ tier: 3, active: true, usage: { percent: 80, isNegative: false, timeUntilNextPercent: 3600 } })));
+    const officialView = render(React.createElement(OpusUsageBar, { collapsed: false }));
+    const officialCard = await screen.findByRole('status', { name: 'Opus 额度 80%' });
+    expect(screen.getByText('≈1384 张 · 20小时后满')).toBeTruthy();
+    expect(officialCard.title).toContain('预计 20小时 后回满');
+    expect(officialCard.title).toContain('每日恢复 +24.0%');
+    officialView.rerender(React.createElement(OpusUsageBar, { collapsed: false, showDetails: true }));
+    expect(screen.getByText(/预计 20小时 后回满/)).toBeTruthy();
+    cleanup();
+
+    // 2) 拼车成员网关未满：直接使用网关精确 fullRefillSeconds 与 refillPerDay
+    sessionStorage.setItem('nai_api_key', 'STA1N-refill-gateway');
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } })
+      : responseFor({ source: 'gateway', gatewayManagedWallet: true, tier: 3, active: true, usage: { percent: 18.5, capacity: 25, fullRefillSeconds: 100800, refillPerDay: 5.5, isNegative: false, timeUntilNextPercent: 0 } })));
+    render(React.createElement(OpusUsageBar, { collapsed: false }));
+    const memberCard = await screen.findByRole('status', { name: 'Opus 额度 18.5%' });
+    expect(screen.getByText('≈320 张 · 1天4小时后满')).toBeTruthy();
+    expect(memberCard.title).toContain('预计 1天4小时 后回满');
+    expect(memberCard.title).toContain('每日恢复 +5.5%');
+    cleanup();
+
+    // 3) 拼车成员网关满额：侧栏次行保持干净，不追加多余时间
+    sessionStorage.setItem('nai_api_key', 'STA1N-refill-full');
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } })
+      : responseFor({ source: 'gateway', gatewayManagedWallet: true, tier: 3, active: true, usage: { percent: 25, capacity: 25, fullRefillSeconds: 0, refillPerDay: 0, isNegative: false, timeUntilNextPercent: 0 } })));
+    render(React.createElement(OpusUsageBar, { collapsed: false }));
+    const fullCard = await screen.findByRole('status', { name: 'Opus 额度 25.0%' });
+    expect(screen.getByText('≈433 张')).toBeTruthy();
+    expect(fullCard.title).toContain('当前已满');
+    cleanup();
+
+    // 4) 拼车成员网关恢复受限：显示恢复受限，不伪造回满时间
+    sessionStorage.setItem('nai_api_key', 'STA1N-refill-limited');
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } })
+      : responseFor({ source: 'gateway', gatewayManagedWallet: true, tier: 3, active: true, usage: { percent: 12, capacity: 25, refillLimited: true, isNegative: false, timeUntilNextPercent: 6048 } })));
+    const limitedView = render(React.createElement(OpusUsageBar, { collapsed: false }));
+    await screen.findByRole('status', { name: 'Opus 额度 12.0%' });
+    expect(screen.getByText('≈208 张 · 恢复受限')).toBeTruthy();
+    limitedView.rerender(React.createElement(OpusUsageBar, { collapsed: false, showDetails: true }));
+    expect(screen.getByText('当前恢复受限，暂无法预计回满时间')).toBeTruthy();
+    cleanup();
+
+    // 5) 普通第三方网关（无 /api/me/quota）：未知个人上限时不猜测回满时间
+    sessionStorage.setItem('nai_api_key', 'STA1N-refill-generic-gateway');
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } })
+      : responseFor({ source: 'gateway', tier: 3, active: true, usage: { percent: 25, isNegative: false, timeUntilNextPercent: 6048 } })));
+    render(React.createElement(OpusUsageBar, { collapsed: false }));
+    await screen.findByRole('status', { name: 'Opus 额度 25.0%' });
+    expect(screen.getByText('≈433 张')).toBeTruthy();
+    expect(screen.queryByText(/后满/)).toBeNull();
   });
   it('详情把额度与估算张数放入等宽两列，同步信息另起公共行，显式提示刷新', async () => {
     sessionStorage.setItem('nai_api_key', 'opus-details-synthetic-key');
@@ -135,7 +197,7 @@ describe('OpusUsageBar', () => {
     expect(card.querySelectorAll('span')).toHaveLength(beforeRows);
     expect(screen.queryByText('正在同步…')).toBeNull();
     expect(card.querySelector('.lucide-refresh-cw')?.classList.contains('animate-spin')).toBe(true);
-    expect(screen.getByLabelText('正在刷新 Opus 限额')).toBeTruthy();
+    expect(screen.getByLabelText('正在刷新 Opus 额度')).toBeTruthy();
     await act(async () => finishRefresh(responseFor(payload(99))));
     await waitFor(() => expect(card.getAttribute('aria-busy')).toBe('false'));
     expect(screen.getByText('99%')).toBeTruthy();
@@ -228,7 +290,7 @@ describe('OpusUsageBar', () => {
     fireEvent.click(screen.getByRole('status', { name: /同步失败/ }));
     await waitFor(() => {
       expect(screen.getByRole('status', { name: /73%/ })).toBeTruthy();
-      expect(screen.getByText('≈1263 张')).toBeTruthy();
+      expect(screen.getByText(/≈1263 张/)).toBeTruthy();
     });
   });
 

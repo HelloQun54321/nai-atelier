@@ -231,12 +231,12 @@ describe('Anlas 官方余额与订阅驱动', () => {
       throw new Error(`测试禁止其他接口：${url}`);
     }));
     render(React.createElement(MobileHarness));
-    const entry = await screen.findByRole('button', { name: /预算 1000 · 余额 8100 · Opus 74%/ });
+    const entry = await screen.findByRole('button', { name: /预算 1000 · 余额 8100 · Opus 额度 74%/ });
     fireEvent.click(entry);
     await screen.findByText('74%');
     expect(queries).toBe(1);
     fireEvent.click(screen.getByRole('status', { name: /74%/ }));
-    await screen.findByRole('button', { name: /预算 1000 · 余额 7900 · Opus 73%/ });
+    await screen.findByRole('button', { name: /预算 1000 · 余额 7900 · Opus 额度 73%/ });
     expect(screen.getByText('73%')).toBeTruthy();
     expect(screen.getByText('官方余额').nextElementSibling?.textContent).toBe('7,900 点');
     expect(queries).toBe(2);
