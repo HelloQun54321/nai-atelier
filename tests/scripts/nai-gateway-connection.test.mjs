@@ -296,9 +296,11 @@ test('批量生图（如 Roll 串多张）在开启 Key 池时逐张按满圈率
   mock.disableNetConnect(); mock.enableNetConnect(host => host.startsWith('127.0.0.1:'));
   setGlobalDispatcher(mock);
   const quotas = { 'STA1N-batch-1': 25, 'STA1N-batch-2': 25 };
+  const quotaEndpointCalls = { 'STA1N-batch-1': 0, 'STA1N-batch-2': 0 };
   let drainBoth = false;
   const usedKeys = [];
   const accountedAuths = [];
+  const savedDurations = [];
   const savedCount = { n: 0 };
   const pngBuffer = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#10b981' } }).png().toBuffer();
   const JSZip = (await import('jszip')).default;
@@ -313,9 +315,10 @@ test('批量生图（如 Roll 串多张）在开启 Key 池时逐张按满圈率
       usage: { percent: quotas[key], isNegative: quotas[key] <= 0, timeUntilNextPercent: 0 },
       trainingStepsLeft: { fixedTrainingStepsLeft: 2500, purchasedTrainingSteps: 0 },
     }), { headers: { 'content-type': 'application/json' } }).persist();
-    pool.intercept({ path: '/api/me/quota', method: 'GET' }).reply(200, () => JSON.stringify({
-      fairQuota: { enabled: true, member: true, v5Capacity: 25 },
-    }), { headers: { 'content-type': 'application/json' } }).persist();
+    pool.intercept({ path: '/api/me/quota', method: 'GET' }).reply(200, () => {
+      quotaEndpointCalls[key] += 1;
+      return JSON.stringify({ fairQuota: { enabled: true, member: true, v5Capacity: 25 } });
+    }, { headers: { 'content-type': 'application/json' } }).persist();
     pool.intercept({ path: '/v1/ai/generate-image', method: 'POST' }).reply(200, () => {
       usedKeys.push(key);
       quotas[key] = drainBoth || key === 'STA1N-batch-2' ? 0 : Math.max(0, quotas[key] - 0.5);
@@ -346,8 +349,11 @@ test('批量生图（如 Roll 串多张）在开启 Key 池时逐张按满圈率
     if (String(input) === `http://127.0.0.1:${worker.address().port}/api/local-history`) {
       assert.ok(options.body instanceof FormData);
       assert.ok((await options.body.get('image').arrayBuffer()).byteLength > 8);
+      const rawMeta = options.body.get('metadata');
+      const meta = typeof rawMeta === 'string' ? JSON.parse(rawMeta) : null;
+      savedDurations.push(meta?.params?._local_generation_duration_ms);
       const id = `hist-${++savedCount.n}`;
-      return new Response(JSON.stringify({ item: { id, imageUrl: `/api/files/${id}.png`, prompt: 'test', params: {} } }));
+      return new Response(JSON.stringify({ item: { id, imageUrl: `/api/files/${id}.png`, prompt: 'test', params: meta?.params || {} } }));
     }
     return originalFetch(input, options);
   };
@@ -403,6 +409,11 @@ test('批量生图（如 Roll 串多张）在开启 Key 池时逐张按满圈率
     const sha256 = text => createHash('sha256').update(text).digest('hex');
     assert.deepEqual(usedKeys, ['STA1N-batch-1', 'STA1N-batch-2', 'STA1N-batch-1']);
     assert.deepEqual(accountedAuths, [sha256('STA1N-batch-1'), sha256('STA1N-batch-2'), sha256('STA1N-batch-1')]);
+    assert.equal(savedDurations.length, 3);
+    assert.ok(savedDurations.every(ms => Number.isFinite(ms) && ms > 0), `每张应记录上游出口生图毫秒耗时：${JSON.stringify(savedDurations)}`);
+    // 静态个人配额上限缓存生效：整批 3 张里每把 Key 至多请求 1 次 /api/me/quota，不逐张阻塞。
+    assert.equal(quotaEndpointCalls['STA1N-batch-1'], 1);
+    assert.equal(quotaEndpointCalls['STA1N-batch-2'], 1);
 
     // 场景 2：中途全池耗尽立即以 pool_exhausted 停止，不消耗 Anlas 也不发起第 3 次请求
     usedKeys.length = 0;

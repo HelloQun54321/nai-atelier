@@ -21,8 +21,19 @@ export async function readGenerationResponse(response, onPreview, onFinal) {
     throw Object.assign(new Error(error.message), { code: error.code || 'generation_failed', status: response.status });
   }
   const estimated = response.headers.get('X-Nai-Anlas-Estimated-Spent');
+  const durationHeader = Number(response.headers.get('X-Nai-Generation-Duration-Ms'));
+  const upstreamStartedAtHeader = Number(response.headers.get('X-Nai-Upstream-Started-At'));
+  const headerDurationMs = Number.isFinite(durationHeader) && durationHeader > 0 ? Math.round(durationHeader) : undefined;
+  const resolveDurationMs = candidate => {
+    const num = Number(candidate);
+    if (Number.isFinite(num) && num > 0) return Math.round(num);
+    if (headerDurationMs !== undefined) return headerDurationMs;
+    if (Number.isFinite(upstreamStartedAtHeader) && upstreamStartedAtHeader > 0) return Math.max(1, Date.now() - upstreamStartedAtHeader);
+    return undefined;
+  };
   const result = {
     estimatedCost: estimated !== null && Number.isFinite(Number(estimated)) ? Number(estimated) : undefined,
+    ...(headerDurationMs !== undefined ? { durationMs: headerDurationMs } : {}),
     accountingFailed: response.headers.get('X-Nai-Anlas-Accounting-Failed') === '1',
     cleanupError: response.headers.get('X-Nai-Queue-Cleanup-Failed') === '1' ? '公共队列退出或释放失败，请检查队列状态' : undefined,
   };
@@ -68,6 +79,9 @@ export async function readGenerationResponse(response, onPreview, onFinal) {
         result.accountingError = typeof data.accountingError === 'string' ? data.accountingError.slice(0, 240) : '本地用量记录未完整保存';
       }
       result.estimatedCost = Number.isFinite(data.estimatedSpent) && data.estimatedSpent >= 0 ? data.estimatedSpent : result.estimatedCost;
+      if (result.durationMs === undefined && Number.isFinite(Number(data.durationMs)) && Number(data.durationMs) > 0) {
+        result.durationMs = Math.round(Number(data.durationMs));
+      }
     }
     if (event === 'nai_usage_error') {
       result.accountingFailed = true;
@@ -80,8 +94,13 @@ export async function readGenerationResponse(response, onPreview, onFinal) {
       onPreview?.({ image, ...(Number.isFinite(data.step_ix) ? { step: data.step_ix + 1 } : {}) });
       if (event === 'final' && !finalOutput) {
         const { bytes, mime } = generationImageBytes(image);
+        const durationMs = resolveDurationMs(data.durationMs);
         finalImage = image;
-        finalOutput = { ...result, bytes, mime, ...(Number.isFinite(data.seed) ? { seed: data.seed } : {}) };
+        finalOutput = {
+          ...result, bytes, mime,
+          ...(Number.isFinite(data.seed) ? { seed: data.seed } : {}),
+          ...(durationMs !== undefined ? { durationMs } : {}),
+        };
         // 保存与流尾记账并行；调用方托管保存 Promise，读取器继续收齐回执。
         onFinal?.(finalOutput);
       }

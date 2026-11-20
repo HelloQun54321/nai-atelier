@@ -94,8 +94,7 @@ export interface PoolGenerationCheck {
 
 const POOL_STORAGE_KEY = 'nai_key_pool_v1';
 export const NAI_KEY_POOL_CHANGED = 'nai-key-pool-changed';
-const POOL_SNAPSHOT_TTL = 30 * 1000;
-const ACTIVE_KEY_PRE_PICK_TTL = 2 * 1000;
+const POOL_SNAPSHOT_TTL = 60 * 1000;
 const POOL_POLL_INTERVAL = 60 * 1000;
 const DEFAULT_HYSTERESIS = 0;
 
@@ -391,12 +390,11 @@ export const prepareGenerationWithPool = async (check: PoolGenerationCheck): Pro
   }
 
   const activeKey = readActiveNaiKey().trim();
-  const activeState = activeKey ? memberStates.get(activeKey) : undefined;
-  const forceActive = activeKey && (!activeState || Date.now() - activeState.fetchedAt >= ACTIVE_KEY_PRE_PICK_TTL)
-    ? new Set([activeKey])
-    : undefined;
-  const statuses = await refreshKeyPoolSnapshots(false, forceActive);
-  const picked = selectBestPoolMember(
+  const pickOptions = {
+    requireOpusQuota: isOpusUsageLimitedModel(check.model),
+    minPercent: check.minPercent ?? 0,
+  };
+  const pickFrom = (statuses: PoolMemberStatus[]) => selectBestPoolMember(
     statuses.map(item => ({
       entry: item.entry,
       info: item.info,
@@ -404,11 +402,19 @@ export const prepareGenerationWithPool = async (check: PoolGenerationCheck): Pro
       cooldownUntil: item.cooldownUntil,
     })),
     activeKey,
-    {
-      requireOpusQuota: isOpusUsageLimitedModel(check.model),
-      minPercent: check.minPercent ?? 0,
-    },
+    pickOptions,
   );
+  // 池缓存有效且已有可用 Opus 密钥时直接起步（零阻塞），由后端 estimate 在发往上游前精确核对刚用过的密钥。
+  const now = Date.now();
+  const cachedStatuses = cachedVaultEntries.length ? buildMemberStatuses() : [];
+  const allWarm = cachedStatuses.length > 0 && cachedStatuses.every(
+    item => item.fetchedAt > 0 && (now - item.fetchedAt < POOL_SNAPSHOT_TTL),
+  );
+  let picked = allWarm ? pickFrom(cachedStatuses) : null;
+  if (!picked || !picked.ok) {
+    const statuses = await refreshKeyPoolSnapshots(false);
+    picked = pickFrom(statuses);
+  }
   if (!picked.ok) {
     return { pooled: true, ok: false, code: picked.code, message: picked.message };
   }
@@ -520,9 +526,11 @@ let lastPoolRefreshBroadcastAt = 0;
 const onUsageRefresh = () => {
   if (!cachedPoolConfig?.enabled) return;
   const now = Date.now();
-  if (now - lastPoolRefreshBroadcastAt < 2_500) return;
+  if (now - lastPoolRefreshBroadcastAt < 5_000) return;
   lastPoolRefreshBroadcastAt = now;
-  void refreshKeyPoolSnapshots(true);
+  const activeKey = readActiveNaiKey().trim();
+  // 只刷新当前激活密钥及已过期的成员，避免批量出图每张保存后并发强刷全池拖慢网关。
+  void refreshKeyPoolSnapshots(false, activeKey ? new Set([activeKey]) : undefined);
 };
 
 const onVaultChanged = () => {

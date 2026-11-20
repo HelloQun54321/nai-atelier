@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, Info, LoaderCircle, Maximize, Minus, Plus, Trash2 } from 'lucide-react';
 import type { LocalGenItem } from '../types';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
+import { formatGenerationDuration, readGenerationDurationMs } from '../services/generationDuration';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageShareActions } from './ImageShareActions';
 import { OriginalImage } from './SmartImage';
@@ -72,12 +73,13 @@ export const HistoryImageViewer: React.FC<Props> = props => {
     window.addEventListener('keydown',keyDown);return()=>window.removeEventListener('keydown',keyDown);
   });
 
+  const durationLabel = formatGenerationDuration(readGenerationDurationMs(item));
   return <ImagePreviewPortal>
     <div className="history-viewer-layer" onClick={onClose}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t("历史图片查看器")} className={`history-viewer appearance-panel ${props.detailsOpen ? 'history-viewer--details' : ''}`} onClick={event => event.stopPropagation()}>
         <header className="history-viewer-header">
           <button data-agent-action="browse" type="button" className="history-viewer-button history-viewer-return" aria-label={t("返回历史列表")} onClick={onClose}><ArrowLeft /></button>
-          <div className="history-viewer-caption"><span>{new Date(item.createdAt).toLocaleString(getLanguage())}</span><small>{getNaiModelDisplayLabel(item.params?.model)} · {natural.width} × {natural.height}{item.sourceChainName ? ` · ${item.sourceChainName}` : ''}</small></div>
+          <div className="history-viewer-caption"><span>{new Date(item.createdAt).toLocaleString(getLanguage())}</span><small>{getNaiModelDisplayLabel(item.params?.model)} · {natural.width} × {natural.height}{item.sourceChainName ? ` · ${item.sourceChainName}` : ''}{durationLabel ? ` · ${durationLabel}` : ''}</small></div>
           <span className="history-viewer-counter" aria-live="polite">{index + 1} / {total}</span>
           <button data-agent-action="browse" type="button" className="history-viewer-button" title={t("查看提示词与参数")} aria-label={t("图片详情")} aria-expanded={props.detailsOpen} onClick={() => props.onDetailsChange(!props.detailsOpen)}><Info /></button>
         </header>

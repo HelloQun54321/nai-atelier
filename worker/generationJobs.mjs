@@ -171,9 +171,15 @@ export class GenerationJobs {
           job.state = 'saving';
           this.notify(job);
           const seed = finalOutput.seed ?? payload.parameters.seed;
+          const durationMs = Number.isFinite(Number(finalOutput.durationMs)) && Number(finalOutput.durationMs) > 0
+            ? Math.round(Number(finalOutput.durationMs)) : undefined;
           const history = {
             ...job.descriptor.history, id: crypto.randomUUID(), createdAt: this.now(), isFavorite: false,
-            params: { ...job.descriptor.history.params, ...(seed === undefined ? {} : { seed }) },
+            params: {
+              ...job.descriptor.history.params,
+              ...(seed === undefined ? {} : { seed }),
+              ...(durationMs !== undefined ? { _local_generation_duration_ms: durationMs } : {}),
+            },
             ...(job.descriptor.history.edit ? { edit: { ...job.descriptor.history.edit, estimatedCost: finalOutput.estimatedCost ?? cost, settlementStatus: 'estimated' } } : {}),
           };
           // 立即接住保存失败，仍等待生成链路收齐记账及公共队列回执。

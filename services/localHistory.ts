@@ -45,7 +45,9 @@ const normalizeHistoryItem = (item: LocalGenItem): LocalGenItem => {
                 : {}),
         } as NAIParams
         : item.params;
-    return { ...item, params, edit: normalizeHistoryEdit(item.edit) };
+    const rawDurationMs = Number(item.generationDurationMs ?? (params as NAIParams | undefined)?._local_generation_duration_ms);
+    const generationDurationMs = Number.isFinite(rawDurationMs) && rawDurationMs > 0 ? Math.round(rawDurationMs) : undefined;
+    return { ...item, params, edit: normalizeHistoryEdit(item.edit), ...(generationDurationMs !== undefined ? { generationDurationMs } : {}) };
 };
 
 const dataUrlToBlob = async (value: string): Promise<Blob> => {

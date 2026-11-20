@@ -1229,16 +1229,96 @@ export const sanitizeNovelAiSubscription = (payload, gatewayUrl = '', gatewayQuo
 };
 
 // 复用界面正常查询的订阅；普通生成不额外联网，也不等待官方常量同步。
+const GATEWAY_QUOTA_CACHE_TTL = 10 * 60_000;
+const SUBSCRIPTION_FAILURE_COOLDOWN_MS = 10_000;
 const novelAiSubscriptions = new Map();
 const novelAiSubscriptionFetchedAt = new Map();
+const novelAiGatewayQuotaCache = new Map();
+const novelAiSubscriptionFailedAt = new Map();
+const novelAiSubscriptionInFlight = new Map();
 export const cacheNovelAiSubscription = (authorization, subscription) => {
   if (subscription) {
     novelAiSubscriptions.set(authorization, subscription);
     novelAiSubscriptionFetchedAt.set(authorization, Date.now());
+    novelAiSubscriptionFailedAt.delete(authorization);
   } else {
     novelAiSubscriptions.delete(authorization);
     novelAiSubscriptionFetchedAt.delete(authorization);
+    novelAiGatewayQuotaCache.delete(authorization);
+    novelAiSubscriptionFailedAt.delete(authorization);
+    for (const key of novelAiSubscriptionInFlight.keys()) {
+      if (key.startsWith(`${authorization}\n`)) novelAiSubscriptionInFlight.delete(key);
+    }
   }
+};
+
+const cachedGatewayQuotaFallback = authorization => {
+  const cached = novelAiGatewayQuotaCache.get(authorization);
+  if (cached) return cached.quota;
+  const sub = novelAiSubscriptions.get(authorization);
+  if (!sub || sub.source !== 'gateway') return null;
+  const usage = sub.usage;
+  const quota = {
+    ...(usage?.capacity !== undefined ? { capacity: usage.capacity } : {}),
+    ...(sub.gatewayManagedWallet ? { managedWallet: true } : {}),
+    ...(usage?.refillPerDay !== undefined ? { refillPerDay: usage.refillPerDay } : {}),
+    ...(usage?.fullRefillSeconds !== undefined ? { fullRefillSeconds: usage.fullRefillSeconds } : {}),
+    ...(usage?.refillLimited ? { refillLimited: true } : {}),
+  };
+  return Object.keys(quota).length ? quota : null;
+};
+
+/** 合并同 Key 在途订阅查询并复用静态配额缓存，避免生图前重复请求 /user/subscription 与 /api/me/quota。 */
+const probeNovelAiSubscription = async (authorization, {
+  gatewayUrl = '',
+  requestRemote = fetch,
+  includeGatewayQuota = false,
+  forceGatewayQuota = false,
+  subTimeoutMs = 30_000,
+  quotaTimeoutMs = 5_000,
+} = {}) => {
+  const inflightKey = `${authorization}\n${gatewayUrl}`;
+  let subPromise = novelAiSubscriptionInFlight.get(inflightKey);
+  if (!subPromise) {
+    subPromise = (async () => {
+      try {
+        const upstream = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(subTimeoutMs), requestRemote, gatewayUrl);
+        if (!upstream.ok) {
+          const unsupported = isSubscriptionUnsupported(gatewayUrl, upstream.status);
+          if (unsupported) cacheNovelAiSubscription(authorization, null);
+          else novelAiSubscriptionFailedAt.set(authorization, Date.now());
+          return { ok: false, status: upstream.status, unsupported, payload: null };
+        }
+        return { ok: true, status: upstream.status, unsupported: false, payload: await upstream.json() };
+      } catch (error) {
+        novelAiSubscriptionFailedAt.set(authorization, Date.now());
+        throw error;
+      } finally {
+        if (novelAiSubscriptionInFlight.get(inflightKey) === subPromise) {
+          novelAiSubscriptionInFlight.delete(inflightKey);
+        }
+      }
+    })();
+    novelAiSubscriptionInFlight.set(inflightKey, subPromise);
+  }
+
+  const resolveQuota = async () => {
+    if (!gatewayUrl) return null;
+    if (!includeGatewayQuota && !forceGatewayQuota) return cachedGatewayQuotaFallback(authorization);
+    const cached = novelAiGatewayQuotaCache.get(authorization);
+    if (!forceGatewayQuota && cached && Date.now() - cached.fetchedAt < GATEWAY_QUOTA_CACHE_TTL) {
+      return cached.quota;
+    }
+    const quota = await fetchGatewayMemberQuota(authorization, AbortSignal.timeout(quotaTimeoutMs), requestRemote, gatewayUrl);
+    novelAiGatewayQuotaCache.set(authorization, { quota, fetchedAt: Date.now() });
+    return quota;
+  };
+
+  const [subResult, gatewayQuota] = await Promise.all([subPromise, resolveQuota()]);
+  if (!subResult.ok) return { ...subResult, sanitized: null };
+  const sanitized = sanitizeNovelAiSubscription(subResult.payload, gatewayUrl, gatewayQuota);
+  cacheNovelAiSubscription(authorization, sanitized);
+  return { ...subResult, sanitized };
 };
 
 /** 后台批量任务逐张轮询选 Key（与前端满圈率优先口径一致，同分优先轮换避开刚用过的 Key）。 */
@@ -2501,6 +2581,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     generationSignal.throwIfAborted();
     generationSubmitted = true;
+    const upstreamStartedAt = Date.now();
     const response = !generationProxyUrl && (resolvedVibeEncodings?.length || preciseReferenceImages?.length || baseImageKeysOmitted?.size)
       ? await generateWithCacheRetry(
         payload,
@@ -2512,6 +2593,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     generationSignal.throwIfAborted();
     if (generationProxyUrl) cloudQueue.update(keyHash, queueTaskId, { phase: 'generating', cancelable: false });
     const responseBody = Buffer.from(await response.arrayBuffer());
+    const generationDurationMs = response.ok ? Math.max(1, Date.now() - upstreamStartedAt) : undefined;
     // 后台任务用现有 final/用量回执提前保存；公开 ZIP 调用仍保留完整头部回执。
     const resultEvents = response.ok && req.headers['x-nai-generation-response'] === 'events'
       && /^[a-zA-Z0-9-]{16,80}$/.test(String(req.headers['x-nai-generation-task'] || ''));
@@ -2520,11 +2602,13 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
       const estimatedCost = billing.subscription ? billingForPayload(settlementPayload, billing.runtime, billing.opusSubscriber, billing.exhausted).cost : undefined;
       res.writeHead(200, {
         'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'private, no-store', 'X-Accel-Buffering': 'no',
-        ...(Number.isFinite(estimatedCost) ? { 'X-Nai-Anlas-Estimated-Spent': String(estimatedCost) } : {}), ...queueHeaders(),
+        ...(Number.isFinite(estimatedCost) ? { 'X-Nai-Anlas-Estimated-Spent': String(estimatedCost) } : {}),
+        ...(generationDurationMs !== undefined ? { 'X-Nai-Generation-Duration-Ms': String(generationDurationMs) } : {}),
+        ...queueHeaders(),
       });
       try {
         const output = await readGenerationResponse(new Response(responseBody));
-        if (!res.destroyed) res.write(`event: final\ndata: ${JSON.stringify({ image: `data:${output.mime};base64,${output.bytes.toString('base64')}`, ...(output.seed === undefined ? {} : { seed: output.seed }) })}\n\n`);
+        if (!res.destroyed) res.write(`event: final\ndata: ${JSON.stringify({ image: `data:${output.mime};base64,${output.bytes.toString('base64')}`, ...(output.seed === undefined ? {} : { seed: output.seed }), ...(generationDurationMs !== undefined ? { durationMs: generationDurationMs } : {}) })}\n\n`);
       } catch (cause) { outputError = cause; }
     }
     let estimatedCost, anlasBudget, accountingError, accountingFailed = false;
@@ -2555,6 +2639,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
       ...(Number.isFinite(estimatedCost) ? { 'X-Nai-Anlas-Estimated-Spent': String(estimatedCost) } : {}),
+      ...(generationDurationMs !== undefined ? { 'X-Nai-Generation-Duration-Ms': String(generationDurationMs) } : {}),
       ...(accountingFailed ? { 'X-Nai-Anlas-Accounting-Failed': '1' } : {}),
       ...(accountingFailed && accountingError ? { 'X-Nai-Anlas-Accounting-Error': encodeURIComponent(accountingError) } : {}),
       ...(anlasBudget ? { 'X-Nai-Anlas-Remaining': String(anlasBudget.remaining) } : {}),
@@ -2721,6 +2806,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     generationSignal.throwIfAborted();
     generationSubmitted = true;
+    const upstreamStartedAt = Date.now();
     const upstream = !generationProxyUrl && (resolvedVibeEncodings?.length || preciseReferenceImages?.length || baseImageKeysOmitted?.size)
       ? await generateWithCacheRetry(payload, authorization,
         { vibeEncodings: resolvedVibeEncodings || [], vibeCacheKeysSentWithData, preciseImages: preciseReferenceImages, preciseCacheKeysSentWithData, baseImageOriginals },
@@ -2739,15 +2825,20 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
       'X-Accel-Buffering': 'no',
+      'X-Nai-Upstream-Started-At': String(upstreamStartedAt),
       // 提前保存沿用本轮结算快照的估算，不能等流尾才补编辑历史的费用。
       ...(billing.subscription ? { 'X-Nai-Anlas-Estimated-Spent': String(billingForPayload(settlementPayload, billing.runtime, billing.opusSubscriber, billing.exhausted).cost) } : {}),
       ...(queueEnabled ? { 'X-Nai-Queue-Task-Id': queueTaskId } : {}),
     });
     const decoder = new TextDecoder();
     let finalSeen = false;
+    let finalDurationMs;
     let upstreamErrorSeen = false;
     const observer = createSseEventObserver(event => {
-      if (event === 'final') finalSeen = true;
+      if (event === 'final') {
+        finalSeen = true;
+        if (finalDurationMs === undefined) finalDurationMs = Math.max(1, Date.now() - upstreamStartedAt);
+      }
       if (event === 'error') upstreamErrorSeen = true;
     });
     const reader = upstream.body.getReader();
@@ -2781,6 +2872,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
         keyHash,
         remaining: anlasBudget?.remaining,
         estimatedSpent: estimatedCost,
+        ...(finalDurationMs !== undefined ? { durationMs: finalDurationMs } : {}),
         refreshPersonal: true,
         accountingFailed: accountingFailed === true,
         ...(accountingFailed ? { accountingError: accountingError || '本地用量记录未完整保存' } : {}),
@@ -3859,20 +3951,24 @@ const serveDistFile = async (req, res, url) => {
           const auth = `Bearer ${String(entry.key).trim()}`;
           refreshed.add(auth);
           const gwUrl = String(entry.gatewayUrl || '').trim();
-          const [upstream, gatewayQuota] = await Promise.all([
-            fetchNovelAiSubscription(auth, AbortSignal.timeout(30_000), remoteFetch, gwUrl),
-            fetchGatewayMemberQuota(auth, AbortSignal.timeout(5_000), remoteFetch, gwUrl),
-          ]);
-          if (upstream.ok) {
-            cacheNovelAiSubscription(auth, sanitizeNovelAiSubscription(await upstream.json(), gwUrl, gatewayQuota));
-          } else if (isSubscriptionUnsupported(gwUrl, upstream.status)) {
-            cacheNovelAiSubscription(auth, null);
-          }
+          // 静态车位上限（v5Capacity）走 10 分钟缓存，批内不再每张图都阻塞等待 /api/me/quota。
+          await probeNovelAiSubscription(auth, {
+            gatewayUrl: gwUrl,
+            requestRemote: remoteFetch,
+            includeGatewayQuota: true,
+            forceGatewayQuota: false,
+            subTimeoutMs: 30_000,
+            quotaTimeoutMs: 2_500,
+          });
         };
         await Promise.allSettled(members.map(async entry => {
           const auth = `Bearer ${String(entry.key).trim()}`;
           const fetchedAt = novelAiSubscriptionFetchedAt.get(auth) || 0;
-          const mustRefresh = (fresh && auth === lastAuth) || !novelAiSubscriptions.has(auth) || (now - fetchedAt > 30_000);
+          const failedAt = novelAiSubscriptionFailedAt.get(auth) || 0;
+          const recentlyFailed = failedAt > 0 && (now - failedAt < SUBSCRIPTION_FAILURE_COOLDOWN_MS);
+          const mustRefresh = (fresh && auth === lastAuth)
+            || (!novelAiSubscriptions.has(auth) && !recentlyFailed)
+            || (novelAiSubscriptions.has(auth) && now - fetchedAt > 60_000);
           if (!mustRefresh) return;
           await probeMember(entry);
         }));
@@ -3909,16 +4005,15 @@ const serveDistFile = async (req, res, url) => {
       if (fresh) {
         try {
           const gatewayUrl = await readNaiGatewayUrl({ ...internalWorkerRequest, headers: { authorization } }, workerPort);
-          const [response, gatewayQuota] = await Promise.all([
-            fetchNovelAiSubscription(authorization, AbortSignal.timeout(30_000), remoteFetch, gatewayUrl),
-            fetchGatewayMemberQuota(authorization, AbortSignal.timeout(5_000), remoteFetch, gatewayUrl),
-          ]);
-          if (isSubscriptionUnsupported(gatewayUrl, response.status)) {
-            subscriptionUnsupported = true;
-            // 接口明确缺失后，旧免费权益不能继续当成当前额度，也不能用于本次结算。
-            cacheNovelAiSubscription(authorization, null);
-          } else if (!response.ok) throw new Error('账号额度刷新失败');
-          else cacheNovelAiSubscription(authorization, sanitizeNovelAiSubscription(await response.json(), gatewayUrl, gatewayQuota));
+          // 单 Key 批内核实费用只依赖 /user/subscription，不阻塞等待 /api/me/quota，复用已有配额缓存。
+          const result = await probeNovelAiSubscription(authorization, {
+            gatewayUrl,
+            requestRemote: remoteFetch,
+            includeGatewayQuota: false,
+            subTimeoutMs: 30_000,
+          });
+          if (result.unsupported) subscriptionUnsupported = true;
+          else if (!result.ok) throw new Error('账号额度刷新失败');
         } catch {
           throw Object.assign(new Error('无法核实当前额度，已停止后续生成'), { code: 'quota_refresh_failed', status: 503 });
         }
@@ -4817,17 +4912,16 @@ const serveDistFile = async (req, res, url) => {
       if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
       try {
         const gatewayUrl = await readNaiGatewayUrl(req, workerPort);
-        const [upstream, gatewayQuota] = await Promise.all([
-          fetchNovelAiSubscription(authorization, undefined, remoteFetch, gatewayUrl),
-          fetchGatewayMemberQuota(authorization, undefined, remoteFetch, gatewayUrl),
-        ]);
-        if (!upstream.ok) {
-          return sendJson(res, 502, { error: gatewayUrl ? '网关余额查询失败' : 'NovelAI 订阅信息获取失败', upstreamStatus: upstream.status });
+        const result = await probeNovelAiSubscription(authorization, {
+          gatewayUrl,
+          requestRemote: remoteFetch,
+          includeGatewayQuota: true,
+          forceGatewayQuota: true,
+        });
+        if (!result.ok) {
+          return sendJson(res, 502, { error: gatewayUrl ? '网关余额查询失败' : 'NovelAI 订阅信息获取失败', upstreamStatus: result.status });
         }
-        const payload = await upstream.json();
-        const sanitized = sanitizeNovelAiSubscription(payload, gatewayUrl, gatewayQuota);
-        cacheNovelAiSubscription(authorization, sanitized);
-        return sendJson(res, 200, sanitized);
+        return sendJson(res, 200, result.sanitized);
       } catch (error) {
         return sendJson(res, 502, { error: error.message || 'NovelAI 订阅信息获取失败' });
       }

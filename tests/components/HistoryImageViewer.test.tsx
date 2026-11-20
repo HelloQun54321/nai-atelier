@@ -165,6 +165,15 @@ it('只读档案翻到相邻图片时，同名底栏按钮复制新原图和新�
   expect(copySharedImage).toHaveBeenCalledWith(nextItem.imageUrl, expect.any(Boolean), { prompt: nextItem.prompt, negativePrompt: nextItem.negativePrompt, params: nextItem.params });
 });
 
+it('历史图片携带上游生图用时时在标题栏显示耗时，旧图片无记录时静默省略', () => {
+  const props = { index: 0, total: 1, navigating: false, favoritePending: false, detailsOpen: false, onDetailsChange: vi.fn(), onNavigate: vi.fn(), onClose: vi.fn(), onFavorite: vi.fn(), onDelete: vi.fn(), filename: 'synthetic.png', notify: vi.fn() };
+  const timedItem: LocalGenItem = { ...item, params: { ...item.params, _local_generation_duration_ms: 6420 } };
+  const { rerender } = render(<HistoryImageViewer {...props} item={timedItem}>{null}</HistoryImageViewer>);
+  expect(screen.getByRole('dialog', { name: '历史图片查看器' }).textContent).toContain('6.4s');
+  rerender(<HistoryImageViewer {...props} item={item}>{null}</HistoryImageViewer>);
+  expect(screen.getByRole('dialog', { name: '历史图片查看器' }).textContent).not.toContain('6.4s');
+});
+
 // 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。
 vi.mock('../../services/collectionFavorites', async original => ({
   ...await original<typeof import('../../services/collectionFavorites')>(),

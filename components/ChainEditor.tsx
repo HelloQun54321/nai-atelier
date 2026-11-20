@@ -41,6 +41,7 @@ import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage'
 import { applyNaiModelSettings, getRuntimeNaiModelInfo, getSelectableNaiModels, isNaiMediumModel } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
 import { prepareGenerationWithPool, reportPoolKeyCooldown } from '../services/naiKeyPool';
+import { formatGenerationDuration, readGenerationDurationMs } from '../services/generationDuration';
 import { useNaiChannelMode } from '../services/naiChannel';
 import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createBlankLabCharacter, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, mergePromptSections, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
@@ -410,13 +411,19 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         setReverseTagOpen(true);
     };
     const imageEditPreviewItem = imageEditPreviewHistoryIndex >= 0 ? previewHistory[imageEditPreviewHistoryIndex] : null;
-    const imageEditPreviewHistoryLabel = imageEditPreviewHistoryIndex >= 0 ? `${imageEditPreviewHistoryIndex + 1} / ${previewHistory.length}` : undefined;
+    const imageEditPreviewDuration = formatGenerationDuration(readGenerationDurationMs(imageEditPreviewItem));
+    const imageEditPreviewBaseLabel = imageEditPreviewHistoryIndex >= 0 ? `${imageEditPreviewHistoryIndex + 1} / ${previewHistory.length}` : undefined;
+    const imageEditPreviewHistoryLabel = imageEditPreviewBaseLabel && imageEditPreviewDuration
+        ? `${imageEditPreviewBaseLabel} · ${imageEditPreviewDuration}`
+        : (imageEditPreviewBaseLabel || imageEditPreviewDuration || undefined);
     const currentPreviewCover = decideCurrentPreviewCover(displayedPreviewImage, chain.previewImage);
     const hasPendingPreviewCover = chain.type === 'style' && currentPreviewCover.needsUpload;
     const canSaveCurrentChain = hasChanges || hasPendingPreviewCover;
     const lightboxItem = lightboxImg ? previewHistory.find(item => item.imageUrl === lightboxImg) || null : null;
+    const lightboxDuration = formatGenerationDuration(readGenerationDurationMs(lightboxItem));
+    const displayedPreviewDuration = formatGenerationDuration(readGenerationDurationMs(selectedPreviewItem));
     const currentPreviewPosition = selectedPreviewItem
-        ? `${selectedPreviewIndex + 1} / ${previewHistory.length}`
+        ? `${selectedPreviewIndex + 1} / ${previewHistory.length}${displayedPreviewDuration ? ` · ${displayedPreviewDuration}` : ''}`
         : previewMode === 'result'
             ? '刚刚生成 · 正在保存历史'
         : previewMode === 'unsaved'
@@ -2708,7 +2715,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                     )}
                     {lightboxItem && (
                         <div data-image-preview-footer className="absolute bottom-16 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1.5 text-xs text-white pointer-events-none">
-                            {previewHistory.indexOf(lightboxItem) + 1} / {previewHistory.length} · {new Date(lightboxItem.createdAt).toLocaleString(getLanguage())}
+                            {previewHistory.indexOf(lightboxItem) + 1} / {previewHistory.length} · {new Date(lightboxItem.createdAt).toLocaleString(getLanguage())}{lightboxDuration ? ` · ${lightboxDuration}` : ''}
                         </div>
                     )}
 

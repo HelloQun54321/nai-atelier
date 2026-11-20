@@ -243,6 +243,8 @@ export function mapLocalHistoryRow(row: any) {
   const mappedParams = storedParams && typeof storedParams === 'object'
     ? { ...storedParams, ...(storedParams._local_edit ? { _local_edit: sanitizeLocalHistoryEdit(storedParams._local_edit) } : {}) }
     : {};
+  const rawDurationMs = Number(storedParams?._local_generation_duration_ms);
+  const generationDurationMs = Number.isFinite(rawDurationMs) && rawDurationMs > 0 ? Math.round(rawDurationMs) : undefined;
   return {
     id: row.id,
     imageUrl: localHistoryImageUrl(row),
@@ -252,6 +254,7 @@ export function mapLocalHistoryRow(row: any) {
     negativePrompt: row.negative_prompt || '',
     params: mappedParams,
     edit: sanitizeLocalHistoryEdit(storedParams?._local_edit),
+    ...(generationDurationMs !== undefined ? { generationDurationMs } : {}),
     ...(hasStructuredPrompt ? {
       basePrompt: row.base_prompt || '',
       subjectPrompt: row.subject_prompt || '',

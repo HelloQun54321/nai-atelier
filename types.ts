@@ -172,6 +172,8 @@ export interface NAIParams {
    * 合并结果仍写入 PromptChain.variableValues.subject，这里只用于回填各栏；旧数据没有该字段。
    */
   _promptSections?: PromptSections;
+  /** 仅记录桌面网关发往上游出口到收齐最终图片的毫秒耗时，不发送到 NovelAI。 */
+  _local_generation_duration_ms?: number;
   /** 分类编辑的分区顺序与用户追加的栏。不影响未打开分类时的整段正文。 */
   _labSectionLayout?: import('./services/labSections').LabSectionLayout;
   /** 角色词库个人覆写的原始完整 Tag，缺省旧记录仍按 basePrompt 识别。 */
@@ -421,6 +423,8 @@ export interface LocalGenItem {
   sourceChainName?: string;
   sourceChainType?: ChainType | 'playground';
   edit?: ImageEditMetadata;
+  /** 上游出口生图耗时（毫秒），仅统计发往出口到收齐最终图片的阶段。 */
+  generationDurationMs?: number;
   createdAt: number;
 }
 

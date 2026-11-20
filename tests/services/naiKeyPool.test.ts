@@ -152,7 +152,15 @@ describe('Key 池自动轮询（满圈率优先）', () => {
     }
     expect(getPoolMaxOpusPercent()).toBe(25);
 
-    // 5) k2 进入限流冷却后，下次生成自动退避改选 k1
+    // 5) 缓存仍在有效期内时再次发起生成：直接复用池缓存零网络阻塞起步
+    const subCallsBeforeWarm = fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/novelai-subscription')).length;
+    const warmPicked = await prepareGenerationWithPool({ model: 'nai-diffusion-5-full', estimatedCostWithOpus: 0 });
+    expect(warmPicked.pooled).toBe(true);
+    if (warmPicked.pooled) expect(warmPicked.ok).toBe(true);
+    const subCallsAfterWarm = fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/novelai-subscription')).length;
+    expect(subCallsAfterWarm).toBe(subCallsBeforeWarm);
+
+    // 6) k2 进入限流冷却后，下次生成自动退避改选 k1
     reportPoolKeyCooldown('STA1N-pool-2', 60_000);
     const fallback = await prepareGenerationWithPool({ model: 'nai-diffusion-5-full', estimatedCostWithOpus: 0 });
     expect(fallback.pooled).toBe(true);
