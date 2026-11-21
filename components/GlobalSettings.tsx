@@ -37,7 +37,7 @@ import { OpusUsageBar } from './OpusUsageBar';
 import { getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
 import { useNaiKeyPool } from '../services/naiKeyPool';
-import { readActiveNaiKey, getRememberNaiKey, setRememberNaiKey, NAI_KEY_REMEMBER_CHANGED } from '../services/naiKeyStorage';
+import { readActiveNaiKey } from '../services/naiKeyStorage';
 import { PromptAgentSettings } from './PromptAgentSettings';
 import { getCloudQueueGenerationUrl } from '../worker/cloudQueueTarget.mjs';
 import {
@@ -45,22 +45,14 @@ import {
   AppearancePreset,
   BUILTIN_APPEARANCE_PRESET,
   CornerStyle,
-  DEFAULT_LAB_PAGE_LAYOUTS,
-  cloneDefaultLabPageLayouts,
   FontScale,
   InterfaceDensity,
-  LAB_PAGE_IDS,
-  LabPageId,
-  LabPageLayout,
-  LabPageModuleId,
   MotionStyle,
   appearanceMatchesPreset,
   appearanceValues,
   readAppearancePresetImport,
   serializeAppearancePresets,
   saveAppearancePreferences,
-  POINTER_TILT_ANGLE,
-  POINTER_TILT_WEIGHT,
   SurfaceStyle,
   ThemeMode,
 } from '../services/appearancePreferences';
@@ -73,7 +65,7 @@ import { resolveWorkspaceBackground, type BackgroundMode } from '../services/the
 import { sharedAppearancePresets } from '../services/sharedAppearancePresets';
 import { useSharedAppearancePresets } from './useSharedAppearancePresets';
 import { FLOATING_CONTROL_MAX, FLOATING_CONTROL_MIN, useFloatingControlSize } from '../services/floatingControls';
-import { ArrowLeft, Boxes, Bot, Check, ChevronRight, Copy, Database, Eye, EyeOff, FolderInput, FolderOutput, Globe, HardDrive, Info, KeyRound, LayoutGrid, Link2, Lock, Monitor, Moon, Palette, Pencil, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, Users, X } from 'lucide-react';
+import { ArrowLeft, Boxes, Bot, Check, ChevronRight, Copy, Database, Eye, EyeOff, FolderInput, FolderOutput, Globe, HardDrive, Info, KeyRound, LayoutGrid, Link2, Lock, Monitor, Moon, Palette, Pencil, Plus, RotateCcw, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, Users, X } from 'lucide-react';
 import {
   SETTINGS_BTN_DANGER,
   SETTINGS_BTN_ICON,
@@ -106,17 +98,7 @@ export type SettingsSection =
 export type SettingsPage = 'home' | SettingsSection | 'maintenance';
 
 interface LocalMaintenanceStatus {
-  gatewayReady: boolean;
-  workerReady: boolean;
   lanUrls?: string[];
-  thumbnailCache: {
-    count: number;
-    bytes: number;
-    pinnedCount: number;
-    pinnedBytes: number;
-    limitBytes: number;
-    pinnedLimitBytes: number;
-  };
 }
 
 interface SettingsSectionMeta {
@@ -192,24 +174,6 @@ interface AppearanceOption {
   label: string;
 }
 
-const LAB_MODULE_META: Record<LabPageModuleId, { label: string }> = {
-  prompt: { label: '全局正面提示词' },
-  characters: { label: '角色专属提示词' },
-  params: { label: '参数设置' },
-  negative: { label: '全局负面提示词' },
-  characterReference: { label: '精准参考' },
-  vibe: { label: '氛围参考' },
-  baseImage: { label: '底图' },
-  editSettings: { label: '编辑参数' },
-};
-
-const LAB_PAGE_META: Record<LabPageId, { label: string }> = {
-  'text-to-image': { label: '文生图' },
-  'image-to-image': { label: '图生图' },
-  inpaint: { label: '局部重绘' },
-  outpaint: { label: '扩图' },
-};
-
 const AppearanceOptionGroup: React.FC<{
   value: string;
   options: AppearanceOption[];
@@ -255,7 +219,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const sharedImageCleanContent = useSharedImageCleanContent();
   const imageDownloadFormat = useImageDownloadFormat();
   const [apiKey, setApiKey] = useState(readApiKey);
-  const [rememberApiKey, setRememberApiKey] = useState(() => getRememberNaiKey());
   const [cloudQueue, setCloudQueue] = useState(getCachedCloudQueuePreferences);
   const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
   const [imageDisplayScope, setImageDisplayScope] = useState<'global' | ImageDisplayPage>('global');
@@ -271,19 +234,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
   const [activeSection, setActiveSection] = useState<'home' | SettingsSection>('home');
-  // 只把「已经改过」的实验室页面分组默认展开：四个分组全展开时这一块接近 2200px，
-  // 占了设置面板三分之二。没动过的分组收起，页头上的「N 个模块」与「已自定义」徽标
-  // 已经足够判断要不要点开。
-  const [expandedLabPages, setExpandedLabPages] = useState<Record<LabPageId, boolean>>(() => Object.fromEntries(
-    LAB_PAGE_IDS.map(pageId => {
-      const stored = appearancePreferences.labPageLayouts?.[pageId];
-      const fallback = DEFAULT_LAB_PAGE_LAYOUTS[pageId];
-      const layout = stored || fallback;
-      const modules = Object.keys(fallback.collapsed) as LabPageModuleId[];
-      const customized = modules.some(moduleId => Boolean(layout.collapsed[moduleId]) !== Boolean(fallback.collapsed[moduleId]));
-      return [pageId, customized];
-    })
-  ) as Record<LabPageId, boolean>);
   const changeImageDisplayScope = (scope: 'global' | ImageDisplayPage) => {
     setImageDisplayScope(scope);
     if (scope === 'global') {
@@ -375,7 +325,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     // 仅打开时读取初始状态，旋转或入口参数变化不重置当前设置会话。
     setActiveSection(normalizeSettingsSection(initialSection, isMobile, android));
     setApiKey(readApiKey());
-    setRememberApiKey(getRememberNaiKey());
     // 每次重新打开设置都回到「脱敏 + 密码框」的默认态，明文回显不跨会话。
     setRevealedKeyId('');
     setShowNewKeyValue(false);
@@ -413,12 +362,12 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   }, [open, requestBack]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !isMobile || android) return;
     const refresh = () => setMobileCacheStats(getMobileCacheStats());
     void refreshMobileCacheMetadata().then(setMobileCacheStats);
     window.addEventListener('nai-mobile-cache-changed', refresh);
     return () => window.removeEventListener('nai-mobile-cache-changed', refresh);
-  }, [open]);
+  }, [open, isMobile, android]);
 
   const refreshMaintenanceStatus = useCallback(async () => {
     setMaintenanceStatusError('');
@@ -456,23 +405,16 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   };
 
   useEffect(() => {
-    if (!open || !['connections', 'storage', 'about'].includes(activeSection) || android) return;
+    if (!open || activeSection !== 'connections' || android) return;
     void refreshMaintenanceStatus();
   }, [open, activeSection, android, refreshMaintenanceStatus]);
 
-  const updateRememberApiKey = (remember: boolean) => {
-    setRememberNaiKey(remember);
-    setRememberApiKey(remember);
-  };
-
   useEffect(() => {
-    const syncKey = () => { setApiKey(readApiKey()); setRememberApiKey(getRememberNaiKey()); };
+    const syncKey = () => { setApiKey(readApiKey()); };
     window.addEventListener('nai-api-key-changed', syncKey);
-    window.addEventListener(NAI_KEY_REMEMBER_CHANGED, syncKey);
     window.addEventListener('storage', syncKey);
     return () => {
       window.removeEventListener('nai-api-key-changed', syncKey);
-      window.removeEventListener(NAI_KEY_REMEMBER_CHANGED, syncKey);
       window.removeEventListener('storage', syncKey);
     };
   }, []);
@@ -530,7 +472,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     if (entry.key === readApiKey()) return;
     const disablePool = keyPool.config.enabled && !keyPool.config.memberIds.includes(entry.id);
     if (disablePool) void keyPool.setEnabled(false);
-    naiKeyVault.activate(entry, rememberApiKey);
+    naiKeyVault.activate(entry, true);
     setApiKey(entry.key);
     // 切走后不再保留上一条的明文回显。
     setRevealedKeyId('');
@@ -575,7 +517,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     await refreshVault();
     // 添加即启用：旧实现只入箱不激活，用户看到「输入框清空 + 列表只剩掩码」后
     // 会以为没保存成功，其他页面仍提示「请先配置 NovelAI API Key」。
-    naiKeyVault.activate(result.entry, rememberApiKey);
+    naiKeyVault.activate(result.entry, true);
     setApiKey(result.entry.key);
     notify(`已添加「${result.entry.name}」并切换使用`, 'success');
   };
@@ -639,12 +581,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   };
 
   const updateAppearance = (patch: Partial<AppearancePreferences>) => {
-    // 指针倾斜与悬停浮动互斥：开一个自动关另一个，两套位移叠加会让按钮跟着移动、点不准。
-    const next: Partial<AppearancePreferences> = patch.galleryPointerTilt === true
-      ? { ...patch, galleryHoverFloat: false }
-      : patch.galleryHoverFloat === true
-        ? { ...patch, galleryPointerTilt: false }
-        : patch;
+    const next: Partial<AppearancePreferences> = patch.galleryHoverFloat === true
+      ? { ...patch, galleryPointerTilt: false }
+      : patch;
     setAppearancePreferences(current => {
       if ((!next.corners && !next.accentColor) || 'details' in next || !current.details) return { ...current, ...next };
       const details = { ...current.details };
@@ -658,33 +597,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       return { ...current, ...next, details: normalizeThemeDetails(details) };
     });
   };
-
-  const getLabPageLayout = (pageId: LabPageId): LabPageLayout => appearancePreferences.labPageLayouts[pageId] || DEFAULT_LAB_PAGE_LAYOUTS[pageId];
-
-  const updateLabPageLayout = (pageId: LabPageId, update: (layout: LabPageLayout) => LabPageLayout) => {
-    updateAppearance({
-      labPageLayouts: {
-        ...appearancePreferences.labPageLayouts,
-        [pageId]: update(getLabPageLayout(pageId)),
-      },
-    });
-  };
-
-  const toggleLabModuleCollapsed = (pageId: LabPageId, moduleId: LabPageModuleId) => {
-    updateLabPageLayout(pageId, current => ({
-      ...current,
-      collapsed: {
-        ...current.collapsed,
-        [moduleId]: !current.collapsed[moduleId],
-      },
-    }));
-  };
-
-  const resetLabPageLayout = (pageId: LabPageId) => updateLabPageLayout(pageId, () => ({
-    collapsed: { ...DEFAULT_LAB_PAGE_LAYOUTS[pageId].collapsed },
-  }));
-
-  const resetAllLabPageLayouts = () => updateAppearance({ labPageLayouts: cloneDefaultLabPageLayouts() });
 
   const resetThemeCustomization = () => {
     applyPreset(DEFAULT_ACTIVE_APPEARANCE_PRESET);
@@ -1196,30 +1108,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     checked={appearancePreferences.galleryHoverFloat}
                     onChange={next => updateAppearance({ galleryHoverFloat: next })}
                     label="卡片悬停浮动"
-                    description="鼠标经过时轻轻抬起并放大图片；与卡片指针倾斜互斥，只能二选一。"
+                    description="鼠标经过时轻轻抬起并放大图片。"
                   />
-                  <div>
-                    <SettingsSwitchRow
-                      checked={appearancePreferences.galleryPointerTilt}
-                      onChange={next => updateAppearance({ galleryPointerTilt: next })}
-                      label="卡片指针倾斜"
-                      description="鼠标压在卡片哪一侧，那一侧就随惯性下沉、另一侧翘起。"
-                      note="虽然好玩，但卡片会跟着晃、按钮也跟着移动，容易点不到；与卡片悬停浮动互斥，只能二选一。"
-                    />
-                    {appearancePreferences.galleryPointerTilt && (() => {
-                      const tiltDisabled = appearancePreferences.motion !== 'full';
-                      const angle = appearancePreferences.galleryPointerTiltAngle;
-                      const weight = appearancePreferences.galleryPointerTiltWeight;
-                      const weightLabel = t(weight <= 25 ? '轻快' : weight >= 75 ? '沉稳' : '标准');
-                      return <div className={`${SETTINGS_SUBPANEL_CLASS} mb-2`}>
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <label className="block min-w-0 text-meta text-gray-600 dark:text-gray-300">{t('倾斜角度')} · <span className="tabular-nums">{angle}°</span><input aria-label={t('倾斜角度')} type="range" min={POINTER_TILT_ANGLE.min} max={POINTER_TILT_ANGLE.max} step={POINTER_TILT_ANGLE.step} value={angle} disabled={tiltDisabled} onChange={event => updateAppearance({ galleryPointerTiltAngle: Number(event.target.value) })} className="mt-2 block w-full accent-[var(--nai-accent)] disabled:cursor-not-allowed disabled:opacity-45" /></label>
-                          <label className="block min-w-0 text-meta text-gray-600 dark:text-gray-300">{t('倾斜重量感')} · <span>{weightLabel}</span><input aria-label={t('倾斜重量感')} aria-valuetext={weightLabel} type="range" min={POINTER_TILT_WEIGHT.min} max={POINTER_TILT_WEIGHT.max} step={POINTER_TILT_WEIGHT.step} value={weight} disabled={tiltDisabled} onChange={event => updateAppearance({ galleryPointerTiltWeight: Number(event.target.value) })} className="mt-2 block w-full accent-[var(--nai-accent)] disabled:cursor-not-allowed disabled:opacity-45" /></label>
-                        </div>
-                        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{tiltDisabled ? t('动效设为「减少」或「关闭」时倾斜不生效。') : t('角度 0° 等同关闭；只在实际鼠标设备上生效。')}</p>
-                      </div>;
-                    })()}
-                  </div>
                 </div>
 
                 <AppearanceBackgroundEditor key={activePresetId} mode={backgroundMode} onModeChange={setBackgroundMode}
@@ -1266,77 +1156,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
               <SettingsCard title={t("生成行为")} icon={<Sparkles />} bodyClassName={SETTINGS_DIVIDE_CLASS}>
                 <SettingsSwitchRow checked={appearancePreferences.generationStreamPreview} onChange={next => updateAppearance({ generationStreamPreview: next })} label="生成过程预览" />
-                <SettingsSwitchRow checked={appearancePreferences.continuousGenerationEnabled} onChange={next => updateAppearance({ continuousGenerationEnabled: next })} label="连续生成与排队" description="关闭后，每次仅生成一张，不允许追加或插队。" />
-                <SettingsSwitchRow checked={appearancePreferences.forceEmptySeed} onChange={next => updateAppearance({ forceEmptySeed: next })} label="强制清空种子（始终随机）" description="不改写预设种子；关闭后恢复。" />
                 <SettingsSwitchRow checked={appearancePreferences.enforceFreeStepLimit} onChange={next => updateAppearance({ enforceFreeStepLimit: next })} label="生成步数锁定在免费额度内" description="关闭后，超出免费步数将消耗 Anlas。" />
-              </SettingsCard>
-
-              <SettingsCard title={t("提示词编辑")} icon={<Pencil />} bodyClassName={SETTINGS_DIVIDE_CLASS}>
-                {([
-                  ['promptInputAutoHeight', '原文框高度跟随内容', '有多少字就显示多少；过长时内部滚动。关闭后用固定高度，电脑可拖右下角。'],
-                  ['promptTranslationAutoHeight', '翻译区高度跟随内容', 'Tag 有多少就显示多少；过长时内部滚动。关闭后用固定高度，电脑可拖右下角。'],
-                ] as const).map(([key, label, description]) => <SettingsSwitchRow key={key} checked={appearancePreferences[key]} onChange={next => updateAppearance({ [key]: next })} label={label} description={description} />)}
-              </SettingsCard>
-
-              <SettingsCard
-                title={t("实验室模块默认展开")}
-                icon={<SlidersHorizontal />}
-                action={
-                  <button
-                    type="button"
-                    onClick={resetAllLabPageLayouts}
-                    data-appearance="control" data-tone="neutral"
-                    className={SETTINGS_BTN_NEUTRAL}
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />{t("全部默认")}</button>
-                }
-                bodyClassName="space-y-2"
-              >
-                {LAB_PAGE_IDS.map(pageId => {
-                  const pageMeta = LAB_PAGE_META[pageId];
-                  const layout = getLabPageLayout(pageId);
-                  const defaultLayout = DEFAULT_LAB_PAGE_LAYOUTS[pageId];
-                  const modules = Object.keys(defaultLayout.collapsed) as LabPageModuleId[];
-                  const isCustom = modules.some(moduleId => Boolean(layout.collapsed[moduleId]) !== Boolean(defaultLayout.collapsed[moduleId]));
-                  return <details key={pageId} open={expandedLabPages[pageId]} onToggle={event => {
-                    // React 的 currentTarget 只在事件回调执行期间有效；状态更新器可能延迟执行。
-                    const expanded = event.currentTarget.open;
-                    setExpandedLabPages(current => current[pageId] === expanded ? current : { ...current, [pageId]: expanded });
-                  }} className="appearance-group group rounded-xl border border-gray-200/80 bg-gray-50/50 dark:border-gray-700/70 dark:bg-gray-800/40">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
-                      <span className="min-w-0"><span className="flex items-center gap-2 text-xs font-bold text-gray-700 dark:text-gray-200"><span>{t(pageMeta.label)}</span>{isCustom && <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-mini font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">{t("已自定义")}</span>}</span><span className="mt-0.5 block truncate text-micro text-gray-400">{t("{0} 个模块", [modules.length])}</span></span>
-                      <span className="flex flex-none items-center gap-1">
-                        {/* 单页恢复只在改过时出现，放在页头省掉展开后那独立一整行。 */}
-                        {isCustom && <button
-                          type="button"
-                          onClick={event => { event.preventDefault(); event.stopPropagation(); resetLabPageLayout(pageId); }}
-                          data-appearance="control" data-tone="neutral"
-                          aria-label={`${t(pageMeta.label)} · ${t("恢复默认")}`}
-                          title={t("恢复默认")}
-                          className="mobile-touch rounded-lg p-1 text-gray-400 transition hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300"
-                        >
-                          <RotateCcw className="h-3 w-3" />
-                        </button>}
-                        <ChevronRight className="h-4 w-4 flex-none text-gray-400 transition-transform group-open:rotate-90" />
-                      </span>
-                    </summary>
-                    <div className="border-t border-gray-200/70 p-2.5 dark:border-gray-700/70">
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {modules.map(moduleId => {
-                          const meta = LAB_MODULE_META[moduleId];
-                          const collapsed = Boolean(layout.collapsed[moduleId]);
-                          return <div
-                            key={moduleId}
-                            className="appearance-group flex min-w-0 items-center gap-2 rounded-xl border border-gray-200/80 bg-white/80 p-2 dark:border-gray-700/80 dark:bg-gray-900/50"
-                          >
-                            <div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold text-gray-700 dark:text-gray-200" title={t(meta.label)}>{t(meta.label)}</div></div>
-                            <div className="flex flex-none items-center gap-1"><button type="button" onClick={() => toggleLabModuleCollapsed(pageId, moduleId)} aria-label={`${t(pageMeta.label)} · ${t(meta.label)} · ${collapsed ? t("默认收起") : t("默认展开")}`} aria-pressed={collapsed} className={`mobile-touch whitespace-nowrap rounded-full border px-2.5 py-1 text-micro font-bold transition ${collapsed ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>{collapsed ? t("默认收起") : t("默认展开")}</button></div>
-                          </div>;
-                        })}
-                      </div>
-                    </div>
-                  </details>;
-                })}
+                <SettingsSwitchRow
+                  checked={appearancePreferences.promptInputAutoHeight && appearancePreferences.promptTranslationAutoHeight}
+                  onChange={next => updateAppearance({ promptInputAutoHeight: next, promptTranslationAutoHeight: next })}
+                  label="提示词框高度跟随内容"
+                  description="原文框与翻译区按内容自动增高，过长时内部滚动；关闭后使用固定高度。"
+                />
               </SettingsCard>
             </>}
           </section>
@@ -1517,13 +1343,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   </button>
                   <button type="button" data-appearance="control" data-tone="primary" onClick={() => void addKeyEntry()} className={SETTINGS_BTN_PRIMARY}>{t("添加")}</button>
                 </div>
-                <div className="space-y-1 pt-0.5 text-xs leading-5">
-                  <label className="inline-flex min-w-0 cursor-pointer items-center gap-2 text-gray-600 dark:text-gray-300">
-                    <input type="checkbox" checked={rememberApiKey} title={t("关闭后仅当前标签页使用")} onChange={event => updateRememberApiKey(event.target.checked)} className="h-4 w-4 shrink-0 rounded border-gray-300 accent-indigo-600" />
-                    <span>{t("在本机记住当前使用的 API Key")}</span>
-                  </label>
-                  <p className="text-meta text-amber-600 dark:text-amber-400">{t("保存后列表只显示脱敏格式 pst-…XXXX，可点条目旁的眼睛或复制图标取回完整 Key。")}{t("Key 明文保存在本机，局域网访问需密码。")}</p>
-                </div>
+                <p className="pt-0.5 text-meta leading-5 text-amber-600 dark:text-amber-400">{t("保存后列表只显示脱敏格式 pst-…XXXX，可点条目旁的眼睛或复制图标取回完整 Key。")}{t("Key 明文保存在本机，局域网访问需密码。")}</p>
               </div>
             </SettingsCard>
 
@@ -1644,13 +1464,15 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           <section id="settings-privacy" className={`settings-section-pane ${activeSection !== 'privacy' ? 'hidden' : 'space-y-4'}`}>
             {activeSection === 'privacy' && <>
               <SettingsCard title={t("安全模式")} icon={<ShieldCheck />} bodyClassName={SETTINGS_DIVIDE_CLASS}>
-                <SettingsSwitchRow
-                  checked={safeMode}
-                  onChange={() => toggleSafeMode()}
-                  label="安全模式（防社死）"
-                  description="点击图片临时显示"
-                  icon={<Shield />}
-                />
+                {isMobile && (
+                  <SettingsSwitchRow
+                    checked={safeMode}
+                    onChange={() => toggleSafeMode()}
+                    label="安全模式（防社死）"
+                    description="点击图片临时显示"
+                    icon={<Shield />}
+                  />
+                )}
                 <SettingsSwitchRow
                   checked={safeModeHideTitles}
                   onChange={next => setSafeModeHideTitles(next)}
@@ -1784,50 +1606,23 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             {activeSection === 'storage' && (android ? <AndroidStorageManager notify={notify} /> : <>
               <SettingsCard><StorageLocationManager notify={notify} /></SettingsCard>
               <SettingsCard><DataBackupManager notify={notify} /></SettingsCard>
-              <SettingsCard title={t("缩略图缓存")} headingLevel={4} icon={<Database />} bodyClassName="space-y-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Smartphone className="h-3.5 w-3.5 flex-none text-indigo-500" aria-hidden="true" />
-                    <h4 className="text-xs font-bold text-gray-800 dark:text-gray-200">{t("手机图片缓存")}</h4>
-                    <span className="text-micro text-gray-400">{t("仅缩略图，不影响原图。")}</span>
-                  </div>
-                  <div className="appearance-segmented mt-2.5 grid grid-cols-4 gap-2">
+              {isMobile && (
+                <SettingsCard title={t("手机图片缓存")} headingLevel={4} icon={<Smartphone />} description={t("仅缩略图，不影响原图。")} bodyClassName="space-y-2.5">
+                  <div className="appearance-segmented grid grid-cols-4 gap-2">
                     {[0, 25, 50, 100].map(value => <button key={value} type="button" data-appearance="control" data-tone="neutral" aria-pressed={getMobileCacheLimitMb() === value} onClick={() => { setMobileCacheLimitMb(value); setMobileCacheStats(getMobileCacheStats()); }} className={`${SETTINGS_SEGMENT_CLASS} ${getMobileCacheLimitMb() === value ? SETTINGS_SEGMENT_ON : SETTINGS_SEGMENT_OFF}`}>{value === 0 ? t("关闭") : `${value} MB`}</button>)}
                   </div>
-                  <div className={`${SETTINGS_SUBPANEL_CLASS} mt-2.5 flex items-center justify-between gap-3 py-2 text-xs`}>
+                  <div className={`${SETTINGS_SUBPANEL_CLASS} flex items-center justify-between gap-3 py-2 text-xs`}>
                     <span className="text-gray-500 dark:text-gray-400">{t("已缓存 {0} 张 · {1} MB / {2} MB", [mobileCacheStats.count, (mobileCacheStats.bytes / 1024 / 1024).toFixed(1), mobileCacheStats.limitMb])}</span>
                     <button type="button" onClick={async () => { if (!await confirmAction({ rememberKey: 'thumbnail-cache.clear', title: '清空手机小图缓存？', message: '只会清除可重新生成的缩略图，不会影响原图、历史或任何本地数据。', confirmLabel: '清空缓存', tone: 'danger' })) return; await clearMobileThumbnailCache(); setMobileCacheStats(getMobileCacheStats()); notify('手机小图缓存已清空'); }} data-appearance="control" data-tone="danger" className={SETTINGS_BTN_DANGER}>{t("清空缓存")}</button>
                   </div>
-                </div>
-                <div className="border-t border-gray-100 pt-4 dark:border-gray-800/80">
-                  <div className="flex items-center gap-2">
-                    <Monitor className="h-3.5 w-3.5 flex-none text-indigo-500" aria-hidden="true" />
-                    <h4 className="text-xs font-bold text-gray-800 dark:text-gray-200">{t("电脑缩略图缓存")}</h4>
-                    <span className="text-micro text-gray-400">{t("自动管理缩略图，不影响原图。")}</span>
-                  </div>
-                  <div className={`${SETTINGS_SUBPANEL_CLASS} mt-2.5 text-xs leading-5 text-gray-500 dark:text-gray-400`}>
-                    {maintenanceStatus ? <>{t("已缓存 ")}{maintenanceStatus.thumbnailCache.count} {t(" 张 · ")}{(maintenanceStatus.thumbnailCache.bytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.limitBytes / 1024 / 1024).toFixed(0)} MB<br />{t("固定封面 ")}{maintenanceStatus.thumbnailCache.pinnedCount} {t(" 张 · ")}{(maintenanceStatus.thumbnailCache.pinnedBytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.pinnedLimitBytes / 1024 / 1024).toFixed(0)} MB</> : t("等待读取本地缓存状态…")}
-                  </div>
-                </div>
-              </SettingsCard>
+                </SettingsCard>
+              )}
             </>)}
           </section>
 
           <section id="settings-about" className={`settings-section-pane ${activeSection !== 'about' ? 'hidden' : 'space-y-4'}`}>
             {activeSection === 'about' && <>
               <SettingsCard><AppUpdateManager /></SettingsCard>
-              {!android && (
-                <SettingsCard title={t("本地服务状态")} headingLevel={4} icon={<Server />}>
-                  {maintenanceStatusError ? (
-                    <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">{maintenanceStatusError}</p>
-                  ) : (
-                    <div className="grid gap-2.5 sm:grid-cols-2">
-                      <div className={`rounded-xl px-3 py-2.5 text-xs font-medium ${maintenanceStatus?.gatewayReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300' : 'appearance-group bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>{t("媒体网关：{0}", [maintenanceStatus?.gatewayReady ? t("可用") : t("正在检查")])}</div>
-                      <div className={`rounded-xl px-3 py-2.5 text-xs font-medium ${maintenanceStatus?.workerReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300' : maintenanceStatus ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300' : 'appearance-group bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>{t("核心页面服务：{0}", [maintenanceStatus?.workerReady ? t("可用") : maintenanceStatus ? t("未就绪") : t("正在检查")])}</div>
-                    </div>
-                  )}
-                </SettingsCard>
-              )}
               {!android && <SettingsCard><DesktopLauncherManager notify={notify} /></SettingsCard>}
               <SettingsCard><ProjectNotice notify={notify} /></SettingsCard>
             </>}

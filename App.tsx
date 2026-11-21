@@ -24,6 +24,7 @@ import type { ChainEditorSaveHandle } from './components/ChainEditor';
 import {
   applyAppearancePreferences,
   AppearancePreferences,
+  DEFAULT_LAB_PAGE_LAYOUTS,
   loadAppearancePreferences,
   saveAppearancePreferences,
   ThemeMode,
@@ -507,7 +508,7 @@ const App = () => {
   }, []);
 
   useLayoutEffect(() => {
-    applyAppearancePreferences(appearancePreferences, isDark);
+    applyAppearancePreferences({ ...appearancePreferences, galleryPointerTilt: false }, isDark);
     saveAppearancePreferences(appearancePreferences);
   }, [appearancePreferences, isDark]);
 
@@ -1214,8 +1215,8 @@ const App = () => {
           forceEmptySeed={appearancePreferences.forceEmptySeed}
           onForceEmptySeedChange={enabled => setAppearancePreferences(current => ({ ...current, forceEmptySeed: enabled }))}
           enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
-          continuousGenerationEnabled={appearancePreferences.continuousGenerationEnabled}
-          labPageLayouts={appearancePreferences.labPageLayouts}
+          continuousGenerationEnabled
+          labPageLayouts={DEFAULT_LAB_PAGE_LAYOUTS}
           sectionedPrompt={appearancePreferences.labSectionedPrompt}
           onSectionedPromptChange={enabled => setAppearancePreferences(current => ({ ...current, labSectionedPrompt: enabled }))}
           safeMode={safeMode}
@@ -1300,7 +1301,7 @@ const App = () => {
         return <GenHistory currentUser={currentUser} chains={chains} notify={notify} initialQuery={historyEntry} onOpenFootprint={() => void handleNavigate('footprint')} onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })} onRefreshInspiration={() => loadInspirations(true)} />;
       case 'roll':
         return <StyleRollPage active={view === 'roll'} chains={chains} notify={notify}
-          continuousGenerationEnabled={appearancePreferences.continuousGenerationEnabled}
+          continuousGenerationEnabled
           selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
           forceEmptySeed={appearancePreferences.forceEmptySeed}
@@ -1341,8 +1342,8 @@ const App = () => {
           forceEmptySeed={appearancePreferences.forceEmptySeed}
           onForceEmptySeedChange={enabled => setAppearancePreferences(current => ({ ...current, forceEmptySeed: enabled }))}
           enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
-          continuousGenerationEnabled={appearancePreferences.continuousGenerationEnabled}
-          labPageLayouts={appearancePreferences.labPageLayouts}
+          continuousGenerationEnabled
+          labPageLayouts={DEFAULT_LAB_PAGE_LAYOUTS}
           sectionedPrompt={appearancePreferences.labSectionedPrompt}
           onSectionedPromptChange={enabled => setAppearancePreferences(current => ({ ...current, labSectionedPrompt: enabled }))}
           safeMode={safeMode}

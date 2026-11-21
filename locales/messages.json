@@ -42856,5 +42856,23 @@
     "Only enables origin checks for tagger endpoints and does not replace login or proxy authentication. Expand settings for first-time setup instructions.",
     "タグ抽出 API のオリジン検証のみを有効にし、ログインやプロキシ認証の代わりにはなりません。初回設定手順は設定を展開して確認してください。",
     "태거 API의 출처 검증만 호환하며 로그인이나 프록시 인증을 대체하지 않습니다. 설정을 펼치면 최초 설정 방법을 확인할 수 있습니다."
+  ],
+  "鼠标经过时轻轻抬起并放大图片。": [
+    "滑鼠經過時輕輕抬起並放大圖片。",
+    "Gently lift and zoom cards on hover.",
+    "ホバー時にカードを軽く浮かせて画像を拡大します。",
+    "마우스를 올리면 카드를 살짝 띄우고 이미지를 확대합니다."
+  ],
+  "提示词框高度跟随内容": [
+    "提示詞框高度跟隨內容",
+    "Auto-size prompt boxes",
+    "プロンプト欄の高さを内容に合わせる",
+    "프롬프트 입력창 높이 자동 조절"
+  ],
+  "原文框与翻译区按内容自动增高，过长时内部滚动；关闭后使用固定高度。": [
+    "原文框與翻譯區按內容自動增高，過長時內部捲動；關閉後使用固定高度。",
+    "Grow both prompt and translation boxes with their content and scroll inside when long; turn off for fixed height.",
+    "原文欄と翻訳欄を内容に合わせて自動伸縮し、長い場合は内部スクロールします。オフにすると固定高さになります。",
+    "원문 창과 번역 영역이 내용에 따라 자동으로 늘어나며 길면 내부 스크롤됩니다. 끄면 고정 높이를 사용합니다."
   ]
 }

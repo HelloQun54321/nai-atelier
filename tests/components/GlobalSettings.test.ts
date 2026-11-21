@@ -3,13 +3,12 @@ import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences, appearanceValues, BUILTIN_APPEARANCE_PRESET, DEFAULT_LAB_PAGE_LAYOUTS, readAppearancePresetImport } from '../../services/appearancePreferences';
+import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences, appearanceValues, BUILTIN_APPEARANCE_PRESET, readAppearancePresetImport } from '../../services/appearancePreferences';
 import { downloadFile } from '../../services/fileDownload';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { GlobalSettings } from '../../components/GlobalSettings';
 import { readAgentPage } from '../../services/agentWorkspace';
 import { getCleanSharedImages, getSharedImageCustomText, getSharedImageCleanContent, getImageDownloadFormat, IMAGE_SHARING_STORAGE_KEY, IMAGE_SHARING_TEXT_STORAGE_KEY, IMAGE_SHARING_CONTENT_STORAGE_KEY, IMAGE_DOWNLOAD_FORMAT_STORAGE_KEY } from '../../services/imageSharing';
-import { readActiveNaiKey, REMEMBER_NAI_KEY_STORAGE_KEY, setActiveNaiKey } from '../../services/naiKeyStorage';
 import { naiKeyVault } from '../../services/naiKeyVault';
 import { naiKeyPoolService } from '../../services/naiKeyPool';
 import { getImageDisplayPageOverride, getMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
@@ -234,30 +233,15 @@ describe('GlobalSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: '恢复出厂默认外观' }));
     expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
   });
-  it('指针倾斜默认关闭，与卡片悬停浮动一次只能开一个', async () => {
+  it('外观设置不再展示卡片指针倾斜及其参数滑块，保留悬停浮动开关', async () => {
     const changed = vi.fn<(preferences: AppearancePreferences) => void>();
-    render(React.createElement(SettingsHarness, { onAppearancePreferencesChange: changed }));
-    const tilt = await screen.findByRole('switch', { name: '卡片指针倾斜' });
-    const hover = screen.getByRole('switch', { name: '卡片悬停浮动' });
-    expect(tilt.getAttribute('aria-checked')).toBe('false');
-    expect(hover.getAttribute('aria-checked')).toBe('true');
-    // 开局倾斜、自动关掉悬停浮动；反过来开浮动也会把倾斜关掉。
-    fireEvent.click(tilt);
-    expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryPointerTilt: true, galleryHoverFloat: false });
+    render(React.createElement(SettingsHarness, { initialAppearancePreferences: { galleryPointerTilt: true, galleryHoverFloat: false }, onAppearancePreferencesChange: changed }));
+    const hover = await screen.findByRole('switch', { name: '卡片悬停浮动' });
+    expect(screen.queryByRole('switch', { name: '卡片指针倾斜' })).toBeNull();
+    expect(screen.queryByRole('slider', { name: '倾斜角度' })).toBeNull();
+    expect(screen.queryByRole('slider', { name: '倾斜重量感' })).toBeNull();
     fireEvent.click(hover);
     expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryHoverFloat: true, galleryPointerTilt: false });
-  });
-  it('连续生成开关默认开启，点击后即时关闭', async () => {
-    const onAppearancePreferencesChange = vi.fn<(preferences: AppearancePreferences) => void>();
-    render(React.createElement(SettingsHarness, {
-      initialSection: 'generation',
-      onAppearancePreferencesChange,
-    }));
-    const toggle = await screen.findByRole('switch', { name: /连续生成与排队/ });
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
-    fireEvent.click(toggle);
-    await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0].continuousGenerationEnabled).toBe(false));
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
   });
 
   it('记住上次生图设置默认开启；可独立选择记忆内容，关闭主开关后保留选择', async () => {
@@ -289,28 +273,35 @@ describe('GlobalSettings', () => {
     for (const field of fields) expect((await screen.findByRole('checkbox', { name: field }) as HTMLInputElement).checked).toBe(field === '角色负面提示词');
   });
 
-  it('生图偏好设置不再提供实验室分类编辑和导入自动分类开关', async () => {
+  it('生图设置不再展示已精简的冗余开关与实验室模块默认展开配置', async () => {
     render(React.createElement(SettingsHarness));
     fireEvent.click(screen.getByRole('button', { name: /生图与实验室/ }));
     await screen.findByRole('switch', { name: '记住上次生图设置' });
     expect(screen.queryByRole('switch', { name: '提示词分类编辑' })).toBeNull();
     expect(screen.queryByRole('checkbox', { name: '导入后自动分类' })).toBeNull();
+    expect(screen.queryByRole('switch', { name: /连续生成与排队/ })).toBeNull();
+    expect(screen.queryByRole('switch', { name: /强制清空种子/ })).toBeNull();
+    expect(screen.queryByText('实验室模块默认展开')).toBeNull();
   });
 
-  it('提示词编辑提供原文框与翻译区高度跟随开关，默认开启，可分别关闭', async () => {
+  it('生成行为合并原文框与翻译区高度跟随为单一开关，默认开启且联动切换', async () => {
     const onAppearancePreferencesChange = vi.fn<(preferences: AppearancePreferences) => void>();
     render(React.createElement(SettingsHarness, { onAppearancePreferencesChange }));
     fireEvent.click(screen.getByRole('button', { name: /生图与实验室/ }));
-    const inputSwitch = await screen.findByRole('switch', { name: '原文框高度跟随内容' });
-    const translationSwitch = screen.getByRole('switch', { name: '翻译区高度跟随内容' });
-    expect(inputSwitch.getAttribute('aria-checked')).toBe('true');
-    expect(translationSwitch.getAttribute('aria-checked')).toBe('true');
-    fireEvent.click(inputSwitch);
-    await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0].promptInputAutoHeight).toBe(false));
-    expect(onAppearancePreferencesChange.mock.lastCall?.[0].promptTranslationAutoHeight).toBe(true);
-    fireEvent.click(translationSwitch);
-    await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0].promptTranslationAutoHeight).toBe(false));
-    expect(onAppearancePreferencesChange.mock.lastCall?.[0].promptInputAutoHeight).toBe(false);
+    const autoHeightSwitch = await screen.findByRole('switch', { name: '提示词框高度跟随内容' });
+    expect(screen.queryByRole('switch', { name: '原文框高度跟随内容' })).toBeNull();
+    expect(screen.queryByRole('switch', { name: '翻译区高度跟随内容' })).toBeNull();
+    expect(autoHeightSwitch.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(autoHeightSwitch);
+    await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0]).toMatchObject({
+      promptInputAutoHeight: false,
+      promptTranslationAutoHeight: false,
+    }));
+    fireEvent.click(autoHeightSwitch);
+    await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0]).toMatchObject({
+      promptInputAutoHeight: true,
+      promptTranslationAutoHeight: true,
+    }));
   });
 
   it('应用外观预设和恢复默认外观不会重置连续生成偏好', async () => {
@@ -624,21 +615,13 @@ describe('GlobalSettings', () => {
       expect(screen.getByRole('button', { name: t('另存当前主题') })).toBeTruthy();
     }
   });
-  it('Key 默认记住，取消后重开仍为关闭，重新开启保存当前 Key', async () => {
-    const view = render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
-    const toggle = screen.getByRole('checkbox', { name: '在本机记住当前使用的 API Key' }) as HTMLInputElement;
-    expect(toggle.checked).toBe(true);
-    fireEvent.click(toggle);
-    expect(localStorage.getItem(REMEMBER_NAI_KEY_STORAGE_KEY)).toBe('false');
-    view.unmount();
-    setActiveNaiKey('mock-settings-key');
-    expect(localStorage.getItem('nai_api_key')).toBeNull();
+  it('密钥保管箱默认始终在本机记住当前 Key，不再展示记住勾选框', async () => {
+    const entry = { id: 'remember-test', name: '主力号', key: 'pst-remember-1234', createdAt: 0 };
+    subscriptionFixture.entries = [entry];
     render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
-    const reopened = screen.getByRole('checkbox', { name: '在本机记住当前使用的 API Key' }) as HTMLInputElement;
-    expect(reopened.checked).toBe(false);
-    fireEvent.click(reopened);
-    expect(localStorage.getItem('nai_api_key')).toBe('mock-settings-key');
-    expect(readActiveNaiKey()).toBe('mock-settings-key');
+    expect(screen.queryByRole('checkbox', { name: '在本机记住当前使用的 API Key' })).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: '使用' }));
+    expect(naiKeyVault.activate).toHaveBeenCalledWith(entry, true);
   });
   it.each([false, true])('隐私开关默认关闭，保存并重开后保持，手机视图=%s', async mobile => {
     vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
@@ -673,21 +656,23 @@ describe('GlobalSettings', () => {
     const cleanHeading = screen.getByRole('heading', { level: 3, name: '图片元数据清洗' });
     expect(safeHeading.closest('section')).not.toBe(cleanHeading.closest('section'));
     expect(screen.queryByRole('heading', { level: 3, name: '隐私与分享' })).toBeNull();
+    // 桌面端侧栏已有常驻安全模式开关，设置页不再重复展示主开关，仅保留子选项。
+    expect(screen.queryByRole('switch', { name: /^安全模式/ })).toBeNull();
 
     const cleanToggle = await screen.findByRole('switch', { name: '分享图片时移除生成信息' });
     const cleanContent = screen.getByRole('combobox', { name: '清洗内容' }) as HTMLSelectElement;
     const customText = screen.getByRole('textbox', { name: '自定义文本' }) as HTMLInputElement;
-    const safeToggle = screen.getByRole('switch', { name: /^安全模式/ });
+    const startupSafeToggle = screen.getByRole('switch', { name: '启动时自动开启安全模式' });
     expect(cleanToggle.getAttribute('aria-checked')).toBe('false');
     expect(cleanContent.value).toBe('all');
     expect(getSharedImageCleanContent()).toBe('all');
     expect(cleanContent.disabled).toBe(true);
     expect(customText.value).toBe('');
     expect(customText.disabled).toBe(true);
-    fireEvent.click(safeToggle);
+    fireEvent.click(startupSafeToggle);
     expect(cleanToggle.getAttribute('aria-checked')).toBe('false');
     fireEvent.click(cleanToggle);
-    expect(safeToggle.getAttribute('aria-checked')).toBe('true');
+    expect(startupSafeToggle.getAttribute('aria-checked')).toBe('true');
     expect(cleanToggle.getAttribute('aria-checked')).toBe('true');
     expect(cleanContent.disabled).toBe(false);
     expect(customText.disabled).toBe(false);
@@ -812,26 +797,6 @@ describe('GlobalSettings', () => {
     expect(screen.getByText('不上传 Key、提示词或图片。')).toBeTruthy();
   });
 
-  it('实验室布局分组默认收起，展开切换不因失效事件对象崩溃', async () => {
-    const { container } = render(React.createElement(SettingsHarness, { initialSection: 'generation' }));
-
-    expect(await screen.findByText('实验室模块默认展开')).toBeTruthy();
-    const details = container.querySelectorAll('details');
-    expect(details).toHaveLength(4);
-    expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
-    expect(screen.getAllByText('精准参考')).toHaveLength(4);
-
-    // 四个分组全展开时这块接近 2200px、占设置面板三分之二；没改过配置的页面默认收起。
-    details.forEach(d => expect(d.open).toBe(false));
-
-    fireEvent.click(details[0].querySelector('summary')!);
-    await waitFor(() => expect(details[0].open).toBe(true));
-
-    fireEvent.click(details[0].querySelector('summary')!);
-    await waitFor(() => expect(details[0].open).toBe(false));
-    expect(screen.getByText('实验室模块默认展开')).toBeTruthy();
-  });
-
   it('Android 版关于与系统分类展示软件内声明，版本与 GitHub 入口只保留一处', async () => {
     platformFixture.android = true;
     render(React.createElement(SettingsHarness, { initialSection: 'about' }));
@@ -871,14 +836,16 @@ describe('GlobalSettings', () => {
     // 切换至「生图与实验室」
     fireEvent.click(screen.getByRole('button', { name: /生图与实验室/ }));
     expect(await screen.findByText('生成过程预览')).toBeTruthy();
-    expect(screen.getByText('强制清空种子（始终随机）')).toBeTruthy();
     expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
-    expect(screen.getByText('实验室模块默认展开')).toBeTruthy();
+    expect(screen.getByRole('switch', { name: '提示词框高度跟随内容' })).toBeTruthy();
+    expect(screen.queryByText('强制清空种子（始终随机）')).toBeNull();
+    expect(screen.queryByText('连续生成与排队')).toBeNull();
+    expect(screen.queryByText('实验室模块默认展开')).toBeNull();
 
     // 切换至「隐私与分享」
     fireEvent.click(screen.getByRole('button', { name: /隐私与分享/ }));
-    expect(await screen.findByRole('switch', { name: /^安全模式/ })).toBeTruthy();
-    expect(screen.getByRole('switch', { name: /同时隐藏作品名称/ })).toBeTruthy();
+    expect(screen.queryByRole('switch', { name: /^安全模式/ })).toBeNull();
+    expect(await screen.findByRole('switch', { name: /同时隐藏作品名称/ })).toBeTruthy();
     expect(screen.getByRole('switch', { name: '启动时自动开启安全模式' })).toBeTruthy();
     expect((await screen.findByRole('switch', { name: '分享图片时移除生成信息' })).getAttribute('aria-checked')).toBe('false');
 
@@ -892,15 +859,16 @@ describe('GlobalSettings', () => {
     expect(await screen.findByText('局域网访问')).toBeTruthy();
     expect(screen.getByText('反推 HTTPS 入口')).toBeTruthy();
 
-    // 切换至「存储与备份」
+    // 切换至「存储与备份」：桌面端不展示手机缓存与电脑只读缓存
     fireEvent.click(screen.getByRole('button', { name: /存储与备份/ }));
     expect(await screen.findByText('重要数据备份')).toBeTruthy();
-    expect(screen.getByText('缩略图缓存')).toBeTruthy();
+    expect(screen.queryByText('手机图片缓存')).toBeNull();
+    expect(screen.queryByText('电脑缩略图缓存')).toBeNull();
 
-    // 切换至「关于与系统」：应用更新、本地服务状态、桌面启动器与软件内声明。
+    // 切换至「关于与系统」：应用更新、桌面启动器与软件内声明（不再展示独立本地服务状态卡）。
     fireEvent.click(screen.getByRole('button', { name: /关于与系统/ }));
     expect(await screen.findByText('应用更新')).toBeTruthy();
-    expect(screen.getByText('本地服务状态')).toBeTruthy();
+    expect(screen.queryByText('本地服务状态')).toBeNull();
     expect(screen.getByText('完全开源免费')).toBeTruthy();
     expect(screen.getByText('内容创作与作者无关')).toBeTruthy();
     expect(screen.getByText('问题反馈与贡献')).toBeTruthy();
@@ -1139,29 +1107,18 @@ describe('GlobalSettings', () => {
     expect(dot?.className).toContain('w-8');
   });
 
-  it.each([false, true])('手机视图=%s 时四模式可设置默认展开，恢复操作彼此独立且没有排序入口', async mobile => {
+  it('手机浏览器保留安全模式主开关与手机图片缓存，且不再展示电脑缩略图缓存', async () => {
     vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
-      matches: mobile && query.includes('767px'), media: query, onchange: null,
+      matches: query.includes('767px'), media: query, onchange: null,
       addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
     })));
-    const changed = vi.fn<(preferences: AppearancePreferences) => void>();
-    const { container } = render(React.createElement(SettingsHarness, { initialSection: 'generation', onAppearancePreferencesChange: changed }));
-    expect(await screen.findByText('实验室模块默认展开')).toBeTruthy();
-    expect(screen.queryByText('手机端固定')).toBeNull();
-    expect(screen.queryByText('拖动排序')).toBeNull();
-    expect(screen.queryByRole('button', { name: /上移|下移|推荐顺序/ })).toBeNull();
-    expect(container.querySelector('[draggable="true"]')).toBeNull();
-    for (const [pageId, label] of [['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const) {
-      fireEvent.click(screen.getByText(label).closest('summary')!);
-      fireEvent.click(await screen.findByRole('button', { name: `${label} · 全局正面提示词 · 默认展开` }));
-      expect(changed.mock.lastCall?.[0].labPageLayouts[pageId].collapsed.prompt).toBe(true);
-      expect(screen.getByRole('button', { name: `${label} · 全局正面提示词 · 默认收起` }).getAttribute('aria-pressed')).toBe('true');
-    }
-    fireEvent.click(screen.getByRole('button', { name: '文生图 · 恢复默认' }));
-    expect(changed.mock.lastCall?.[0].labPageLayouts['text-to-image']).toEqual(DEFAULT_LAB_PAGE_LAYOUTS['text-to-image']);
-    expect(changed.mock.lastCall?.[0].labPageLayouts.inpaint.collapsed.prompt).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: '全部默认' }));
-    expect(changed.mock.lastCall?.[0].labPageLayouts).toEqual(DEFAULT_LAB_PAGE_LAYOUTS);
+    const view = render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
+    expect(await screen.findByRole('switch', { name: /^安全模式/ })).toBeTruthy();
+    view.unmount();
+
+    render(React.createElement(SettingsHarness, { initialSection: 'storage' }));
+    expect(await screen.findByRole('heading', { name: '手机图片缓存' })).toBeTruthy();
+    expect(screen.queryByText('电脑缩略图缓存')).toBeNull();
   });
 it('Agent 能看到普通外观设置和关闭入口，NovelAI 密钥区域仍不可读取', async () => {
   render(React.createElement(SettingsHarness, { initialSection: 'appearance' }));
