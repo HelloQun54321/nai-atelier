@@ -36,18 +36,19 @@ test('本机网关法典入口只读，原始字节经过出站通道，不转�
   }
 });
 
-test('法典各图床原图返回原始字节，浏览器读取配置、收藏及底图不跳转跨域', async () => {
+test('法典和 Danbooru 图床原图返回原始字节，浏览器取图不跳转跨域', async () => {
   const previous = getGlobalDispatcher();
   const mock = new MockAgent(); mock.disableNetConnect(); mock.enableNetConnect(/^127\.0\.0\.1(?::\d+)?$/); setGlobalDispatcher(mock);
   const bytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  for (const host of CODEX_MEDIA_HOSTS) mock.get(`https://${host}`).intercept({ path: '/synthetic.png?v=abc', method: 'GET' }).reply(200, options => {
+  const hosts = [...CODEX_MEDIA_HOSTS, 'cdn.donmai.us'];
+  for (const host of hosts) mock.get(`https://${host}`).intercept({ path: '/synthetic.png?v=abc', method: 'GET' }).reply(200, options => {
     assert.doesNotMatch(JSON.stringify(options.headers), /synthetic-private-key|synthetic-cookie/);
     return bytes;
   }, { headers: { 'content-type': 'image/png' } });
   let server;
   try {
     server = await createMediaGateway({ port: 0, workerPort: 39999 });
-    for (const host of CODEX_MEDIA_HOSTS) {
+    for (const host of hosts) {
       const response = await fetch(`http://127.0.0.1:${server.address().port}/api/media?source=${encodeURIComponent(`https://${host}/synthetic.png?v=abc`)}&variant=original`, {
         redirect: 'manual', headers: { authorization: 'Bearer synthetic-private-key', cookie: 'session=synthetic-cookie' },
       });

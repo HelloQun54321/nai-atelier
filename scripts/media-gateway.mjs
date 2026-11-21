@@ -5383,7 +5383,7 @@ const serveDistFile = async (req, res, url) => {
             const host = originalUrl.hostname.toLowerCase();
             isProxyRequiredOriginal = originalUrl.protocol === 'https:'
               && (!originalUrl.port || originalUrl.port === '443')
-              && (host === PIXIV_IMAGE_HOST || host === AITAG_IMAGE_HOST || host === 'aitag.win' || CODEX_MEDIA_HOSTS.includes(host));
+              && (host === PIXIV_IMAGE_HOST || host === AITAG_IMAGE_HOST || host === 'aitag.win' || host === 'cdn.donmai.us' || CODEX_MEDIA_HOSTS.includes(host));
           } catch {}
         }
         // 防盗链图床及法典原图经网关返回，避免 Referer 缺失或跨域阻断配置读取与图片取用。
