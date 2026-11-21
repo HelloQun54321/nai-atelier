@@ -2135,3 +2135,12 @@ test('prompt agent: reviseSessionMessage audit log records sha256 and length ins
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('Pixiv media accepts declared lengths above the ordinary limit and rejects above 64 MB', async () => {
+  const url = 'https://i.pximg.net/img-original/synthetic.png';
+  const bytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const response = (size) => new Response(bytes, { headers: { 'content-type': 'image/png', 'content-length': String(size * 1024 * 1024) } });
+  const accepted = await requestRemoteBuffer(url, async () => response(40));
+  assert.deepEqual(accepted.buffer, bytes);
+  await assert.rejects(requestRemoteBuffer(url, async () => response(65)), { status: 413 });
+});

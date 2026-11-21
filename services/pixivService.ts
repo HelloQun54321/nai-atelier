@@ -1,3 +1,4 @@
+import { IMPORTED_IMAGE_MAX_BYTES } from './imageLimits.mjs';
 import { getLanguage } from './i18n';
 import { MediaVariant, buildMediaUrl } from './mobileImageCache';
 
@@ -190,16 +191,27 @@ export const pixivArtworkUrl = (illust: PixivIllust): string => `https://www.pix
 
 export const pixivPageCount = (illust: PixivIllust): number => Math.max(1, illust.metaPages.length || illust.pageCount || 1);
 
+/** 旧足迹可能已保存媒体代理地址；先展开本机包装，避免重复代理导致 502。 */
+const unwrapPixivMediaSource = (value: string): string => {
+  let source = value;
+  for (let depth = 0; depth < 8 && source.startsWith('/api/media?'); depth++) {
+    const inner = new URLSearchParams(source.slice(source.indexOf('?') + 1)).get('source');
+    if (!inner || inner === source) break;
+    source = inner;
+  }
+  return source;
+};
+
 /** 多页作品第 pageIndex 页的原图 URL；单页作品回退到 original/large/medium。 */
 export const getPixivCurrentPageUrl = (illust: PixivIllust, pageIndex = 0): string => {
   const pages = illust.metaPages.length ? illust.metaPages : [illust.urls.original, illust.urls.large, illust.urls.medium].filter(Boolean);
   const index = Math.min(Math.max(0, pageIndex), pages.length - 1);
-  return pages[index] || illust.urls.original || '';
+  return unwrapPixivMediaSource(pages[index] || illust.urls.original || '');
 };
 
 /** 详情/卡片的渐进预览源：优先 Pixiv large，其次 medium，最后回退当前页原图（由网关缩放）。 */
 export const getPixivPreviewUrl = (illust: PixivIllust, pageIndex = 0): string => {
-  if (pageIndex === 0) return illust.urls.large || illust.urls.medium || getPixivCurrentPageUrl(illust, 0);
+  if (pageIndex === 0) return unwrapPixivMediaSource(illust.urls.large || illust.urls.medium || getPixivCurrentPageUrl(illust, 0));
   return getPixivCurrentPageUrl(illust, pageIndex) || illust.urls.large || illust.urls.medium || '';
 };
 
@@ -212,8 +224,8 @@ export const buildPixivPreviewMediaUrl = (illust: PixivIllust, pageIndex = 0, va
   buildMediaUrl(getPixivPreviewUrl(illust, pageIndex), variant);
 
 const PIXIV_IMAGE_HOST = 'i.pximg.net';
-const MAX_PIXIV_IMAGE_BYTES = 12 * 1024 * 1024;
-const PIXIV_IMAGE_TIMEOUT_MS = 20_000;
+const MAX_PIXIV_IMAGE_BYTES = IMPORTED_IMAGE_MAX_BYTES;
+const PIXIV_IMAGE_TIMEOUT_MS = 100_000;
 
 /**
  * 与 danbooruCoverImport 同款链路：经本机 /api/media 读取原图，返回可直接上传的 File，
@@ -243,6 +255,7 @@ export const importPixivImageAsFile = async (source: string): Promise<File> => {
     window.clearTimeout(timer);
   }
   if (!response.ok) {
+    if (response.status === 413) throw new Error(`图片超过 ${MAX_PIXIV_IMAGE_BYTES / 1024 / 1024}MB`);
     throw new Error(`无法通过本机图片服务读取这张 Pixiv 图片（HTTP ${response.status}）`);
   }
   const contentType = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
@@ -251,7 +264,7 @@ export const importPixivImageAsFile = async (source: string): Promise<File> => {
   }
   const blob = await response.blob();
   if (!blob.size) throw new Error('图片内容为空');
-  if (blob.size > MAX_PIXIV_IMAGE_BYTES) throw new Error('图片超过 12MB');
+  if (blob.size > MAX_PIXIV_IMAGE_BYTES) throw new Error(`图片超过 ${MAX_PIXIV_IMAGE_BYTES / 1024 / 1024}MB`);
 
   const extension = contentType === 'image/png' ? 'png' : contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/webp' ? 'webp' : 'gif';
   return new File([blob], `pixiv-${Date.now()}.${extension}`, { type: contentType });
