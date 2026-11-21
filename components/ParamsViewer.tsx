@@ -9,6 +9,7 @@ import { DEFAULT_NOISE_SCHEDULE, NOISE_SCHEDULE_LABELS, normalizeNoiseSchedule }
 import { InfoPopover } from './InfoPopover';
 import { PromptLibraryCaptureButton } from './PromptLibraryAccess';
 import { characterReferenceTypeLabel } from '../services/characterReferenceTypes';
+import { PromptArtistSamples } from './PromptArtistSamples';
 
 /**
  * UC Preset 的人类可读标签映射
@@ -279,6 +280,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                     </div>
                 </details>
             )}
+            {!section && <PromptArtistSamples prompt={prompt} params={params} />}
         </div>
     );
 };
