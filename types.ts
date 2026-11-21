@@ -183,6 +183,10 @@ export interface NAIParams {
   _promptLibraryDirectoryIds?: string[];
   /** 风格串分享来源快照，不进入 NovelAI 生成请求；再次分享时保留。 */
   _styleBundleSources?: StyleBundleSource[];
+  /** 本机分享包导入分区；导出和生成时排除。 */
+  _styleBundleImport?: { id: string; name: string };
+  /** 本机当前分区；与原分享包来源分开，不进入生成或分享包。 */
+  _chainPartition?: { id: string; name: string };
 }
 
 /** 实验室提示词分栏原文；缺省或全为空表示尚未使用分栏（旧数据）。 */

@@ -29,8 +29,8 @@ vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount
 
 let stored: ChainFolderState;
 const makeChain = (id: string): PromptChain => ({ id, userId: 'owner', name: '风格 ' + id, type: 'style', description: '', tags: [], basePrompt: 'original', negativePrompt: '', modules: [], params: { model: 'nai-diffusion-4-5-full' } as PromptChain['params'], createdAt: 1, updatedAt: 1 });
-const setup = async () => {
-  const props = { chains: [makeChain('a'), makeChain('b')], type: 'style' as const, onCreate: vi.fn(), onSelect: vi.fn(), onDelete: vi.fn(), onBulkDelete: vi.fn(), onRefresh: vi.fn(), onUpdateChain: vi.fn(), isLoading: false, notify: vi.fn() };
+const setup = async (chains = [makeChain('a'), makeChain('b')]) => {
+  const props = { chains, type: 'style' as const, onCreate: vi.fn(), onSelect: vi.fn(), onDelete: vi.fn(), onBulkDelete: vi.fn(), onRefresh: vi.fn(), onUpdateChain: vi.fn(), isLoading: false, notify: vi.fn() };
   const view = render(<ChainList {...props} />);
   const expand = screen.queryByRole('button', { name: '展开文件夹' });
   if (expand) fireEvent.click(expand);
@@ -128,6 +128,23 @@ beforeEach(() => {
   window.history.replaceState(null, '');
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it('本机分区与新版目录取交集，目录计数不混入其他分享包且切换不改归属', async () => {
+  const imported = { ...makeChain('b'), params: { ...makeChain('b').params, _styleBundleImport: { id: 'a'.repeat(64), name: '合成分享包' } } };
+  stored.assignments = { a: ['child'], b: ['child'] };
+  const original = structuredClone(stored.assignments);
+  await setup([makeChain('a'), imported]);
+  choose('root');
+  const navigation = within(screen.getByLabelText('风格串文件夹'));
+  expect(navigation.getByRole('button', { name: '画风实验' }).textContent).toBe('画风实验1');
+  expect(screen.getByRole('button', { name: '打开风格串：风格 a' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '打开风格串：风格 b' })).toBeNull();
+  fireEvent.change(screen.getByRole('combobox', { name: '风格串分区' }), { target: { value: imported.params._styleBundleImport.id } });
+  expect(navigation.getByRole('button', { name: '画风实验' }).textContent).toBe('画风实验1');
+  expect(screen.getByRole('button', { name: '打开风格串：风格 b' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '打开风格串：风格 a' })).toBeNull();
+  expect(stored.assignments).toEqual(original); expect(put).not.toHaveBeenCalled();
+});
 
 it('目录计数按完整风格串ID去重，不受渲染数量和父子重复归属影响', () => {
   stored.assignments = { a: ['root', 'child'], b: ['child'] };

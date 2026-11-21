@@ -15,6 +15,7 @@ import { extractMetadata } from '../../services/metadataService';
 import { NAI_QUALITY_TAGS } from '../../services/promptUtils';
 import { buildMediaUrl } from '../../services/mobileImageCache';
 import { applyCollectionBoardUpdates, getCollectionBoardIds } from '../../services/inspirationUtils';
+import type { PromptChain } from '../../types';
 vi.mock('../../services/api', async original => {
   const actual = await original<typeof import('../../services/api')>();
   return { ...actual, api: { ...actual.api, uploadFile: vi.fn(async () => ({ url: '/api/assets/synthetic.png' })) } };
@@ -401,6 +402,31 @@ it.each([390, 1280])('宽度 %s：同一收藏命中多个夹，批量部分选�
   if (width < 768) fireEvent.click(within(screen.getByRole('dialog', { name: '收藏分类' })).getByRole('button', { name: '关闭' }));
   expect(screen.getByText('未归属作品')).toBeTruthy(); expect(screen.queryByText('多夹作品')).toBeNull();
   vi.mocked(db.bulkUpdateInspirations).mockReset().mockResolvedValue(undefined);
+});
+
+it.each([390, 1280])('宽度 %s：法典自动归集，两类法典来源同区，风格串按分区自动生成收藏夹', async width => {
+  vi.stubGlobal('innerWidth', width);
+  vi.mocked(db.bulkUpdateInspirations).mockClear(); vi.mocked(db.saveInspiration).mockClear();
+  const a = { id: 'a'.repeat(64), name: '合成分区 A' }, b = { id: 'b'.repeat(64), name: '合成分区 B' };
+  const make = (id: string, sourceType: Inspiration['sourceType'], params = {}) => ({ id, userId: mockUser.id, title: `合成图片 ${id}`, imageUrl: `/synthetic-${id}.png`, prompt: '', sourceType, sourceId: id, params, createdAt: 1 } as Inspiration);
+  const items = [make('book', 'codex'), make('community', 'codex-community'), make('chain-a', 'chain', { _styleBundleImport: a }), make('upload', 'upload')];
+  const chains = [{ id: 'chain-a', params: { _styleBundleImport: a } }, { id: 'chain-b', params: { _chainPartition: b } }] as PromptChain[];
+  const original = JSON.stringify(items);
+  const props = { currentUser: mockUser, inspirationsData: items, chains, notify: vi.fn(), onRefresh: vi.fn(async () => {}) };
+  const view = render(React.createElement(InspirationGallery, props));
+  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+  const root = width < 768 ? screen.getByRole('dialog', { name: '收藏分类' }) : document.body;
+  fireEvent.click(within(root).getByRole('button', { name: /法典\s+2/ }));
+  expect(screen.getByText('合成图片 book')).toBeTruthy(); expect(screen.getByText('合成图片 community')).toBeTruthy();
+  expect(screen.queryByText('合成图片 upload')).toBeNull();
+  fireEvent.click(within(root).getByRole('button', { name: /合成分区 A\s+1/ }));
+  expect(screen.getByText('合成图片 chain-a')).toBeTruthy(); expect(screen.queryByText('合成图片 book')).toBeNull();
+  expect(within(root).queryByRole('button', { name: /合成分区 B/ })).toBeNull();
+  view.rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: [...items, make('chain-b', 'chain', { _chainPartition: b })] }));
+  fireEvent.click(within(root).getByRole('button', { name: /合成分区 B\s+1/ }));
+  expect(screen.getByText('合成图片 chain-b')).toBeTruthy(); expect(screen.queryByText('合成图片 chain-a')).toBeNull();
+  expect(db.bulkUpdateInspirations).not.toHaveBeenCalled(); expect(db.saveInspiration).not.toHaveBeenCalled();
+  expect(JSON.stringify(items)).toBe(original);
 });
 
 it('缺图画师偏好在收藏库保留空封面与 Tag，可进入详情且没有失效图片操作', async () => {

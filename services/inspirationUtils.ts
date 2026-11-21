@@ -1,4 +1,5 @@
-import { Inspiration, InspirationSourceType, InspirationUpdates } from '../types';
+import { Inspiration, InspirationSourceType, InspirationUpdates, PromptChain } from '../types';
+import { getBundlePartitions, getChainPartition, OWN_CHAIN_PARTITION, LEGACY_BUNDLE_PARTITION } from './chainPartitions';
 import type { MediaPreviewTransform } from './mobileImageCache';
 
 /** 收藏已保存原件后仍按来源快照识别图包预览，不依赖图包继续安装。 */
@@ -87,6 +88,25 @@ export const rememberCollectionFolder = (id?: string) => {
 export const sourceLabel = (source?: InspirationSourceType) => ({
   history: '生成历史', aitag: 'AITag', danbooru: 'Danbooru', pixiv: 'Pixiv', codex: '法典书目', 'codex-community': '共创广场', upload: '手动上传', agent: '创作助手', artist: '画师库', character: '角色库', chain: '风格预设', other: '其他来源',
 }[source || 'other'] || '其他来源');
+
+/** 来源入口归集法典书目与共创广场，不改写原来源、收藏夹或图片。 */
+export const collectionSource = (source?: InspirationSourceType): InspirationSourceType => source === 'codex-community' ? 'codex' : source || 'other';
+export const collectionSourceLabel = (source: InspirationSourceType) => source === 'codex' ? '法典' : source === 'chain' ? '风格串' : sourceLabel(source);
+
+/** 原串仍在时读取当前分区；删除原串后继续使用收藏保留的参数快照。 */
+export function collectionChainPartition(item: Inspiration, chains: ReadonlyMap<string, PromptChain>): string {
+  const chain = chains.get(item.sourceId || '') || { id: item.sourceId || '', params: item.params || {} } as PromptChain;
+  return getChainPartition(chain);
+}
+export function getCollectionChainFolders(items: Inspiration[], chains: PromptChain[]) {
+  const byId = new Map(chains.map(chain => [chain.id, chain]));
+  const saved = items.filter(item => !item.archived && item.sourceType === 'chain');
+  const snapshots = saved.map(item => ({ id: item.sourceId || '', params: item.params || {} } as PromptChain));
+  const names = new Map([{ id: OWN_CHAIN_PARTITION, name: '我的风格串' }, { id: LEGACY_BUNDLE_PARTITION, name: '旧分享包导入' }, ...getBundlePartitions([...chains, ...snapshots])].map(partition => [partition.id, partition.name]));
+  const counts = new Map<string, number>();
+  for (const item of saved) { const id = collectionChainPartition(item, byId); counts.set(id, (counts.get(id) || 0) + 1); }
+  return [...counts].map(([id, count]) => ({ id, name: names.get(id) || id, count }));
+}
 
 // 旧版自动来源 Tag 只在读取时隐藏，来源字段与私人存储保持原样。
 export const getCollectionTags = (item: Pick<Inspiration, 'tags' | 'sourceType'>) =>

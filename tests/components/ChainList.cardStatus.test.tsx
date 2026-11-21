@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 import { ChainList } from '../../components/ChainList';
+import { api } from '../../services/api';
 
 const { syncSelection } = vi.hoisted(() => ({
   syncSelection: {
@@ -30,7 +31,7 @@ vi.mock('../../services/imageDisplayPreferences', () => ({
 }));
 vi.mock('../../components/StyleCollectorControl', () => ({ StyleCollectorControl: () => null }));
 vi.mock('../../components/chain/FolderBatchImportModal', () => ({ FolderBatchImportModal: () => null }));
-vi.mock('../../components/chain/StyleBundleDialog', () => ({ StyleBundleDialog: ({ onImported }: { onImported: () => Promise<void> }) => <button onClick={() => void onImported()}>合成分享包回读</button> }));
+vi.mock('../../components/chain/StyleBundleDialog', () => ({ StyleBundleDialog: ({ onImported, chains }: { onImported: (id?: string) => Promise<void>; chains: PromptChain[] }) => <><button data-export-ids={chains.map(chain => chain.id).join(',')} onClick={() => void onImported()}>合成分享包回读</button><button onClick={() => void onImported('a'.repeat(64))}>合成导入包</button></> }));
 vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: '', IMAGE_CARD_ACTION_TONE: { save: '', delete: '', primary: '' }, ImageShareActions: () => null }));
 vi.mock('../../components/SmartImage', () => ({
   ImageActivityContext: React.createContext(true),
@@ -68,6 +69,96 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('风格串卡片的待实测状态', () => {
+  it('卡片复制保留原区，新 ID 副本显示在目标区，不调用删除', async () => {
+    const own = chain('own-id', '原始个人串', false), pack = { ...chain('pack-id', '包内配方', false), params: { ...own.params, _styleBundleImport: { id: 'a'.repeat(64), name: '目标包' } } };
+    const callbacks = props([own, pack]);
+    let rows = [own, pack];
+    const reload = vi.fn(async () => { rows = [own, { ...own, id: 'copy-own-id', params: { ...own.params, _chainPartition: { id: 'a'.repeat(64), name: '目标包' } } }, pack]; view.rerender(<ChainList {...callbacks} chains={rows} onBundleImported={reload} />); });
+    vi.mocked(api.post).mockResolvedValue({ sourceIds: [own.id], copiedIds: ['copy-own-id'], partitionId: 'a'.repeat(64) });
+    const view = render(<ChainList {...callbacks} onBundleImported={reload} />);
+    fireEvent.click(screen.getByRole('button', { name: '复制到分区：原始个人串' }));
+    expect(callbacks.onSelect).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: '确认复制' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '复制到分区' })).toBeNull());
+    expect(api.post).toHaveBeenLastCalledWith('/chains/copy-partition', { ids: [own.id], target: 'a'.repeat(64), operation: expect.any(String) });
+    expect(screen.getByRole('button', { name: '打开风格串：原始个人串' })).toBeTruthy();
+    expect(rows.find(row => row.id === own.id)).toBe(own);
+    fireEvent.change(screen.getByRole('combobox', { name: '风格串分区' }), { target: { value: 'a'.repeat(64) } });
+    expect(screen.getByRole('button', { name: '打开风格串：原始个人串' })).toBeTruthy();
+    expect(callbacks.onCreate).not.toHaveBeenCalled(); expect(callbacks.onDelete).not.toHaveBeenCalled();
+  });
+
+  it('批量复制只提交当前分区选中的原 ID，游客和角色页隐藏复制入口', async () => {
+    const first = chain('one', '个人一', false), second = chain('two', '个人二', false), pack = { ...chain('pack', '包内', false), params: { ...first.params, _styleBundleImport: { id: 'a'.repeat(64), name: '目标包' } } };
+    const callbacks = props([first, second, pack]); const onBulkDelete = vi.fn();
+    vi.mocked(api.post).mockResolvedValue({ sourceIds: ['one', 'two'], copiedIds: ['copy-one', 'copy-two'], partitionId: 'a'.repeat(64) });
+    const view = render(<ChainList {...callbacks} onBulkDelete={onBulkDelete} />);
+    fireEvent.click(screen.getByRole('button', { name: '批量选择风格串' }));
+    fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
+    fireEvent.click(screen.getByRole('button', { name: '复制到分区' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认复制' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '复制到分区' })).toBeNull());
+    expect(api.post).toHaveBeenLastCalledWith('/chains/copy-partition', { ids: ['one', 'two'], target: 'a'.repeat(64), operation: expect.any(String) });
+    expect(callbacks.onCreate).not.toHaveBeenCalled(); expect(onBulkDelete).not.toHaveBeenCalled();
+    view.rerender(<ChainList {...callbacks} isGuest />);
+    expect(screen.queryByRole('button', { name: /复制到分区/ })).toBeNull();
+    view.rerender(<ChainList {...callbacks} type="character" />);
+    expect(screen.queryByRole('button', { name: /复制到分区/ })).toBeNull();
+  });
+  it('各分享包独立分区，搜索与导出只作用于当前分区，重新挂载记住选择', async () => {
+    const own = chain('own', '我的水彩', false);
+    const imported = { ...chain('shared', '包内水彩', false), params: { ...own.params, _styleBundleImport: { id: 'a'.repeat(64), name: '水彩合集' } } };
+    const other = { ...chain('other', '另一包配方', false), params: { ...own.params, _styleBundleImport: { id: 'b'.repeat(64), name: '另一个包' } } };
+    const callbacks = props([own, imported, other]);
+    const view = render(<ChainList {...callbacks} />);
+    expect(screen.getByRole('button', { name: '打开风格串：我的水彩' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '打开风格串：包内水彩' })).toBeNull();
+    fireEvent.change(screen.getByRole('combobox', { name: '风格串分区' }), { target: { value: 'a'.repeat(64) } });
+    expect(screen.getByRole('button', { name: '打开风格串：包内水彩' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '打开风格串：另一包配方' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '打开风格串：我的水彩' })).toBeNull();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '另一包' } });
+    expect(screen.getByText('无匹配结果')).toBeTruthy();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '更多操作' }).find(button => button.parentElement?.classList.contains('max-md:hidden'))!);
+    const overflow = await screen.findByRole('dialog', { name: '更多操作' });
+    fireEvent.click(within(overflow).getByRole('button', { name: '风格串分享包' }));
+    expect((await screen.findByRole('button', { name: '合成分享包回读' })).getAttribute('data-export-ids')).toBe('shared');
+    view.unmount();
+    render(<ChainList {...callbacks} />);
+    expect((screen.getByRole('combobox', { name: '风格串分区' }) as HTMLSelectElement).value).toBe('a'.repeat(64));
+  });
+
+  it('旧导入单列，缺失分区回退到个人区，角色页不出现风格串分区', () => {
+    localStorage.setItem('nai_style_partition', 'missing');
+    const own = chain('own', '个人配方', false), legacy = chain('naia-' + 'c'.repeat(64), '旧包配方', false);
+    const callbacks = props([own, legacy]);
+    const view = render(<ChainList {...callbacks} />);
+    expect((screen.getByRole('combobox', { name: '风格串分区' }) as HTMLSelectElement).value).toBe('own');
+    fireEvent.change(screen.getByRole('combobox', { name: '风格串分区' }), { target: { value: 'legacy-imports' } });
+    expect(screen.getByRole('button', { name: '打开风格串：旧包配方' })).toBeTruthy();
+    view.rerender(<ChainList {...callbacks} type="character" />);
+    expect(screen.queryByRole('combobox', { name: '风格串分区' })).toBeNull();
+  });
+
+  it('导入回读后切换包分区，批量全选与删除不会带上其他分区', async () => {
+    const own = chain('own', '个人配方', false), imported = { ...chain('shared', '包内配方', false), params: { ...chain('x', '', false).params, _styleBundleImport: { id: 'a'.repeat(64), name: '合成包' } } };
+    const callbacks = props([own]), onBundleImported = vi.fn(async () => {}), onBulkDelete = vi.fn();
+    const view = render(<ChainList {...callbacks} onBundleImported={onBundleImported} onBulkDelete={onBulkDelete} />);
+    fireEvent.click(screen.getAllByRole('button', { name: '更多操作' }).find(button => button.parentElement?.classList.contains('max-md:hidden'))!);
+    const overflow = await screen.findByRole('dialog', { name: '更多操作' });
+    fireEvent.click(within(overflow).getByRole('button', { name: '风格串分享包' }));
+    fireEvent.click(await screen.findByRole('button', { name: '合成导入包' }));
+    await waitFor(() => expect(onBundleImported).toHaveBeenCalledOnce());
+    view.rerender(<ChainList {...callbacks} chains={[own, imported]} onBundleImported={onBundleImported} onBulkDelete={onBulkDelete} />);
+    await waitFor(() => expect((screen.getByRole('combobox', { name: '风格串分区' }) as HTMLSelectElement).value).toBe('a'.repeat(64)));
+    fireEvent.click(screen.getByRole('button', { name: '批量选择风格串' }));
+    fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
+    expect(screen.getAllByRole('checkbox', { checked: true })).toHaveLength(1);
+    expect(screen.getByRole('checkbox', { name: '选择风格串：包内配方' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.queryByRole('checkbox', { name: '选择风格串：个人配方' })).toBeNull();
+    expect(onBulkDelete).not.toHaveBeenCalled();
+  });
   it('触底后无需点击便逐批展示全部风格串，超过首批和后续批次仍继续', async () => {
     class VisibleObserver {
       private targets = new Set<Element>();

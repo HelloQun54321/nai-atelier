@@ -18,7 +18,7 @@ vi.mock('../../components/MobileUI', () => ({ useMobileHistoryLayer: (_open: boo
 
 const chains = Array.from({ length: 65 }, (_, index) => ({ id: `chain-${index}`, name: `风格 ${index}`, type: 'style' } as PromptChain));
 const props = () => ({ chains, filteredChains: chains.slice(0, 63), selectedChains: chains.slice(61), initialScope: 'all' as const, onClose: vi.fn(), onImported: vi.fn(), notify: vi.fn() });
-const preview = { entries: [
+const preview = { partition: { id: 'a'.repeat(64), name: '合成包' }, entries: [
   { id: 'a', name: '水彩', description: '纸张', cover: true, sources: [{ author: '作者甲', sourceUrl: 'https://example.org/free', note: '免费分享' }] },
   { id: 'b', name: '素描', description: '铅笔', cover: false, sources: [] },
 ], coverage: 'full' as const, warnings: [] };
@@ -641,6 +641,7 @@ it('预览来源并按搜索导入，部分失败后重试不重复成功项', a
   fireEvent.change(screen.getByLabelText('搜索分享包'), { target: { value: '铅笔' } });
   fireEvent.click(actionButton('导入筛选结果'));
   await waitFor(() => expect(callbacks.onImported).toHaveBeenCalledTimes(2));
+  expect(callbacks.onImported).toHaveBeenLastCalledWith(preview.partition.id);
   expect(mocks.import.mock.calls[1][1]).toEqual(['b']);
   expect(screen.queryByText('合成保存失败')).toBeNull();
 });

@@ -7,7 +7,7 @@ import { INIT_SQL, type D1Database, type Env, type R2Bucket, type RouteContext }
 const databases: DatabaseSync[] = [];
 afterEach(() => { for (const database of databases.splice(0)) database.close(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-const fixture = (bucket?: R2Bucket, envOverrides: Partial<Env> = {}) => {
+const fixture = (bucket?: R2Bucket, envOverrides: Partial<Env> = {}, role: 'admin' | 'guest' = 'admin') => {
   const sqlite = new DatabaseSync(':memory:'); databases.push(sqlite); sqlite.exec(INIT_SQL);
   let pendingBatch = Promise.resolve<unknown>(undefined);
   const db = { prepare(query: string) {
@@ -42,7 +42,7 @@ const fixture = (bucket?: R2Bucket, envOverrides: Partial<Env> = {}) => {
   } };
   const invoke = async (path = '/api/chains', method = 'GET', body?: unknown, userId = 'test-owner') => {
     const request = new Request(`http://localhost${path}`, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const context: RouteContext = { request, path: new URL(request.url).pathname, method, url: new URL(request.url), db, currentUser: { id: userId, username: 'test', role: 'admin' }, env: { BUCKET: bucket, ASSETS: assets, ...envOverrides }, initDB };
+    const context: RouteContext = { request, path: new URL(request.url).pathname, method, url: new URL(request.url), db, currentUser: { id: userId, username: 'test', role }, env: { BUCKET: bucket, ASSETS: assets, ...envOverrides }, initDB };
     const response = path.startsWith('/api/agent/') ? await handleAgentRoute(context) : await handleSettingsRoute(context);
     return response!;
   };
@@ -83,6 +83,71 @@ describe('风格串标签读写链路（隔离 SQLite）', () => {
     for (const creationId of ['', '../bad', null, 12]) expect((await f.invoke('/api/chains', 'POST', { ...payload, creationId })).status).toBe(400);
     const copied = await (await f.invoke('/api/chains', 'POST', { id: first.id, name: '普通复制' })).json() as any;
     expect(copied.id).not.toBe(first.id); expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM chains').get()?.n).toBe(3);
+  });
+  it('跨分区复制保留原记录，副本使用新 ID；同次重试复用副本，新操作可再次复制', async () => {
+    const f = fixture(), source = { id: 'a'.repeat(64), name: '源包' }, target = { id: 'b'.repeat(64), name: '目标包' };
+    const create = async (name: string, partition: typeof source) => (await (await f.invoke('/api/chains', 'POST', { name, basePrompt: '1.3::artist:test::', negativePrompt: 'hat', tags: ['原标签'], params: { seed: 123, width: 832, _styleBundleImport: partition, _styleBundleSources: [{ author: '原作者', sourceUrl: '', note: '原声明' }] } })).json() as any).id;
+    const first = await create('待复制', source); await create('目标分区配方', target);
+    const before = f.sqlite.prepare('SELECT * FROM chains WHERE id = ?').get(first) as any;
+    const historyBefore = f.sqlite.prepare('SELECT COUNT(*) AS n FROM local_generation_history').get()!.n;
+    const request = { ids: [first, first], target: target.id, operation: 'copy-operation-1' };
+    const result = await (await f.invoke('/api/chains/copy-partition', 'POST', request)).json() as any;
+    expect(result.sourceIds).toEqual([first]); expect(result.copiedIds).toHaveLength(1); expect(result.copiedIds[0]).not.toBe(first);
+    const copied = f.sqlite.prepare('SELECT * FROM chains WHERE id = ?').get(result.copiedIds[0]) as any;
+    const params = JSON.parse(copied.params); expect(params._chainPartition.id).toBe(target.id); delete params._chainPartition;
+    expect(params).toEqual(JSON.parse(before.params));
+    for (const field of ['name', 'description', 'tags', 'base_prompt', 'negative_prompt', 'modules', 'variable_values', 'preview_image', 'guest_hidden']) expect(copied[field]).toEqual(before[field]);
+    expect(f.sqlite.prepare('SELECT * FROM chains WHERE id = ?').get(first)).toEqual(before);
+    // 副本人工编辑后，回执丢失重试不能覆盖它或创建第二份。
+    await f.invoke(`/api/chains/${copied.id}`, 'PUT', { name: '副本独立改名', params: { seed: 99 } });
+    const replay = await (await f.invoke('/api/chains/copy-partition', 'POST', request)).json() as any;
+    expect(replay.copiedIds).toEqual(result.copiedIds); expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM chains').get()!.n).toBe(3);
+    expect(f.sqlite.prepare('SELECT name FROM chains WHERE id = ?').get(copied.id)!.name).toBe('副本独立改名');
+    expect(f.sqlite.prepare('SELECT * FROM chains WHERE id = ?').get(first)).toEqual(before);
+    const next = await (await f.invoke('/api/chains/copy-partition', 'POST', { ...request, operation: 'copy-operation-2' })).json() as any;
+    expect(next.copiedIds[0]).not.toBe(copied.id); expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM chains').get()!.n).toBe(4);
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM local_generation_history').get()!.n).toBe(historyBefore);
+    expect(await f.invoke('/api/chains/transfer-partition', 'POST', { ids: [first], target: 'own' })).toBeNull();
+  });
+
+  it('复制拒绝无效目标、角色、他人记录与无操作 ID 的请求，原件保持不变', async () => {
+    const f = fixture(), partition = { id: 'a'.repeat(64), name: '分享包' };
+    const create = async (type = 'style') => (await (await f.invoke('/api/chains', 'POST', { name: '合成', type, params: { _styleBundleImport: partition } })).json() as any).id;
+    const own = await create(), other = await create(), role = await create('character');
+    f.sqlite.prepare('UPDATE chains SET user_id = ? WHERE id = ?').run('other-user', other);
+    for (const [ids, target, status] of [[[own], 'f'.repeat(64), 409], [[own, other], 'own', 404], [[own, role], 'own', 404], [[], 'own', 400]] as const) {
+      expect((await f.invoke('/api/chains/copy-partition', 'POST', { ids, target, operation: 'copy-operation-1' })).status).toBe(status);
+      expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM chains').get()!.n).toBe(3);
+    }
+    expect((await f.invoke('/api/chains/copy-partition', 'POST', { ids: [own], target: 'own' })).status).toBe(400);
+    expect(f.initDB).not.toHaveBeenCalled();
+    const guest = fixture(undefined, {}, 'guest');
+    expect((await guest.invoke('/api/chains/copy-partition', 'POST', { ids: [own], target: 'own', operation: 'copy-operation-1' })).status).toBe(403);
+  });
+
+  it('81 条跨分块复制共用事务，后段失败完整回滚，成功后原件和副本同时存在', async () => {
+    const f = fixture(), ids = Array.from({ length: 81 }, (_, i) => `bulk-${i}`), params = JSON.stringify({ seed: 8, _styleBundleImport: { id: 'a'.repeat(64), name: '源包' } });
+    const insert = f.sqlite.prepare('INSERT INTO chains (id, user_id, name, type, params) VALUES (?, ?, ?, ?, ?)');
+    ids.forEach(id => insert.run(id, 'test-owner', id, 'style', params));
+    f.sqlite.exec("CREATE TRIGGER reject_last BEFORE INSERT ON chains WHEN NEW.name = 'bulk-80' BEGIN SELECT RAISE(ABORT, 'synthetic final chunk failure'); END");
+    const request = { ids, target: 'own', operation: 'copy-batch-operation' };
+    await expect(f.invoke('/api/chains/copy-partition', 'POST', request)).rejects.toThrow('synthetic final chunk failure');
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM chains').get()!.n).toBe(81);
+    f.sqlite.exec('DROP TRIGGER reject_last');
+    const response = await f.invoke('/api/chains/copy-partition', 'POST', request);
+    expect(response.status).toBe(200); const result = await response.json() as any; expect(result.sourceIds).toEqual(ids); expect(result.copiedIds).toHaveLength(81);
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM chains').get()!.n).toBe(162);
+    expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM chains WHERE json_extract(params, '$._chainPartition.id') = 'own'").get()!.n).toBe(81);
+    expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM chains WHERE id LIKE 'bulk-%'").get()!.n).toBe(81);
+  });
+  it('导入分区随真实创建和回读保留，替换参数与普通编辑不改变包归属', async () => {
+    const f = fixture(), partition = { id: 'a'.repeat(64), name: '合成分享包' };
+    const created = await (await f.invoke('/api/chains', 'POST', { name: '包内配方', params: { seed: 42, _styleBundleImport: partition } })).json() as any;
+    await f.invoke(`/api/chains/${created.id}`, 'PUT', { params: { seed: 17, _styleBundleImport: { id: 'b'.repeat(64), name: '另一区' } } });
+    await f.invoke(`/api/chains/${created.id}`, 'PUT', { name: '修改名称' });
+    const stored = await (await f.invoke(`/api/chains/${created.id}`)).json() as any;
+    expect(stored).toMatchObject({ name: '修改名称', params: { seed: 17, _styleBundleImport: partition } });
+    expect(f.initDB).not.toHaveBeenCalled();
   });
   it('分享来源随创建与读取保留，替换生成参数或普通编辑不会抹掉原出处', async () => {
     const f = fixture();
