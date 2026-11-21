@@ -5,12 +5,21 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { TaggerRemoteAccessSettings } from '../../components/TaggerRemoteAccessSettings';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-it('读取服务器偏好，显式保存开关与列表，关闭不清空列表', async () => {
+
+const openPanel = () => {
+  const button = screen.queryByRole('button', { name: '展开配置' });
+  if (button) fireEvent.click(button);
+};
+
+it('未开启时默认收起；展开后读取服务器偏好，显式保存开关与列表，关闭不清空列表', async () => {
   const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ enabled: false, origins: ['https://example.com'] })))
     .mockResolvedValueOnce(new Response(JSON.stringify({ enabled: true, origins: ['https://example.com'] })))
     .mockResolvedValueOnce(new Response(JSON.stringify({ enabled: false, origins: ['https://example.com'] })));
   vi.stubGlobal('fetch', fetcher);
   render(<TaggerRemoteAccessSettings />);
+  await waitFor(() => expect(screen.getByText('未开启')).toBeTruthy());
+  expect(screen.queryByRole('textbox')).toBeNull();
+  openPanel();
   await waitFor(() => expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('https://example.com'));
   const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
   expect(checkbox.checked).toBe(false);
@@ -24,10 +33,12 @@ it('读取服务器偏好，显式保存开关与列表，关闭不清空列表'
   await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
   expect(JSON.parse(fetcher.mock.calls[2][1].body)).toEqual({ enabled: false, origins: ['https://example.com'] });
 });
+
 it('保存失败显示错误并保留未保存输入', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ enabled: false, origins: [] })))
     .mockResolvedValueOnce(new Response(JSON.stringify({ error: '来源尚未允许' }), { status: 403 })));
   render(<TaggerRemoteAccessSettings />);
+  openPanel();
   const input = screen.getByRole('textbox') as HTMLTextAreaElement;
   await waitFor(() => expect(input.disabled).toBe(false));
   fireEvent.change(input, { target: { value: 'https://example.com' } });
@@ -35,13 +46,15 @@ it('保存失败显示错误并保留未保存输入', async () => {
   expect((await screen.findByRole('alert')).textContent).toBe('来源尚未允许');
   expect(input.value).toBe('https://example.com');
 });
-it('首次加载显示 InlineSpinner；失败禁写，重读成功才恢复编辑', async () => {
+
+it('首次加载显示 InlineSpinner；失败自动展开并禁写，重读成功才恢复编辑', async () => {
   let rejectFirst!: (error: Error) => void;
   const first = new Promise<Response>((_, reject) => { rejectFirst = reject; });
   const fetcher = vi.fn().mockReturnValueOnce(first)
     .mockResolvedValueOnce(new Response(JSON.stringify({ enabled: true, origins: ['https://example.com'] })));
   vi.stubGlobal('fetch', fetcher);
   render(<TaggerRemoteAccessSettings />);
+  openPanel();
   const input = screen.getByRole('textbox') as HTMLTextAreaElement;
   const save = screen.getByRole('button', { name: '保存来源配置' }) as HTMLButtonElement;
   expect(screen.getByRole('status').textContent).toContain('正在读取配置');
@@ -60,6 +73,7 @@ it('首次加载显示 InlineSpinner；失败禁写，重读成功才恢复编�
   expect(screen.queryByRole('alert')).toBeNull();
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
+
 it('保存遇到读取错误及重读失败时保留草稿，成功重读后才重新启用', async () => {
   const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ enabled: false, origins: [] })))
     .mockResolvedValueOnce(new Response(JSON.stringify({ error: '无法读取来源配置', code: 'TAGGER_REMOTE_ACCESS_READ_FAILED' }), { status: 503 }))
@@ -67,6 +81,7 @@ it('保存遇到读取错误及重读失败时保留草稿，成功重读后才�
     .mockResolvedValueOnce(new Response(JSON.stringify({ enabled: false, origins: ['https://saved.example.com'] })));
   vi.stubGlobal('fetch', fetcher);
   render(<TaggerRemoteAccessSettings />);
+  openPanel();
   const input = screen.getByRole('textbox') as HTMLTextAreaElement;
   const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
   const save = screen.getByRole('button', { name: '保存来源配置' }) as HTMLButtonElement;
@@ -89,7 +104,8 @@ it('保存遇到读取错误及重读失败时保留草稿，成功重读后才�
   expect(save.disabled).toBe(false);
   expect(screen.queryByRole('alert')).toBeNull();
 });
-it('读取返回无效载荷时禁止覆盖，仍可展开首次配置帮助并重新读取', async () => {
+
+it('读取返回无效载荷时自动展开并禁止覆盖，仍可展开首次配置帮助并重新读取', async () => {
   const fetcher = vi.fn().mockResolvedValueOnce(new Response('{}'))
     .mockResolvedValueOnce(new Response(JSON.stringify({ enabled: false, origins: [] })));
   vi.stubGlobal('fetch', fetcher);
