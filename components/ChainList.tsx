@@ -14,7 +14,7 @@ import type { ChainSimilaritySession } from './chain/ChainSimilarityDialog';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, EyeOff, FileOutput, FlaskConical, FolderDown, Heart, Image, Link2, ListChecks, Package, Pencil, Plus, ScanSearch, Sparkles, Tags, Trash2, User, X } from 'lucide-react';
+import { CopyPlus, Check, EyeOff, FileOutput, FlaskConical, FolderDown, Heart, Image, Link2, ListChecks, Package, Pencil, Plus, ScanSearch, Sparkles, Tags, Trash2, User, X } from 'lucide-react';
 import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
 import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { GalleryModelBadge } from './GalleryModelBadge';
@@ -36,6 +36,7 @@ import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
 import { ChainTagManager } from './chain/ChainTagManager';
 import { getCustomChainTags } from '../services/chainTags';
 import { chainReferenceSummary } from '../services/chainReferenceBadges';
+import { compilePrompt } from '../services/promptUtils';
 import { useConfirmDialog } from './ConfirmDialog';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
@@ -43,10 +44,12 @@ import { useChainFolders } from '../services/useChainFolders';
 import { folderContains, getChainFolderIds, updateChainFolderMemberships } from '../services/chainFolders';
 import { CHAIN_FOLDER_DRAG_TYPE, ChainFolderMembershipDialog, ChainFolderNavigation } from './chain/ChainFolders';
 import { Dice5, Folder, FolderInput } from 'lucide-react';
+import { CHAIN_PARTITION_STORAGE_KEY, getBundlePartitions, getChainPartition, hasLegacyChainPartition, LEGACY_BUNDLE_PARTITION, OWN_CHAIN_PARTITION } from '../services/chainPartitions';
 import { DIRECTORY_FAVORITES_ID } from './DirectoryTreeNavigation';
 
 const ChainSimilarityDialog = React.lazy(() => import('./chain/ChainSimilarityDialog').then(module => ({ default: module.ChainSimilarityDialog })));
 const StyleBundleDialog = React.lazy(() => import('./chain/StyleBundleDialog').then(module => ({ default: module.StyleBundleDialog })));
+const ChainPartitionCopyDialog = React.lazy(() => import('./chain/ChainPartitionCopyDialog').then(module => ({ default: module.ChainPartitionCopyDialog })));
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -59,9 +62,8 @@ interface ChainListProps {
   onBundleImported?: () => Promise<void>;
   onReloadTags?: () => Promise<void>;
   onUpdateChain: UpdateChainInfo;
-  /** 整串送入实验室：复用历史／灵感页的 sessionStorage 导入通道后跳转。 */
+  /** 将原有配方结构交给实验室，在独立试画分区打开。 */
   onNavigateToPlayground?: () => void;
-  /** Roll 串并入风格串页：顶栏骰子只做入口，不占底栏与资源库面板。 */
   onOpenRoll?: () => void;
   isLoading: boolean;
   loadError?: string;
@@ -95,6 +97,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [similarityOpen, setSimilarityOpen] = useState(false);
   const [bundleScope, setBundleScope] = useState<'all' | 'filtered' | 'selected' | null>(null);
+  const [copyIds, setCopyIds] = useState<string[] | null>(null);
+  const [partition, setPartition] = useState(() => {
+    try { return localStorage.getItem(CHAIN_PARTITION_STORAGE_KEY) || OWN_CHAIN_PARTITION; } catch { return OWN_CHAIN_PARTITION; }
+  });
   const similaritySession = useRef<ChainSimilaritySession | null>(null);
   const folderStore = useChainFolders(type === 'style' && !isGuest);
   const [selectedFolder, setSelectedFolder] = useState(() => { try { return localStorage.getItem('nai-style-folder-selection') ?? '*'; } catch { return '*'; } });
@@ -179,6 +185,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     setTagManagerOpen(false);
     setSimilarityOpen(false);
     setBundleScope(null);
+    setCopyIds(null);
     similaritySession.current = null;
   }, [type, isGuest]);
 
@@ -267,8 +274,29 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
   // 从当前资料类型的完整列表生成选项，编辑／导入后即时更新，不被其他筛选缩掉。
   const typeChains = useMemo(() => chains.filter(chain => chain.type === type || (!chain.type && type === 'style')), [chains, type]);
-  const customTagOptions = useMemo(() => [...new Set(typeChains
-    .flatMap(chain => getCustomChainTags(chain.tags)))].sort((a, b) => a.localeCompare(b, 'zh-CN')), [typeChains]);
+  const bundlePartitions = useMemo(() => getBundlePartitions(typeChains), [typeChains]);
+  const hasLegacyImports = hasLegacyChainPartition(typeChains);
+  const activePartition = partition === OWN_CHAIN_PARTITION || partition === LEGACY_BUNDLE_PARTITION && hasLegacyImports || bundlePartitions.some(item => item.id === partition) ? partition : OWN_CHAIN_PARTITION;
+  const partitionChains = useMemo(() => type === 'style' ? typeChains.filter(chain => getChainPartition(chain) === activePartition) : typeChains, [typeChains, type, activePartition]);
+  const copyDestinations = [
+    { id: OWN_CHAIN_PARTITION, name: t('我的风格串') },
+    ...(hasLegacyImports ? [{ id: LEGACY_BUNDLE_PARTITION, name: t('旧分享包导入') }] : []),
+    ...bundlePartitions.map(item => ({ ...item, name: item.name === '分享包导入' ? t(item.name) : item.name })),
+  ].filter(item => item.id !== activePartition);
+  const changePartition = useCallback((id: string) => {
+    setPartition(id); setSelectedIds(new Set()); similaritySession.current = null;
+    try { localStorage.setItem(CHAIN_PARTITION_STORAGE_KEY, id); } catch { /* 本端存储不可用不阻断切换。 */ }
+  }, []);
+  // 从编辑器返回或新建后定位真实条目所属分区，不能被旧的下拉选择隐藏。
+  const partitionReturnTarget = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (type !== 'style' || !returnTargetId) { partitionReturnTarget.current = undefined; return; }
+    if (partitionReturnTarget.current === returnTargetId) return;
+    const target = typeChains.find(chain => chain.id === returnTargetId);
+    if (target) { partitionReturnTarget.current = returnTargetId; changePartition(getChainPartition(target)); }
+  }, [returnTargetId, type, typeChains, changePartition]);
+  const customTagOptions = useMemo(() => [...new Set(partitionChains
+    .flatMap(chain => getCustomChainTags(chain.tags)))].sort((a, b) => a.localeCompare(b, 'zh-CN')), [partitionChains]);
   useEffect(() => {
     // 管理回读后先映射已选标签，避免重命名期间被旧的筛选清理逻辑摘除。
     if (tagManagerOpen) return;
@@ -295,7 +323,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
   // 自定义标签可组合筛选；待实测独立于用户分类。
   const filteredChains = useMemo(() => {
-    return chains
+    return partitionChains
       .filter(c =>
         (c.type === type || (!c.type && type === 'style')) && // Backward compat: default to style if no type
         (c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -331,7 +359,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             return ub - ua;
         }
       });
-  }, [chains, type, searchTerm, favoritesOnly, untestedOnly, vibesOnly, characterRefsOnly, favorites, selectedModel, selectedTags, sortOption, selecting, syncSelection.open, syncSelection.view, syncSelection.recordFilter, syncSelection.entries, activeFolder, matchingFolderIds, folderStore.state, isGuest]);
+  }, [partitionChains, type, searchTerm, favoritesOnly, untestedOnly, vibesOnly, characterRefsOnly, favorites, selectedModel, selectedTags, sortOption, selecting, syncSelection.open, syncSelection.view, syncSelection.recordFilter, syncSelection.entries, activeFolder, matchingFolderIds, folderStore.state, isGuest]);
 
   // 批量删除只针对当前筛选；隐藏项与已消失项不保留选择。
   const selectedChains = filteredChains.filter(chain => selectedIds.has(chain.id));
@@ -377,7 +405,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     }
   };
 
-  const resultKey = JSON.stringify([type, searchTerm, favOnly, untestedOnly, selectedModel, [...selectedTags].sort(), sortOption, syncSelection.view, syncSelection.recordFilter, syncSelection.open, type === 'style' ? activeFolder : '*']);
+  const resultKey = JSON.stringify([type, activePartition, searchTerm, favOnly, untestedOnly, selectedModel, [...selectedTags].sort(), sortOption, syncSelection.view, syncSelection.recordFilter, syncSelection.open, type === 'style' ? activeFolder : '*']);
   useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [resultKey]);
   const expandedReturnTarget = useRef<string | undefined>(undefined);
   const returnResultKey = useRef(resultKey);
@@ -448,8 +476,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>}
           {/* 图片取用与编辑共同换列；无封面时仍保留编辑。 */}
           {!selecting && !syncSelection.open && (chain.previewImage || !isGuest) && <ImageCardActions>
-            {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} favorite={{ imageUrl: chain.previewImage, title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }} />}
+            {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} favorite={{ imageUrl: chain.previewImage, title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: compilePrompt(chain, chain.variableValues?.subject || ''), negativePrompt: chain.negativePrompt, params: chain.params }} />}
             {!isGuest && type === 'style' && <button type="button" onClick={event => { event.stopPropagation(); sendToPlayground(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("发送到实验室")} aria-label={t("发送到实验室：{0}", [chain.name])}><FlaskConical className="h-4 w-4" /></button>}
+            {!isGuest && type === 'style' && <button type="button" disabled={!copyDestinations.length} onClick={event => { event.stopPropagation(); setCopyIds([chain.id]); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition disabled:opacity-40`} title={t('复制到分区')} aria-label={t('复制到分区：{0}', [chain.name])}><CopyPlus className="h-4 w-4" /></button>}
             {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("编辑信息")} aria-label={t("编辑{0}信息：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}><Pencil className="h-4 w-4" /></button>}
           </ImageCardActions>}
           {chain.previewImage ? (
@@ -536,8 +565,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const filtersActive = filterCount > 0 || sortOption !== 'updated_desc';
   const countCaptionFiltered = filterCount > 0 || !!searchTerm || syncSelection.open && syncSelection.view !== 'pick';
   const countCaptionTotal = syncSelection.open && syncSelection.view !== 'pick'
-    ? typeChains.filter(chain => syncSelection.accepts(chain.id)).length
-    : typeChains.length;
+    ? partitionChains.filter(chain => syncSelection.accepts(chain.id)).length
+    : partitionChains.length;
   const resetFilters = () => {
     setSelectedModel(''); setFavOnly(false); setUntestedOnly(false); setVibesOnly(false); setCharacterRefsOnly(false); setSortOption('updated_desc'); setSelectedTags(new Set()); setTagSearch('');
     // 重置浏览条件时把文件夹也带回「全部」，避免清完筛选仍被目录限制、看到空列表找不到原因。
@@ -584,6 +613,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               <ToolbarButton aria-label={t('全选筛选结果')} title={t('全选筛选结果')} disabled={bulkDeleteBusy} onClick={() => setSelectedIds(new Set(filteredChains.map(chain => chain.id)))} className="mobile-touch !px-2.5 max-md:hidden">{t('全选筛选结果')}</ToolbarButton>
               <ToolbarButton aria-label={t('反选筛选结果')} title={t('反选筛选结果')} disabled={bulkDeleteBusy} onClick={() => setSelectedIds(previous => new Set(filteredChains.filter(chain => !previous.has(chain.id)).map(chain => chain.id)))} className="mobile-touch !px-2.5 max-md:hidden">{t('反选筛选结果')}</ToolbarButton>
               <ToolbarButton aria-label={t('清空选择')} title={t('清空选择')} disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setSelectedIds(new Set())} className="mobile-touch !px-2.5 max-md:hidden">{t('清空选择')}</ToolbarButton>
+              <ToolbarButton disabled={bulkDeleteBusy || !selectedChains.length || !copyDestinations.length} onClick={() => setCopyIds(selectedChains.map(chain => chain.id))} className="mobile-touch !px-2.5"><CopyPlus /><span>{t('复制到分区')}</span></ToolbarButton>
               <ToolbarButton aria-label={t('导出已选')} title={t('导出已选')} disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setBundleScope('selected')} className="mobile-touch !px-2.5"><FileOutput /><span className="toolbar-responsive-label hidden md:inline">{t('导出已选')}</span></ToolbarButton>
               <ToolbarButton aria-label={t('设置文件夹')} title={t('设置文件夹')} disabled={bulkDeleteBusy || folderStore.busy || !folderStore.ready || Boolean(folderStore.error) || !selectedChains.length} onClick={() => setMoveIds(selectedChains.map(chain => chain.id))} className="mobile-touch !px-2.5"><FolderInput /><span className="toolbar-responsive-label hidden md:inline">{t('设置文件夹')}</span></ToolbarButton>
               <ToolbarButton tone="danger" aria-label={t('删除')} title={t('删除')} disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => void deleteSelected()} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span className="toolbar-responsive-label hidden md:inline">{t('删除')}</span></ToolbarButton>
@@ -596,6 +626,14 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="toolbar-responsive-label hidden md:inline">{t('退出多选')}</span></ToolbarButton>
           </> : <>
           {!isGuest && type === 'style' && <ToolbarButton data-agent-action="browse" aria-label={t(foldersExpanded ? '收起文件夹' : '展开文件夹')} title={[t(foldersExpanded ? '收起文件夹' : '展开文件夹'), activeFolderLabel].join(' · ')} aria-expanded={foldersExpanded} active={foldersExpanded || activeFolder !== '*'} disabled={folderStore.busy} onClick={toggleFolders} className="!px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{activeFolderLabel}</span></ToolbarButton>}
+          {type === 'style' && <label className="flex h-11 max-w-[45%] flex-none items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-2 dark:border-gray-700 dark:bg-gray-950 md:max-w-64 md:px-3">
+            <span className="hidden text-xs font-semibold text-gray-500 lg:inline">{t('分区')}</span>
+            <select aria-label={t('风格串分区')} value={activePartition} onChange={event => changePartition(event.target.value)} className="h-full min-w-0 max-w-32 bg-transparent text-sm font-semibold outline-none md:max-w-52">
+              <option value={OWN_CHAIN_PARTITION}>{t('我的风格串')}</option>
+              {hasLegacyImports && <option value={LEGACY_BUNDLE_PARTITION}>{t('旧分享包导入')}</option>}
+              {bundlePartitions.map(item => <option key={item.id} value={item.id}>{item.name === '分享包导入' ? t(item.name) : item.name}</option>)}
+            </select>
+          </label>}
           <div ref={filterHostRef} className="flex-none">
             <ToolbarPopover title={t("筛选与排序")} count={filterCount} active={filtersActive} open={showFilters} onOpenChange={setShowFilters}>
               {(close, mobile) => renderFilterContent(close, mobile)}
@@ -627,7 +665,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
         </WorkspaceChrome>
         <div data-workspace-body className="flex min-h-0 flex-1 flex-col md:flex-row">
-        {type === 'style' && !isGuest && <ChainFolderNavigation expanded={foldersExpanded} store={folderStore} selected={activeFolder} onSelect={selectFolder} chainIds={chains.filter(chain => chain.type === 'style' || !chain.type).map(chain => chain.id)} countsPending={Boolean((isLoading || loadError) && !chains.length)} favoriteCount={favoritesReady && !((isLoading || loadError) && !chains.length) ? new Set(chains.filter(chain => (chain.type === 'style' || !chain.type) && favorites.has(chain.id)).map(chain => chain.id)).size : '—'} onMove={(ids, folder) => setFolderMemberships(ids, { [folder]: true })} notify={notify} disabled={bulkDeleteBusy || syncSelection.busy} onRequestClose={() => setFoldersOpen(false)} />}
+        {type === 'style' && !isGuest && <ChainFolderNavigation expanded={foldersExpanded} store={folderStore} selected={activeFolder} onSelect={selectFolder} chainIds={partitionChains.map(chain => chain.id)} countsPending={Boolean((isLoading || loadError) && !chains.length)} favoriteCount={favoritesReady && !((isLoading || loadError) && !chains.length) ? new Set(partitionChains.filter(chain => favorites.has(chain.id)).map(chain => chain.id)).size : '—'} onMove={(ids, folder) => setFolderMemberships(ids, { [folder]: true })} notify={notify} disabled={bulkDeleteBusy || syncSelection.busy} onRequestClose={() => setFoldersOpen(false)} />}
         <div ref={chainScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-5">
             {filteredChains.length > 0 && !isLoading && loadError && <div role="alert" className="mb-3 flex items-center justify-center gap-2 text-center text-sm text-gray-500">{t(loadError)}<button type="button" onClick={onRefresh} className="mobile-touch underline">{t('重试')}</button></div>}
           {filteredChains.length === 0 && (isLoading || loadError) ? (isLoading ? <PageSpinner /> : <WorkspacePageState role="alert" className="py-20 text-center text-sm text-gray-500">{t(loadError || '')}{loadError && <button type="button" onClick={onRefresh} className="mobile-touch ml-2 underline">{t('重试')}</button>}</WorkspacePageState>) : activeFolder === DIRECTORY_FAVORITES_ID && !favoritesReady ? (favoritesError ? <WorkspacePageState role="alert" className="py-20 text-center text-sm text-gray-500">{favoritesError}<button type="button" className="mobile-touch ml-2 underline" onClick={() => setFavoritesRetry(value => value + 1)}>{t('重新加载')}</button></WorkspacePageState> : <PageSpinner />) : filteredChains.length === 0 ? emptyFiltersActive ? (
@@ -665,8 +703,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       </div>
 
       {/* Simple Create Modal */}
-      {bundleScope && type === 'style' && !isGuest && <React.Suspense fallback={null}><StyleBundleDialog chains={typeChains} filteredChains={filteredChains} selectedChains={selectedChains} initialScope={bundleScope} onViewFolder={id => { selectFolder(id); setBundleScope(null); }} onClose={() => setBundleScope(null)} onImported={onBundleImported || onRefresh} notify={notify} /></React.Suspense>}
-      {similarityOpen && <React.Suspense fallback={null}><ChainSimilarityDialog chains={typeChains} filteredChains={filteredChains} onClose={() => setSimilarityOpen(false)} onOpenChain={onSelect} onDelete={handleDelete} sessionRef={similaritySession} /></React.Suspense>}
+      {bundleScope && type === 'style' && !isGuest && <React.Suspense fallback={null}><StyleBundleDialog chains={partitionChains} filteredChains={filteredChains} selectedChains={selectedChains} initialScope={bundleScope} onViewFolder={id => { selectFolder(id); setBundleScope(null); }} onClose={() => setBundleScope(null)} onImported={async id => { await (onBundleImported || onRefresh)(); if (id) { resetFilters(); setSearchTerm(''); changePartition(id); selectFolder('*'); } }} notify={notify} /></React.Suspense>}
+      {similarityOpen && <React.Suspense fallback={null}><ChainSimilarityDialog chains={partitionChains} filteredChains={filteredChains} onClose={() => setSimilarityOpen(false)} onOpenChain={onSelect} onDelete={handleDelete} sessionRef={similaritySession} /></React.Suspense>}
       {isModalOpen && (
         <ImagePreviewPortal><div role="dialog" aria-modal="true" aria-label={t(createLabel)} className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="appearance-panel bg-white dark:bg-gray-800 rounded-xl p-6 md:p-8 w-full max-w-md border border-gray-200 dark:border-gray-700 shadow-2xl">
@@ -701,9 +739,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         </div>
       </ImagePreviewPortal>)}
 
+      {copyIds && type === 'style' && !isGuest && <React.Suspense fallback={null}><ChainPartitionCopyDialog ids={copyIds} destinations={copyDestinations} onReload={async () => { await (onBundleImported || onRefresh)(); }} onDone={() => setSelectedIds(new Set())} onClose={() => setCopyIds(null)} notify={notify} /></React.Suspense>}
       {infoChain && <ChainInfoModal key={infoChain.id} chain={infoChain} onSave={onUpdateChain} onClose={() => setInfoChain(null)} notify={notify} />}
       {moveIds && type === 'style' && <ChainFolderMembershipDialog store={folderStore} ids={moveIds} onSave={setFolderMemberships} onClose={() => setMoveIds(null)} />}
-      {tagManagerOpen && !isGuest && <ChainTagManager key={type} chains={typeChains} isLoading={isLoading} loadError={loadError} onRefresh={onReloadTags || onRefresh} onClose={() => setTagManagerOpen(false)} notify={notify} onTagChanged={(from, to) => setSelectedTags(current => new Set([...current].flatMap(tag => tag === from ? to ? [to] : [] : [tag])))} />}
+      {tagManagerOpen && !isGuest && <ChainTagManager key={type} chains={partitionChains} isLoading={isLoading} loadError={loadError} onRefresh={onReloadTags || onRefresh} onClose={() => setTagManagerOpen(false)} notify={notify} onTagChanged={(from, to) => setSelectedTags(current => new Set([...current].flatMap(tag => tag === from ? to ? [to] : [] : [tag])))} />}
       {/* Folder Batch Import Modal */}
       <FolderBatchImportModal
         isOpen={isFolderImportOpen}

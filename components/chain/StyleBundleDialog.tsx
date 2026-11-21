@@ -27,7 +27,7 @@ interface Props {
   selectedChains: PromptChain[];
   initialScope: Scope;
   onClose: () => void;
-  onImported: () => void | Promise<void>;
+  onImported: (partitionId?: string) => void | Promise<void>;
   onViewFolder?: (folderId: string) => void;
   notify: (message: string, type?: 'success' | 'error') => void;
 }
@@ -204,7 +204,7 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
       if (result.createdIds.length) {
         notify(t('已导入 {0} 条风格串', [result.createdIds.length]), 'success');
         await fileImported(result.createdIds, targets);
-        try { await onImported(); }
+        try { await onImported(preview.partition?.id); }
         catch (failure) { notify(t('风格串已保存，列表刷新失败：{0}', [errorText(failure)]), 'error'); }
       }
       if (result.failed.length) setError(previous => [previous, t('{0} 条导入失败，可重试', [result.failed.length])].filter(Boolean).join('；'));

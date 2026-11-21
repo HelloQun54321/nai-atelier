@@ -134,8 +134,26 @@ describe('.naia 风格串分享包', () => {
     await expect(exportStyleBundle([chain()], { ...options, allChainIds: undefined } as unknown as Parameters<typeof exportStyleBundle>[1])).rejects.toThrow('打包范围');
   });
 
+  it('每次打开同一分享包都建立独立分区，分批重试沿用本次分区且分享不携带本机分区', async () => {
+    const blob = await exportStyleBundle([chain()], options);
+    const first = await readStyleBundle(new File([blob], '水彩合集.naia'));
+    const renamed = await readStyleBundle(new File([blob], '复制文件.naia'));
+    expect(first.partition).toMatchObject({ name: '水彩合集' });
+    expect(renamed.partition?.id).not.toBe(first.partition?.id);
+    await importStyleBundle(first, ['s0']);
+    const saved = createChain.mock.calls[0][0];
+    expect(saved.params._styleBundleImport).toEqual(first.partition);
+    const different = await readStyleBundle(new File([await exportStyleBundle([chain('other')], { ...options, note: '另一个包' })], '水彩合集.naia'));
+    expect(different.partition?.id).not.toBe(first.partition?.id);
+    const reexport = await readStyleBundle(await exportStyleBundle([{ ...chain(), params: saved.params }], options));
+    expect(reexport.partition?.id).not.toBe(first.partition?.id);
+    // 配方白名单丢弃原本机分区，即使上传包试图声明分区也由当前接收方重建。
+    const forged = await replaceManifest(blob, raw => { ((raw.entries as Array<{ params: Record<string, unknown> }>)[0].params)._styleBundleImport = { id: 'f'.repeat(64), name: '伪造本机分区' }; });
+    await importStyleBundle(await readStyleBundle(new File([forged], '接收文件.naia')), ['s0']);
+    expect(createChain.mock.calls.at(-1)![0].params._styleBundleImport.name).toBe('接收文件');
+  });
   it('完整往返正文、模块、参数、多角色和主体，保留来源且不携带账号与未知本机字段', async () => {
-    const original = chain(); Object.assign(original.params, { apiKey: 'secret', localPath: 'D:/private.png' });
+    const original = chain(); Object.assign(original.params, { apiKey: 'secret', localPath: 'D:/private.png', _chainPartition: { id: 'own', name: '本机转移归属' } });
     const file = await exportStyleBundle([original], options), preview = await readStyleBundle(file);
     expect(preview.entries[0].sources.map(item => item.author)).toEqual(['原作者', '分享者']);
     expect(preview.entries[0].cover).toBe(false);
@@ -145,6 +163,7 @@ describe('.naia 风格串分享包', () => {
     expect(data).toMatchObject({ basePrompt: original.basePrompt, negativePrompt: original.negativePrompt, modules: original.modules, variableValues: original.variableValues, params: { characters: original.params.characters, seed: 42, _promptSections: { scene: 'park', sectionMeta: { scene: { entryName: '场景名' } } } } });
     expect(JSON.stringify(data)).not.toMatch(/secret|private-owner|private-entry|private.png/);
     expect(data.id).toMatch(/^naia-[a-f0-9]{64}$/); expect(data.params).not.toHaveProperty('apiKey');
+    expect(data.params).not.toHaveProperty('_chainPartition');
     expect(original.params._promptSections?.sectionMeta?.scene.entryId).toBe('private-entry');
   });
 

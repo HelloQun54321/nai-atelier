@@ -14,6 +14,7 @@ export interface StyleBundleProgress { phase: 'export' | 'read' | 'import'; comp
 type Progress = (value: StyleBundleProgress) => void;
 export interface StyleBundlePreview {
   coverage: 'full' | 'partial' | 'unrecorded';
+  partition?: { id: string; name: string };
   entries: Array<{ id: string; name: string; description: string; cover: boolean; sources: StyleBundleSource[] }>;
   sources: StyleBundleSource[];
   warnings: string[];
@@ -23,7 +24,7 @@ interface Encoding { id: string; asset: string; sourceHash: string; name: string
 interface Entry extends Pick<PromptChain, 'name' | 'description' | 'tags' | 'basePrompt' | 'negativePrompt' | 'modules' | 'params' | 'variableValues'> { id: string; cover?: string }
 export interface StyleBundleEntryPreview extends Omit<Entry, 'cover'> { coverBlob?: Blob }
 interface Manifest { coverage?: 'full' | 'partial'; entries: Entry[]; assets: Asset[]; encodings: Encoding[] }
-interface Parsed { manifest: Manifest; entriesById: Map<string, Entry>; assetsById: Map<string, Asset>; file: Blob; offset: number; imported: Map<string, string>; covers: Map<string, string>; operationIds: Map<string, string>; references: Map<string, string>; vibes: Map<string, { vibeId: string; encodingId: string; informationExtracted: number; informationKnown: boolean }>; busy: boolean }
+interface Parsed { manifest: Manifest; entriesById: Map<string, Entry>; assetsById: Map<string, Asset>; file: Blob; offset: number; partition: { id: string; name: string }; imported: Map<string, string>; covers: Map<string, string>; operationIds: Map<string, string>; references: Map<string, string>; vibes: Map<string, { vibeId: string; encodingId: string; informationExtracted: number; informationKnown: boolean }>; busy: boolean }
 const parsedBundles = new WeakMap<StyleBundlePreview, Parsed>();
 const MAGIC = new Uint8Array([78, 65, 73, 65, 13, 10, 26, 10]);
 const HEADER = 48;
@@ -331,8 +332,10 @@ export async function readStyleBundle(file: Blob, onProgress?: Progress): Promis
     onProgress?.({ phase: 'read', completed: index + 1, total: assets.length });
   }
   const allSources = [...new Map(entries.flatMap(entry => entry.params._styleBundleSources || []).map(item => [JSON.stringify(item), item])).values()];
-  const preview: StyleBundlePreview = { coverage, entries: entries.map(entry => ({ id: entry.id, name: entry.name, description: entry.description, cover: Boolean(entry.cover), sources: entry.params._styleBundleSources || [] })), sources: allSources, warnings: ['来源是分享者填写的声明，未经签名验证。'] };
-  parsedBundles.set(preview, { manifest: { entries, assets, encodings }, entriesById: new Map(entries.map(entry => [entry.id, entry])), assetsById: assetMap, file, offset: HEADER + length, imported: new Map(), covers: new Map(), operationIds: new Map(entries.map(entry => [entry.id, `naia-${hex(sha256(new TextEncoder().encode(createUuid())))}`])), references: new Map(), vibes: new Map(), busy: false });
+  const filename = 'name' in file && typeof file.name === 'string' ? file.name.split(/[\\/]/).pop()!.replace(/\.naia$/i, '').trim() : '';
+  const partition = { id: hex(sha256(new TextEncoder().encode(createUuid()))), name: filename.slice(0, 200) || '分享包导入' };
+  const preview: StyleBundlePreview = { coverage, partition, entries: entries.map(entry => ({ id: entry.id, name: entry.name, description: entry.description, cover: Boolean(entry.cover), sources: entry.params._styleBundleSources || [] })), sources: allSources, warnings: ['来源是分享者填写的声明，未经签名验证。'] };
+  parsedBundles.set(preview, { manifest: { entries, assets, encodings }, entriesById: new Map(entries.map(entry => [entry.id, entry])), assetsById: assetMap, file, offset: HEADER + length, partition, imported: new Map(), covers: new Map(), operationIds: new Map(entries.map(entry => [entry.id, `naia-${hex(sha256(new TextEncoder().encode(createUuid())))}`])), references: new Map(), vibes: new Map(), busy: false });
   return preview;
 }
 
@@ -363,6 +366,7 @@ export async function importStyleBundle(preview: StyleBundlePreview, selectedIds
     try {
       if (!parsed.imported.has(entry.id)) {
         const params = structuredClone(entry.params);
+        params._styleBundleImport = { ...parsed.partition };
         for (const slot of params.characterReferences?.slots || []) {
           const id = slot.assetId;
           if (!parsed.references.has(id)) {

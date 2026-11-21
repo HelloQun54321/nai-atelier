@@ -6,6 +6,7 @@ import { readPromptPurposes } from '../../services/promptPurposes.mjs';
 import { LAN_ACCESS_COOKIE, CODEX_MEDIA_HOSTS } from '../sharedWhitelist.mjs';
 import { MEDIA_VARIANTS, validateMediaSource } from '../mediaValidation';
 import { normalizeChainTags } from '../../services/chainTags';
+import { copyChainPartition } from './chainPartitionRoutes';
 import { DEFAULT_IMAGE_TAGGER_MODEL, findImageTaggerModel } from '../../services/imageTaggerModels.mjs';
 import { buildAitagImageFetch, getAitagImageCacheKeys } from './aitagRoutes';
 import { deletePromptLibraryLinksByChain, queuePromptLibraryLinkBackfill, recomputePromptLibraryLinksForChain } from './promptLibraryLinkRoutes';
@@ -751,6 +752,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
   };
 
   // Chains
+  if (path === '/api/chains/copy-partition' && method === 'POST') return copyChainPartition(ctx);
   if (path === '/api/chains' && method === 'GET') {
     // 游客不返回 guest_hidden=1 的记录
     const isGuestUser = currentUser.role === 'guest';
@@ -905,7 +907,13 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     try {
       if (updates.params !== undefined) {
         updates.params = await preparePromptLibraryParams(updates.params, db, currentUser.id);
-        const sources = parseChainParams(chain.params)._styleBundleSources;
+        const savedParams = parseChainParams(chain.params);
+        // 分区只允许通过专用复制接口修改；旧编辑器提交的快照不覆盖当前归属。
+        delete updates.params._chainPartition;
+        if (savedParams._chainPartition) updates.params._chainPartition = savedParams._chainPartition;
+        const sources = savedParams._styleBundleSources;
+        // 收录分区与生成配置独立，替换参数不能让导入配方掉回个人分区。
+        if (savedParams._styleBundleImport) updates.params = { ...updates.params, _styleBundleImport: savedParams._styleBundleImport };
         // 替换生成配置也保留原分享声明，避免普通编辑无意抹掉出处。
         if (Array.isArray(sources) && sources.length) {
           const incoming = Array.isArray(updates.params?._styleBundleSources) ? updates.params._styleBundleSources : [];
@@ -940,7 +948,10 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     if (updates.basePrompt !== undefined) { fields.push('base_prompt = ?'); values.push(updates.basePrompt); }
     if (updates.negativePrompt !== undefined) { fields.push('negative_prompt = ?'); values.push(updates.negativePrompt); }
     if (updates.modules !== undefined) { fields.push('modules = ?'); values.push(JSON.stringify(updates.modules)); }
-    if (updates.params !== undefined) { fields.push('params = ?'); values.push(JSON.stringify(updates.params)); }
+    if (updates.params !== undefined) {
+      fields.push("params = CASE WHEN json_type(params, '$._chainPartition') = 'object' THEN json_set(?, '$._chainPartition', json_extract(params, '$._chainPartition')) ELSE ? END");
+      values.push(JSON.stringify(updates.params), JSON.stringify(updates.params));
+    }
     if (updates.variableValues !== undefined) { fields.push('variable_values = ?'); values.push(JSON.stringify(updates.variableValues)); }
     if (updates.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(normalizeChainTags(updates.tags))); }
     if (updates.guestHidden !== undefined) { fields.push('guest_hidden = ?'); values.push(updates.guestHidden ? 1 : 0); }
