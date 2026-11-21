@@ -1,4 +1,5 @@
 import { isAgentReadTool } from '../../scripts/agent-runtime.mjs';
+import { getGlobalDispatcher, ProxyAgent } from 'undici';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
@@ -1070,6 +1071,21 @@ test('空配置没有预设服务；旧连接统一编辑且保持 ID、Key 与�
   assert.equal(service.listCustomProviders().length, 1); assert.equal(service.listAvailableModels().filter(model => model.id === 'deepseek-v4-flash').length, 1);
   assert.equal((await service.readSession(session.id)).meta.provider, 'deepseek');
 }));
+
+test('自定义 API 获取模型时使用工坊配置的出站代理，结束后恢复原 dispatcher', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousDispatcher = getGlobalDispatcher();
+  const service = new PromptAgentService({ lanSecret: 'synthetic', outboundProxyUrl: 'http://127.0.0.1:39998' });
+  globalThis.fetch = async () => {
+    assert.ok(getGlobalDispatcher() instanceof ProxyAgent);
+    return Response.json({ data: [{ id: 'synthetic-model' }] });
+  };
+  try {
+    const result = await service.fetchCustomProviderModels({ ...customInput(), baseUrl: 'https://provider.example/v1' });
+    assert.equal(result.models[0].id, 'synthetic-model');
+    assert.equal(getGlobalDispatcher(), previousDispatcher);
+  } finally { globalThis.fetch = previousFetch; }
+});
 
 test('模型获取仅访问规范化列表端点，域名变化不复用旧密钥，迟到能力由前端忽略', () => isolated(async service => {
   const previous = globalThis.fetch, requests = [];
