@@ -289,6 +289,7 @@ export interface LabWorkspaceSession {
   version: 1;
   activeMode: GenerationMode;
   textToImage: {
+    artistString?: string;
     basePrompt: string;
     subjectPrompt: string;
     negativePrompt: string;

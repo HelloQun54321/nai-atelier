@@ -26,6 +26,7 @@ export const IMPORT_SESSION_KEY = 'nai_pending_import';
 /** 外部素材只投递用户选中的字段，不用默认参数冒充原图配置。 */
 export interface PromptFragmentImport {
     mode: 'prompt-fragments';
+    targetChainId?: string;
     artistSampleTarget?: import('./artistSampleDrafts').ArtistSampleTarget;
     /** 外部入口可明确投递文生图，未指定时沿用当前模式。 */
     targetMode?: 'text-to-image';
@@ -66,6 +67,7 @@ export type ImportMode = 'replace' | 'prompt-only' | 'negative-only' | 'params-o
 
 export interface PendingImportData extends ParsedNAIData {
     mode?: ImportMode;
+    targetChainId?: string;
     /** 历史／收藏等入口可明确切到文生图。 */
     targetMode?: 'text-to-image';
     basePrompt?: string;

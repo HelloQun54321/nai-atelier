@@ -4,7 +4,6 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 import { ChainList } from '../../components/ChainList';
-import { IMPORT_SESSION_KEY } from '../../services/metadataService';
 
 const { confirmAction, syncSelection } = vi.hoisted(() => ({
   confirmAction: vi.fn(async () => false),
@@ -142,7 +141,8 @@ describe('风格串发送到实验室', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '发送到实验室：风格 A' }));
 
-    const payload = JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!);
+    const [name, payload] = viewProps.onNavigateToPlayground.mock.calls[0] as unknown as [string, import('../../services/metadataService').PendingImportData];
+    expect(name).toBe('风格 A');
     expect(payload).toMatchObject({
       targetMode: 'text-to-image',
       basePrompt: 'masterpiece, best quality',
@@ -154,7 +154,6 @@ describe('风格串发送到实验室', () => {
       model: 'nai-diffusion-4-5-full', width: 1024, height: 1536, steps: 32, scale: 6, seed: 1234,
     });
     expect(payload.params.characters).toHaveLength(1);
-    expect(viewProps.notify).toHaveBeenCalledWith('已把「风格 A」发送到实验室');
     expect(viewProps.onNavigateToPlayground).toHaveBeenCalledTimes(1);
     // 卡片本身是「点开编辑」的按钮，发送必须拦截冒泡，不能顺带打开原串。
     expect(viewProps.onSelect).not.toHaveBeenCalled();

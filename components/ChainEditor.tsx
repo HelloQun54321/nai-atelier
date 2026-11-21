@@ -1,3 +1,4 @@
+import { isLabTrialId } from '../services/labTrials';
 import { normalizeAgentLabDraft, restoreUnchangedAgentLabFields } from '../services/agentLabSync.mjs';
 import { LabEditorTabs } from './LabEditorTabs';
 import type { PromptToolbarSlot } from './PromptLibraryAccess';
@@ -53,6 +54,7 @@ import { FileDown } from 'lucide-react';
 import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags, isNativePromptText } from '../services/tagTranslations';
 import { UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
+import { ARTIST_STRING_ID, getArtistString, setArtistString } from '../services/artistString';
 import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
 import { buildPromptSampleDraft, getPromptSampleSettings, type PromptSampleBridge, type PromptSampleDraft } from '../services/promptSampleSettings';
 import { LabCategoryMode, labCategoryTabOptions } from './chain/LabCategoryMode';
@@ -71,6 +73,8 @@ export interface ChainEditorSaveHandle {
 
 interface ChainEditorProps {
     chain: PromptChain;
+    active?: boolean;
+    onTrialResult?: (item: LocalGenItem) => void;
     allChains: PromptChain[]; // 角色卡就地引用角色库。
     chainsLoading?: boolean;
     chainsError?: string;
@@ -105,7 +109,7 @@ interface ChainEditorProps {
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chainsLoading, chainsError, onRetryChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, sectionedPrompt = false, onSectionedPromptChange, safeMode, onBack, onContentRollForRole, onContentRollForGlobal }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, active = true, onTrialResult, allChains, chainsLoading, chainsError, onRetryChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, sectionedPrompt = false, onSectionedPromptChange, safeMode, onBack, onContentRollForRole, onContentRollForGlobal }) => {
   useLanguage();
     const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
     const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -417,7 +421,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         setCharacterPresetSources({});
     };
 
-    const sourceChainId = chain.id === 'playground' ? 'playground' : chain.id;
+    const sourceChainId = chain.id;
     const activeGenerationMode = workspaceSession.activeMode;
     const sectionedActive = sectionedPrompt && activeGenerationMode === 'text-to-image';
     const showReference = sectionedActive ? categoryTab === 'reference' : mobileEditorTab === 'reference';
@@ -454,6 +458,10 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     const selectedPreviewIndex = selectedPreviewItem ? previewHistory.indexOf(selectedPreviewItem) : previewIndex;
     const displayedPreviewImage = selectedPreviewItem?.imageUrl || generatedImage;
     const displayedPreviewItem = previewHistory.find(item => item.imageUrl === displayedPreviewImage);
+    useEffect(() => {
+      const item = imageEditPreviewImage ? previewHistory.find(saved => saved.imageUrl === imageEditPreviewImage) : displayedPreviewItem;
+      if (isLabTrialId(chain.id) && item) onTrialResult?.(item);
+    }, [chain.id, displayedPreviewItem, imageEditPreviewImage, previewHistory, onTrialResult]);
     // 移动端浮动圆圈：编辑模式显示最近一次编辑结果（底图已移入左侧「底图与导入」），文生图沿用最近生成结果
     const mobileFloatingPreviewImage = activeEditOperation
         ? imageEditPreviewImage
@@ -494,7 +502,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         // 历史请求可能晚于本次生成完成；合并新结果，不能把预览拉回请求时的旧图。
         setPreviewHistory(previous => [...new Map([...history, ...previous].map(item => [item.id, item])).values()]
             .sort((a, b) => b.createdAt - a.createdAt));
-        if (getGenerationSeriesSession(chain.id)?.lastSavedItem || targetSourceChainId === 'playground' || selectionRevision !== previewSelectionRevisionRef.current) return;
+        if (getGenerationSeriesSession(chain.id)?.lastSavedItem || isLabTrialId(targetSourceChainId) || selectionRevision !== previewSelectionRevisionRef.current) return;
         setPreviewIndex(0);
         if (history.length > 0) {
             setPreviewMode('history');
@@ -588,12 +596,12 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     /* 实验室伪链把编辑区状态回推给 App：一键 Roll 的默认目标 / 写入基底与这里保持一致。
        其它真实链路（保存动作）仍按各自流程提交，这里只在 playground 上做轻量同步。 */
     useEffect(() => {
-        if (chain.id !== 'playground') return;
+        if (!isLabTrialId(chain.id)) return;
         void onUpdateChain(chain.id, {
-            params,
+            basePrompt, negativePrompt, modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })), params,
             variableValues: { ...(chain.variableValues || {}), subject: subjectPrompt },
         });
-    }, [chain.id, params, subjectPrompt]);
+    }, [chain.id, basePrompt, negativePrompt, modules, activeModules, params, subjectPrompt]);
 
     useEffect(() => {
         // Only reset state if Chain ID changes.
@@ -615,10 +623,10 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         setWorkspaceSession(storedWorkspace);
         setBasePrompt(storedWorkspace.textToImage.basePrompt);
         setNegativePrompt(storedWorkspace.textToImage.negativePrompt);
-        setModules((chain.modules || []).map(m => ({
+        setModules(setArtistString((chain.modules || []).map(m => ({
             ...m,
             position: m.position || 'post'
-        })));
+        })), storedWorkspace.textToImage.artistString ?? getArtistString(chain.modules || [])));
         setParams(normalizeParams({
             seed: undefined,
             qualityToggle: true, ucPreset: 4, characters: [],
@@ -665,7 +673,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             JSON.stringify(restoredParams) !== JSON.stringify(persistedParams) ||
             moduleStateDiffers;
         setHasChanges(restoredDiffers);
-        if (restoredDiffers && chain.id !== 'playground') {
+        if (restoredDiffers && !isLabTrialId(chain.id)) {
             notify('已恢复上次未保存的修改，保存后才会写回风格串');
         }
 
@@ -682,11 +690,13 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
 
     // --- sessionStorage 侦听：接收来自历史/灵感页面的一键导入数据 ---
     useEffect(() => {
+        if (!active) return;
         const raw = sessionStorage.getItem(IMPORT_SESSION_KEY);
         if (!raw) return;
 
         try {
             const data = JSON.parse(raw) as PendingImportData | PromptFragmentImport | BaseImageImport;
+            if ('targetChainId' in data && data.targetChainId && data.targetChainId !== chain.id) return;
             // 清除标志位，防止重复消费
             sessionStorage.removeItem(IMPORT_SESSION_KEY);
             // 应用数据到当前编辑器
@@ -695,7 +705,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             console.error('解析 pending import 数据失败', e);
             sessionStorage.removeItem(IMPORT_SESSION_KEY);
         }
-    }, [chain.id, externalImportToken]); // Also consume when a kept-alive playground receives a fresh external import.
+    }, [chain.id, externalImportToken, active]); // Also consume when a kept-alive playground receives a fresh external import.
 
     useEffect(() => {
         const syncApiKey = (event: Event) => {
@@ -818,11 +828,11 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             return;
         }
         setWorkspaceSession(previous => {
-            const nextTextToImage = { basePrompt, subjectPrompt, negativePrompt, params: { ...params }, activeModules: { ...activeModules } };
+            const nextTextToImage = { basePrompt, subjectPrompt, negativePrompt, params: { ...params }, activeModules: { ...activeModules }, artistString: getArtistString(modules) };
             if (JSON.stringify(previous.textToImage) === JSON.stringify(nextTextToImage)) return previous;
             return { ...previous, textToImage: nextTextToImage, updatedAt: Date.now() };
         });
-    }, [basePrompt, subjectPrompt, negativePrompt, params, activeModules, chain.id]);
+    }, [basePrompt, subjectPrompt, negativePrompt, params, activeModules, modules, chain.id]);
 
     const updateWorkspace = (updater: (previous: LabWorkspaceSession) => LabWorkspaceSession) => {
         setWorkspaceSession(previous => ({ ...updater(previous), updatedAt: Date.now() }));
@@ -950,7 +960,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 // 保存失败的终态会带完整未保存成图：先展示，再按失败态标注为未保存。
                 const previewState = session.state === 'failed' ? 'unsaved' as const : 'result' as const;
                 if (activeEditOperationRef.current) {
-                    if (chain.id !== 'playground') { setGeneratedImage(preview.image); setPreviewMode(previewState); }
+                    if (!isLabTrialId(chain.id)) { setGeneratedImage(preview.image); setPreviewMode(previewState); }
                     setImageEditPreviewImage(preview.image);
                 } else {
                     setGeneratedImage(preview.image);
@@ -965,7 +975,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             const awaiting = session.awaiting;
             if (awaiting) {
                 const revision = `${session.token}:${awaiting.cost}:${awaiting.completedCount}`;
-                if (awaitingApprovalRef.current !== revision) {
+                if (active && awaitingApprovalRef.current !== revision) {
                     awaitingApprovalRef.current = revision;
                     void promptJobApprovalRef.current(session, awaiting);
                 }
@@ -981,11 +991,11 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             previewSelectionRevisionRef.current += 1;
             setPreviewHistory(previous => [item, ...previous.filter(saved => saved.id !== item.id)]);
             if (item.edit && !keepPreview) setImageEditPreviewImage(item.imageUrl);
-            if (!keepPreview && (!item.edit || chain.id !== 'playground')) {
+            if (!keepPreview && (!item.edit || !isLabTrialId(chain.id))) {
                 setGeneratedImage(item.imageUrl);
                 setPreviewIndex(0);
                 setPreviewMode('history');
-                if (session.count === 1 && !item.edit && window.matchMedia('(max-width: 1023px)').matches) setLightboxImg(item.imageUrl);
+                if (active && session.count === 1 && !item.edit && window.matchMedia('(max-width: 1023px)').matches) setLightboxImg(item.imageUrl);
             }
             if (!keepPreview) setGenerationProgress(null);
             // 历史变更与额度刷新广播由后台任务监督器统一发出，本页不再重复 add。
@@ -993,7 +1003,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         };
         sync();
         return subscribeGenerationSeries(sync);
-    }, [chain.id]);
+    }, [chain.id, active]);
 
     /** 仅重置单个编辑模式的持久化底图/蒙版资产与草稿；不触碰文生图与其他编辑模式。 */
     const resetEditOperation = async (operation: ImageEditOperation) => {
@@ -1001,7 +1011,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         const maskAssetId = getLabWorkspaceAssetId(workspaceKey, operation, 'mask');
         const previousDraft = workspaceSession.edits[operation];
         const currentEditDraft = activeEditOperation === operation && activeEditDraft ? activeEditDraft : previousDraft;
-        const defaultDraft = chain.id === 'playground'
+        const defaultDraft = isLabTrialId(chain.id)
             ? createLabImageEditDraft(operation, '', '', LAB_DEFAULT_PARAMS)
             : createLabImageEditDraft(operation, finalPrompt, negativePrompt, params);
         await Promise.all([
@@ -1466,7 +1476,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         // 实验室（playground）是临时试验田，不是真正的风格串：它永远没有持久封面。
         // 缺了这条豁免，实验室实例被 keep-alive 淘汰卸载时会把生成的图"自动设为封面"
         // 并弹提示，而用户此刻早已在其他页面。
-        if (chain.id === 'playground') return;
+        if (isLabTrialId(chain.id)) return;
         if (chain.type !== 'style' || chain.previewImage) return;
         if (!displayedPreviewImage || isUploading) return;
         try {
@@ -1491,7 +1501,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     }, []);
 
     const handleSaveAll = async () => {
-        if (isUploading || !canSaveActiveModeToLibrary || chain.id === 'playground') return false;
+        if (isUploading || !canSaveActiveModeToLibrary || isLabTrialId(chain.id)) return false;
         setIsUploading(true);
         const updatedModules = modules.map(m => ({
             ...m,
@@ -1530,7 +1540,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     };
 
     React.useImperativeHandle(saveRef, () => ({
-        canSave: !isUploading && canSaveActiveModeToLibrary && chain.id !== 'playground',
+        canSave: !isUploading && canSaveActiveModeToLibrary && !isLabTrialId(chain.id),
         save: handleSaveAll,
     }));
 
@@ -1552,7 +1562,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             setImageEditBaseImage(null);
             setImageEditPreviewImage(null);
             setImageEditMaskData(undefined);
-            if (chain.id !== 'playground') {
+            if (!isLabTrialId(chain.id)) {
                 setGeneratedImage(null);
                 setPreviewMode('cover');
             }
@@ -1560,16 +1570,16 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             return;
         }
 
-        if (!await confirmAction({ rememberKey: 'editor.reset-text', rememberScope: chain.id === 'playground' ? 'playground' : 'preset',
+        if (!await confirmAction({ rememberKey: 'editor.reset-text', rememberScope: isLabTrialId(chain.id) ? 'playground' : 'preset',
             title: '重置文生图？',
-            message: chain.id === 'playground'
+            message: isLabTrialId(chain.id)
                 ? '将恢复文生图的提示词、模块与参数为默认值。此操作无法撤销。'
                 : `将放弃当前修改，恢复「${chain.name}」已保存的内容。其他模式的草稿保留。`,
             confirmLabel: '确认重置',
             tone: 'danger',
         })) return;
 
-        const resetToSaved = chain.id !== 'playground';
+        const resetToSaved = !isLabTrialId(chain.id);
         const restored = resetToSaved ? workspaceFallback.textToImage : createLabWorkspaceSession('', '', '', LAB_DEFAULT_PARAMS, {}).textToImage;
         editorRevisionRef.current += 1;
         setBasePrompt(restored.basePrompt);
@@ -1590,7 +1600,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
 
     const handleFork = async () => {
         if (isUploading || !canSaveActiveModeToLibrary) return;
-        const targetType = chain.id === 'playground' || !isCharacterMode ? 'style' : 'character';
+        const targetType = isLabTrialId(chain.id) || !isCharacterMode ? 'style' : 'character';
         setIsUploading(true);
         const updatedModules = modules.map(m => ({
             ...m,
@@ -1605,7 +1615,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             await onFork({
                 ...chain,
                 name: chainName,
-                description: chain.id === 'playground' ? '' : chainDesc,
+                description: isLabTrialId(chain.id) ? '' : chainDesc,
                 tags: chainTags,
                 basePrompt,
                 negativePrompt,
@@ -1669,7 +1679,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     };
 
     const checkAndRemoveUntestedTag = () => {
-        if (chain.id && chain.id !== 'playground' && chainTags.includes(UNTESTED_CHAIN_TAG)) {
+        if (chain.id && !isLabTrialId(chain.id) && chainTags.includes(UNTESTED_CHAIN_TAG)) {
             const updatedTags = chainTags.filter(t => t !== UNTESTED_CHAIN_TAG);
             if (mountedRef.current) setChainTags(updatedTags);
             void onUpdateChain(chain.id, { tags: updatedTags });
@@ -1770,7 +1780,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             params: activeParams, stream, forceEmptySeed: randomSeed, approvedCost,
             history: {
                 basePrompt: draft.basePrompt, subjectPrompt: draft.subjectPrompt, modules: draft.modules,
-                sourceChainId, sourceChainName: chainName, sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
+                sourceChainId, sourceChainName: chainName, sourceChainType: isLabTrialId(chain.id) ? 'playground' : chain.type,
             },
         });
     };
@@ -1988,7 +1998,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 history: {
                     basePrompt, subjectPrompt,
                     modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
-                    sourceChainId, sourceChainName: chainName, sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
+                    sourceChainId, sourceChainName: chainName, sourceChainType: isLabTrialId(chain.id) ? 'playground' : chain.type,
                     edit: {
                         operation: request.operation,
                         parentHistoryId: request.parentHistoryId,
@@ -2217,7 +2227,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
 
     const handleSavePreview = async () => {
         const coverImage = displayedPreviewImage;
-        if (!coverImage || chain.id === 'playground') return;
+        if (!coverImage || isLabTrialId(chain.id)) return;
         if (await confirmAction({ rememberKey: 'editor.cover-current',
             title: '将当前图片设为封面并保存？',
             message: '替换原封面，并保存当前提示词与参数。',
@@ -2248,7 +2258,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         const characterPrompts = (currentParams.characters || []).map(character => compileCharacterContent(character, (currentParams as NAIParams & { _characterSectionsNegatives?: Record<string, unknown> })._characterSectionsNegatives));
         const promptValues = activeEditDraft
             ? [activeEditDraft.prompt, getEditableGlobalNegative(activeEditDraft.negativePrompt, currentParams._promptSections), ...characterPrompts.flatMap(character => [character.prompt, character.negativePrompt || ''])]
-            : [basePrompt, subjectPrompt, getEditableGlobalNegative(negativePrompt, currentParams._promptSections), ...characterPrompts.flatMap(character => [character.prompt, character.negativePrompt || ''])];
+            : [getArtistString(modules), basePrompt, subjectPrompt, getEditableGlobalNegative(negativePrompt, currentParams._promptSections), ...characterPrompts.flatMap(character => [character.prompt, character.negativePrompt || ''])];
         const tokens = promptValues.flatMap(value => parsePromptTags(value || '')).filter(token => !isNativePromptText(token.displayTag));
         if (!tokens.length) { notify(t("当前提示词没有未翻译 Tag")); return; }
 
@@ -2374,6 +2384,12 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                     <div className="lab-editor-surface flex w-full max-w-3xl flex-col gap-6 p-4 pb-36 md:p-6 md:pb-24 mx-auto">
                         {sectionedActive && <LabCategoryMode tab={categoryTab} base={basePrompt} negative={negativePrompt} sections={params._promptSections} layout={params._labSectionLayout} characters={params.characters || []} tagAssist={tagAssistEnabled} negativeLocked={isNaiMediumModel(params.model)} characterTools={{ chains: allChains, chainsLoading, chainsError, onRetryChains, onSaveCharacter: saveCharacterToLibrary, notify, freeformPosition: activeModelInfo.freeformCharacterPosition, params, setParams, onSettingsChange: () => markPresetSectionModified('settings') }} onBase={value => { setBasePrompt(value); markPresetSectionModified('base'); markChange(); }} onNegative={value => { setNegativePrompt(value); markPresetSectionModified('negative'); markChange(); }} onSections={next => { setParams(previous => ({ ...previous, _promptSections: next })); setSubjectPrompt(subjectFromSections(next, params._labSectionLayout)); markPresetSectionModified('subject'); markChange(); }} onLayout={next => { setParams(previous => ({ ...previous, _labSectionLayout: next })); markChange(); }} onCopy={copyPromptToClipboard} onAddCharacter={addCharacter} onUpdateCharacter={updateCharacter} onRemoveCharacter={removeCharacter} />}
                         <ChainEditorPromptInputs
+                            artistString={getArtistString(modules)}
+                            setArtistString={value => {
+                                setModules(previous => setArtistString(previous, value));
+                                setActiveModules(previous => ({ ...previous, [ARTIST_STRING_ID]: true }));
+                                markChange();
+                            }}
                             prompt={basePrompt}
                             onPlainPromptChange={value => {
                                 setNegativePrompt(getEditableGlobalNegative(negativePrompt, params._promptSections));
@@ -2511,7 +2527,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 {/* Right Panel - Preview (Testing) - Extracted Component */}
                 <div className="appearance-content chain-editor-preview-wrapper hidden min-h-0 flex-1 lg:contents">
                 <ChainEditorPreview
-                    favorite={displayedPreviewItem ? { imageUrl: displayedPreviewItem.imageUrl, sourceType: 'history', sourceId: displayedPreviewItem.id } : { imageUrl: chain.previewImage || '', title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }}
+                    favorite={displayedPreviewItem ? { imageUrl: displayedPreviewItem.imageUrl, sourceType: 'history', sourceId: displayedPreviewItem.id } : { imageUrl: chain.previewImage || '', title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: compilePrompt(chain, chain.variableValues?.subject || ''), negativePrompt: chain.negativePrompt, params: chain.params }}
                     generationData={displayedPreviewItem ? { prompt: displayedPreviewItem.prompt, negativePrompt: displayedPreviewItem.negativePrompt, params: displayedPreviewItem.params } : undefined}
                     historyId={displayedPreviewItem?.id}
                     historyCreatedAt={displayedPreviewItem?.createdAt}
@@ -2530,8 +2546,8 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                     savingArtistSample={savingArtistSample}
                     onReverseTag={displayedPreviewImage ? () => { setReverseTagImage(displayedPreviewImage); setReverseTagOpen(true); } : undefined}
                     getDownloadFilename={getDownloadFilename}
-                    hideCoverActions={chain.id === 'playground'}
-                    canNavigateHistory={previewHistory.length > 1 && (chain.id !== 'playground' || Boolean(displayedPreviewImage))}
+                    hideCoverActions={isLabTrialId(chain.id)}
+                    canNavigateHistory={previewHistory.length > 1 && (!isLabTrialId(chain.id) || Boolean(displayedPreviewImage))}
                     historyLabel={displayedPreviewImage ? currentPreviewPosition : undefined}
                     onPreviousHistory={showPreviousHistory}
                     onNextHistory={showNextHistory}
@@ -2575,7 +2591,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                     setLightboxImg(image);
                 }}
                 getDownloadFilename={getDownloadFilename}
-                canNavigateHistory={previewHistory.length > 1 && (chain.id !== 'playground' || Boolean(imageEditPreviewImage))}
+                canNavigateHistory={previewHistory.length > 1 && (!isLabTrialId(chain.id) || Boolean(imageEditPreviewImage))}
                 historyLabel={imageEditPreviewHistoryLabel}
                 onPreviousHistory={() => showHistoryAt((imageEditPreviewHistoryIndex >= 0 ? imageEditPreviewHistoryIndex : previewIndex) - 1)}
                 onNextHistory={() => showHistoryAt((imageEditPreviewHistoryIndex >= 0 ? imageEditPreviewHistoryIndex : previewIndex) + 1)}
@@ -2714,10 +2730,10 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
 
             {/* Lightbox Modal */}
             {lightboxImg && (
-                <ImageLightbox src={lightboxImg} customActions onClose={() => setLightboxImg(null)} onSwipe={delta => delta < 0 ? showPreviousHistory() : showNextHistory()}>
+                <ImageLightbox src={lightboxImg} generationData={lightboxItem ? { prompt: lightboxItem.prompt, negativePrompt: lightboxItem.negativePrompt, params: lightboxItem.params } : undefined} customActions onClose={() => setLightboxImg(null)} onSwipe={delta => delta < 0 ? showPreviousHistory() : showNextHistory()}>
                     <ImagePreviewActions
                         imageUrl={lightboxImg}
-                        favorite={lightboxItem ? { imageUrl: lightboxItem.imageUrl, sourceType: 'history', sourceId: lightboxItem.id } : { imageUrl: lightboxImg, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, title: chain.name, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }}
+                        favorite={lightboxItem ? { imageUrl: lightboxItem.imageUrl, sourceType: 'history', sourceId: lightboxItem.id } : { imageUrl: lightboxImg, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, title: chain.name, prompt: compilePrompt(chain, chain.variableValues?.subject || ''), negativePrompt: chain.negativePrompt, params: chain.params }}
                         generationData={lightboxItem ? { prompt: lightboxItem.prompt, negativePrompt: lightboxItem.negativePrompt, params: lightboxItem.params } : undefined}
                         historyId={lightboxItem?.id}
                         historyCreatedAt={lightboxItem?.createdAt}
@@ -2726,7 +2742,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                         canManageHistoryGroup={Boolean(lightboxItem)}
                         onRemoveCurrentHistory={() => { void handleRemoveCurrentHistory(lightboxItem); }}
                         onClearHistoryGroup={handleClearHistoryGroup}
-                        onSetCover={!activeEditOperation && chain.id !== 'playground' && lightboxImg === displayedPreviewImage ? handleSavePreview : undefined}
+                        onSetCover={!activeEditOperation && !isLabTrialId(chain.id) && lightboxImg === displayedPreviewImage ? handleSavePreview : undefined}
                         isUploading={isUploading}
                         onSaveArtistSample={canSaveArtistSample(lightboxItem || undefined, artistSampleTarget) ? () => { void handleSaveArtistSample(lightboxItem || undefined); } : undefined}
                         savingArtistSample={savingArtistSample}

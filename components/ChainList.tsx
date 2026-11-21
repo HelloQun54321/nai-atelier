@@ -38,7 +38,7 @@ import { getCustomChainTags } from '../services/chainTags';
 import { chainReferenceSummary } from '../services/chainReferenceBadges';
 import { useConfirmDialog } from './ConfirmDialog';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
-import { IMPORT_SESSION_KEY } from '../services/metadataService';
+import type { PendingImportData } from '../services/metadataService';
 import { useChainFolders } from '../services/useChainFolders';
 import { folderContains, getChainFolderIds, updateChainFolderMemberships } from '../services/chainFolders';
 import { CHAIN_FOLDER_DRAG_TYPE, ChainFolderMembershipDialog, ChainFolderNavigation } from './chain/ChainFolders';
@@ -60,7 +60,7 @@ interface ChainListProps {
   onReloadTags?: () => Promise<void>;
   onUpdateChain: UpdateChainInfo;
   /** 整串送入实验室：复用历史／灵感页的 sessionStorage 导入通道后跳转。 */
-  onNavigateToPlayground?: () => void;
+  onNavigateToPlayground?: (name: string, data: PendingImportData) => void | Promise<void>;
   /** Roll 串并入风格串页：顶栏骰子只做入口，不占底栏与资源库面板。 */
   onOpenRoll?: () => void;
   isLoading: boolean;
@@ -221,27 +221,20 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     setNewDesc('');
   };
 
-  /**
-   * 风格串 → 实验室：整串的基础提示词、主体正文、风格模块、角色槽位与生成参数一并投递。
-   * 实验室按临时伪链处理，不改动原串；sessionStorage 通道与历史／灵感页导入一致，
-   * 即使实验室已常驻（keep-alive），externalImportToken 也会触发它重新消费。
-   */
-  const sendToPlayground = (chain: PromptChain) => {
+  const sendToPlayground = async (chain: PromptChain) => {
     try {
-      sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({
+      await onNavigateToPlayground?.(chain.name, {
         targetMode: 'text-to-image',
+        prompt: chain.basePrompt || '',
         basePrompt: chain.basePrompt || '',
         subjectPrompt: chain.variableValues?.subject || '',
         modules: chain.modules || [],
         negativePrompt: chain.negativePrompt || '',
         params: chain.params,
-      }));
+      });
     } catch (error) {
       notify(error instanceof Error ? error.message : t('发送到实验室失败，请重试'), 'error');
-      return;
     }
-    notify(t('已把「{0}」发送到实验室', [chain.name]));
-    onNavigateToPlayground?.();
   };
 
   const handleDelete = async (chain: PromptChain) => {
@@ -449,7 +442,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           {/* 图片取用与编辑共同换列；无封面时仍保留编辑。 */}
           {!selecting && !syncSelection.open && (chain.previewImage || !isGuest) && <ImageCardActions>
             {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} favorite={{ imageUrl: chain.previewImage, title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }} />}
-            {!isGuest && type === 'style' && <button type="button" onClick={event => { event.stopPropagation(); sendToPlayground(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("发送到实验室")} aria-label={t("发送到实验室：{0}", [chain.name])}><FlaskConical className="h-4 w-4" /></button>}
+            {!isGuest && type === 'style' && <button type="button" onClick={event => { event.stopPropagation(); void sendToPlayground(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("发送到实验室")} aria-label={t("发送到实验室：{0}", [chain.name])}><FlaskConical className="h-4 w-4" /></button>}
             {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("编辑信息")} aria-label={t("编辑{0}信息：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}><Pencil className="h-4 w-4" /></button>}
           </ImageCardActions>}
           {chain.previewImage ? (
