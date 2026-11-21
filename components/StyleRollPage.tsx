@@ -1,5 +1,6 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { flushSync } from 'react-dom';
+import type { PromptFragmentImport } from '../services/metadataService';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ChevronLeft, ChevronRight, CopyPlus, Folder, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
@@ -65,7 +66,7 @@ interface Props {
   notify: (message: string, type?: 'success' | 'error') => void;
   onSaveChain: (chain: PromptChain) => Promise<PromptChain>;
   onOpenChain: (id: string) => void;
-  onNavigateToPlayground: () => void;
+  onNavigateToPlayground: (name: string, data: PromptFragmentImport) => void | Promise<void>;
   onOpenArtistLibrary?: (name?: string) => void;
   initialPinned?: { tags: string[]; token: number } | null;
 }
@@ -753,13 +754,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (target.name === trimmed) return;
     await store({ ...target, name: trimmed });
   });
-  const sendToLab = () => {
+  const sendToLab = async () => {
     if (!experiment || !selected) return;
     const chain = rollCandidateToChain(experiment, selected);
-    sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({ mode: 'prompt-fragments', targetMode: 'text-to-image', fullMetadata: true, replace: true,
+    const name = experiment.name + ' · ' + t('候选 {0}', [experiment.candidates.indexOf(selected) + 1]);
+    await onNavigateToPlayground(name, { mode: 'prompt-fragments', targetMode: 'text-to-image', fullMetadata: true, replace: true,
       prompt: selectedImage?.prompt ?? chain.basePrompt, negativePrompt: selectedImage?.negativePrompt ?? chain.negativePrompt,
-      params: selectedImage?.params ?? chain.params, importSettings: true, importSeed: true, importModel: true }));
-    onNavigateToPlayground();
+      params: selectedImage?.params ?? chain.params, importSettings: true, importSeed: true, importModel: true });
   };
   const createPinnedRecord = (candidate: RollCandidate) => void perform(async () => {
     if (!experiment) return;
@@ -781,7 +782,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   /** 详情页的三个主动作收进标题栏，统一用透明底线条图标；已保存的条目用品牌色前景区分。 */
   const detailActions = selected ? <>
     <IconButton label={t(selectedSavedChain ? '打开风格串' : selectedImage ? '存为风格串' : '生成后可保存')} tone="ghost" className={selectedSavedChain ? '!text-indigo-600 dark:!text-indigo-400' : '!text-emerald-600 dark:!text-emerald-400'} disabled={busy || loading || (!selectedImage && !selectedSavedChain)} onClick={selectedSavedChain ? () => onOpenChain(selected.savedChainId!) : selectedImage ? () => saveCandidate() : undefined}><Save /></IconButton>
-    <IconButton label={t('送往实验室')} tone="ghost" disabled={busy} onClick={() => { try { sendToLab(); } catch (cause) { setError((cause as Error).message); } }}><FlaskConical /></IconButton>
+    <IconButton label={t('送往实验室')} tone="ghost" disabled={busy} onClick={() => void sendToLab().catch(cause => setError((cause as Error).message))}><FlaskConical /></IconButton>
     <IconButton label={t('新建记录 · 固定这些画师')} tone="ghost" disabled={busy || loading || selected.archived} onClick={() => createPinnedRecord(selected)}><CopyPlus /></IconButton>
   </> : null;
   const detail = experiment && selected ? <div className="space-y-4 p-4">

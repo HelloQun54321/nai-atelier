@@ -1,3 +1,4 @@
+import { isLabTrialId } from '../../services/labTrials';
 import { t, useLanguage } from '../../services/i18n';
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Copy, FileDown, ImagePlus, Languages, ListTree, LoaderCircle, MoreVertical, RotateCcw, Save, Tags } from 'lucide-react';
@@ -75,7 +76,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     const importInputRef = useRef<HTMLInputElement>(null);
     const headerRef = useRef<HTMLElement>(null);
     const moreAnchorRef = useRef<HTMLDivElement>(null);
-    const isPlayground = chainId === 'playground';
+    const isPlayground = isLabTrialId(chainId);
     const [actionsOpen, setActionsOpen] = useState(false);
     const closeActions = React.useCallback(() => setActionsOpen(false), []);
     const saveAnchorRef = useRef<HTMLDivElement>(null);

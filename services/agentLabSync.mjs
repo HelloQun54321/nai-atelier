@@ -196,6 +196,8 @@ export const compilePrompt = (
   activeModulesOnly = true
 ) => {
   const promptParts = [];
+  const artist = chain.modules?.find(module => module.id === 'atelier-artist-string');
+  if (artist && (!activeModulesOnly || artist.isActive) && artist.content.trim()) promptParts.push(artist.content.trim());
 
   // 1. Add Base Prompt
   if (chain.basePrompt && chain.basePrompt.trim()) {
@@ -206,7 +208,7 @@ export const compilePrompt = (
   if (chain.modules) {
       const preModules = chain.modules.filter(m => {
           const isActive = !activeModulesOnly || m.isActive;
-          return isActive && m.position === 'pre';
+          return m.id !== 'atelier-artist-string' && isActive && m.position === 'pre';
       });
       preModules.forEach(m => {
           if (m.content.trim()) promptParts.push(m.content.trim());
@@ -222,7 +224,7 @@ export const compilePrompt = (
   if (chain.modules) {
       const postModules = chain.modules.filter(m => {
           const isActive = !activeModulesOnly || m.isActive;
-          return isActive && (m.position === 'post' || !m.position);
+          return m.id !== 'atelier-artist-string' && isActive && (m.position === 'post' || !m.position);
       });
       postModules.forEach(m => {
           if (m.content.trim()) promptParts.push(m.content.trim());

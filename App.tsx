@@ -1,3 +1,7 @@
+import { IMPORT_SESSION_KEY, type PendingImportData, type PromptFragmentImport } from './services/metadataService';
+import { isLabTrialId, useLabTrials } from './services/labTrials';
+import { LabTrialNavigation } from './components/LabTrialNavigation';
+import type { LocalGenItem } from './types';
 import { getEntryPurposes } from './services/promptPurposes.mjs';
 import { getCustomChainTags, replaceCustomChainTags } from './services/chainTags';
 import { t, useLanguage } from './services/i18n';
@@ -18,7 +22,7 @@ import { useAgentCommand } from './services/agentCommands';
 import { listGenerationSeriesSessions, stopGenerationSeriesSession } from './services/generationSeries';
 import { cancelGenerationQueue, getGenerationQueue, setGenerationQueuePaused } from './services/generationTask';
 import { useCollectorAppearance } from './services/collectorAppearance';
-import { createBlankLabCharacter, LAB_DEFAULT_PARAMS, mergePromptSections, resolvePromptSections } from './services/labWorkspace';
+import { LAB_DEFAULT_PARAMS, mergePromptSections, resolvePromptSections } from './services/labWorkspace';
 import { deleteLabWorkspaceSession, getLabWorkspaceSessionKey, markEditorSessionDiscarded } from './services/labWorkspace';
 import type { ChainEditorSaveHandle } from './components/ChainEditor';
 import {
@@ -188,7 +192,7 @@ const App = () => {
   }, []);
   const [view, setView] = useState<ViewState>('list');
   /* 一键 Roll 填入的撤销快照（只保留最近一次；刷新即失效） */
-  const [contentRollUndo, setContentRollUndo] = useState<{ params: NAIParams; subject: string; createdRoleId: string } | null>(null);
+  const [contentRollUndo, setContentRollUndo] = useState<{ chainId: string; params: NAIParams; subject: string; createdRoleId: string } | null>(null);
   /* 从提示词库「载入到一键 Roll」带过来的那一组（工作区挂载时消费一次） */
   const [contentRollSeed, setContentRollSeed] = useState<{ picks: Record<string, unknown>; seed: string; seeds: Record<string, string>; sourceText?: string; tags?: string[] } | null>(null);
   const [contentRollEditId, setContentRollEditId] = useState('');
@@ -235,7 +239,6 @@ const App = () => {
 
   // Playground State
   const lastLabEntryViewRef = useRef<ViewState>('list');
-  const [playgroundChain, setPlaygroundChain] = useState<PromptChain | null>(null);
   const [playgroundImportToken, setPlaygroundImportToken] = useState(0);
   const [playgroundAgentOpenToken, setPlaygroundAgentOpenToken] = useState(0);
   const [editorAgentOpenToken, setEditorAgentOpenToken] = useState(0);
@@ -292,6 +295,9 @@ const App = () => {
 
   // 设计主题、明暗模式和个性化覆盖统一由外观偏好管理。
   const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(loadAppearancePreferences);
+  const labTrials = useLabTrials(currentUser?.id || 'local-owner', appearancePreferences.rememberGenerationSettings, appearancePreferences.generationMemory);
+  const playgroundChain = labTrials.activeChain;
+  const [labTrialResults, setLabTrialResults] = useState<Record<string, LocalGenItem>>({});
   const themeMode = appearancePreferences.themeMode;
   const setThemeMode = (mode: ThemeMode) => setAppearancePreferences(current => ({ ...current, themeMode: mode }));
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -687,26 +693,7 @@ const App = () => {
     });
   };
 
-  const ensurePlayground = () => {
-    setPlaygroundChain(previous => previous || {
-      id: 'playground',
-      name: '生图实验室',
-      description: '临时生图实验',
-      userId: currentUser?.id || 'local-owner',
-      basePrompt: '',
-      negativePrompt: '',
-      modules: [],
-      params: {
-        width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: undefined, qualityToggle: true, ucPreset: 4,
-        characters: [createBlankLabCharacter()],
-      },
-      variableValues: { subject: '' },
-      type: 'style',
-      tags: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    });
-  };
+  const ensurePlayground = () => { /* 试画分区始终保留一个可编辑工作区。 */ };
 
   const handleOpenAgent = () => {
     // Agent is a tool overlay, not a destination. Opening it must never trigger
@@ -716,7 +703,7 @@ const App = () => {
       return;
     }
     if (playgroundChain && mountedViews.includes('playground')) {
-      window.dispatchEvent(new CustomEvent('nai-open-prompt-agent', { detail: { chainId: 'playground' } }));
+      window.dispatchEvent(new CustomEvent('nai-open-prompt-agent', { detail: { chainId: playgroundChain.id } }));
       return;
     }
     ensurePlayground();
@@ -724,7 +711,7 @@ const App = () => {
     setPlaygroundAgentOpenToken(value => value + 1);
   };
 
-  const handleNavigate = useCommittedCallback(async (newView: ViewState, id?: string, options: { externalImport?: boolean; refreshData?: boolean } = {}) => {
+  const handleNavigate = useCommittedCallback(async (newView: ViewState, id?: string, options: { externalImport?: boolean; refreshData?: boolean; trialImport?: { name: string; data: PendingImportData | PromptFragmentImport } } = {}) => {
     if (isEditorDirty) {
       const editor = editorSaveRef.current;
       let saved = false;
@@ -759,12 +746,18 @@ const App = () => {
       newView = 'content-library';
     }
 
+    if (newView === 'playground' && options.trialImport) {
+      const { name, data } = options.trialImport;
+      const targetChainId = labTrials.add(false, name);
+      sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({ ...data, targetChainId }));
+    }
+
     // 记录进入实验室前的内容页，供手机端返回箭头使用；实验室内部切换不覆盖该记录。
     if (newView === 'playground' && LAB_ENTRY_VIEWS.includes(view)) lastLabEntryViewRef.current = view;
     setSelectedId(id);
     setView(newView);
     keepViewMounted(newView);
-    if (newView === 'playground' && options.externalImport) {
+    if (newView === 'playground' && (options.externalImport || options.trialImport)) {
       setPlaygroundImportToken(prev => prev + 1);
     }
     if (newView === 'playground') ensurePlayground();
@@ -791,7 +784,7 @@ const App = () => {
   };
 
   const handleUpdatePlaygroundChain = async (id: string, updates: Partial<PromptChain>) => {
-    setPlaygroundChain(prev => prev ? { ...prev, ...updates } : null);
+    labTrials.update(id, updates);
   };
 
   // 按计划更新角色及全局分栏，保留旧正文和撤销快照。
@@ -803,11 +796,11 @@ const App = () => {
     const writesGlobal = Object.keys(plan.globalSections).length > 0;
     const base = writesGlobal ? { ...params, _promptSections: resolvePromptSections(params._promptSections, subject) } : params;
     const result = applyContentRollToParams(base, plan, createUuid);
-    setContentRollUndo({ params, subject, createdRoleId: result.createdRoleId });
+    setContentRollUndo({ chainId: playgroundChain.id, params, subject, createdRoleId: result.createdRoleId });
     /* 分区与「主体正文」必须一起提交：resolvePromptSections 要求两者一致，否则场景/镜头会被判为不匹配而回落到补充栏 */
     const merged = mergePromptSections(result.params._promptSections);
     /* 主体正文在 chain.variableValues.subject 上（分区在 params 上），两者必须一起提交 */
-    await handleUpdatePlaygroundChain('playground', {
+    await handleUpdatePlaygroundChain(playgroundChain.id, {
       params: result.params,
       variableValues: { ...(playgroundChain?.variableValues || {}), subject: writesGlobal ? merged : subject },
     });
@@ -941,13 +934,13 @@ const App = () => {
   };
 
   const handleUndoContentRoll = async (): Promise<boolean> => {
-    if (!contentRollUndo) return false;
+    if (!contentRollUndo || contentRollUndo.chainId !== playgroundChain.id) return false;
     const restored = undoContentRollApply(playgroundChain?.params, contentRollUndo.params, contentRollUndo.createdRoleId);
     /* 正文与分区必须一起回滚：resolvePromptSections 要求两者一致，否则场景/镜头会被判为不匹配而回落。
        注意：应用前的正文可能是**空串**，也要照样写回 —— 用真值判断会漏掉这种情况，留下新正文。 */
     const restoredSubject = contentRollUndo.subject;
     setContentRollUndo(null);
-    await handleUpdatePlaygroundChain('playground', {
+    await handleUpdatePlaygroundChain(playgroundChain.id, {
       params: restored,
       variableValues: { ...(playgroundChain?.variableValues || {}), subject: restoredSubject },
     });
@@ -987,7 +980,7 @@ const App = () => {
 
   const handleForkChain = async (chain: PromptChain, targetType?: ChainType) => {
     const finalType = targetType || chain.type;
-    const name = chain.name + (chain.id === 'playground' ? '' : ' (Fork)');
+    const name = chain.name + (isLabTrialId(chain.id) ? '' : ' (Fork)');
     try {
       await db.createChain(name, chain.description, chain, finalType); // Persist type on fork
       notify(finalType === 'character' ? '已保存到角色库' : '已保存到风格串');
@@ -1110,7 +1103,7 @@ const App = () => {
           onDelete={handleDelete}
           onBulkDelete={handleBulkDelete}
           onUpdateChain={handleUpdateChain}
-          onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
+          onNavigateToPlayground={(name, data) => handleNavigate('playground', undefined, { trialImport: { name, data } })}
           onOpenRoll={() => void handleNavigate('roll')}
           onRefresh={() => refreshData(true)}
           onBundleImported={async () => {
@@ -1165,7 +1158,7 @@ const App = () => {
             editing={!!contentRollEditId}
             playgroundParams={playgroundChain?.params || null}
             playgroundRoles={(playgroundChain?.params?.characters || []).map((item, index) => ({ id: String(item.id), enabled: item.enabled !== false, label: t('角色 {0}', [String(index + 1)]) })).filter(item => item.enabled)}
-            canUndo={!!contentRollUndo}
+            canUndo={!!contentRollUndo && contentRollUndo.chainId === playgroundChain.id}
             onApplyRoll={handleApplyContentRoll}
             onUseCombination={contentRollEntryTarget ? undefined : picks => handleUseLibraryEntry({ id: 'current-combination', ...createCombinationData(t('当前组合'), picks) } as PromptChain)}
             onUndoApply={handleUndoContentRoll}
@@ -1307,7 +1300,7 @@ const App = () => {
           forceEmptySeed={appearancePreferences.forceEmptySeed}
           onForceEmptySeedChange={enabled => setAppearancePreferences(current => ({ ...current, forceEmptySeed: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
-          onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
+          onNavigateToPlayground={(name, data) => handleNavigate('playground', undefined, { trialImport: { name, data } })}
           onOpenArtistLibrary={openArtistLibrary}
           initialPinned={rollPinnedEntry}
           onOpenChain={id => { void handleNavigate('edit', id); }}
@@ -1320,8 +1313,12 @@ const App = () => {
           }} />;
       case 'playground':
         if (!playgroundChain) return <PageSpinner />;
-        return <PromptLibraryRequestEnabledContext.Provider value><ChainEditor
-          chain={playgroundChain}
+        return <PromptLibraryRequestEnabledContext.Provider value><div className="flex h-full min-h-0 flex-col">
+        <LabTrialNavigation trials={labTrials.trials} activeId={labTrials.activeId} onSelect={labTrials.select} onAdd={labTrials.add} onRename={labTrials.rename} onRemove={labTrials.remove} results={labTrialResults} notify={notify} />
+        {labTrials.trials.map(trial => <div key={trial.id} hidden={trial.id !== labTrials.activeId} className={trial.id === labTrials.activeId ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><ChainEditor
+          chain={trial}
+          active={trial.id === labTrials.activeId && view === 'playground'}
+          onTrialResult={item => setLabTrialResults(previous => previous[trial.id]?.id === item.id ? previous : { ...previous, [trial.id]: item })}
           allChains={chains}
           {...chainReadState}
           onUpdateChain={handleUpdatePlaygroundChain}
@@ -1329,11 +1326,11 @@ const App = () => {
           onCreateCharacter={handleSaveCharacterToLibrary}
           setIsDirty={() => { }}
           notify={notify}
-          externalImportToken={playgroundImportToken}
-          sectionsRevision={contentRollRevision}
+          externalImportToken={trial.id === labTrials.activeId ? playgroundImportToken : 0}
+          sectionsRevision={trial.id === labTrials.activeId ? contentRollRevision : 0}
           onContentRollForRole={handleContentRollForRole}
           onContentRollForGlobal={handleContentRollForGlobal}
-          agentOpenToken={playgroundAgentOpenToken}
+          agentOpenToken={trial.id === labTrials.activeId ? playgroundAgentOpenToken : 0}
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
@@ -1348,7 +1345,8 @@ const App = () => {
           onSectionedPromptChange={enabled => setAppearancePreferences(current => ({ ...current, labSectionedPrompt: enabled }))}
           safeMode={safeMode}
           onBack={() => handleNavigate(lastLabEntryViewRef.current)}
-        /></PromptLibraryRequestEnabledContext.Provider>;
+        /></div>)}
+        </div></PromptLibraryRequestEnabledContext.Provider>;
       default:
         return <div>Unknown View</div>;
     }
@@ -1360,7 +1358,7 @@ const App = () => {
       .map(target => [target, renderViewContent(target)]),
   ), [view, chains, currentUser, loading, chainsError, selectedId, appearancePreferences, inspirationsCache, inspirationsError, historyEntry, libraryEntry, rollPinnedEntry, language]);
   const playgroundContent = useMemo(() => renderViewContent('playground'), [
-    view, playgroundChain, chains, loading, chainsError, currentUser, playgroundImportToken, contentRollRevision, playgroundAgentOpenToken,
+    view, playgroundChain, labTrials.trials, labTrials.activeId, labTrialResults, chains, loading, chainsError, currentUser, playgroundImportToken, contentRollRevision, playgroundAgentOpenToken,
     appearancePreferences, safeMode, language,
   ]);
   const contentLibraryContent = useMemo(() => renderViewContent('content-library'), [

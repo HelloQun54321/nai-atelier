@@ -279,7 +279,7 @@ export const serializeLabWorkspaceMemory = (session: LabWorkspaceSession, memory
     updatedAt: clean.updatedAt,
     ...(memory.parameters ? { activeMode: clean.activeMode } : {}),
     textToImage: {
-      ...(memory.globalPrompt ? { basePrompt: clean.textToImage.basePrompt, subjectPrompt: clean.textToImage.subjectPrompt, activeModules: clean.textToImage.activeModules } : {}),
+      ...(memory.globalPrompt ? { basePrompt: clean.textToImage.basePrompt, artistString: clean.textToImage.artistString, subjectPrompt: clean.textToImage.subjectPrompt, activeModules: clean.textToImage.activeModules } : {}),
       ...(memory.negativePrompt ? { negativePrompt: memory.globalPrompt ? clean.textToImage.negativePrompt
         : getEditableGlobalNegative(clean.textToImage.negativePrompt, clean.textToImage.params._promptSections) } : {}),
       params: selectParams(clean.textToImage.params),
@@ -331,6 +331,7 @@ const restoreLabWorkspaceMemory = (value: unknown, fallback: LabWorkspaceSession
     textToImage: {
       ...fallback.textToImage,
       ...(memory.globalPrompt ? { basePrompt: source.textToImage?.basePrompt ?? fallback.textToImage.basePrompt,
+        artistString: source.textToImage?.artistString ?? fallback.textToImage.artistString,
         subjectPrompt: source.textToImage?.subjectPrompt ?? fallback.textToImage.subjectPrompt,
         activeModules: source.textToImage?.activeModules ?? fallback.textToImage.activeModules } : {}),
       negativePrompt: memory.negativePrompt ? (memory.globalPrompt ? source.textToImage?.negativePrompt
@@ -355,7 +356,7 @@ const restoreLabWorkspaceMemory = (value: unknown, fallback: LabWorkspaceSession
 /** 自由实验室复开只恢复文字与参数；预设工作台的本次会话仍完整恢复。 */
 export const openLabWorkspaceSession = (key: string, fallback: LabWorkspaceSession, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES): LabWorkspaceSession => {
   const session = loadLabWorkspaceSession(key, fallback, rememberGenerationSettings, generationMemory);
-  return key === 'playground' ? getLabWorkspaceSettings(session) : session;
+  return key === 'playground' || key.startsWith('playground:') ? getLabWorkspaceSettings(session) : session;
 };
 
 export const saveLabWorkspaceSession = (key: string, session: LabWorkspaceSession, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES): boolean => {

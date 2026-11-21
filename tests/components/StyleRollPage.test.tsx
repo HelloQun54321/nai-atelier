@@ -623,7 +623,7 @@ it('存为风格串保留实际参数，关联失败后重试不重复创建链�
 });
 it('实验室入口在详情直接可达，导入完整草稿而不生图', async () => {
   const { props } = await setup(); fireEvent.click(screen.getByRole('button', { name: '查看候选 1' })); details(); fireEvent.click(screen.getByRole('button', { name: '送往实验室' }));
-  expect(props.onNavigateToPlayground).toHaveBeenCalledOnce(); expect(JSON.parse(sessionStorage.getItem('nai_pending_import')!)).toEqual(expect.objectContaining({ fullMetadata: true, targetMode: 'text-to-image', params: experiment.template.params, importSeed: true })); expect(mocks.generate).not.toHaveBeenCalled();
+  expect(props.onNavigateToPlayground).toHaveBeenCalledOnce(); expect(props.onNavigateToPlayground).toHaveBeenCalledWith(experiment.name + ' · 候选 1', expect.objectContaining({ fullMetadata: true, targetMode: 'text-to-image', params: experiment.template.params, importSeed: true })); expect(mocks.generate).not.toHaveBeenCalled();
 });
 
 it('卡片直接保存；下一轮重新从画师库随机抽取，不再继承已保存组合', async () => {

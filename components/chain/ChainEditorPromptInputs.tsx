@@ -69,6 +69,8 @@ export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placehol
 };
 
 export interface ChainEditorPromptInputsProps {
+    artistString?: string;
+    setArtistString?: (value: string) => void;
     prompt: string;
     setPrompt: (value: string) => void;
     sections?: PromptSections | null;
@@ -92,7 +94,7 @@ export interface ChainEditorPromptInputsProps {
 }
 
 export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = ({
-    prompt, setPrompt, sections, setSections, supplementPrompt = mergePromptSections(sections), setSupplementPrompt,
+    artistString = '', setArtistString, prompt, setPrompt, sections, setSections, supplementPrompt = mergePromptSections(sections), setSupplementPrompt,
     presetSources, tagAssistEnabled, canEdit, copyPromptToClipboard,
     onPlainPromptChange, embedded = false,
     markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab, notify, sample, onReversePromptTag,
@@ -112,7 +114,11 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                     }} />
             </div>
         </section>;
-    return embedded ? content : <LabModuleSection moduleId="prompt" label={t('全局正面提示词')}
-        defaultCollapsed={Boolean(activeLabLayout.collapsed.prompt)}
-        className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>{content}</LabModuleSection>;
+    const artistField = setArtistString ? <PromptField label="画师串" value={artistString}
+        placeholder="画师标签与固定画风" disabled={!canEdit} tagAssistEnabled={tagAssistEnabled}
+        onCopy={copyPromptToClipboard} onChange={setArtistString} /> : null;
+    return <>{artistField && <LabModuleSection moduleId="artistString" label={t('画师串')} defaultCollapsed={activeLabLayout.collapsed.artistString ?? true}
+        className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>{artistField}</LabModuleSection>}
+        {embedded ? content : <LabModuleSection moduleId="prompt" label={t('全局正面提示词')} defaultCollapsed={Boolean(activeLabLayout.collapsed.prompt)}
+        className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>{content}</LabModuleSection>}</>;
 };

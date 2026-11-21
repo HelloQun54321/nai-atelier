@@ -243,6 +243,32 @@ const setup = (entry: PromptChain = chain, rememberGenerationSettings = true, ge
   return { ...render(<ChainEditor {...props} />), props };
 };
 const textPrompt = () => screen.getByRole('textbox', { name: '全局正面提示词' }) as HTMLTextAreaElement;
+it('两个试画分区切换保留各自原文，不触发保存风格串或封面', async () => {
+  const first = { ...chain, id: 'playground:trial-a', basePrompt: 'style a', variableValues: { subject: '' } };
+  const second = { ...chain, id: 'playground:trial-b', basePrompt: 'style b', variableValues: { subject: '' } };
+  const initial = setup(first); initial.unmount(); state.scopes.add(second.id);
+  const Harness = () => {
+    const [active, setActive] = React.useState(first.id);
+    const [token, setToken] = React.useState(0);
+    return <><button onClick={() => setActive(id => id === first.id ? second.id : first.id)}>切换试画</button><button onClick={() => {
+      sessionStorage.setItem('nai_pending_import', JSON.stringify({ targetMode: 'text-to-image', basePrompt: 'imported style', subjectPrompt: '', modules: [], negativePrompt: '', params: chain.params }));
+      setActive(second.id); setToken(value => value + 1);
+    }}>导入到第二分区</button>{[first, second].map(entry =>
+      <div key={entry.id} hidden={active !== entry.id}><ChainEditor {...initial.props} chain={entry} active={active === entry.id} externalImportToken={active === entry.id ? token : 0} /></div>)}</>;
+  };
+  render(<Harness />);
+  fireEvent.change(textPrompt(), { target: { value: 'style a, forest,\n' } });
+  fireEvent.click(screen.getByText('切换试画')); expect(textPrompt().value).toBe('style b');
+  fireEvent.change(textPrompt(), { target: { value: 'style b, forest,\n' } });
+  fireEvent.click(screen.getByText('切换试画')); expect(textPrompt().value).toBe('style a, forest,\n');
+  expect(initial.props.onFork).not.toHaveBeenCalled();
+  expect(initial.props.onUpdateChain).toHaveBeenCalledWith(first.id, expect.objectContaining({ basePrompt: 'style a, forest,\n' }));
+  fireEvent.click(screen.getByText('导入到第二分区'));
+  await waitFor(() => expect(textPrompt().value).toBe('imported style'));
+  fireEvent.click(screen.getByText('切换试画')); expect(textPrompt().value).toBe('style a, forest,\n');
+  expect(sessionStorage.getItem('nai_pending_import')).toBeNull();
+});
+
 /** 底栏短「生成」与「生成选项」都匹配 /^生成/；主按钮排除选项。 */
 const generatePrimaryName = /^(生成|加入队列|读取图片中…)(?!选项)/;
 
@@ -1728,6 +1754,20 @@ describe('统一工作台真实状态链路', () => {
     expect(screen.queryByRole('button', { name: /保存风格串|保存到库|另存为新串/ })).toBeNull();
     expect(view.props.onUpdateChain).toHaveBeenCalledOnce();
     expect(view.props.onFork).toHaveBeenCalledOnce();
+  });
+
+  it('指定试画分区的导入仅由该分区消费', async () => {
+    const view = setup({ ...chain, id: 'playground' });
+    await waitFor(() => expect(state.agent?.draft.basePrompt).toBeTruthy());
+    const existing = state.agent?.draft.basePrompt;
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'prompt-fragments', targetMode: 'text-to-image',
+      targetChainId: 'playground:roll-test', fullMetadata: true, replace: true, prompt: 'roll test prompt' }));
+    view.rerender(<ChainEditor {...view.props} externalImportToken={1} />);
+    expect(state.agent?.draft.basePrompt).toBe(existing);
+    expect(sessionStorage.getItem('nai_pending_import')).not.toBeNull();
+    view.rerender(<ChainEditor {...view.props} key="roll-test" chain={{ ...chain, id: 'playground:roll-test' }} externalImportToken={1} />);
+    await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('roll test prompt'));
+    expect(sessionStorage.getItem('nai_pending_import')).toBeNull();
   });
 
   it('分享配方替换生成配置后另存新串，仍保留原作者与免费出处', async () => {

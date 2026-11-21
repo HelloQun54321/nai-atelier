@@ -16,7 +16,7 @@ export type FontScale = 'small' | 'standard' | 'large';
 export type LabModuleId = 'prompt' | 'characters' | 'params' | 'negative' | 'characterReference' | 'vibe';
 export type LabModuleCollapsedPreferences = Record<LabModuleId, boolean>;
 export type LabPageId = 'text-to-image' | 'image-to-image' | 'inpaint' | 'outpaint';
-export type LabPageModuleId = LabModuleId | 'baseImage' | 'editSettings';
+export type LabPageModuleId = LabModuleId | 'baseImage' | 'editSettings' | 'artistString';
 export interface LabPageLayout {
   collapsed: Partial<Record<LabPageModuleId, boolean>>;
 }
