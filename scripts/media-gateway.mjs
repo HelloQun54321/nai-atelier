@@ -1,3 +1,4 @@
+import { IMPORTED_IMAGE_MAX_BYTES } from '../services/imageLimits.mjs';
 import { vibeBaseModel, vibeModelKey } from '../services/vibeProtocol.mjs';
 import { GenerationTasks, DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval, validateGenerationIntervalJitter } from '../worker/generationTasks.mjs';
 import { createDesktopGenerationJobs, handleGenerationJobRequest } from './generation-gateway.mjs';
@@ -3353,9 +3354,9 @@ export const getValidatedSource = value => {  const source = String(value || '')
   return { type: 'remote', source: url.toString() };
 };
 
-const readLimitedResponse = async response => {
+const readLimitedResponse = async (response, limit = INPUT_LIMIT) => {
   const declared = Number(response.headers.get('content-length') || 0);
-  if (declared > INPUT_LIMIT) throw new Error('Image is too large');
+  if (declared > limit) { await response.body?.cancel().catch(() => {}); throw Object.assign(new Error('Image is too large'), { status: 413 }); }
   const reader = response.body?.getReader();
   if (!reader) return Buffer.alloc(0);
   const chunks = [];
@@ -3364,9 +3365,9 @@ const readLimitedResponse = async response => {
     const { value, done } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > INPUT_LIMIT) {
+    if (size > limit) {
       await reader.cancel();
-      throw new Error('Image is too large');
+      throw Object.assign(new Error('Image is too large'), { status: 413 });
     }
     chunks.push(Buffer.from(value));
   }
@@ -3480,7 +3481,7 @@ export const requestRemoteBuffer = async (source, remoteFetch = fetch) => {
     }
     const response = await remoteFetch(url, {
       redirect: 'manual',
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(host === PIXIV_IMAGE_HOST ? 90_000 : 20_000),
       headers,
     });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
@@ -3491,7 +3492,7 @@ export const requestRemoteBuffer = async (source, remoteFetch = fetch) => {
     }
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
     if (!response.ok) return { status: response.status, headers: { 'content-type': contentType }, buffer: Buffer.alloc(0) };
-    const buffer = await readLimitedResponse(response);
+    const buffer = await readLimitedResponse(response, host === PIXIV_IMAGE_HOST ? IMPORTED_IMAGE_MAX_BYTES : INPUT_LIMIT);
     const mediaType = contentType.toLowerCase().split(';')[0].trim();
     const resolvedType = mediaType.startsWith('image/') ? mediaType : sniffImageMime(buffer);
     if (!resolvedType) throw new Error('Remote response is not an image');

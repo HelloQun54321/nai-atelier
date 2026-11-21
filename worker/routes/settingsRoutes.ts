@@ -1,3 +1,4 @@
+import { IMPORTED_IMAGE_MAX_BYTES } from '../../services/imageLimits.mjs';
 import { ensureHistoryRecycleSchema } from './historyRecycleSchema';
 import { readPromptPurposes } from '../../services/promptPurposes.mjs';
 // LAN access, anlas budget, admin endpoints, NAI proxy (generate/upload),
@@ -724,8 +725,8 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
       const rawExt = String(file.name.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
       const ext = extensionByType[rawExt];
       if (!ext) return error('仅支持上传 PNG、JPEG 或 WebP 图片', 400);
-      if (file.size > MAX_MANAGED_IMAGE_BYTES) {
-        return error(`图片不能超过 ${Math.floor(MAX_MANAGED_IMAGE_BYTES / 1024 / 1024)}MB`, 413);
+      if (file.size > IMPORTED_IMAGE_MAX_BYTES) {
+        return error(`图片不能超过 ${Math.floor(IMPORTED_IMAGE_MAX_BYTES / 1024 / 1024)}MB`, 413);
       }
       const filename = `${folder}/${currentUser.id}_${Date.now()}_${crypto.randomUUID()}.${ext}`;
       await env.BUCKET.put(filename, file.stream(), { httpMetadata: { contentType: `image/${ext}` } });
