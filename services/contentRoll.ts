@@ -9,7 +9,7 @@ import { PROMPT_PURPOSES, purposeSectionKey, promptPurposeLabel, isPurposeSectio
  *      派生成「缺席约束、自动、明确定值、待确认」四类，并给出备注与 needsReview，
  *      原文副本保留、不猜测、不回写词库。
  *
- * 六库抽取、随机流、历史与证据部分见 tools/nai-roll/patches/roll/core.mjs（本文件暂不移植）。
+ * 六库抽取、随机流、历史与证据部分见 services/contentRollDraw.ts。
  */
 
 /**

@@ -13,7 +13,7 @@
 | `tests/fixtures/` | 合成的测试数据与生成器，不存私人资料或真实凭据 |
 | `tests/live/` | 用户显式执行的联网检查 |
 | `tests/android/` | Android 原生仪器回归，全部使用应用内独立合成目录 |
-| `logs/tests/` | npm 测试入口的完整日志，每次运行独立保存；旧根目录测试日志保存在 `archive/` |
+| `logs/tests/` | npm 测试入口的完整日志，每次运行独立保存并自动轮转保留近期记录 |
 | `tests/.tmp/` | 忽略入库的临时工作区与一次性排查文件 |
 
 ## 命令
@@ -52,7 +52,7 @@ npm run test:android
 
 联网自检抓取当前官方 Web 应用，逐项验证模型、免费门槛、倍率与附加费提取，并在无文件／网络／进程能力的测试沙箱中执行官方实际费用调用及完整基础计价函数，覆盖尺寸、步数、订阅、额度、多张、参考、Vibe 与 Strength 的组合；Vibe 附加费和缓存／新编码费用执行独立官方函数，不用待验证常量拼造对照结果。按实际调用传入参考，不人为添加重试判定字段。不调用生图或付费编码接口。
 
-[run.mjs](./run.mjs) 保留终端输出，同时将日志写入 `<类型>-<时间戳>-<进程号>.log`，并行运行互不覆盖；后端 Node 与 Worker 两阶段输出合并在本次同一日志，任一阶段失败均返回非零码。新增 Node 测试不需要再手动更新 `package.json` 的文件清单；后端入口按测试名称排除 `desktop-*`、`android-*`、图标、门禁与测试工具，其余 Node 测试自动加入。`test:gateway -- <文件.test.mjs>` 保留旧的定向调用，仅运行指定 Node 文件。Vitest 自动发现集中目录中的 `*.test.ts` 和 `*.test.tsx`。两类入口均排除 `tests/.tmp/`；目录回归检查防止正式测试重新散落到源码目录。
+[run.mjs](./run.mjs) 保留终端输出，同时将日志写入 `<类型>-<时间戳>-<进程号>.log` 并自动清理过期旧日志（保留最近 20 份），并行运行互不覆盖；后端 Node 与 Worker 两阶段输出合并在本次同一日志，任一阶段失败均返回非零码。新增 Node 测试不需要再手动更新 `package.json` 的文件清单；后端入口按测试名称排除 `desktop-*`、`android-*` 与 `node-workspace`，其余 Node 测试自动加入。`test:gateway -- <文件.test.mjs>` 保留旧的定向调用，仅运行指定 Node 文件。Vitest 自动发现集中目录中的 `*.test.ts` 和 `*.test.tsx`。两类入口均排除 `tests/.tmp/`。
 
 例如 `components/AgentModelControl.tsx` 对应 `tests/components/AgentModelControl.test.tsx`；针对同一实现的多个测试变体也放在对应目录。分类依据是主要维护归属，模块目录可以包含集成验证，不强制把所有使用多个模块的测试移入 `integration/`。
 

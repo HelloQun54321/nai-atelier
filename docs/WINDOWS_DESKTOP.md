@@ -57,7 +57,7 @@ npm run build:desktop
 
 输出目录是 Git 忽略的 `release/`。GitHub Release 上传安装 EXE、`.sha256`、`latest.yml` 与使用说明；元数据使后续安装版能发现并验证该安装包。无需分发 `win-unpacked` 或 `.desktop-build`。构建固定 `publish: never`，不会自动上传或公开发布。当前采用完整包更新，不提供差分下载。构建过程联网取得 Electron、Node 和依赖；Node 官方 ZIP 必须通过官方 SHA-256 清单校验。所有第三方运行依赖按各自许可保留许可材料。
 
-应用、窗口、托盘及源码快捷方式使用同源晴空蓝调色盘 ICO。修改图案后运行 `node scripts/generate-app-icon.mjs`，同步三份 ICO 与网页 PNG；256px 高清帧为 PNG，小尺寸为带 alpha／AND 蒙版的 32 位 DIB，避免全 PNG 图标被打包后无法由 Windows Shell 提取。`tests/scripts/generate-app-icon.test.mjs` 核对生成结果与公开资产一致，并在 Windows 实际提取大小图标；交付包还须核对 EXE 的系统提取结果，不能只确认图标路径存在。
+应用、窗口、托盘及源码快捷方式使用同源晴空蓝调色盘 ICO。修改图案后运行 `node scripts/generate-app-icon.mjs`，同步三份 ICO 与网页 PNG；256px 高清帧为 PNG，小尺寸为带 alpha／AND 蒙版的 32 位 DIB，避免全 PNG 图标被打包后无法由 Windows Shell 提取。交付包还须核对 EXE 的系统提取结果，不能只确认图标路径存在。
 
 - 前端构建仅使用公开图标白名单，禁用 `.env*` 文件加载；运行脚本、助手规则和酒馆连接器也采用公开文件白名单。
 - 不复制源码的 `local-data`、`local-cache`、`public/tag-data`、`.wrangler`、日志、测试材料、环境配置或 `node_modules`。

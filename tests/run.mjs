@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { createWriteStream, readdirSync, mkdirSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { once } from 'node:events';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { cleanupStaleWorkspaces, createWorkspace, projectRoot, removeWorkspace, resolveExternalTestRoot } from './support/workspace.mjs';
+
+const MAX_RETAINED_TEST_LOGS = 20;
+const ACTIVE_LOG_GRACE_MS = 10 * 60 * 1000;
 
 export const discoverNodeTests = (root = projectRoot) => {
   const files = [];
@@ -20,9 +23,9 @@ export const discoverNodeTests = (root = projectRoot) => {
   return files.sort();
 };
 
-// 日常后端回归不夹带桌面／Android 打包与工程工具；完整 Node 入口仍自动发现全部文件。
+// 日常后端回归不夹带桌面／Android 打包与工作区隔离自检；完整 Node 入口仍自动发现全部文件。
 export const discoverGatewayTests = (root = projectRoot) => discoverNodeTests(root)
-  .filter(file => !/^(?:desktop-|android-|generate-app-icon\.|gitignore\.|git-hooks\.|secret-scan\.|run\.test\.|node-workspace\.)/.test(basename(file)));
+  .filter(file => !/^(?:desktop-|android-|node-workspace\.)/.test(basename(file)));
 
 export const nodeTestArguments = (args, files = discoverNodeTests()) => {
   const selected = args.filter(value => value.endsWith('.test.mjs')).map(value => resolve(projectRoot, value));
@@ -47,6 +50,29 @@ export const runLoggedCommand = async (args, { logPath, append = false, cwd = pr
 
 export const testLogPath = mode => join(resolveExternalTestRoot(process.env.NAI_TEST_LOG_ROOT, join(projectRoot, 'logs', 'tests')), `${mode}-${Date.now()}-${process.pid}.log`);
 
+/** 默认日志目录只保留近期日志，避免历史输出无限堆积；10 分钟内的新日志原样保留以兼容并行会话。 */
+export const cleanupOldTestLogs = (maxRetained = MAX_RETAINED_TEST_LOGS) => {
+  if (process.env.NAI_TEST_LOG_ROOT) return 0;
+  const logDir = join(projectRoot, 'logs', 'tests');
+  if (!existsSync(logDir)) return 0;
+  const now = Date.now();
+  const entries = readdirSync(logDir, { withFileTypes: true })
+    .filter(entry => entry.isFile() && entry.name.endsWith('.log'))
+    .map(entry => {
+      const fullPath = join(logDir, entry.name);
+      try { return { fullPath, mtimeMs: statSync(fullPath).mtimeMs }; }
+      catch { return null; }
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  let removed = 0;
+  for (const entry of entries.slice(maxRetained)) {
+    if (now - entry.mtimeMs < ACTIVE_LOG_GRACE_MS) continue;
+    try { unlinkSync(entry.fullPath); removed += 1; } catch { /* 占用中则跳过 */ }
+  }
+  return removed;
+};
+
 const main = async () => {
   const [mode = 'unit', ...extra] = process.argv.slice(2);
   const modes = {
@@ -60,8 +86,9 @@ const main = async () => {
   };
   if (!modes[mode]) throw new Error('测试类型应为 unit、node、gateway 或 live-sync');
   const commands = modes[mode]();
-  // 上次被中断的运行会留下工作区，开跑前先清掉，避免 tests/.tmp 越积越大。
+  // 上次被中断的运行会留下工作区，开跑前先清掉，避免 tests/.tmp 与 logs/tests 越积越大。
   cleanupStaleWorkspaces();
+  cleanupOldTestLogs();
   const logPath = testLogPath(mode);
   const runRoot = ['gateway', 'node'].includes(mode) ? createWorkspace('run-') : undefined;
   console.log(`测试完整日志：${relative(projectRoot, logPath)}`);
