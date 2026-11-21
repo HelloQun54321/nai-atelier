@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../services/i18n';
-import React, { useEffect, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, Maximize, Minus, Plus } from 'lucide-react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Maximize, Minus, Palette, Plus, X } from 'lucide-react';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { OriginalImage } from './SmartImage';
 import { ImageShareOverlay, IMAGE_CARD_ACTION_CLASS } from './ImageShareActions';
@@ -12,18 +12,22 @@ import type { ImageGenerationData } from '../services/imageClipboardContext';
 import type { CollectionTarget } from '../services/collectionFavorites';
 import { buildMediaUrl, type MediaPreviewTransform } from '../services/mobileImageCache';
 
+const ArtistSamples = lazy(() => import('./PromptArtistSamples').then(module => ({ default: module.PromptArtistSamples })));
+
 export const ImageLightbox:React.FC<React.PropsWithChildren<{
-  src:string;alt?:string;filename?:string;generationData?:ImageGenerationData;favorite?:CollectionTarget;
+  src:string;alt?:string;filename?:string;generationData?:ImageGenerationData;favorite?:CollectionTarget;artistSourcePrompt?:string;
   notify?:(message:string,type?:'success'|'error')=>void;
   onClose:()=>void;onSwipe?:(delta:number)=>void;customActions?:boolean;hideShareActions?:boolean;
   pager?: { index: number; count: number; onChange: (index: number) => void };
   zIndex?: number;
-}>>=({src,alt='图片预览',filename='image.png',generationData,favorite,notify,onClose,onSwipe,customActions=false,hideShareActions=false,pager,children,zIndex})=>{
+}>>=({src,alt='图片预览',filename='image.png',generationData,favorite,artistSourcePrompt,notify,onClose,onSwipe,customActions=false,hideShareActions=false,pager,children,zIndex})=>{
   useLanguage();
   const dialog=useModalA11y<HTMLDivElement>(true);
   const close=useMobileHistoryLayer(true,onClose,'image-zoom');
   const [failedSrc,setFailedSrc]=useState<string|null>(null);
   const [retry,setRetry]=useState(0);
+  const [artistsOpen,setArtistsOpen]=useState(false);
+  useEffect(()=>setArtistsOpen(false),[src]);
   const failed=failedSrc===src;
   const navigate=(delta:number)=>{
     if(!pager){onSwipe?.(delta);return;}
@@ -51,6 +55,11 @@ export const ImageLightbox:React.FC<React.PropsWithChildren<{
       </>}
       {children}
     </PressRevealSurface>
+    {generationData && <button type="button" className={`${IMAGE_CARD_ACTION_CLASS} absolute left-16 top-4 z-40 flex items-center justify-center`} aria-label={t('查看画师')} aria-expanded={artistsOpen} onClick={()=>setArtistsOpen(value=>!value)}><Palette className="h-5 w-5" /></button>}
+    {artistsOpen && generationData && <aside aria-label={t('画师样张')} className="appearance-panel absolute bottom-20 right-4 top-20 z-50 w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl bg-white p-3 text-gray-900 shadow-xl dark:bg-gray-900 dark:text-white" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();setArtistsOpen(false);}else if(event.key==='ArrowLeft'||event.key==='ArrowRight')event.stopPropagation();}}>
+      <div className="mb-2 flex justify-end"><button type="button" className="mobile-touch" aria-label={t('关闭画师样张')} onClick={()=>setArtistsOpen(false)}><X className="h-4 w-4" /></button></div>
+      <Suspense fallback={<p role="status">{t('加载中…')}</p>}><ArtistSamples key={src} prompt={generationData.prompt} params={generationData.params} sourcePrompt={artistSourcePrompt} defaultOpen /></Suspense>
+    </aside>}
     <div data-card-action="true" data-image-preview-footer className="absolute inset-x-0 bottom-3 z-40 flex flex-col items-center justify-center gap-2 text-white" onPointerDown={event=>event.stopPropagation()}>
       {pager&&pager.count>1&&<div className="flex items-center gap-3">
         <button data-agent-action="browse" type="button" className={IMAGE_CARD_ACTION_CLASS} aria-label={t('上一张图片')} disabled={pager.index<=0} onClick={()=>navigate(-1)}><ChevronLeft className="mx-auto h-4 w-4" /></button>
@@ -68,10 +77,10 @@ export const ImageLightbox:React.FC<React.PropsWithChildren<{
 };
 
 /** 详情原图点按进入同一大图查看器，原有详情滚动与分享控件仍留在原位。 */
-export const ViewableImage:React.FC<React.ImgHTMLAttributes<HTMLImageElement>&{src:string;filename?:string;generationData?:ImageGenerationData;favorite?:CollectionTarget;previewTransform?:MediaPreviewTransform;notify?:(message:string,type?:'success'|'error')=>void}>=({filename,generationData,favorite,previewTransform,notify,onClick,...props})=>{
+export const ViewableImage:React.FC<React.ImgHTMLAttributes<HTMLImageElement>&{src:string;filename?:string;generationData?:ImageGenerationData;artistSourcePrompt?:string;favorite?:CollectionTarget;previewTransform?:MediaPreviewTransform;notify?:(message:string,type?:'success'|'error')=>void}>=({filename,generationData,artistSourcePrompt,favorite,previewTransform,notify,onClick,...props})=>{
   useLanguage();
   const [open,setOpen]=useState(false);
   const previewSrc=previewTransform?buildMediaUrl(props.src,'thumb-960',previewTransform):props.src;
   return <><button data-agent-action="browse" type="button" className="contents [&:focus-visible>img]:outline-2 [&:focus-visible>img]:outline-indigo-500" aria-label={t("放大查看：{0}", [props.alt||'图片'])} onClick={event=>{event.stopPropagation();setOpen(true);}}><OriginalImage {...props} src={previewSrc} {...(previewTransform?{"data-agent-original-src":props.src}:{})} draggable={false} onClick={onClick} /></button>
-    {open&&<ImageLightbox src={props.src} alt={props.alt} filename={filename} generationData={generationData} favorite={favorite} notify={notify} onClose={()=>setOpen(false)} />}</>;
+    {open&&<ImageLightbox src={props.src} alt={props.alt} filename={filename} generationData={generationData} artistSourcePrompt={artistSourcePrompt} favorite={favorite} notify={notify} onClose={()=>setOpen(false)} />}</>;
 };
