@@ -1,15 +1,25 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
+import { BookOpen } from 'lucide-react';
 import { usePromptLibrary } from './PromptLibraryAccess';
 import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
 import { PROMPT_LIBRARY_KIND_LABELS, promptAgentService, type PromptLibraryKind } from '../services/promptAgent';
+import {
+  SETTINGS_BTN_DANGER,
+  SETTINGS_BTN_NEUTRAL,
+  SETTINGS_BTN_PRIMARY,
+  SETTINGS_CARD_CLASS,
+  SETTINGS_SUBPANEL_CLASS,
+  SETTINGS_TEXTAREA_CLASS,
+  SettingsCardHeader,
+} from './SettingsUI';
 
 /** 预览可切换的四个库类型，顺序与标签由服务层常量决定。 */
 const libraryKinds: PromptLibraryKind[] = ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'];
 
-const libraryFieldClass = 'w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-800 outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-100';
-const libraryPrimaryButtonClass = 'mobile-touch rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50';
-const librarySecondaryButtonClass = 'appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700';
+const libraryFieldClass = SETTINGS_TEXTAREA_CLASS;
+const libraryPrimaryButtonClass = SETTINGS_BTN_PRIMARY;
+const librarySecondaryButtonClass = SETTINGS_BTN_NEUTRAL;
 
 /**
  * 库生成提示词设置：为人物形象 / 服饰 / 姿势 / 场景四个提示词库置顶追加两段自定义内容，
@@ -104,12 +114,16 @@ export const PromptLibrarySettings: React.FC = () => {
   };
 
   return (
-    <section aria-label={t("库生成提示词")} className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-      <h3 className="mb-2 text-sm font-bold text-gray-900 dark:text-white">{t("库生成提示词")}</h3>
-      <p className="mb-3 text-xs leading-5 text-gray-500 dark:text-gray-400">{t('用于当前目录的提示词生成。')}</p>
+    <section aria-label={t("库生成提示词")} className={SETTINGS_CARD_CLASS}>
+      <SettingsCardHeader
+        title={t("库生成提示词")}
+        icon={<BookOpen />}
+        description={t('用于当前目录的提示词生成。')}
+        className="mb-3"
+      />
       <div className="space-y-3">
         <label className="block">
-          <span className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">{t("规范提示词")}</span>
+          <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-300">{t("规范提示词")}</span>
           <textarea
             rows={5}
             value={spec}
@@ -122,7 +136,7 @@ export const PromptLibrarySettings: React.FC = () => {
           />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">{t("附加指令")}</span>
+          <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-300">{t("附加指令")}</span>
           <textarea
             rows={3}
             value={extra}
@@ -137,13 +151,13 @@ export const PromptLibrarySettings: React.FC = () => {
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button type="button" data-appearance="control" data-tone="primary" disabled={!loaded || saving || previewing || !dirty} onClick={() => void save()} className={libraryPrimaryButtonClass}>{t("保存")}</button>
-        <button type="button" data-appearance="control" data-tone="danger" disabled={saving || (!spec && !extra)} onClick={clear} className={librarySecondaryButtonClass}>{t("清空")}</button>
+        <button type="button" data-appearance="control" data-tone="danger" disabled={saving || (!spec && !extra)} onClick={clear} className={SETTINGS_BTN_DANGER}>{t("清空")}</button>
         <button type="button" data-appearance="control" data-tone="neutral" disabled={!loaded || saving || previewing || !!library?.directoriesError || !!library?.reloadDirectories && !library.directories || !!library?.directories && !library.directories.nodes.length} onClick={() => void loadPreview(kind)} className={librarySecondaryButtonClass}>{t("预览最终系统提示词")}</button>
-        {dirty && <span className="text-xs font-bold text-amber-600 dark:text-amber-400">{t("有未保存的修改")}</span>}
+        {dirty && <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">{t("有未保存的修改")}</span>}
       </div>
       {notice && <p role="status" className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{notice}</p>}
       {previewOpen && (
-        <div className="appearance-group mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950">
+        <div className={`${SETTINGS_SUBPANEL_CLASS} mt-3`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div role="tablist" aria-label={t("提示词库类型")} className="flex flex-wrap items-center gap-2">
               {library?.directories ? <PromptLibraryDirectoryPicker state={library.directories} selectedIds={directoryId ? [directoryId] : []} onChange={ids => { if (ids[0]) void loadPreview(kind, ids[0]); }} mode="single" includeAll={false} disabled={previewing} /> : libraryKinds.map(item => (

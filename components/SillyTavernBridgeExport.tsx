@@ -17,6 +17,14 @@ import {
 import { openLocalBackupFolder } from '../services/localBackup';
 import { beginExportTarget } from '../services/exportLocation';
 import { pickStorageDirectory } from '../services/storageLocations';
+import {
+  SETTINGS_BTN_NEUTRAL,
+  SETTINGS_BTN_PRIMARY,
+  SETTINGS_DIVIDE_CLASS,
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_SUBPANEL_CLASS,
+  SettingsSwitchRow,
+} from './SettingsUI';
 import { refreshStChatu8Preferences, setStChatu8Enabled, useStChatu8Preferences } from '../services/stChatu8Preferences';
 import { refreshStBaiBaiPreferences, setStBaiBaiEnabled, useStBaiBaiPreferences } from '../services/stBaiBaiPreferences';
 
@@ -422,32 +430,34 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
 
   return (
     <div className="space-y-3">
-      {/* 智慧姬同步独立开关 */}
-      <label className="flex cursor-pointer items-start justify-between gap-4">
-        <span className="min-w-0">
-          <span className="block font-semibold text-gray-900 dark:text-white">{t("智慧姬同步")}</span>
-          <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">
-            {t("发送工坊精选，接收酒馆预设；关闭保留资料。")}</span>
-        </span>
-        <input type="checkbox" aria-label={t("智慧姬同步")} checked={chatu8Preferences.enabled} disabled={!chatu8Preferences.ready || chatu8Preferences.busy || installing || exporting}
-          onChange={event => { void handleToggleChatu8(event.target.checked); }} className="mt-1 h-5 w-5 shrink-0 accent-indigo-600 disabled:opacity-40" />
-      </label>
-      {chatu8Preferences.error && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400"><span>{t(chatu8Preferences.error)}</span><button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void refreshStChatu8Preferences(); }} disabled={chatu8Preferences.busy} className="mobile-touch shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 underline transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t("重新读取")}</button></div>}
+      <div className={SETTINGS_DIVIDE_CLASS}>
+        {/* 智慧姬同步独立开关 */}
+        <div className="pb-1">
+          <SettingsSwitchRow
+            label="智慧姬同步"
+            description="发送工坊精选，接收酒馆预设；关闭保留资料。"
+            checked={chatu8Preferences.enabled}
+            disabled={!chatu8Preferences.ready || chatu8Preferences.busy || installing || exporting}
+            onChange={next => { void handleToggleChatu8(next); }}
+          />
+          {chatu8Preferences.error && <div className="flex items-center gap-2 pb-2 text-xs text-red-600 dark:text-red-400"><span>{t(chatu8Preferences.error)}</span><button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void refreshStChatu8Preferences(); }} disabled={chatu8Preferences.busy} className="mobile-touch shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 underline transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t("重新读取")}</button></div>}
+        </div>
 
-      {/* 柏宝绘同步独立开关 */}
-      <label className="flex cursor-pointer items-start justify-between gap-4 border-t border-gray-200/70 pt-3 dark:border-gray-700/70">
-        <span className="min-w-0">
-          <span className="block font-semibold text-gray-900 dark:text-white">{t("柏宝绘同步")}</span>
-          <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">
-            {t("接收柏宝绘预设、Vibe 与历史图；仅在酒馆手动点击「立即同步」时写回，写入后需刷新酒馆页面生效。")}</span>
-        </span>
-        <input type="checkbox" aria-label={t("柏宝绘同步")} checked={baiBaiPreferences.enabled} disabled={!baiBaiPreferences.ready || baiBaiPreferences.busy || installing || exporting}
-          onChange={event => { void handleToggleBaiBai(event.target.checked); }} className="mt-1 h-5 w-5 shrink-0 accent-indigo-600 disabled:opacity-40" />
-      </label>
-      {baiBaiPreferences.error && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400"><span>{t(baiBaiPreferences.error)}</span><button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void refreshStBaiBaiPreferences(); }} disabled={baiBaiPreferences.busy} className="mobile-touch shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 underline transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t("重新读取")}</button></div>}
+        {/* 柏宝绘同步独立开关 */}
+        <div className="pt-1">
+          <SettingsSwitchRow
+            label="柏宝绘同步"
+            description="接收柏宝绘预设、Vibe 与历史图；仅在酒馆手动点击「立即同步」时写回，写入后需刷新酒馆页面生效。"
+            checked={baiBaiPreferences.enabled}
+            disabled={!baiBaiPreferences.ready || baiBaiPreferences.busy || installing || exporting}
+            onChange={next => { void handleToggleBaiBai(next); }}
+          />
+          {baiBaiPreferences.error && <div className="flex items-center gap-2 pb-2 text-xs text-red-600 dark:text-red-400"><span>{t(baiBaiPreferences.error)}</span><button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void refreshStBaiBaiPreferences(); }} disabled={baiBaiPreferences.busy} className="mobile-touch shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 underline transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t("重新读取")}</button></div>}
+        </div>
+      </div>
 
       {anyEnabled && <>
-        <div className="appearance-group space-y-3 rounded-xl border border-gray-200 bg-gray-50/70 p-3.5 text-xs dark:border-gray-700/60 dark:bg-gray-800/50">
+        <div className={`${SETTINGS_SUBPANEL_CLASS} space-y-3 p-3.5 text-xs`}>
           {/* 第一行：酒馆目录独占整行，避免长路径被截断或标题/徽标折行导致错位 */}
           <div>
             <div className="flex items-center justify-between gap-2">
@@ -468,7 +478,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
                 value={stRoot}
                 onChange={e => setStRoot(e.target.value)}
                 placeholder={t("例如：D:\\SillyTavern 或 TauriTavern 数据目录")}
-                className="h-9 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2.5 font-mono text-xs outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                className={`${SETTINGS_INPUT_CLASS} flex-1 font-mono`}
                 title={t("SillyTavern 本地安装根目录")}
               />
               <button
@@ -478,7 +488,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
                 onClick={() => void handlePickRootDirectory()}
                 aria-label={t("选择本地酒馆目录")}
                 title={t("选择本地酒馆目录")}
-                className="appearance-group mobile-touch inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                className={SETTINGS_BTN_NEUTRAL}
               >
                 {pickingRoot ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderOpen className="h-3.5 w-3.5" />}
                 <span>{pickingRoot ? t("正在选择…") : t("选择目录")}</span>
@@ -489,7 +499,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
                   data-appearance="control" data-tone="neutral"
                   disabled={savingRoot}
                   onClick={() => void handleSaveRoot()}
-                  className="appearance-group mobile-touch inline-flex h-9 shrink-0 items-center rounded-lg border border-gray-300 bg-white px-3 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                  className={SETTINGS_BTN_NEUTRAL}
                 >
                   {savingRoot ? t("保存中…") : t("保存目录")}
                 </button>
@@ -505,7 +515,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
                     disabled={savingRoot}
                     onClick={() => { setStRoot(item.root); void handleSaveRoot(item.root); }}
                     title={item.root}
-                    className={`appearance-group mobile-touch rounded-md border px-2 py-0.5 font-semibold transition ${stRoot === item.root ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/50 dark:text-indigo-200' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}
+                    className={`appearance-group mobile-touch rounded-lg border px-2 py-0.5 font-semibold transition ${stRoot === item.root ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/50 dark:text-indigo-200' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}
                   >
                     {item.kind === 'tauritavern' ? 'TauriTavern' : 'SillyTavern'}
                   </button>
@@ -526,7 +536,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
                 value={serverUrl}
                 onChange={e => setServerUrl(e.target.value)}
                 placeholder="http://localhost:3000"
-                className="mt-1.5 h-9 w-full rounded-lg border border-gray-300 bg-white px-2.5 font-mono text-xs outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                className={`${SETTINGS_INPUT_CLASS} mt-1.5 font-mono`}
                 title={t("SillyTavern 连接器向本项目通信所使用的 HTTP 地址")}
               />
             </div>
@@ -537,7 +547,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
                 <span className="truncate">{t("扩展安装路径")}</span>
               </div>
               <code
-                className="appearance-group mt-1.5 flex h-9 items-center truncate rounded-lg border border-gray-200/80 bg-gray-200/60 px-2.5 font-mono text-meta text-gray-800 dark:border-gray-700/80 dark:bg-gray-700/70 dark:text-gray-200"
+                className="appearance-group mt-1.5 flex h-9 items-center truncate rounded-xl border border-gray-200/80 bg-gray-200/60 px-2.5 font-mono text-meta text-gray-800 dark:border-gray-700/80 dark:bg-gray-700/70 dark:text-gray-200"
                 title={currentTargetPath}
               >
                 <span className="truncate">{currentTargetPath}</span>
@@ -606,7 +616,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
             data-appearance="control" data-tone="primary"
             onClick={() => void handleInstallExtension()}
             disabled={installing}
-            className="mobile-touch flex items-center gap-1.5 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className={SETTINGS_BTN_PRIMARY}
             title={t("将扩展直接安装/更新写入到指定的 SillyTavern 插件目录")}
           >
             {installing ? (
@@ -622,7 +632,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
               type="button"
               data-appearance="control" data-tone="neutral"
               onClick={() => void handleOpenFolder()}
-              className="appearance-group mobile-touch flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              className={SETTINGS_BTN_NEUTRAL}
               title={t("在系统文件管理器中打开安装目录")}
             >
               <ExternalLink className="h-3.5 w-3.5" />
@@ -635,7 +645,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
               data-appearance="control" data-tone="neutral"
               onClick={() => void handleExportToDirectory()}
               disabled={exporting}
-              className="appearance-group mobile-touch flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              className={SETTINGS_BTN_NEUTRAL}
               title={t("手动选择本地目录导出（选中酒馆根目录亦可自动补全）")}
             >
               <FolderOutput className="h-3.5 w-3.5" />
@@ -648,7 +658,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
             data-appearance="control" data-tone="neutral"
             onClick={() => void handleDownloadZip()}
             disabled={exporting}
-            className="appearance-group mobile-touch flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+            className={SETTINGS_BTN_NEUTRAL}
             title={t("将完整的扩展文件打包下载为 ZIP 压缩包")}
           >
             <Download className="h-3.5 w-3.5" />

@@ -1,10 +1,40 @@
 {
-  "展开配置": ["展開設定", "Configure", "設定を開く", "설정 펼치기"],
-  "未开启": ["未開啟", "Off", "オフ", "꺼짐"],
-  "酒馆目录": ["酒館目錄", "Tavern Directory", "酒場ディレクトリ", "타번 디렉터리"],
-  "服务连接地址": ["服務連線位址", "Server URL", "接続先 URL", "서버 연결 주소"],
-  "扩展安装路径": ["擴充安裝路徑", "Extension Install Path", "拡張インストール先", "확장 설치 경로"],
-  "正在选择…": ["正在選擇…", "Choosing…", "選択中…", "선택 중…"],
+  "展开配置": [
+    "展開設定",
+    "Configure",
+    "設定を開く",
+    "설정 펼치기"
+  ],
+  "未开启": [
+    "未開啟",
+    "Off",
+    "オフ",
+    "꺼짐"
+  ],
+  "酒馆目录": [
+    "酒館目錄",
+    "Tavern Directory",
+    "酒場ディレクトリ",
+    "타번 디렉터리"
+  ],
+  "服务连接地址": [
+    "服務連線位址",
+    "Server URL",
+    "接続先 URL",
+    "서버 연결 주소"
+  ],
+  "扩展安装路径": [
+    "擴充安裝路徑",
+    "Extension Install Path",
+    "拡張インストール先",
+    "확장 설치 경로"
+  ],
+  "正在选择…": [
+    "正在選擇…",
+    "Choosing…",
+    "選択中…",
+    "선택 중…"
+  ],
   "选择本地酒馆目录": [
     "選擇本機酒館目錄",
     "Choose local tavern folder",
@@ -29,10 +59,30 @@
     "例：D:\\SillyTavern または TauriTavern データフォルダ",
     "예: D:\\SillyTavern 또는 TauriTavern 데이터 폴더"
   ],
-  "快速切换：": ["快速切換：", "Quick switch:", "クイック切替：", "빠른 전환:"],
-  "柏宝绘": ["柏寶繪", "ST-BaiBai-Image", "ST-BaiBai-Image", "ST-BaiBai-Image"],
-  "智慧姬": ["智慧姬", "st-chatu8", "st-chatu8", "st-chatu8"],
-  "柏宝绘同步": ["柏寶繪同步", "ST-BaiBai-Image Sync", "ST-BaiBai-Image 同期", "ST-BaiBai-Image 동기화"],
+  "快速切换：": [
+    "快速切換：",
+    "Quick switch:",
+    "クイック切替：",
+    "빠른 전환:"
+  ],
+  "柏宝绘": [
+    "柏寶繪",
+    "ST-BaiBai-Image",
+    "ST-BaiBai-Image",
+    "ST-BaiBai-Image"
+  ],
+  "智慧姬": [
+    "智慧姬",
+    "st-chatu8",
+    "st-chatu8",
+    "st-chatu8"
+  ],
+  "柏宝绘同步": [
+    "柏寶繪同步",
+    "ST-BaiBai-Image Sync",
+    "ST-BaiBai-Image 同期",
+    "ST-BaiBai-Image 동기화"
+  ],
   "接收柏宝绘预设、Vibe 与历史图；仅在酒馆手动点击「立即同步」时写回，写入后需刷新酒馆页面生效。": [
     "接收柏寶繪預設、Vibe 與歷史圖；僅在酒館手動點擊「立即同步」時寫回，寫入後需重新整理酒館頁面生效。",
     "Receive ST-BaiBai-Image presets, Vibes, and history; write-back happens only on manual Sync Now in SillyTavern, then refresh the SillyTavern page.",
@@ -57,7 +107,12 @@
     "st-chatu8：SillyTavern フォルダ未検出（ゼロコピー履歴とカバー取り込みには有効なパスが必要）",
     "st-chatu8: SillyTavern 폴더 미감지(제로 카피 기록 및 커버 가져오기에 유효한 경로 필요)"
   ],
-  "扫描智慧姬历史": ["掃描智慧姬歷史", "Scan st-chatu8 history", "st-chatu8 履歴をスキャン", "st-chatu8 기록 스캔"],
+  "扫描智慧姬历史": [
+    "掃描智慧姬歷史",
+    "Scan st-chatu8 history",
+    "st-chatu8 履歴をスキャン",
+    "st-chatu8 기록 스캔"
+  ],
   "柏宝绘 · 风格串 {0} · Vibe {1} · 历史 {2} 张": [
     "柏寶繪 · 風格串 {0} · Vibe {1} · 歷史 {2} 張",
     "ST-BaiBai-Image · Styles {0} · Vibes {1} · History {2}",
@@ -70,42 +125,162 @@
     "ST-BaiBai-Image：SillyTavern フォルダ未検出（ゼロコピー履歴とカバー取り込みには有効なパスが必要）",
     "ST-BaiBai-Image: SillyTavern 폴더 미감지(제로 카피 기록 및 커버 가져오기에 유효한 경로 필요)"
   ],
-  "扫描柏宝绘历史": ["掃描柏寶繪歷史", "Scan ST-BaiBai-Image history", "ST-BaiBai-Image 履歴をスキャン", "ST-BaiBai-Image 기록 스캔"],
-  "切换同步目标": ["切換同步目標", "Switch sync target", "同期先を切り替え", "동기화 대상 전환"],
-  "柏宝绘同步操作": ["柏寶繪同步操作", "ST-BaiBai-Image sync actions", "ST-BaiBai-Image 同期操作", "ST-BaiBai-Image 동기화 작업"],
-  "柏宝绘同步视图": ["柏寶繪同步檢視", "ST-BaiBai-Image sync views", "ST-BaiBai-Image 同期ビュー", "ST-BaiBai-Image 동기화 보기"],
+  "扫描柏宝绘历史": [
+    "掃描柏寶繪歷史",
+    "Scan ST-BaiBai-Image history",
+    "ST-BaiBai-Image 履歴をスキャン",
+    "ST-BaiBai-Image 기록 스캔"
+  ],
+  "切换同步目标": [
+    "切換同步目標",
+    "Switch sync target",
+    "同期先を切り替え",
+    "동기화 대상 전환"
+  ],
+  "柏宝绘同步操作": [
+    "柏寶繪同步操作",
+    "ST-BaiBai-Image sync actions",
+    "ST-BaiBai-Image 同期操作",
+    "ST-BaiBai-Image 동기화 작업"
+  ],
+  "柏宝绘同步视图": [
+    "柏寶繪同步檢視",
+    "ST-BaiBai-Image sync views",
+    "ST-BaiBai-Image 同期ビュー",
+    "ST-BaiBai-Image 동기화 보기"
+  ],
   "在酒馆连接器点击「立即同步」写入，完成后请刷新酒馆页面": [
     "在酒館連接器點擊「立即同步」寫入，完成後請重新整理酒館頁面",
     "Click \"Sync Now\" in the SillyTavern bridge to write back, then refresh the SillyTavern page",
     "SillyTavern 連携パネルで「今すぐ同期」を押して書き込み後、ページを再読み込みしてください",
     "SillyTavern 브리지에서 「지금 동기화」를 눌러 반영한 뒤 페이지를 새로고침하세요"
   ],
-  "柏宝绘中已移除": ["柏寶繪中已移除", "Removed in ST-BaiBai-Image", "ST-BaiBai-Image で削除済み", "ST-BaiBai-Image에서 제거됨"],
-  "柏宝绘同步：{0}": ["柏寶繪同步：{0}", "ST-BaiBai-Image sync: {0}", "ST-BaiBai-Image 同期：{0}", "ST-BaiBai-Image 동기화: {0}"],
-  "柏宝绘同步设置响应无效": ["柏寶繪同步設定回應無效", "Invalid ST-BaiBai-Image sync preference response", "ST-BaiBai-Image 同期設定の応答が無効です", "ST-BaiBai-Image 동기화 설정 응답이 잘못되었습니다"],
-  "读取柏宝绘同步设置失败": ["讀取柏寶繪同步設定失敗", "Failed to load ST-BaiBai-Image sync preferences", "ST-BaiBai-Image 同期設定の読み込みに失敗しました", "ST-BaiBai-Image 동기화 설정을 불러오지 못했습니다"],
-  "保存柏宝绘同步设置失败": ["儲存柏寶繪同步設定失敗", "Failed to save ST-BaiBai-Image sync preferences", "ST-BaiBai-Image 同期設定の保存に失敗しました", "ST-BaiBai-Image 동기화 설정을 저장하지 못했습니다"],
-  "柏宝绘同步列表响应无效": ["柏寶繪同步列表回應無效", "Invalid ST-BaiBai-Image sync list response", "ST-BaiBai-Image 同期リストの応答が無効です", "ST-BaiBai-Image 동기화 목록 응답이 잘못되었습니다"],
-  "读取柏宝绘同步列表失败": ["讀取柏寶繪同步列表失敗", "Failed to load ST-BaiBai-Image sync list", "ST-BaiBai-Image 同期リストの読み込みに失敗しました", "ST-BaiBai-Image 동기화 목록을 불러오지 못했습니다"],
-  "更新柏宝绘同步列表失败": ["更新柏寶繪同步列表失敗", "Failed to update ST-BaiBai-Image sync list", "ST-BaiBai-Image 同期リストの更新に失敗しました", "ST-BaiBai-Image 동기화 목록을 업데이트하지 못했습니다"],
+  "柏宝绘中已移除": [
+    "柏寶繪中已移除",
+    "Removed in ST-BaiBai-Image",
+    "ST-BaiBai-Image で削除済み",
+    "ST-BaiBai-Image에서 제거됨"
+  ],
+  "柏宝绘同步：{0}": [
+    "柏寶繪同步：{0}",
+    "ST-BaiBai-Image sync: {0}",
+    "ST-BaiBai-Image 同期：{0}",
+    "ST-BaiBai-Image 동기화: {0}"
+  ],
+  "柏宝绘同步设置响应无效": [
+    "柏寶繪同步設定回應無效",
+    "Invalid ST-BaiBai-Image sync preference response",
+    "ST-BaiBai-Image 同期設定の応答が無効です",
+    "ST-BaiBai-Image 동기화 설정 응답이 잘못되었습니다"
+  ],
+  "读取柏宝绘同步设置失败": [
+    "讀取柏寶繪同步設定失敗",
+    "Failed to load ST-BaiBai-Image sync preferences",
+    "ST-BaiBai-Image 同期設定の読み込みに失敗しました",
+    "ST-BaiBai-Image 동기화 설정을 불러오지 못했습니다"
+  ],
+  "保存柏宝绘同步设置失败": [
+    "儲存柏寶繪同步設定失敗",
+    "Failed to save ST-BaiBai-Image sync preferences",
+    "ST-BaiBai-Image 同期設定の保存に失敗しました",
+    "ST-BaiBai-Image 동기화 설정을 저장하지 못했습니다"
+  ],
+  "柏宝绘同步列表响应无效": [
+    "柏寶繪同步列表回應無效",
+    "Invalid ST-BaiBai-Image sync list response",
+    "ST-BaiBai-Image 同期リストの応答が無効です",
+    "ST-BaiBai-Image 동기화 목록 응답이 잘못되었습니다"
+  ],
+  "读取柏宝绘同步列表失败": [
+    "讀取柏寶繪同步列表失敗",
+    "Failed to load ST-BaiBai-Image sync list",
+    "ST-BaiBai-Image 同期リストの読み込みに失敗しました",
+    "ST-BaiBai-Image 동기화 목록을 불러오지 못했습니다"
+  ],
+  "更新柏宝绘同步列表失败": [
+    "更新柏寶繪同步列表失敗",
+    "Failed to update ST-BaiBai-Image sync list",
+    "ST-BaiBai-Image 同期リストの更新に失敗しました",
+    "ST-BaiBai-Image 동기화 목록을 업데이트하지 못했습니다"
+  ],
   "已加入待同步，请在酒馆连接器手动点击「立即同步」并刷新页面": [
     "已加入待同步，請在酒館連接器手動點擊「立即同步」並重新整理頁面",
     "Added to pending sync. Click \"Sync Now\" in SillyTavern and refresh the page.",
     "同期待ちに追加しました。SillyTavern で「今すぐ同期」を押してページを再読み込みしてください。",
     "동기화 대기에 추가했습니다. SillyTavern에서 「지금 동기화」를 누르고 페이지를 새로고침하세요."
   ],
-  "准备中…": ["準備中…", "Preparing…", "準備中…", "준비 중…"],
-  "轮询密钥额度…": ["輪詢金鑰額度…", "Polling key quotas…", "キー残高を照会中…", "키 한도 조회 중…"],
-  "核实额度中…": ["核實額度中…", "Checking quota…", "残高を確認中…", "한도 확인 중…"],
-  "处理参考图中…": ["處理參考圖中…", "Preparing reference…", "参考画像を処理中…", "참조 이미지 처리 중…"],
-  "等待下一张…": ["等待下一張…", "Waiting for next…", "次を待機中…", "다음 이미지 대기 중…"],
-  "等待中…": ["等待中…", "Waiting…", "待機中…", "대기 중…"],
-  "等待确认费用": ["等待確認費用", "Awaiting cost confirmation", "費用確認待ち", "비용 확인 대기 중"],
-  "正在停止…": ["正在停止…", "Stopping…", "停止中…", "중지 중…"],
-  "云端排队中…": ["雲端排隊中…", "Cloud queue waiting…", "クラウド待機中…", "클라우드 대기 중…"],
-  "云端排队 · 第 {0} 位": ["雲端排隊 · 第 {0} 位", "Cloud queue · #{0}", "クラウド待機 · {0}番目", "클라우드 대기 · {0}번"],
-  "全选已加载": ["全選已載入", "Select all loaded", "読み込み済みをすべて選択", "불러온 항목 모두 선택"],
-  "结构化提示词": ["結構化提示詞", "Structured prompt", "構造化プロンプト", "구조화된 프롬프트"],
+  "准备中…": [
+    "準備中…",
+    "Preparing…",
+    "準備中…",
+    "준비 중…"
+  ],
+  "轮询密钥额度…": [
+    "輪詢金鑰額度…",
+    "Polling key quotas…",
+    "キー残高を照会中…",
+    "키 한도 조회 중…"
+  ],
+  "核实额度中…": [
+    "核實額度中…",
+    "Checking quota…",
+    "残高を確認中…",
+    "한도 확인 중…"
+  ],
+  "处理参考图中…": [
+    "處理參考圖中…",
+    "Preparing reference…",
+    "参考画像を処理中…",
+    "참조 이미지 처리 중…"
+  ],
+  "等待下一张…": [
+    "等待下一張…",
+    "Waiting for next…",
+    "次を待機中…",
+    "다음 이미지 대기 중…"
+  ],
+  "等待中…": [
+    "等待中…",
+    "Waiting…",
+    "待機中…",
+    "대기 중…"
+  ],
+  "等待确认费用": [
+    "等待確認費用",
+    "Awaiting cost confirmation",
+    "費用確認待ち",
+    "비용 확인 대기 중"
+  ],
+  "正在停止…": [
+    "正在停止…",
+    "Stopping…",
+    "停止中…",
+    "중지 중…"
+  ],
+  "云端排队中…": [
+    "雲端排隊中…",
+    "Cloud queue waiting…",
+    "クラウド待機中…",
+    "클라우드 대기 중…"
+  ],
+  "云端排队 · 第 {0} 位": [
+    "雲端排隊 · 第 {0} 位",
+    "Cloud queue · #{0}",
+    "クラウド待機 · {0}番目",
+    "클라우드 대기 · {0}번"
+  ],
+  "全选已加载": [
+    "全選已載入",
+    "Select all loaded",
+    "読み込み済みをすべて選択",
+    "불러온 항목 모두 선택"
+  ],
+  "结构化提示词": [
+    "結構化提示詞",
+    "Structured prompt",
+    "構造化プロンプト",
+    "구조화된 프롬프트"
+  ],
   "历史迁移失败": [
     "歷史遷移失敗",
     "History migration failed",
@@ -42058,90 +42233,628 @@
     "画像をアップロードまたは貼り付けると、この欄に追記します",
     "이미지를 업로드하거나 붙여넣으면 이 칸에 추가됩니다"
   ],
-  "校对 Tag": ["校對 Tag", "Proofread tags", "Tag 校正", "태그 교정"],
-  "校对 Tag：对齐词库写法，统一英文标点": ["校對 Tag：對齊詞庫寫法，統一英文標點", "Proofread tags: match dictionary spellings and unify English punctuation", "Tag 校正：辞書の表記に合わせ、句読点を英語に統一", "태그 교정: 사전 표기로 맞추고 문장 부호를 영어로 통일"],
-  "没有可校对的提示词": ["沒有可校對的提示詞", "Nothing to proofread", "校正するプロンプトがありません", "교정할 프롬프트가 없습니다"],
-  "校对期间提示词有改动，这次结果没有覆盖": ["校對期間提示詞有改動，這次結果沒有覆蓋", "The prompt changed during proofreading, so this result was not applied", "校正中にプロンプトが変更されたため、今回の結果は反映していません", "교정 중 프롬프트가 변경되어 이번 결과를 적용하지 않았습니다"],
-  "Tag 词库未就绪，没有可校对的词；请先在全局设置更新词库": ["Tag 詞庫未就緒，沒有可校對的詞；請先在全域設定更新詞庫", "The tag dictionary is not ready, so nothing could be proofread. Update it in Global settings first", "Tag 辞書が未準備のため校正できる語がありません。先にグローバル設定で辞書を更新してください", "태그 사전이 준비되지 않아 교정할 단어가 없습니다. 먼저 전역 설정에서 사전을 업데이트하세요"],
-  "提示词没有需要校对的地方": ["提示詞沒有需要校對的地方", "Nothing in the prompt needs proofreading", "校正が必要な箇所はありません", "교정할 부분이 없습니다"],
-  "Tag 词库未就绪，只统一了 {0} 处标点": ["Tag 詞庫未就緒，只統一了 {0} 處標點", "The tag dictionary is not ready; only {0} punctuation marks were converted", "Tag 辞書が未準備のため、句読点 {0} か所のみ変換しました", "태그 사전이 준비되지 않아 문장 부호 {0}곳만 변환했습니다"],
-  "已校对 {0} 个 Tag、{1} 处标点，可以撤销": ["已校對 {0} 個 Tag、{1} 處標點，可以撤銷", "Proofread {0} tags and {1} punctuation marks; you can undo", "Tag {0} 個と句読点 {1} か所を校正しました。元に戻せます", "태그 {0}개와 문장 부호 {1}곳을 교정했습니다. 되돌릴 수 있습니다"],
-  "已校对 {0} 个 Tag，可以撤销": ["已校對 {0} 個 Tag，可以撤銷", "Proofread {0} tags; you can undo", "Tag {0} 個を校正しました。元に戻せます", "태그 {0}개를 교정했습니다. 되돌릴 수 있습니다"],
-  "已统一 {0} 处中文标点，可以撤销": ["已統一 {0} 處中文標點，可以撤銷", "Converted {0} Chinese punctuation marks; you can undo", "中文の句読点 {0} か所を変換しました。元に戻せます", "중국어 문장 부호 {0}곳을 변환했습니다. 되돌릴 수 있습니다"],
-  "查看改动的 {0} 处": ["檢視改動的 {0} 處", "View {0} changes", "変更 {0} か所を表示", "변경 {0}곳 보기"],
-  "改动 {0}": ["改動 {0}", "{0} changed", "変更 {0}", "변경 {0}"],
-  "这次改动的 Tag": ["這次改動的 Tag", "Tags changed this time", "今回変更した Tag", "이번에 변경된 태그"],
-  "按原文顺序共 {0} 个 Tag；另有 {1} 处中文标点换成英文。": ["按原文順序共 {0} 個 Tag；另有 {1} 處中文標點換成英文。", "{0} tags in original order; {1} Chinese punctuation marks were also converted to English.", "原文順に {0} 個の Tag。ほかに中文の句読点 {1} か所を英語に変換しました。", "원문 순서대로 태그 {0}개, 중국어 문장 부호 {1}곳을 영어로 변환했습니다."],
-  "按原文顺序共 {0} 个 Tag。": ["按原文順序共 {0} 個 Tag。", "{0} tags in original order.", "原文順に {0} 個の Tag。", "원문 순서대로 태그 {0}개."],
-  "没有 Tag 需要改写法，{0} 处中文标点换成英文。": ["沒有 Tag 需要改寫法，{0} 處中文標點換成英文。", "No tags needed respelling; {0} Chinese punctuation marks were converted to English.", "書き方を直す Tag はありません。中文の句読点 {0} か所を英語に変換しました。", "표기를 고칠 태그는 없습니다. 중국어 문장 부호 {0}곳을 영어로 변환했습니다."],
-  "改动的 Tag": ["改動的 Tag", "Changed tags", "変更した Tag", "변경된 태그"],
-  "撤销校对": ["撤銷校對", "Undo proofreading", "校正を元に戻す", "교정 실행 취소"],
-  "改错了就撤销，恢复校对前的提示词。": ["改錯了就撤銷，恢復校對前的提示詞。", "If something was wrong, undo to restore the prompt from before proofreading.", "違っていたら元に戻し、校正前のプロンプトに戻してください。", "잘못 바뀌었다면 되돌려 교정 전 프롬프트로 복구하세요."],
-  "识别图片 Tag 并追加到此角色": ["識別圖片 Tag 並追加到此角色", "Identify tags from an image and append them to this character", "画像から Tag を識別してこのキャラクターに追加", "이미지에서 태그를 인식해 이 캐릭터에 추가"],
-  "追加 {count} 个 Tag 到此角色": ["追加 {count} 個 Tag 到此角色", "Append {count} tags to this character", "Tag を {count} 個このキャラクターに追加", "태그 {count}개를 이 캐릭터에 추가"],
-  "当前反推模型尚未下载，先在下方下载模型才能识别图片。": ["目前反推模型尚未下載，先在下方下載模型才能識別圖片。", "The current tagger model is not downloaded yet. Download it below before identifying images.", "現在の反推進モデルは未ダウンロードです。下でモデルをダウンロードしてから画像を識別してください。", "현재 태그 모델이 아직 다운로드되지 않았습니다. 아래에서 모델을 다운로드한 후 이미지를 인식하세요."],
-  "当前反推模型尚未下载，点右上角「反推模型」下载后才能识别图片。": ["目前反推模型尚未下載，點右上角「反推模型」下載後才能識別圖片。", "The current tagger model is not downloaded yet. Download it from \"Tagger model\" at the top right before identifying images.", "現在の反推モデルは未ダウンロードです。右上の「反推モデル」からダウンロードしてから画像を識別してください。", "현재 태그 모델이 아직 다운로드되지 않았습니다. 오른쪽 위 \"태그 모델\"에서 다운로드한 후 이미지를 인식하세요."],
-  "反推模型": ["反推模型", "Tagger model", "反推モデル", "태그 모델"],
-  "续传": ["續傳", "Resume", "続きから", "이어받기"],
-  "统计粒度": ["統計粒度", "Time granularity", "集計単位", "통계 단위"],
-  "批量添加标签": ["批次新增標籤", "Batch add tags", "タグを一括追加", "태그 일괄 추가"],
-  "输入或选择标签，多个用逗号分隔": ["輸入或選擇標籤，多個以逗號分隔", "Enter or select tags, separated by commas", "タグを入力または選択（カンマ区切り）", "태그 입력 또는 선택(쉼표로 구분)"],
-  "成员网关已独立分配可用点数，无需本地 1666 预算": ["成員閘道已獨立分配可用點數，無需本機 1666 預算", "This member gateway allocates your available points independently, so no local 1666 budget is needed", "メンバーゲートウェイが利用可能ポイントを個別に割り当てているため、ローカルの 1666 予算は不要です", "회원 게이트웨이가 사용 가능 포인트를 독립적으로 배정하므로 로컬 1666 예산이 필요하지 않습니다"],
-  "网关余额为当前成员分配额度；官方费用估算不代表网关实际扣费。": ["閘道餘額為目前成員分配額度；官方費用估算不代表閘道實際扣費。", "The gateway balance is the current member allocation; official cost estimates do not represent actual gateway charges.", "ゲートウェイ残高は現在のメンバー割当です。公式料金の見積もりはゲートウェイの実際の課金額とは異なる場合があります。", "게이트웨이 잔액은 현재 회원 배정량입니다. 공식 비용 추정은 게이트웨이 실제 요금을 나타내지 않습니다."],
-  "刷新 Anlas 余额：账号剩余点数 {0}；{1}": ["重新整理 Anlas 餘額：帳號剩餘點數 {0}；{1}", "Refresh Anlas balance: account points {0}; {1}", "Anlas 残高を更新：アカウントの残りポイント {0}。{1}", "Anlas 잔액 새로고침: 계정 남은 포인트 {0}, {1}"],
-  "余额 {0} · {1}{2}": ["餘額 {0} · {1}{2}", "Balance {0} · {1}{2}", "残高 {0} · {1}{2}", "잔액 {0} · {1}{2}"],
-  "当前成员网关已独立分配并管理你的可用点数，无需手动设置本地 1666 预算。": ["目前成員閘道已獨立分配並管理你的可用點數，無需手動設定本機 1666 預算。", "This member gateway independently allocates and manages your available points, so you do not need to set a local 1666 budget manually.", "現在のメンバーゲートウェイが利用可能ポイントを個別に割り当て管理しているため、ローカルの 1666 予算を手動で設定する必要はありません。", "현재 회원 게이트웨이가 사용 가능 포인트를 독립적으로 배정하고 관리하므로 로컬 1666 예산을 수동으로 설정할 필요가 없습니다."],
-  "Opus 额度": ["Opus 額度", "Opus Usage", "Opus 枠", "Opus 할당량"],
-  "Opus 额度 {0}": ["Opus 額度 {0}", "Opus Usage {0}", "Opus 枠 {0}", "Opus 할당량 {0}"],
-  "Opus 额度 {0}%": ["Opus 額度 {0}%", "Opus Usage {0}%", "Opus 枠 {0}%", "Opus 할당량 {0}%"],
-  "Opus 额度 {0}% · 旧值": ["Opus 額度 {0}% · 舊值", "Opus Usage {0}% · Previous value", "Opus 枠 {0}% · 前回値", "Opus 할당량 {0}% · 이전 값"],
-  "Opus 额度已用尽": ["Opus 額度已用盡", "Opus Usage exhausted", "Opus 枠を使い切りました", "Opus 할당량을 모두 사용했습니다"],
-  "正在刷新 Opus 额度": ["正在重新整理 Opus 額度", "Refreshing Opus Usage", "Opus 枠を更新中", "Opus 할당량 새로 고침 중"],
-  "Opus 额度同步失败：{0}": ["Opus 額度同步失敗：{0}", "Opus Usage sync failed: {0}", "Opus 枠の同期に失敗：{0}", "Opus 할당량 동기화 실패: {0}"],
-  "Opus 额度同步失败，点击立即重试": ["Opus 額度同步失敗，點擊立即重試", "Opus Usage sync failed, click to retry now", "Opus 枠の同期に失敗しました。クリックして再試行", "Opus 할당량 동기화 실패, 클릭하여 다시 시도"],
-  "正在同步 Opus 额度": ["正在同步 Opus 額度", "Syncing Opus Usage", "Opus 枠を同期中", "Opus 할당량 동기화 중"],
-  "Opus 额度已用尽：所有生图将消耗 Anlas，额度恢复后自动回到免费生成": ["Opus 額度已用盡：所有生圖將消耗 Anlas，額度恢復後自動回到免費生成", "Opus Usage exhausted: all generations will cost Anlas until it refills", "Opus 枠を使い切りました。回復するまで生成には Anlas が消費されます", "Opus 할당량을 모두 사용했습니다. 회복될 때까지 모든 생성에 Anlas가 소모됩니다"],
-  "Opus 额度已用尽，请核对网关余额与策略": ["Opus 額度已用盡，請核對閘道餘額與策略", "Opus Usage exhausted; check the gateway balance and policy", "Opus 枠を使い切りました。ゲートウェイの残高とポリシーを確認してください", "Opus 할당량을 모두 사용했습니다. 게이트웨이 잔액과 정책을 확인하세요"],
-  "Opus 额度：剩余 {0}%（约 {1} 张）": ["Opus 額度：剩餘 {0}%（約 {1} 張）", "Opus Usage: {0}% remaining (about {1} images)", "Opus 枠：残り {0}%（約 {1} 枚）", "Opus 할당량: {0}% 남음 (약 {1}장)"],
-  "Opus 额度：{0}% / {1}%（约 {2} 张），按官方规则估算": ["Opus 額度：{0}% / {1}%（約 {2} 張），按官方規則估算", "Opus Usage: {0}% / {1}% (about {2} images), estimated using official rules", "Opus 枠：{0}% / {1}%（約 {2} 枚）、公式ルールによる見積もり", "Opus 할당량: {0}% / {1}% (약 {2}장), 공식 규칙으로 추정"],
-  "Opus 额度：{0}%（约 {1} 张），按官方规则估算": ["Opus 額度：{0}%（約 {1} 張），按官方規則估算", "Opus Usage: {0}% (about {1} images), estimated using official rules", "Opus 枠：{0}%（約 {1} 枚）、公式ルールによる見積もり", "Opus 할당량: {0}% (약 {1}장), 공식 규칙으로 추정"],
-  "不到 1 分钟": ["不到 1 分鐘", "<1m", "1分未満", "1분 미만"],
-  "{0}分钟": ["{0}分鐘", "{0}m", "{0}分", "{0}분"],
-  "{0}小时{1}分": ["{0}小時{1}分", "{0}h {1}m", "{0}時間{1}分", "{0}시간 {1}분"],
-  "{0}小时": ["{0}小時", "{0}h", "{0}時間", "{0}시간"],
-  "{0}天{1}小时": ["{0}天{1}小時", "{0}d {1}h", "{0}日{1}時間", "{0}일 {1}시간"],
-  "{0}天": ["{0}天", "{0}d", "{0}日", "{0}일"],
-  "{0}后满": ["{0}後滿", "full in {0}", "{0}で満タン", "{0} 후 충전 완료"],
-  "恢复受限": ["恢復受限", "refill limited", "回復制限中", "회복 제한됨"],
-  "每日恢复 +{0}%（约 {1} 张）": ["每日恢復 +{0}%（約 {1} 張）", "Refills +{0}%/day (~{1} images)", "1日あたり +{0}% 回復（約 {1} 枚）", "하루 +{0}% 회복 (약 {1}장)"],
-  "预计 {0} 后回满（{1}）": ["預計 {0} 後回滿（{1}）", "Full in ~{0} ({1})", "満タンまで約 {0}（{1}）", "약 {0} 후 충전 완료 ({1})"],
-  "当前恢复受限，暂无法预计回满时间": ["目前恢復受限，暫無法預計回滿時間", "Recovery is currently limited; full refill time cannot be estimated", "現在回復が制限されているため、満タン時刻を予測できません", "현재 회복이 제한되어 충전 완료 시간을 추정할 수 없습니다"],
-  "超过 100% 时暂停自动恢复": ["超過 100% 時暫停自動恢復", "Recovery is paused above 100%", "100% を超えている間は自動回復が一時停止します", "100%를 초과하면 자동 회복이 일시 중지됩니다"],
-  "当前已满": ["目前已滿", "Full", "満タン", "충전 완료"],
-  "Key 池自动轮询": ["Key 池自動輪詢", "Key pool auto-rotation", "Key プール自動切替", "Key 풀 자동 전환"],
-  "按满圈率优先自动选用池内 Opus 额度最充足的密钥；全池耗尽或需付费时直接停止提示。": ["按滿圈率優先自動選用池內 Opus 額度最充足的金鑰；全池耗盡或需付費時直接停止提示。", "Automatically picks the pooled key with the highest fill ratio of its Opus Usage capacity; stops and notifies when all pooled keys are exhausted or when Anlas would be spent.", "プール内で Opus 枠の満タン率が最も高いキーを自動選択します。全キーが枯渇または課金が必要な場合は生成を停止して通知します。", "풀에서 Opus 할당량 충전 비율이 가장 높은 키를 자동 선택합니다. 모든 키가 소진되거나 유료 생성이 필요하면 중단하고 안내합니다."],
-  "已开启 Key 池自动轮询（共 {0} 把密钥）": ["已開啟 Key 池自動輪詢（共 {0} 把金鑰）", "Key pool auto-rotation enabled ({0} keys)", "Key プール自動切替を有効にしました（{0} 件）", "Key 풀 자동 전환 활성화됨 (키 {0}개)"],
-  "已关闭 Key 池自动轮询": ["已關閉 Key 池自動輪詢", "Key pool auto-rotation disabled", "Key プール自動切替を無効にしました", "Key 풀 자동 전환 비활성화됨"],
-  "已入池 {0} 把密钥 · 满圈率优先（按次渠道不参与）": ["已入池 {0} 把金鑰 · 滿圈率優先（按次管道不參與）", "{0} keys in pool · Highest fill ratio first (per-use excluded)", "プール内 {0} 件・満タン率優先（従量チャネルは対象外）", "풀에 키 {0}개 · 충전 비율 우선 (건당 채널 제외)"],
-  "刷新池额度": ["重新整理池額度", "Refresh pool quotas", "プール枠を更新", "풀 할당량 새로고침"],
-  "同步中": ["同步中", "Syncing", "同期中", "동기화 중"],
-  "不可用": ["不可用", "Unavailable", "利用不可", "사용 불가"],
-  "移出 Key 池：{0}": ["移出 Key 池：{0}", "Remove from key pool: {0}", "Key プールから除外：{0}", "Key 풀에서 제거: {0}"],
-  "加入 Key 池：{0}": ["加入 Key 池：{0}", "Add to key pool: {0}", "Key プールに追加：{0}", "Key 풀에 추가: {0}"],
-  "已入池": ["已入池", "In pool", "プール中", "풀 포함"],
-  "入池": ["入池", "Pool", "追加", "풀 추가"],
-  "Key 池（满圈率优先）：{0}": ["Key 池（滿圈率優先）：{0}", "Key pool (fill ratio first): {0}", "Key プール（満タン率優先）：{0}", "Key 풀 (충전 비율 우선): {0}"],
-  "池 {0}": ["池 {0}", "Pool {0}", "プール {0}", "풀 {0}"],
-  "池 #{0}": ["池 #{0}", "Pool #{0}", "プール #{0}", "풀 #{0}"],
-  "Key 池序号 #{0}": ["Key 池序號 #{0}", "Key pool slot #{0}", "Key プール番号 #{0}", "Key 풀 번호 #{0}"],
-  "Key 池中还没有可用密钥，请先在全局设置中选择入池密钥或关闭 Key 池": ["Key 池中還沒有可用金鑰，請先在全域設定中選擇入池金鑰或關閉 Key 池", "No keys in the key pool yet. Add keys in Global Settings or disable the key pool.", "Key プールに利用可能なキーがありません。設定でキーを追加するかプールを無効にしてください。", "Key 풀에 사용 가능한 키가 없습니다. 설정에서 키를 추가하거나 Key 풀을 꺼주세요."],
-  "Key 池中所有可用密钥的 Opus 额度均已耗尽，已停止生成（未消耗 Anlas）": ["Key 池中所有可用金鑰的 Opus 額度均已耗盡，已停止生成（未消耗 Anlas）", "Opus Usage is exhausted across all pooled keys. Generation stopped without spending Anlas.", "プール内のすべてのキーの Opus 枠を使い切ったため、Anlas を消費せず生成を停止しました。", "풀의 모든 키에서 Opus 할당량이 소진되어 Anlas를 소모하지 않고 생성을 중단했습니다."],
-  "Key 池中当前没有可用的 Opus 密钥（可能已过期、冷却中或同步失败），已停止生成": ["Key 池中目前沒有可用的 Opus 金鑰（可能已過期、冷卻中或同步失敗），已停止生成", "No active Opus keys are currently available in the pool (expired, cooling down, or failed to sync). Generation stopped.", "プール内に利用可能な Opus キーがありません（期限切れ・クールダウン中・同期失敗）。生成を停止しました。", "풀에 현재 사용 가능한 Opus 키가 없습니다(만료, 쿨다운 또는 동기화 실패). 생성을 중단했습니다."],
-  "Key 池模式仅用于 Opus 免费额度生成，当前参数需要消耗 Anlas，已停止生成。如需付费生成，请先关闭 Key 池并指定单把密钥。": ["Key 池模式僅用於 Opus 免費額度生成，目前參數需要消耗 Anlas，已停止生成。如需付費生成，請先關閉 Key 池並指定單把金鑰。", "Key pool mode is only for free Opus generations. Current settings require Anlas, so generation stopped. Disable the key pool and select a specific key for paid generations.", "Key プールは無料の Opus 生成専用です。現在の設定は Anlas が必要なため停止しました。課金生成する場合はプールを無効にしてキーを指定してください。", "Key 풀 모드는 무료 Opus 생성 전용입니다. 현재 설정은 Anlas가 필요하여 중단했습니다. 유료 생성은 Key 풀을 끄고 특정 키를 지정해 주세요."],
-  "已连接酒馆目录 · 风格串 {0} · Vibe 组 {1} · 历史 {2} 张": ["已連線酒館目錄 · 風格串 {0} · Vibe 組 {1} · 歷史 {2} 張", "SillyTavern linked · {0} styles · {1} Vibe groups · {2} history images", "SillyTavern 連携済み・スタイル {0}・Vibe グループ {1}・履歴 {2} 枚", "SillyTavern 연결됨 · 스타일 {0} · Vibe 그룹 {1} · 기록 {2}장"],
-  "未检测到酒馆目录（历史零拷贝与导入封面需绑定有效路径）": ["未偵測到酒館目錄（歷史零複製與匯入封面需綁定有效路徑）", "SillyTavern directory not detected (valid path required for zero-copy history and imported covers)", "SillyTavern ディレクトリ未検出（履歴ゼロコピーとカバー取込には有効なパスが必要）", "SillyTavern 경로 미감지(기록 제로카피 및 표지 가져오기에 유효한 경로 필요)"],
-  "上次同步 {0}": ["上次同步 {0}", "Last synced {0}", "前回同期 {0}", "마지막 동기화 {0}"],
-  "保存目录": ["儲存目錄", "Save path", "パスを保存", "경로 저장"],
-  "扫描中…": ["掃描中…", "Scanning…", "スキャン中…", "스캔 중…"],
-  "扫描历史": ["掃描歷史", "Scan history", "履歴をスキャン", "기록 스캔"]
+  "校对 Tag": [
+    "校對 Tag",
+    "Proofread tags",
+    "Tag 校正",
+    "태그 교정"
+  ],
+  "校对 Tag：对齐词库写法，统一英文标点": [
+    "校對 Tag：對齊詞庫寫法，統一英文標點",
+    "Proofread tags: match dictionary spellings and unify English punctuation",
+    "Tag 校正：辞書の表記に合わせ、句読点を英語に統一",
+    "태그 교정: 사전 표기로 맞추고 문장 부호를 영어로 통일"
+  ],
+  "没有可校对的提示词": [
+    "沒有可校對的提示詞",
+    "Nothing to proofread",
+    "校正するプロンプトがありません",
+    "교정할 프롬프트가 없습니다"
+  ],
+  "校对期间提示词有改动，这次结果没有覆盖": [
+    "校對期間提示詞有改動，這次結果沒有覆蓋",
+    "The prompt changed during proofreading, so this result was not applied",
+    "校正中にプロンプトが変更されたため、今回の結果は反映していません",
+    "교정 중 프롬프트가 변경되어 이번 결과를 적용하지 않았습니다"
+  ],
+  "Tag 词库未就绪，没有可校对的词；请先在全局设置更新词库": [
+    "Tag 詞庫未就緒，沒有可校對的詞；請先在全域設定更新詞庫",
+    "The tag dictionary is not ready, so nothing could be proofread. Update it in Global settings first",
+    "Tag 辞書が未準備のため校正できる語がありません。先にグローバル設定で辞書を更新してください",
+    "태그 사전이 준비되지 않아 교정할 단어가 없습니다. 먼저 전역 설정에서 사전을 업데이트하세요"
+  ],
+  "提示词没有需要校对的地方": [
+    "提示詞沒有需要校對的地方",
+    "Nothing in the prompt needs proofreading",
+    "校正が必要な箇所はありません",
+    "교정할 부분이 없습니다"
+  ],
+  "Tag 词库未就绪，只统一了 {0} 处标点": [
+    "Tag 詞庫未就緒，只統一了 {0} 處標點",
+    "The tag dictionary is not ready; only {0} punctuation marks were converted",
+    "Tag 辞書が未準備のため、句読点 {0} か所のみ変換しました",
+    "태그 사전이 준비되지 않아 문장 부호 {0}곳만 변환했습니다"
+  ],
+  "已校对 {0} 个 Tag、{1} 处标点，可以撤销": [
+    "已校對 {0} 個 Tag、{1} 處標點，可以撤銷",
+    "Proofread {0} tags and {1} punctuation marks; you can undo",
+    "Tag {0} 個と句読点 {1} か所を校正しました。元に戻せます",
+    "태그 {0}개와 문장 부호 {1}곳을 교정했습니다. 되돌릴 수 있습니다"
+  ],
+  "已校对 {0} 个 Tag，可以撤销": [
+    "已校對 {0} 個 Tag，可以撤銷",
+    "Proofread {0} tags; you can undo",
+    "Tag {0} 個を校正しました。元に戻せます",
+    "태그 {0}개를 교정했습니다. 되돌릴 수 있습니다"
+  ],
+  "已统一 {0} 处中文标点，可以撤销": [
+    "已統一 {0} 處中文標點，可以撤銷",
+    "Converted {0} Chinese punctuation marks; you can undo",
+    "中文の句読点 {0} か所を変換しました。元に戻せます",
+    "중국어 문장 부호 {0}곳을 변환했습니다. 되돌릴 수 있습니다"
+  ],
+  "查看改动的 {0} 处": [
+    "檢視改動的 {0} 處",
+    "View {0} changes",
+    "変更 {0} か所を表示",
+    "변경 {0}곳 보기"
+  ],
+  "改动 {0}": [
+    "改動 {0}",
+    "{0} changed",
+    "変更 {0}",
+    "변경 {0}"
+  ],
+  "这次改动的 Tag": [
+    "這次改動的 Tag",
+    "Tags changed this time",
+    "今回変更した Tag",
+    "이번에 변경된 태그"
+  ],
+  "按原文顺序共 {0} 个 Tag；另有 {1} 处中文标点换成英文。": [
+    "按原文順序共 {0} 個 Tag；另有 {1} 處中文標點換成英文。",
+    "{0} tags in original order; {1} Chinese punctuation marks were also converted to English.",
+    "原文順に {0} 個の Tag。ほかに中文の句読点 {1} か所を英語に変換しました。",
+    "원문 순서대로 태그 {0}개, 중국어 문장 부호 {1}곳을 영어로 변환했습니다."
+  ],
+  "按原文顺序共 {0} 个 Tag。": [
+    "按原文順序共 {0} 個 Tag。",
+    "{0} tags in original order.",
+    "原文順に {0} 個の Tag。",
+    "원문 순서대로 태그 {0}개."
+  ],
+  "没有 Tag 需要改写法，{0} 处中文标点换成英文。": [
+    "沒有 Tag 需要改寫法，{0} 處中文標點換成英文。",
+    "No tags needed respelling; {0} Chinese punctuation marks were converted to English.",
+    "書き方を直す Tag はありません。中文の句読点 {0} か所を英語に変換しました。",
+    "표기를 고칠 태그는 없습니다. 중국어 문장 부호 {0}곳을 영어로 변환했습니다."
+  ],
+  "改动的 Tag": [
+    "改動的 Tag",
+    "Changed tags",
+    "変更した Tag",
+    "변경된 태그"
+  ],
+  "撤销校对": [
+    "撤銷校對",
+    "Undo proofreading",
+    "校正を元に戻す",
+    "교정 실행 취소"
+  ],
+  "改错了就撤销，恢复校对前的提示词。": [
+    "改錯了就撤銷，恢復校對前的提示詞。",
+    "If something was wrong, undo to restore the prompt from before proofreading.",
+    "違っていたら元に戻し、校正前のプロンプトに戻してください。",
+    "잘못 바뀌었다면 되돌려 교정 전 프롬프트로 복구하세요."
+  ],
+  "识别图片 Tag 并追加到此角色": [
+    "識別圖片 Tag 並追加到此角色",
+    "Identify tags from an image and append them to this character",
+    "画像から Tag を識別してこのキャラクターに追加",
+    "이미지에서 태그를 인식해 이 캐릭터에 추가"
+  ],
+  "追加 {count} 个 Tag 到此角色": [
+    "追加 {count} 個 Tag 到此角色",
+    "Append {count} tags to this character",
+    "Tag を {count} 個このキャラクターに追加",
+    "태그 {count}개를 이 캐릭터에 추가"
+  ],
+  "当前反推模型尚未下载，先在下方下载模型才能识别图片。": [
+    "目前反推模型尚未下載，先在下方下載模型才能識別圖片。",
+    "The current tagger model is not downloaded yet. Download it below before identifying images.",
+    "現在の反推進モデルは未ダウンロードです。下でモデルをダウンロードしてから画像を識別してください。",
+    "현재 태그 모델이 아직 다운로드되지 않았습니다. 아래에서 모델을 다운로드한 후 이미지를 인식하세요."
+  ],
+  "当前反推模型尚未下载，点右上角「反推模型」下载后才能识别图片。": [
+    "目前反推模型尚未下載，點右上角「反推模型」下載後才能識別圖片。",
+    "The current tagger model is not downloaded yet. Download it from \"Tagger model\" at the top right before identifying images.",
+    "現在の反推モデルは未ダウンロードです。右上の「反推モデル」からダウンロードしてから画像を識別してください。",
+    "현재 태그 모델이 아직 다운로드되지 않았습니다. 오른쪽 위 \"태그 모델\"에서 다운로드한 후 이미지를 인식하세요."
+  ],
+  "反推模型": [
+    "反推模型",
+    "Tagger model",
+    "反推モデル",
+    "태그 모델"
+  ],
+  "续传": [
+    "續傳",
+    "Resume",
+    "続きから",
+    "이어받기"
+  ],
+  "统计粒度": [
+    "統計粒度",
+    "Time granularity",
+    "集計単位",
+    "통계 단위"
+  ],
+  "批量添加标签": [
+    "批次新增標籤",
+    "Batch add tags",
+    "タグを一括追加",
+    "태그 일괄 추가"
+  ],
+  "输入或选择标签，多个用逗号分隔": [
+    "輸入或選擇標籤，多個以逗號分隔",
+    "Enter or select tags, separated by commas",
+    "タグを入力または選択（カンマ区切り）",
+    "태그 입력 또는 선택(쉼표로 구분)"
+  ],
+  "成员网关已独立分配可用点数，无需本地 1666 预算": [
+    "成員閘道已獨立分配可用點數，無需本機 1666 預算",
+    "This member gateway allocates your available points independently, so no local 1666 budget is needed",
+    "メンバーゲートウェイが利用可能ポイントを個別に割り当てているため、ローカルの 1666 予算は不要です",
+    "회원 게이트웨이가 사용 가능 포인트를 독립적으로 배정하므로 로컬 1666 예산이 필요하지 않습니다"
+  ],
+  "网关余额为当前成员分配额度；官方费用估算不代表网关实际扣费。": [
+    "閘道餘額為目前成員分配額度；官方費用估算不代表閘道實際扣費。",
+    "The gateway balance is the current member allocation; official cost estimates do not represent actual gateway charges.",
+    "ゲートウェイ残高は現在のメンバー割当です。公式料金の見積もりはゲートウェイの実際の課金額とは異なる場合があります。",
+    "게이트웨이 잔액은 현재 회원 배정량입니다. 공식 비용 추정은 게이트웨이 실제 요금을 나타내지 않습니다."
+  ],
+  "刷新 Anlas 余额：账号剩余点数 {0}；{1}": [
+    "重新整理 Anlas 餘額：帳號剩餘點數 {0}；{1}",
+    "Refresh Anlas balance: account points {0}; {1}",
+    "Anlas 残高を更新：アカウントの残りポイント {0}。{1}",
+    "Anlas 잔액 새로고침: 계정 남은 포인트 {0}, {1}"
+  ],
+  "余额 {0} · {1}{2}": [
+    "餘額 {0} · {1}{2}",
+    "Balance {0} · {1}{2}",
+    "残高 {0} · {1}{2}",
+    "잔액 {0} · {1}{2}"
+  ],
+  "当前成员网关已独立分配并管理你的可用点数，无需手动设置本地 1666 预算。": [
+    "目前成員閘道已獨立分配並管理你的可用點數，無需手動設定本機 1666 預算。",
+    "This member gateway independently allocates and manages your available points, so you do not need to set a local 1666 budget manually.",
+    "現在のメンバーゲートウェイが利用可能ポイントを個別に割り当て管理しているため、ローカルの 1666 予算を手動で設定する必要はありません。",
+    "현재 회원 게이트웨이가 사용 가능 포인트를 독립적으로 배정하고 관리하므로 로컬 1666 예산을 수동으로 설정할 필요가 없습니다."
+  ],
+  "Opus 额度": [
+    "Opus 額度",
+    "Opus Usage",
+    "Opus 枠",
+    "Opus 할당량"
+  ],
+  "Opus 额度 {0}": [
+    "Opus 額度 {0}",
+    "Opus Usage {0}",
+    "Opus 枠 {0}",
+    "Opus 할당량 {0}"
+  ],
+  "Opus 额度 {0}%": [
+    "Opus 額度 {0}%",
+    "Opus Usage {0}%",
+    "Opus 枠 {0}%",
+    "Opus 할당량 {0}%"
+  ],
+  "Opus 额度 {0}% · 旧值": [
+    "Opus 額度 {0}% · 舊值",
+    "Opus Usage {0}% · Previous value",
+    "Opus 枠 {0}% · 前回値",
+    "Opus 할당량 {0}% · 이전 값"
+  ],
+  "Opus 额度已用尽": [
+    "Opus 額度已用盡",
+    "Opus Usage exhausted",
+    "Opus 枠を使い切りました",
+    "Opus 할당량을 모두 사용했습니다"
+  ],
+  "正在刷新 Opus 额度": [
+    "正在重新整理 Opus 額度",
+    "Refreshing Opus Usage",
+    "Opus 枠を更新中",
+    "Opus 할당량 새로 고침 중"
+  ],
+  "Opus 额度同步失败：{0}": [
+    "Opus 額度同步失敗：{0}",
+    "Opus Usage sync failed: {0}",
+    "Opus 枠の同期に失敗：{0}",
+    "Opus 할당량 동기화 실패: {0}"
+  ],
+  "Opus 额度同步失败，点击立即重试": [
+    "Opus 額度同步失敗，點擊立即重試",
+    "Opus Usage sync failed, click to retry now",
+    "Opus 枠の同期に失敗しました。クリックして再試行",
+    "Opus 할당량 동기화 실패, 클릭하여 다시 시도"
+  ],
+  "正在同步 Opus 额度": [
+    "正在同步 Opus 額度",
+    "Syncing Opus Usage",
+    "Opus 枠を同期中",
+    "Opus 할당량 동기화 중"
+  ],
+  "Opus 额度已用尽：所有生图将消耗 Anlas，额度恢复后自动回到免费生成": [
+    "Opus 額度已用盡：所有生圖將消耗 Anlas，額度恢復後自動回到免費生成",
+    "Opus Usage exhausted: all generations will cost Anlas until it refills",
+    "Opus 枠を使い切りました。回復するまで生成には Anlas が消費されます",
+    "Opus 할당량을 모두 사용했습니다. 회복될 때까지 모든 생성에 Anlas가 소모됩니다"
+  ],
+  "Opus 额度已用尽，请核对网关余额与策略": [
+    "Opus 額度已用盡，請核對閘道餘額與策略",
+    "Opus Usage exhausted; check the gateway balance and policy",
+    "Opus 枠を使い切りました。ゲートウェイの残高とポリシーを確認してください",
+    "Opus 할당량을 모두 사용했습니다. 게이트웨이 잔액과 정책을 확인하세요"
+  ],
+  "Opus 额度：剩余 {0}%（约 {1} 张）": [
+    "Opus 額度：剩餘 {0}%（約 {1} 張）",
+    "Opus Usage: {0}% remaining (about {1} images)",
+    "Opus 枠：残り {0}%（約 {1} 枚）",
+    "Opus 할당량: {0}% 남음 (약 {1}장)"
+  ],
+  "Opus 额度：{0}% / {1}%（约 {2} 张），按官方规则估算": [
+    "Opus 額度：{0}% / {1}%（約 {2} 張），按官方規則估算",
+    "Opus Usage: {0}% / {1}% (about {2} images), estimated using official rules",
+    "Opus 枠：{0}% / {1}%（約 {2} 枚）、公式ルールによる見積もり",
+    "Opus 할당량: {0}% / {1}% (약 {2}장), 공식 규칙으로 추정"
+  ],
+  "Opus 额度：{0}%（约 {1} 张），按官方规则估算": [
+    "Opus 額度：{0}%（約 {1} 張），按官方規則估算",
+    "Opus Usage: {0}% (about {1} images), estimated using official rules",
+    "Opus 枠：{0}%（約 {1} 枚）、公式ルールによる見積もり",
+    "Opus 할당량: {0}% (약 {1}장), 공식 규칙으로 추정"
+  ],
+  "不到 1 分钟": [
+    "不到 1 分鐘",
+    "<1m",
+    "1分未満",
+    "1분 미만"
+  ],
+  "{0}分钟": [
+    "{0}分鐘",
+    "{0}m",
+    "{0}分",
+    "{0}분"
+  ],
+  "{0}小时{1}分": [
+    "{0}小時{1}分",
+    "{0}h {1}m",
+    "{0}時間{1}分",
+    "{0}시간 {1}분"
+  ],
+  "{0}小时": [
+    "{0}小時",
+    "{0}h",
+    "{0}時間",
+    "{0}시간"
+  ],
+  "{0}天{1}小时": [
+    "{0}天{1}小時",
+    "{0}d {1}h",
+    "{0}日{1}時間",
+    "{0}일 {1}시간"
+  ],
+  "{0}天": [
+    "{0}天",
+    "{0}d",
+    "{0}日",
+    "{0}일"
+  ],
+  "{0}后满": [
+    "{0}後滿",
+    "full in {0}",
+    "{0}で満タン",
+    "{0} 후 충전 완료"
+  ],
+  "恢复受限": [
+    "恢復受限",
+    "refill limited",
+    "回復制限中",
+    "회복 제한됨"
+  ],
+  "每日恢复 +{0}%（约 {1} 张）": [
+    "每日恢復 +{0}%（約 {1} 張）",
+    "Refills +{0}%/day (~{1} images)",
+    "1日あたり +{0}% 回復（約 {1} 枚）",
+    "하루 +{0}% 회복 (약 {1}장)"
+  ],
+  "预计 {0} 后回满（{1}）": [
+    "預計 {0} 後回滿（{1}）",
+    "Full in ~{0} ({1})",
+    "満タンまで約 {0}（{1}）",
+    "약 {0} 후 충전 완료 ({1})"
+  ],
+  "当前恢复受限，暂无法预计回满时间": [
+    "目前恢復受限，暫無法預計回滿時間",
+    "Recovery is currently limited; full refill time cannot be estimated",
+    "現在回復が制限されているため、満タン時刻を予測できません",
+    "현재 회복이 제한되어 충전 완료 시간을 추정할 수 없습니다"
+  ],
+  "超过 100% 时暂停自动恢复": [
+    "超過 100% 時暫停自動恢復",
+    "Recovery is paused above 100%",
+    "100% を超えている間は自動回復が一時停止します",
+    "100%를 초과하면 자동 회복이 일시 중지됩니다"
+  ],
+  "当前已满": [
+    "目前已滿",
+    "Full",
+    "満タン",
+    "충전 완료"
+  ],
+  "Key 池自动轮询": [
+    "Key 池自動輪詢",
+    "Key pool auto-rotation",
+    "Key プール自動切替",
+    "Key 풀 자동 전환"
+  ],
+  "按满圈率优先自动选用池内 Opus 额度最充足的密钥；全池耗尽或需付费时直接停止提示。": [
+    "按滿圈率優先自動選用池內 Opus 額度最充足的金鑰；全池耗盡或需付費時直接停止提示。",
+    "Automatically picks the pooled key with the highest fill ratio of its Opus Usage capacity; stops and notifies when all pooled keys are exhausted or when Anlas would be spent.",
+    "プール内で Opus 枠の満タン率が最も高いキーを自動選択します。全キーが枯渇または課金が必要な場合は生成を停止して通知します。",
+    "풀에서 Opus 할당량 충전 비율이 가장 높은 키를 자동 선택합니다. 모든 키가 소진되거나 유료 생성이 필요하면 중단하고 안내합니다."
+  ],
+  "已开启 Key 池自动轮询（共 {0} 把密钥）": [
+    "已開啟 Key 池自動輪詢（共 {0} 把金鑰）",
+    "Key pool auto-rotation enabled ({0} keys)",
+    "Key プール自動切替を有効にしました（{0} 件）",
+    "Key 풀 자동 전환 활성화됨 (키 {0}개)"
+  ],
+  "已关闭 Key 池自动轮询": [
+    "已關閉 Key 池自動輪詢",
+    "Key pool auto-rotation disabled",
+    "Key プール自動切替を無効にしました",
+    "Key 풀 자동 전환 비활성화됨"
+  ],
+  "已入池 {0} 把密钥 · 满圈率优先（按次渠道不参与）": [
+    "已入池 {0} 把金鑰 · 滿圈率優先（按次管道不參與）",
+    "{0} keys in pool · Highest fill ratio first (per-use excluded)",
+    "プール内 {0} 件・満タン率優先（従量チャネルは対象外）",
+    "풀에 키 {0}개 · 충전 비율 우선 (건당 채널 제외)"
+  ],
+  "刷新池额度": [
+    "重新整理池額度",
+    "Refresh pool quotas",
+    "プール枠を更新",
+    "풀 할당량 새로고침"
+  ],
+  "同步中": [
+    "同步中",
+    "Syncing",
+    "同期中",
+    "동기화 중"
+  ],
+  "不可用": [
+    "不可用",
+    "Unavailable",
+    "利用不可",
+    "사용 불가"
+  ],
+  "移出 Key 池：{0}": [
+    "移出 Key 池：{0}",
+    "Remove from key pool: {0}",
+    "Key プールから除外：{0}",
+    "Key 풀에서 제거: {0}"
+  ],
+  "加入 Key 池：{0}": [
+    "加入 Key 池：{0}",
+    "Add to key pool: {0}",
+    "Key プールに追加：{0}",
+    "Key 풀에 추가: {0}"
+  ],
+  "已入池": [
+    "已入池",
+    "In pool",
+    "プール中",
+    "풀 포함"
+  ],
+  "入池": [
+    "入池",
+    "Pool",
+    "追加",
+    "풀 추가"
+  ],
+  "Key 池（满圈率优先）：{0}": [
+    "Key 池（滿圈率優先）：{0}",
+    "Key pool (fill ratio first): {0}",
+    "Key プール（満タン率優先）：{0}",
+    "Key 풀 (충전 비율 우선): {0}"
+  ],
+  "池 {0}": [
+    "池 {0}",
+    "Pool {0}",
+    "プール {0}",
+    "풀 {0}"
+  ],
+  "池 #{0}": [
+    "池 #{0}",
+    "Pool #{0}",
+    "プール #{0}",
+    "풀 #{0}"
+  ],
+  "Key 池序号 #{0}": [
+    "Key 池序號 #{0}",
+    "Key pool slot #{0}",
+    "Key プール番号 #{0}",
+    "Key 풀 번호 #{0}"
+  ],
+  "Key 池中还没有可用密钥，请先在全局设置中选择入池密钥或关闭 Key 池": [
+    "Key 池中還沒有可用金鑰，請先在全域設定中選擇入池金鑰或關閉 Key 池",
+    "No keys in the key pool yet. Add keys in Global Settings or disable the key pool.",
+    "Key プールに利用可能なキーがありません。設定でキーを追加するかプールを無効にしてください。",
+    "Key 풀에 사용 가능한 키가 없습니다. 설정에서 키를 추가하거나 Key 풀을 꺼주세요."
+  ],
+  "Key 池中所有可用密钥的 Opus 额度均已耗尽，已停止生成（未消耗 Anlas）": [
+    "Key 池中所有可用金鑰的 Opus 額度均已耗盡，已停止生成（未消耗 Anlas）",
+    "Opus Usage is exhausted across all pooled keys. Generation stopped without spending Anlas.",
+    "プール内のすべてのキーの Opus 枠を使い切ったため、Anlas を消費せず生成を停止しました。",
+    "풀의 모든 키에서 Opus 할당량이 소진되어 Anlas를 소모하지 않고 생성을 중단했습니다."
+  ],
+  "Key 池中当前没有可用的 Opus 密钥（可能已过期、冷却中或同步失败），已停止生成": [
+    "Key 池中目前沒有可用的 Opus 金鑰（可能已過期、冷卻中或同步失敗），已停止生成",
+    "No active Opus keys are currently available in the pool (expired, cooling down, or failed to sync). Generation stopped.",
+    "プール内に利用可能な Opus キーがありません（期限切れ・クールダウン中・同期失敗）。生成を停止しました。",
+    "풀에 현재 사용 가능한 Opus 키가 없습니다(만료, 쿨다운 또는 동기화 실패). 생성을 중단했습니다."
+  ],
+  "Key 池模式仅用于 Opus 免费额度生成，当前参数需要消耗 Anlas，已停止生成。如需付费生成，请先关闭 Key 池并指定单把密钥。": [
+    "Key 池模式僅用於 Opus 免費額度生成，目前參數需要消耗 Anlas，已停止生成。如需付費生成，請先關閉 Key 池並指定單把金鑰。",
+    "Key pool mode is only for free Opus generations. Current settings require Anlas, so generation stopped. Disable the key pool and select a specific key for paid generations.",
+    "Key プールは無料の Opus 生成専用です。現在の設定は Anlas が必要なため停止しました。課金生成する場合はプールを無効にしてキーを指定してください。",
+    "Key 풀 모드는 무료 Opus 생성 전용입니다. 현재 설정은 Anlas가 필요하여 중단했습니다. 유료 생성은 Key 풀을 끄고 특정 키를 지정해 주세요."
+  ],
+  "已连接酒馆目录 · 风格串 {0} · Vibe 组 {1} · 历史 {2} 张": [
+    "已連線酒館目錄 · 風格串 {0} · Vibe 組 {1} · 歷史 {2} 張",
+    "SillyTavern linked · {0} styles · {1} Vibe groups · {2} history images",
+    "SillyTavern 連携済み・スタイル {0}・Vibe グループ {1}・履歴 {2} 枚",
+    "SillyTavern 연결됨 · 스타일 {0} · Vibe 그룹 {1} · 기록 {2}장"
+  ],
+  "未检测到酒馆目录（历史零拷贝与导入封面需绑定有效路径）": [
+    "未偵測到酒館目錄（歷史零複製與匯入封面需綁定有效路徑）",
+    "SillyTavern directory not detected (valid path required for zero-copy history and imported covers)",
+    "SillyTavern ディレクトリ未検出（履歴ゼロコピーとカバー取込には有効なパスが必要）",
+    "SillyTavern 경로 미감지(기록 제로카피 및 표지 가져오기에 유효한 경로 필요)"
+  ],
+  "上次同步 {0}": [
+    "上次同步 {0}",
+    "Last synced {0}",
+    "前回同期 {0}",
+    "마지막 동기화 {0}"
+  ],
+  "保存目录": [
+    "儲存目錄",
+    "Save path",
+    "パスを保存",
+    "경로 저장"
+  ],
+  "扫描中…": [
+    "掃描中…",
+    "Scanning…",
+    "スキャン中…",
+    "스캔 중…"
+  ],
+  "扫描历史": [
+    "掃描歷史",
+    "Scan history",
+    "履歴をスキャン",
+    "기록 스캔"
+  ],
+  "界面与创作": [
+    "介面與創作",
+    "Interface & Creation",
+    "画面と制作",
+    "인터페이스 및 창작"
+  ],
+  "接口与扩展": [
+    "介面與擴充",
+    "APIs & Extensions",
+    "連携と拡張",
+    "API 및 확장"
+  ],
+  "数据与关于": [
+    "資料與關於",
+    "Data & About",
+    "データと情報",
+    "데이터 및 정보"
+  ],
+  "外观与显示": [
+    "外觀與顯示",
+    "Appearance & Display",
+    "外観と表示",
+    "외관 및 표시"
+  ],
+  "生图与实验室": [
+    "生圖與實驗室",
+    "Generation & Lab",
+    "生成とラボ",
+    "생성 및 실험실"
+  ],
+  "生图密钥与额度": [
+    "生圖金鑰與額度",
+    "API Keys & Quota",
+    "生成キーと残高",
+    "생성 키 및 한도"
+  ],
+  "本地资源与模型": [
+    "本機資源與模型",
+    "Local Resources & Models",
+    "ローカル資源とモデル",
+    "로컬 리소스 및 모델"
+  ],
+  "同步与网络访问": [
+    "同步與網路存取",
+    "Sync & Network Access",
+    "同期とネットワーク",
+    "동기화 및 네트워크"
+  ],
+  "存储与备份": [
+    "儲存與備份",
+    "Storage & Backup",
+    "保存先とバックアップ",
+    "저장소 및 백업"
+  ],
+  "关于与系统": [
+    "關於與系統",
+    "About & System",
+    "情報とシステム",
+    "정보 및 시스템"
+  ],
+  "设置分类": [
+    "設定分類",
+    "Settings Categories",
+    "設定カテゴリ",
+    "설정 카테고리"
+  ],
+  "语言与明暗": [
+    "語言與明暗",
+    "Language & Theme",
+    "言語とテーマ",
+    "언어 및 테마"
+  ],
+  "生成行为": [
+    "生成行為",
+    "Generation Behavior",
+    "生成の動作",
+    "생성 동작"
+  ],
+  "密钥保管箱": [
+    "金鑰保管箱",
+    "API Key Vault",
+    "キー保管庫",
+    "API 키 보관함"
+  ],
+  "酒馆同步": [
+    "酒館同步",
+    "Tavern Sync",
+    "酒館同期",
+    "태번 동기화"
+  ],
+  "尚未下载 Tag 词库，请在全局设置「本地资源与模型」中更新 Tag 补全词库": [
+    "尚未下載 Tag 詞庫，請在全域設定「本機資源與模型」中更新 Tag 補全詞庫",
+    "Tag dictionary not downloaded yet. Update it in Settings → Local Resources & Models.",
+    "Tag辞書が未ダウンロードです。設定「ローカル資源とモデル」でTag補完辞書を更新してください。",
+    "Tag 사전이 아직 다운로드되지 않았습니다. 설정「로컬 리소스 및 모델」에서 Tag 자동완성 사전을 업데이트하세요."
+  ],
+  "在运行工坊的设备打开 http://127.0.0.1:3000，进入「全局设置 → 同步与网络访问 → 反推 HTTPS 入口」，开启并保存正式来源。远程部署可在自己的电脑执行下列 SSH 转发，再打开 http://127.0.0.1:13000。": [
+    "在執行工坊的裝置開啟 http://127.0.0.1:3000，進入「全域設定 → 同步與網路存取 → 反推 HTTPS 入口」，開啟並儲存正式來源。遠端部署可在自己的電腦執行下列 SSH 轉發，再開啟 http://127.0.0.1:13000。",
+    "Open http://127.0.0.1:3000 on the host running Atelier, go to Settings → Sync & Network Access → Tagger HTTPS Access, enable it, and save your production origins. For remote deployments, run the SSH port-forward below on your computer and open http://127.0.0.1:13000.",
+    "Atelier が動作している端末で http://127.0.0.1:3000 を開き、「全体設定 → 同期とネットワーク → タグ抽出 HTTPS 入口」を有効にして本番オリジンを保存してください。リモート環境では手元の PC で以下の SSH 転送を実行してから http://127.0.0.1:13000 を開いてください。",
+    "Atelier가 실행 중인 기기에서 http://127.0.0.1:3000을 열고 「전체 설정 → 동기화 및 네트워크 → 태거 HTTPS 입구」를 활성화한 뒤 실제 출처를 저장하세요. 원격 배포의 경우 아래 SSH 포트 포워딩을 실행한 뒤 http://127.0.0.1:13000을 여세요."
+  ],
+  "仅兼容反推接口的来源校验，不代替登录或代理认证。展开配置可查看首次配置方法。": [
+    "僅相容反推介面的來源校驗，不代替登入或代理認證。展開設定可檢視首次設定方法。",
+    "Only enables origin checks for tagger endpoints and does not replace login or proxy authentication. Expand settings for first-time setup instructions.",
+    "タグ抽出 API のオリジン検証のみを有効にし、ログインやプロキシ認証の代わりにはなりません。初回設定手順は設定を展開して確認してください。",
+    "태거 API의 출처 검증만 호환하며 로그인이나 프록시 인증을 대체하지 않습니다. 설정을 펼치면 최초 설정 방법을 확인할 수 있습니다."
+  ]
 }

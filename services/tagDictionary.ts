@@ -64,7 +64,7 @@ const loadManifest = async (retried = false): Promise<TagDictionaryManifest> => 
     manifestPromise = fetch(url, { cache: 'no-store' })
       .then(response => {
         // 404 即本机还没有词库（新装手机 APK 常见），给出可操作的去处，而不是英文状态码。
-        if (response.status === 404) throw new Error(t('尚未下载 Tag 词库，请在全局设置「数据与维护」中更新 Tag 补全词库'));
+        if (response.status === 404) throw new Error(t('尚未下载 Tag 词库，请在全局设置「本地资源与模型」中更新 Tag 补全词库'));
         if (!response.ok) throw new Error(t('Tag 词库读取失败（{0}），请稍后重试', [response.status]));
         return response.json() as Promise<TagDictionaryManifest>;
       })

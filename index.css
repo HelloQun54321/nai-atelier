@@ -392,6 +392,7 @@ html[data-design-theme='nai-atelier'].dark body {
 /* 系统弹出的原生选项不能沿用玻璃控件的透明底，否则夜间会出现浅底白字。 */
 html:root select { color-scheme: light; }
 html:root.dark select { color-scheme: dark; }
+html:root select.appearance-none::picker-icon { display: none; }
 html:root select :is(option, optgroup) {
   background-color: var(--nai-panel-solid-surface, Canvas);
   color: var(--color-gray-900, CanvasText);

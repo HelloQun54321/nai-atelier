@@ -1,7 +1,8 @@
 import { t, useLanguage } from '../services/i18n';
 import React from 'react';
-import { Bug, Copy, ExternalLink, Heart, Mail, Scale } from 'lucide-react';
+import { Bug, Copy, ExternalLink, Heart, Info, Mail, Scale } from 'lucide-react';
 import { copyTagText } from '../services/externalImageTags';
+import { SETTINGS_BTN_PRIMARY, SETTINGS_SUBPANEL_CLASS, SettingsCardHeader } from './SettingsUI';
 
 /** 声明里的地址与邮箱是固定文案，测试与文档共用同一来源，不在多处手写。 */
 export const PROJECT_REPOSITORY_URL = 'https://github.com/HelloQun54321/nai-atelier';
@@ -12,7 +13,7 @@ interface ProjectNoticeProps {
   notify?: (message: string, type?: 'success' | 'error') => void;
 }
 
-const NOTICE_ITEM = 'flex gap-2.5 rounded-xl bg-gray-50 px-3 py-2.5 dark:bg-gray-800/60';
+const NOTICE_ITEM = `${SETTINGS_SUBPANEL_CLASS} flex gap-2.5`;
 const NOTICE_TITLE = 'text-xs font-bold text-gray-800 dark:text-gray-200';
 const NOTICE_BODY = 'mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400';
 const NOTICE_LINK = 'mobile-touch inline-flex min-w-0 items-center gap-1 text-xs font-semibold text-indigo-600 transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-indigo-300';
@@ -32,13 +33,15 @@ export const ProjectNotice: React.FC<ProjectNoticeProps> = ({ notify }) => {
     }
   };
   return <div>
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0">
-        <h4 className="font-semibold text-gray-900 dark:text-white">{t("关于 NAI Atelier")}</h4>
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t("个人维护版本 · v{0}", [__APP_VERSION__])}</p>
-      </div>
-      <a href={PROJECT_REPOSITORY_URL} target="_blank" rel="noreferrer" data-appearance="control" data-tone="primary" className="mobile-touch flex flex-none items-center gap-1.5 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-indigo-600"><ExternalLink className="h-3.5 w-3.5" />{t("打开 GitHub")}</a>
-    </div>
+    <SettingsCardHeader
+      title={t("关于 NAI Atelier")}
+      headingLevel={4}
+      icon={<Info />}
+      description={t("个人维护版本 · v{0}", [__APP_VERSION__])}
+      action={
+        <a href={PROJECT_REPOSITORY_URL} target="_blank" rel="noreferrer" data-appearance="control" data-tone="primary" className={SETTINGS_BTN_PRIMARY}><ExternalLink className="h-3.5 w-3.5" />{t("打开 GitHub")}</a>
+      }
+    />
 
     <div className="mt-4 space-y-2.5">
       <section className={NOTICE_ITEM}>

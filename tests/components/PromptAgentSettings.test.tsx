@@ -78,19 +78,19 @@ it('破限模式读取服务端默认状态与规则，保存失败保留开关�
   const notify = vi.fn();
   const mount = () => render(<ConfirmDialogProvider><PromptAgentSettings notify={notify} /></ConfirmDialogProvider>);
   mount();
-  const toggle = screen.getByRole('checkbox', { name: '破限模式' }) as HTMLInputElement;
-  await waitFor(() => expect(toggle.checked).toBe(true));
+  const toggle = screen.getByRole('switch', { name: '破限模式' }) as HTMLButtonElement;
+  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
   fireEvent.click(screen.getByText('查看与编辑破限规则'));
   await waitFor(() => expect((screen.getByRole('textbox', { name: '破限规则正文' }) as HTMLTextAreaElement).value).toBe('synthetic direct rules'));
   fireEvent.click(toggle);
   await waitFor(() => expect(notify).toHaveBeenCalledWith('synthetic save failure', 'error'));
-  expect(toggle.checked).toBe(true);
+  expect(toggle.getAttribute('aria-checked')).toBe('true');
   fireEvent.click(toggle);
-  await waitFor(() => expect(toggle.checked).toBe(false));
+  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
   expect(updates).toEqual([{ enabled: false }, { enabled: false }]);
   cleanup(); mount();
-  await waitFor(() => expect((screen.getByRole('checkbox', { name: '破限模式' }) as HTMLInputElement).disabled).toBe(false));
-  expect((screen.getByRole('checkbox', { name: '破限模式' }) as HTMLInputElement).checked).toBe(false);
+  await waitFor(() => expect((screen.getByRole('switch', { name: '破限模式' }) as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.getByRole('switch', { name: '破限模式' }).getAttribute('aria-checked')).toBe('false');
 });
 
 it('破限规则可编辑保存并恢复内置默认，失败保留草稿与提示', async () => {
@@ -115,7 +115,7 @@ it('破限规则可编辑保存并恢复内置默认，失败保留草稿与提�
   vi.stubGlobal('fetch', fetch);
   const notify = vi.fn();
   render(<ConfirmDialogProvider><PromptAgentSettings notify={notify} /></ConfirmDialogProvider>);
-  await waitFor(() => expect(screen.getByRole('checkbox', { name: '破限模式' })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole('switch', { name: '破限模式' })).toBeTruthy());
   fireEvent.click(screen.getByText('查看与编辑破限规则'));
   const field = () => screen.getByRole('textbox', { name: '破限规则正文' }) as HTMLTextAreaElement;
   await waitFor(() => expect(field().value).toBe('synthetic direct rules'));
@@ -164,7 +164,7 @@ it('破限规则可另存、切换、覆盖与删除，规则库与生效正文�
   });
   vi.stubGlobal('fetch', fetch);
   render(<ConfirmDialogProvider><PromptAgentSettings notify={vi.fn()} /></ConfirmDialogProvider>);
-  await waitFor(() => expect(screen.getByRole('checkbox', { name: '破限模式' })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole('switch', { name: '破限模式' })).toBeTruthy());
   fireEvent.click(screen.getByText('查看与编辑破限规则'));
   const field = () => screen.getByRole('textbox', { name: '破限规则正文' }) as HTMLTextAreaElement;
   const picker = () => screen.getByRole('combobox', { name: '选择破限规则' }) as HTMLSelectElement;
@@ -225,12 +225,12 @@ it('联网搜索可保存独立地址与 Key，未配置时提示回退免费搜
   });
   vi.stubGlobal('fetch', fetch);
   render(<ConfirmDialogProvider><PromptAgentSettings notify={vi.fn()} /></ConfirmDialogProvider>);
-  const toggle = screen.getByRole('checkbox', { name: '使用搜索 API' }) as HTMLInputElement;
+  const toggle = screen.getByRole('switch', { name: '使用搜索 API' }) as HTMLButtonElement;
   await waitFor(() => expect(toggle.disabled).toBe(false));
-  expect(toggle.checked).toBe(false);
+  expect(toggle.getAttribute('aria-checked')).toBe('false');
   expect(screen.getByText('未检测到可用 Key，开启后仍使用免费搜索。')).toBeTruthy();
   fireEvent.click(toggle);
-  await waitFor(() => expect(toggle.checked).toBe(true));
+  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
   fireEvent.change(screen.getByLabelText(/API Key/), { target: { value: 'synthetic-key' } });
   fireEvent.click(screen.getByRole('button', { name: '保存搜索设置' }));
   await waitFor(() => expect(screen.getByText('已保存搜索专用 Key。')).toBeTruthy());

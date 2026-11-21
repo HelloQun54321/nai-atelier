@@ -45,8 +45,8 @@ describe('设置里的智慧姬同步开关', () => {
   });
   it('关闭时只有开关与说明；开启后显示安装配置，勾选使用持久化接口', async () => {
     const view = render(React.createElement(SillyTavernBridgeExport, { notify: vi.fn() }));
-    const toggle = screen.getByRole('checkbox', { name: '智慧姬同步' }) as HTMLInputElement;
-    expect(toggle.checked).toBe(false); expect(fetch).not.toHaveBeenCalled();
+    const toggle = screen.getByRole('switch', { name: '智慧姬同步' });
+    expect(toggle.getAttribute('aria-checked')).toBe('false'); expect(fetch).not.toHaveBeenCalled();
     expect(screen.queryByTitle('SillyTavern 本地安装根目录')).toBeNull();
     fireEvent.click(toggle); expect(save).toHaveBeenCalledWith(true);
     preferences.enabled = true; view.rerender(React.createElement(SillyTavernBridgeExport, { notify: vi.fn() }));
@@ -59,7 +59,7 @@ describe('设置里的智慧姬同步开关', () => {
   it('读写等待时防止重复操作；失败显示原因与手动重读', async () => {
     const notify = vi.fn(); preferences.ready = false;
     const view = render(React.createElement(SillyTavernBridgeExport, { notify }));
-    const toggle = screen.getByRole('checkbox', { name: '智慧姬同步' }) as HTMLInputElement;
+    const toggle = screen.getByRole('switch', { name: '智慧姬同步' }) as HTMLButtonElement;
     expect(toggle.disabled).toBe(true);
     preferences.ready = true; preferences.busy = true; view.rerender(React.createElement(SillyTavernBridgeExport, { notify }));
     expect(toggle.disabled).toBe(true);
@@ -70,10 +70,10 @@ describe('设置里的智慧姬同步开关', () => {
   });
   it('柏宝绘同步独立开关互不干扰，单独开启时共享目录与扩展安装入口', async () => {
     const view = render(React.createElement(SillyTavernBridgeExport, { notify: vi.fn() }));
-    const chatu8Toggle = screen.getByRole('checkbox', { name: '智慧姬同步' }) as HTMLInputElement;
-    const baiBaiToggle = screen.getByRole('checkbox', { name: '柏宝绘同步' }) as HTMLInputElement;
-    expect(chatu8Toggle.checked).toBe(false);
-    expect(baiBaiToggle.checked).toBe(false);
+    const chatu8Toggle = screen.getByRole('switch', { name: '智慧姬同步' });
+    const baiBaiToggle = screen.getByRole('switch', { name: '柏宝绘同步' });
+    expect(chatu8Toggle.getAttribute('aria-checked')).toBe('false');
+    expect(baiBaiToggle.getAttribute('aria-checked')).toBe('false');
     fireEvent.click(baiBaiToggle);
     expect(saveBaiBai).toHaveBeenCalledWith(true);
     expect(save).not.toHaveBeenCalled();

@@ -157,7 +157,7 @@ it('本机尚无词库（清单 404）时提示去设置下载，其他失败保
     .mockResolvedValueOnce(new Response('{}', { status: 404 }))
     .mockResolvedValueOnce(new Response('', { status: 503 }));
   vi.stubGlobal('fetch', fetchMock);
-  await expect(searchTagDictionary('blue')).rejects.toThrow('尚未下载 Tag 词库，请在全局设置「数据与维护」中更新 Tag 补全词库');
+  await expect(searchTagDictionary('blue')).rejects.toThrow('尚未下载 Tag 词库，请在全局设置「本地资源与模型」中更新 Tag 补全词库');
   await expect(searchTagDictionary('blue')).rejects.toThrow('Tag 词库读取失败（503），请稍后重试');
   expect(fetchMock).toHaveBeenCalledTimes(2);
   vi.unstubAllGlobals();

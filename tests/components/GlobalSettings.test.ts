@@ -101,7 +101,7 @@ vi.mock('../../services/naiKeyVault', () => ({
 interface SettingsHarnessProps {
   open?: boolean;
   onClose?: () => void;
-  initialSection?: 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
+  initialSection?: 'home' | 'appearance' | 'generation' | 'privacy' | 'novelai' | 'agent' | 'resources' | 'connections' | 'storage' | 'about' | 'maintenance';
   initialAppearancePreferences?: Partial<AppearancePreferences>;
   onAppearancePreferencesChange?: (preferences: AppearancePreferences) => void;
   notify?: (message: string, tone?: 'success' | 'error' | 'info') => void;
@@ -264,7 +264,7 @@ describe('GlobalSettings', () => {
     const changed = vi.fn<(preferences: AppearancePreferences) => void>();
     render(React.createElement(SettingsHarness, { onAppearancePreferencesChange: changed }));
     expect(screen.queryByRole('switch', { name: '记住上次生图设置' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /生图偏好与实验室/ }));
+    fireEvent.click(screen.getByRole('button', { name: /生图与实验室/ }));
     const toggle = await screen.findByRole('switch', { name: '记住上次生图设置' });
     expect(toggle.getAttribute('aria-checked')).toBe('true');
     const fields = ['参数设置', '全局正向提示词', '全局负面提示词', '角色正向提示词', '角色负面提示词'];
@@ -291,7 +291,7 @@ describe('GlobalSettings', () => {
 
   it('生图偏好设置不再提供实验室分类编辑和导入自动分类开关', async () => {
     render(React.createElement(SettingsHarness));
-    fireEvent.click(screen.getByRole('button', { name: /生图偏好与实验室/ }));
+    fireEvent.click(screen.getByRole('button', { name: /生图与实验室/ }));
     await screen.findByRole('switch', { name: '记住上次生图设置' });
     expect(screen.queryByRole('switch', { name: '提示词分类编辑' })).toBeNull();
     expect(screen.queryByRole('checkbox', { name: '导入后自动分类' })).toBeNull();
@@ -300,7 +300,7 @@ describe('GlobalSettings', () => {
   it('提示词编辑提供原文框与翻译区高度跟随开关，默认开启，可分别关闭', async () => {
     const onAppearancePreferencesChange = vi.fn<(preferences: AppearancePreferences) => void>();
     render(React.createElement(SettingsHarness, { onAppearancePreferencesChange }));
-    fireEvent.click(screen.getByRole('button', { name: /生图偏好与实验室/ }));
+    fireEvent.click(screen.getByRole('button', { name: /生图与实验室/ }));
     const inputSwitch = await screen.findByRole('switch', { name: '原文框高度跟随内容' });
     const translationSwitch = screen.getByRole('switch', { name: '翻译区高度跟随内容' });
     expect(inputSwitch.getAttribute('aria-checked')).toBe('true');
@@ -349,7 +349,7 @@ describe('GlobalSettings', () => {
     expect(container.textContent).not.toMatch(/独立页面中打开|主题预设、防社死|连接信息和本地数据维护/);
     const entries = screen.getAllByRole('button', { name: '隐私与分享' });
     fireEvent.click(entries.at(-1)!);
-    const toggle = await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement;
+    const toggle = await screen.findByRole('switch', { name: '分享图片时移除生成信息' });
     expect(screen.getByText('复制／下载时移除生成信息；原图与历史保留。')).toBeTruthy();
     fireEvent.click(toggle);
     expect(getCleanSharedImages()).toBe(true);
@@ -516,12 +516,12 @@ describe('GlobalSettings', () => {
     subscriptionFixture.entries = [{ id: 'resize', name: '合成旋转测试', key, createdAt: 0 }];
     const view = render(React.createElement(SettingsHarness, { initialSection: 'home' }));
     const choices = screen.getByText('选择设置分类').parentElement!.parentElement!;
-    fireEvent.click(within(choices).getByRole('button', { name: 'NovelAI 与 Anlas' }));
+    fireEvent.click(within(choices).getByRole('button', { name: '生图密钥与额度' }));
     fireEvent.click((await screen.findAllByRole('button', { name: '显示完整 Key' }))[0]);
     for (const next of [false, true]) {
       mobile = next;
       act(() => listeners.forEach(listener => listener()));
-      expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('NovelAI 与 Anlas');
+      expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('生图密钥与额度');
       expect(screen.getByText(key)).toBeTruthy();
     }
     view.rerender(React.createElement(SettingsHarness, { initialSection: 'generation' }));
@@ -547,10 +547,10 @@ describe('GlobalSettings', () => {
     };
     if (initialSection === 'home') {
       const choices = screen.getByText('选择设置分类').parentElement!.parentElement!;
-      fireEvent.click(within(choices).getByRole('button', { name: '生图偏好与实验室' }));
+      fireEvent.click(within(choices).getByRole('button', { name: '生图与实验室' }));
     }
     expect(window.history.state.__naiMobileLayers).toHaveLength(2);
-    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('生图偏好与实验室');
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('生图与实验室');
     window.history.replaceState(parentState, '');
     fireEvent(window, new PopStateEvent('popstate', { state: parentState }));
     expect(screen.getByText('选择设置分类')).toBeTruthy();
@@ -646,15 +646,15 @@ describe('GlobalSettings', () => {
       addEventListener: vi.fn(), removeEventListener: vi.fn(),
     })));
     const view = render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
-    const toggle = await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement;
-    expect(toggle.checked).toBe(false);
+    const toggle = await screen.findByRole('switch', { name: '分享图片时移除生成信息' });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
     fireEvent.click(toggle);
-    expect(toggle.checked).toBe(true);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
     expect(getCleanSharedImages()).toBe(true);
     expect(localStorage.getItem(IMAGE_SHARING_STORAGE_KEY)).toBe('true');
     view.unmount();
     render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
-    expect((await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement).checked).toBe(true);
+    expect((await screen.findByRole('switch', { name: '分享图片时移除生成信息' })).getAttribute('aria-checked')).toBe('true');
     expect(screen.getByText('复制／下载时移除生成信息；原图与历史保留。')).toBeTruthy();
   });
   it('图片悬浮按钮的下载格式默认原图，可切到生成信息并写入设置', async () => {
@@ -671,24 +671,24 @@ describe('GlobalSettings', () => {
     const view = render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
     const safeHeading = screen.getByRole('heading', { level: 3, name: '安全模式' });
     const cleanHeading = screen.getByRole('heading', { level: 3, name: '图片元数据清洗' });
-    expect(safeHeading.parentElement).not.toBe(cleanHeading.parentElement);
+    expect(safeHeading.closest('section')).not.toBe(cleanHeading.closest('section'));
     expect(screen.queryByRole('heading', { level: 3, name: '隐私与分享' })).toBeNull();
 
-    const cleanToggle = await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement;
+    const cleanToggle = await screen.findByRole('switch', { name: '分享图片时移除生成信息' });
     const cleanContent = screen.getByRole('combobox', { name: '清洗内容' }) as HTMLSelectElement;
     const customText = screen.getByRole('textbox', { name: '自定义文本' }) as HTMLInputElement;
-    const safeToggle = screen.getByRole('button', { name: /^安全模式/ });
-    expect(cleanToggle.checked).toBe(false);
+    const safeToggle = screen.getByRole('switch', { name: /^安全模式/ });
+    expect(cleanToggle.getAttribute('aria-checked')).toBe('false');
     expect(cleanContent.value).toBe('all');
     expect(getSharedImageCleanContent()).toBe('all');
     expect(cleanContent.disabled).toBe(true);
     expect(customText.value).toBe('');
     expect(customText.disabled).toBe(true);
     fireEvent.click(safeToggle);
-    expect(cleanToggle.checked).toBe(false);
+    expect(cleanToggle.getAttribute('aria-checked')).toBe('false');
     fireEvent.click(cleanToggle);
-    expect(safeToggle.getAttribute('aria-pressed')).toBe('true');
-    expect(cleanToggle.checked).toBe(true);
+    expect(safeToggle.getAttribute('aria-checked')).toBe('true');
+    expect(cleanToggle.getAttribute('aria-checked')).toBe('true');
     expect(cleanContent.disabled).toBe(false);
     expect(customText.disabled).toBe(false);
     fireEvent.change(cleanContent, { target: { value: 'prompts' } });
@@ -700,10 +700,10 @@ describe('GlobalSettings', () => {
 
     view.unmount();
     render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
-    const reopenedToggle = await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement;
+    const reopenedToggle = await screen.findByRole('switch', { name: '分享图片时移除生成信息' });
     const reopenedCleanContent = screen.getByRole('combobox', { name: '清洗内容' }) as HTMLSelectElement;
     const reopenedText = screen.getByRole('textbox', { name: '自定义文本' }) as HTMLInputElement;
-    expect(reopenedToggle.checked).toBe(true);
+    expect(reopenedToggle.getAttribute('aria-checked')).toBe('true');
     expect(reopenedCleanContent.value).toBe('prompts');
     expect(reopenedText.value).toBe('中文自定义文本 🌸');
     fireEvent.click(reopenedToggle);
@@ -796,7 +796,7 @@ describe('GlobalSettings', () => {
   it.each(['https://nai.ry.mk/ai/generate-image', 'https://relay.example/prefix/ai/generate-image/'])('通用中转 %s 明确传输内容，话语设置仅在 st-chatu 协议生效', async serviceUrl => {
     render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
     const address = await screen.findByRole('textbox', { name: '公共队列服务地址' });
-    const enabled = screen.getByRole('checkbox', { name: '多人拼车公共队列' });
+    const enabled = screen.getByRole('switch', { name: '多人拼车公共队列' });
     fireEvent.click(enabled);
     await screen.findByRole('checkbox', { name: '显示当前使用者的个性语' });
     fireEvent.change(address, { target: { value: serviceUrl } });
@@ -832,9 +832,9 @@ describe('GlobalSettings', () => {
     expect(screen.getByText('实验室模块默认展开')).toBeTruthy();
   });
 
-  it('Android 版维护分类同样展示软件内声明，版本与 GitHub 入口只保留一处', async () => {
+  it('Android 版关于与系统分类展示软件内声明，版本与 GitHub 入口只保留一处', async () => {
     platformFixture.android = true;
-    render(React.createElement(SettingsHarness, { initialSection: 'maintenance' }));
+    render(React.createElement(SettingsHarness, { initialSection: 'about' }));
     expect(await screen.findByText('完全开源免费')).toBeTruthy();
     expect(screen.getByText('内容创作与作者无关')).toBeTruthy();
     expect(screen.getByRole('link', { name: '打开开源地址' }).getAttribute('href')).toBe('https://github.com/HelloQun54321/nai-atelier');
@@ -842,43 +842,65 @@ describe('GlobalSettings', () => {
     // 手机存储管理自带的重复版本 / GitHub 头部已并入声明卡。
     expect(screen.queryByRole('link', { name: 'GitHub' })).toBeNull();
     expect(screen.getAllByRole('link', { name: '打开 GitHub' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /同步与网络访问/ })).toBeNull();
   });
 
-  it('支持 6 分类独立导航且各区专属内容正常展示与切换', async () => {
+  it('支持 9 分类分组导航且各区专属内容正常展示与切换', async () => {
     render(React.createElement(SettingsHarness));
 
-    // 验证侧边栏包含全部分类导航
-    expect(screen.getByRole('button', { name: /外观与画廊/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /生图偏好与实验室/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /NovelAI 与 Anlas/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /创作助手/ })).toBeTruthy();
+    // 验证侧边栏包含全部分类与分组
+    expect(screen.getByText('界面与创作')).toBeTruthy();
+    expect(screen.getByText('接口与扩展')).toBeTruthy();
+    expect(screen.getByText('数据与关于')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /外观与显示/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /生图与实验室/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /隐私与分享/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /数据与维护/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /生图密钥与额度/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /创作助手/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /本地资源与模型/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /同步与网络访问/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /存储与备份/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /关于与系统/ })).toBeTruthy();
 
     // 外观区保留明暗模式与图片列表布局，防窥设置归入隐私分类。
     expect(screen.getByText('明暗模式')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /^安全模式/ })).toBeNull();
+    expect(screen.queryByRole('switch', { name: /^安全模式/ })).toBeNull();
     expect(screen.queryByText('启动时自动开启安全模式')).toBeNull();
     expect(screen.getByText('图片列表布局')).toBeTruthy();
 
-    // 切换至「生图偏好与实验室」
-    fireEvent.click(screen.getByRole('button', { name: /生图偏好与实验室/ }));
+    // 切换至「生图与实验室」
+    fireEvent.click(screen.getByRole('button', { name: /生图与实验室/ }));
     expect(await screen.findByText('生成过程预览')).toBeTruthy();
     expect(screen.getByText('强制清空种子（始终随机）')).toBeTruthy();
     expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
     expect(screen.getByText('实验室模块默认展开')).toBeTruthy();
 
+    // 切换至「隐私与分享」
     fireEvent.click(screen.getByRole('button', { name: /隐私与分享/ }));
-    expect(await screen.findByRole('button', { name: /^安全模式/ })).toBeTruthy();
+    expect(await screen.findByRole('switch', { name: /^安全模式/ })).toBeTruthy();
     expect(screen.getByRole('switch', { name: /同时隐藏作品名称/ })).toBeTruthy();
     expect(screen.getByRole('switch', { name: '启动时自动开启安全模式' })).toBeTruthy();
-    expect((await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement).checked).toBe(false);
+    expect((await screen.findByRole('switch', { name: '分享图片时移除生成信息' })).getAttribute('aria-checked')).toBe('false');
 
-    // 切换至「数据与维护」
-    fireEvent.click(screen.getByRole('button', { name: /数据与维护/ }));
+    // 切换至「本地资源与模型」
+    fireEvent.click(screen.getByRole('button', { name: /本地资源与模型/ }));
+    expect(await screen.findByText('Tag 补全词库')).toBeTruthy();
+    expect(screen.getByText('画师预览图库')).toBeTruthy();
+
+    // 切换至「同步与网络访问」
+    fireEvent.click(screen.getByRole('button', { name: /同步与网络访问/ }));
+    expect(await screen.findByText('局域网访问')).toBeTruthy();
+    expect(screen.getByText('反推 HTTPS 入口')).toBeTruthy();
+
+    // 切换至「存储与备份」
+    fireEvent.click(screen.getByRole('button', { name: /存储与备份/ }));
     expect(await screen.findByText('重要数据备份')).toBeTruthy();
-    expect(screen.getByText('局域网访问')).toBeTruthy();
-    // 软件内声明随维护分类出现：开源免费、内容免责、反馈与支持作者。
+    expect(screen.getByText('缩略图缓存')).toBeTruthy();
+
+    // 切换至「关于与系统」：应用更新、本地服务状态、桌面启动器与软件内声明。
+    fireEvent.click(screen.getByRole('button', { name: /关于与系统/ }));
+    expect(await screen.findByText('应用更新')).toBeTruthy();
+    expect(screen.getByText('本地服务状态')).toBeTruthy();
     expect(screen.getByText('完全开源免费')).toBeTruthy();
     expect(screen.getByText('内容创作与作者无关')).toBeTruthy();
     expect(screen.getByText('问题反馈与贡献')).toBeTruthy();

@@ -1,7 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Globe, Save } from 'lucide-react';
+import { ChevronDown, Globe, Save } from 'lucide-react';
 import { InlineSpinner } from './DesignSystem';
 import { t, useLanguage } from '../services/i18n';
+import {
+  SETTINGS_BTN_INLINE,
+  SETTINGS_BTN_NEUTRAL,
+  SETTINGS_BTN_PRIMARY,
+  SETTINGS_SUBPANEL_CLASS,
+  SETTINGS_TEXTAREA_CLASS,
+  SettingsCardHeader,
+  SettingsDisclosure,
+  SettingsSwitchRow,
+} from './SettingsUI';
 
 interface Policy { enabled: boolean; origins: string[] }
 const endpoint = '/api/lan/tagger-remote-access';
@@ -67,50 +77,46 @@ export function TaggerRemoteAccessSettings() {
 
   const panelOpen = expanded || loadError;
 
-  return <section className="min-w-0 space-y-3 border-b border-gray-200 pb-5 dark:border-gray-700" aria-labelledby="tagger-remote-title">
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <h4 id="tagger-remote-title" className="font-semibold text-gray-900 dark:text-white">{t('反推 HTTPS 入口')}</h4>
-          {!loading && !loadError && (
-            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-micro font-semibold ${policy?.enabled ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'appearance-group bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
-              {policy?.enabled ? t('已开启') : t('未开启')}
-            </span>
-          )}
-        </div>
-        <p id="tagger-remote-help" className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-          {t('仅兼容反推接口的来源校验，不代替登录或代理认证。首次配置方法见下方。')}
-        </p>
-      </div>
-      <button
-        type="button"
-        data-appearance="control"
-        data-tone="neutral"
-        aria-expanded={panelOpen}
-        onClick={() => setExpanded(value => !value)}
-        className="appearance-group mobile-touch mt-0.5 inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-      >
-        <span>{panelOpen ? t('收起') : t('展开配置')}</span>
-        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${panelOpen ? 'rotate-180' : ''}`} />
-      </button>
-    </div>
+  return <div className="min-w-0 space-y-3" aria-labelledby="tagger-remote-title">
+    <SettingsCardHeader
+      title={t('反推 HTTPS 入口')}
+      titleId="tagger-remote-title"
+      headingLevel={4}
+      icon={<Globe />}
+      badge={!loading && !loadError ? (
+        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-micro font-semibold ${policy?.enabled ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'appearance-group bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
+          {policy?.enabled ? t('已开启') : t('未开启')}
+        </span>
+      ) : undefined}
+      description={<span id="tagger-remote-help">{t('仅兼容反推接口的来源校验，不代替登录或代理认证。展开配置可查看首次配置方法。')}</span>}
+      action={
+        <button
+          type="button"
+          data-appearance="control"
+          data-tone="neutral"
+          aria-expanded={panelOpen}
+          onClick={() => setExpanded(value => !value)}
+          className={SETTINGS_BTN_NEUTRAL}
+        >
+          <span>{panelOpen ? t('收起') : t('展开配置')}</span>
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${panelOpen ? 'rotate-180' : ''}`} />
+        </button>
+      }
+    />
 
     {loading && !panelOpen && <InlineSpinner label={t('正在读取配置…')} className="text-xs" />}
 
     {panelOpen && (
-      <div className="appearance-group space-y-3 rounded-xl border border-gray-200 bg-gray-50/70 p-3.5 text-xs dark:border-gray-700/60 dark:bg-gray-800/50">
+      <div className={`${SETTINGS_SUBPANEL_CLASS} space-y-3 p-3.5 text-xs`}>
         {loading && <InlineSpinner label={t('正在读取配置…')} className="text-xs" />}
 
-        <label className="flex cursor-pointer items-center justify-between gap-4">
-          <span className="font-medium text-gray-800 dark:text-gray-200">{t('允许指定来源管理反推模型')}</span>
-          <input
-            type="checkbox"
-            checked={policy?.enabled ?? false}
-            disabled={!policy || busy || loading || loadError}
-            onChange={event => { setPolicy(current => current && { ...current, enabled: event.target.checked }); setMessage(''); }}
-            className="h-5 w-5 shrink-0 accent-indigo-600 disabled:opacity-40"
-          />
-        </label>
+        <SettingsSwitchRow
+          label="允许指定来源管理反推模型"
+          checked={policy?.enabled ?? false}
+          disabled={!policy || busy || loading || loadError}
+          onChange={next => { setPolicy(current => current && { ...current, enabled: next }); setMessage(''); }}
+          className="!py-1"
+        />
 
         <div className="border-t border-gray-200/70 pt-3 dark:border-gray-700/70">
           <label htmlFor="tagger-remote-origins" className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
@@ -126,7 +132,7 @@ export function TaggerRemoteAccessSettings() {
             placeholder="https://atelier.example.com"
             aria-describedby="tagger-remote-help tagger-remote-format tagger-remote-error"
             aria-invalid={!!error}
-            className="mt-1.5 w-full min-w-0 resize-none rounded-lg border border-gray-300 bg-white px-2.5 py-2 font-mono text-xs leading-5 outline-none focus:border-indigo-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+            className={`${SETTINGS_TEXTAREA_CLASS} mt-1.5 resize-none font-mono`}
           />
           <p id="tagger-remote-format" className="mt-1.5 text-meta leading-5 text-gray-500 dark:text-gray-400">
             {t('填写协议、主机和端口，不含路径或通配符。反代需保留 Host；关闭后保留列表。')}
@@ -143,7 +149,7 @@ export function TaggerRemoteAccessSettings() {
                 data-appearance="control"
                 data-tone="neutral"
                 onClick={() => setRetry(value => value + 1)}
-                className="mobile-touch shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 underline transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+                className={`${SETTINGS_BTN_INLINE} shrink-0 underline`}
               >
                 {t('重新读取')}
               </button>
@@ -158,21 +164,21 @@ export function TaggerRemoteAccessSettings() {
             onClick={() => void save()}
             data-appearance="control"
             data-tone="primary"
-            className="mobile-touch inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600"
+            className={SETTINGS_BTN_PRIMARY}
           >
             <Save className="h-3.5 w-3.5" />
             <span>{busy ? t('保存中…') : t('保存来源配置')}</span>
           </button>
         </div>
 
-        <details className="group border-t border-gray-200/70 pt-2.5 text-meta leading-5 text-gray-500 dark:border-gray-700/70 dark:text-gray-400">
-          <summary className="mobile-touch flex cursor-pointer list-none items-center gap-1.5 py-1 text-xs font-semibold text-gray-600 transition hover:text-indigo-600 dark:text-gray-300 dark:hover:text-indigo-300 [&::-webkit-details-marker]:hidden">
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" />
-            <span>{t('首次配置方法（本机页面 / 命令行）')}</span>
-          </summary>
+        <SettingsDisclosure
+          summary={t('首次配置方法（本机页面 / 命令行）')}
+          className="border-t border-gray-200/70 pt-2.5 text-meta leading-5 text-gray-500 dark:border-gray-700/70 dark:text-gray-400"
+          summaryClassName="py-1"
+        >
           <div className="mt-2 space-y-2">
             <p className="font-semibold text-gray-700 dark:text-gray-300">{t('通过页面配置')}</p>
-            <p>{t('在运行工坊的设备打开 http://127.0.0.1:3000，进入「全局设置 → 数据与维护 → 反推 HTTPS 入口」，开启并保存正式来源。远程部署可在自己的电脑执行下列 SSH 转发，再打开 http://127.0.0.1:13000。')}</p>
+            <p>{t('在运行工坊的设备打开 http://127.0.0.1:3000，进入「全局设置 → 同步与网络访问 → 反推 HTTPS 入口」，开启并保存正式来源。远程部署可在自己的电脑执行下列 SSH 转发，再打开 http://127.0.0.1:13000。')}</p>
             <pre className="appearance-content min-w-0 whitespace-pre-wrap break-all rounded-lg bg-gray-100 p-2.5 font-mono dark:bg-gray-900/70"><code>ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:13000:127.0.0.1:3000 user@server</code></pre>
             <p>{t('将 user@server 替换为 SSH 登录地址；3000 为服务器网关端口，13000 为本机转发端口，请按实际情况调整。')}</p>
             <p className="pt-1 font-semibold text-gray-700 dark:text-gray-300">{t('通过命令行配置')}</p>
@@ -185,8 +191,8 @@ export function TaggerRemoteAccessSettings() {
             <p>{t('返回 HTTP 200 后回到 HTTPS 页面重试，无需重启。若返回 HTTP 503，请先排查配置读取错误，不要删除或覆盖原配置。')}</p>
             <p>{t('反代须保留原始 Host，并设置独立认证、隔离源站直连；此设置不提供公网认证。')}</p>
           </div>
-        </details>
+        </SettingsDisclosure>
       </div>
     )}
-  </section>;
+  </div>;
 }

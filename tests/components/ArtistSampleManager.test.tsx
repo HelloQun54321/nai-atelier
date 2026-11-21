@@ -304,7 +304,7 @@ it('V5在原行按需展开七个文件，使用实际文件名、体积及已�
   expect(fileRegion(0).getByText('1.37 GB · 已接入 · 10000 个画师 Tag')).toBeTruthy();
   expect((fileRegion(0).getByRole('button') as HTMLButtonElement).disabled).toBe(true);
   expect(fileRegion(6).getByText('1.34 GB · 未下载')).toBeTruthy();
-  expect(fileRegion(6).getByRole('button').classList.contains('min-h-11')).toBe(true);
+  expect(fileRegion(6).getByRole('button').classList.contains('mobile-touch')).toBe(true);
   expect(fileRegion(6).getByText(FILES[6][0]).classList.contains('break-all')).toBe(true);
   expect(screen.getByText('可用 · 31000 个画师 Tag')).toBeTruthy();
   expect(fileRegion(6).queryByRole('button', { name: /解除|删除/ })).toBeNull();

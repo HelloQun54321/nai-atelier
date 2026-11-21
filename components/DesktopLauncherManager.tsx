@@ -14,6 +14,7 @@ import {
   createDesktopLauncher,
   openDesktopFolder,
 } from '../services/desktopLauncher';
+import { SETTINGS_BTN_INLINE, SETTINGS_BTN_PRIMARY, SETTINGS_SUBPANEL_CLASS, SettingsCardHeader } from './SettingsUI';
 
 interface DesktopLauncherManagerProps {
   notify: (message: string) => void;
@@ -68,17 +69,10 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
 
   return (
     <div className="space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h4 className="font-semibold text-gray-900 dark:text-white">{t("Windows 桌面启动器")}</h4>
-        </div>
-        <div className="flex items-center gap-1.5 flex-none">
-          <Monitor className="h-4 w-4 text-indigo-500" />
-        </div>
-      </div>
+      <SettingsCardHeader title={t("Windows 桌面启动器")} headingLevel={4} icon={<Monitor />} />
 
       {error && (
-        <div className="rounded-lg bg-red-50 p-3 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">
+        <div className="rounded-xl bg-red-50 p-3 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">
           {t(error)}
         </div>
       )}
@@ -86,7 +80,7 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
       {status ? (
         <div className="space-y-3">
           {!status.supported && (
-            <div className="flex items-start gap-2.5 rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+            <div className="flex items-start gap-2.5 rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
               <Info className="h-4 w-4 flex-none mt-0.5 text-amber-500" />
               <div className="space-y-1">
                 <p>{t("仅支持 Windows（当前：{0}）。", [status.platform])}</p>
@@ -97,7 +91,7 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
           )}
 
           {/* 状态与路径详情 */}
-          <div className="appearance-group rounded-lg bg-gray-50 p-3 text-xs text-gray-600 dark:bg-gray-800/70 dark:text-gray-300 space-y-2">
+          <div className={`${SETTINGS_SUBPANEL_CLASS} space-y-2 text-xs text-gray-600 dark:text-gray-300`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0 flex items-center gap-1.5">
                 <span className="text-gray-400 dark:text-gray-500 flex-none">{t("桌面目录:")}</span>
@@ -111,7 +105,7 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
                   data-appearance="control" data-tone="neutral"
                   onClick={() => void handleOpenDesktop()}
                   disabled={openingFolder}
-                  className="mobile-touch flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+                  className={SETTINGS_BTN_INLINE}
                 >
                   <FolderOpen className="h-3.5 w-3.5" />
                   <span>{t("打开桌面")}</span>
@@ -119,7 +113,7 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-gray-200 dark:border-gray-700">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-gray-200/80 dark:border-gray-700/70">
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 dark:text-gray-500">{status.launcherKind === 'exe' ? t("桌面应用:") : t("项目内启动脚本:")}</span>
                 {status.batExists ? (
@@ -145,21 +139,20 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
           </div>
 
           {/* 操作按钮栏 */}
-          <div className="flex flex-wrap items-center gap-2.5 pt-1">
-            {status.supported ? (
+          {status.supported && (
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => void handleCreate()}
                 disabled={creating}
                 data-appearance="control" data-tone="primary"
-                className="mobile-touch flex items-center gap-1.5 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                className={SETTINGS_BTN_PRIMARY}
               >
                 {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                 <span>{status.shortcutExists ? t("修复桌面快捷方式") : t("创建桌面快捷方式")}</span>
               </button>
-            ) : null}
-
-          </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex items-center gap-2 text-xs text-gray-400 py-2">

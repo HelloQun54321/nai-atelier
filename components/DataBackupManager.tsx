@@ -1,5 +1,12 @@
 import { useConfirmDialog } from './ConfirmDialog';
 import { InlineSpinner } from './DesignSystem';
+import {
+  SETTINGS_BTN_NEUTRAL,
+  SETTINGS_BTN_PRIMARY,
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_SUBPANEL_CLASS,
+  SettingsCardHeader,
+} from './SettingsUI';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { getStorageLocationStatus, pickStorageDirectory } from '../services/storageLocations';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
@@ -178,30 +185,30 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
   return (
     <div className="space-y-4">
       {/* 头部概述与源数据指标 */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h4 className="font-semibold text-gray-900 dark:text-white">{t("重要数据备份")}</h4>
-            {isRunning && (
-              <span className="flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-meta font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                {t("正在备份")}</span>
-            )}
-          </div>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t("含密钥，请妥善保管备份。")}</p>
-        </div>
-        <div className="flex flex-none items-center gap-2">
+      <SettingsCardHeader
+        title={t("重要数据备份")}
+        headingLevel={4}
+        icon={<Archive />}
+        badge={isRunning ? (
+          <span className="flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-meta font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {t("正在备份")}
+          </span>
+        ) : undefined}
+        description={t("含密钥，请妥善保管备份。")}
+        action={
           <button
             type="button"
             onClick={() => void handleOpenFolder(status?.targetDir)}
             data-appearance="control" data-tone="neutral"
-            className="appearance-group mobile-touch flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+            className={SETTINGS_BTN_NEUTRAL}
             title={t("在系统文件管理器中打开备份总目录")}
           >
             <FolderOpen className="h-3.5 w-3.5 text-indigo-500" />
-            {t("打开备份文件夹")}</button>
-        </div>
-      </div>
+            {t("打开备份文件夹")}
+          </button>
+        }
+      />
 
       {error && (
         <div className="flex items-center gap-2 rounded-xl bg-red-50 p-3 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">
@@ -302,8 +309,8 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
       </div>
 
       {/* 备份操作控制台 */}
-      <div className="appearance-group rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className={`${SETTINGS_SUBPANEL_CLASS} p-3.5`}>
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
           <div className="min-w-0 flex-1">
             <input
               type="text"
@@ -312,7 +319,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
               disabled={isRunning}
               maxLength={30}
               placeholder={t("可选备注名（例如：升级前备份 / 阶段归档）")}
-              className="mobile-touch w-full rounded-xl border border-gray-300 bg-gray-50 px-3 text-xs text-gray-800 outline-none transition focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-800/80 dark:text-gray-100"
+              className={SETTINGS_INPUT_CLASS}
             />
           </div>
           <button
@@ -320,20 +327,16 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
             onClick={handleStartBackup}
             disabled={isRunning}
             data-appearance="control" data-tone="primary"
-            className={`mobile-touch flex flex-none items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold text-white shadow-sm transition ${
-              isRunning
-                ? 'cursor-not-allowed bg-indigo-400 dark:bg-indigo-800'
-                : 'bg-indigo-700 hover:bg-indigo-600 active:scale-[0.98]'
-            }`}
+            className={SETTINGS_BTN_PRIMARY}
           >
             {isRunning ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 <span>{t("正在备份中…")}</span>
               </>
             ) : (
               <>
-                <Play className="h-4 w-4 fill-current" />
+                <Play className="h-3.5 w-3.5 fill-current" />
                 <span>{t("立即完整备份")}</span>
               </>
             )}

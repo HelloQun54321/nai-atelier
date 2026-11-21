@@ -48,7 +48,7 @@ const MobileNavButton: React.FC<{ label: string; active: boolean; icon: React.El
 );
 
 type AppView = 'list' | 'characters' | 'content-library' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll' | 'prompts' | 'content-roll' | 'content-roll-library';
-type SettingsSection = 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
+type SettingsSection = 'home' | 'appearance' | 'generation' | 'privacy' | 'novelai' | 'agent' | 'resources' | 'connections' | 'storage' | 'about' | 'maintenance';
 
 interface LayoutProps {
   children: ReactNode;
@@ -191,7 +191,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   useEffect(() => {
     const openSettings = (event: Event) => {
       const section = (event as CustomEvent<{ section?: SettingsSection }>).detail?.section;
-      if (section && ['appearance', 'generation', 'novelai', 'agent', 'maintenance'].includes(section)) setSettingsSection(section);
+      if (section && ['appearance', 'generation', 'privacy', 'novelai', 'agent', 'resources', 'connections', 'storage', 'about', 'maintenance'].includes(section)) setSettingsSection(section);
       else setSettingsSection('home');
       setShowSettings(true);
     };

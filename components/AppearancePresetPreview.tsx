@@ -8,7 +8,7 @@ import { t } from '../services/i18n';
 
 export const AppearancePresetPreview: React.FC<{ preset: AppearancePreset; isDark: boolean; backgrounds?: WorkspaceBackgrounds }> = ({ preset, isDark, backgrounds }) => {
   const activeDark = preset.themeMode === 'system' ? isDark : preset.themeMode === 'dark';
-  return <div className="atelier-theme-preview grid w-full min-w-0 gap-4" aria-hidden="true">
+  return <div className="atelier-theme-preview grid w-full max-w-[34rem] min-w-0 gap-2.5" aria-hidden="true">
     {[false, true].map(dark => {
       const colors = resolveThemePalette(preset.palette, dark);
       const details = resolveThemeDetails(preset.details, dark);
@@ -38,7 +38,7 @@ export const AppearancePresetPreview: React.FC<{ preset: AppearancePreset; isDar
       });
       const icon = { width: '1.15em', height: '1.15em', flexShrink: 0, strokeWidth: details?.iconStroke ?? 1.8 };
       return <div key={String(dark)} className="min-w-0" style={{ containerType: 'inline-size' }}>
-        <div className="mb-2 text-xs text-gray-500 dark:text-gray-400" style={{ fontWeight: dark === activeDark ? 600 : 400 }}>{t(dark ? '深色' : '浅色')}</div>
+        <div className="mb-1 text-micro text-gray-500 dark:text-gray-400" style={{ fontWeight: dark === activeDark ? 600 : 400 }}>{t(dark ? '深色' : '浅色')}</div>
         <div data-preview-mode={dark ? 'dark' : 'light'} data-preview-active={dark === activeDark} className="relative isolate grid min-w-0 overflow-hidden border" style={{
           aspectRatio: '8 / 5', gridTemplateColumns: '22% minmax(0, 1fr)', gap: unit(inset), padding: unit(inset),
           backgroundColor: colors.canvas, borderColor: border, borderRadius: radius,

@@ -1,6 +1,6 @@
 /* 高级主题接管共用控件与界面材质；作品、画布、语义色和触控底线保持原义。 */
 .atelier-theme-card { container-type: inline-size; }
-@container (min-width: 480px) {
+@container (min-width: 360px) {
   .atelier-theme-preview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @layer theme-accessibility, theme-state;
@@ -405,7 +405,7 @@ html[data-control-style='filled'] .settings-navigation b { font-weight: inherit;
 html[data-control-style='filled'] .settings-dialog .workspace-command-bar { background-color: transparent !important; border-color: var(--nai-control-border); }
 html[data-control-style='filled'] .settings-dialog :is(section, details, .appearance-control-panel) { border-color: var(--nai-control-border); }
 html[data-control-style='filled'] .settings-content { background-color: var(--nai-canvas); }
-html[data-control-style='filled'] .settings-dialog #settings-appearance { border: 0; padding: 0; }
+html[data-control-style='filled'] .settings-dialog .settings-section-pane { border: 0; padding: 0; }
 html[data-control-style='filled'] .appearance-control-panel { background-color: var(--nai-panel-solid-surface); }
 /* 窗口统一承担透光；内部正文不能再用实色画布把外层玻璃盖住。 */
 /* 厚黑遮罩会先吞掉环境颜色，玻璃窗口仅保留轻遮罩区分前后景。 */

@@ -5,6 +5,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { InfoPopover } from './InfoPopover';
 import { AppUpdateState, desktopUpdateBridge, preserveUpdateDrafts, clearUpdateDrafts } from '../services/appUpdate';
 import { compareReleaseVersions, fetchPublishedRelease, RELEASE_PAGE } from '../services/appReleases.mjs';
+import { SETTINGS_BTN_NEUTRAL, SETTINGS_BTN_PRIMARY, SettingsCardHeader, SettingsDisclosure } from './SettingsUI';
 
 export const AppUpdateManager: React.FC = () => {
   useLanguage();
@@ -36,30 +37,38 @@ export const AppUpdateManager: React.FC = () => {
       setState(previous => ({ ...previous, phase: previous.phase === 'downloaded' ? 'downloaded' : 'error', message: error instanceof Error ? error.message : '更新失败，请稍后重试' }));
     }
   };
-  const button = 'mobile-touch inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-indigo-600 disabled:opacity-50';
+  const button = SETTINGS_BTN_PRIMARY;
   const status = state.phase === 'checking' ? '正在检查…' : state.phase === 'latest' ? '当前渠道没有更新版本' : state.phase === 'downloading' ? `正在下载 ${state.progress}%` : state.phase === 'downloaded' ? `v${state.version} 已下载` : state.phase === 'installing' ? '正在退出工坊并安装…' : state.version ? `可用版本 v${state.version}` : '';
-  return <div className="space-y-2">
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <div className="flex min-w-0 flex-1 basis-40 items-center gap-2">
-        <h4 className="whitespace-nowrap font-semibold text-gray-900 dark:text-white">{t("应用更新")}</h4>
-        <span className="text-xs text-gray-500 dark:text-gray-400">v{state.currentVersion}</span>
-        {!bridge && <InfoPopover label={t("更新方式")} content={t("请在电脑更新工坊：安装版使用应用内入口；源码版退出服务后，双击项目中的「更新 NAI Atelier.bat」。")} />}
-      </div>
-      {status && <span role="status" className="text-xs text-gray-500 dark:text-gray-400">{t(status)}</span>}
-      <label title={t("仅检查已发布版本，勾选后包含预发布")} className="flex items-center gap-2 whitespace-nowrap text-xs text-gray-600 dark:text-gray-300"><input type="checkbox" checked={state.allowPrerelease} disabled={busy || state.phase === 'downloaded'} onChange={async event => {
+  return <div className="space-y-3">
+    <SettingsCardHeader
+      title={t("应用更新")}
+      headingLevel={4}
+      icon={<RefreshCw />}
+      badge={
+        <span className="inline-flex items-center gap-1.5">
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-micro font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">v{state.currentVersion}</span>
+          {!bridge && <InfoPopover label={t("更新方式")} content={t("请在电脑更新工坊：安装版使用应用内入口；源码版退出服务后，双击项目中的「更新 NAI Atelier.bat」。")} />}
+        </span>
+      }
+      action={
+        <>
+          <button type="button" data-appearance="control" data-tone="primary" className={button} disabled={busy || state.phase === 'downloaded'} onClick={() => void action('check')}><RefreshCw className={`h-3.5 w-3.5 ${state.phase === 'checking' ? 'animate-spin' : ''}`} />{t("检查更新")}</button>
+          {bridge && state.version && ['available', 'error'].includes(state.phase) && <button type="button" data-appearance="control" data-tone="primary" className={button} onClick={() => void action('download')}><Download className="h-3.5 w-3.5" />{t("下载更新")}</button>}
+          {bridge && state.phase === 'downloaded' && <button type="button" data-appearance="control" data-tone="primary" className={button} onClick={() => void action('install')}>{t("重启并安装")}</button>}
+          <a href={RELEASE_PAGE} target="_blank" rel="noreferrer" data-appearance="control" data-tone="neutral" className={SETTINGS_BTN_NEUTRAL}><ExternalLink className="h-3.5 w-3.5" />{t("下载页")}</a>
+        </>
+      }
+    />
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <label title={t("仅检查已发布版本，勾选后包含预发布")} className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap text-xs text-gray-600 dark:text-gray-300"><input type="checkbox" checked={state.allowPrerelease} disabled={busy || state.phase === 'downloaded'} onChange={async event => {
         const value = event.target.checked;
         try { setState(bridge ? await bridge.channel(value) : { ...state, allowPrerelease: value, phase: 'idle', version: '', message: '' }); }
         catch (error) { setState(previous => ({ ...previous, message: error instanceof Error ? error.message : '设置保存失败' })); }
       }} className="h-4 w-4 accent-indigo-600" />{t("接收预发布版本")}</label>
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="button" data-appearance="control" data-tone="primary" className={button} disabled={busy || state.phase === 'downloaded'} onClick={() => void action('check')}><RefreshCw className={`h-3.5 w-3.5 ${state.phase === 'checking' ? 'animate-spin' : ''}`} />{t("检查更新")}</button>
-        {bridge && state.version && ['available', 'error'].includes(state.phase) && <button type="button" data-appearance="control" data-tone="primary" className={button} onClick={() => void action('download')}><Download className="h-3.5 w-3.5" />{t("下载更新")}</button>}
-        {bridge && state.phase === 'downloaded' && <button type="button" data-appearance="control" data-tone="primary" className={button} onClick={() => void action('install')}>{t("重启并安装")}</button>}
-        <a href={RELEASE_PAGE} target="_blank" rel="noreferrer" className="mobile-touch inline-flex items-center gap-1.5 px-2 py-2 text-xs text-indigo-600 dark:text-indigo-300"><ExternalLink className="h-3.5 w-3.5" />{t("下载页")}</a>
-      </div>
+      {status && <span role="status" className="text-xs text-gray-500 dark:text-gray-400">{t(status)}</span>}
     </div>
     {state.phase === 'downloading' && <progress aria-label={t("更新下载进度")} value={state.progress} max={100} className="h-2 w-full accent-indigo-600" />}
     {state.message && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{t(state.message)}</p>}
-    {state.releaseNotes && <details className="text-xs text-gray-500 dark:text-gray-400"><summary className="cursor-pointer">{t("更新说明")}</summary><p className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap leading-5">{state.releaseNotes}</p></details>}
+    {state.releaseNotes && <SettingsDisclosure summary={t("更新说明")} className="text-xs text-gray-500 dark:text-gray-400"><p className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap leading-5">{state.releaseNotes}</p></SettingsDisclosure>}
   </div>;
 };

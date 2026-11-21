@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { MoreHorizontal, ChevronRight, Database, Download, FolderOpen, PackageOpen, Pause, RotateCw, Trash2, X } from 'lucide-react';
+import { MoreHorizontal, Database, Download, FolderOpen, PackageOpen, Pause, RotateCw, Trash2, X } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import { useConfirmDialog } from './ConfirmDialog';
 import { InlineSpinner } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
+import { SETTINGS_BTN_NEUTRAL, SETTINGS_BTN_PRIMARY, SettingsCardHeader, SettingsDisclosure } from './SettingsUI';
 import {
   broadcastArtistSamplesChanged, controlArtistSamplePack, getArtistSampleStatus,
   isArtistSampleSourceForPack,
@@ -115,8 +116,8 @@ export const ArtistSampleManager: React.FC = () => {
   const activeDownloadPack = packData.find(pack => isDownloadActive(pack.download?.stage) || pack.files?.some(file => isDownloadActive(file.download.stage)))?.id;
   const pickBusy = Object.values(busy).includes('pick');
   const actionPending = Object.values(busy).some(Boolean);
-  return <section aria-label={title} className="space-y-3 border-b border-gray-200 pb-5 dark:border-gray-700">
-    <div className="flex items-start gap-2"><Database className="mt-0.5 h-4 w-4 flex-none text-indigo-500" /><div><h4 className="font-semibold text-gray-900 dark:text-white">{title}</h4></div></div>
+  return <section aria-label={title} className="space-y-3">
+    <SettingsCardHeader title={title} headingLevel={4} icon={<Database />} />
     {status.canManage === false && status.available && <p className="text-xs text-gray-500 dark:text-gray-400">{t('图包下载与本地文件操作需在工坊电脑进行。')}</p>}
     {statusError && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">{statusError} <button type="button" data-appearance="control" data-tone="neutral" className="mobile-touch rounded-lg px-2 py-1 text-xs font-semibold underline" onClick={() => void readStatus().catch(() => {})}>{t('重试读取状态')}</button></p>}
     {PACKS.map((pack, index) => {
@@ -157,8 +158,8 @@ export const ArtistSampleManager: React.FC = () => {
         : downloading || verifying ? (verifying ? t('正在校验图包…') : t('图包下载中：{0}%', [percent])) : item?.phase === 'ready' && !sourceMatches ? t('当前图包未确认为 V5 Full，原文件已保留') : item?.phase === 'ready' ? t('可用 · {0} 个画师 Tag', [item.count]) : item?.phase === 'indexing' ? t('样张索引中：{0}%', [Math.round(item.progress)]) : download?.stage === 'paused' ? t('已暂停') : item?.phase === 'error' ? t('索引失败') : download?.stage === 'ready' ? t('未启用') : t('未下载');
       return <div key={pack} className={`${index === PACKS.length - 1 ? '' : 'border-b border-gray-100 pb-3 dark:border-gray-800'}`}>
         <div className="flex min-w-0 items-center gap-2"><div className="min-w-0 flex-1"><span className="text-sm font-bold text-gray-800 dark:text-gray-100">NovelAI {pack === 'v45' ? 'V4.5' : 'V5 Full'}</span>{!statusReady && !statusError ? <InlineSpinner label={t('加载中…')} className="mt-0.5 text-xs" /> : <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{statusText}</p>}</div>
-          <button type="button" data-appearance="control" data-tone="primary" className={`mobile-touch flex-none inline-flex items-center rounded-lg px-2.5 py-2 text-xs font-semibold transition ${mainDisabled ? 'appearance-group bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500' : 'bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white hover:bg-indigo-600'}`} onClick={() => mainAction && void act(mainAction, pack)} disabled={mainDisabled} aria-label={mainLabel}>
-          {mainAction === 'pause' ? <Pause className="mr-1 h-3.5 w-3.5" /> : <Download className="mr-1 h-3.5 w-3.5" />}{mainLabel}
+          <button type="button" data-appearance="control" data-tone={mainDisabled ? 'neutral' : 'primary'} className={mainDisabled ? `${SETTINGS_BTN_NEUTRAL} opacity-60` : SETTINGS_BTN_PRIMARY} onClick={() => mainAction && void act(mainAction, pack)} disabled={mainDisabled} aria-label={mainLabel}>
+          {mainAction === 'pause' ? <Pause className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />}{mainLabel}
           </button>
           {canManageFiles && <ToolbarPopover label={t('图包管理')} title={t('图包管理')} icon={<MoreHorizontal />} iconOnly width={320} disabled={actionPending || pickBusy}>
             {close => <div className="space-y-1"><p title={path || undefined} className="break-all px-3 py-2 text-xs text-gray-500">{usingPack ? item?.packFile?.path || path : pack === 'v5' && sourceMatches ? item?.filename || packageInfo.filename : path || packageInfo.filename}<br />{usingPack ? t('本地样张包 · {0}', [formatBytes(item?.packFile?.bytes || 0)]) : t('Hugging Face · 约 {0}', [packageInfo.size])}</p>
@@ -178,23 +179,22 @@ export const ArtistSampleManager: React.FC = () => {
         {(download?.stage === 'error' && download.error || actionErrors[pack]) && <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-300">{actionErrors[pack] || download?.error}</p>}
         {item?.phase === 'error' && item.error && <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-300">{item.error}</p>}
         {item?.phase === 'indexing' && !packDownloading && <div role="progressbar" aria-label={t('正在建立索引')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, item.progress))} className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700"><div className="h-full bg-indigo-500" style={{ width: Math.max(0, Math.min(100, item.progress)) + '%' }} /></div>}
-        {files && <details className="group mt-2 min-w-0">
-          <summary className="mobile-touch flex min-h-11 cursor-pointer list-none items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-300 [&::-webkit-details-marker]:hidden"><ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />{t('分别下载图包（{0}）', [files.length])}</summary>
-          <div className="min-w-0 space-y-2">{files.map(file => {
+        {files && <SettingsDisclosure summary={t('分别下载图包（{0}）', [files.length])} className="mt-2" summaryClassName="min-h-9">
+          <div className="mt-1.5 min-w-0 space-y-2">{files.map(file => {
             const key = `${pack}:${file.filename}`, filePending = busy[key], stage = file.download.stage;
             const running = isDownloadActive(stage), filePercent = file.download.totalBytes > 0 ? Math.min(100, Math.round(file.download.receivedBytes / file.download.totalBytes * 100)) : 0;
             const fileLabel = filePending === 'download' ? t('正在启动下载…') : filePending === 'pause' ? t('正在暂停…') : running ? t('暂停下载') : stage === 'paused' ? t('继续下载') : stage === 'error' ? t('重试下载') : file.active ? t('已接入') : stage === 'ready' ? t('使用已下载图包') : t('下载图包');
             const fileDisabled = !canManageFiles || actionPending || Boolean(activeDownloadPack && !running) || (item?.phase === 'indexing' && !running) || (file.active && !running && stage !== 'error' && stage !== 'paused');
             const fileStatus = file.active ? file.count === undefined ? t('已接入') : t('已接入 · {0} 个画师 Tag', [file.count]) : stage === 'paused' ? t('已暂停') : stage === 'error' ? t('下载失败') : stage === 'ready' ? t('未接入') : running ? stage === 'verifying' ? t('正在校验图包…') : t('图包下载中：{0}%', [filePercent]) : t('未下载');
-            return <section key={file.filename} aria-label={file.filename} className="appearance-group min-w-0 rounded-lg border border-gray-200 px-2.5 py-2 dark:border-gray-700">
-              <div className="flex min-w-0 items-start gap-2"><div className="min-w-0 flex-1"><p className="break-all font-mono text-xs text-gray-800 dark:text-gray-200">{file.filename}</p><p className="mt-0.5 break-words text-xs text-gray-500 dark:text-gray-400">{`${(file.size / 1_000_000_000).toFixed(2)} GB`} · {fileStatus}</p></div>
-                <button type="button" data-appearance="control" data-tone="primary" aria-label={t('{0}：{1}', [fileLabel, file.filename])} disabled={fileDisabled} onClick={() => void act(running ? 'pause' : 'download', pack, file.filename)} className="mobile-touch inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-2.5 text-xs font-semibold text-white transition hover:bg-indigo-600 disabled:bg-gray-100 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-500">{running ? <Pause className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />}{fileLabel}</button>
+            return <section key={file.filename} aria-label={file.filename} className="appearance-group min-w-0 rounded-xl border border-gray-200 px-3 py-2 dark:border-gray-700">
+              <div className="flex min-w-0 items-center gap-2"><div className="min-w-0 flex-1"><p className="break-all font-mono text-xs text-gray-800 dark:text-gray-200">{file.filename}</p><p className="mt-0.5 break-words text-xs text-gray-500 dark:text-gray-400">{`${(file.size / 1_000_000_000).toFixed(2)} GB`} · {fileStatus}</p></div>
+                <button type="button" data-appearance="control" data-tone={fileDisabled ? 'neutral' : 'primary'} aria-label={t('{0}：{1}', [fileLabel, file.filename])} disabled={fileDisabled} onClick={() => void act(running ? 'pause' : 'download', pack, file.filename)} className={fileDisabled ? `${SETTINGS_BTN_NEUTRAL} opacity-60` : SETTINGS_BTN_PRIMARY}>{running ? <Pause className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />}{fileLabel}</button>
               </div>
               {['downloading', 'verifying', 'paused'].includes(stage) && <div className="mt-1.5 min-w-0 text-xs text-gray-500"><p className="break-words">{t('已接收 {0} / {1} · {2}%', [formatBytes(file.download.receivedBytes), formatBytes(file.download.totalBytes || file.size), filePercent])}</p><div role="progressbar" aria-label={t('{0} 下载进度', [file.filename])} aria-valuemin={0} aria-valuemax={100} aria-valuenow={filePercent} className="mt-1 h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700"><div className="h-full bg-indigo-500" style={{ width: `${filePercent}%` }} /></div></div>}
               {(actionErrors[key] || file.download.error) && <p role="alert" className="mt-1 break-words text-xs text-red-600 dark:text-red-300">{actionErrors[key] || file.download.error}</p>}
             </section>;
           })}</div>
-        </details>}
+        </SettingsDisclosure>}
       </div>;
     })}
     {!status.available && !statusError && <InlineSpinner label={t('正在读取样张图库状态…')} className="text-xs" />}

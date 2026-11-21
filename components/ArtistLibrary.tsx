@@ -297,7 +297,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         };
         if (returned) void returned.then(open); else open();
     };
-    const openSampleSettings = () => window.dispatchEvent(new CustomEvent('nai-open-global-settings', { detail: { section: 'maintenance' } }));
+    const openSampleSettings = () => window.dispatchEvent(new CustomEvent('nai-open-global-settings', { detail: { section: 'resources' } }));
     useEffect(() => {
         const changed = () => setSampleRefresh(current => current + 1);
         window.addEventListener(ARTIST_SAMPLES_CHANGED, changed);

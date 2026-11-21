@@ -4,8 +4,9 @@ import { t, useLanguage } from '../services/i18n';
 import { isAndroidApp } from '../services/platform';
 import { getStorageLocationStatus, openStorageDirectory, pickStorageDirectory, setStorageCacheDirectory, switchStorageDataDirectory, type StorageLocationStatus } from '../services/storageLocations';
 import { clearExportDirectory, getExportLocation, pickExportDirectory, setExportMode, type ExportLocation, type ExportMode } from '../services/exportLocation';
-import { ToolbarButton, ToolbarSelect } from './DesignSystem';
+import { ToolbarButton } from './DesignSystem';
 import { useConfirmDialog } from './ConfirmDialog';
+import { SETTINGS_BTN_ICON, SETTINGS_BTN_NEUTRAL, SETTINGS_BTN_PRIMARY, SETTINGS_DIVIDE_CLASS, SETTINGS_SUBPANEL_CLASS, SettingsCardHeader, SettingsSelect } from './SettingsUI';
 
 const fieldClass = 'min-w-0 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-400 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100';
 type StorageRow = 'data' | 'cache' | 'export';
@@ -151,31 +152,31 @@ export function StorageLocationManager({ notify }: { notify: (message: string, t
       <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{kind === 'data' ? t('风格串、原图、历史与设置。') : t('缩略图、词库、反推模型与画师图包，可重新下载。')}{kind === 'cache' && storage?.cacheFollowsData && <span className="ml-2">{t('跟随工坊')}</span>}</p>
       {renderFeedback(kind)}
     </div>
-    {storage?.canManage && <div className="flex flex-none gap-2">
-      <ToolbarButton className="h-9 px-2 text-xs" disabled={pending(kind) || migrating} aria-label={t('打开{0}文件夹', [t(label)])} title={t('打开文件夹')} onClick={() => void perform(kind, async () => { await openStorageDirectory(path); }, 'opening')}><FolderOpen /></ToolbarButton>
-      <ToolbarButton tone="primary" className="h-9 px-3 text-xs" disabled={pending(kind) || migrating} aria-label={t('更改{0}', [t(label)])} onClick={() => beginEdit(kind)}>{t('更改')}</ToolbarButton>
+    {storage?.canManage && <div className="flex flex-none items-center gap-2">
+      <button type="button" data-appearance="control" data-control-kind="icon" data-tone="neutral" className={SETTINGS_BTN_ICON} disabled={pending(kind) || migrating} aria-label={t('打开{0}文件夹', [t(label)])} title={t('打开文件夹')} onClick={() => void perform(kind, async () => { await openStorageDirectory(path); }, 'opening')}><FolderOpen className="h-4 w-4" /></button>
+      <button type="button" data-appearance="control" data-tone="primary" className={SETTINGS_BTN_PRIMARY} disabled={pending(kind) || migrating} aria-label={t('更改{0}', [t(label)])} onClick={() => beginEdit(kind)}>{t('更改')}</button>
     </div>}
   </div>;
   const exportDirectory = !exports ? t('正在读取…') : exports.mode === 'directory' ? exports.directory : exports.mode === 'ask' ? t('导出时选择保存位置') : exports.platform === 'android' ? 'Pictures/NAI Atelier' : exports.systemDirectory || t('由浏览器下载设置决定');
 
   return <div className="min-w-0" aria-label={t('存储位置')}>
-    <h4 className="flex items-center gap-2 font-semibold text-gray-900 dark:text-white"><HardDrive className="h-4 w-4 text-indigo-500" />{t('存储位置')}</h4>
-    <div className="mt-1 divide-y divide-gray-100 dark:divide-gray-800">
+    <SettingsCardHeader title={t('存储位置')} headingLevel={4} icon={<HardDrive />} className="mb-1" />
+    <div className={SETTINGS_DIVIDE_CLASS}>
       {storage?.available && <>
         {pathRow('工坊数据', storage.dataDir, 'data')}
         {pathRow('缓存与下载资源', storage.cacheDir, 'cache')}
       </>}
       {!storage?.available && feedback.data && <div className="py-3"><span className="text-sm font-medium">{t('工坊数据')}</span>{renderFeedback('data')}</div>}
       {android && <div className="flex items-center justify-between gap-3 py-3 text-sm"><span>{t('工坊数据')}</span><span className="text-xs text-gray-500">{t('Android 应用私有存储')}</span></div>}
-      {editing && <div className="appearance-group space-y-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/50">
+      {editing && <div className={`${SETTINGS_SUBPANEL_CLASS} my-2 space-y-3`}>
         <div className="flex min-w-0 gap-2">
           <input aria-label={editing === 'data' ? t('新的工坊数据位置') : t('新的缓存与下载资源位置')} value={directory} disabled={pending(editing) || migrating} onChange={event => setDirectory(event.target.value)} className={fieldClass} />
           <ToolbarButton className="h-10 text-xs" disabled={pickerOpen || pending(editing) || migrating} onClick={choose}><FolderOpen />{t('浏览')}</ToolbarButton>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {editing === 'data' ? <ToolbarSelect label="目录切换方式" value={operation} disabled={pending(editing) || migrating} onChange={event => setOperation(event.target.value as 'migrate' | 'open')} containerClassName="min-w-0 flex-1" className="text-xs">
+          {editing === 'data' ? <SettingsSelect aria-label={t('目录切换方式')} title={t('目录切换方式')} value={operation} disabled={pending(editing) || migrating} onChange={event => setOperation(event.target.value as 'migrate' | 'open')} containerClassName="min-w-0 flex-1">
             <option value="migrate">{t('迁移现有工坊')}</option><option value="open">{t('打开另一工坊')}</option>
-          </ToolbarSelect> : !storage?.cacheFollowsData && <ToolbarButton className="h-10 text-xs" disabled={busy || migrating} onClick={() => changeCache('')}>{t('跟随工坊')}</ToolbarButton>}
+          </SettingsSelect> : !storage?.cacheFollowsData && <ToolbarButton className="h-10 text-xs" disabled={busy || migrating} onClick={() => changeCache('')}>{t('跟随工坊')}</ToolbarButton>}
           <ToolbarButton tone="primary" className="h-10 text-xs" disabled={busy || migrating || !directory.trim() || directory.trim() === (editing === 'data' ? storage?.dataDir : storage?.cacheDir)} onClick={editing === 'data' ? changeData : () => changeCache(directory)}>{editing === 'data' ? operation === 'migrate' ? t('迁移并重启') : t('打开并重启') : t('应用并重启')}</ToolbarButton>
           <ToolbarButton className="h-10 text-xs" disabled={pending(editing) || migrating} onClick={() => setEditing(null)}>{t('取消')}</ToolbarButton>
         </div>
@@ -184,17 +185,19 @@ export function StorageLocationManager({ notify }: { notify: (message: string, t
         <div className="pt-2 text-sm font-medium text-gray-900 dark:text-gray-100">{t('默认导出位置')}</div>
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <ToolbarSelect label="导出保存方式" value={exports?.mode || 'system'} disabled={!exports || pending('export') || migrating} onChange={event => exportMode(event.target.value as ExportMode)} className="h-9 text-xs" containerClassName="min-w-0">
+            <SettingsSelect aria-label={t('导出保存方式')} title={t('导出保存方式')} value={exports?.mode || 'system'} disabled={!exports || pending('export') || migrating} onChange={event => exportMode(event.target.value as ExportMode)} containerClassName="min-w-0">
               <option value="system">{t('系统默认')}</option><option value="directory" disabled={!exports?.canPickDirectory}>{t('自定义文件夹')}</option><option value="ask" disabled={!exports?.canAsk}>{t('每次询问')}</option>
-            </ToolbarSelect>
+            </SettingsSelect>
           </div>
-          <div className="appearance-group flex min-w-0 flex-wrap items-center gap-2 rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-800/50">
+          <div className={`${SETTINGS_SUBPANEL_CLASS} flex min-w-0 flex-wrap items-center gap-2 px-3 py-2.5`}>
             <div className="min-w-0 flex-1 basis-40">
               <p className="text-xs text-gray-500 dark:text-gray-400">{t('当前导出目录')}</p>
-              <p className="mt-1 truncate text-xs text-gray-800 dark:text-gray-200" title={exportDirectory}>{exportDirectory}</p>
+              <p className="mt-1 truncate font-mono text-xs text-gray-800 dark:text-gray-200" title={exportDirectory}>{exportDirectory}</p>
             </div>
-            {exports?.canPickDirectory && <ToolbarButton tone="primary" className="h-9 text-xs" aria-label={t('更改默认导出位置')} disabled={pickerOpen || pending('export') || migrating} onClick={changeExport}><FolderOpen />{t('更改')}</ToolbarButton>}
-            {exports?.directory && <ToolbarButton className="h-9 text-xs" disabled={pending('export') || migrating} onClick={() => void perform('export', async () => { setExports(await clearExportDirectory()); return true; })}>{t('清除')}</ToolbarButton>}
+            <div className="flex flex-none items-center gap-2">
+              {exports?.canPickDirectory && <button type="button" data-appearance="control" data-tone="primary" className={SETTINGS_BTN_PRIMARY} aria-label={t('更改默认导出位置')} disabled={pickerOpen || pending('export') || migrating} onClick={changeExport}>{t('更改')}</button>}
+              {exports?.directory && <button type="button" data-appearance="control" data-tone="neutral" className={SETTINGS_BTN_NEUTRAL} disabled={pending('export') || migrating} onClick={() => void perform('export', async () => { setExports(await clearExportDirectory()); return true; })}>{t('清除')}</button>}
+            </div>
           </div>
           <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{exports?.platform === 'android' && exports.mode === 'system' ? t('图片保存到相册；其他文件由系统询问位置。') : t('图片和文件默认导出至此目录；未单独指定导出路径时使用。')}</p>
           {renderFeedback('export')}

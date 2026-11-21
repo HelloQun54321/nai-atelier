@@ -5,7 +5,21 @@ import './AgentSurface.css';
 import { AgentGenerationOptions } from './AgentChatPreferences';
 import { useAgentRuntimeRecheck } from './useAgentRuntimeRecheck';
 import { AgentConnectionForm } from './AgentConnectionForm';
-import { ArrowLeft, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Bot, Globe, Pencil, Plug, Plus, ShieldAlert, Sparkles, Trash2 } from 'lucide-react';
+import {
+  SETTINGS_BTN_DANGER,
+  SETTINGS_BTN_ICON,
+  SETTINGS_BTN_ICON_DANGER,
+  SETTINGS_BTN_NEUTRAL,
+  SETTINGS_BTN_PRIMARY,
+  SETTINGS_CARD_CLASS,
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_TEXTAREA_CLASS,
+  SettingsCardHeader,
+  SettingsDisclosure,
+  SettingsSelect,
+  SettingsSwitch,
+} from './SettingsUI';
 import { PromptAgentConfig, PromptAgentCustomProvider, PromptAgentModel, PromptAgentProbeResult, PromptAgentRulePreset, agentRuntimeWarning, displayModelName, formatModelOptionTitle, mergePromptAgentModelCapabilities, promptAgentService } from '../services/promptAgent';
 import { useConfirmDialog } from './ConfirmDialog';
 import { useMobileHistoryLayer } from './MobileUI';
@@ -278,45 +292,53 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
 
   return <>
     {view === 'home' && (
-      <div data-agent-surface className="agent-theme mt-3 space-y-4">
+      <div data-agent-surface className="agent-theme space-y-4">
       {/* 阶段二：层级 1 - 当前运行模型卡 */}
-      <div className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <div className={SETTINGS_CARD_CLASS}>
         {!settingsLoaded && settingsLoadError && <div role="alert" className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">
           <span>{t(settingsLoadError)}</span>
           <button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }} className="mobile-touch shrink-0 rounded-lg px-2 py-1 text-xs font-bold underline">{t('重试')}</button>
         </div>}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-meta font-bold uppercase tracking-wider text-indigo-500">{t("当前助手模型")}</div>
-          <div className="relative flex items-center gap-2">
-            {!settingsLoaded && settingsLoading && <InlineSpinner label={t('正在读取模型列表…')} className="pointer-events-none absolute right-full top-1/2 mr-2 -translate-y-1/2 whitespace-nowrap text-micro" />}
-            <button
-              type="button"
-              disabled={models.length === 0}
-              onClick={() => openView('model')}
-              className="mobile-touch rounded-lg border border-indigo-200 bg-indigo-50/60 px-2.5 py-1 text-xs font-bold text-indigo-600 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-950/60"
-            >
-              {t("更换模型")}</button>
-          </div>
-        </div>
-        {settingsLoaded && <div className="mt-1.5 truncate text-base font-black text-gray-900 dark:text-white">{config?.configured ? displayModelName(currentModel?.name || config.model) : t("尚未配置模型服务")}</div>}
-        {config?.configured && <div className="mt-1 text-xs text-gray-500">{t("{0} · {1} 个服务已配置", [(currentModel as { providerName?: string } | null)?.providerName || currentModel?.provider, config.configuredProviders.length])}</div>}
+        <SettingsCardHeader
+          title={t("当前助手模型")}
+          icon={<Bot />}
+          action={
+            <div className="relative flex items-center gap-2">
+              {!settingsLoaded && settingsLoading && <InlineSpinner label={t('正在读取模型列表…')} className="pointer-events-none absolute right-full top-1/2 mr-2 -translate-y-1/2 whitespace-nowrap text-micro" />}
+              <button
+                type="button"
+                data-appearance="control"
+                data-tone="neutral"
+                disabled={models.length === 0}
+                onClick={() => openView('model')}
+                className={SETTINGS_BTN_NEUTRAL}
+              >
+                {t("更换模型")}
+              </button>
+            </div>
+          }
+        />
+        {settingsLoaded && <div className="mt-2 truncate text-base font-black text-gray-900 dark:text-white">{config?.configured ? displayModelName(currentModel?.name || config.model) : t("尚未配置模型服务")}</div>}
+        {config?.configured && <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t("{0} · {1} 个服务已配置", [(currentModel as { providerName?: string } | null)?.providerName || currentModel?.provider, config.configuredProviders.length])}</div>}
       </div>
       {config && agentRuntimeWarning(config) && <div role="status" className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{agentRuntimeWarning(config)}</div>}
       {config?.credentialWarning && <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{config.credentialWarning}</div>}
 
       {/* 阶段二：层级 3 - 模型服务管理区 */}
-      <div className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <b className="block text-sm text-gray-900 dark:text-white">{t("API 连接")}</b>
-          </div>
-          <button type="button" data-appearance="control" data-tone="primary" onClick={() => openCustom()} className="mobile-touch inline-flex items-center gap-1 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-3.5 w-3.5" />{t("连接 API")}</button>
-        </div>
-        <div className="mt-3 space-y-2">
+      <div className={SETTINGS_CARD_CLASS}>
+        <SettingsCardHeader
+          title={t("API 连接")}
+          icon={<Plug />}
+          action={
+            <button type="button" data-appearance="control" data-tone="primary" onClick={() => openCustom()} className={SETTINGS_BTN_PRIMARY}><Plus className="h-3.5 w-3.5" />{t("连接 API")}</button>
+          }
+          className="mb-3"
+        />
+        <div className="space-y-2">
           {customProviders.map(provider => (
             <div
               key={provider.id}
-              className="flex items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/30 px-3 py-2 dark:border-indigo-950/50 dark:bg-indigo-950/20"
+              className="flex items-center gap-2 rounded-xl border border-indigo-100/80 bg-indigo-50/30 px-3 py-2 dark:border-indigo-950/50 dark:bg-indigo-950/20"
             >
               <span className="h-2 w-2 rounded-full bg-indigo-500 shrink-0" />
               <div className="min-w-0 flex-1">
@@ -328,7 +350,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
                 onClick={() => openCustom(provider)}
                 data-appearance="control" data-tone="neutral"
                 aria-label={t("编辑")} title={t("编辑")}
-                className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-2 py-1 text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                className={SETTINGS_BTN_ICON}
               >
                 <Pencil className="h-3.5 w-3.5" /></button>
               <button
@@ -336,7 +358,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
                 onClick={() => void deleteCustom(provider)}
                 data-appearance="control" data-tone="danger"
                 aria-label={t("删除")} title={t("删除")}
-                className="mobile-touch rounded-lg border border-transparent px-2 py-1 text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                className={SETTINGS_BTN_ICON_DANGER}
               >
                 <Trash2 className="h-3.5 w-3.5" /></button>
             </div>
@@ -348,87 +370,101 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
           )}
         </div>
       </div>
-      <section aria-label={t('联网搜索')} className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-        <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
-          <span className="text-sm font-bold text-gray-900 dark:text-white">{t('使用搜索 API')}</span>
-          <input type="checkbox" checked={config?.searchEnabled === true}
-            disabled={typeof config?.searchEnabled !== 'boolean' || busy || searchSaving}
-            onChange={event => { void saveSearchApi({ enabled: event.target.checked }); }}
-            className="h-5 w-5 shrink-0 rounded border-gray-300 accent-indigo-600 disabled:opacity-40" />
-        </label>
-        <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t('开启后优先调用搜索服务（兼容 DeepSeek Search/Fetch 协议）；按成功请求计费，每 1000 次 5 元，失败、无结果或超时不收费，2026-11-01 前免费。')}</p>
-        <div className="mt-3 space-y-2">
+      <section aria-label={t('联网搜索')} className={SETTINGS_CARD_CLASS}>
+        <SettingsCardHeader
+          title={t('使用搜索 API')}
+          icon={<Globe />}
+          description={t('开启后优先调用搜索服务（兼容 DeepSeek Search/Fetch 协议）；按成功请求计费，每 1000 次 5 元，失败、无结果或超时不收费，2026-11-01 前免费。')}
+          action={
+            <SettingsSwitch
+              label={t('使用搜索 API')}
+              checked={config?.searchEnabled === true}
+              disabled={typeof config?.searchEnabled !== 'boolean' || busy || searchSaving}
+              onChange={next => { void saveSearchApi({ enabled: next }); }}
+            />
+          }
+        />
+        <div className="mt-3 space-y-2.5">
           <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('服务地址')}
-            <input value={searchBaseUrl} onChange={event => setSearchBaseUrl(event.target.value)} placeholder="https://api.deepseek.com" className="mobile-touch mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-normal outline-none focus:border-indigo-400 dark:border-gray-800 dark:bg-gray-950" />
+            <input value={searchBaseUrl} onChange={event => setSearchBaseUrl(event.target.value)} placeholder="https://api.deepseek.com" className={`${SETTINGS_INPUT_CLASS} mt-1 font-normal`} />
           </label>
           <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('API Key')}
-            <input type="password" value={searchKeyDraft} onChange={event => setSearchKeyDraft(event.target.value)} placeholder={config?.searchApiKeyCustom ? t('已保存，留空保持不变') : t('可留空，自动使用同地址的已配置连接')} className="mobile-touch mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-normal outline-none focus:border-indigo-400 dark:border-gray-800 dark:bg-gray-950" />
+            <input type="password" value={searchKeyDraft} onChange={event => setSearchKeyDraft(event.target.value)} placeholder={config?.searchApiKeyCustom ? t('已保存，留空保持不变') : t('可留空，自动使用同地址的已配置连接')} className={`${SETTINGS_INPUT_CLASS} mt-1 font-normal`} />
           </label>
-          <div className="flex flex-wrap items-center gap-2">
-            <button type="button" data-appearance="control" data-tone="primary" onClick={() => { void saveSearchApi({ baseUrl: searchBaseUrl, apiKey: searchKeyDraft.trim() ? searchKeyDraft : undefined }); }} disabled={searchSaving} className="mobile-touch rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50">{t('保存搜索设置')}</button>
-            {config?.searchApiKeyCustom && <button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void saveSearchApi({ apiKey: '' }); }} disabled={searchSaving} className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('清除已保存 Key')}</button>}
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+            <button type="button" data-appearance="control" data-tone="primary" onClick={() => { void saveSearchApi({ baseUrl: searchBaseUrl, apiKey: searchKeyDraft.trim() ? searchKeyDraft : undefined }); }} disabled={searchSaving} className={SETTINGS_BTN_PRIMARY}>{t('保存搜索设置')}</button>
+            {config?.searchApiKeyCustom && <button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void saveSearchApi({ apiKey: '' }); }} disabled={searchSaving} className={SETTINGS_BTN_NEUTRAL}>{t('清除已保存 Key')}</button>}
           </div>
         </div>
         <p className="mt-2 text-xs leading-5 text-gray-400 dark:text-gray-500">{config?.searchApiKeyCustom ? t('已保存搜索专用 Key。') : config?.searchApiKeyConfigured ? t('将使用同地址的已配置连接。') : t('未检测到可用 Key，开启后仍使用免费搜索。')}</p>
       </section>
-      <section aria-label={t("生图协作")} className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-        <h3 className="mb-2 text-sm font-bold text-gray-900 dark:text-white">{t("生图协作")}</h3>
+      <section aria-label={t("生图协作")} className={SETTINGS_CARD_CLASS}>
+        <SettingsCardHeader title={t("生图协作")} icon={<Sparkles />} className="mb-2" />
         <AgentGenerationOptions />
       </section>
       <PromptLibrarySettings />
-      <section aria-label={t('破限模式')} className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-        <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
-          <span className="text-sm font-bold text-gray-900 dark:text-white">{t('破限模式')}</span>
-          <input type="checkbox" checked={config?.creativeDirect === true}
-            disabled={typeof config?.creativeDirect !== 'boolean' || busy || creativeSaving}
-            onChange={event => { void setCreativeDirect(event.target.checked); }}
-            className="h-5 w-5 shrink-0 rounded border-gray-300 accent-indigo-600 disabled:opacity-40" />
-        </label>
-        <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t('默认开启。开启后向助手注入创作向破限交付契约：直接给出可用成果，不以前置审查、说教或替代方案回避请求；工具权限与费用确认照常生效。')}</p>
-        <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t('保存后从下一次助手请求生效，不改变正在运行的任务或已有对话；本模式只约束输出内容与交付尺度，不改变工具权限、费用确认或模型服务端的审核过滤。')}</p>
-        {config && <details className="mt-3">
-          <summary className="mobile-touch cursor-pointer text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('查看与编辑破限规则')}</summary>
-          <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-            <span className="font-semibold">{t('规则库')}</span>
-            <select
+      <section aria-label={t('破限模式')} className={SETTINGS_CARD_CLASS}>
+        <SettingsCardHeader
+          title={t('破限模式')}
+          icon={<ShieldAlert />}
+          description={
+            <>
+              <p>{t('默认开启。开启后向助手注入创作向破限交付契约：直接给出可用成果，不以前置审查、说教或替代方案回避请求；工具权限与费用确认照常生效。')}</p>
+              <p className="mt-1">{t('保存后从下一次助手请求生效，不改变正在运行的任务或已有对话；本模式只约束输出内容与交付尺度，不改变工具权限、费用确认或模型服务端的审核过滤。')}</p>
+            </>
+          }
+          action={
+            <SettingsSwitch
+              label={t('破限模式')}
+              checked={config?.creativeDirect === true}
+              disabled={typeof config?.creativeDirect !== 'boolean' || busy || creativeSaving}
+              onChange={next => { void setCreativeDirect(next); }}
+            />
+          }
+        />
+        {config && <SettingsDisclosure summary={t('查看与编辑破限规则')} className="mt-3 border-t border-gray-200/70 pt-2.5 dark:border-gray-700/70">
+          <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+            <label htmlFor="agent-rule-preset-select" className="font-semibold">{t('规则库')}</label>
+            <SettingsSelect
+              id="agent-rule-preset-select"
               value={presetId}
               onChange={event => { void selectRulePreset(event.target.value); }}
               disabled={rulesSaving || presetsSaving}
               aria-label={t('选择破限规则')}
-              className="mobile-touch min-w-0 flex-1 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-indigo-400 disabled:opacity-40 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
+              containerClassName="flex-1"
             >
               <option value="">{config.creativeDirectRulesCustom ? t('当前自定义') : t('内置默认')}</option>
               {rulePresets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
-            </select>
-          </label>
+            </SettingsSelect>
+          </div>
           <textarea
             value={rulesDraft}
             onChange={event => setRulesDraft(event.target.value)}
             disabled={rulesSaving || presetsSaving}
             rows={10}
             aria-label={t('破限规则正文')}
-            className="mt-2 w-full resize-y rounded-lg border border-gray-200 bg-gray-50 p-3 font-mono text-xs leading-5 text-gray-700 outline-none focus:border-indigo-400 disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
+            className={`${SETTINGS_TEXTAREA_CLASS} mt-2 font-mono`}
           />
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
             <button type="button" onClick={() => { void (presetId ? saveRulePreset() : saveCreativeDirectRules(rulesDraft)); }}
               disabled={rulesSaving || presetsSaving || !rulesDraft.trim() || (rulesDraft === (config.creativeDirectRules || '') && !presetId)}
               data-appearance="control" data-tone="primary"
-              className="mobile-touch rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50">{t('保存规则')}</button>
+              className={SETTINGS_BTN_PRIMARY}>{t('保存规则')}</button>
             <button type="button" onClick={() => { void addRulePreset(); }}
               disabled={rulesSaving || presetsSaving || !rulesDraft.trim() || rulePresets.length >= 16}
               data-appearance="control" data-tone="neutral"
-              className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('另存为新规则')}</button>
+              className={SETTINGS_BTN_NEUTRAL}>{t('另存为新规则')}</button>
             <button type="button" onClick={() => { void deleteRulePreset(); }}
               disabled={rulesSaving || presetsSaving || !presetId}
               data-appearance="control" data-tone="danger"
-              className="mobile-touch rounded-lg border border-transparent px-3 py-1.5 text-xs font-bold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30">{t('删除规则')}</button>
+              className={SETTINGS_BTN_DANGER}>{t('删除规则')}</button>
             <button type="button" onClick={() => { void saveCreativeDirectRules(''); }}
               disabled={rulesSaving || presetsSaving || !config.creativeDirectRulesCustom}
               data-appearance="control" data-tone="neutral"
-              className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('恢复内置默认')}</button>
+              className={SETTINGS_BTN_NEUTRAL}>{t('恢复内置默认')}</button>
           </div>
-          <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{config.creativeDirectRulesCustom ? t('当前使用自定义规则') : t('当前使用内置默认规则')}；{t('已保存 {0} 条规则', [rulePresets.length])}；{t('保存后从下一次助手任务生效。')}</p>
-        </details>}
+          <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{config.creativeDirectRulesCustom ? t('当前使用自定义规则') : t('当前使用内置默认规则')}；{t('已保存 {0} 条规则', [rulePresets.length])}；{t('保存后从下一次助手任务生效。')}</p>
+        </SettingsDisclosure>}
       </section>
     </div>
     )}
