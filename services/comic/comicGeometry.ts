@@ -6,6 +6,8 @@ import {
 } from '../aspectRatio';
 import { createUuid } from '../id';
 import type {
+  ComicAiGuidePanel,
+  ComicAiPagePlan,
   ComicLayerState,
   ComicPageDraft,
   ComicPanel,
@@ -187,6 +189,44 @@ export const COMIC_LAYOUT_TEMPLATES: ComicLayoutTemplate[] = [
   },
 ];
 
+export const createGuidePanelsFromTemplate = (
+  templateId = 'classic-4-121',
+  pageWidth = 832,
+  pageHeight = 1216,
+  gutterPx = 14,
+): ComicAiGuidePanel[] => {
+  const gx = gutterPx / Math.max(1, pageWidth);
+  const gy = gutterPx / Math.max(1, pageHeight);
+  const template = COMIC_LAYOUT_TEMPLATES.find(item => item.id === templateId) || COMIC_LAYOUT_TEMPLATES[0];
+  return template.buildPanels(gx, gy).map((panel, idx) => {
+    const b = getPanelBoundingBox(panel.points, 1, 1);
+    return {
+      id: createUuid(),
+      label: panel.name || `第 ${idx + 1} 格`,
+      summary: '',
+      x: Math.round(b.minX * 1000) / 1000,
+      y: Math.round(b.minY * 1000) / 1000,
+      width: Math.round(b.width * 1000) / 1000,
+      height: Math.round(b.height * 1000) / 1000,
+    };
+  });
+};
+
+export const createInitialAiPagePlan = (
+  pageWidth = 832,
+  pageHeight = 1216,
+  gutterPx = 14,
+): ComicAiPagePlan => ({
+  storyPrompt: '',
+  targetPanelCount: 4,
+  castCharacterIds: [],
+  splitMode: 'auto',
+  layoutHint: '4-panel manga page, 1-2-1 layout, crisp white gutters',
+  guidePanels: createGuidePanelsFromTemplate('classic-4-121', pageWidth, pageHeight, gutterPx),
+  anchors: [],
+  showGuideOverlay: true,
+});
+
 export const createInitialComicDraft = (templateId = 'classic-4-121'): ComicPageDraft => {
   const preset = COMIC_PAPER_PRESETS[0];
   const gutterPx = 14;
@@ -203,7 +243,7 @@ export const createInitialComicDraft = (templateId = 'classic-4-121'): ComicPage
     backgroundColor: '#ffffff',
     gutterPx,
     creationMode: 'manual',
-    dialogueMode: 'clean-vector',
+    dialogueMode: 'empty-bubble',
     colorMode: 'color',
     v5Model: 'nai-diffusion-5-full',
     globalBasePrompt: '',
@@ -217,6 +257,7 @@ export const createInitialComicDraft = (templateId = 'classic-4-121'): ComicPage
     qualityPresetId: 'standard',
     ucPresetId: 'light',
     panels: template.buildPanels(gx, gy),
+    aiPage: createInitialAiPagePlan(preset.width, preset.height, gutterPx),
     strokes: [],
     bubbles: [],
     texts: [],

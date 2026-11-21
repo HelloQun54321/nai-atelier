@@ -4915,6 +4915,11 @@ const serveDistFile = async (req, res, url) => {
           const body = JSON.parse((await readRequestBody(req, 128 * 1024)).toString('utf8') || '{}');
           return sendJson(res, 200, await promptAgent.tidyPrompt(body));
         }
+        if (url.pathname === '/api/prompt-agent/comic-storyboard') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 256 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, await promptAgent.planComicStoryboard(body));
+        }
         if (url.pathname === '/api/prompt-agent/extract-candidates') {
           // 提示词／图片 → 六类库候选：只调一次当前助手模型，原词由本地重组保证不被改写。
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });

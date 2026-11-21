@@ -10,6 +10,7 @@ import {
   rotatePointAround,
   snapComicPoint,
 } from '../../services/comic/comicGeometry';
+import type { ComicAiZonePlan } from '../../services/comic/comicAiPageEngine';
 import type {
   ComicBubbleItem,
   ComicLayerId,
@@ -24,6 +25,7 @@ import type {
 
 interface ComicCanvasProps {
   draft: ComicPageDraft;
+  aiZonePlan?: ComicAiZonePlan;
   activeTool: ComicTool;
   selection: ComicSelection;
   zoom: number;
@@ -31,12 +33,15 @@ interface ComicCanvasProps {
   brushSize: number;
   brushOpacity: number;
   generatingPanelId?: string | null;
+  generatingAiPage?: boolean;
+  generatingAiZoneIndex?: 0 | 1 | null;
   livePreviewImage?: string | null;
   onSelect: (selection: ComicSelection) => void;
   onZoomChange: (nextZoom: number) => void;
   onZoomFit: () => void;
   onToggleSnap: () => void;
   onUpdatePanel: (panelId: string, updater: (panel: ComicPanel) => ComicPanel, commit?: boolean) => void;
+  onMoveAiAnchor?: (anchorId: string, x: number, y: number, commit?: boolean) => void;
   onAddPanel: (points: ComicPoint[]) => void;
   onSliceAtLine: (start: ComicPoint, end: ComicPoint) => void;
   onCommitStroke: (stroke: ComicStroke) => void;
@@ -60,6 +65,7 @@ type DragAction =
   | { kind: 'vertex'; panelId: string; vertexIndex: number }
   | { kind: 'rotate-panel'; panelId: string; cx: number; cy: number; startAngle: number; origRotation: number }
   | { kind: 'move-anchor'; panelId: string; anchorId: string }
+  | { kind: 'move-ai-anchor'; anchorId: string }
   | { kind: 'draw-panel'; startPoint: ComicPoint; currentPoint: ComicPoint }
   | { kind: 'slice'; startPoint: ComicPoint; currentPoint: ComicPoint }
   | { kind: 'move-bubble'; id: string; dx: number; dy: number }
@@ -201,6 +207,7 @@ const renderStickerSvg = (sticker: ComicStickerItem, pageW: number, pageH: numbe
 
 export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   draft,
+  aiZonePlan,
   activeTool,
   selection,
   zoom,
@@ -208,12 +215,15 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   brushSize,
   brushOpacity,
   generatingPanelId,
+  generatingAiPage,
+  generatingAiZoneIndex,
   livePreviewImage,
   onSelect,
   onZoomChange,
   onZoomFit,
   onToggleSnap,
   onUpdatePanel,
+  onMoveAiAnchor,
   onAddPanel,
   onSliceAtLine,
   onCommitStroke,
@@ -397,7 +407,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     }
 
     if (activeTool === 'draw-panel') {
-      if (draft.layers.panels?.locked) return;
+      if (draft.creationMode !== 'manual' || draft.layers.panels?.locked) return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
       const snapped = snapComicPoint(pt, draft.panels, draft.snapEnabled);
       setSnapGuide({ x: snapped.guideX, y: snapped.guideY });
@@ -406,7 +416,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     }
 
     if (activeTool === 'slice') {
-      if (draft.layers.panels?.locked) return;
+      if (draft.creationMode !== 'manual' || draft.layers.panels?.locked) return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
       setDrag({ kind: 'slice', startPoint: pt, currentPoint: pt });
       return;
@@ -427,7 +437,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       return;
     }
 
-    if (draft.layers.panels?.visible) {
+    if (draft.creationMode === 'manual' && draft.layers.panels?.visible) {
       for (let i = sortedPanels.length - 1; i >= 0; i--) {
         const panel = sortedPanels[i];
         if (hitTestPanel(pt, panel, pageW, pageH)) {
@@ -521,6 +531,11 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       return;
     }
 
+    if (drag.kind === 'move-ai-anchor') {
+      onMoveAiAnchor?.(drag.anchorId, clampAnchorCoord(pt.x), clampAnchorCoord(pt.y), false);
+      return;
+    }
+
     if (drag.kind === 'move-panel') {
       const dx = pt.x - drag.startPoint.x;
       const dy = pt.y - drag.startPoint.y;
@@ -611,6 +626,9 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       }
     } else if (drag.kind === 'move-panel' || drag.kind === 'vertex' || drag.kind === 'rotate-panel' || drag.kind === 'pan-image' || drag.kind === 'move-anchor') {
       onUpdatePanel(drag.panelId, panel => panel, true);
+    } else if (drag.kind === 'move-ai-anchor') {
+      const anchor = draft.aiPage.anchors.find(item => item.id === drag.anchorId);
+      if (anchor) onMoveAiAnchor?.(anchor.id, anchor.x, anchor.y, true);
     } else if (drag.kind === 'move-bubble') {
       const b = draft.bubbles.find(item => item.id === drag.id);
       if (b) onMoveBubble(b.id, b.x, b.y, true);
@@ -721,6 +739,228 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
 
               {orderedLayers.map(layerId => {
                 if (layerId === 'panels') {
+                  if (draft.creationMode === 'ai-page') {
+                    const aiPage = draft.aiPage;
+                    const hasGenerated = Boolean(aiPage.generatedPageImage?.url);
+                    const showGuides = aiPage.showGuideOverlay || !hasGenerated;
+                    const activeZoneRect = aiZonePlan?.zones[generatingAiZoneIndex ?? 0]?.rect || { x: 0, y: 0, width: 1, height: 1 };
+                    return (
+                      <g key="panels">
+                        {aiPage.generatedPageImage?.url && (
+                          <image
+                            href={aiPage.generatedPageImage.url}
+                            x={0}
+                            y={0}
+                            width={pageW}
+                            height={pageH}
+                            preserveAspectRatio="xMidYMid slice"
+                          />
+                        )}
+                        {generatingAiPage && livePreviewImage && (
+                          <image
+                            href={livePreviewImage}
+                            x={activeZoneRect.x * pageW}
+                            y={activeZoneRect.y * pageH}
+                            width={activeZoneRect.width * pageW}
+                            height={activeZoneRect.height * pageH}
+                            preserveAspectRatio="xMidYMid slice"
+                          />
+                        )}
+                        {generatingAiPage && (
+                          <rect
+                            x={activeZoneRect.x * pageW + 2}
+                            y={activeZoneRect.y * pageH + 2}
+                            width={Math.max(4, activeZoneRect.width * pageW - 4)}
+                            height={Math.max(4, activeZoneRect.height * pageH - 4)}
+                            fill="rgba(79,70,229,0.08)"
+                            stroke="#4f46e5"
+                            strokeWidth={4}
+                            strokeDasharray="12 8"
+                          />
+                        )}
+                        {showGuides && (
+                          <g>
+                            {aiPage.guidePanels.map((gp, idx) => {
+                              const gx = gp.x * pageW;
+                              const gy = gp.y * pageH;
+                              const gw = gp.width * pageW;
+                              const gh = gp.height * pageH;
+                              const badgeNum = String(idx + 1).padStart(2, '0');
+                              return (
+                                <g key={gp.id}>
+                                  <rect
+                                    x={gx}
+                                    y={gy}
+                                    width={gw}
+                                    height={gh}
+                                    rx={4}
+                                    fill={hasGenerated ? 'rgba(99, 102, 241, 0.06)' : '#f8fafc'}
+                                    stroke="#6366f1"
+                                    strokeOpacity={hasGenerated ? 0.65 : 0.45}
+                                    strokeWidth={2.5}
+                                    strokeDasharray="10 6"
+                                  />
+                                  <rect
+                                    x={gx + 10}
+                                    y={gy + 10}
+                                    width={30}
+                                    height={20}
+                                    rx={4}
+                                    fill="rgba(79, 70, 229, 0.88)"
+                                  />
+                                  <text
+                                    x={gx + 25}
+                                    y={gy + 20}
+                                    textAnchor="middle"
+                                    dominantBaseline="central"
+                                    fontSize={11}
+                                    fontWeight={700}
+                                    fill="#ffffff"
+                                  >
+                                    {badgeNum}
+                                  </text>
+                                  {!hasGenerated && (
+                                    <>
+                                      <text
+                                        x={gx + 48}
+                                        y={gy + 20}
+                                        dominantBaseline="central"
+                                        fontSize={13}
+                                        fontWeight={700}
+                                        fill="#475569"
+                                      >
+                                        {gp.label}
+                                      </text>
+                                      {gp.summary && (
+                                        <foreignObject x={gx + 14} y={gy + 38} width={Math.max(40, gw - 28)} height={Math.max(24, gh - 48)}>
+                                          <div
+                                            style={{
+                                              color: '#64748b',
+                                              fontSize: '13px',
+                                              lineHeight: 1.4,
+                                              fontWeight: 500,
+                                              overflow: 'hidden',
+                                              userSelect: 'none',
+                                            }}
+                                          >
+                                            {gp.summary}
+                                          </div>
+                                        </foreignObject>
+                                      )}
+                                    </>
+                                  )}
+                                </g>
+                              );
+                            })}
+                            {/* 自动/手动双区拆分可视分割线：让用户在生图前一眼看到免费双区的拼接缝 */}
+                            {aiZonePlan && aiZonePlan.zones.length === 2 && (
+                              aiZonePlan.effectiveSplit === 'dual-vertical' ? (
+                                <g>
+                                  <line
+                                    x1={0}
+                                    y1={aiZonePlan.splitRatio * pageH}
+                                    x2={pageW}
+                                    y2={aiZonePlan.splitRatio * pageH}
+                                    stroke="#f43f5e"
+                                    strokeWidth={3}
+                                    strokeDasharray="12 7"
+                                  />
+                                  <rect
+                                    x={pageW - 186}
+                                    y={Math.max(6, aiZonePlan.splitRatio * pageH - 28)}
+                                    width={176}
+                                    height={22}
+                                    rx={6}
+                                    fill="rgba(244, 63, 94, 0.9)"
+                                  />
+                                  <text
+                                    x={pageW - 98}
+                                    y={Math.max(17, aiZonePlan.splitRatio * pageH - 17)}
+                                    textAnchor="middle"
+                                    dominantBaseline="central"
+                                    fontSize={11}
+                                    fontWeight={700}
+                                    fill="#ffffff"
+                                  >
+                                    {`区 1 · ${aiZonePlan.zones[0].resolution.width}×${aiZonePlan.zones[0].resolution.height}`}
+                                  </text>
+                                  <rect
+                                    x={pageW - 186}
+                                    y={Math.min(pageH - 28, aiZonePlan.splitRatio * pageH + 6)}
+                                    width={176}
+                                    height={22}
+                                    rx={6}
+                                    fill="rgba(244, 63, 94, 0.9)"
+                                  />
+                                  <text
+                                    x={pageW - 98}
+                                    y={Math.min(pageH - 17, aiZonePlan.splitRatio * pageH + 17)}
+                                    textAnchor="middle"
+                                    dominantBaseline="central"
+                                    fontSize={11}
+                                    fontWeight={700}
+                                    fill="#ffffff"
+                                  >
+                                    {`区 2 · ${aiZonePlan.zones[1].resolution.width}×${aiZonePlan.zones[1].resolution.height}`}
+                                  </text>
+                                </g>
+                              ) : (
+                                <g>
+                                  <line
+                                    x1={aiZonePlan.splitRatio * pageW}
+                                    y1={0}
+                                    x2={aiZonePlan.splitRatio * pageW}
+                                    y2={pageH}
+                                    stroke="#f43f5e"
+                                    strokeWidth={3}
+                                    strokeDasharray="12 7"
+                                  />
+                                  <rect
+                                    x={Math.max(6, aiZonePlan.splitRatio * pageW - 166)}
+                                    y={10}
+                                    width={158}
+                                    height={22}
+                                    rx={6}
+                                    fill="rgba(244, 63, 94, 0.9)"
+                                  />
+                                  <text
+                                    x={Math.max(85, aiZonePlan.splitRatio * pageW - 87)}
+                                    y={21}
+                                    textAnchor="middle"
+                                    dominantBaseline="central"
+                                    fontSize={11}
+                                    fontWeight={700}
+                                    fill="#ffffff"
+                                  >
+                                    {`区 1 · ${aiZonePlan.zones[0].resolution.width}×${aiZonePlan.zones[0].resolution.height}`}
+                                  </text>
+                                  <rect
+                                    x={Math.min(pageW - 164, aiZonePlan.splitRatio * pageW + 8)}
+                                    y={10}
+                                    width={158}
+                                    height={22}
+                                    rx={6}
+                                    fill="rgba(244, 63, 94, 0.9)"
+                                  />
+                                  <text
+                                    x={Math.min(pageW - 85, aiZonePlan.splitRatio * pageW + 87)}
+                                    y={21}
+                                    textAnchor="middle"
+                                    dominantBaseline="central"
+                                    fontSize={11}
+                                    fontWeight={700}
+                                    fill="#ffffff"
+                                  >
+                                    {`区 2 · ${aiZonePlan.zones[1].resolution.width}×${aiZonePlan.zones[1].resolution.height}`}
+                                  </text>
+                                </g>
+                              )
+                            )}
+                          </g>
+                        )}
+                      </g>
+                    );
+                  }
                   return (
                     <g key="panels">
                       {sortedPanels.map((panel, panelOrderIdx) => {
@@ -1097,7 +1337,44 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
               }}
             />
 
-            {activeTool === 'select' && selectedPanel && !selectedPanel.locked && !draft.layers.panels?.locked && (() => {
+            {draft.creationMode === 'ai-page' && (draft.aiPage.showGuideOverlay || !draft.aiPage.generatedPageImage?.url) && (
+              <div className="pointer-events-none absolute inset-0 z-20">
+                {draft.aiPage.anchors.map((anchor, idx) => {
+                  const isSelected = selection?.kind === 'ai-anchor' && selection.id === anchor.id;
+                  const dotClass = anchor.kind === 'character' ? 'bg-blue-600'
+                    : anchor.kind === 'scene' ? 'bg-emerald-600'
+                      : anchor.kind === 'bubble' ? 'bg-amber-600'
+                        : 'bg-purple-600';
+                  const shortText = anchor.kind === 'bubble' && anchor.bubbleText?.trim()
+                    ? `「${anchor.bubbleText.trim().slice(0, 8)}」`
+                    : anchor.label;
+                  return (
+                    <button
+                      key={anchor.id}
+                      type="button"
+                      aria-label={t('整页锚点 {0}', [anchor.label])}
+                      title={`${anchor.label} (${anchor.x.toFixed(2)}, ${anchor.y.toFixed(2)})`}
+                      onPointerDown={event => {
+                        if (isPanningMode || activeTool !== 'select') return;
+                        event.stopPropagation();
+                        onSelect({ kind: 'ai-anchor', id: anchor.id });
+                        stageRef.current?.setPointerCapture?.(event.pointerId);
+                        setDrag({ kind: 'move-ai-anchor', anchorId: anchor.id });
+                      }}
+                      style={{ left: `${anchor.x * 100}%`, top: `${anchor.y * 100}%` }}
+                      className={`pointer-events-auto absolute flex -translate-x-1/2 -translate-y-1/2 cursor-grab items-center gap-1 rounded-full border-2 border-white bg-white/95 py-0.5 pl-0.5 pr-2 text-[11px] font-semibold text-gray-800 shadow-md transition hover:scale-105 dark:border-gray-900 dark:bg-gray-900/95 dark:text-gray-100 ${isSelected ? 'ring-2 ring-indigo-500 scale-105' : ''} ${anchor.enabled ? '' : 'opacity-45'}`}
+                    >
+                      <span className={`flex h-5 w-5 flex-none items-center justify-center rounded-full text-[10px] font-bold text-white ${dotClass}`}>
+                        {idx + 1}
+                      </span>
+                      <span className="max-w-24 truncate">{shortText}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {draft.creationMode === 'manual' && activeTool === 'select' && selectedPanel && !selectedPanel.locked && !draft.layers.panels?.locked && (() => {
               const normBounds = getPanelBoundingBox(selectedPanel.points, 1, 1);
               const aspect = pageW / pageH;
               const center = { x: normBounds.cx, y: normBounds.cy };

@@ -15,6 +15,11 @@ import {
   evaluateAnchorGuard,
   stripColorTagsForMonochrome,
 } from '../../services/comic/comicPromptBuilder';
+import {
+  buildAiPageZoneRequest,
+  planComicAiZones,
+} from '../../services/comic/comicAiPageEngine';
+import { parseComicStoryboardResponse } from '../../services/comic/comicStoryboardAgent.mjs';
 import { loadComicDraft, saveComicDraft } from '../../services/comic/comicStorage';
 import type { ComicAnchor } from '../../services/comic/comicTypes';
 
@@ -165,5 +170,133 @@ describe('comicStorage auto-draft isolation', () => {
     expect(loaded.colorMode).toBe('monochrome');
     expect(loaded.panels).toHaveLength(4);
     expect(localStorage.getItem('nai_lab_workspace_session_playground')).toBe('{"untouched":true}');
+  });
+
+  it('persists and restores aiPage storyboard plan & anchors safely', () => {
+    const draft = createInitialComicDraft('4-manga');
+    draft.creationMode = 'ai-page';
+    draft.aiPage.storyPrompt = '雨夜车站重逢';
+    draft.aiPage.splitMode = 'dual-vertical';
+    draft.aiPage.anchors = [
+      {
+        id: 'ai-1',
+        kind: 'character',
+        label: '女主-格1',
+        prompt: '1girl, silver hair, holding umbrella',
+        negativePrompt: '',
+        x: 0.35,
+        y: 0.22,
+        enabled: true,
+      },
+    ];
+    expect(saveComicDraft(draft)).toBe(true);
+    const loaded = loadComicDraft();
+    expect(loaded.creationMode).toBe('ai-page');
+    expect(loaded.aiPage.storyPrompt).toBe('雨夜车站重逢');
+    expect(loaded.aiPage.splitMode).toBe('dual-vertical');
+    expect(loaded.aiPage.anchors).toHaveLength(1);
+    expect(loaded.aiPage.anchors[0].label).toBe('女主-格1');
+  });
+});
+
+describe('comicStoryboardAgent & comicAiPageEngine (Phase 2)', () => {
+  it('parses fenced JSON storyboard responses, clamps coords, and strips bubble anchors in clean-vector mode', () => {
+    const raw = [
+      '```json',
+      JSON.stringify({
+        title: '雨中递伞',
+        layoutHint: '4-panel manga page, clean white gutters',
+        guidePanels: [
+          { label: '第 1 格', summary: '雨中教室门口', x: 0.04, y: 0.04, width: 0.92, height: 0.44 },
+          { label: '第 2 格', summary: '递出透明雨伞', x: 0.04, y: 0.52, width: 0.92, height: 0.44 },
+        ],
+        anchors: [
+          { kind: 'character', label: '女主-格1', prompt: '1girl, black hair, rain', x: 1.5, y: 0.22 },
+          { kind: 'bubble', label: '台词-格2', prompt: 'tail pointing left', x: 0.72, y: 0.65, bubbleShape: 'oval', bubbleText: '一起走吧' },
+        ],
+      }),
+      '```',
+    ].join('\n');
+
+    const emptyBubbleParsed = parseComicStoryboardResponse(raw, { dialogueMode: 'empty-bubble' });
+    expect(emptyBubbleParsed.title).toBe('雨中递伞');
+    expect(emptyBubbleParsed.guidePanels).toHaveLength(2);
+    expect(emptyBubbleParsed.anchors).toHaveLength(2);
+    expect(emptyBubbleParsed.anchors[0].x).toBeLessThanOrEqual(0.96);
+    expect(emptyBubbleParsed.anchors[1].bubbleText).toBe('一起走吧');
+
+    const cleanVectorParsed = parseComicStoryboardResponse(raw, { dialogueMode: 'clean-vector' });
+    expect(cleanVectorParsed.anchors).toHaveLength(1);
+    expect(cleanVectorParsed.anchors[0].kind).toBe('character');
+  });
+
+  it('auto-splits into 2 Opus-free zones when exceeding single-zone panel/slot sweet spot and remaps local coords', () => {
+    const draft = createInitialComicDraft('6-grid');
+    draft.creationMode = 'ai-page';
+    draft.width = 832;
+    draft.height = 1216;
+    draft.aiPage.splitMode = 'auto';
+    draft.aiPage.guidePanels = Array.from({ length: 6 }, (_, i) => ({
+      id: `gp-${i}`,
+      label: `第 ${i + 1} 格`,
+      summary: `剧情 ${i + 1}`,
+      x: i % 2 === 0 ? 0.04 : 0.52,
+      y: 0.04 + Math.floor(i / 2) * 0.31,
+      width: 0.44,
+      height: 0.29,
+    }));
+    draft.aiPage.anchors = [
+      { id: 'a1', kind: 'character', label: '上区角色', prompt: '1girl, waving', negativePrompt: '', x: 0.25, y: 0.18, enabled: true },
+      { id: 'a2', kind: 'character', label: '下区角色', prompt: '1boy, surprised', negativePrompt: '', x: 0.72, y: 0.82, enabled: true },
+    ];
+
+    const plan = planComicAiZones(draft);
+    expect(plan.effectiveSplit).toBe('dual-vertical');
+    expect(plan.autoSplitTriggered).toBe(true);
+    expect(plan.zones).toHaveLength(2);
+    for (const z of plan.zones) {
+      expect(z.resolution.width * z.resolution.height).toBeLessThanOrEqual(OPUS_FREE_PIXEL_LIMIT);
+      expect(z.resolution.width % 64).toBe(0);
+      expect(z.resolution.height % 64).toBe(0);
+    }
+    expect(plan.zones[0].localAnchors).toHaveLength(1);
+    expect(plan.zones[1].localAnchors).toHaveLength(1);
+    // 下区 y=0.82 重映射到局部坐标后应在 (0.2, 0.9) 之间
+    expect(plan.zones[1].localAnchors[0].y).toBeGreaterThan(0.2);
+    expect(plan.zones[1].localAnchors[0].y).toBeLessThan(0.95);
+  });
+
+  it('enforces anti-ghost-clone merging, monochrome send-copy stripping, and ai-text pinned Text: inside bubble slot', () => {
+    const draft = createInitialComicDraft('4-manga');
+    draft.creationMode = 'ai-page';
+    draft.colorMode = 'monochrome';
+    draft.dialogueMode = 'ai-text';
+    draft.globalBasePrompt = 'vibrant colors, masterpiece';
+    draft.aiPage.splitMode = 'single';
+    draft.aiPage.guidePanels = [
+      { id: 'gp-1', label: '第 1 格', summary: '走廊相遇', x: 0.04, y: 0.04, width: 0.92, height: 0.44 },
+    ];
+    const origCharPrompt = '1girl, blue eyes, red scarf, standing';
+    draft.aiPage.anchors = [
+      { id: 'c1', kind: 'character', label: '女主', prompt: origCharPrompt, negativePrompt: '', x: 0.35, y: 0.25, enabled: true },
+      { id: 'bg1', kind: 'scene', label: '背景', prompt: 'no humans, rainy street, lamp post', negativePrompt: '', x: 0.5, y: 0.25, enabled: true },
+      { id: 'b1', kind: 'bubble', label: '气泡', prompt: 'tail pointing left', negativePrompt: '', x: 0.72, y: 0.18, enabled: true, bubbleShape: 'shout', bubbleText: '等等!' },
+    ];
+
+    const plan = planComicAiZones(draft);
+    const compiled = buildAiPageZoneRequest(draft, plan.zones[0], 1);
+    // 同格 no humans 背景被合并进角色槽，不会出现独立幽灵背景槽
+    expect(compiled.params.characters).toHaveLength(2);
+    const charSlot = compiled.params.characters?.[0];
+    const bubbleSlot = compiled.params.characters?.[1];
+    expect(charSlot?.prompt).toContain('rainy street');
+    expect(charSlot?.prompt.toLowerCase()).not.toContain('no humans');
+    expect(charSlot?.prompt.toLowerCase()).not.toContain('red');
+    expect(charSlot?.prompt.toLowerCase()).not.toContain('blue');
+    // 原草稿不被污染
+    expect(draft.aiPage.anchors[0].prompt).toBe(origCharPrompt);
+    // 气泡锚点内置 Text: 短台词
+    expect(bubbleSlot?.prompt).toContain('Text: 等等!');
+    expect(bubbleSlot?.prompt).toContain('jagged speech bubble');
   });
 });

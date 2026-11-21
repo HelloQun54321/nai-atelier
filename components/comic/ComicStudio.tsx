@@ -18,10 +18,18 @@ import {
   type GenerationSeriesSession,
 } from '../../services/generationSeries';
 import { createUuid } from '../../services/id';
+import { localHistory } from '../../services/localHistory';
+import { promptAgentService } from '../../services/promptAgent';
+import {
+  buildAiPageZoneRequest,
+  planComicAiZones,
+  stitchAiZoneImages,
+} from '../../services/comic/comicAiPageEngine';
 import {
   COMIC_LAYOUT_TEMPLATES,
   COMIC_PANEL_SOFT_MAX,
   COMIC_PAPER_PRESETS,
+  createGuidePanelsFromTemplate,
   getPanelBoundingBox,
   rectToPolygon,
   slicePolygonByLine,
@@ -30,6 +38,8 @@ import { buildComicPanelGenerationInput } from '../../services/comic/comicPrompt
 import { exportComicPageAndArchive } from '../../services/comic/comicExporter';
 import { loadComicDraft, saveComicDraft } from '../../services/comic/comicStorage';
 import type {
+  ComicAiGuidePanel,
+  ComicAiPagePlan,
   ComicBubbleItem,
   ComicBubbleShape,
   ComicLayerId,
@@ -81,6 +91,42 @@ const describeStage = (session: GenerationSeriesSession | null): string => {
   return t('生成中…');
 };
 
+const buildGuidePanelsForCount = (
+  count: number,
+  gutterPx: number,
+  width: number,
+  height: number,
+): ComicAiGuidePanel[] => {
+  if (count === 3) return createGuidePanelsFromTemplate('3-tier', gutterPx, width, height);
+  if (count === 4) return createGuidePanelsFromTemplate('4-manga', gutterPx, width, height);
+  if (count === 6) return createGuidePanelsFromTemplate('6-grid', gutterPx, width, height);
+  const cols = count >= 8 ? 2 : 2;
+  const rows = Math.max(2, Math.ceil(count / cols));
+  const margin = 0.04;
+  const gx = Math.max(0.012, gutterPx / Math.max(1, width));
+  const gy = Math.max(0.012, gutterPx / Math.max(1, height));
+  const usableW = 1 - margin * 2;
+  const usableH = 1 - margin * 2;
+  const cellW = (usableW - gx * (cols - 1)) / cols;
+  const cellH = (usableH - gy * (rows - 1)) / rows;
+  const result: ComicAiGuidePanel[] = [];
+  for (let i = 0; i < count; i++) {
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    const isLastOdd = i === count - 1 && count % 2 === 1;
+    result.push({
+      id: createUuid(),
+      label: `第 ${i + 1} 格`,
+      summary: '',
+      x: isLastOdd ? margin : margin + c * (cellW + gx),
+      y: margin + r * (cellH + gy),
+      width: isLastOdd ? usableW : cellW,
+      height: cellH,
+    });
+  }
+  return result;
+};
+
 export const ComicStudio: React.FC<ComicStudioProps> = ({
   chains,
   notify,
@@ -116,15 +162,20 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const handleSelectWithTab = useCallback((next: ComicSelection) => {
     setSelection(next);
     if (!next) return;
-    if (next.kind === 'panel') {
+    if (next.kind === 'panel' || next.kind === 'ai-anchor') {
       setInspectorTab(cur => (cur === 'layers' ? 'panel' : cur));
     } else {
       setInspectorTab('layers');
     }
   }, []);
 
-  // 单格生图状态
+  // 单格生图与 AI 整页生图状态
   const [generatingPanelId, setGeneratingPanelId] = useState<string | null>(null);
+  const [planningAiStoryboard, setPlanningAiStoryboard] = useState(false);
+  const [generatingAiPage, setGeneratingAiPage] = useState(false);
+  const [generatingAiZoneIndex, setGeneratingAiZoneIndex] = useState<0 | 1 | null>(null);
+  const [aiGenerationStageText, setAiGenerationStageText] = useState('');
+  const aiCancelRequestedRef = useRef(false);
   const activeSessionRef = useRef<GenerationSeriesSession | null>(null);
   const [, setSessionTick] = useState(0);
 
@@ -205,6 +256,15 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     if (!selection) return;
     if (selection.kind === 'panel') {
       handleDeletePanel(selection.id);
+    } else if (selection.kind === 'ai-anchor') {
+      applyDraftChange(cur => ({
+        ...cur,
+        aiPage: {
+          ...cur.aiPage,
+          anchors: cur.aiPage.anchors.filter(a => a.id !== selection.id),
+        },
+      }), true);
+      setSelection(null);
     } else if (selection.kind === 'bubble') {
       applyDraftChange(cur => ({ ...cur, bubbles: cur.bubbles.filter(b => b.id !== selection.id) }), true);
       setSelection(null);
@@ -392,6 +452,20 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const handleApplyTemplate = useCallback(async (templateId: string) => {
     const template = COMIC_LAYOUT_TEMPLATES.find(item => item.id === templateId);
     if (!template) return;
+    if (draft.creationMode === 'ai-page') {
+      const nextGuides = createGuidePanelsFromTemplate(templateId, draft.gutterPx, draft.width, draft.height);
+      applyDraftChange(current => ({
+        ...current,
+        aiPage: {
+          ...current.aiPage,
+          targetPanelCount: nextGuides.length,
+          guidePanels: nextGuides,
+          showGuideOverlay: true,
+        },
+      }), true);
+      notify(t('已套用「{0}」为 AI 整页构图引导区', [template.label]));
+      return;
+    }
     const hasImages = draft.panels.some(p => Boolean(p.image?.url));
     if (hasImages) {
       const ok = await confirmAction({
@@ -408,7 +482,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       panels: template.buildPanels(gx, gy),
     }), true);
     setSelection(null);
-  }, [applyDraftChange, confirmAction, draft.gutterPx, draft.height, draft.panels, draft.width]);
+  }, [applyDraftChange, confirmAction, draft.creationMode, draft.gutterPx, draft.height, draft.panels, draft.width, notify]);
 
   const handleApplyStyleChain = useCallback((chain: PromptChain) => {
     applyDraftChange(current => ({
@@ -511,7 +585,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     setActiveTool('select');
   }, [applyDraftChange, defaultStickerKind, handleSelectWithTab]);
 
-  // 估算当前活跃分镜格费用（用于底部生成栏展示）
+  // 估算当前活跃分镜格费用与 AI 整页总费用（用于底部生成栏展示）
   const selectedPanelForCost = (selection?.kind === 'panel'
     ? draft.panels.find(p => p.id === selection.id)
     : undefined) || draft.panels[0];
@@ -522,6 +596,405 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     const exhausted = novelaiSubscription.info?.usage?.isNegative === true;
     return estimateV45GenerationCost(compiled.params, isOpus, exhausted);
   }, [draft, selectedPanelForCost, novelaiSubscription.info]);
+
+  const aiZonePlan = useMemo(() => planComicAiZones(draft), [draft]);
+  const aiEstimatedCost = useMemo(() => {
+    const isOpus = (novelaiSubscription.info?.tier ?? 3) >= 3;
+    const exhausted = novelaiSubscription.info?.usage?.isNegative === true;
+    return aiZonePlan.zones.reduce((sum, zone) => {
+      const compiled = buildAiPageZoneRequest(draft, zone, aiZonePlan.zones.length);
+      return sum + estimateV45GenerationCost(compiled.params, isOpus, exhausted);
+    }, 0);
+  }, [aiZonePlan, draft, novelaiSubscription.info]);
+
+  const handleUpdateAiPage = useCallback((updater: (aiPage: ComicAiPagePlan) => ComicAiPagePlan, commit = true) => {
+    applyDraftChange(current => ({
+      ...current,
+      aiPage: updater(current.aiPage),
+    }), commit);
+  }, [applyDraftChange]);
+
+  const handleMoveAiAnchor = useCallback((anchorId: string, x: number, y: number, commit = false) => {
+    handleUpdateAiPage(cur => ({
+      ...cur,
+      anchors: cur.anchors.map(a => a.id === anchorId ? { ...a, x, y } : a),
+    }), commit);
+  }, [handleUpdateAiPage]);
+
+  const handleInitAiFromTemplate = useCallback(() => {
+    const nextGuides = buildGuidePanelsForCount(
+      draft.aiPage.targetPanelCount || 4,
+      draft.gutterPx,
+      draft.width,
+      draft.height,
+    );
+    handleUpdateAiPage(cur => ({
+      ...cur,
+      guidePanels: nextGuides,
+      showGuideOverlay: true,
+    }), true);
+    notify(t('已按 {0} 格重置 AI 构图引导区', [nextGuides.length]));
+  }, [draft.aiPage.targetPanelCount, draft.gutterPx, draft.height, draft.width, handleUpdateAiPage, notify]);
+
+  const handlePlanAiStoryboard = useCallback(async () => {
+    const story = draft.aiPage.storyPrompt.trim();
+    if (!story) {
+      notify(t('请先输入本页剧情描述'), 'error');
+      return;
+    }
+    setPlanningAiStoryboard(true);
+    try {
+      const castCharacters = draft.aiPage.castCharacterIds
+        .map(id => chains.find(c => c.id === id))
+        .filter((c): c is PromptChain => Boolean(c))
+        .map(c => ({
+          name: c.name,
+          prompt: [c.basePrompt, c.variableValues?.subject].filter(Boolean).join(', '),
+        }));
+
+      const planned = await promptAgentService.planComicStoryboard({
+        storyPrompt: story,
+        targetPanelCount: draft.aiPage.targetPanelCount,
+        width: draft.width,
+        height: draft.height,
+        colorMode: draft.colorMode,
+        dialogueMode: draft.dialogueMode,
+        castCharacters,
+      });
+
+      const nextGuides: ComicAiGuidePanel[] = planned.guidePanels.map(gp => ({
+        id: createUuid(),
+        label: gp.label,
+        summary: gp.summary,
+        x: gp.x,
+        y: gp.y,
+        width: gp.width,
+        height: gp.height,
+      }));
+      const nextAnchors = planned.anchors.map(a => ({
+        id: createUuid(),
+        kind: a.kind,
+        label: a.label,
+        prompt: a.prompt,
+        negativePrompt: a.negativePrompt || '',
+        x: a.x,
+        y: a.y,
+        enabled: a.enabled !== false,
+        ...(a.bubbleShape ? { bubbleShape: a.bubbleShape } : {}),
+        ...(a.bubbleText ? { bubbleText: a.bubbleText } : {}),
+      }));
+
+      applyDraftChange(current => ({
+        ...current,
+        title: (!current.title || current.title === '未命名漫画页') && planned.title
+          ? planned.title
+          : current.title,
+        aiPage: {
+          ...current.aiPage,
+          layoutHint: planned.layoutHint || current.aiPage.layoutHint,
+          guidePanels: nextGuides.length > 0 ? nextGuides : current.aiPage.guidePanels,
+          anchors: nextAnchors,
+          showGuideOverlay: true,
+        },
+      }), true);
+
+      if (nextAnchors[0]) {
+        setSelection({ kind: 'ai-anchor', id: nextAnchors[0].id });
+      }
+      const modelSuffix = planned.model ? `（${planned.model}）` : '';
+      notify(t('AI 已编排 {0} 个引导格与 {1} 个空间锚点{2}', [nextGuides.length, nextAnchors.length, modelSuffix]));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('AI 分镜编排失败，请检查创作助手模型配置'), 'error');
+    } finally {
+      setPlanningAiStoryboard(false);
+    }
+  }, [applyDraftChange, chains, draft.aiPage.castCharacterIds, draft.aiPage.storyPrompt, draft.aiPage.targetPanelCount, draft.colorMode, draft.dialogueMode, draft.height, draft.width, notify]);
+
+  const handleConvertBubbleAnchorsToVector = useCallback(() => {
+    const bubbleAnchors = draft.aiPage.anchors.filter(a => a.enabled && a.kind === 'bubble');
+    if (!bubbleAnchors.length) {
+      notify(t('当前没有可转换的气泡锚点'), 'error');
+      return;
+    }
+    const created: ComicBubbleItem[] = [];
+    for (const anchor of bubbleAnchors) {
+      const duplicate = draft.bubbles.some(b => Math.hypot(b.x - anchor.x, b.y - anchor.y) < 0.03);
+      if (duplicate) continue;
+      const shape: ComicBubbleShape = anchor.bubbleShape || defaultBubbleShape;
+      created.push({
+        id: createUuid(),
+        shape,
+        x: anchor.x,
+        y: anchor.y,
+        width: 0.24,
+        height: 0.12,
+        hasTail: shape !== 'caption',
+        tailX: Math.min(0.95, anchor.x + 0.06),
+        tailY: Math.min(0.95, anchor.y + 0.09),
+        text: anchor.bubbleText?.trim() || '输入台词…',
+        writingMode: defaultBubbleWritingMode,
+        fontSize: 20,
+        textColor: '#111827',
+        fillColor: '#ffffff',
+        strokeColor: '#111827',
+        strokeWidth: 3,
+        rotation: 0,
+      });
+    }
+    if (!created.length) {
+      notify(t('对应位置的气泡已存在于矢量层中'));
+      return;
+    }
+    applyDraftChange(cur => ({
+      ...cur,
+      bubbles: [...cur.bubbles, ...created],
+    }), true);
+    handleSelectWithTab({ kind: 'bubble', id: created[0].id });
+    notify(t('已将 {0} 个气泡锚点转为可编辑矢量气泡', [created.length]));
+  }, [applyDraftChange, defaultBubbleShape, defaultBubbleWritingMode, draft.aiPage.anchors, draft.bubbles, handleSelectWithTab, notify]);
+
+  // 核心：AI 整页锚点一图成型（单区直出或自动双区无缝拼合，走统一 Key 池 / Opus 守卫 / 单并发队列）
+  const handleGenerateAiPage = useCallback(async () => {
+    if (generatingPanelId || generatingAiPage) {
+      notify(t('当前已有生图任务正在运行，请等待完成'), 'error');
+      return;
+    }
+    if (aiZonePlan.overallLevel === 'hard-exceeded') {
+      notify(t('单区锚点超过 24 槽硬上限，请先切换双区或精简锚点'), 'error');
+      return;
+    }
+
+    const compiledZones = aiZonePlan.zones.map(zone => ({
+      zone,
+      compiled: buildAiPageZoneRequest(draft, zone, aiZonePlan.zones.length),
+    }));
+    const hasAnyContent = compiledZones.some(z => z.compiled.prompt.trim() || (z.compiled.params.characters?.length ?? 0) > 0);
+    if (!hasAnyContent) {
+      notify(t('请先编排锚点或填写全页画风提示词后再生成'), 'error');
+      return;
+    }
+
+    let submitKey = readActiveApiKey();
+    const firstCompiled = compiledZones[0].compiled;
+    const opusBaseCost = estimateV45GenerationCost(firstCompiled.params, true, false);
+    const poolCheck = await prepareGenerationWithPool({
+      model: firstCompiled.params.model,
+      estimatedCostWithOpus: opusBaseCost,
+    });
+    if (poolCheck.pooled) {
+      if (!poolCheck.ok) {
+        notify(poolCheck.message || t('Key 池当前无可用免费额度'), 'error');
+        return;
+      }
+      submitKey = poolCheck.key;
+    }
+    if (!submitKey) {
+      notify(t('请先在全局设置中配置 NovelAI API Key'), 'error');
+      return;
+    }
+
+    const perUseChannel = getNaiChannelMode() === 'per-use';
+    const opusTier = poolCheck.pooled ? (poolCheck.info?.tier ?? 3) : (novelaiSubscription.info?.tier ?? 3);
+    const exhausted = poolCheck.pooled
+      ? poolCheck.info?.usage?.isNegative === true
+      : await usageForCostEstimate(novelaiSubscription.info?.usage, () => novelaiSubscription.refresh(), firstCompiled.params.model);
+
+    const zoneCosts = compiledZones.map(item => (
+      perUseChannel ? 0 : estimateV45GenerationCost(item.compiled.params, opusTier >= 3, exhausted)
+    ));
+    const totalCost = zoneCosts.reduce((acc, c) => acc + c, 0);
+
+    if (totalCost > 0) {
+      const approved = await confirmAction({
+        rememberKey: 'comic.ai-page-paid',
+        rememberScope: { cost: totalCost, model: firstCompiled.params.model, zones: compiledZones.length },
+        title: t('确认消耗 Anlas 生成 AI 整页'),
+        message: compiledZones.length === 2
+          ? t('本次自动双区拼合将依次生成 2 张图，合计预计消耗 {0}。确认后才会向 NovelAI 提交。', [formatGenerationCostLabel(totalCost, firstCompiled.params.model)])
+          : t('本次整页生成预计消耗 {0}。确认后才会向 NovelAI 提交。', [formatGenerationCostLabel(totalCost, firstCompiled.params.model)]),
+        confirmLabel: t('消耗 {0} 点生成', [totalCost]),
+        tone: 'danger',
+      });
+      if (!approved) return;
+    }
+
+    const firstWarning = compiledZones.flatMap(z => z.compiled.warnings)[0];
+    if (firstWarning) notify(firstWarning);
+
+    aiCancelRequestedRef.current = false;
+    setGeneratingAiPage(true);
+
+    try {
+      const zoneResults: Array<{ url: string; historyId?: string; width: number; height: number }> = [];
+      for (let idx = 0; idx < compiledZones.length; idx++) {
+        if (aiCancelRequestedRef.current) break;
+        const { zone, compiled } = compiledZones[idx];
+        const zoneCost = zoneCosts[idx];
+        setGeneratingAiZoneIndex(zone.zoneIndex);
+        setAiGenerationStageText(compiledZones.length === 2
+          ? t('区 {0}/2 · {1} 生成中…', [idx + 1, zone.label])
+          : t('整页生成中…'));
+
+        const descriptor = await buildGenerationJobDescriptor({
+          operation: 'text-to-image',
+          prompt: compiled.prompt,
+          negative: compiled.negative,
+          params: compiled.params,
+          approvedCost: zoneCost,
+          stream: generationStreamPreview,
+          forceEmptySeed,
+          apiKey: submitKey,
+          estimatedCost: zoneCost,
+          history: {
+            basePrompt: draft.globalBasePrompt,
+            subjectPrompt: draft.aiPage.storyPrompt || zone.label,
+            sourceChainId: draft.styleChainId || 'comic',
+            sourceChainName: compiledZones.length === 2
+              ? `漫画整页 · ${draft.title || '未命名漫画页'} · ${zone.label}`
+              : `漫画整页 · ${draft.title || '未命名漫画页'}`,
+            sourceChainType: 'comic',
+          },
+        });
+
+        const { session, settle } = beginGenerationSeries({
+          scope: COMIC_GEN_SCOPE,
+          key: submitKey,
+          count: 1,
+          agent: false,
+          descriptor,
+        });
+        activeSessionRef.current = session;
+
+        const unsubApproval = subscribeGenerationSeries(() => {
+          if (session.state === 'awaiting_confirmation' && session.awaiting) {
+            const nextCost = session.awaiting.cost;
+            void confirmAction({
+              title: t('费用变化确认'),
+              message: t('上游计费已更新为 {0} Anlas，是否继续生成 {1}？', [nextCost, zone.label]),
+              confirmLabel: t('继续生成'),
+              tone: 'danger',
+            }).then(ok => {
+              if (ok) void approveGenerationSeries(session, nextCost);
+              else {
+                aiCancelRequestedRef.current = true;
+                stopGenerationSeriesSession(session);
+              }
+            });
+          }
+        });
+
+        const result = await settle;
+        unsubApproval();
+        activeSessionRef.current = null;
+
+        const saved = session.lastSavedItem;
+        if (!result.success || !saved?.imageUrl) {
+          if (result.outcome === 'cancelled' || aiCancelRequestedRef.current) {
+            return;
+          }
+          notify(result.error || t('{0}生成失败', [zone.label]), 'error');
+          return;
+        }
+        zoneResults.push({
+          url: saved.imageUrl,
+          historyId: saved.id,
+          width: saved.params?.width || zone.resolution.width,
+          height: saved.params?.height || zone.resolution.height,
+        });
+      }
+
+      if (aiCancelRequestedRef.current || zoneResults.length !== compiledZones.length) return;
+
+      if (zoneResults.length === 1) {
+        const only = zoneResults[0];
+        handleUpdateAiPage(cur => ({
+          ...cur,
+          generatedPageImage: {
+            url: only.url,
+            historyId: only.historyId,
+            width: only.width,
+            height: only.height,
+            zoneHistoryIds: only.historyId ? [only.historyId] : undefined,
+          },
+          showGuideOverlay: false,
+        }), true);
+        notify(t('AI 整页漫画生成完成，已可叠加气泡嵌字或导出'));
+      } else {
+        setAiGenerationStageText(t('正在无缝拼合双区整页…'));
+        const splitAxis = aiZonePlan.effectiveSplit === 'dual-horizontal' ? 'dual-horizontal' : 'dual-vertical';
+        const stitchedBlob = await stitchAiZoneImages(
+          [zoneResults[0].url, zoneResults[1].url],
+          splitAxis,
+          aiZonePlan.splitRatio,
+          draft.width,
+          draft.height,
+          draft.backgroundColor,
+          draft.gutterPx,
+        );
+
+        let finalUrl = '';
+        let finalHistoryId: string | undefined;
+        try {
+          const archived = await localHistory.add(
+            stitchedBlob,
+            draft.aiPage.storyPrompt || `[AI 漫画双区拼合] ${draft.title || '未命名漫画页'}`,
+            {
+              model: draft.v5Model,
+              width: draft.width,
+              height: draft.height,
+              steps: draft.steps,
+              scale: draft.scale,
+              sampler: draft.sampler,
+              noiseSchedule: draft.noiseSchedule,
+              qualityPresetId: draft.qualityPresetId,
+              ucPresetId: draft.ucPresetId,
+            },
+            draft.globalNegativePrompt,
+            {
+              sourceChainId: draft.styleChainId || 'comic',
+              sourceChainName: `漫画整页拼合 · ${draft.title || '未命名漫画页'}`,
+              sourceChainType: 'comic',
+            },
+          );
+          finalUrl = archived.imageUrl;
+          finalHistoryId = archived.id;
+        } catch {
+          finalUrl = URL.createObjectURL(stitchedBlob);
+        }
+
+        handleUpdateAiPage(cur => ({
+          ...cur,
+          generatedPageImage: {
+            url: finalUrl,
+            historyId: finalHistoryId,
+            width: draft.width,
+            height: draft.height,
+            zoneHistoryIds: zoneResults.map(z => z.historyId).filter((id): id is string => Boolean(id)),
+          },
+          showGuideOverlay: false,
+        }), true);
+        notify(t('双区免费生成并无缝拼合完成，整页成品已归档至历史'));
+      }
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('AI 整页生成失败'), 'error');
+    } finally {
+      activeSessionRef.current = null;
+      setGeneratingAiPage(false);
+      setGeneratingAiZoneIndex(null);
+      setAiGenerationStageText('');
+    }
+  }, [
+    aiZonePlan,
+    confirmAction,
+    draft,
+    forceEmptySeed,
+    generatingAiPage,
+    generatingPanelId,
+    generationStreamPreview,
+    handleUpdateAiPage,
+    notify,
+    novelaiSubscription,
+  ]);
 
   // 核心：单格 V5 生图（走工坊统一 Key 池、Opus 守卫与后端单并发队列）
   const handleGeneratePanel = useCallback(async (panelId: string) => {
@@ -659,6 +1132,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   }, [confirmAction, draft, forceEmptySeed, generatingPanelId, generationStreamPreview, handleUpdatePanel, notify, novelaiSubscription]);
 
   const handleCancelGeneration = useCallback(() => {
+    aiCancelRequestedRef.current = true;
     if (activeSessionRef.current) {
       stopGenerationSeriesSession(activeSessionRef.current);
     }
@@ -699,7 +1173,10 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         exporting={exporting}
         inspectorOpen={inspectorOpen}
         onChangeTitle={title => applyDraftChange(cur => ({ ...cur, title }), false)}
-        onChangeMode={creationMode => applyDraftChange(cur => ({ ...cur, creationMode }), true)}
+        onChangeMode={creationMode => {
+          applyDraftChange(cur => ({ ...cur, creationMode }), true);
+          setInspectorTab('panel');
+        }}
         onSelectPaperPreset={handleSelectPaperPreset}
         onSetCustomPaperSize={handleSetCustomPaperSize}
         onApplyTemplate={tplId => void handleApplyTemplate(tplId)}
@@ -742,6 +1219,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         <div ref={canvasWrapRef} className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ComicCanvas
             draft={draft}
+            aiZonePlan={aiZonePlan}
             activeTool={activeTool}
             selection={selection}
             zoom={zoom}
@@ -749,12 +1227,15 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             brushSize={brushSize}
             brushOpacity={brushOpacity}
             generatingPanelId={generatingPanelId}
+            generatingAiPage={generatingAiPage}
+            generatingAiZoneIndex={generatingAiZoneIndex}
             livePreviewImage={activeSession?.preview?.image || null}
             onSelect={handleSelectWithTab}
             onZoomChange={setZoom}
             onZoomFit={() => fitCanvasToViewport()}
             onToggleSnap={() => applyDraftChange(cur => ({ ...cur, snapEnabled: !cur.snapEnabled }), true)}
             onUpdatePanel={handleUpdatePanel}
+            onMoveAiAnchor={handleMoveAiAnchor}
             onAddPanel={handleAddPanel}
             onSliceAtLine={handleSliceAtLine}
             onCommitStroke={(stroke: ComicStroke) => applyDraftChange(cur => ({ ...cur, strokes: [...cur.strokes, stroke] }), true)}
@@ -800,16 +1281,26 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
           <div className="h-[46vh] w-full flex-none border-t border-gray-200 dark:border-gray-800 md:h-full md:w-[376px] md:border-t-0 lg:w-[416px] xl:w-[440px]">
             <ComicInspector
               draft={draft}
+              aiZonePlan={aiZonePlan}
               activeTab={inspectorTab}
               selection={selection}
               chains={chains}
               generatingPanelId={generatingPanelId}
+              planningAiStoryboard={planningAiStoryboard}
+              generatingAiPage={generatingAiPage}
+              aiGenerationStageText={aiGenerationStageText}
               generationStageText={describeStage(activeSession)}
               estimatedCost={estimatedCost}
+              aiEstimatedCost={aiEstimatedCost}
               onSelectTab={setInspectorTab}
               onSelect={handleSelectWithTab}
               onQuickAddPanel={() => handleAddPanel(rectToPolygon(0.18, 0.22, 0.64, 0.32))}
               onUpdateDraft={applyDraftChange}
+              onUpdateAiPage={handleUpdateAiPage}
+              onPlanAiStoryboard={() => void handlePlanAiStoryboard()}
+              onInitAiFromTemplate={handleInitAiFromTemplate}
+              onConvertBubbleAnchorsToVector={handleConvertBubbleAnchorsToVector}
+              onGenerateAiPage={() => void handleGenerateAiPage()}
               onApplyStyleChain={handleApplyStyleChain}
               onUpdatePanel={handleUpdatePanel}
               onDuplicatePanel={handleDuplicatePanel}

@@ -35,6 +35,7 @@ import { AGENT_THINKING_LEVELS, createAgentThinkingMap, normalizeAgentThinkingLe
 import { agentLanguagePolicy } from '../locales/index.mjs';
 import { preparePromptClassification, parsePromptClassification } from '../services/promptClassification.mjs';
 import { buildPromptTidySystemPrompt, buildPromptTidyUserMessage, parsePromptTidy, preparePromptTidy } from '../services/promptTidyAgent.mjs';
+import { buildComicStoryboardSystemPrompt, buildComicStoryboardUserMessage, parseComicStoryboardResponse } from '../services/comic/comicStoryboardAgent.mjs';
 import { buildTextExtractionSystemPrompt, buildVisionExtractionSystemPrompt, assembleTextExtraction, parseTextExtractionResponse, parseVisionExtractionResponse, prepareExtractionChunks } from '../services/promptExtraction.mjs';
 import { readPromptLibraryTree, getPromptLibraryDefaultSelection, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryTarget, getPromptLibraryDirectoryLegacyKind, isPromptLibraryFragmentEntry, normalizePromptLibraryDirectorySelection, PROMPT_LIBRARY_DIRECTORY_IDS_KEY } from '../services/promptLibraryTree.mjs';
 
@@ -2250,6 +2251,41 @@ export class PromptAgentService {
       await agent.prompt(buildPromptTidyUserMessage(prepared));
       if (agent.state.errorMessage) throw Object.assign(new Error(agent.state.errorMessage), { status: 502 });
       return { ...parsePromptTidy(extractAssistantText(agent.state.messages), prepared), provider, model: modelId };
+    } finally { leaveOutboundProxy(); }
+  }
+
+  /**
+   * 漫画「AI 整页锚点编排」：复用当前已配置的创作助手大模型，单次返回结构化分镜引导区与 V5 空间锚点 JSON，不写入聊天记录。
+   */
+  async planComicStoryboard(input = {}) {
+    const storyPrompt = String(input.storyPrompt || '').trim();
+    if (!storyPrompt) throw Object.assign(new Error('请先输入本页剧情大纲或分镜台本'), { status: 400 });
+    const { provider: selectedProvider, model: modelId } = this.publicConfig();
+    const provider = this.normalizeProvider(selectedProvider);
+    const storedCredential = this.getCredential(provider);
+    if (!storedCredential) throw Object.assign(new Error('请先在全局设置中配置创作助手的模型服务'), { status: 400 });
+    if (!this.listModels(provider).some(item => item.id === modelId)) throw Object.assign(new Error('当前助手模型不可用，请在设置中重新选择'), { status: 400 });
+    const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
+    try {
+      const credentials = new InMemoryCredentialStore();
+      await credentials.modify(provider, async () => ({ ...storedCredential,
+        ...(this.outboundProxyUrl ? { env: { ...(storedCredential.env || {}), HTTPS_PROXY: this.outboundProxyUrl, HTTP_PROXY: this.outboundProxyUrl } } : {}),
+      }));
+      const runtime = createPromptAgentModelRuntime(credentials, [...this.customProviders.values()]);
+      const customProvider = this.customProviders.get(provider);
+      if (customProvider) runtime.setProvider(customProviderRuntime(customProvider));
+      const model = runtime.getModel(provider, modelId);
+      if (!model) throw Object.assign(new Error('无法加载当前助手模型'), { status: 400 });
+      const agent = new Agent({ initialState: {
+        systemPrompt: buildComicStoryboardSystemPrompt(), model, thinkingLevel: lightestThinkingLevel(model), tools: [], messages: [],
+      }, streamFn: runtime.streamSimple.bind(runtime), sessionId: `nai-comic-${randomUUID()}` });
+      await agent.prompt(buildComicStoryboardUserMessage(input));
+      if (agent.state.errorMessage) throw Object.assign(new Error(agent.state.errorMessage), { status: 502 });
+      return {
+        ...parseComicStoryboardResponse(extractAssistantText(agent.state.messages), { dialogueMode: input.dialogueMode }),
+        provider,
+        model: modelId,
+      };
     } finally { leaveOutboundProxy(); }
   }
 

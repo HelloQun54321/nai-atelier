@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { ComicStudio } from '../../components/comic/ComicStudio';
+import { promptAgentService } from '../../services/promptAgent';
 import type { PromptChain } from '../../types';
 
 const mockChains: PromptChain[] = [
@@ -120,5 +121,56 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     fireEvent.click(screen.getByRole('tab', { name: /嵌字·图层/ }));
     expect(screen.getByText('分镜画格')).toBeTruthy();
     expect(screen.getByText('手绘涂鸦')).toBeTruthy();
+  });
+
+  it('supports Phase 2 AI whole-page storyboard orchestration, dual-zone preview, and bubble-to-vector conversion', async () => {
+    const planSpy = vi.spyOn(promptAgentService, 'planComicStoryboard').mockResolvedValue({
+      title: '雨中递伞',
+      layoutHint: '4-panel manga page, clean white gutters',
+      guidePanels: [
+        { label: '第 1 格', summary: '雨中教室门口', x: 0.04, y: 0.04, width: 0.92, height: 0.44 },
+        { label: '第 2 格', summary: '递出透明雨伞', x: 0.04, y: 0.52, width: 0.92, height: 0.44 },
+      ],
+      anchors: [
+        { kind: 'character', label: '银发女主-格1', prompt: '1girl, silver hair, umbrella', negativePrompt: '', x: 0.35, y: 0.25, enabled: true },
+        { kind: 'bubble', label: '台词-格2', prompt: 'tail pointing left', negativePrompt: '', x: 0.72, y: 0.65, enabled: true, bubbleShape: 'oval', bubbleText: '一起走吧' },
+      ],
+      model: 'mock-llm',
+    });
+
+    const { notify } = renderStudio();
+
+    // 切换到 AI 整页模式
+    fireEvent.click(screen.getByRole('button', { name: 'AI 整页' }));
+    expect(screen.getByRole('button', { name: 'AI 整页' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'AI 整页编排' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('button', { name: /生成 AI 整页/ })).toBeTruthy();
+
+    // 勾选出场角色并输入剧情，点击 AI 编排分镜与锚点
+    fireEvent.click(screen.getByRole('button', { name: '银发女主' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '漫画整页剧情描述' }), {
+      target: { value: '放学后下雨，银发少女递伞给少年' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /AI 编排分镜与锚点/ }));
+
+    await waitFor(() => {
+      expect(planSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(planSpy.mock.calls[0][0].castCharacters?.[0]?.name).toBe('银发女主');
+
+    // 画布渲染整页可拖锚点
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '整页锚点 银发女主-格1' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '整页锚点 台词-格2' })).toBeTruthy();
+    });
+
+    // 切换上下双区，按钮展示「2 区拼合」
+    fireEvent.click(screen.getByRole('button', { name: '上下双区' }));
+    expect(screen.getByText('2 区拼合')).toBeTruthy();
+
+    // 一键将气泡锚点转为可编辑矢量气泡
+    fireEvent.click(screen.getByRole('button', { name: /气泡点转矢量嵌字/ }));
+    expect(screen.getByText('当前对白气泡')).toBeTruthy();
+    expect(notify).toHaveBeenCalled();
   });
 });

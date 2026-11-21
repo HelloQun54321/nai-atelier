@@ -177,7 +177,7 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
             aria-pressed={draft.creationMode === 'ai-page'}
             onClick={() => onChangeMode('ai-page')}
             className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition ${draft.creationMode === 'ai-page' ? 'bg-white text-indigo-600 shadow-xs dark:bg-gray-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
-            title={t('AI 整页锚点编排（第二期上线）')}
+            title={t('AI 整页锚点一图成型（含自动双区拼合）')}
           >
             <Sparkles className="h-3 w-3" aria-hidden="true" />
             <span>{t('AI 整页')}</span>

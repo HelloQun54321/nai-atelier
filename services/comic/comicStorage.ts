@@ -1,10 +1,32 @@
-import { createDefaultLayers, createInitialComicDraft } from './comicGeometry';
-import type { ComicPageDraft } from './comicTypes';
+import { createDefaultLayers, createInitialAiPagePlan, createInitialComicDraft } from './comicGeometry';
+import type { ComicAiPagePlan, ComicAiZoneSplitMode, ComicPageDraft } from './comicTypes';
 
 const COMIC_DRAFT_STORAGE_KEY = 'nai_comic_studio_draft_v1';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const normalizeAiPage = (raw: unknown, width: number, height: number, gutterPx: number): ComicAiPagePlan => {
+  const fallback = createInitialAiPagePlan(width, height, gutterPx);
+  if (!isRecord(raw)) return fallback;
+  const splitMode: ComicAiZoneSplitMode =
+    raw.splitMode === 'single' || raw.splitMode === 'dual-vertical' || raw.splitMode === 'dual-horizontal'
+      ? raw.splitMode
+      : 'auto';
+  return {
+    storyPrompt: typeof raw.storyPrompt === 'string' ? raw.storyPrompt : '',
+    targetPanelCount: Number.isFinite(Number(raw.targetPanelCount)) ? Math.max(2, Math.min(8, Math.round(Number(raw.targetPanelCount)))) : 4,
+    castCharacterIds: Array.isArray(raw.castCharacterIds) ? raw.castCharacterIds.filter((id): id is string => typeof id === 'string') : [],
+    splitMode,
+    layoutHint: typeof raw.layoutHint === 'string' && raw.layoutHint.trim() ? raw.layoutHint : fallback.layoutHint,
+    guidePanels: Array.isArray(raw.guidePanels) && raw.guidePanels.length > 0 ? raw.guidePanels as ComicAiPagePlan['guidePanels'] : fallback.guidePanels,
+    anchors: Array.isArray(raw.anchors) ? raw.anchors as ComicAiPagePlan['anchors'] : [],
+    generatedPageImage: isRecord(raw.generatedPageImage) && typeof raw.generatedPageImage.url === 'string'
+      ? raw.generatedPageImage as unknown as ComicAiPagePlan['generatedPageImage']
+      : undefined,
+    showGuideOverlay: raw.showGuideOverlay !== false,
+  };
+};
 
 export const normalizeComicDraft = (raw: unknown): ComicPageDraft => {
   const fallback = createInitialComicDraft();
@@ -40,6 +62,12 @@ export const normalizeComicDraft = (raw: unknown): ComicPageDraft => {
     qualityPresetId: typeof raw.qualityPresetId === 'string' ? raw.qualityPresetId : fallback.qualityPresetId,
     ucPresetId: typeof raw.ucPresetId === 'string' ? raw.ucPresetId : fallback.ucPresetId,
     panels: Array.isArray(raw.panels) ? raw.panels : fallback.panels,
+    aiPage: normalizeAiPage(
+      raw.aiPage,
+      Number.isFinite(width) && width >= 256 && width <= 4096 ? Math.round(width) : fallback.width,
+      Number.isFinite(height) && height >= 256 && height <= 4096 ? Math.round(height) : fallback.height,
+      Number.isFinite(Number(raw.gutterPx)) ? Math.max(0, Math.min(64, Number(raw.gutterPx))) : fallback.gutterPx,
+    ),
     strokes: Array.isArray(raw.strokes) ? raw.strokes : [],
     bubbles: Array.isArray(raw.bubbles) ? raw.bubbles : [],
     texts: Array.isArray(raw.texts) ? raw.texts : [],

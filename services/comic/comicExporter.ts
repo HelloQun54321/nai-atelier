@@ -280,10 +280,14 @@ export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob>
   ctx.fillStyle = page.backgroundColor || '#ffffff';
   ctx.fillRect(0, 0, page.width, page.height);
 
-  // 预加载分镜格图片
+  // 预加载分镜格图片（含 AI 整页成图）
   const imageMap = new Map<string, HTMLImageElement>();
-  await Promise.all(
-    page.panels
+  let aiWholeImage: HTMLImageElement | null = null;
+  await Promise.all([
+    ...(page.creationMode === 'ai-page' && page.aiPage?.generatedPageImage?.url
+      ? [loadImageElement(page.aiPage.generatedPageImage.url).then(img => { aiWholeImage = img; }).catch(() => {})]
+      : []),
+    ...page.panels
       .filter(panel => panel.image?.url)
       .map(async panel => {
         try {
@@ -293,7 +297,7 @@ export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob>
           // 某张外链图片失败时不阻塞整页导出
         }
       }),
-  );
+  ]);
 
   const orderedLayers = (['panels', 'drawing', 'bubbles', 'stickers'] as ComicLayerId[])
     .filter(id => page.layers[id]?.visible !== false)
@@ -301,6 +305,16 @@ export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob>
 
   for (const layerId of orderedLayers) {
     if (layerId === 'panels') {
+      if (page.creationMode === 'ai-page') {
+        if (aiWholeImage) {
+          const img = aiWholeImage as HTMLImageElement;
+          const coverScale = Math.max(page.width / img.naturalWidth, page.height / img.naturalHeight);
+          const drawW = img.naturalWidth * coverScale;
+          const drawH = img.naturalHeight * coverScale;
+          ctx.drawImage(img, (page.width - drawW) / 2, (page.height - drawH) / 2, drawW, drawH);
+        }
+        continue;
+      }
       const sortedPanels = [...page.panels].sort((a, b) => a.zIndex - b.zIndex);
       for (const panel of sortedPanels) {
         if (panel.points.length < 3) continue;
@@ -513,10 +527,12 @@ export const exportComicPageAndArchive = async (
 
   // 已确认决策：导出整页 PNG 时同步归档一份整页成品到生成历史，方便回看、收藏与后续书架引用保护
   try {
-    const combinedPrompt = [
-      page.globalBasePrompt,
-      ...page.panels.map(panel => panel.prompt).filter(Boolean),
-    ].filter(Boolean).join(' | ');
+    const combinedPrompt = page.creationMode === 'ai-page'
+      ? [page.globalBasePrompt, page.aiPage.storyPrompt].filter(Boolean).join(' | ')
+      : [
+        page.globalBasePrompt,
+        ...page.panels.map(panel => panel.prompt).filter(Boolean),
+      ].filter(Boolean).join(' | ');
     const saved = await localHistory.add(
       blob,
       combinedPrompt || `[漫画整页] ${page.title || '未命名漫画页'}`,

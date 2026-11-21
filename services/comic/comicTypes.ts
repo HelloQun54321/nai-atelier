@@ -170,6 +170,39 @@ export interface ComicPaperPreset {
   height: number;
 }
 
+export type ComicAiZoneSplitMode = 'auto' | 'single' | 'dual-vertical' | 'dual-horizontal';
+
+export interface ComicAiGuidePanel {
+  id: string;
+  label: string;
+  summary: string;
+  /** 相对整页的半透明构图引导区（0..1）。 */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ComicAiGeneratedPageImage {
+  url: string;
+  historyId?: string;
+  width: number;
+  height: number;
+  zoneHistoryIds?: string[];
+}
+
+export interface ComicAiPagePlan {
+  storyPrompt: string;
+  targetPanelCount: number;
+  castCharacterIds: string[];
+  splitMode: ComicAiZoneSplitMode;
+  layoutHint: string;
+  guidePanels: ComicAiGuidePanel[];
+  anchors: ComicAnchor[];
+  generatedPageImage?: ComicAiGeneratedPageImage;
+  showGuideOverlay: boolean;
+}
+
 export interface ComicPageDraft {
   version: 1;
   id: string;
@@ -195,6 +228,7 @@ export interface ComicPageDraft {
   qualityPresetId: string;
   ucPresetId: string;
   panels: ComicPanel[];
+  aiPage: ComicAiPagePlan;
   strokes: ComicStroke[];
   bubbles: ComicBubbleItem[];
   texts: ComicTextItem[];
@@ -206,6 +240,7 @@ export interface ComicPageDraft {
 
 export type ComicSelection =
   | { kind: 'panel'; id: string }
+  | { kind: 'ai-anchor'; id: string }
   | { kind: 'bubble'; id: string }
   | { kind: 'text'; id: string }
   | { kind: 'sticker'; id: string }

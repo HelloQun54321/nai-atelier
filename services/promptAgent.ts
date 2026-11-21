@@ -497,6 +497,39 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json() as Promise<{ keep?: boolean[]; prompt?: string }>;
   },
+  /** 漫画「AI 整页锚点编排」：复用当前已配置的创作助手模型，单次返回整页引导区与四类空间锚点 JSON。 */
+  planComicStoryboard: async (
+    input: import('./comic/comicStoryboardAgent.mjs').ComicStoryboardInput,
+  ): Promise<import('./comic/comicStoryboardAgent.mjs').ComicStoryboardResult> => {
+    const response = await fetch('/api/prompt-agent/comic-storyboard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (response.status === 404) {
+      // 兼容尚未重启旧后端进程的本地会话：自动回落到既有 tidy-prompt rewrite 通道解析同一份 JSON 编排
+      const { buildComicStoryboardSystemPrompt, buildComicStoryboardUserMessage, parseComicStoryboardResponse } =
+        await import('./comic/comicStoryboardAgent.mjs');
+      const fallback = await fetch('/api/prompt-agent/tidy-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instruction: buildComicStoryboardSystemPrompt(),
+          rewrite: true,
+          prompt: buildComicStoryboardUserMessage(input),
+        }),
+      });
+      if (!fallback.ok) return readError(fallback) as never;
+      const payload = await fallback.json() as { prompt?: string; provider?: string; model?: string };
+      return {
+        ...parseComicStoryboardResponse(payload.prompt || '', { dialogueMode: input.dialogueMode }),
+        provider: payload.provider,
+        model: payload.model,
+      };
+    }
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
   /**
    * 提示词／图片 → 当前目录候选（忠实提取，不是创作补全）。
    *

@@ -39,7 +39,10 @@ import {
   COMIC_V5_MODELS,
   evaluateAnchorGuard,
 } from '../../services/comic/comicPromptBuilder';
+import type { ComicAiZonePlan } from '../../services/comic/comicAiPageEngine';
 import type {
+  ComicAiPagePlan,
+  ComicAiZoneSplitMode,
   ComicAnchor,
   ComicAnchorKind,
   ComicBubbleItem,
@@ -64,16 +67,26 @@ export type ComicInspectorTab = 'panel' | 'style' | 'layers';
 
 interface ComicInspectorProps {
   draft: ComicPageDraft;
+  aiZonePlan: ComicAiZonePlan;
   activeTab: ComicInspectorTab;
   selection: ComicSelection;
   chains: PromptChain[];
   generatingPanelId: string | null;
+  planningAiStoryboard: boolean;
+  generatingAiPage: boolean;
+  aiGenerationStageText: string;
   generationStageText: string;
   estimatedCost: number;
+  aiEstimatedCost: number;
   onSelectTab: (tab: ComicInspectorTab) => void;
   onSelect: (selection: ComicSelection) => void;
   onQuickAddPanel: () => void;
   onUpdateDraft: (updater: (current: ComicPageDraft) => ComicPageDraft, commit?: boolean) => void;
+  onUpdateAiPage: (updater: (aiPage: ComicAiPagePlan) => ComicAiPagePlan, commit?: boolean) => void;
+  onPlanAiStoryboard: () => void;
+  onInitAiFromTemplate: () => void;
+  onConvertBubbleAnchorsToVector: () => void;
+  onGenerateAiPage: () => void;
   onApplyStyleChain: (chain: PromptChain) => void;
   onUpdatePanel: (panelId: string, updater: (panel: ComicPanel) => ComicPanel, commit?: boolean) => void;
   onDuplicatePanel: (panelId: string) => void;
@@ -133,18 +146,35 @@ const shortModelLabel = (id: ComicV5ModelId): string => {
   return 'High (23步)';
 };
 
+const SPLIT_MODE_OPTIONS: Array<{ id: ComicAiZoneSplitMode; label: string }> = [
+  { id: 'auto', label: '自动' },
+  { id: 'single', label: '单区' },
+  { id: 'dual-vertical', label: '上下双区' },
+  { id: 'dual-horizontal', label: '左右双区' },
+];
+
 export const ComicInspector: React.FC<ComicInspectorProps> = ({
   draft,
+  aiZonePlan,
   activeTab,
   selection,
   chains,
   generatingPanelId,
+  planningAiStoryboard,
+  generatingAiPage,
+  aiGenerationStageText,
   generationStageText,
   estimatedCost,
+  aiEstimatedCost,
   onSelectTab,
   onSelect,
   onQuickAddPanel,
   onUpdateDraft,
+  onUpdateAiPage,
+  onPlanAiStoryboard,
+  onInitAiFromTemplate,
+  onConvertBubbleAnchorsToVector,
+  onGenerateAiPage,
   onApplyStyleChain,
   onUpdatePanel,
   onDuplicatePanel,
@@ -245,6 +275,35 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
     setSelectedAnchorId(next.id);
   };
 
+  const addAnchorToAiPage = (kind: ComicAnchorKind, seed?: { label?: string; prompt?: string; negativePrompt?: string; sourceCharacterId?: string }) => {
+    const countOfKind = draft.aiPage.anchors.filter(a => a.kind === kind).length + 1;
+    // 默认落在新引导格或页面中段，略微错开防止重叠
+    const offset = (draft.aiPage.anchors.length % 5) * 0.06;
+    const next: ComicAnchor = {
+      id: createUuid(),
+      kind,
+      label: seed?.label || `${ANCHOR_META[kind].label} ${countOfKind}`,
+      prompt: seed?.prompt || '',
+      negativePrompt: seed?.negativePrompt || '',
+      x: clampAnchorCoord(0.32 + offset),
+      y: clampAnchorCoord(0.28 + offset),
+      enabled: true,
+      ...(kind === 'bubble' ? { bubbleShape: 'oval' as ComicBubbleShape, bubbleText: '' } : {}),
+      ...(seed?.sourceCharacterId ? { sourceCharacterId: seed.sourceCharacterId } : {}),
+    };
+    onUpdateAiPage(cur => ({
+      ...cur,
+      showGuideOverlay: true,
+      anchors: [...cur.anchors, next],
+    }), true);
+    onSelect({ kind: 'ai-anchor', id: next.id });
+  };
+
+  const allCharacterChains = useMemo(
+    () => chains.filter(item => item.type === 'character'),
+    [chains],
+  );
+
   const handleSelectHistoryImage = (item: LocalGenItem) => {
     if (!activePanel) return;
     onUpdatePanel(activePanel.id, current => ({
@@ -273,7 +332,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
         className="grid flex-none grid-cols-3 border-b border-gray-200/90 bg-white/95 dark:border-gray-800/90 dark:bg-gray-900/95"
       >
         {([
-          { id: 'panel', label: '分镜生图', icon: Wand2 },
+          { id: 'panel', label: draft.creationMode === 'ai-page' ? 'AI 整页编排' : '分镜生图', icon: draft.creationMode === 'ai-page' ? Sparkles : Wand2 },
           { id: 'style', label: '画风设定', icon: Palette },
           { id: 'layers', label: overlayCount > 0 ? `嵌字·图层 (${overlayCount})` : '嵌字·图层', icon: Layers },
         ] as Array<{ id: ComicInspectorTab; label: string; icon: React.ElementType }>).map(tab => {
@@ -296,8 +355,448 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
         })}
       </div>
 
-      {/* ==================== 标签 1：分镜生图（默认首页） ==================== */}
-      {activeTab === 'panel' && (
+      {/* ==================== 标签 1A：AI 整页锚点编排工作台（第二期核心） ==================== */}
+      {activeTab === 'panel' && draft.creationMode === 'ai-page' && (() => {
+        const aiPage = draft.aiPage;
+        const selectedAiAnchor = selection?.kind === 'ai-anchor'
+          ? aiPage.anchors.find(a => a.id === selection.id)
+          : undefined;
+        const bubbleAnchorCount = aiPage.anchors.filter(a => a.enabled && a.kind === 'bubble').length;
+        const anyGenerating = Boolean(generatingPanelId) || generatingAiPage;
+
+        return (
+          <>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3.5 pb-6 text-xs">
+              {/* 剧情脚本与 AI 编排区 */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-gray-800 dark:text-gray-100">{t('本页剧情与分镜编排')}</span>
+                  <span className="text-[11px] text-gray-400">{t('调用创作助手，不消耗生图额度')}</span>
+                </div>
+                <textarea
+                  rows={3}
+                  aria-label={t('漫画整页剧情描述')}
+                  value={aiPage.storyPrompt}
+                  onChange={e => onUpdateAiPage(cur => ({ ...cur, storyPrompt: e.target.value }), false)}
+                  placeholder={t('例如：放学后的雨中教室，黑发少女递给银发少年一把透明雨伞，少年愣住随后脸红，最后两人并肩走入雨幕（4 格）')}
+                  className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                />
+
+                {/* 目标格数快选 */}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">{t('目标格数')}</span>
+                  <div className="flex items-center gap-1">
+                    {[3, 4, 5, 6, 8].map(count => (
+                      <button
+                        key={count}
+                        type="button"
+                        aria-pressed={aiPage.targetPanelCount === count}
+                        onClick={() => onUpdateAiPage(cur => ({ ...cur, targetPanelCount: count }), true)}
+                        className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${aiPage.targetPanelCount === count ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                      >
+                        {count}{t('格')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 本页出场角色库快选（勾中后 AI 自动代入角色外观串） */}
+                {allCharacterChains.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="block text-[11px] font-medium text-gray-500 dark:text-gray-400">{t('本页出场角色（可选，自动带入角色库外观）')}</span>
+                    <div className="flex flex-wrap gap-1">
+                      {allCharacterChains.slice(0, 12).map(char => {
+                        const checked = aiPage.castCharacterIds.includes(char.id);
+                        return (
+                          <button
+                            key={char.id}
+                            type="button"
+                            aria-pressed={checked}
+                            onClick={() => onUpdateAiPage(cur => ({
+                              ...cur,
+                              castCharacterIds: checked
+                                ? cur.castCharacterIds.filter(id => id !== char.id)
+                                : [...cur.castCharacterIds, char.id],
+                            }), true)}
+                            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium transition ${checked ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                          >
+                            {checked && <Check className="h-3 w-3" />}
+                            <span className="max-w-24 truncate">{char.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={planningAiStoryboard || !aiPage.storyPrompt.trim()}
+                    onClick={onPlanAiStoryboard}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow-xs transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {planningAiStoryboard ? <InlineSpinner className="h-3.5 w-3.5 text-white" /> : <Sparkles className="h-3.5 w-3.5" />}
+                    <span>{planningAiStoryboard ? t('AI 编排中…') : t('AI 编排分镜与锚点')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={planningAiStoryboard}
+                    onClick={onInitAiFromTemplate}
+                    title={t('按当前目标格数重置引导区（不调用大模型）')}
+                    className="inline-flex flex-none items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-[11px] font-medium text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                  >
+                    {t('重置引导格')}
+                  </button>
+                </div>
+              </div>
+
+              {/* 分区策略、槽位护栏与引导层控制 */}
+              <div className="space-y-2 border-t border-gray-200/80 pt-3.5 dark:border-gray-800">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-gray-800 dark:text-gray-100">{t('分区策略与槽位护栏')}</span>
+                  <span className={`text-[11px] font-semibold ${aiZonePlan.overallLevel === 'hard-exceeded' ? 'text-red-500' : aiZonePlan.overallLevel === 'soft-warning' ? 'text-amber-500' : 'text-gray-500 dark:text-gray-400'}`}>
+                    {aiZonePlan.totalPanels}{t('格')} · {aiZonePlan.totalActiveAnchors}{t('槽')} · {aiZonePlan.zones.length}{t('区')}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-4 gap-1" role="group" aria-label={t('AI 整页分区方式')}>
+                  {SPLIT_MODE_OPTIONS.map(opt => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      aria-pressed={aiPage.splitMode === opt.id}
+                      onClick={() => onUpdateAiPage(cur => ({ ...cur, splitMode: opt.id }), true)}
+                      className={`rounded-md border px-1.5 py-1 text-[11px] font-semibold transition ${aiPage.splitMode === opt.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                    >
+                      {t(opt.label)}
+                    </button>
+                  ))}
+                </div>
+
+                {aiZonePlan.autoSplitTriggered && (
+                  <p className="rounded-lg bg-indigo-50/90 px-2.5 py-1.5 text-[11px] text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">
+                    {t('格数或槽位超过单区甜点区，已自动拆为 2 张免费 Opus 区依次生成并无缝拼合。')}
+                  </p>
+                )}
+                {aiZonePlan.recommendDualSplit && (
+                  <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                    {t('当前强制单区已超过甜点密度，建议切换「自动」或双区以保持人物清晰度。')}
+                  </p>
+                )}
+                {aiZonePlan.overallLevel === 'soft-warning' && (
+                  <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                    {t('存在单个分区超过 12 个锚点，人物可能缩为 Q 版；可切双区或精简次要锚点。')}
+                  </p>
+                )}
+                {aiZonePlan.overallLevel === 'hard-exceeded' && (
+                  <p className="rounded-lg bg-red-50 px-2.5 py-1.5 text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                    {t('单个分区超过 24 槽硬上限，请切换双区或停用部分锚点后再生成。')}
+                  </p>
+                )}
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onUpdateAiPage(cur => ({ ...cur, showGuideOverlay: !cur.showGuideOverlay }), false)}
+                    className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                  >
+                    {aiPage.showGuideOverlay ? <Eye className="h-3 w-3 text-indigo-500" /> : <EyeOff className="h-3 w-3 text-gray-400" />}
+                    <span>{aiPage.showGuideOverlay ? t('隐藏引导与锚点') : t('显示引导与锚点')}</span>
+                  </button>
+                  {bubbleAnchorCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={onConvertBubbleAnchorsToVector}
+                      className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                    >
+                      <MessageCircle className="h-3 w-3 text-amber-500" />
+                      <span>{t('气泡点转矢量嵌字')} ({bubbleAnchorCount})</span>
+                    </button>
+                  )}
+                  {aiPage.generatedPageImage?.url && (
+                    <button
+                      type="button"
+                      onClick={() => onUpdateAiPage(cur => ({ ...cur, generatedPageImage: undefined, showGuideOverlay: true }), true)}
+                      className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"
+                    >
+                      <Trash2 className="h-3 w-3" /> {t('清成图')}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 整页四类空间锚点（与画布可拖圆点双向联动） */}
+              <div className="space-y-2.5 border-t border-gray-200/80 pt-3.5 dark:border-gray-800">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-gray-800 dark:text-gray-100">{t('整页四类空间锚点')}</span>
+                  <span className="text-[11px] text-gray-400">{t('画布上可直接拖拽坐标')}</span>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => addAnchorToAiPage('character')}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200/90 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
+                    {t('角色')}
+                  </button>
+                  {hasAnyCharacterChains && (
+                    <button
+                      type="button"
+                      onClick={() => setCharacterPickerOpen(open => !open)}
+                      className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${characterPickerOpen ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/50 dark:text-indigo-200' : 'border-gray-200/90 bg-white text-gray-700 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200'}`}
+                    >
+                      <UserPlus className="h-3 w-3 text-blue-500" /> {t('角色库')}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => addAnchorToAiPage('scene')}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200/90 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />
+                    {t('空镜/道具')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addAnchorToAiPage('bubble')}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200/90 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden="true" />
+                    {t('气泡点')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addAnchorToAiPage('inset')}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200/90 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-purple-500" aria-hidden="true" />
+                    {t('特写叠框')}
+                  </button>
+                </div>
+
+                {characterPickerOpen && hasAnyCharacterChains && (
+                  <div className="space-y-1.5 rounded-lg border border-blue-200 bg-white p-1.5 dark:border-blue-800 dark:bg-gray-900">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        value={charQuery}
+                        onChange={e => setCharQuery(e.target.value)}
+                        placeholder={t('搜索角色库加入整页锚点…')}
+                        className="w-full rounded border border-gray-200 bg-gray-50 py-1 pl-6 pr-2 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                      />
+                    </div>
+                    <div className="max-h-36 space-y-1 overflow-y-auto">
+                      {characterChains.map(char => (
+                        <button
+                          key={char.id}
+                          type="button"
+                          onClick={() => {
+                            addAnchorToAiPage('character', {
+                              label: char.name,
+                              prompt: [char.basePrompt, char.variableValues?.subject].filter(Boolean).join(', '),
+                              negativePrompt: char.negativePrompt || '',
+                              sourceCharacterId: char.id,
+                            });
+                            setCharacterPickerOpen(false);
+                            setCharQuery('');
+                          }}
+                          className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-[11px] hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                        >
+                          <span className="truncate font-medium text-gray-800 dark:text-gray-100">{char.name}</span>
+                          <span className="ml-2 flex-none text-blue-600 dark:text-blue-400">+ {t('加入')}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {aiPage.anchors.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-[11px] text-gray-400 dark:border-gray-700">
+                    {t('输入剧情点「AI 编排分镜与锚点」，或直接点击上方按钮手动放置整页锚点')}
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {aiPage.anchors.map((anchor, idx) => {
+                      const isExpanded = selectedAiAnchor?.id === anchor.id || (!selectedAiAnchor && idx === 0);
+                      return (
+                        <div
+                          key={anchor.id}
+                          onClick={() => onSelect({ kind: 'ai-anchor', id: anchor.id })}
+                          className={`rounded-lg border p-2 transition ${isExpanded ? 'border-indigo-400 bg-white dark:border-indigo-500 dark:bg-gray-900' : 'border-gray-200/80 bg-white/70 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900/50'}`}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="checkbox"
+                              aria-label={t('启用锚点')}
+                              checked={anchor.enabled}
+                              onClick={e => e.stopPropagation()}
+                              onChange={e => onUpdateAiPage(cur => ({
+                                ...cur,
+                                anchors: cur.anchors.map(a => a.id === anchor.id ? { ...a, enabled: e.target.checked } : a),
+                              }), true)}
+                              className="rounded accent-indigo-600"
+                            />
+                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${ANCHOR_META[anchor.kind].badgeClass}`}>
+                              {idx + 1} · {t(ANCHOR_META[anchor.kind].label)}
+                            </span>
+                            <input
+                              type="text"
+                              value={anchor.label}
+                              onClick={e => e.stopPropagation()}
+                              onChange={e => onUpdateAiPage(cur => ({
+                                ...cur,
+                                anchors: cur.anchors.map(a => a.id === anchor.id ? { ...a, label: e.target.value } : a),
+                              }), false)}
+                              className="min-w-0 flex-1 bg-transparent text-xs font-medium text-gray-800 outline-none dark:text-gray-100"
+                            />
+                            <span className="font-mono text-[10px] text-gray-400">({anchor.x.toFixed(2)}, {anchor.y.toFixed(2)})</span>
+                            <button
+                              type="button"
+                              aria-label={t('删除整页锚点')}
+                              onClick={e => {
+                                e.stopPropagation();
+                                onUpdateAiPage(cur => ({
+                                  ...cur,
+                                  anchors: cur.anchors.filter(a => a.id !== anchor.id),
+                                }), true);
+                              }}
+                              className="rounded p-0.5 text-gray-400 hover:text-red-500"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+
+                          {isExpanded && (
+                            <div className="mt-2 space-y-1.5">
+                              <textarea
+                                rows={2}
+                                value={anchor.prompt}
+                                onChange={e => onUpdateAiPage(cur => ({
+                                  ...cur,
+                                  anchors: cur.anchors.map(a => a.id === anchor.id ? { ...a, prompt: e.target.value } : a),
+                                }), false)}
+                                placeholder={anchor.kind === 'bubble' ? t('气泡补充说明（如 tail pointing left）') : t('输入该锚点的英文外观、动作、表情或物件提示词')}
+                                className="w-full rounded border border-gray-200 bg-gray-50/70 p-1.5 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                              />
+                              {anchor.kind === 'bubble' && (
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <select
+                                    value={anchor.bubbleShape || 'oval'}
+                                    onChange={e => onUpdateAiPage(cur => ({
+                                      ...cur,
+                                      anchors: cur.anchors.map(a => a.id === anchor.id ? { ...a, bubbleShape: e.target.value as ComicBubbleShape } : a),
+                                    }), true)}
+                                    className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                                  >
+                                    {BUBBLE_SHAPES.map(shape => <option key={shape.id} value={shape.id}>{t(shape.label)}</option>)}
+                                  </select>
+                                  <input
+                                    type="text"
+                                    value={anchor.bubbleText || ''}
+                                    onChange={e => onUpdateAiPage(cur => ({
+                                      ...cur,
+                                      anchors: cur.anchors.map(a => a.id === anchor.id ? { ...a, bubbleText: e.target.value } : a),
+                                    }), false)}
+                                    placeholder={draft.dialogueMode === 'ai-text' ? t('短台词（直出）') : t('备用台词（可转矢量）')}
+                                    className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* 折叠细节：构图总述与引导区微调 */}
+              <details className="border-t border-gray-200/80 pt-3.5 dark:border-gray-800">
+                <summary className="cursor-pointer select-none font-bold text-gray-700 dark:text-gray-200">
+                  {t('整页版式词与构图引导区')} ({aiPage.guidePanels.length})
+                </summary>
+                <div className="mt-2.5 space-y-2">
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] text-gray-500">{t('极简版式总词（不写单格剧情，防止串格）')}</span>
+                    <input
+                      type="text"
+                      value={aiPage.layoutHint}
+                      onChange={e => onUpdateAiPage(cur => ({ ...cur, layoutHint: e.target.value }), false)}
+                      placeholder="4-panel manga page, clean white gutters"
+                      className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                    />
+                  </label>
+                  <div className="space-y-1">
+                    {aiPage.guidePanels.map((gp, idx) => (
+                      <div key={gp.id} className="flex items-center gap-1.5 rounded border border-gray-200/80 bg-gray-50/70 px-2 py-1 dark:border-gray-800 dark:bg-gray-800/50">
+                        <span className="font-mono text-[10px] font-bold text-indigo-500">{String(idx + 1).padStart(2, '0')}</span>
+                        <input
+                          type="text"
+                          value={gp.summary}
+                          onChange={e => onUpdateAiPage(cur => ({
+                            ...cur,
+                            guidePanels: cur.guidePanels.map(item => item.id === gp.id ? { ...item, summary: e.target.value } : item),
+                          }), false)}
+                          placeholder={gp.label}
+                          className="min-w-0 flex-1 bg-transparent text-[11px] text-gray-700 outline-none dark:text-gray-200"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            {/* 底部常驻「生成 AI 整页」主操作栏 */}
+            <div className="flex-none border-t border-gray-200 bg-white/95 p-3 dark:border-gray-800 dark:bg-gray-900/95">
+              <div className="mb-1.5 flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
+                <span>
+                  {aiZonePlan.zones.length === 1
+                    ? `${t('免费单区')}：${aiZonePlan.zones[0].resolution.width} × ${aiZonePlan.zones[0].resolution.height}`
+                    : `${t('双区无缝拼合')}：2 × ${t('免费档')}`}
+                </span>
+                <span>{formatGenerationCostLabel(aiEstimatedCost, draft.v5Model)}</span>
+              </div>
+              {generatingAiPage ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-bold text-white">
+                    <InlineSpinner className="h-3.5 w-3.5 text-white" />
+                    <span className="truncate">{aiGenerationStageText || generationStageText || t('整页生成中…')}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onCancelGeneration}
+                    className="rounded-xl border border-red-300 bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
+                  >
+                    {t('停止')}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={anyGenerating || aiZonePlan.overallLevel === 'hard-exceeded'}
+                  onClick={onGenerateAiPage}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  <span>{t('生成 AI 整页')}</span>
+                  <span className="rounded-md bg-white/15 px-1.5 py-0.5 text-[11px] font-medium">
+                    {aiZonePlan.zones.length === 1 ? t('1 张直出') : t('2 区拼合')}
+                  </span>
+                </button>
+              )}
+            </div>
+          </>
+        );
+      })()}
+
+      {/* ==================== 标签 1B：手动逐格生图 ==================== */}
+      {activeTab === 'panel' && draft.creationMode === 'manual' && (
         <>
           {/* 顶部常驻分镜格快速切换条 */}
           <div className="flex flex-none items-center gap-1.5 overflow-x-auto border-b border-gray-200/80 bg-gray-50/50 px-3.5 py-2 dark:border-gray-800/80 dark:bg-gray-950/30">
@@ -327,14 +826,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
               <Plus className="h-3.5 w-3.5" />
             </button>
           </div>
-
-          {draft.creationMode === 'ai-page' && (
-            <div className="mx-3 mt-2.5 flex-none rounded-xl border border-indigo-200/80 bg-indigo-50/70 px-2.5 py-2 text-[11px] text-indigo-800 dark:border-indigo-800/80 dark:bg-indigo-950/40 dark:text-indigo-200">
-              <div className="flex items-center gap-1 font-bold">
-                <Sparkles className="h-3 w-3" /> {t('AI 整页编排将在第二期接入此处，当前可先逐格生成')}
-              </div>
-            </div>
-          )}
 
           {activePanel ? (() => {
             const resolution = getPanelTargetResolution(activePanel, draft.width, draft.height);
