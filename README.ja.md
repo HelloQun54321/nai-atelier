@@ -78,4 +78,4 @@ npm run dev:local
 ## 連携と謝辞
 
 - SillyTavern 拡張 [st-chatu8](https://github.com/damoshen123/st-chatu8) とのスタイルチェーン・Vibe・履歴ゼロコピー同期および `st-chatu` 共有待機列に対応（詳細は [ブリッジガイド](./docs/SILLYTAVERN_BRIDGE.md)）。
-- [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager)（MIT）、[@ffdkj](https://github.com/ffdkj)、[@damoshen123/st-chatu8](https://github.com/damoshen123/st-chatu8)、[@sdnwls/nai-style-lab](https://github.com/sdnwls/nai-style-lab)、[@yexi-by/dsh-unrestricted](https://github.com/yexi-by/dsh-unrestricted)、[@clanso](https://github.com/clanso)、[SmilingWolf WD Tagger](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3) に感謝いたします。
+- [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager)（MIT）、[@ffdkj](https://github.com/ffdkj)、[@damoshen123/st-chatu8](https://github.com/damoshen123/st-chatu8)、[@baibai-git/ST-BaiBai-Image](https://github.com/baibai-git/ST-BaiBai-Image)、[@sdnwls/nai-style-lab](https://github.com/sdnwls/nai-style-lab)、[@yexi-by/dsh-unrestricted](https://github.com/yexi-by/dsh-unrestricted)、[@clanso](https://github.com/clanso)、[SmilingWolf WD Tagger](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3) に感謝いたします。

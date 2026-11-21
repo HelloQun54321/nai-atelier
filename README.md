@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.215.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.215.2-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -317,7 +317,7 @@ flowchart TD
 
 ## 🔗 生态互通与扩展（st-chatu8 联动）
 
-- **智慧姬双向资产互通（SillyTavern 联动）**：内置专属酒馆扩展，可将工坊精选的风格串、封面与永久 Vibe 同步至 SillyTavern 的 [st-chatu8](https://github.com/damoshen123/st-chatu8) 插件，并零拷贝索引酒馆生成的历史原图。详见 [SillyTavern 桥接指南](./docs/SILLYTAVERN_BRIDGE.md)。
+- **酒馆双向资产互通（SillyTavern / TauriTavern 联动）**：内置共用酒馆扩展，支持原生 SillyTavern 与 TauriTavern，可将工坊精选的风格串、封面与永久 Vibe 同步至 [st-chatu8（智慧姬）](https://github.com/damoshen123/st-chatu8) 与 [ST-BaiBai-Image（柏宝绘）](https://github.com/baibai-git/ST-BaiBai-Image)，并零拷贝索引酒馆生成的历史原图。详见 [SillyTavern 桥接指南](./docs/SILLYTAVERN_BRIDGE.md)。
 - **多人拼车公共队列与生图中转**：支持按 Key 配置 `st-chatu` 协议公共排队（仅用 Key 指纹协调顺序，支持查看前方人数与自定义 15 字个性语，不上传原 Key 与提示词），也支持填入兼容 NovelAI 接口的第三方生图中转地址。
 
 ---
@@ -350,6 +350,7 @@ flowchart TD
 - 源自 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 二次开发并独立维护，遵循 [MIT 许可证](./LICENSE)；
 - 感谢 [@ffdkj](https://github.com/ffdkj) 维护的 [Danbooru 中英对照翻译数据库](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)；
 - 感谢 [@damoshen123](https://github.com/damoshen123) 的 [st-chatu8](https://github.com/damoshen123/st-chatu8)：智慧姬资产互通与拼车公共排队协议深度参考了该项目；
+- 感谢 [@baibai-git](https://github.com/baibai-git) 的 [ST-BaiBai-Image（柏宝绘）](https://github.com/baibai-git/ST-BaiBai-Image)：柏宝绘的画师串、Vibe 与生图历史零拷贝联动适配参考了该项目的存储与侧写元数据约定；
 - 感谢 [@sdnwls](https://github.com/sdnwls) 的 [nai-style-lab](https://github.com/sdnwls/nai-style-lab)：Roll 串的随机抽卡与画风探索体验受该项目启发并结合工坊独立实现；
 - 感谢 [@yexi-by](https://github.com/yexi-by) 的 [dsh-unrestricted](https://github.com/yexi-by/dsh-unrestricted)：创作助手「破限模式」的交付契约设计参考了该项目；
 - 感谢 [@clanso](https://github.com/clanso) 在 [#21](https://github.com/HelloQun54321/nai-atelier/pull/21) 中贡献的画师统计解析与收藏状态修复；
