@@ -7,7 +7,8 @@ import { mapLocalHistoryRow } from './historyRoutes';
 import { parseImageData, exactArrayBuffer, ensureVibeSchema, ensureCharacterReferenceSchema } from './vibeRoutes';
 
 const digest = async (value:string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),n=>n.toString(16).padStart(2,'0')).join('');
-type Issue = { id: string; reasons: string[] };
+type CoverRef = { id: string; name: string; type: string };
+type Issue = { id: string; reasons: string[]; coverRefs?: CoverRef[] };
 const columns = HISTORY_COLUMNS.split(',');
 const version = (alias: string) => `json_array(${columns.map(column => `${alias}.${column}`).join(',')})`;
 const rowVersion = (row: any) => JSON.stringify(columns.map(column => row[column] ?? null));
@@ -52,7 +53,6 @@ const documentReference = (name: keyof typeof documentSources, indexed: boolean)
 const referenceAsset = (table: string) => `EXISTS(SELECT 1 FROM ${table} a WHERE a.original_key = NULLIF(t.image_key,'') OR a.thumbnail_key = NULLIF(t.image_key,''))`;
 const buildReferenceChecks = (indexed = false) => Object.entries({
  favorite: 't.is_favorite = 1',
- prompt_library: 'EXISTS(SELECT 1 FROM prompt_library_links WHERE history_id = t.id)',
  collection: `EXISTS(SELECT 1 FROM inspirations i WHERE i.image_key = NULLIF(t.image_key,'') OR i.image_url IN (${targetUrls})
   OR i.source_url IN (${targetUrls}) OR (i.source_type IN ('history','local-history') AND i.source_id = t.id)) OR ${documentReference('collection', indexed)}`,
  chain: `EXISTS(SELECT 1 FROM chains WHERE preview_image IN (${targetUrls})) OR ${documentReference('chain', indexed)}`,
@@ -96,6 +96,34 @@ const previewReferenceDetailsQuery = `${referenceContext(`
  invalid_history AS MATERIALIZED (SELECT d.id FROM local_generation_history d WHERE ${invalidDocument('d.params')} LIMIT 2)
  SELECT t.id, ${referenceFlags(buildReferenceChecks(true))} FROM target t`;
 const referenceArgs = (row: any) => [`/api/assets/${encodeURIComponent(row.image_key)}`, `/api/assets/${String(row.image_key).split('/').map(encodeURIComponent).join('/')}`];
+const coverRefsQuery = `${referenceContext(`
+ SELECT json_extract(q.value, '$[0]') AS id, json_extract(q.value, '$[1]') AS image_key,
+  json_extract(q.value, '$[2]') AS external_id, json_extract(q.value, '$[3]') AS encoded_url,
+  json_extract(q.value, '$[4]') AS segmented_url
+ FROM json_each(?) q
+`, 't.encoded_url', 't.segmented_url')}
+ SELECT t.id AS history_id, c.id AS id, COALESCE(c.name, '') AS name, COALESCE(c.type, '') AS type
+ FROM target t JOIN chains c ON EXISTS (
+  SELECT 1 FROM urls u WHERE u.history_id = t.id AND c.preview_image = u.url
+ )
+ ORDER BY c.updated_at DESC, c.id ASC`;
+async function loadCoverRefs(db: D1Database, rows: any[]): Promise<Map<string, CoverRef[]>> {
+ const map = new Map<string, CoverRef[]>();
+ if (!rows.length) return map;
+ try {
+  const payload = JSON.stringify(rows.map(row => [row.id, row.image_key || '', row.external_id || null, ...referenceArgs(row)]));
+  const { results } = await db.prepare(coverRefsQuery).bind(payload)
+   .all<{ history_id: string; id: string; name: string; type: string }>();
+  for (const row of results || []) {
+   const list = map.get(row.history_id) || [];
+   if (list.length < 10) list.push({ id: String(row.id), name: String(row.name || ''), type: String(row.type || '') });
+   map.set(row.history_id, list);
+  }
+ } catch {
+  // 附带封面条目名称失败不削弱原有引用保护。
+ }
+ return map;
+}
 const referenceStatement = (db: D1Database, row: any) => db.prepare(referenceDetailsQuery).bind(row.id, row.user_id, ...referenceArgs(row));
 const reasonsFromFlags = (flags?: Record<string, unknown> | null) => flags
  ? referenceChecks.filter(([reason]) => flags[reason] === 1).map(([reason]) => reason)
@@ -107,6 +135,8 @@ async function checkedReferenceReasons(db: D1Database, row: any): Promise<string
  try { return await referenceReasons(db, row); }
  catch { return ['reference_check_failed']; }
 }
+const issueWithCoverRefs = (id: string, reasons: string[], coverRefs?: CoverRef[]): Issue =>
+ coverRefs?.length ? { id, reasons, coverRefs } : { id, reasons };
 export function recycleResult(operation: 'move'|'restore'|'purge', requestedCount: number, completedIds: string[], skipped: Issue[] = [], failed: Issue[] = [], warnings: Issue[] = []) {
  const completedCount = completedIds.length, skippedCount = skipped.length, failedCount = failed.length;
  const outcome = !requestedCount ? 'noop' : completedCount === requestedCount ? 'success' : completedCount ? 'partial' : failedCount ? 'failed' : 'blocked';
@@ -124,7 +154,11 @@ export async function moveHistoryRows(ctx: RouteContext, rows: any[], protectedI
    const row = await db.prepare('SELECT * FROM local_generation_history WHERE id = ? AND user_id = ?').bind(input.id,currentUser.id).first<any>();
    if (!row || (input._version ? await digest(rowVersion(row))!==input._version : rowVersion(row)!==rowVersion(input))) { skipped.push({id:input.id,reasons:['source_changed']}); continue; }
    const protectedBy = await checkedReferenceReasons(db, row);
-   if (protectedBy.length) { skipped.push({id:row.id,reasons:protectedBy}); continue; }
+   if (protectedBy.length) {
+    const coverRefs = protectedBy.includes('chain') ? (await loadCoverRefs(db, [row])).get(row.id) : undefined;
+    skipped.push(issueWithCoverRefs(row.id, protectedBy, coverRefs));
+    continue;
+   }
    const result = await db.batch([
     db.prepare(`INSERT INTO local_generation_recycle_bin (${HISTORY_COLUMNS},moved_at,move_nonce) SELECT ${columns.map(c=>'h.'+c).join(',')},?,? FROM local_generation_history h WHERE h.id = ? AND h.user_id = ? AND ${version('h')} = ? AND NOT EXISTS(${referenceQuery})`).bind(Date.now(),crypto.randomUUID(),row.id,currentUser.id,rowVersion(row),...referenceArgs(row)),
     db.prepare('DELETE FROM local_generation_history WHERE id = ? AND user_id = ? AND changes() = 1').bind(row.id,currentUser.id),
@@ -181,10 +215,12 @@ async function previewRecycleCandidates(ctx: RouteContext, ids: string[], protec
     for (const row of checkable) reasons.set(row.id, await checkedReferenceReasons(ctx.db, row));
    }
   }
+  const chainSkipped = checkable.filter(row => reasons.get(row.id)?.includes('chain'));
+  const coverRefsByHistory = chainSkipped.length ? await loadCoverRefs(ctx.db, chainSkipped) : new Map<string, CoverRef[]>();
   for (const row of rows) {
    const why = row._missing ? ['not_found'] : protectedIds.has(row.id) ? ['favorite'] : reasons.get(row.id) ?? ['not_found'];
    if (why.length) {
-    skipped.push({ id: row.id, reasons: why });
+    skipped.push(issueWithCoverRefs(row.id, why, coverRefsByHistory.get(row.id)));
    } else {
     allowed.push({ id: row.id, external_source: row.external_source, external_id: row.external_id, _version: await digest(rowVersion(row)) });
    }

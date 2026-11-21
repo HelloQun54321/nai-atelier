@@ -963,3 +963,28 @@ it('移动确认在途时批量收藏入口禁用，不能在执行后补发收�
     expect((within(toolbar).getByRole('button', { name: '收藏选中' }) as HTMLButtonElement).disabled).toBe(false);
     expect(localHistory.moveToRecycleBin).not.toHaveBeenCalled();
 });
+
+it('历史图被用作提示词库或风格串封面时，预览确认与移入结果均明确展示引用条目名称', async () => {
+    const { cards, notify } = await setup();
+    const skipped = [{
+        id: items[0].id,
+        reasons: ['chain'],
+        coverRefs: [
+            { id: 'lib-1', name: '月下长发', type: 'appearance' },
+            { id: 'style-1', name: '复古赛璐璐', type: 'style' },
+        ],
+    }];
+    vi.mocked(localHistory.previewMove).mockResolvedValueOnce({
+        previewToken: 'cover-token', expiresAt: Date.now() + 60000, requestedCount: 1, movableCount: 0, skippedCount: 1, skipped,
+    });
+    vi.mocked(localHistory.moveToRecycleBin).mockResolvedValueOnce({
+        operation: 'move', requestedCount: 1, completedCount: 0, completedIds: [], skippedCount: 1, failedCount: 0,
+        movedCount: 0, restoredCount: 0, purgedCount: 0, warnings: [], skipped, failed: [],
+        success: false, ok: false, outcome: 'blocked', partial: false, deletedCount: 0,
+    });
+    confirmAction.mockResolvedValueOnce(true);
+    fireEvent.click(within(cards[0]).getByRole('button', { name: '移入回收站' }));
+    await waitFor(() => expect(confirmAction).toHaveBeenCalledOnce());
+    expect(confirmAction.mock.calls[0][0].message).toContain('已被用作封面（提示词库「月下长发」、风格串「复古赛璐璐」）');
+    await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.stringContaining('已被用作封面（提示词库「月下长发」、风格串「复古赛璐璐」）'), 'error'));
+});

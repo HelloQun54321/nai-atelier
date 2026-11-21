@@ -58,7 +58,8 @@ const dataUrlToBlob = async (value: string): Promise<Blob> => {
 
 export type LocalHistoryRecycleBinItem = LocalGenItem & { movedAt: number; version: string };
 export type LocalHistoryMoveSelection = { ids?: string[]; days?: number; keepCount?: number; clear?: boolean; protectedIds?: string[] };
-export type LocalHistoryOperationIssue = { id: string; reasons: string[] };
+export type LocalHistoryCoverRef = { id: string; name: string; type: string };
+export type LocalHistoryOperationIssue = { id: string; reasons: string[]; coverRefs?: LocalHistoryCoverRef[] };
 export type LocalHistoryMovePreview = {
     previewToken: string; expiresAt: number; requestedCount: number; movableCount: number;
     skippedCount: number; skipped: LocalHistoryOperationIssue[];

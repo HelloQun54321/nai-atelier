@@ -802,7 +802,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     };
     const movePreviewMessage = (preview: LocalHistoryMovePreview) => [
         t('候选 {0} 张 · 可移入 {1} 张 · 跳过 {2} 张', [preview.requestedCount, preview.movableCount, preview.skippedCount]),
-        ...preview.skipped.map(item => item.id + ': ' + formatHistoryBinReasons(item.reasons)),
+        ...preview.skipped.map(item => item.id + ': ' + formatHistoryBinReasons(item.reasons, item.coverRefs)),
         t('有效收藏与引用会跳过。移入回收站不释放空间，也不会自动过期，可在回收站恢复。'),
     ].join('\n');
     const executeMove = async (preview: LocalHistoryMovePreview) => {
@@ -810,8 +810,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
         const completed = new Set(result.completedIds);
         if (completed.size) await removeBrowseItems(completed);
         setSelectedIds(previous => new Set([...previous].filter(id => !completed.has(id))));
-        const reasons = [...result.skipped, ...result.failed].map(item => item.id + ': ' + formatHistoryBinReasons(item.reasons));
-        notify([t('已移入回收站 {0} 张 · 跳过 {1} 张 · 失败 {2} 张', [completed.size, result.skippedCount, result.failedCount]), ...reasons, ...result.warnings.map(item => item.id + ': ' + formatHistoryBinReasons(item.reasons))].join('\n'), result.skippedCount || result.failedCount ? 'error' : 'success');
+        const reasons = [...result.skipped, ...result.failed].map(item => item.id + ': ' + formatHistoryBinReasons(item.reasons, item.coverRefs));
+        notify([t('已移入回收站 {0} 张 · 跳过 {1} 张 · 失败 {2} 张', [completed.size, result.skippedCount, result.failedCount]), ...reasons, ...result.warnings.map(item => item.id + ': ' + formatHistoryBinReasons(item.reasons, item.coverRefs))].join('\n'), result.skippedCount || result.failedCount ? 'error' : 'success');
     };
     const requestMove = async (selection: LocalHistoryMoveSelection) => {
         if (moveBusyRef.current) return;

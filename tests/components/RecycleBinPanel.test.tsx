@@ -165,3 +165,15 @@ it('同ID的active/bin迁移冲突档案不互相覆盖，邻图与原蒙版来�
     fireEvent.click(within(viewer).getByRole('button', { name: '上一张图片' }));
     await waitFor(() => expect(within(viewer).getByRole('img', { name: '历史生成图片预览' }).getAttribute('src')).toBe(active.imageUrl));
 });
+
+it('formatHistoryBinReasons 对封面引用展示具体条目类别与名称，非封面回落通用配方文案', () => {
+    expect(formatHistoryBinReasons(['chain'])).toBe('创作配方仍在引用');
+    expect(formatHistoryBinReasons(['chain'], [{ id: 'p1', name: '银发飘扬', type: 'appearance' }]))
+        .toBe('已被用作封面（提示词库「银发飘扬」）');
+    expect(formatHistoryBinReasons(['chain'], [
+        { id: 'p1', name: '银发飘扬', type: 'appearance' },
+        { id: 's1', name: '厚涂水彩', type: 'style' },
+        { id: 'c1', name: '爱丽丝', type: 'character' },
+        { id: 'p2', name: '夜景灯光', type: 'scene' },
+    ])).toBe('已被用作封面（提示词库「银发飘扬」、风格串「厚涂水彩」、角色「爱丽丝」 等 4 项）');
+});

@@ -3,6 +3,7 @@ import { deleteR2File } from '../../worker/routes/settingsRoutes';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, expect, it, vi } from 'vitest';
 import { handleHistoryRoute } from '../../worker/routes/historyRoutes';
+import { handlePromptLibraryLinkRoute } from '../../worker/routes/promptLibraryLinkRoutes';
 import { INIT_SQL, type D1Database, type Env, type RouteContext } from '../../worker/routes/types';
 import { recordArtistHistory } from '../../worker/routes/artistUsageIndex';
 import { handleStyleRollRoute } from '../../worker/routes/styleRollRoutes';
@@ -14,7 +15,7 @@ function fixture(){
  let beforeMove: (() => void) | undefined;
  const db={prepare(query:string){let values:any[]=[];return {query,bind(...next:any[]){values=next;return this;},async first(){return sqlite.prepare(query).get(...values)||null;},async all(){return {results:sqlite.prepare(query).all(...values)};},async run(){return {meta:sqlite.prepare(query).run(...values),success:true};}};},async batch(statements:{query:string;run():Promise<any>}[]){if(statements[0]?.query.startsWith('INSERT INTO local_generation_recycle_bin')){beforeMove?.();beforeMove=undefined;}sqlite.exec('BEGIN');try{const out=[];for(const statement of statements)out.push(await statement.run());sqlite.exec('COMMIT');return out;}catch(cause){sqlite.exec('ROLLBACK');throw cause;}}} as unknown as D1Database;
  const files=new Map<string,ArrayBuffer>();const bucket={delete:vi.fn(async(key:string)=>{files.delete(key);}),get:vi.fn(async(key:string)=>files.has(key)?{body:files.get(key),httpEtag:'synthetic',writeHttpMetadata(){}}:null),put:vi.fn(async(key:string,value:ArrayBuffer)=>{files.set(key,value);})},env={DB:db,BUCKET:bucket,LOCAL_HISTORY_ENABLED:'true'} as unknown as Env;
- const invoke=async(path:string,method='POST',body?:unknown)=>{if(path.match(/recycle-bin\/(restore|purge)$/)&&body&&!(body as any).expectedVersions){const versions:Record<string,string>={};for(const id of (body as any).ids){const row=sqlite.prepare('SELECT * FROM local_generation_recycle_bin WHERE id=?').get(id) as any;if(row){const keys='id,user_id,image_key,image_type,prompt,negative_prompt,params,base_prompt,subject_prompt,modules,structure_version,source_chain_id,source_chain_name,source_chain_type,external_source,external_id,is_favorite,favorite_at,created_at'.split(',');versions[id]=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(keys.map(k=>row[k]??null))+':'+row.moved_at+':'+(row.move_nonce||'')))),n=>n.toString(16).padStart(2,'0')).join('');}else versions[id]='0'.repeat(64);}body={...(body as any),expectedVersions:versions};}const request=new Request('http://localhost'+path,{method,...(body===undefined?{}:{body:JSON.stringify(body)})});return (await handleHistoryRoute({request,url:new URL(request.url),path:path.split('?')[0],method,db,env,currentUser:{id:'owner',role:'admin'}} as RouteContext))!;};
+ const invoke=async(path:string,method='POST',body?:unknown)=>{if(path.match(/recycle-bin\/(restore|purge)$/)&&body&&!(body as any).expectedVersions){const versions:Record<string,string>={};for(const id of (body as any).ids){const row=sqlite.prepare('SELECT * FROM local_generation_recycle_bin WHERE id=?').get(id) as any;if(row){const keys='id,user_id,image_key,image_type,prompt,negative_prompt,params,base_prompt,subject_prompt,modules,structure_version,source_chain_id,source_chain_name,source_chain_type,external_source,external_id,is_favorite,favorite_at,created_at'.split(',');versions[id]=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(keys.map(k=>row[k]??null))+':'+row.moved_at+':'+(row.move_nonce||'')))),n=>n.toString(16).padStart(2,'0')).join('');}else versions[id]='0'.repeat(64);}body={...(body as any),expectedVersions:versions};}const request=new Request('http://localhost'+path,{method,...(body===undefined?{}:{body:JSON.stringify(body)})});const ctx={request,url:new URL(request.url),path:path.split('?')[0],method,db,env,currentUser:{id:'owner',role:'admin'}} as RouteContext;return (path.startsWith('/api/prompt-library-links')?await handlePromptLibraryLinkRoute(ctx):await handleHistoryRoute(ctx))!;};
  const add=(id='h',extra:Record<string,unknown>={})=>{const row={id,user_id:'owner',image_key:id+'.png',created_at:123,prompt:'artist:synthetic',...extra};sqlite.prepare(`INSERT INTO local_generation_history (${Object.keys(row).join(',')}) VALUES (${Object.keys(row).map(()=>'?').join(',')})`).run(...Object.values(row) as any[]);};
  return {sqlite,db,bucket,env,invoke,add,beforeMove:(fn:()=>void)=>{beforeMove=fn;}};
 }
@@ -31,13 +32,64 @@ it('完整行原子移入恢复，保留时间、结构、蒙版、回执及统�
 });
 it.each([
  ['favorite',"UPDATE local_generation_history SET is_favorite=1 WHERE id='h'"],
- ['prompt_library',"INSERT INTO prompt_library_links(history_id,chain_id,kind,created_at) VALUES('h','c','appearance',1)"],
  ['collection',"INSERT INTO inspirations(id,title,source_type,source_id) VALUES('i','s','history','h')"],
  ['chain',"INSERT INTO chains(id,name,params) VALUES('c','s','{\"reference\":\"/api/local-history/h/image\"}')"],
  ['shared_image',"INSERT INTO local_generation_history(id,user_id,image_key,created_at) VALUES('other','another-user','h.png',1)"],
  ['reference_check_failed',"INSERT INTO chains(id,name,params) VALUES('c','s','damaged')"],
 ])('引用 %s 阻止移入，其余批量继续',async(reason,sql)=>{
  const f=fixture();f.add();f.add('safe');f.sqlite.exec(sql);const result=await(await f.invoke('/api/local-history/recycle-bin/move','POST',{ids:['h','safe']})).json();expect(result).toMatchObject({movedCount:reason==='reference_check_failed'?0:1,skippedCount:reason==='reference_check_failed'?2:1});expect(result.skipped).toContainEqual({id:'h',reasons:expect.arrayContaining([reason])});expect(f.bucket.delete).not.toHaveBeenCalled();
+});
+it('纯提示词库文本关联不阻止移入，恢复还原且永久删除清理；用作封面时拦截并返回条目名',async()=>{
+ const f=fixture();
+ f.add('linked-only',{image_key:'local-history/owner/linked-only.png',prompt:'silver hair floating'});
+ f.add('cover-used',{image_key:'local-history/owner/cover-used.png',prompt:'silver hair floating'});
+ f.sqlite.prepare("INSERT INTO chains(id,user_id,username,type,name,base_prompt,preview_image,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)")
+  .run('lib-1','owner','owner','appearance','银发飘扬','silver hair floating','/api/assets/local-history%2Fowner%2Fcover-used.png',1,20);
+ f.sqlite.prepare("INSERT INTO chains(id,user_id,username,type,name,base_prompt,preview_image,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)")
+  .run('style-1','owner','owner','style','水彩画风','watercolor','/api/assets/local-history%2Fowner%2Fcover-used.png',1,10);
+ f.sqlite.prepare("INSERT INTO prompt_library_links(history_id,chain_id,kind,chain_name,matched_length,created_at) VALUES(?,?,?,?,?,?)")
+  .run('linked-only','lib-1','appearance','银发飘扬',20,123);
+ f.sqlite.prepare("INSERT INTO prompt_library_links(history_id,chain_id,kind,chain_name,matched_length,created_at) VALUES(?,?,?,?,?,?)")
+  .run('cover-used','lib-1','appearance','银发飘扬',20,123);
+
+ const preview=await(await f.invoke('/api/local-history/recycle-bin/preview','POST',{ids:['linked-only','cover-used']})).json();
+ expect(preview).toMatchObject({
+  movableCount:1,
+  skippedCount:1,
+  skipped:[{
+   id:'cover-used',
+   reasons:['chain'],
+   coverRefs:[
+    {id:'lib-1',name:'银发飘扬',type:'appearance'},
+    {id:'style-1',name:'水彩画风',type:'style'},
+   ],
+  }],
+ });
+
+ const moved=await(await f.invoke('/api/local-history/recycle-bin/move','POST',{previewToken:preview.previewToken})).json();
+ expect(moved.completedIds).toEqual(['linked-only']);
+ expect(moved.skipped).toEqual(preview.skipped);
+
+ // 直接调用 move 拦截封面时也返回 coverRefs
+ const directBlocked=await(await f.invoke('/api/local-history/recycle-bin/move','POST',{ids:['cover-used']})).json();
+ expect(directBlocked.skipped).toEqual(preview.skipped);
+
+ // 移入回收站后，反查列表只剩活动历史里的 cover-used，恢复后 linked-only 重新出现
+ const whileRecycled=await(await f.invoke('/api/prompt-library-links/images?chainId=lib-1','GET')).json();
+ expect(whileRecycled.items.map((item:any)=>item.id)).toEqual(['cover-used']);
+
+ expect((await(await f.invoke('/api/local-history/recycle-bin/restore','POST',{ids:['linked-only']})).json()).restoredCount).toBe(1);
+ const afterRestore=await(await f.invoke('/api/prompt-library-links/images?chainId=lib-1','GET')).json();
+ expect(afterRestore.items.map((item:any)=>item.id).sort()).toEqual(['cover-used','linked-only']);
+
+ // 再次移入并永久删除后，prompt_library_links 被清理干净
+ expect((await(await f.invoke('/api/local-history/recycle-bin/move','POST',{ids:['linked-only']})).json()).movedCount).toBe(1);
+ expect((await(await f.invoke('/api/local-history/recycle-bin/purge','POST',{ids:['linked-only']})).json()).purgedCount).toBe(1);
+ expect(f.sqlite.prepare("SELECT chain_id FROM prompt_library_links WHERE history_id='linked-only'").all()).toEqual([]);
+
+ // 清除封面引用后，cover-used 也可正常移入回收站
+ f.sqlite.exec("UPDATE chains SET preview_image = '' WHERE id IN ('lib-1','style-1')");
+ expect((await(await f.invoke('/api/local-history/recycle-bin/move','POST',{ids:['cover-used']})).json()).completedIds).toEqual(['cover-used']);
 });
 it('Roll 只保护仍被使用的首次原图，删除记录不删除历史', async () => {
  const f = fixture();

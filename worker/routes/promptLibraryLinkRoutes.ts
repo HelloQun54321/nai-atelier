@@ -141,11 +141,11 @@ export async function syncPromptLibraryCover(db: D1Database, chainIds: unknown[]
   return updated;
 }
 
-/** 回填/重算后收尾：给所有「有生成图但没封面」的库条目补上自动封面。 */
+/** 回填/重算后收尾：给所有「有活动生成图但没封面」的库条目补上自动封面。 */
 export async function syncPromptLibraryCovers(db: D1Database) {
   const rows = await db.prepare(`SELECT c.id AS id FROM chains c
     WHERE COALESCE(TRIM(c.preview_image), '') = ''
-      AND EXISTS (SELECT 1 FROM prompt_library_links l WHERE l.chain_id = c.id)`).all<{ id: string }>();
+      AND EXISTS (SELECT 1 FROM prompt_library_links l JOIN local_generation_history h ON h.id = l.history_id WHERE l.chain_id = c.id)`).all<{ id: string }>();
   return syncPromptLibraryCover(db, (rows.results || []).map(row => row.id));
 }
 

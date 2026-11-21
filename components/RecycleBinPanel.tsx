@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ListChecks, MoreVertical, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
-import { localHistory, type LocalHistoryRecycleBinItem } from '../services/localHistory';
+import { localHistory, type LocalHistoryCoverRef, type LocalHistoryRecycleBinItem } from '../services/localHistory';
 import { getLanguage, t, useLanguage } from '../services/i18n';
 import { EmptyState, InlineSpinner, PageSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { compactCount, ToolbarCountBadge } from './ToolbarCountBadge';
@@ -27,18 +27,32 @@ const PAGE_SIZE = 60;
 // 浏览器迁移冲突允许 active/bin 同编号并存，档案身份必须包括来源。
 const panelItemKey = (item: PanelItem) => `${item.archiveBin === undefined ? 'bin' : item.archiveBin ? 'archive-bin' : 'archive-active'}:${item.id}`;
 
-export const formatHistoryBinReasons = (reasons: string[]) => reasons.map(reason => t(({
-    favorite: '有效收藏或收藏正在保存', prompt_library: '提示词库仍在引用', collection: '收藏资料仍在引用',
-    chain: '创作配方仍在引用', artist: '画师资料仍在引用', roll: 'Roll 候选仍在引用', shared_image: '原图仍被其他资料共享',
-    history: '其他历史仍在引用', recycle_bin: '其他回收站条目仍在引用', settings: '设置仍在引用', reference_asset: '参考资产仍在引用',
-    reference_check_failed: '无法确认引用关系，已保留原记录', source_changed: '条目已变化，请重新读取后重试',
-    source_changed_or_referenced: '条目已变化或仍被引用', write_conflict: '条目正在写入，请稍后重试',
-    not_found: '条目不存在', not_in_recycle_bin: '条目已不在回收站', active_id_conflict: '生成历史中已有同编号条目，已保留两份资料',
-    restore_conflict_or_failed: '恢复冲突或失败，回收站资料已保留', move_conflict_or_failed: '移动冲突或失败，原记录已保留',
-    id_conflict: '生成历史中已有同编号条目，已保留两份资料', external_identity_conflict: '外部来源标识冲突，已保留两份资料', transaction_failed: '事务失败，原资料已保留',
-    purge_failed: '永久删除失败', image_retained_reference: '共享原图仍被引用，已保留', image_cleanup_failed: '原图清理失败',
-    link_cleanup_failed: '关联资料清理失败', mask_cleanup_failed: '蒙版清理失败',
-} as Record<string, string>)[reason] || reason)).join('、');
+const formatCoverRefLabel = (ref: LocalHistoryCoverRef) => {
+    const kind = ref.type === 'style' ? t('风格串') : ref.type === 'character' ? t('角色') : t('提示词库');
+    const name = ref.name.trim() || ref.id;
+    return `${kind}「${name}」`;
+};
+const formatChainReason = (coverRefs?: LocalHistoryCoverRef[]) => {
+    if (!coverRefs?.length) return t('创作配方仍在引用');
+    const shown = coverRefs.slice(0, 3).map(formatCoverRefLabel).join('、');
+    const summary = coverRefs.length > 3 ? t('{0} 等 {1} 项', [shown, coverRefs.length]) : shown;
+    return t('已被用作封面（{0}）', [summary]);
+};
+
+export const formatHistoryBinReasons = (reasons: string[], coverRefs?: LocalHistoryCoverRef[]) => reasons.map(reason => (
+    reason === 'chain' && coverRefs?.length ? formatChainReason(coverRefs) : t(({
+        favorite: '有效收藏或收藏正在保存', prompt_library: '提示词库仍在引用', collection: '收藏资料仍在引用',
+        chain: '创作配方仍在引用', artist: '画师资料仍在引用', roll: 'Roll 候选仍在引用', shared_image: '原图仍被其他资料共享',
+        history: '其他历史仍在引用', recycle_bin: '其他回收站条目仍在引用', settings: '设置仍在引用', reference_asset: '参考资产仍在引用',
+        reference_check_failed: '无法确认引用关系，已保留原记录', source_changed: '条目已变化，请重新读取后重试',
+        source_changed_or_referenced: '条目已变化或仍被引用', write_conflict: '条目正在写入，请稍后重试',
+        not_found: '条目不存在', not_in_recycle_bin: '条目已不在回收站', active_id_conflict: '生成历史中已有同编号条目，已保留两份资料',
+        restore_conflict_or_failed: '恢复冲突或失败，回收站资料已保留', move_conflict_or_failed: '移动冲突或失败，原记录已保留',
+        id_conflict: '生成历史中已有同编号条目，已保留两份资料', external_identity_conflict: '外部来源标识冲突，已保留两份资料', transaction_failed: '事务失败，原资料已保留',
+        purge_failed: '永久删除失败', image_retained_reference: '共享原图仍被引用，已保留', image_cleanup_failed: '原图清理失败',
+        link_cleanup_failed: '关联资料清理失败', mask_cleanup_failed: '蒙版清理失败',
+    } as Record<string, string>)[reason] || reason)
+)).join('、');
 
 /** 回收站独立浏览；只按完成回执移出条目，冲突和失败项保留选择供重试。 */
 export const RecycleBinPanel: React.FC<Props> = ({ onBack, notify, archive, onRetryMigration }) => {
@@ -187,8 +201,8 @@ export const RecycleBinPanel: React.FC<Props> = ({ onBack, notify, archive, onRe
             }
             const message = t(operation === 'restore' ? '已恢复 {0} 张 · 跳过 {1} 张 · 失败 {2} 张' : '已永久删除 {0} 张 · 跳过 {1} 张 · 失败 {2} 张', [completed.size, result.skippedCount, result.failedCount]);
             if (result.skippedCount || result.failedCount) setNeedsRefresh(true);
-            const reasons = [...result.skipped, ...result.failed].map(entry => `${entry.id}: ${formatHistoryBinReasons(entry.reasons)}`).join('\n');
-            const warnings = result.warnings.map(entry => `${entry.id}: ${formatHistoryBinReasons(entry.reasons)}`).join('\n');
+            const reasons = [...result.skipped, ...result.failed].map(entry => `${entry.id}: ${formatHistoryBinReasons(entry.reasons, entry.coverRefs)}`).join('\n');
+            const warnings = result.warnings.map(entry => `${entry.id}: ${formatHistoryBinReasons(entry.reasons, entry.coverRefs)}`).join('\n');
             notify([message, reasons, warnings].filter(Boolean).join('\n'), result.skippedCount || result.failedCount ? 'error' : 'success');
         } catch (error) {
             notify(error instanceof Error ? error.message : t('回收站操作失败'), 'error');

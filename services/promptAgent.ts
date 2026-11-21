@@ -35,7 +35,7 @@ export interface PromptAgentProjectActionReceipt {
   restoredCount?: number;
   purgedCount?: number;
   completedIds?: string[];
-  skipped?: Array<{ id: string; reasons: string[] }>;
+  skipped?: Array<{ id: string; reasons: string[]; coverRefs?: Array<{ id: string; name: string; type: string }> }>;
   failed?: Array<{ id: string; reasons: string[] }>;
   warnings?: Array<{ id: string; reasons: string[] }>;
   partialDetails?: boolean;
