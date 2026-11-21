@@ -103,9 +103,10 @@ interface ChainEditorProps {
     onSectionedPromptChange?: (enabled: boolean) => void;
     safeMode: boolean;
     onBack: () => void | Promise<void>;
+    onOpenComic?: () => void;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chainsLoading, chainsError, onRetryChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, sectionedPrompt = false, onSectionedPromptChange, safeMode, onBack, onContentRollForRole, onContentRollForGlobal }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chainsLoading, chainsError, onRetryChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, sectionedPrompt = false, onSectionedPromptChange, safeMode, onBack, onOpenComic, onContentRollForRole, onContentRollForGlobal }) => {
   useLanguage();
     const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
     const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -2311,6 +2312,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 selectGenerationMode={selectGenerationMode}
                 isGenerating={modeSwitchLocked || isSwitchingMode}
                 onBack={onBack}
+                onOpenComic={onOpenComic}
                 handleReset={handleReset}
                 handleFork={handleFork}
                 handleSaveAll={handleSaveAll}

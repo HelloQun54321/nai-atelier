@@ -29,6 +29,7 @@ export interface ChainEditorHeaderProps {
     /** 生成进行中禁用模式切换（透传至模式导航）。 */
     isGenerating?: boolean;
     onBack: () => void | Promise<void>;
+    onOpenComic?: () => void;
     handleReset: () => void;
     handleFork: () => void;
     handleSaveAll: () => void;
@@ -60,6 +61,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     selectGenerationMode,
     isGenerating = false,
     onBack,
+    onOpenComic,
     handleReset,
     handleFork,
     handleSaveAll,
@@ -135,6 +137,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     onSelectMode={selectGenerationMode}
                     isGenerating={isGenerating}
                     onBack={onBack}
+                    onOpenComic={onOpenComic}
                 />
                 {compact && !isPlayground && canSaveActiveModeToLibrary && isOwner && <div ref={saveAnchorRef} className="flex-none"><IconButton label={t(saveLabel)} tone={ownerSaveTone} disabled={isUploading} aria-haspopup="dialog" aria-expanded={saveActionsOpen} onClick={() => setSaveActionsOpen(value => !value)} className="mobile-touch"><Save /></IconButton></div>}
                 {compact && !isPlayground && canSaveActiveModeToLibrary && !isOwner && !isGuest && <IconButton label={forkLabel} tone="save" disabled={isUploading} onClick={handleFork} className="mobile-touch"><Save /></IconButton>}

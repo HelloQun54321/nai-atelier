@@ -63,8 +63,9 @@ const CharacterLibrary = lazy(() => import('./components/CharacterLibrary').then
 const PromptLibraryEntryEditor = lazy(() => import('./components/PromptLibrary').then(module => ({ default: module.PromptLibraryEntryEditor })));
 const ContentRollWorkspace = lazy(() => import('./components/ContentRollWorkspace').then(module => ({ default: module.ContentRollWorkspace })));
 const StyleRollPage = lazy(() => import('./components/StyleRollPage').then(module => ({ default: module.StyleRollPage })));
+const ComicStudio = lazy(() => import('./components/comic/ComicStudio').then(module => ({ default: module.ComicStudio })));
 
-type ViewState = 'list' | 'characters' | 'content-library' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll' | 'prompts' | 'content-roll' | 'content-roll-library';
+type ViewState = 'list' | 'characters' | 'content-library' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'comic' | 'roll' | 'prompts' | 'content-roll' | 'content-roll-library';
 type KeepAliveView = Exclude<ViewState, 'edit'>;
 
 // 手机端实验室返回箭头的落点：只记录内容页，编辑器/实验室本身不作为返回落点。
@@ -1348,7 +1349,16 @@ const App = () => {
           onSectionedPromptChange={enabled => setAppearancePreferences(current => ({ ...current, labSectionedPrompt: enabled }))}
           safeMode={safeMode}
           onBack={() => handleNavigate(lastLabEntryViewRef.current)}
+          onOpenComic={() => void handleNavigate('comic')}
         /></PromptLibraryRequestEnabledContext.Provider>;
+      case 'comic':
+        return <ComicStudio
+          chains={chains}
+          notify={notify}
+          forceEmptySeed={appearancePreferences.forceEmptySeed}
+          generationStreamPreview={appearancePreferences.generationStreamPreview}
+          onBack={() => void handleNavigate('playground')}
+        />;
       default:
         return <div>Unknown View</div>;
     }
@@ -1356,7 +1366,7 @@ const App = () => {
 
   // 页面元素只随实际资料、外观和激活状态更新，实验室输入及 toast 不重建其他保活页。
   const cachedViews = useMemo(() => Object.fromEntries(
-    (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'footprint', 'history', 'roll'] as const)
+    (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'footprint', 'history', 'roll', 'comic'] as const)
       .map(target => [target, renderViewContent(target)]),
   ), [view, chains, currentUser, loading, chainsError, selectedId, appearancePreferences, inspirationsCache, inspirationsError, historyEntry, libraryEntry, rollPinnedEntry, language]);
   const playgroundContent = useMemo(() => renderViewContent('playground'), [
@@ -1456,7 +1466,7 @@ const App = () => {
         setSafeModeHideTitles={setSafeModeHideTitles}
         toggleSafeMode={toggleSafeMode}
         toast={toast}
-        hideNav={view === 'edit' || view === 'playground'}
+        hideNav={view === 'edit' || view === 'playground' || view === 'comic'}
         notify={notify}
         onOpenAgent={handleOpenAgent}
       >

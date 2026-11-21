@@ -421,7 +421,7 @@ export interface LocalGenItem {
   modules?: PromptModule[];
   sourceChainId?: string;
   sourceChainName?: string;
-  sourceChainType?: ChainType | 'playground';
+  sourceChainType?: ChainType | 'playground' | 'comic';
   edit?: ImageEditMetadata;
   /** 上游出口生图耗时（毫秒），仅统计发往出口到收齐最终图片的阶段。 */
   generationDurationMs?: number;

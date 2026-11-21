@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../services/i18n';
 import React from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, LayoutGrid } from 'lucide-react';
 import { GenerationMode } from '../types';
 import { GenerationModeNav } from './GenerationModeNav';
 import { IconButton } from './DesignSystem';
@@ -13,6 +13,8 @@ interface ChainEditorModeHeaderProps {
   /** 生成进行中禁用模式切换（透传至 GenerationModeNav）。 */
   isGenerating?: boolean;
   onBack: () => void | Promise<void>;
+  /** 手机端实验室顶栏直达「漫画」入口（参照风格串→Roll 串、历史→足迹成对设计）。 */
+  onOpenComic?: () => void;
 }
 
 export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
@@ -22,6 +24,7 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
   onSelectMode,
   isGenerating = false,
   onBack,
+  onOpenComic,
 }) => {
   useLanguage();
   // 手机：返回 + 模式标题成一组左对齐；电脑：模式导航仍占满中间可用宽。
@@ -37,6 +40,15 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
       <div className="min-w-0 md:flex-1">
         <GenerationModeNav activeMode={activeMode} onSelect={onSelectMode} disabled={isGenerating} />
       </div>
+      {isLaboratory && onOpenComic && (
+        <IconButton
+          label={t("漫画")}
+          onClick={onOpenComic}
+          className="ml-auto flex-none md:hidden"
+        >
+          <LayoutGrid className="h-4 w-4" />
+        </IconButton>
+      )}
     </div>
   );
 };

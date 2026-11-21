@@ -16,6 +16,7 @@ import {
   Heart,
   Images,
   Layers,
+  LayoutGrid,
   Palette,
   Settings,
   ShieldCheck,
@@ -47,7 +48,7 @@ const MobileNavButton: React.FC<{ label: string; active: boolean; icon: React.El
   </button>
 );
 
-type AppView = 'list' | 'characters' | 'content-library' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll' | 'prompts' | 'content-roll' | 'content-roll-library';
+type AppView = 'list' | 'characters' | 'content-library' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'comic' | 'roll' | 'prompts' | 'content-roll' | 'content-roll-library';
 type SettingsSection = 'home' | 'appearance' | 'generation' | 'privacy' | 'novelai' | 'agent' | 'resources' | 'connections' | 'storage' | 'about' | 'maintenance';
 
 interface LayoutProps {
@@ -173,6 +174,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { label: '工作区', items: [
       { id: 'list', label: '风格串', icon: icons.list },
       { id: 'playground', label: '实验室', icon: icons.lab },
+      { id: 'comic', label: '漫画', icon: LayoutGrid },
       { id: 'roll', label: 'Roll 串', icon: Dice5 },
     ] },
     { label: '资源库', items: [
@@ -518,7 +520,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         <div className="app-mobile-nav fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start border-t border-gray-200 bg-white/95 px-1 pt-1.5 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 md:hidden">
           <MobileNavButton label={t("风格串")} active={activeView === 'list' || activeView === 'roll'} icon={icons.list} onClick={() => navigateMobile('list')} />
           <MobileNavButton label={t("资源库")} active={resourceActive || showResources} icon={icons.resources} onClick={() => { if (showResources) requestResourcesClose(); else setShowResources(true); }} />
-          <MobileNavButton label={t("实验室")} active={activeView === 'playground'} icon={icons.lab} onClick={() => navigateMobile('playground')} />
+          <MobileNavButton label={t("实验室")} active={activeView === 'playground' || activeView === 'comic'} icon={icons.lab} onClick={() => navigateMobile('playground')} />
           <MobileNavButton label={t("历史")} active={activeView === 'history' || activeView === 'footprint'} icon={icons.history} onClick={() => navigateMobile('history')} />
           <MobileNavButton label={t("设置")} active={showSettings} icon={icons.settings} onClick={() => { setSettingsSection('home'); setShowSettings(true); }} />
         </div>

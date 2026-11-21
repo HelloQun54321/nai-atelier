@@ -84,7 +84,7 @@ export interface GenerationJobHistoryInput {
   modules?: PromptModule[];
   sourceChainId?: string;
   sourceChainName?: string;
-  sourceChainType?: ChainType | 'playground';
+  sourceChainType?: ChainType | 'playground' | 'comic';
   /** 编辑模式的部分 metadata；请求宽度、蒙版可用性与 Key 指纹由本模块补齐。 */
   edit?: Partial<ImageEditMetadata>;
 }
