@@ -117,6 +117,16 @@ it.each([1280, 390])('%s 宽度恢复主按钮尺寸、图标，切换连续模�
   expect(actionSurface(main).classList.contains('generation-action-button--workbench')).toBe(true);
 });
 
+it('保存期间左侧进度胶囊与底栏菜单保持张数计数，不重复显示保存文案', () => {
+  const view = render(<GenerationCountControl {...props} generationState="saving" queueState={state} />);
+  expect(screen.getByRole('button', { name: '正在保存…' })).toBeTruthy();
+  const pauseBtn = screen.getByRole('button', { name: '暂停生成' });
+  expect(pauseBtn.textContent).toBe('2/8');
+  view.rerender(<GenerationCountControl {...props} layout="dock" generationState="saving" queueState={state} />);
+  fireEvent.click(screen.getByRole('button', { name: '生成选项' }));
+  expect(within(screen.getByRole('dialog', { name: '生成选项' })).getByRole('button', { name: '暂停生成 2/8' })).toBeTruthy();
+});
+
 it.each([false, true])('连续生成 %s 时主按钮精准展示各生命周期阶段并防误触，真实执行亮起特效', continuousGenerationEnabled => {
   const queue = vi.fn(), generate = vi.fn();
   const common = { ...props, continuousGenerationEnabled, onQueue: queue, onGenerate: generate, busy: true, disabled: true, series: { current: 0, total: 3, stopping: false } };

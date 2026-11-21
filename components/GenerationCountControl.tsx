@@ -167,7 +167,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
       : <ImageIcon aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={2.2} />
   ) : null;
   const dockProgressActive = occupied || paused || waiting.length > 0 || Boolean(series && series.current < series.total);
-  const dockProgressLabel = dock && dockProgressActive ? (saving ? t('保存') : `${completed}/${total}`) : null;
+  const dockProgressLabel = dock && dockProgressActive ? `${completed}/${total}` : null;
   const dockShowPause = dock && showProgress;
   const pauseDisabled = pausePending || series?.stopping || queueState?.pausing || (!occupied && !paused);
   const pauseLabel = t(queueState?.pausing ? "暂停中…" : paused ? "继续生成" : "暂停生成");
@@ -254,7 +254,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     {showProgress && !dock && <ToolbarButton onClick={onTogglePause || onStop} disabled={pauseDisabled}
       aria-label={pauseLabel} title={pauseTitle}
       className="appearance-reading-surface mobile-touch !h-auto min-h-10 !gap-1.5 !px-3 !text-xs tabular-nums rounded-full lg:rounded-xl lg:absolute lg:inset-y-0 lg:right-full lg:mr-2.5">
-      {continuousGenerationEnabled && <span>{saving ? t("正在保存…") : `${completed}/${total}`}</span>}{paused && !queueState?.pausing ? <Play aria-hidden="true" className="h-3.5 w-3.5" /> : <Pause aria-hidden="true" className="h-3.5 w-3.5" />}
+      {continuousGenerationEnabled && <span>{`${completed}/${total}`}</span>}{paused && !queueState?.pausing ? <Play aria-hidden="true" className="h-3.5 w-3.5" /> : <Pause aria-hidden="true" className="h-3.5 w-3.5" />}
     </ToolbarButton>}
     <div ref={anchorRef} role="group" className={'generation-action-button generation-action-button--workbench flex min-w-0 flex-1 items-stretch overflow-hidden rounded-full text-sm font-semibold lg:rounded-xl ' + (dock ? 'generation-action-button--dock !h-11 !min-h-11 !max-h-11 !min-w-0 ' : '') + (showCloudQueue && !dock ? 'max-lg:!min-w-0 ' : '') + (executing ? 'generation-action-button--loading' : '')}>
       <button type="button" data-agent-action="business" aria-disabled={primaryBlocked}
