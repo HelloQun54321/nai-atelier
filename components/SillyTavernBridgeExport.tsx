@@ -35,9 +35,18 @@ const FALLBACK_MANIFEST = JSON.stringify({
   description: '同步工坊精选风格串、Vibe 与历史图片（支持智慧姬 / 柏宝绘）。',
 }, null, 2);
 
+interface DetectedTavernRoot {
+  kind: 'sillytavern' | 'tauritavern';
+  root: string;
+  extensionTargetDir: string;
+}
+
 interface StBridgeStatus {
   connected: boolean;
   sillyTavernRoot: string | null;
+  tavernKind: 'sillytavern' | 'tauritavern' | null;
+  extensionTargetDir: string | null;
+  detectedRoots: DetectedTavernRoot[];
   linkedArtists: number;
   linkedVibes: number;
   linkedGroups: number;
@@ -61,6 +70,9 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
   });
   const [stRoot, setStRoot] = useState('');
   const [detectedRoot, setDetectedRoot] = useState('');
+  const [detectedKind, setDetectedKind] = useState<'sillytavern' | 'tauritavern' | null>(null);
+  const [detectedExtensionDir, setDetectedExtensionDir] = useState('');
+  const [detectedRoots, setDetectedRoots] = useState<DetectedTavernRoot[]>([]);
   const [chatu8Status, setChatu8Status] = useState<StBridgeStatus | null>(null);
   const [baiBaiStatus, setBaiBaiStatus] = useState<StBridgeStatus | null>(null);
   const [installedPath, setInstalledPath] = useState('');
@@ -73,9 +85,13 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
   const normalizeStatus = (data: Partial<StBridgeStatus> | null | undefined): StBridgeStatus | null => {
     if (!data || typeof data !== 'object') return null;
     const root = typeof data.sillyTavernRoot === 'string' ? data.sillyTavernRoot : null;
+    const kind = data.tavernKind === 'tauritavern' || data.tavernKind === 'sillytavern' ? data.tavernKind : null;
     return {
       connected: Boolean(data.connected ?? root),
       sillyTavernRoot: root,
+      tavernKind: kind,
+      extensionTargetDir: typeof data.extensionTargetDir === 'string' ? data.extensionTargetDir : null,
+      detectedRoots: Array.isArray(data.detectedRoots) ? data.detectedRoots.filter(item => item && typeof item.root === 'string') : [],
       linkedArtists: Number(data.linkedArtists || 0),
       linkedVibes: Number(data.linkedVibes || 0),
       linkedGroups: Number(data.linkedGroups || 0),
@@ -91,8 +107,11 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
     if (!normalized) return;
     if (target === 'st-chatu8') setChatu8Status(normalized);
     else setBaiBaiStatus(normalized);
+    if (normalized.detectedRoots.length) setDetectedRoots(normalized.detectedRoots);
     if (normalized.sillyTavernRoot) {
       setDetectedRoot(normalized.sillyTavernRoot);
+      setDetectedKind(normalized.tavernKind);
+      if (normalized.extensionTargetDir) setDetectedExtensionDir(normalized.extensionTargetDir);
       if (fillInput) setStRoot(prev => prev || normalized.sillyTavernRoot!);
     }
   }, []);
@@ -134,14 +153,23 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
   const computeTargetDir = (root: string) => {
     const trimmed = root.trim();
     if (!trimmed) return 'SillyTavern/public/scripts/extensions/third-party/npm-bridge/';
+    if (detectedExtensionDir && trimmed === detectedRoot) return detectedExtensionDir;
+    const matched = detectedRoots.find(item => item.root === trimmed);
+    if (matched?.extensionTargetDir) return matched.extensionTargetDir;
     const normalized = trimmed.replaceAll('/', '\\');
-    if (normalized.toLowerCase().endsWith('\\npm-bridge')) return trimmed;
-    if (normalized.toLowerCase().endsWith('\\third-party')) return `${trimmed}\\npm-bridge`;
-    if (normalized.toLowerCase().endsWith('\\extensions')) return `${trimmed}\\third-party\\npm-bridge`;
-    if (normalized.toLowerCase().endsWith('\\scripts')) return `${trimmed}\\extensions\\third-party\\npm-bridge`;
-    if (normalized.toLowerCase().endsWith('\\public')) return `${trimmed}\\scripts\\extensions\\third-party\\npm-bridge`;
+    const lower = normalized.toLowerCase();
     const sep = trimmed.includes('/') ? '/' : '\\';
-    return `${trimmed.replace(/[\\/]+$/, '')}${sep}public${sep}scripts${sep}extensions${sep}third-party${sep}npm-bridge`;
+    const clean = trimmed.replace(/[\\/]+$/, '');
+    if (lower.endsWith('\\npm-bridge')) return trimmed;
+    if (lower.endsWith('\\third-party')) return `${clean}${sep}npm-bridge`;
+    if (lower.endsWith('\\default-user\\extensions')) return `${clean}${sep}npm-bridge`;
+    if (lower.endsWith('\\extensions')) return `${clean}${sep}third-party${sep}npm-bridge`;
+    if (lower.endsWith('\\scripts')) return `${clean}${sep}extensions${sep}third-party${sep}npm-bridge`;
+    if (lower.endsWith('\\public')) return `${clean}${sep}scripts${sep}extensions${sep}third-party${sep}npm-bridge`;
+    if (lower.includes('tauritavern')) {
+      return `${clean}${sep}data${sep}default-user${sep}extensions${sep}npm-bridge`;
+    }
+    return `${clean}${sep}public${sep}scripts${sep}extensions${sep}third-party${sep}npm-bridge`;
   };
 
   const primaryBridgePrefix = chatu8Preferences.enabled ? '/api/integrations/st-chatu8' : '/api/integrations/st-baibai';
@@ -210,10 +238,10 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
     }
   };
 
-  const handleSaveRoot = async () => {
-    const trimmed = stRoot.trim();
+  const handleSaveRoot = async (overrideRoot?: string) => {
+    const trimmed = (overrideRoot ?? stRoot).trim();
     if (!trimmed) {
-      notify('请先填写 SillyTavern 的安装根目录');
+      notify('请先填写 SillyTavern 或 TauriTavern 的目录路径');
       return;
     }
     setSavingRoot(true);
@@ -228,7 +256,8 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
       if (chatu8Preferences.enabled) applyTargetStatus('st-chatu8', data, false);
       if (baiBaiPreferences.enabled) applyTargetStatus('st-baibai', data, false);
       if (data?.sillyTavernRoot) setStRoot(data.sillyTavernRoot);
-      notify(`已绑定 SillyTavern 目录：${data?.sillyTavernRoot || trimmed}`);
+      const kindName = data?.tavernKind === 'tauritavern' ? 'TauriTavern' : 'SillyTavern';
+      notify(`已绑定 ${kindName} 目录：${data?.sillyTavernRoot || trimmed}`);
     } catch (err: any) {
       notify(`保存目录失败：${err?.message || '未知错误'}`);
     } finally {
@@ -296,6 +325,9 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
 
       let targetDirHandle = dirHandle;
       const nameLower = String(dirHandle.name || '').toLowerCase();
+      const hasSubdir = async (parent: any, child: string) => {
+        try { await parent.getDirectoryHandle(child, { create: false }); return true; } catch { return false; }
+      };
       if (nameLower === 'sillytavern') {
         const publicDir = await dirHandle.getDirectoryHandle('public', { create: true });
         const scriptsDir = await publicDir.getDirectoryHandle('scripts', { create: true });
@@ -305,14 +337,25 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
       } else if (nameLower === 'third-party') {
         targetDirHandle = await dirHandle.getDirectoryHandle('npm-bridge', { create: true });
       } else if (nameLower !== 'npm-bridge') {
-        try {
+        if (await hasSubdir(dirHandle, 'public')) {
           const publicDir = await dirHandle.getDirectoryHandle('public', { create: false });
           const scriptsDir = await publicDir.getDirectoryHandle('scripts', { create: true });
           const extDir = await scriptsDir.getDirectoryHandle('extensions', { create: true });
           const thirdPartyDir = await extDir.getDirectoryHandle('third-party', { create: true });
           targetDirHandle = await thirdPartyDir.getDirectoryHandle('npm-bridge', { create: true });
-        } catch {
-          // 用户选中的就是目标目录或自定义子目录，直接写入
+        } else if (await hasSubdir(dirHandle, 'default-user')) {
+          // TauriTavern data_root（含 default-user/）
+          const userDir = await dirHandle.getDirectoryHandle('default-user', { create: false });
+          const extDir = await userDir.getDirectoryHandle('extensions', { create: true });
+          targetDirHandle = await extDir.getDirectoryHandle('npm-bridge', { create: true });
+        } else if (await hasSubdir(dirHandle, 'data')) {
+          // TauriTavern 应用根或便携目录（含 data/default-user/）
+          const dataDir = await dirHandle.getDirectoryHandle('data', { create: false });
+          if (await hasSubdir(dataDir, 'default-user')) {
+            const userDir = await dataDir.getDirectoryHandle('default-user', { create: false });
+            const extDir = await userDir.getDirectoryHandle('extensions', { create: true });
+            targetDirHandle = await extDir.getDirectoryHandle('npm-bridge', { create: true });
+          }
         }
       }
 
@@ -364,27 +407,44 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
       {anyEnabled && <>
         <div className="appearance-group rounded-xl border border-gray-200 bg-gray-50/70 p-3 text-xs dark:border-gray-700/60 dark:bg-gray-800/50">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {/* 酒馆根目录 */}
+            {/* 酒馆根目录（兼容 SillyTavern / TauriTavern） */}
             <div>
               <div className="flex items-center justify-between gap-2">
                 <label className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
                   <Folder className="h-3.5 w-3.5 text-gray-400" />
-                  <span>{t("SillyTavern 安装路径：")}</span>
+                  <span>{t("酒馆目录（SillyTavern / TauriTavern）：")}</span>
                 </label>
                 {detectedRoot && stRoot === detectedRoot && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-micro font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
                     <CheckCircle2 className="h-3 w-3" />
-                    {t("已自动检测")}</span>
+                    {detectedKind === 'tauritavern' ? t("已自动检测 · TauriTavern") : t("已自动检测")}</span>
                 )}
               </div>
               <input
                 type="text"
                 value={stRoot}
                 onChange={e => setStRoot(e.target.value)}
-                placeholder={t("例如：D:\\SillyTavern")}
+                placeholder={t("例如：D:\\SillyTavern 或 TauriTavern 数据目录")}
                 className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 font-mono text-xs outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                 title={t("SillyTavern 本地安装根目录")}
               />
+              {detectedRoots.length > 1 && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-micro text-gray-500 dark:text-gray-400">
+                  <span>{t("快速切换：")}</span>
+                  {detectedRoots.map(item => (
+                    <button
+                      key={item.root}
+                      type="button"
+                      disabled={savingRoot}
+                      onClick={() => { setStRoot(item.root); void handleSaveRoot(item.root); }}
+                      title={item.root}
+                      className={`mobile-touch rounded-md border px-2 py-0.5 font-semibold transition ${stRoot === item.root ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/50 dark:text-indigo-200' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}
+                    >
+                      {item.kind === 'tauritavern' ? 'TauriTavern' : 'SillyTavern'}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* 服务连接地址 */}

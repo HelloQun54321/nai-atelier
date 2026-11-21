@@ -1,4 +1,7 @@
 ## 2026-11-21
+- 适配 **TauriTavern**（桌面原生版酒馆）与智慧姬／柏宝绘联动：
+  - **放行本机 Tauri WebView 跨域源**：桌面网关在保留本机回环校验的前提下，放行 `http(s)://tauri.localhost` 与 `tauri://localhost` 的同步接口、Vibe 与封面预检／读取请求。
+  - **自动识别 TauriTavern 目录与扩展安装位**：支持自动探测 Windows／macOS／Linux 默认 `com.tauritavern.client` 目录、便携版（`portable.flag`）以及通过 `tauritavern-runtime.json` 迁移的自定义 `data_root`；一键安装与目录导出自动写入 `<userDir>/extensions/npm-bridge/`（原生 SillyTavern 保持 `public/scripts/extensions/third-party/npm-bridge/`）；同时装有原生 SillyTavern 与 TauriTavern 时支持在设置面板一键切换。
 - 新增 **柏宝绘（`ST-BaiBai-Image`）** 酒馆联动同步支持：
   - **独立开关与共用连接器**：在「全局设置 → 数据与维护」新增独立的「柏宝绘同步」开关，与「智慧姬同步」互不干扰；共用同一 SillyTavern 连接器扩展（`npm-bridge`，自动检测已启用的智慧姬、柏宝绘或两者同时使用）与酒馆根目录绑定。
   - **风格串、封面与 Vibe 互通**：工坊风格串列表支持独立勾选待同步至柏宝绘的 V4.5／V5 风格串（双开时支持在同步工具栏快捷切换目标），互通画师串正文、正面质量词、负面词、封面（`柏宝绘_画师串` 目录）以及 Vibe 编码与扁平分组映射。

@@ -1,8 +1,9 @@
 import { vibeStrength } from '../services/vibeProtocol.mjs';
 import { extractPngMetadata } from '../services/pngMetadata.mjs';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { mkdir, open, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { dirname, extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import { isStChatu8ExportableChain } from '../worker/stChatu8Policy.mjs';
 
@@ -55,8 +56,53 @@ export const canonicalVibeSourceHash = document => {
 };
 
 const EXTENSION_SUFFIX_PARTS = ['public', 'scripts', 'extensions', 'third-party', 'npm-bridge'];
+const TAURITAVERN_SUFFIX_LIST = [
+  ['data', 'default-user', 'extensions', 'npm-bridge'],
+  ['data', 'default-user', 'extensions'],
+  ['data', 'extensions', 'third-party', 'npm-bridge'],
+  ['data', 'extensions', 'third-party'],
+  ['default-user', 'extensions', 'npm-bridge'],
+  ['default-user', 'extensions'],
+  ['extensions', 'third-party', 'npm-bridge'],
+  ['extensions', 'third-party'],
+];
 
-/** 从酒馆根目录或各级扩展子目录反推出 SillyTavern 根目录。 */
+const readTauriTavernRuntimeDataRoot = appRoot => {
+  try {
+    const configPath = join(appRoot, 'tauritavern-runtime.json');
+    if (!existsSync(configPath)) return '';
+    const parsed = JSON.parse(readFileSync(configPath, 'utf8'));
+    const dataRoot = typeof parsed?.data_root === 'string' ? parsed.data_root.trim() : '';
+    if (dataRoot && isAbsolute(dataRoot) && existsSync(dataRoot)) return normalize(dataRoot);
+  } catch { /* 忽略损坏或不可读的运行时配置 */ }
+  return '';
+};
+
+const findUserDirInsideDataRootSync = dataRoot => {
+  if (!dataRoot || !existsSync(dataRoot)) return null;
+  const defaultDir = join(dataRoot, 'default-user');
+  if (existsSync(join(defaultDir, 'settings.json'))) return defaultDir;
+  try {
+    for (const entry of readdirSync(dataRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === '_tauritavern' || entry.name === 'extensions') continue;
+      const candidate = join(dataRoot, entry.name);
+      if (existsSync(join(candidate, 'settings.json'))) return candidate;
+    }
+  } catch { /* 目录不可读 */ }
+  return null;
+};
+
+const hasTauriTavernMarkers = dir => {
+  if (!dir || !existsSync(dir)) return false;
+  return existsSync(join(dir, 'tauritavern-runtime.json'))
+    || existsSync(join(dir, 'portable.flag'))
+    || existsSync(join(dir, '_tauritavern'))
+    || existsSync(join(dir, 'data', '_tauritavern'))
+    || existsSync(join(dir, 'extensions', 'third-party'))
+    || existsSync(join(dir, 'data', 'extensions', 'third-party'));
+};
+
+/** 从酒馆根目录或各级扩展子目录反推出 SillyTavern / TauriTavern 根目录。 */
 export const computeSillyTavernRootDir = stRoot => {
   const trimmed = String(stRoot || '').trim();
   if (!trimmed) return '';
@@ -65,16 +111,111 @@ export const computeSillyTavernRootDir = stRoot => {
   for (let depth = EXTENSION_SUFFIX_PARTS.length; depth >= 1; depth--) {
     const suffix = '/' + EXTENSION_SUFFIX_PARTS.slice(0, depth).join('/');
     if (lower.endsWith(suffix)) {
-      current = current.slice(0, current.length - suffix.length) || current;
-      break;
+      const stripped = current.slice(0, current.length - suffix.length) || current;
+      // 避免把 TauriTavern 的 <data_root>/default-user/extensions 误按原生规则截断
+      if (!(depth <= 3 && lower.includes('/default-user/extensions'))) {
+        return stripped;
+      }
+    }
+  }
+  for (const parts of TAURITAVERN_SUFFIX_LIST) {
+    const suffix = '/' + parts.join('/');
+    if (lower.endsWith(suffix)) {
+      return current.slice(0, current.length - suffix.length) || current;
     }
   }
   return current;
 };
 
-/** 解析酒馆真实用户目录：优先 data/default-user，兼容多用户或自定义句柄名。 */
+/** 同步解析酒馆类型（原生 SillyTavern 或 TauriTavern）、数据根、用户目录与扩展安装目录。 */
+export const resolveTavernLayout = inputPath => {
+  const raw = String(inputPath || '').trim();
+  if (!raw) return null;
+  const root = resolve(computeSillyTavernRootDir(raw));
+  if (!existsSync(root)) return null;
+
+  // 1. TauriTavern 运行时引导配置（tauritavern-runtime.json → data_root，支持自定义迁移数据目录）
+  const runtimeDataRoot = readTauriTavernRuntimeDataRoot(root);
+  if (runtimeDataRoot) {
+    const userDir = findUserDirInsideDataRootSync(runtimeDataRoot);
+    if (userDir) {
+      return {
+        kind: 'tauritavern',
+        root,
+        dataRoot: runtimeDataRoot,
+        userDir,
+        extensionTargetDir: join(userDir, 'extensions', 'npm-bridge'),
+      };
+    }
+  }
+
+  // 2. TauriTavern 标记目录（标准安装目录、便携版目录或直接传入的 data_root）
+  const ttMarked = hasTauriTavernMarkers(root);
+  const nestedDataDir = join(root, 'data');
+  const nestedUserDir = findUserDirInsideDataRootSync(nestedDataDir);
+  if (ttMarked && nestedUserDir) {
+    return {
+      kind: 'tauritavern',
+      root,
+      dataRoot: nestedDataDir,
+      userDir: nestedUserDir,
+      extensionTargetDir: join(nestedUserDir, 'extensions', 'npm-bridge'),
+    };
+  }
+  const directUserDir = findUserDirInsideDataRootSync(root);
+  if (directUserDir) {
+    // 直接传入 data/ 或自定义 data_root：若父目录存在 public/ 且无 TT 标记则回推原生 SillyTavern
+    const parent = dirname(root);
+    if (!ttMarked && parent !== root && existsSync(join(parent, 'public'))) {
+      return {
+        kind: 'sillytavern',
+        root: parent,
+        dataRoot: root,
+        userDir: directUserDir,
+        extensionTargetDir: join(parent, 'public', 'scripts', 'extensions', 'third-party', 'npm-bridge'),
+      };
+    }
+    return {
+      kind: 'tauritavern',
+      root,
+      dataRoot: root,
+      userDir: directUserDir,
+      extensionTargetDir: join(directUserDir, 'extensions', 'npm-bridge'),
+    };
+  }
+
+  // 3. 原生 SillyTavern（<root>/data/<user>/settings.json）
+  if (nestedUserDir) {
+    return {
+      kind: 'sillytavern',
+      root,
+      dataRoot: nestedDataDir,
+      userDir: nestedUserDir,
+      extensionTargetDir: join(root, 'public', 'scripts', 'extensions', 'third-party', 'npm-bridge'),
+    };
+  }
+
+  // 4. 尚未初始化 settings.json 但明确有 TauriTavern 标记（允许提前一键安装扩展）
+  if (ttMarked) {
+    const dataRoot = runtimeDataRoot || (existsSync(join(root, '_tauritavern')) || existsSync(join(root, 'extensions', 'third-party')) ? root : nestedDataDir);
+    const userDir = join(dataRoot, 'default-user');
+    return {
+      kind: 'tauritavern',
+      root,
+      dataRoot,
+      userDir: existsSync(join(userDir, 'settings.json')) ? userDir : null,
+      extensionTargetDir: join(userDir, 'extensions', 'npm-bridge'),
+    };
+  }
+
+  return null;
+};
+
+/** 解析酒馆真实用户目录：兼容原生 SillyTavern（data/<user>）与 TauriTavern（含自定义 data_root 与 runtime.json）。 */
 export const findSillyTavernUserDir = async root => {
   if (!root) return null;
+  const layout = resolveTavernLayout(root);
+  if (layout?.userDir) return layout.userDir;
   const dataDir = resolve(root, 'data');
   const defaultDir = join(dataDir, 'default-user');
   try {
@@ -97,7 +238,8 @@ export const findSillyTavernUserDir = async root => {
 
 export const resolveStUserFile = (root, publicPath, userDir = null) => {
   if ((!root && !userDir) || typeof publicPath !== 'string' || !publicPath.startsWith('/user/')) return null;
-  const userRoot = resolve(userDir || join(root, 'data', 'default-user'), 'user');
+  const resolvedUserDir = userDir || resolveTavernLayout(root)?.userDir || join(root, 'data', 'default-user');
+  const userRoot = resolve(resolvedUserDir, 'user');
   const candidate = resolve(userRoot, publicPath.slice('/user/'.length));
   const rel = relative(userRoot, candidate);
   return rel && !rel.startsWith('..') && !isAbsolute(rel) ? candidate : null;
@@ -118,22 +260,25 @@ export const collectStHistoryCandidates = (settings, resolvePath) => {
 };
 
 export const computeSillyTavernExtensionTargetDir = stRoot => {
-  let targetDir = stRoot;
+  let targetDir = String(stRoot || '').trim();
   const normalized = targetDir.replaceAll('/', '\\');
-  if (normalized.endsWith('\\npm-bridge')) {
-    // 已是最终目录
-  } else if (normalized.endsWith('\\third-party')) {
-    targetDir = join(targetDir, 'npm-bridge');
-  } else if (normalized.endsWith('\\extensions')) {
-    targetDir = join(targetDir, 'third-party', 'npm-bridge');
-  } else if (normalized.endsWith('\\scripts')) {
-    targetDir = join(targetDir, 'extensions', 'third-party', 'npm-bridge');
-  } else if (normalized.endsWith('\\public')) {
-    targetDir = join(targetDir, 'scripts', 'extensions', 'third-party', 'npm-bridge');
-  } else {
-    targetDir = join(targetDir, 'public', 'scripts', 'extensions', 'third-party', 'npm-bridge');
+  const lower = normalized.toLowerCase();
+  if (lower.endsWith('\\npm-bridge')) return targetDir;
+  if (lower.endsWith('\\third-party')) return join(targetDir, 'npm-bridge');
+  if (lower.endsWith('\\default-user\\extensions')) return join(targetDir, 'npm-bridge');
+  if (lower.endsWith('\\extensions')) {
+    const parent = dirname(targetDir);
+    if (existsSync(join(parent, 'settings.json'))) return join(targetDir, 'npm-bridge');
+    return join(targetDir, 'third-party', 'npm-bridge');
   }
-  return targetDir;
+  if (lower.endsWith('\\scripts')) return join(targetDir, 'extensions', 'third-party', 'npm-bridge');
+  if (lower.endsWith('\\public')) return join(targetDir, 'scripts', 'extensions', 'third-party', 'npm-bridge');
+
+  // 对存在的真实目录自动区分 TauriTavern 与原生 SillyTavern
+  const layout = resolveTavernLayout(targetDir);
+  if (layout?.extensionTargetDir) return layout.extensionTargetDir;
+
+  return join(targetDir, 'public', 'scripts', 'extensions', 'third-party', 'npm-bridge');
 };
 
 export const installSillyTavernBridgeExtension = async ({
@@ -143,11 +288,12 @@ export const installSillyTavernBridgeExtension = async ({
   workspaceRoot = projectRoot,
 } = {}) => {
   let stRoot = String(sillyTavernRoot || '').trim();
-  if (!stRoot) throw Object.assign(new Error('未指定 SillyTavern 安装路径，且未能自动检测到酒馆目录'), { status: 400 });
-  if (!isAbsolute(stRoot)) throw Object.assign(new Error('SillyTavern 安装路径必须为绝对路径'), { status: 400 });
+  if (!stRoot) throw Object.assign(new Error('未指定 SillyTavern / TauriTavern 安装路径，且未能自动检测到酒馆目录'), { status: 400 });
+  if (!isAbsolute(stRoot)) throw Object.assign(new Error('酒馆安装路径必须为绝对路径'), { status: 400 });
   stRoot = normalize(stRoot);
-  if (!existsSync(stRoot)) throw Object.assign(new Error(`指定的 SillyTavern 路径不存在：${stRoot}`), { status: 404 });
+  if (!existsSync(stRoot)) throw Object.assign(new Error(`指定的酒馆路径不存在：${stRoot}`), { status: 404 });
 
+  const layout = resolveTavernLayout(stRoot);
   const targetDir = computeSillyTavernExtensionTargetDir(stRoot);
 
   const localDataDir = resolve(workspaceRoot, 'local-data');
@@ -191,25 +337,63 @@ export const installSillyTavernBridgeExtension = async ({
 
   return {
     success: true,
-    sillyTavernRoot: computeSillyTavernRootDir(stRoot),
+    tavernKind: layout?.kind || 'sillytavern',
+    sillyTavernRoot: layout?.root || computeSillyTavernRootDir(stRoot),
     targetPath: targetDir,
     files: ['manifest.json', 'index.js', 'style.css', 'README.md'],
   };
 };
 
-export const findSillyTavernLocation = async (projectRoot, preferredRoot = '') => {
-  const candidates = [
+const defaultTauriTavernCandidates = projectRoot => {
+  const list = [];
+  if (process.env.TAURI_TAVERN_ROOT) list.push(process.env.TAURI_TAVERN_ROOT);
+  if (process.platform === 'win32' && process.env.APPDATA) {
+    list.push(join(process.env.APPDATA, 'com.tauritavern.client'));
+  } else if (process.platform === 'darwin') {
+    list.push(join(homedir(), 'Library', 'Application Support', 'com.tauritavern.client'));
+  } else {
+    list.push(join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'com.tauritavern.client'));
+  }
+  list.push(resolve(projectRoot, '..', 'TauriTavern'));
+  if (process.platform === 'win32') list.push('D:\\TauriTavern');
+  return list;
+};
+
+/** 扫描本机已安装的 SillyTavern 与 TauriTavern 目录（按规范化 userDir 去重，供双开／混用快捷切换）。 */
+export const detectAllTavernLocations = async (projectRoot, preferredRoot = '') => {
+  const rawCandidates = [
     preferredRoot ? computeSillyTavernRootDir(preferredRoot) : '',
     process.env.SILLY_TAVERN_ROOT ? computeSillyTavernRootDir(process.env.SILLY_TAVERN_ROOT) : '',
     resolve(projectRoot, '..', 'SillyTavern'),
-    'D:\\SillyTavern',
+    ...(process.platform === 'win32' ? ['D:\\SillyTavern'] : []),
+    ...defaultTauriTavernCandidates(projectRoot),
   ].filter(Boolean);
-  for (const candidate of candidates) {
-    const root = resolve(candidate);
-    const userDir = await findSillyTavernUserDir(root);
-    if (userDir) return { root, userDir };
+  const found = [];
+  const seenUserDirs = new Set();
+  for (const candidate of rawCandidates) {
+    const layout = resolveTavernLayout(candidate);
+    if (!layout?.userDir) continue;
+    const key = layout.userDir.toLowerCase();
+    if (seenUserDirs.has(key)) continue;
+    seenUserDirs.add(key);
+    found.push(layout);
   }
-  return { root: null, userDir: null };
+  return found;
+};
+
+export const findSillyTavernLocation = async (projectRoot, preferredRoot = '') => {
+  const all = await detectAllTavernLocations(projectRoot, preferredRoot);
+  if (all.length) {
+    const first = all[0];
+    return {
+      root: first.root,
+      userDir: first.userDir,
+      kind: first.kind,
+      extensionTargetDir: first.extensionTargetDir,
+      detectedRoots: all.map(item => ({ kind: item.kind, root: item.root, extensionTargetDir: item.extensionTargetDir })),
+    };
+  }
+  return { root: null, userDir: null, kind: null, extensionTargetDir: null, detectedRoots: [] };
 };
 
 export const resolveNovelAiModelFromSource = (source, modelMappings = {}) => {
@@ -351,6 +535,8 @@ export class StChatu8Bridge {
     this.modelMappings = typeof modelMappings === 'function' ? modelMappings : () => modelMappings || {};
     this.root = null;
     this.userDir = null;
+    this.tavernKind = null;
+    this.detectedRoots = [];
     this.state = defaultState();
     this.writeQueue = Promise.resolve();
     this.historySyncPromise = null;
@@ -368,25 +554,31 @@ export class StChatu8Bridge {
     const found = await findSillyTavernLocation(this.projectRoot, this.state.sillyTavernRoot);
     this.root = found.root;
     this.userDir = found.userDir;
+    this.tavernKind = found.kind || null;
+    this.detectedRoots = found.detectedRoots || [];
   }
 
   async setRoot(inputPath, { strict = true } = {}) {
     const raw = String(inputPath || '').trim();
     if (!raw) {
-      if (strict) throw Object.assign(new Error('请提供有效的 SillyTavern 安装根目录'), { status: 400 });
+      if (strict) throw Object.assign(new Error('请提供有效的 SillyTavern / TauriTavern 安装目录或数据目录'), { status: 400 });
       return { connected: Boolean(this.root), sillyTavernRoot: this.root };
     }
-    const candidate = resolve(computeSillyTavernRootDir(raw));
-    const userDir = await findSillyTavernUserDir(candidate);
+    const layout = resolveTavernLayout(raw);
+    const candidate = layout?.root || resolve(computeSillyTavernRootDir(raw));
+    const userDir = layout?.userDir || await findSillyTavernUserDir(candidate);
     if (!userDir) {
-      if (strict) throw Object.assign(new Error(`未在该目录下找到 SillyTavern 用户配置（data/*/settings.json）：${candidate}`), { status: 404 });
+      if (strict) throw Object.assign(new Error(`未在该目录下找到酒馆用户配置（settings.json）：${candidate}`), { status: 404 });
       return { connected: Boolean(this.root), sillyTavernRoot: this.root };
     }
     this.root = candidate;
     this.userDir = userDir;
+    this.tavernKind = layout?.kind || 'sillytavern';
     this.state.sillyTavernRoot = candidate;
+    const all = await detectAllTavernLocations(this.projectRoot, candidate);
+    this.detectedRoots = all.map(item => ({ kind: item.kind, root: item.root, extensionTargetDir: item.extensionTargetDir }));
     await this.saveState();
-    return { connected: true, sillyTavernRoot: this.root };
+    return { connected: true, sillyTavernRoot: this.root, tavernKind: this.tavernKind };
   }
 
   applyPreferences(preferences) {
@@ -444,6 +636,9 @@ export class StChatu8Bridge {
       enabled: this.enabled,
       connected: Boolean(this.root),
       sillyTavernRoot: this.root,
+      tavernKind: this.tavernKind,
+      extensionTargetDir: this.root ? computeSillyTavernExtensionTargetDir(this.root) : null,
+      detectedRoots: this.detectedRoots || [],
       linkedArtists: Object.keys(this.state.artistLinks || {}).length,
       linkedGroups: Object.keys(this.state.groupLinks || {}).length,
       linkedHistory: Object.keys(this.state.history || {}).length,

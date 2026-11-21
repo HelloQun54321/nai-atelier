@@ -81,4 +81,25 @@ describe('设置里的智慧姬同步开关', () => {
     expect(screen.getByRole('button', { name: '一键安装 / 更新扩展' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '扫描智慧姬历史' })).toBeNull();
   });
+  it('检测到 TauriTavern 与 SillyTavern 并存时显示快速切换与准确扩展路径', async () => {
+    baiBaiPreferences.enabled = true;
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      connected: true,
+      sillyTavernRoot: 'C:\\Users\\demo\\AppData\\Roaming\\com.tauritavern.client',
+      tavernKind: 'tauritavern',
+      extensionTargetDir: 'E:\\TTData\\default-user\\extensions\\npm-bridge',
+      detectedRoots: [
+        { kind: 'tauritavern', root: 'C:\\Users\\demo\\AppData\\Roaming\\com.tauritavern.client', extensionTargetDir: 'E:\\TTData\\default-user\\extensions\\npm-bridge' },
+        { kind: 'sillytavern', root: 'D:\\SillyTavern', extensionTargetDir: 'D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge' },
+      ],
+      linkedArtists: 1, linkedVibes: 1, linkedHistory: 2,
+    })));
+    vi.stubGlobal('fetch', fetchMock);
+    render(React.createElement(SillyTavernBridgeExport, { notify: vi.fn() }));
+    await waitFor(() => expect(screen.getByText('已自动检测 · TauriTavern')).toBeTruthy());
+    expect(screen.getByText('E:\\TTData\\default-user\\extensions\\npm-bridge')).toBeTruthy();
+    const stSwitch = screen.getByRole('button', { name: 'SillyTavern' });
+    fireEvent.click(stSwitch);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/integrations/st-baibai/root', expect.objectContaining({ method: 'POST' })));
+  });
 });

@@ -5,12 +5,15 @@ import { basename, dirname, extname, join, resolve } from 'node:path';
 import { isStChatu8ExportableChain } from '../worker/stChatu8Policy.mjs';
 import {
   canonicalVibeSourceHash,
+  computeSillyTavernExtensionTargetDir,
   computeSillyTavernRootDir,
+  detectAllTavernLocations,
   findSillyTavernLocation,
   findSillyTavernUserDir,
   readNovelAiMetadata,
   resolveNovelAiModelFromSource,
   resolveStUserFile,
+  resolveTavernLayout,
 } from './st-chatu8-bridge.mjs';
 
 const DEFAULT_STATE_FILE = join(process.cwd(), 'local-data', 'st-baibai-bridge.json');
@@ -238,6 +241,8 @@ export class StBaiBaiBridge {
     this.sharedRootFallbackFile = sharedRootFallbackFile;
     this.root = null;
     this.userDir = null;
+    this.tavernKind = null;
+    this.detectedRoots = [];
     this.state = defaultState();
     this.writeQueue = Promise.resolve();
     this.historySyncPromise = null;
@@ -264,25 +269,31 @@ export class StBaiBaiBridge {
     const found = await findSillyTavernLocation(this.projectRoot, preferredRoot);
     this.root = found.root;
     this.userDir = found.userDir;
+    this.tavernKind = found.kind || null;
+    this.detectedRoots = found.detectedRoots || [];
   }
 
   async setRoot(inputPath, { strict = true } = {}) {
     const raw = String(inputPath || '').trim();
     if (!raw) {
-      if (strict) throw Object.assign(new Error('请提供有效的 SillyTavern 安装根目录'), { status: 400 });
+      if (strict) throw Object.assign(new Error('请提供有效的 SillyTavern / TauriTavern 安装目录或数据目录'), { status: 400 });
       return { connected: Boolean(this.root), sillyTavernRoot: this.root };
     }
-    const candidate = resolve(computeSillyTavernRootDir(raw));
-    const userDir = await findSillyTavernUserDir(candidate);
+    const layout = resolveTavernLayout(raw);
+    const candidate = layout?.root || resolve(computeSillyTavernRootDir(raw));
+    const userDir = layout?.userDir || await findSillyTavernUserDir(candidate);
     if (!userDir) {
-      if (strict) throw Object.assign(new Error(`未在该目录下找到 SillyTavern 用户配置（data/*/settings.json）：${candidate}`), { status: 404 });
+      if (strict) throw Object.assign(new Error(`未在该目录下找到酒馆用户配置（settings.json）：${candidate}`), { status: 404 });
       return { connected: Boolean(this.root), sillyTavernRoot: this.root };
     }
     this.root = candidate;
     this.userDir = userDir;
+    this.tavernKind = layout?.kind || 'sillytavern';
     this.state.sillyTavernRoot = candidate;
+    const all = await detectAllTavernLocations(this.projectRoot, candidate);
+    this.detectedRoots = all.map(item => ({ kind: item.kind, root: item.root, extensionTargetDir: item.extensionTargetDir }));
     await this.saveState();
-    return { connected: true, sillyTavernRoot: this.root };
+    return { connected: true, sillyTavernRoot: this.root, tavernKind: this.tavernKind };
   }
 
   applyPreferences(preferences) {
@@ -339,6 +350,9 @@ export class StBaiBaiBridge {
       enabled: this.enabled,
       connected: Boolean(this.root),
       sillyTavernRoot: this.root,
+      tavernKind: this.tavernKind,
+      extensionTargetDir: this.root ? computeSillyTavernExtensionTargetDir(this.root) : null,
+      detectedRoots: this.detectedRoots || [],
       linkedArtists: Object.keys(this.state.artistLinks || {}).length,
       linkedVibes: Object.keys(this.state.vibeLinks || {}).length,
       linkedGroups: Object.keys(this.state.groupLinks || {}).length,

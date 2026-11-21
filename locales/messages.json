@@ -1,4 +1,23 @@
 {
+  "酒馆目录（SillyTavern / TauriTavern）：": [
+    "酒館目錄（SillyTavern / TauriTavern）：",
+    "Tavern Directory (SillyTavern / TauriTavern):",
+    "酒場ディレクトリ（SillyTavern / TauriTavern）：",
+    "타번 디렉터리(SillyTavern / TauriTavern):"
+  ],
+  "已自动检测 · TauriTavern": [
+    "已自動偵測 · TauriTavern",
+    "Auto-detected · TauriTavern",
+    "自動検出済み · TauriTavern",
+    "자동 감지됨 · TauriTavern"
+  ],
+  "例如：D:\\SillyTavern 或 TauriTavern 数据目录": [
+    "例如：D:\\SillyTavern 或 TauriTavern 資料目錄",
+    "e.g. D:\\SillyTavern or TauriTavern data folder",
+    "例：D:\\SillyTavern または TauriTavern データフォルダ",
+    "예: D:\\SillyTavern 또는 TauriTavern 데이터 폴더"
+  ],
+  "快速切换：": ["快速切換：", "Quick switch:", "クイック切替：", "빠른 전환:"],
   "柏宝绘": ["柏寶繪", "ST-BaiBai-Image", "ST-BaiBai-Image", "ST-BaiBai-Image"],
   "智慧姬": ["智慧姬", "st-chatu8", "st-chatu8", "st-chatu8"],
   "柏宝绘同步": ["柏寶繪同步", "ST-BaiBai-Image Sync", "ST-BaiBai-Image 同期", "ST-BaiBai-Image 동기화"],

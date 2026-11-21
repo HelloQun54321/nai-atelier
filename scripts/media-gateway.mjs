@@ -641,10 +641,13 @@ export const handleLanPinUpdate = async (req, res, { secret, configFile = LAN_CO
   return sendJson(res, 200, { success: true });
 };
 
-const isLoopbackOrigin = value => {
+export const isLoopbackOrigin = value => {
   try {
     const url = new URL(String(value || ''));
-    return (url.protocol === 'http:' || url.protocol === 'https:') && isLoopbackHost(url.hostname);
+    const host = url.hostname.toLowerCase();
+    // 兼容 TauriTavern（Tauri v2 原生 WebView）：Windows 为 http(s)://tauri.localhost，macOS/Linux 为 tauri://localhost。
+    if (url.protocol === 'tauri:' && host === 'localhost') return true;
+    return (url.protocol === 'http:' || url.protocol === 'https:') && (isLoopbackHost(host) || host === 'tauri.localhost');
   } catch { return false; }
 };
 

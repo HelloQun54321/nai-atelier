@@ -9,8 +9,10 @@
 
 ## 安装方式
 
-- **工坊内一键安装（推荐）**：在 NAI Atelier「全局设置 → 数据与维护」中开启「智慧姬同步」或「柏宝绘同步」，确认酒馆根目录后点击 **「一键安装 / 更新扩展」**。
-- **手动安装**：将本目录完整放入 `SillyTavern/public/scripts/extensions/third-party/npm-bridge/`（确保其下直接包含 `manifest.json`、`index.js`、`style.css`）。
+- **工坊内一键安装（推荐）**：在 NAI Atelier「全局设置 → 数据与维护」中开启「智慧姬同步」或「柏宝绘同步」，确认酒馆目录（支持原生 SillyTavern 与 TauriTavern 标准／便携／自定义数据目录）后点击 **「一键安装 / 更新扩展」**。
+- **手动安装**：
+  - **原生 SillyTavern**：将本目录放入 `SillyTavern/public/scripts/extensions/third-party/npm-bridge/`；
+  - **TauriTavern**：将本目录放入 `<data_root>/default-user/extensions/npm-bridge/`（Windows 标准安装版默认在 `%APPDATA%\com.tauritavern.client\data\default-user\extensions\npm-bridge\`）。
 
 ## 使用说明
 

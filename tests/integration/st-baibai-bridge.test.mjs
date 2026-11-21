@@ -12,6 +12,12 @@ import {
   isCompleteBaiBaiArtistSnapshot,
   readBaiBaiHistoryMetadata,
 } from '../../scripts/st-baibai-bridge.mjs';
+import {
+  computeSillyTavernExtensionTargetDir,
+  installSillyTavernBridgeExtension,
+  resolveTavernLayout,
+} from '../../scripts/st-chatu8-bridge.mjs';
+import { isLoopbackOrigin } from '../../scripts/media-gateway.mjs';
 
 const tempRoot = name => join(tmpdir(), `nai-baibai-test-${name}-${randomUUID()}`);
 const TINY_PNG_BYTES = Buffer.from(
@@ -536,4 +542,75 @@ test('共用扩展 (npm-bridge)：自动识别柏宝绘，自动同步绝不改�
 
   const statusText = dom.window.document.querySelector('.npm-bridge-status').textContent;
   assert.match(statusText, /请刷新酒馆页面生效/);
+});
+
+test('TauriTavern 适配：放行本机 Tauri WebView Origin，拒绝恶意伪造源', () => {
+  assert.equal(isLoopbackOrigin('http://tauri.localhost'), true);
+  assert.equal(isLoopbackOrigin('https://tauri.localhost'), true);
+  assert.equal(isLoopbackOrigin('tauri://localhost'), true);
+  assert.equal(isLoopbackOrigin('http://localhost:8000'), true);
+  assert.equal(isLoopbackOrigin('http://127.0.0.1:8000'), true);
+  assert.equal(isLoopbackOrigin('https://tauri.localhost.evil.com'), false);
+  assert.equal(isLoopbackOrigin('tauri://evil.com'), false);
+  assert.equal(isLoopbackOrigin('http://evil.com'), false);
+  assert.equal(isLoopbackOrigin('file://localhost'), false);
+});
+
+test('TauriTavern 适配：识别标准目录、portable、runtime.json 迁移数据根与直接 data_root，并将扩展安装到 default-user/extensions/npm-bridge', async () => {
+  const base = tempRoot('tauritavern');
+  const appRoot = join(base, 'com.tauritavern.client');
+  const migratedDataRoot = join(base, 'CustomTTData');
+  const portableRoot = join(base, 'PortableTT');
+  const fakeProject = join(base, 'project');
+  try {
+    // 准备假项目扩展源
+    const srcExt = join(fakeProject, 'sillytavern-extension', 'npm-bridge');
+    await mkdir(srcExt, { recursive: true });
+    for (const f of ['manifest.json', 'index.js', 'style.css', 'README.md']) {
+      await writeFile(join(srcExt, f), await readFile(new URL(`../../sillytavern-extension/npm-bridge/${f}`, import.meta.url), 'utf8'));
+    }
+
+    // 1. TauriTavern 迁移后自定义 data_root + appRoot/tauritavern-runtime.json
+    await mkdir(join(appRoot), { recursive: true });
+    await mkdir(join(migratedDataRoot, '_tauritavern'), { recursive: true });
+    await mkdir(join(migratedDataRoot, 'default-user', 'user', 'images', '柏宝绘_Luna'), { recursive: true });
+    await writeFile(join(migratedDataRoot, 'default-user', 'settings.json'), JSON.stringify({ extension_settings: { baibai_image: {} } }));
+    await writeFile(join(migratedDataRoot, 'default-user', 'user', 'images', '柏宝绘_Luna', 'bbi_tt_0_p1-g1.png'), TINY_PNG_BYTES);
+    await writeFile(join(appRoot, 'tauritavern-runtime.json'), JSON.stringify({ version: 1, data_root: migratedDataRoot }));
+
+    const viaRuntime = resolveTavernLayout(appRoot);
+    assert.equal(viaRuntime.kind, 'tauritavern');
+    assert.equal(viaRuntime.dataRoot, migratedDataRoot);
+    assert.equal(viaRuntime.userDir, join(migratedDataRoot, 'default-user'));
+    assert.equal(viaRuntime.extensionTargetDir, join(migratedDataRoot, 'default-user', 'extensions', 'npm-bridge'));
+    assert.equal(computeSillyTavernExtensionTargetDir(appRoot), join(migratedDataRoot, 'default-user', 'extensions', 'npm-bridge'));
+
+    // 安装扩展通过 appRoot 应自动写入迁移后的 default-user/extensions/npm-bridge
+    const installed = await installSillyTavernBridgeExtension({
+      sillyTavernRoot: appRoot,
+      targetUrl: 'http://localhost:3000',
+      projectRoot: fakeProject,
+    });
+    assert.equal(installed.tavernKind, 'tauritavern');
+    assert.equal(installed.targetPath, join(migratedDataRoot, 'default-user', 'extensions', 'npm-bridge'));
+    assert.ok((await readFile(join(installed.targetPath, 'manifest.json'), 'utf8')).includes('ST-BaiBai-Image'));
+
+    // 直接填 migratedDataRoot（外层无 data/）也能识别并扫描出柏宝绘历史图
+    const directLayout = resolveTavernLayout(migratedDataRoot);
+    assert.equal(directLayout.kind, 'tauritavern');
+    assert.equal(directLayout.extensionTargetDir, join(migratedDataRoot, 'default-user', 'extensions', 'npm-bridge'));
+    const candidates = await collectBaiBaiHistoryCandidates(appRoot);
+    assert.equal(candidates.length, 1);
+    assert.equal(candidates[0].publicPath, '/user/images/柏宝绘_Luna/bbi_tt_0_p1-g1.png');
+
+    // 2. Portable TauriTavern（含 portable.flag 与 data/default-user）
+    await mkdir(join(portableRoot, 'data', 'default-user'), { recursive: true });
+    await writeFile(join(portableRoot, 'portable.flag'), '');
+    await writeFile(join(portableRoot, 'data', 'default-user', 'settings.json'), '{}');
+    const portableLayout = resolveTavernLayout(portableRoot);
+    assert.equal(portableLayout.kind, 'tauritavern');
+    assert.equal(portableLayout.extensionTargetDir, join(portableRoot, 'data', 'default-user', 'extensions', 'npm-bridge'));
+  } finally {
+    await rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
 });
