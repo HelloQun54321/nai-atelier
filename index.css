@@ -80,10 +80,16 @@
   filter: brightness(.7);
 }
 /* 参数区按面板的实际宽度换行，窄侧栏不能沿用整窗的多列断点。
-   最小轨道取 7.5rem：采样器／噪声调度／步数／种子四项在常见面板宽度下能排满一行，
-   更窄时自然退化成 3 列或 2 列，不会让种子单独换行留下半行空白。 */
+   采样器／噪声调度／步数／种子使用独立容器查询：宽屏始终铺满四列不留空轨，窄屏整齐折成 2×2 或单列。 */
 .chain-editor-model-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); }
-.chain-editor-param-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.5rem), 1fr)); }
+.chain-editor-param-section { container: chain-editor-param / inline-size; }
+.chain-editor-param-grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(5.75rem, 0.85fr) minmax(0, 1.35fr); }
+@container chain-editor-param (max-width: 34rem) {
+  .chain-editor-param-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container chain-editor-param (max-width: 19rem) {
+  .chain-editor-param-grid { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* 内容库按实际剩余宽度换行，打开助手也不会挤掉搜索或主要操作。 */
 .content-library { container: content-library / inline-size; }
@@ -989,10 +995,6 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     padding-right: 1.5rem;
   }
 
-}
-
-.agent-panel-docked .chain-editor-param-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.5rem), 1fr)) !important;
 }
 
 /* 仅由 Layout 的实际宽度测量决定纵排，避免容器查询与 JS 两套阈值冲突。 */

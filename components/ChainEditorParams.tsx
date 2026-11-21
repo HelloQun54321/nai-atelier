@@ -302,8 +302,9 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                 </div>
             )}
 
-            {/* 采样器／噪声调度／步数／种子：步数只占数字宽度，采样器与调度分摊剩余。 */}
-            <div className="chain-editor-param-grid mb-4 grid grid-cols-1 gap-3 border-b border-gray-100 pb-4 dark:border-gray-800 sm:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_5.75rem_minmax(0,1.2fr)] md:gap-4">
+            {/* 采样器／噪声调度／步数／种子：独立四列容器，不与全宽开关共格，避免宽屏右侧留空列。 */}
+            <div className="chain-editor-param-section mb-4 space-y-3 border-b border-gray-100 pb-4 dark:border-gray-800">
+            <div className="chain-editor-param-grid grid gap-3 md:gap-4">
                 <div className={`flex min-w-0 flex-col gap-1 ${fixedSettings ? 'nai-model-locked' : ''}`} title={fixedSettings ? t('Medium 固定此设置') : undefined}>
                     <label className="flex h-6 items-center text-xs text-gray-500 dark:text-gray-500 font-medium">{t("采样器")}</label>
                     <select
@@ -399,9 +400,10 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                         }}
                     />
                 </div>
+            </div>
 
                 {currentModelInfo.supportsTransparentBackground && (
-                    <div className="appearance-group col-span-full rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                    <div className="appearance-group rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
                         <button
                             type="button"
                             aria-label={t("透明背景")}
@@ -438,7 +440,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                 )}
 
                 {getActiveCharacters(params.characters).length > currentModelInfo.maxCharacters && (
-                    <p className="col-span-full rounded-md bg-amber-50 px-2.5 py-1.5 text-meta leading-4 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">{t("{0} 最多支持 {1} 个角色提示词；当前启用了 {2} 个，请停用或删除多余角色后再生成。", [t(currentModelInfo.label), currentModelInfo.maxCharacters, getActiveCharacters(params.characters).length])}</p>
+                    <p className="rounded-md bg-amber-50 px-2.5 py-1.5 text-meta leading-4 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">{t("{0} 最多支持 {1} 个角色提示词；当前启用了 {2} 个，请停用或删除多余角色后再生成。", [t(currentModelInfo.label), currentModelInfo.maxCharacters, getActiveCharacters(params.characters).length])}</p>
                 )}
             </div>
 
