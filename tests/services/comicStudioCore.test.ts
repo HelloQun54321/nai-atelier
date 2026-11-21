@@ -2,7 +2,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { OPUS_FREE_PIXEL_LIMIT } from '../../services/aspectRatio';
 import {
+  createGuidePanelsFromTemplate,
   createInitialComicDraft,
+  getPanelBoundingBox,
   matchFreeOpusResolution,
   rectToPolygon,
   slicePolygonByLine,
@@ -65,6 +67,20 @@ describe('comicGeometry & free Opus resolution matching', () => {
     expect(snapped.point.y).toBeCloseTo(bottomRowTopY, 3);
     expect(snapped.guideX).toBeDefined();
     expect(snapped.guideY).toBeDefined();
+  });
+
+  it('computes accurate normalized bounding boxes (0..1) without clamping width/height to 1', () => {
+    const draft = createInitialComicDraft('classic-4-121');
+    const panel1Bounds = getPanelBoundingBox(draft.panels[0].points, 1, 1);
+    expect(panel1Bounds.width).toBeCloseTo(0.92, 2);
+    expect(panel1Bounds.height).toBeGreaterThan(0.2);
+    expect(panel1Bounds.height).toBeLessThan(0.35);
+    expect(panel1Bounds.cy).toBeLessThan(0.25);
+
+    const guides = createGuidePanelsFromTemplate('classic-4-121', 832, 1216, 14);
+    expect(guides).toHaveLength(4);
+    expect(guides[0].height).toBeLessThan(0.35);
+    expect(guides[1].width).toBeLessThan(0.5);
   });
 });
 

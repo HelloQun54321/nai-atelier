@@ -299,8 +299,9 @@ export const getPanelBoundingBox = (
     if (px > maxX) maxX = px;
     if (py > maxY) maxY = py;
   }
-  const width = Math.max(1, maxX - minX);
-  const height = Math.max(1, maxY - minY);
+  const minExtent = Math.min(pageWidth, pageHeight) <= 2 ? 1e-6 : 1;
+  const width = Math.max(minExtent, maxX - minX);
+  const height = Math.max(minExtent, maxY - minY);
   return {
     minX,
     minY,

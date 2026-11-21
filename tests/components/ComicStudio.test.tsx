@@ -75,11 +75,15 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getByRole('button', { name: /生成当前格/ })).toBeTruthy();
     expect(screen.getByText(/0\/12（上限 24）/)).toBeTruthy();
 
-    // 从角色库直接加入角色锚点并追加空镜/道具点
+    // 从角色库直接加入角色锚点并追加空镜/道具点，且画布锚点必须落在第 1 格高度内（绝不能飘到第 2 格）
     fireEvent.click(screen.getByRole('button', { name: /角色库/ }));
     fireEvent.click(screen.getByRole('button', { name: /银发女主/ }));
     expect(screen.getByText(/1\/12（上限 24）/)).toBeTruthy();
     expect(screen.getByRole('button', { name: '定位锚点 银发女主' })).toBeTruthy();
+    const canvasPin = screen.getByRole('button', { name: '画布锚点 银发女主' });
+    const pinTopPercent = parseFloat(canvasPin.style.top);
+    expect(pinTopPercent).toBeGreaterThan(5);
+    expect(pinTopPercent).toBeLessThan(30);
 
     fireEvent.click(screen.getByRole('button', { name: /空镜\/道具/ }));
     expect(screen.getByText(/2\/12（上限 24）/)).toBeTruthy();

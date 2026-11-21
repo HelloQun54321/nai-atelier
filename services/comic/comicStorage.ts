@@ -13,13 +13,18 @@ const normalizeAiPage = (raw: unknown, width: number, height: number, gutterPx: 
     raw.splitMode === 'single' || raw.splitMode === 'dual-vertical' || raw.splitMode === 'dual-horizontal'
       ? raw.splitMode
       : 'auto';
+  const rawGuides = Array.isArray(raw.guidePanels) && raw.guidePanels.length > 0
+    ? raw.guidePanels as ComicAiPagePlan['guidePanels']
+    : fallback.guidePanels;
+  // 自愈修复：旧版 getPanelBoundingBox 曾把归一化宽高错误钳成 1×1，遇到多格全为 1×1 的脏缓存自动重建
+  const hasCorruptedGuides = rawGuides.length > 1 && rawGuides.every(g => Number(g?.width) >= 0.99 && Number(g?.height) >= 0.99);
   return {
     storyPrompt: typeof raw.storyPrompt === 'string' ? raw.storyPrompt : '',
     targetPanelCount: Number.isFinite(Number(raw.targetPanelCount)) ? Math.max(2, Math.min(8, Math.round(Number(raw.targetPanelCount)))) : 4,
     castCharacterIds: Array.isArray(raw.castCharacterIds) ? raw.castCharacterIds.filter((id): id is string => typeof id === 'string') : [],
     splitMode,
     layoutHint: typeof raw.layoutHint === 'string' && raw.layoutHint.trim() ? raw.layoutHint : fallback.layoutHint,
-    guidePanels: Array.isArray(raw.guidePanels) && raw.guidePanels.length > 0 ? raw.guidePanels as ComicAiPagePlan['guidePanels'] : fallback.guidePanels,
+    guidePanels: hasCorruptedGuides ? fallback.guidePanels : rawGuides,
     anchors: Array.isArray(raw.anchors) ? raw.anchors as ComicAiPagePlan['anchors'] : [],
     generatedPageImage: isRecord(raw.generatedPageImage) && typeof raw.generatedPageImage.url === 'string'
       ? raw.generatedPageImage as unknown as ComicAiPagePlan['generatedPageImage']

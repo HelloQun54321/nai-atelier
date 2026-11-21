@@ -97,16 +97,26 @@ const buildGuidePanelsForCount = (
   width: number,
   height: number,
 ): ComicAiGuidePanel[] => {
-  if (count === 3) return createGuidePanelsFromTemplate('3-tier', gutterPx, width, height);
-  if (count === 4) return createGuidePanelsFromTemplate('4-manga', gutterPx, width, height);
-  if (count === 6) return createGuidePanelsFromTemplate('6-grid', gutterPx, width, height);
-  const cols = count >= 8 ? 2 : 2;
-  const rows = Math.max(2, Math.ceil(count / cols));
+  if (count === 4) return createGuidePanelsFromTemplate('classic-4-121', width, height, gutterPx);
   const margin = 0.04;
   const gx = Math.max(0.012, gutterPx / Math.max(1, width));
   const gy = Math.max(0.012, gutterPx / Math.max(1, height));
   const usableW = 1 - margin * 2;
   const usableH = 1 - margin * 2;
+  if (count === 3) {
+    const h = (usableH - gy * 2) / 3;
+    return [0, 1, 2].map(i => ({
+      id: createUuid(),
+      label: `第 ${i + 1} 格`,
+      summary: '',
+      x: margin,
+      y: margin + i * (h + gy),
+      width: usableW,
+      height: h,
+    }));
+  }
+  const cols = 2;
+  const rows = Math.max(2, Math.ceil(count / cols));
   const cellW = (usableW - gx * (cols - 1)) / cols;
   const cellH = (usableH - gy * (rows - 1)) / rows;
   const result: ComicAiGuidePanel[] = [];
@@ -142,10 +152,9 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const [undoStack, setUndoStack] = useState<ComicPageDraft[]>([]);
   const [redoStack, setRedoStack] = useState<ComicPageDraft[]>([]);
   const [activeTool, setActiveTool] = useState<ComicTool>('select');
-  const [selection, setSelection] = useState<ComicSelection>(() => {
-    const initial = loadComicDraft();
-    return initial.panels[0] ? { kind: 'panel', id: initial.panels[0].id } : null;
-  });
+  const [selection, setSelection] = useState<ComicSelection>(() => (
+    draft.panels[0] ? { kind: 'panel', id: draft.panels[0].id } : null
+  ));
   const [inspectorTab, setInspectorTab] = useState<ComicInspectorTab>('panel');
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [zoom, setZoom] = useState(0.62);
@@ -453,7 +462,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     const template = COMIC_LAYOUT_TEMPLATES.find(item => item.id === templateId);
     if (!template) return;
     if (draft.creationMode === 'ai-page') {
-      const nextGuides = createGuidePanelsFromTemplate(templateId, draft.gutterPx, draft.width, draft.height);
+      const nextGuides = createGuidePanelsFromTemplate(templateId, draft.width, draft.height, draft.gutterPx);
       applyDraftChange(current => ({
         ...current,
         aiPage: {
