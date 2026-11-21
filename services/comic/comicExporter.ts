@@ -1,5 +1,6 @@
 import { downloadFile } from '../fileDownload';
 import { localHistory } from '../localHistory';
+import type { ComicBook } from './comicBookshelf';
 import { getPanelBoundingBox } from './comicGeometry';
 import type {
   ComicBubbleItem,
@@ -569,3 +570,32 @@ export const exportComicPageAndArchive = async (
     };
   }
 };
+
+/**
+ * 第四期：整话批量打包导出高清 PNG ZIP（按页序命名 01_页名.png、02_页名.png…）。
+ */
+export const exportComicBookAsZip = async (
+  book: ComicBook,
+  onProgress?: (current: number, total: number) => void,
+): Promise<{ filename: string; pageCount: number }> => {
+  const { default: JSZip } = await import('jszip');
+  const zip = new JSZip();
+  const total = book.pages.length;
+
+  for (let i = 0; i < total; i++) {
+    const page = book.pages[i];
+    onProgress?.(i + 1, total);
+    const blob = await renderComicPageToBlob(page);
+    const num = String(i + 1).padStart(2, '0');
+    const safePageName = (page.title || `第${i + 1}页`).replace(/[\\/:*?"<>|]+/g, '_').trim() || `page_${num}`;
+    zip.file(`${num}_${safePageName}.png`, blob);
+  }
+
+  const zipBlob = await zip.generateAsync({ type: 'blob' });
+  const safeBookName = (book.title || 'comic-book').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'comic-book';
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const filename = `${safeBookName}_${total}p_${stamp}.zip`;
+  await downloadFile(zipBlob, filename);
+  return { filename, pageCount: total };
+};
+

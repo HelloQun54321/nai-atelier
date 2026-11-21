@@ -42,7 +42,7 @@ const formatChainReason = (coverRefs?: LocalHistoryCoverRef[]) => {
 export const formatHistoryBinReasons = (reasons: string[], coverRefs?: LocalHistoryCoverRef[]) => reasons.map(reason => (
     reason === 'chain' && coverRefs?.length ? formatChainReason(coverRefs) : t(({
         favorite: '有效收藏或收藏正在保存', prompt_library: '提示词库仍在引用', collection: '收藏资料仍在引用',
-        chain: '创作配方仍在引用', artist: '画师资料仍在引用', roll: 'Roll 候选仍在引用', shared_image: '原图仍被其他资料共享',
+        chain: '创作配方仍在引用', artist: '画师资料仍在引用', roll: 'Roll 候选仍在引用', comic: '漫画书架仍在引用', shared_image: '原图仍被其他资料共享',
         history: '其他历史仍在引用', recycle_bin: '其他回收站条目仍在引用', settings: '设置仍在引用', reference_asset: '参考资产仍在引用',
         reference_check_failed: '无法确认引用关系，已保留原记录', source_changed: '条目已变化，请重新读取后重试',
         source_changed_or_referenced: '条目已变化或仍被引用', write_conflict: '条目正在写入，请稍后重试',

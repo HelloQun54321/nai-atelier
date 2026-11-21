@@ -14,6 +14,7 @@ import { handleStyleCollectorRoute } from './routes/styleCollectorRoutes';
 import { handleArtistSampleRoute } from './routes/artistSampleRoutes';
 import { handlePromptLibraryCoverRoute } from './routes/promptLibraryCoverRoutes';
 import { handleStyleRollRoute } from './routes/styleRollRoutes';
+import { handleComicBookshelfRoute } from './routes/comicBookshelfRoutes';
 import { handlePromptLibraryLinkRoute } from './routes/promptLibraryLinkRoutes';
 import { handleAppearancePresetRoute } from './routes/appearancePresetRoutes';
 import { handleChainFolderRoute } from './routes/chainFolderRoutes';
@@ -214,6 +215,9 @@ export default {
 
       const styleRollResult = await handleStyleRollRoute(routeContext);
       if (styleRollResult) return styleRollResult;
+
+      const comicBookshelfResult = await handleComicBookshelfRoute(routeContext);
+      if (comicBookshelfResult) return comicBookshelfResult;
 
       const keyVaultResult = await handleNaiKeyVaultRoute(routeContext);
       if (keyVaultResult) return keyVaultResult;

@@ -32,8 +32,9 @@ const documentSources = {
  history: { from: 'local_generation_history d', value: 'd.params', where: '1' },
  recycle_bin: { from: 'local_generation_recycle_bin d', value: 'd.params', where: '1' },
  artist: { from: 'artists d', value: 'd.benchmarks', where: '1' },
+ comic: { from: 'settings d', value: 'd.value', where: `d.key GLOB 'comic_book_v1:*' AND substr(ltrim(d.value),1,1) = '{'` },
  settings: { from: 'settings d', value: 'd.value', where: `d.key NOT GLOB 'artist_usage_v1:*' AND d.key NOT GLOB 'history_write_v1:*'
-  AND d.key NOT GLOB 'history_preview_v1:*' AND d.key NOT GLOB 'history_import_v1:*' AND substr(ltrim(d.value),1,1) IN ('{','[')` },
+  AND d.key NOT GLOB 'history_preview_v1:*' AND d.key NOT GLOB 'history_import_v1:*' AND d.key NOT GLOB 'comic_book_v1:*' AND substr(ltrim(d.value),1,1) IN ('{','[')` },
 };
 const documentNames = Object.keys(documentSources) as (keyof typeof documentSources)[];
 const historyIdKey = "n.key IN ('historyId','history_id','sourceHistoryId')";
@@ -67,6 +68,7 @@ const buildReferenceChecks = (indexed = false) => Object.entries({
  }).join(' OR '),
  history: documentReference('history', indexed),
  recycle_bin: documentReference('recycle_bin', indexed),
+ comic: documentReference('comic', indexed),
  settings: documentReference('settings', indexed),
  reference_asset: `${referenceAsset('vibe_assets')} OR ${referenceAsset('character_reference_assets')}`,
 });

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  BookOpen,
   ChevronDown,
   Download,
   Grid,
@@ -34,6 +35,9 @@ import { AnchoredToolbarPopover } from '../ToolbarPopover';
 
 interface ComicToolbarProps {
   draft: ComicPageDraft;
+  bookTitle?: string;
+  pageIndex?: number;
+  pageTotal?: number;
   activeTool: ComicTool;
   activePanel?: ComicPanel;
   brushColor: string;
@@ -46,6 +50,7 @@ interface ComicToolbarProps {
   canRedo: boolean;
   exporting: boolean;
   inspectorOpen: boolean;
+  onOpenBookshelf?: () => void;
   onChangeTitle: (title: string) => void;
   onChangeMode: (mode: ComicCreationMode) => void;
   onSelectPaperPreset: (presetId: string) => void;
@@ -90,6 +95,9 @@ const STICKER_KINDS: Array<{ id: ComicStickerKind; label: string }> = [
 
 export const ComicToolbar: React.FC<ComicToolbarProps> = ({
   draft,
+  bookTitle,
+  pageIndex = 0,
+  pageTotal = 1,
   activeTool,
   activePanel,
   brushColor,
@@ -102,6 +110,7 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
   canRedo,
   exporting,
   inspectorOpen,
+  onOpenBookshelf,
   onChangeTitle,
   onChangeMode,
   onSelectPaperPreset,
@@ -149,6 +158,19 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
           >
             <ArrowLeft className="h-4 w-4" />
           </IconButton>
+        )}
+        {onOpenBookshelf && (
+          <button
+            type="button"
+            aria-label={t('打开漫画书架')}
+            title={t('管理作品/话、页序、连续阅读与批量打包导出')}
+            onClick={onOpenBookshelf}
+            className="inline-flex h-8 max-w-36 flex-none items-center gap-1.5 rounded-lg border border-gray-200/90 bg-gray-50/90 px-2 text-xs font-semibold text-gray-700 transition hover:border-indigo-400 hover:bg-white hover:text-indigo-600 dark:border-gray-700/80 dark:bg-gray-800/80 dark:text-gray-200 dark:hover:border-indigo-500"
+          >
+            <BookOpen className="h-3.5 w-3.5 flex-none text-indigo-500" aria-hidden="true" />
+            <span className="truncate">{bookTitle || t('速写单页集')}</span>
+            <span className="flex-none font-mono text-[10px] text-gray-400">{pageIndex + 1}/{Math.max(1, pageTotal)}</span>
+          </button>
         )}
         <input
           type="text"

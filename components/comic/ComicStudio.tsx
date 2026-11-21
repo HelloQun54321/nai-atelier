@@ -42,12 +42,26 @@ import {
   COMIC_PANEL_SOFT_MAX,
   COMIC_PAPER_PRESETS,
   createGuidePanelsFromTemplate,
+  createInitialComicDraft,
   getPanelBoundingBox,
   rectToPolygon,
   slicePolygonByLine,
 } from '../../services/comic/comicGeometry';
 import { buildComicPanelGenerationInput } from '../../services/comic/comicPromptBuilder';
-import { exportComicPageAndArchive } from '../../services/comic/comicExporter';
+import { exportComicBookAsZip, exportComicPageAndArchive } from '../../services/comic/comicExporter';
+import {
+  createComicBook,
+  DEFAULT_COMIC_BOOK_ID,
+  DEFAULT_COMIC_BOOK_TITLE,
+  type ComicBook,
+} from '../../services/comic/comicBookshelf';
+import {
+  comicBookshelfService,
+  readActiveBookPointer,
+  readLocalBookshelfCache,
+  writeActiveBookPointer,
+  writeLocalBookshelfCache,
+} from '../../services/comic/comicBookshelfService';
 import { loadComicDraft, saveComicDraft } from '../../services/comic/comicStorage';
 import type {
   ComicAiGuidePanel,
@@ -66,6 +80,7 @@ import type {
   ComicTool,
 } from '../../services/comic/comicTypes';
 import { useConfirmDialog } from '../ConfirmDialog';
+import { ComicBookshelfModal } from './ComicBookshelfModal';
 import { ComicCanvas } from './ComicCanvas';
 import { ComicInspector, type ComicInspectorTab } from './ComicInspector';
 import { ComicToolRail } from './ComicToolRail';
@@ -161,6 +176,28 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const novelaiSubscription = useNovelaiUsage();
 
   const [draft, setDraft] = useState<ComicPageDraft>(() => loadComicDraft());
+  const [books, setBooks] = useState<ComicBook[]>(() => {
+    const cached = readLocalBookshelfCache();
+    if (cached.length > 0) return cached;
+    return [createComicBook(DEFAULT_COMIC_BOOK_TITLE, [draft], {
+      id: DEFAULT_COMIC_BOOK_ID,
+      description: '默认随手创作与单页草稿合集',
+    })];
+  });
+  const [activeBookId, setActiveBookId] = useState<string>(() => {
+    const pointer = readActiveBookPointer();
+    const cached = readLocalBookshelfCache();
+    if (pointer.bookId && cached.some(b => b.id === pointer.bookId)) return pointer.bookId;
+    return cached[0]?.id || DEFAULT_COMIC_BOOK_ID;
+  });
+  const [bookshelfOpen, setBookshelfOpen] = useState(false);
+  const [bookshelfSynced, setBookshelfSynced] = useState(false);
+  const [exportingZip, setExportingZip] = useState(false);
+  const [zipProgressText, setZipProgressText] = useState('');
+  const dirtyBeforeServerLoadRef = useRef(false);
+  const booksRef = useRef(books);
+  booksRef.current = books;
+
   const [undoStack, setUndoStack] = useState<ComicPageDraft[]>([]);
   const [redoStack, setRedoStack] = useState<ComicPageDraft[]>([]);
   const [activeTool, setActiveTool] = useState<ComicTool>('select');
@@ -205,13 +242,52 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
 
   const canvasWrapRef = useRef<HTMLDivElement>(null);
 
-  // 跨重启自动留稿（防抖 400ms，与实验室草稿完全隔离）
+  // 启动时从 D1 书架同步作品与页序（离线或未重启后端时优雅保留本地缓存）
+  useEffect(() => {
+    let cancelled = false;
+    void comicBookshelfService.loadBooks().then(({ books: loaded, syncedToServer }) => {
+      if (cancelled || !loaded.length) return;
+      setBookshelfSynced(syncedToServer);
+      if (dirtyBeforeServerLoadRef.current) return;
+      setBooks(loaded);
+      const pointer = readActiveBookPointer();
+      const targetBook = loaded.find(b => b.id === pointer.bookId) || loaded[0];
+      const targetPage = targetBook.pages.find(p => p.id === pointer.pageId) || targetBook.pages[0];
+      setActiveBookId(targetBook.id);
+      if (targetPage) {
+        setDraft(targetPage);
+        setSelection(targetPage.panels[0] ? { kind: 'panel', id: targetPage.panels[0].id } : null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // 跨重启自动留稿 + 同步当前页回写所属 D1 书架作品（防抖 600ms，与实验室草稿完全隔离）
   useEffect(() => {
     const timer = window.setTimeout(() => {
       saveComicDraft(draft);
-    }, 400);
+      writeActiveBookPointer(activeBookId, draft.id);
+      let updatedBook: ComicBook | null = null;
+      const nextBooks = booksRef.current.map(book => {
+        if (book.id !== activeBookId) return book;
+        const idx = book.pages.findIndex(p => p.id === draft.id);
+        const nextPages = idx >= 0
+          ? book.pages.map((p, i) => (i === idx ? draft : p))
+          : [...book.pages, draft];
+        updatedBook = { ...book, pages: nextPages, updatedAt: Date.now() };
+        return updatedBook;
+      });
+      if (updatedBook) {
+        setBooks(nextBooks);
+        writeLocalBookshelfCache(nextBooks);
+        void comicBookshelfService.saveBook(updatedBook).then(res => {
+          if (res.syncedToServer) setBookshelfSynced(true);
+          if (res.error) notify(res.error, 'error');
+        });
+      }
+    }, 600);
     return () => window.clearTimeout(timer);
-  }, [draft]);
+  }, [draft, activeBookId, notify]);
 
   // 订阅后台生成进度与流式预览帧
   useEffect(() => subscribeGenerationSeries(() => {
@@ -234,6 +310,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   }, [fitCanvasToViewport]);
 
   const applyDraftChange = useCallback((updater: (current: ComicPageDraft) => ComicPageDraft, commit = true) => {
+    dirtyBeforeServerLoadRef.current = true;
     setDraft(current => {
       const next = updater(current);
       if (commit && next !== current) {
@@ -1403,12 +1480,206 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     }
   }, [draft, notify]);
 
+  // 第四期：两级漫画书架管理（作品/话 CRUD、多页新增/复制/排页/删除与批量打包导出 ZIP）
+  const persistBooks = useCallback((nextBooks: ComicBook[], changedBook?: ComicBook) => {
+    setBooks(nextBooks);
+    writeLocalBookshelfCache(nextBooks);
+    if (changedBook) {
+      void comicBookshelfService.saveBook(changedBook).then(res => {
+        if (res.syncedToServer) setBookshelfSynced(true);
+        if (res.error) notify(res.error, 'error');
+      });
+    }
+  }, [notify]);
+
+  const switchToPage = useCallback((bookId: string, page: ComicPageDraft) => {
+    dirtyBeforeServerLoadRef.current = true;
+    setActiveBookId(bookId);
+    setDraft(page);
+    setUndoStack([]);
+    setRedoStack([]);
+    setInpaintDraft(null);
+    setSelection(page.panels[0] ? { kind: 'panel', id: page.panels[0].id } : null);
+    writeActiveBookPointer(bookId, page.id);
+    fitCanvasToViewport(page.width, page.height);
+  }, [fitCanvasToViewport]);
+
+  const handleSelectBook = useCallback((bookId: string) => {
+    const target = booksRef.current.find(b => b.id === bookId);
+    if (!target || !target.pages[0]) return;
+    switchToPage(target.id, target.pages[0]);
+  }, [switchToPage]);
+
+  const handleSelectPage = useCallback((bookId: string, pageId: string) => {
+    const targetBook = booksRef.current.find(b => b.id === bookId);
+    const targetPage = targetBook?.pages.find(p => p.id === pageId);
+    if (targetBook && targetPage) switchToPage(targetBook.id, targetPage);
+  }, [switchToPage]);
+
+  const handleCreateBook = useCallback((title: string) => {
+    const firstPage = createInitialComicDraft();
+    firstPage.title = '第 1 页';
+    const created = createComicBook(title, [firstPage]);
+    const nextBooks = [created, ...booksRef.current];
+    persistBooks(nextBooks, created);
+    switchToPage(created.id, firstPage);
+    notify(t('已新建作品「{0}」', [created.title]));
+  }, [notify, persistBooks, switchToPage]);
+
+  const handleRenameBook = useCallback((bookId: string, nextTitle: string) => {
+    let updated: ComicBook | undefined;
+    const nextBooks = booksRef.current.map(b => {
+      if (b.id !== bookId) return b;
+      updated = { ...b, title: nextTitle, updatedAt: Date.now() };
+      return updated;
+    });
+    if (updated) persistBooks(nextBooks, updated);
+  }, [persistBooks]);
+
+  const handleDeleteBook = useCallback(async (bookId: string) => {
+    if (booksRef.current.length <= 1) return;
+    const target = booksRef.current.find(b => b.id === bookId);
+    if (!target) return;
+    const ok = await confirmAction({
+      title: t('删除漫画作品「{0}」？', [target.title]),
+      message: t('删除后该作品内的 {0} 页排版将被移除（已生成的单格原图和整页成品仍保留在生成历史中，并释放回收站引用保护）。', [target.pages.length]),
+      confirmLabel: t('确认删除'),
+      tone: 'danger',
+    });
+    if (!ok) return;
+    const nextBooks = booksRef.current.filter(b => b.id !== bookId);
+    persistBooks(nextBooks);
+    void comicBookshelfService.deleteBook(bookId);
+    if (activeBookId === bookId && nextBooks[0]?.pages[0]) {
+      switchToPage(nextBooks[0].id, nextBooks[0].pages[0]);
+    }
+    notify(t('已删除作品「{0}」', [target.title]));
+  }, [activeBookId, confirmAction, notify, persistBooks, switchToPage]);
+
+  const handleAddPageToBook = useCallback((bookId: string) => {
+    const target = booksRef.current.find(b => b.id === bookId);
+    if (!target) return;
+    const refPage = target.pages[target.pages.length - 1] || draft;
+    const created = createInitialComicDraft();
+    created.title = `第 ${target.pages.length + 1} 页`;
+    // 继承当前话的画幅、风格串、V5 模型与色彩策略，确保整话风格连贯
+    created.paperPresetId = refPage.paperPresetId;
+    created.width = refPage.width;
+    created.height = refPage.height;
+    created.creationMode = refPage.creationMode;
+    created.colorMode = refPage.colorMode;
+    created.dialogueMode = refPage.dialogueMode;
+    created.v5Model = refPage.v5Model;
+    created.styleChainId = refPage.styleChainId;
+    created.globalBasePrompt = refPage.globalBasePrompt;
+    created.globalNegativePrompt = refPage.globalNegativePrompt;
+    let updated: ComicBook | undefined;
+    const nextBooks = booksRef.current.map(b => {
+      if (b.id !== bookId) return b;
+      updated = { ...b, pages: [...b.pages, created], updatedAt: Date.now() };
+      return updated;
+    });
+    if (updated) persistBooks(nextBooks, updated);
+    switchToPage(bookId, created);
+    notify(t('已新增「{0}」（自动沿用当前话画风）', [created.title]));
+  }, [draft, notify, persistBooks, switchToPage]);
+
+  const handleDuplicatePageInBook = useCallback((bookId: string, pageId: string) => {
+    const target = booksRef.current.find(b => b.id === bookId);
+    const source = target?.pages.find(p => p.id === pageId);
+    if (!target || !source) return;
+    const clone: ComicPageDraft = {
+      ...structuredClone(source),
+      id: createUuid(),
+      title: `${source.title || '漫画页'} 副本`,
+      updatedAt: Date.now(),
+    };
+    const idx = target.pages.findIndex(p => p.id === pageId);
+    const nextPages = [...target.pages];
+    nextPages.splice(idx + 1, 0, clone);
+    let updated: ComicBook | undefined;
+    const nextBooks = booksRef.current.map(b => {
+      if (b.id !== bookId) return b;
+      updated = { ...b, pages: nextPages, updatedAt: Date.now() };
+      return updated;
+    });
+    if (updated) persistBooks(nextBooks, updated);
+    switchToPage(bookId, clone);
+    notify(t('已复制漫画页'));
+  }, [notify, persistBooks, switchToPage]);
+
+  const handleDeletePageInBook = useCallback(async (bookId: string, pageId: string) => {
+    const target = booksRef.current.find(b => b.id === bookId);
+    if (!target || target.pages.length <= 1) return;
+    const page = target.pages.find(p => p.id === pageId);
+    const ok = await confirmAction({
+      title: t('删除「{0}」？', [page?.title || '该漫画页']),
+      message: t('删除后该页排版将从本话移除（生成历史原图不受影响）。'),
+      confirmLabel: t('删除页'),
+      tone: 'danger',
+    });
+    if (!ok) return;
+    const nextPages = target.pages.filter(p => p.id !== pageId);
+    let updated: ComicBook | undefined;
+    const nextBooks = booksRef.current.map(b => {
+      if (b.id !== bookId) return b;
+      updated = { ...b, pages: nextPages, updatedAt: Date.now() };
+      return updated;
+    });
+    if (updated) persistBooks(nextBooks, updated);
+    if (draft.id === pageId && nextPages[0]) {
+      switchToPage(bookId, nextPages[0]);
+    }
+  }, [confirmAction, draft.id, persistBooks, switchToPage]);
+
+  const handleReorderPageInBook = useCallback((bookId: string, fromIndex: number, toIndex: number) => {
+    const target = booksRef.current.find(b => b.id === bookId);
+    if (!target) return;
+    if (toIndex < 0 || toIndex >= target.pages.length || fromIndex === toIndex) return;
+    const nextPages = [...target.pages];
+    const [moved] = nextPages.splice(fromIndex, 1);
+    nextPages.splice(toIndex, 0, moved);
+    let updated: ComicBook | undefined;
+    const nextBooks = booksRef.current.map(b => {
+      if (b.id !== bookId) return b;
+      updated = { ...b, pages: nextPages, updatedAt: Date.now() };
+      return updated;
+    });
+    if (updated) persistBooks(nextBooks, updated);
+  }, [persistBooks]);
+
+  const handleExportBookZip = useCallback(async (book: ComicBook) => {
+    setExportingZip(true);
+    setZipProgressText(t('准备打包…'));
+    try {
+      // 确保导出包含当前正在编辑的实时草稿
+      const latestBook: ComicBook = book.id === activeBookId
+        ? { ...book, pages: book.pages.map(p => (p.id === draft.id ? draft : p)) }
+        : book;
+      const receipt = await exportComicBookAsZip(latestBook, (cur, total) => {
+        setZipProgressText(t('导出 {0}/{1} 页…', [cur, total]));
+      });
+      notify(t('已打包导出整话 {0}（共 {1} 页）', [receipt.filename, receipt.pageCount]));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('整话打包导出失败'), 'error');
+    } finally {
+      setExportingZip(false);
+      setZipProgressText('');
+    }
+  }, [activeBookId, draft, notify]);
+
+  const activeBook = books.find(b => b.id === activeBookId) || books[0];
+  const activePageIndex = Math.max(0, activeBook?.pages.findIndex(p => p.id === draft.id) ?? 0);
+
   const activeSession = activeSessionRef.current;
 
   return (
     <div data-agent-view="comic" className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950">
       <ComicToolbar
         draft={draft}
+        bookTitle={activeBook?.title}
+        pageIndex={activePageIndex}
+        pageTotal={activeBook?.pages.length || 1}
         activeTool={activeTool}
         activePanel={selectedPanelForCost}
         brushColor={brushColor}
@@ -1421,6 +1692,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         canRedo={redoStack.length > 0}
         exporting={exporting}
         inspectorOpen={inspectorOpen}
+        onOpenBookshelf={() => setBookshelfOpen(true)}
         onChangeTitle={title => applyDraftChange(cur => ({ ...cur, title }), false)}
         onChangeMode={creationMode => {
           applyDraftChange(cur => ({ ...cur, creationMode }), true);
@@ -1603,6 +1875,27 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
           </div>
         )}
       </div>
+
+      <ComicBookshelfModal
+        open={bookshelfOpen}
+        books={books}
+        activeBookId={activeBookId}
+        activePageId={draft.id}
+        syncedToServer={bookshelfSynced}
+        exportingZip={exportingZip}
+        zipProgressText={zipProgressText}
+        onClose={() => setBookshelfOpen(false)}
+        onSelectBook={handleSelectBook}
+        onSelectPage={handleSelectPage}
+        onCreateBook={handleCreateBook}
+        onRenameBook={handleRenameBook}
+        onDeleteBook={id => void handleDeleteBook(id)}
+        onAddPage={handleAddPageToBook}
+        onDuplicatePage={handleDuplicatePageInBook}
+        onDeletePage={(bookId, pageId) => void handleDeletePageInBook(bookId, pageId)}
+        onReorderPage={handleReorderPageInBook}
+        onExportBookZip={book => void handleExportBookZip(book)}
+      />
     </div>
   );
 };

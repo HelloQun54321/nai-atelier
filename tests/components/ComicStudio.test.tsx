@@ -178,4 +178,28 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getByText('当前对白气泡')).toBeTruthy();
     expect(notify).toHaveBeenCalled();
   });
+
+  it('supports Phase 4 two-level comic bookshelf (create book, add page, reorder, open reader)', async () => {
+    renderStudio();
+
+    // 点击顶栏书架按钮打开两级漫画书架（默认自带「速写单页集」）
+    fireEvent.click(screen.getByRole('button', { name: '打开漫画书架' }));
+    expect(screen.getByRole('dialog', { name: '漫画书架与整话阅读' })).toBeTruthy();
+    expect(screen.getAllByText('速写单页集').length).toBeGreaterThan(0);
+
+    // 新建一部作品并新增第二页
+    fireEvent.click(screen.getByRole('button', { name: /新建作品/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '新作品名称' }), { target: { value: '第 1 话 雨夜车站' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+    expect(screen.getAllByText('第 1 话 雨夜车站').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: /新增一页/ }));
+    expect(screen.getByText('P02')).toBeTruthy();
+
+    // 切换进入整话连续阅读视图并切回书架
+    fireEvent.click(screen.getByRole('button', { name: /整话连续阅读/ }));
+    expect(screen.getByRole('button', { name: /返回书架/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /返回书架/ }));
+    expect(screen.getByRole('button', { name: /整话打包导出 ZIP/ })).toBeTruthy();
+  });
 });
