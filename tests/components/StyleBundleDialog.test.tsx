@@ -332,6 +332,27 @@ it('以文件名预填新夹并允许改名，分批导入和失败重试复用�
   expect(onViewFolder).toHaveBeenCalledWith(id);
 });
 
+it('换包后默认新建独立文件夹，保留上个导入目标的原有归属', async () => {
+  folderState.folders = [{ id: 'existing', name: '旧分享区', parentId: null }];
+  folderState.assignments = { original: ['existing'] };
+  mocks.import.mockResolvedValueOnce({ createdIds: ['new-a'], importedEntryIds: ['a'], failed: [] });
+  render(<StyleBundleDialog {...props()} />);
+  fireEvent.click(screen.getByRole('button', { name: '导入' }));
+  const file = screen.getByLabelText('选择 .naia 文件', { selector: 'input' });
+  fireEvent.change(file, { target: { files: [new File(['first'], '旧分享区.naia')] } });
+  await openFolderName();
+  fireEvent.change(folderModeField(), { target: { value: 'existing' } });
+  fireEvent.click(screen.getByRole('checkbox', { name: '旧分享区' }));
+  fireEvent.change(file, { target: { files: [new File(['second'], '新分享区.naia')] } });
+  await waitFor(() => expect(folderModeField()).toHaveProperty('value', 'new'));
+  expect(await openFolderName()).toHaveProperty('value', '新分享区');
+  fireEvent.click(actionButton('导入全部'));
+  await waitFor(() => expect(folderState.folders).toHaveLength(2));
+  const id = folderState.folders[1].id;
+  await waitFor(() => expect(folderState.assignments['new-a']).toEqual([id]));
+  expect(folderState.assignments.original).toEqual(['existing']);
+});
+
 it('已有文件夹可多选，归类先读取最新归属并追加，保留其他串与其他夹', async () => {
   folderState = { revision: 0, folders: [{ id: 'f1', name: '分享区', parentId: 'f3' }, { id: 'f2', name: '分享区', parentId: null }, { id: 'f3', name: '原有区', parentId: null }], assignments: { mine: ['f3'] } };
   mocks.import.mockImplementationOnce(async () => {
