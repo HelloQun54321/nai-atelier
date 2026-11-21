@@ -90,6 +90,8 @@ export interface PoolGenerationCheck {
   minPercent?: number;
   /** 已有任务排队中时保持当前活动 Key，不中途切换以免中断在途任务。 */
   preserveActiveKey?: boolean;
+  /** 进入发车前同步联网轮询池额度时的阶段回调，供按钮精准展示当前动作。 */
+  onStage?: (stage: 'checking_pool') => void;
 }
 
 const POOL_STORAGE_KEY = 'nai_key_pool_v1';
@@ -417,6 +419,7 @@ export const prepareGenerationWithPool = async (check: PoolGenerationCheck): Pro
   let picked = safeFastStart ? cachedPicked : null;
   if (!picked || !picked.ok) {
     // 处于低额警戒区（≤ 1%）或缓存显示全池耗尽时，强制实时刷新核对，不受 60 秒 TTL 缓存跳过影响。
+    check.onStage?.('checking_pool');
     const needsForceVerify = Boolean(
       cachedStatuses.length > 0
       && (!cachedPicked?.ok || (pickOptions.requireOpusQuota && cachedPicked.remainingPercent <= POOL_LOW_QUOTA_SYNC_THRESHOLD)),

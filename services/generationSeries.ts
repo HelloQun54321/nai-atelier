@@ -2,8 +2,8 @@ import { agentGenerationFailure, agentOperationError, normalizeAgentGenerationRe
 import { parseHttpError } from './httpErrors.mjs';
 import type { LocalGenItem, PromptAgentGenerationResult } from '../types';
 import {
-    cancelGenerationJob, getGenerationJob, isGenerationJobState, isGenerationJobTerminal, observeGenerationJob, startGenerationJob, updateGenerationJobApproval,
-    type GenerationJobDescriptor, type GenerationJobPreview, type GenerationJobSnapshot, type GenerationJobState,
+    cancelGenerationJob, getGenerationJob, isGenerationJobStage, isGenerationJobState, isGenerationJobTerminal, observeGenerationJob, startGenerationJob, updateGenerationJobApproval,
+    type GenerationJobDescriptor, type GenerationJobPreview, type GenerationJobSnapshot, type GenerationJobStage, type GenerationJobState,
 } from './generationJob';
 import type { GenerationPlacement } from './generationTask';
 import { localHistory } from './localHistory';
@@ -33,6 +33,7 @@ export interface GenerationSeriesSession {
     stopped: boolean;
     queued: boolean;
     state: GenerationJobState;
+    stage?: GenerationJobStage;
     historyIds: string[];
     lastSavedItem?: LocalGenItem;
     preview?: GenerationJobPreview;
@@ -163,6 +164,7 @@ const applySnapshot = (session: GenerationSeriesSession, snapshot: GenerationJob
         emitCloudQueueStatus(null, session.key);
     }
     session.state = isGenerationJobState(snapshot.state) ? snapshot.state : session.state;
+    session.stage = isGenerationJobStage(snapshot.stage) ? snapshot.stage : undefined;
     if (Array.isArray(snapshot.historyIds)) session.historyIds = snapshot.historyIds.filter(id => typeof id === 'string' && id.length > 0);
     const position = typeof snapshot.position === 'number' && Number.isSafeInteger(snapshot.position) && snapshot.position > 0 ? snapshot.position : undefined;
     session.progress = { current: snapshot.completedCount, total: snapshot.requestedCount, stopping: session.stopped, ...(position ? { position } : {}) };

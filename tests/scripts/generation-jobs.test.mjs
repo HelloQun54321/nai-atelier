@@ -443,3 +443,28 @@ test('冻结超过终态清理时间仍能收取已保存回执，收取后才�
   fixture.advance(300_001);
   assert.throws(() => fixture.jobs.get('key', a), { code: 'generation_job_not_found' });
 });
+
+test('准备子阶段与生成状态切换立即推送订阅者，无需等待 1 秒定时轮询', async () => {
+  let releaseEstimate;
+  const events = [];
+  const fixture = setup({
+    estimate: async (_job, _fresh, setStage) => {
+      await new Promise(resolve => { releaseEstimate = () => { setStage('checking_pool'); resolve(); }; });
+      return 0;
+    },
+  });
+  fixture.jobs.start('key', a, 1, undefined, descriptor(), {});
+  const job = fixture.jobs.get('key', a);
+  const unsubscribe = fixture.jobs.subscribe(job, snapshot => {
+    events.push({ state: snapshot.state, stage: snapshot.stage });
+  });
+  await until(() => Boolean(releaseEstimate));
+  releaseEstimate();
+  await job.running;
+  unsubscribe();
+  assert.ok(events.some(item => item.state === 'preparing' && item.stage === 'checking_pool'));
+  assert.ok(events.some(item => item.state === 'generating' && item.stage === undefined));
+  assert.ok(events.some(item => item.state === 'saving' && item.stage === undefined));
+  assert.equal(events.at(-1)?.state, 'succeeded');
+  assert.equal(events.at(-1)?.stage, undefined);
+});

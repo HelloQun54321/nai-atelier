@@ -1,8 +1,8 @@
 import { createSseParser, notifyLanAccessRequired, parseErrorResponse } from './api';
 import type { GenerationPlacement } from './generationTask';
-import type { GenerationJobDescriptor, GenerationJobSnapshot, GenerationJobState } from '../worker/generationJobs.mjs';
+import type { GenerationJobDescriptor, GenerationJobSnapshot, GenerationJobStage, GenerationJobState } from '../worker/generationJobs.mjs';
 
-export type { GenerationJobDescriptor, GenerationJobSnapshot, GenerationJobState };
+export type { GenerationJobDescriptor, GenerationJobSnapshot, GenerationJobStage, GenerationJobState };
 export type GenerationJobPreview = NonNullable<GenerationJobSnapshot['preview']>;
 
 const JOB_PATH = '/api/generation-job';
@@ -11,6 +11,9 @@ const REQUEST_TIMEOUT = 15_000;
 export const isGenerationJobState = (value: unknown): value is GenerationJobState =>
     value === 'waiting' || value === 'preparing' || value === 'generating' || value === 'saving' || value === 'paused'
     || value === 'awaiting_confirmation' || value === 'succeeded' || value === 'cancelled' || value === 'failed';
+
+export const isGenerationJobStage = (value: unknown): value is GenerationJobStage =>
+    value === 'checking_pool' || value === 'checking_quota' || value === 'preparing_references';
 
 export const isGenerationJobTerminal = (state: GenerationJobState) => state === 'succeeded' || state === 'cancelled' || state === 'failed';
 

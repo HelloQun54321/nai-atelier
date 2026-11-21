@@ -153,13 +153,19 @@ describe('Key 池自动轮询（满圈率优先）', () => {
     }
     expect(getPoolMaxOpusPercent()).toBe(25);
 
-    // 5) 缓存高于 1% 安全线时再次发起生成（哪怕看图已超过 60 秒）：直接复用池缓存零网络阻塞起步
+    // 5) 缓存高于 1% 安全线时再次发起生成（哪怕看图已超过 60 秒）：直接复用池缓存零网络阻塞起步，且不误报轮询阶段
     const subCallsBeforeWarm = fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/novelai-subscription')).length;
+    const warmStages: string[] = [];
     const realNow = Date.now;
     vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 5 * 60_000);
-    const warmPicked = await prepareGenerationWithPool({ model: 'nai-diffusion-5-full', estimatedCostWithOpus: 0 });
+    const warmPicked = await prepareGenerationWithPool({
+      model: 'nai-diffusion-5-full',
+      estimatedCostWithOpus: 0,
+      onStage: stage => warmStages.push(stage),
+    });
     expect(warmPicked.pooled).toBe(true);
     if (warmPicked.pooled) expect(warmPicked.ok).toBe(true);
+    expect(warmStages).toEqual([]);
     const subCallsAfterWarm = fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/novelai-subscription')).length;
     expect(subCallsAfterWarm).toBe(subCallsBeforeWarm);
     vi.restoreAllMocks();
@@ -199,11 +205,17 @@ describe('Key 池自动轮询（满圈率优先）', () => {
     await naiKeyPoolService.set({ enabled: true, memberIds: ['k1'] });
     const first = await prepareGenerationWithPool({ model: 'nai-diffusion-5-full', estimatedCostWithOpus: 0 });
     expect(first.pooled && first.ok).toBe(true);
-    // 远端耗尽且时间推进使 TTL 过期 → 因处于 ≤ 1% 警戒区，发车前必须同步核实并拦截
+    // 远端耗尽且时间推进使 TTL 过期 → 因处于 ≤ 1% 警戒区，发车前必须同步核实并触发 checking_pool 阶段回调后拦截
     livePercent = 0;
+    const lowStages: string[] = [];
     const realNow = Date.now;
     vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 90_000);
-    const blocked = await prepareGenerationWithPool({ model: 'nai-diffusion-5-full', estimatedCostWithOpus: 0 });
+    const blocked = await prepareGenerationWithPool({
+      model: 'nai-diffusion-5-full',
+      estimatedCostWithOpus: 0,
+      onStage: stage => lowStages.push(stage),
+    });
+    expect(lowStages).toEqual(['checking_pool']);
     expect(blocked).toMatchObject({ pooled: true, ok: false, code: 'pool_exhausted' });
     vi.restoreAllMocks();
   });

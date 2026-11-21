@@ -10,14 +10,14 @@ import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { t, useLanguage } from '../services/i18n';
 import type { GenerationSeriesProgress } from '../services/generationSeries';
 import type { GenerationPlacement, GenerationQueueSnapshot } from '../services/generationTask';
-import type { GenerationJobState } from '../services/generationJob';
+import type { GenerationJobStage, GenerationJobState } from '../services/generationJob';
 import { DEFAULT_GENERATION_INTERVAL_SECONDS, DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval, validateGenerationIntervalJitter } from '../worker/generationTasks.mjs';
 
 export interface GenerationCountControlProps {
   count: number; onCountChange: (count: number) => void;
   series: GenerationSeriesProgress | null; onStop: () => void;
   disabled?: boolean; onGenerate?: () => void; costLabel?: string; unavailableLabel?: string;
-  busy?: boolean; generationState?: GenerationJobState; queueState?: GenerationQueueSnapshot | null;
+  busy?: boolean; generationState?: GenerationJobState; generationStage?: GenerationJobStage; queueState?: GenerationQueueSnapshot | null;
   generationProgress?: { step: number; total: number } | null; showQueueStatus?: boolean;
   onTogglePause?: () => void; pausePending?: boolean;
   onQueue?: (placement: GenerationPlacement) => void;
@@ -31,7 +31,7 @@ export interface GenerationCountControlProps {
   layout?: 'default' | 'dock';
 }
 
-export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ count, onCountChange, series, onStop, disabled, onGenerate, costLabel, unavailableLabel, busy, generationState, generationProgress, showQueueStatus = true, queueState, onTogglePause, pausePending, onQueue, queued = [], queueDisabled, continuousGenerationEnabled = true, intervalSeconds = DEFAULT_GENERATION_INTERVAL_SECONDS, onIntervalChange, intervalPending, intervalJitterPercent = DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT, onIntervalJitterChange, layout = 'default' }) => {
+export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ count, onCountChange, series, onStop, disabled, onGenerate, costLabel, unavailableLabel, busy, generationState, generationStage, generationProgress, showQueueStatus = true, queueState, onTogglePause, pausePending, onQueue, queued = [], queueDisabled, continuousGenerationEnabled = true, intervalSeconds = DEFAULT_GENERATION_INTERVAL_SECONDS, onIntervalChange, intervalPending, intervalJitterPercent = DEFAULT_GENERATION_INTERVAL_JITTER_PERCENT, onIntervalJitterChange, layout = 'default' }) => {
   useLanguage();
   const queueStatus = useCloudQueueStatus();
   const cloudQueueEnabled = useCloudQueueEnabled();
@@ -136,7 +136,12 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
       const pos = queueStatus.position;
       return { icon: 'spin', label: pos && pos > 0 ? t("云端排队 · 第 {0} 位", [pos]) : t("云端排队中…") };
     }
-    if (occupied && generationState === 'preparing') return { icon: 'spin', label: t("准备中…") };
+    if (occupied && generationState === 'preparing') {
+      if (generationStage === 'checking_pool') return { icon: 'spin', label: t("轮询密钥额度…") };
+      if (generationStage === 'checking_quota') return { icon: 'spin', label: t("核实额度中…") };
+      if (generationStage === 'preparing_references') return { icon: 'spin', label: t("处理参考图中…") };
+      return { icon: 'spin', label: t("准备中…") };
+    }
     if (occupied && generationState === 'waiting') {
       if (series?.position && series.position > 0) return { icon: 'clock', label: t("排队中 · 第 {0} 位", [series.position]) };
       if (series && series.current > 0 && series.current < series.total) return { icon: 'timer', label: t("等待下一张…") };

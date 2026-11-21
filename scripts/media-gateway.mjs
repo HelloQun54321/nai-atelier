@@ -3952,7 +3952,7 @@ const serveDistFile = async (req, res, url) => {
         }).catch(() => {});
       }
     },
-    estimate: async (job, fresh) => {
+    estimate: async (job, fresh, setStage) => {
       const payload = job.descriptor.payload, p = payload.parameters;
       const priced = { ...payload, parameters: { ...p,
         ...(p._local_character_references?.enabled ? { director_reference_images_cached: p._local_character_references.slots } : {}),
@@ -4022,6 +4022,7 @@ const serveDistFile = async (req, res, url) => {
           }
         } else {
           // 2) 同步核对路径：仅在冷启动无缓存、无干净可用密钥、或剩余额度跌入 ≤ 1% 低额警戒区时才同步联网核实。
+          setStage?.('checking_pool');
           await Promise.allSettled(members.map(async entry => {
             const auth = `Bearer ${String(entry.key).trim()}`;
             const failedAt = novelAiSubscriptionFailedAt.get(auth) || 0;
@@ -4068,6 +4069,7 @@ const serveDistFile = async (req, res, url) => {
       job.executionKeyHash = job.key;
       let subscriptionUnsupported = false;
       if (fresh) {
+        setStage?.('checking_quota');
         try {
           const gatewayUrl = await readNaiGatewayUrl({ ...internalWorkerRequest, headers: { authorization } }, workerPort);
           // 单 Key 批内核实费用只依赖 /user/subscription，不阻塞等待 /api/me/quota，复用已有配额缓存。

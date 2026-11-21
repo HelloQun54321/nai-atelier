@@ -53,6 +53,12 @@ export class GenerationJobs {
       try { listener(snapshot); } catch { job.listeners.delete(listener); }
     }
   }
+  setStage(job, stage) {
+    const next = stage || undefined;
+    if (job.stage === next) return;
+    job.stage = next;
+    this.notify(job);
+  }
   snapshot(job, previewVersion, observed = true) {
     if (observed && terminal(job.state) && job.observedAt === undefined) {
       job.observedAt = this.now();
@@ -71,6 +77,7 @@ export class GenerationJobs {
     const queue = this.readQueue?.(job);
     return {
       token: job.token, state, completedCount: job.historyIds.length, requestedCount: job.count,
+      ...(!terminal(state) && job.stage ? { stage: job.stage } : {}),
       // 只传展示与取消所需信息，后台控制器、Key 指纹等内部字段留在运行设备。
       cloudQueue: queue ? {
         taskId: queue.taskId, phase: queue.phase, position: queue.position, queueSize: queue.queueSize,
@@ -131,19 +138,32 @@ export class GenerationJobs {
         if (job.state === 'awaiting_confirmation') { await this.sleep(250); continue; }
         const status = this.tasks.status(job.key, job.token), current = this.tasks.current(job.key);
         if (status.paused || status.position > 0 || status.waitMs > 0 || current?.inFlight) {
-          job.state = status.paused ? 'paused' : 'waiting';
+          const nextState = status.paused ? 'paused' : 'waiting';
+          if (job.state !== nextState || job.stage) {
+            job.state = nextState;
+            job.stage = undefined;
+            this.notify(job);
+          }
           await this.sleep(status.waitMs > 0 ? Math.min(status.waitMs, 250) : 250);
           continue;
         }
         this.tasks.renew(job.key, job.token, undefined, true);
         job.state = 'preparing';
-        const cost = await this.estimate(job, Boolean(job.placement) || job.count > 1 || job.historyIds.length > 0 || job.needsRefresh);
+        job.stage = undefined;
+        this.notify(job);
+        const cost = await this.estimate(
+          job,
+          Boolean(job.placement) || job.count > 1 || job.historyIds.length > 0 || job.needsRefresh,
+          stage => this.setStage(job, stage),
+        );
         job.needsRefresh = false;
         if (job.cancelled) break;
         if (!Number.isFinite(cost) || cost < 0) throw failure('无法核实当前额度，已停止后续生成', 'quota_refresh_failed', 503);
         if (cost > job.approvedCost && job.descriptor.autoApproveCost !== true) {
           job.cost = cost;
           job.state = 'awaiting_confirmation';
+          job.stage = undefined;
+          this.notify(job);
           // 保留当前执行位等待本任务授权，不改写用户/其他客户端的全局暂停状态。
           continue;
         }
@@ -151,7 +171,9 @@ export class GenerationJobs {
         const ready = this.tasks.status(job.key, job.token);
         if (ready.paused || ready.position > 0 || ready.waitMs > 0) {
           job.state = ready.paused ? 'paused' : 'waiting';
+          job.stage = undefined;
           job.needsRefresh = true;
+          this.notify(job);
           await this.sleep(250);
           continue;
         }
@@ -164,11 +186,14 @@ export class GenerationJobs {
         job.preview = undefined;
         job.previewVersion++;
         job.state = 'generating';
+        job.stage = undefined;
+        this.notify(job);
         let output, saving;
         const startSaving = finalOutput => {
           if (saving) return;
           output = finalOutput;
           job.state = 'saving';
+          job.stage = undefined;
           this.notify(job);
           const seed = finalOutput.seed ?? payload.parameters.seed;
           const durationMs = Number.isFinite(Number(finalOutput.durationMs)) && Number(finalOutput.durationMs) > 0
@@ -215,6 +240,7 @@ export class GenerationJobs {
         if (saveError) throw saveError;
         // 保存已落定，后续续租/取消异常不能再冒充历史保存失败。
         job.state = 'waiting';
+        job.stage = undefined;
         job.historyIds.push(item.id);
         job.lastSavedItem = item;
         job.preview = undefined;
@@ -223,10 +249,12 @@ export class GenerationJobs {
         this.tasks.renew(job.key, job.token, job.historyIds.length);
       }
       job.state = job.cancelled ? 'cancelled' : 'succeeded';
+      job.stage = undefined;
       if (job.cancelled) { job.error = '已取消后续生成，已提交的图片仍已保存'; job.code = 'generation_cancelled'; }
     } catch (error) {
       const saving = job.state === 'saving';
       job.state = !saving && (error.code === 'generation_cancelled' || job.cancelled) ? 'cancelled' : 'failed';
+      job.stage = undefined;
       job.error = error.message || '后台生成失败';
       job.code = job.state === 'cancelled' ? 'generation_cancelled' : saving ? 'history_save_failed' : error.code || 'generation_failed';
       if (error.preview) { job.preview = error.preview; job.previewVersion++; }

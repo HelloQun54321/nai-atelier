@@ -138,6 +138,15 @@ it.each([false, true])('连续生成 %s 时主按钮精准展示各生命周期�
     expect(screen.getByRole('button', { name: expectedLabel })).toBe(main);
     expect(actionSurface(main).classList.contains('generation-action-button--loading')).toBe(true);
   }
+  for (const [generationStage, expectedLabel] of [
+    ['checking_pool', '轮询密钥额度…'],
+    ['checking_quota', '核实额度中…'],
+    ['preparing_references', '处理参考图中…'],
+  ] as const) {
+    view.rerender(<GenerationCountControl {...common} generationState="preparing" generationStage={generationStage} queueState={state} />);
+    expect(screen.getByRole('button', { name: expectedLabel })).toBe(main);
+    expect(actionSurface(main).classList.contains('generation-action-button--loading')).toBe(true);
+  }
   view.rerender(<GenerationCountControl {...common} generationState="generating" generationProgress={{ step: 14, total: 28 }} queueState={state} />);
   expect(screen.getByRole('button', { name: '采样 14 / 28' })).toBe(main);
   view.rerender(<GenerationCountControl {...common} generationState="saving" queueState={{ ...state, paused: true, pausing: true }} />);

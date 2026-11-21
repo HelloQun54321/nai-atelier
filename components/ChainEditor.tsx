@@ -10,7 +10,7 @@ import { promptAgentService, type AgentPromptApplied, type AgentPromptBeforeAppl
 import { useAgentCommand } from '../services/agentCommands';
 import { agentOperationError, agentGenerationFailure, normalizeAgentGenerationResult, validateGenerationCount, validateGenerationPlacement } from '../services/agentOperation.mjs';
 import { approveGenerationSeries, beginGenerationSeries, getGenerationSeriesSession, getQueuedGenerationSeries, stopGenerationSeriesSession, subscribeGenerationSeries, type GenerationSeriesSession } from '../services/generationSeries';
-import { cancelGenerationJob, type GenerationJobDescriptor, type GenerationJobState } from '../services/generationJob';
+import { cancelGenerationJob, type GenerationJobDescriptor, type GenerationJobStage, type GenerationJobState } from '../services/generationJob';
 import { getGenerationQueue, setGenerationQueuePaused, setGenerationInterval, type GenerationPlacement, type GenerationQueueSnapshot } from '../services/generationTask';
 import { AgentDraftReview } from './AgentDraftReview';
 
@@ -186,7 +186,8 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     const connectionNoticeRef = useRef('');
     const activeEditOperationRef = useRef<ImageEditOperation | null>(null);
     const promptJobApprovalRef = useRef<(session: GenerationSeriesSession, awaiting: { cost: number; completedCount: number; requestedCount: number }) => Promise<void>>(async () => {});
-    const [preparingGeneration, setPreparingGeneration] = useState(false);
+    const [preparingStage, setPreparingStage] = useState<'preparing' | GenerationJobStage | null>(null);
+    const preparingGeneration = preparingStage !== null;
     const isGenerating = preparingGeneration || isImageGenerating || Boolean(generationSeries && generationSeries.current < generationSeries.total);
     const latestGenerationStateRef = useRef({ apiKey, subscription: novelaiStatus, isGenerating });
     latestGenerationStateRef.current = { apiKey, subscription: novelaiStatus, isGenerating };
@@ -386,8 +387,11 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     useEffect(() => { setGenerationError(null); }, [activeGenerationMode, chain.id]);
     const generationSession = getGenerationSeriesSession(chain.id);
     const generationState: GenerationJobState = generationSession?.key === apiKey ? generationSession.state : (preparingGeneration || isImageGenerating) ? 'preparing' : 'waiting';
+    const generationStage: GenerationJobStage | undefined = generationSession?.key === apiKey
+        ? generationSession.stage
+        : (preparingStage && preparingStage !== 'preparing' ? preparingStage : undefined);
     const generationCountControl = { continuousGenerationEnabled, count: effectiveGenerationCount, onCountChange: setGenerationCount, series: generationSeries, onStop: stopGenerationSeries, queueState, onTogglePause: () => { void toggleQueuePause(); }, pausePending,
-        generationState,
+        generationState, generationStage,
         intervalSeconds: queueState?.intervalSeconds, onIntervalChange: (seconds: number) => { void changeGenerationInterval(seconds); }, intervalPending: intervalPending || !apiKey,
         intervalJitterPercent: queueState?.intervalJitterPercent ?? 0,
         onIntervalJitterChange: (percent: number) => { void changeGenerationInterval(queueState?.intervalSeconds ?? 2, percent); },
@@ -1751,16 +1755,17 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         const count = sampleDraft ? 1 : validateGenerationCount(effectiveGenerationCount);
         let submitKey = apiKey;
         let freshSubscription = novelaiSubscription;
-        if (!placement) setPreparingGeneration(true);
+        if (!placement) setPreparingStage('preparing');
         let poolCheck: Awaited<ReturnType<typeof prepareGenerationWithPool>>;
         try {
             poolCheck = await prepareGenerationWithPool({
                 model: draft.params.model,
                 estimatedCostWithOpus: estimateV45GenerationCost(draft.params, true, false),
                 preserveActiveKey: Boolean(placement),
+                onStage: stage => { if (!placement) setPreparingStage(stage); },
             });
         } finally {
-            if (!placement) setPreparingGeneration(false);
+            if (!placement) setPreparingStage(null);
         }
         if (poolCheck.pooled) {
             if (!poolCheck.ok) {
@@ -1845,37 +1850,39 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         const fullAccess = permissionMode === 'full';
         const editParamsSource = options?.params || request.params || activeEditDraft?.params || params;
         let preparedEdit: PreparedImageEdit;
-        try {
-            preparedEdit = await prepareImageEdit({
-                operation: request.operation, image: request.image, mask: request.mask,
-                focused: Boolean(request.focused && request.operation === 'inpaint'),
-                focusedRect: request.focusedRect, minimumContextArea: request.minimumContextArea,
-            });
-        } catch {
-            const message = '无法准备图片编辑底图或蒙版';
-            setErrorMsg(message);
-            notify(message, 'error');
-            return stop(message, 'invalid_base_image');
-        }
-        const { sourceWidth, sourceHeight } = preparedEdit;
         let submitKey = apiKey;
         let freshSubscription = latestGenerationStateRef.current.subscription.info;
-        if (!options?.placement) setPreparingGeneration(true);
         let poolCheck: Awaited<ReturnType<typeof prepareGenerationWithPool>>;
+        if (!options?.placement) setPreparingStage('preparing_references');
         try {
+            try {
+                preparedEdit = await prepareImageEdit({
+                    operation: request.operation, image: request.image, mask: request.mask,
+                    focused: Boolean(request.focused && request.operation === 'inpaint'),
+                    focusedRect: request.focusedRect, minimumContextArea: request.minimumContextArea,
+                });
+            } catch {
+                const message = '无法准备图片编辑底图或蒙版';
+                setErrorMsg(message);
+                notify(message, 'error');
+                return stop(message, 'invalid_base_image');
+            }
+            if (!options?.placement) setPreparingStage('preparing');
             poolCheck = await prepareGenerationWithPool({
                 model: editParamsSource.model,
                 estimatedCostWithOpus: estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), 3, false, {
-                    width: sourceWidth,
-                    height: sourceHeight,
+                    width: preparedEdit.sourceWidth,
+                    height: preparedEdit.sourceHeight,
                     focusedRect: request.focusedRect,
                     minimumContextArea: request.minimumContextArea,
                 }),
                 preserveActiveKey: Boolean(options?.placement),
+                onStage: stage => { if (!options?.placement) setPreparingStage(stage); },
             });
         } finally {
-            if (!options?.placement) setPreparingGeneration(false);
+            if (!options?.placement) setPreparingStage(null);
         }
+        const { sourceWidth, sourceHeight } = preparedEdit;
         if (poolCheck.pooled) {
             if (!poolCheck.ok) {
                 setErrorMsg(poolCheck.message);
@@ -2074,11 +2081,18 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             if (permissionMode === 'read_only') throw agentOperationError('当前为只读权限，不能生成图片', 'agent_read_only');
             let submitKey = apiKey;
             let freshSubscription = novelaiSubscription;
-            const poolCheck = await prepareGenerationWithPool({
-                model: draft.params.model,
-                estimatedCostWithOpus: estimateV45GenerationCost(draft.params, true, false),
-                preserveActiveKey: Boolean(placement),
-            });
+            if (!placement) setPreparingStage('preparing');
+            let poolCheck: Awaited<ReturnType<typeof prepareGenerationWithPool>>;
+            try {
+                poolCheck = await prepareGenerationWithPool({
+                    model: draft.params.model,
+                    estimatedCostWithOpus: estimateV45GenerationCost(draft.params, true, false),
+                    preserveActiveKey: Boolean(placement),
+                    onStage: stage => { if (!placement) setPreparingStage(stage); },
+                });
+            } finally {
+                if (!placement) setPreparingStage(null);
+            }
             if (poolCheck.pooled) {
                 if (!poolCheck.ok) throw agentOperationError(poolCheck.message, poolCheck.code);
                 submitKey = poolCheck.key;

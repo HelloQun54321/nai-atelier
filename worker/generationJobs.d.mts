@@ -4,6 +4,7 @@ import type { GenerationTasks } from './generationTasks.mjs';
 import type { CloudQueueStatus } from '../services/cloudQueue';
 
 export type GenerationJobState = 'waiting' | 'preparing' | 'generating' | 'saving' | 'paused' | 'awaiting_confirmation' | 'succeeded' | 'cancelled' | 'failed';
+export type GenerationJobStage = 'checking_pool' | 'checking_quota' | 'preparing_references';
 export interface GenerationJobDescriptor {
   payload: { model: string; action: 'generate' | 'img2img' | 'infill'; parameters: Record<string, unknown>; input?: string };
   history: Pick<LocalGenItem, 'prompt' | 'negativePrompt' | 'params'> & Partial<Pick<LocalGenItem, 'basePrompt' | 'subjectPrompt' | 'modules' | 'sourceChainId' | 'sourceChainName' | 'sourceChainType'>> & { edit?: ImageEditMetadata };
@@ -18,7 +19,7 @@ export interface GenerationJobDescriptor {
   sequence?: GenerationJobDescriptor[];
 }
 export interface GenerationJobSnapshot {
-  token: string; state: GenerationJobState; completedCount: number; requestedCount: number;
+  token: string; state: GenerationJobState; stage?: GenerationJobStage; completedCount: number; requestedCount: number;
   historyIds: string[]; position?: number; lastSavedItem?: LocalGenItem;
   preview?: { image: string; step?: number }; previewVersion?: number; cost?: number; error?: string; code?: string;
   accountingFailed?: boolean; accountingError?: string; cleanupError?: string;
@@ -30,7 +31,7 @@ export interface GenerationJobOutput {
 export type GenerationJobHistoryMetadata = Omit<LocalGenItem, 'imageUrl'>;
 export interface GenerationJob<Context> {
   key: string; token: string; count: number; placement?: 'end' | 'next'; descriptor: GenerationJobDescriptor;
-  context: Context; state: GenerationJobState; historyIds: string[]; approvedCost: number; cancelled: boolean;
+  context: Context; state: GenerationJobState; stage?: GenerationJobStage; historyIds: string[]; approvedCost: number; cancelled: boolean;
   running: Promise<void>; lastSavedItem?: LocalGenItem; lastQueueTaskId?: string;
   sequence?: GenerationJobDescriptor[];
 }
@@ -39,7 +40,7 @@ export class GenerationJobs<Context = unknown, Output extends GenerationJobOutpu
     tasks: GenerationTasks;
     generate: (job: GenerationJob<Context>, payload: GenerationJobDescriptor['payload'], onPreview: (preview: { image: string; step?: number }) => void, onFinal: (output: Output) => void) => Promise<Output>;
     save: (job: GenerationJob<Context>, output: Output, history: GenerationJobHistoryMetadata) => Promise<LocalGenItem>;
-    estimate: (job: GenerationJob<Context>, fresh: boolean) => Promise<number>;
+    estimate: (job: GenerationJob<Context>, fresh: boolean, setStage?: (stage?: GenerationJobStage) => void) => Promise<number>;
     validate: (descriptor: GenerationJobDescriptor) => void;
     readCleanup: (job: GenerationJob<Context>) => string | undefined;
     readQueue?: (job: GenerationJob<Context>) => CloudQueueStatus | null | undefined;
