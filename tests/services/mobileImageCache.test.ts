@@ -79,6 +79,11 @@ describe('getMobileOriginalUrl', () => {
     expect(getMobileOriginalUrl(remote)).toBe(`/api/media?source=${encodeURIComponent(remote)}&variant=original`);
   });
 
+  it('Danbooru 原图使用新的网关地址以避开缓存的跨域重定向', () => {
+    const source = 'https://cdn.donmai.us/720x720/aa/bb/synthetic.webp';
+    expect(getMobileOriginalUrl(source)).toBe(buildMediaUrl(source, 'original') + '&relay=1');
+  });
+
   it('对本地已有资源保持原始 URL', () => {
     const local = '/api/assets/aitag-covers/123.webp';
     expect(getMobileOriginalUrl(local)).toBe(local);
