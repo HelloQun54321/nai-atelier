@@ -105,10 +105,16 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: '黑白网点漫' }));
     expect(screen.getByText(/自动剥离发送副本中的彩色词/)).toBeTruthy();
 
-    // 点击左侧悬浮工具坞的「画笔」，就近弹出画笔迷你属性卡且不切换右侧标签
+    // 点击满高竖工具栏的「画笔」或按快捷键，顶栏动态属性条实时显示粗细且不切换右侧标签
     fireEvent.click(screen.getByRole('button', { name: '画笔' }));
     expect(screen.getByText('粗细')).toBeTruthy();
     expect(screen.getByRole('tab', { name: '画风设定' }).getAttribute('aria-selected')).toBe('true');
+
+    // PS 单键快捷键切换抓手平移与格内移图工具
+    fireEvent.keyDown(window, { key: 'h' });
+    expect(screen.getByRole('button', { name: '抓手平移' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(screen.getByRole('button', { name: '格内移图' }).getAttribute('aria-pressed')).toBe('true');
 
     // 切到「嵌字·图层」标签管理 4 大图层
     fireEvent.click(screen.getByRole('tab', { name: /嵌字·图层/ }));

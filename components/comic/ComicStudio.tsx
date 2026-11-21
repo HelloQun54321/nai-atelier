@@ -46,6 +46,7 @@ import type {
 import { useConfirmDialog } from '../ConfirmDialog';
 import { ComicCanvas } from './ComicCanvas';
 import { ComicInspector, type ComicInspectorTab } from './ComicInspector';
+import { ComicToolRail } from './ComicToolRail';
 import { ComicToolbar } from './ComicToolbar';
 
 const MAX_UNDO_STACK = 50;
@@ -142,13 +143,13 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     setSessionTick(tick => tick + 1);
   }), []);
 
-  // 自动计算适配画布缩放
+  // 自动计算更舒展的画布初始缩放（让漫画页饱满居中成为视觉主角）
   const fitCanvasToViewport = useCallback((targetW = draft.width, targetH = draft.height) => {
     const host = canvasWrapRef.current;
     if (!host) return;
-    const availW = Math.max(240, host.clientWidth - 48);
-    const availH = Math.max(240, host.clientHeight - 48);
-    const ratio = Math.min(availW / targetW, availH / targetH, 1.15);
+    const availW = Math.max(240, host.clientWidth - 44);
+    const availH = Math.max(240, host.clientHeight - 44);
+    const ratio = Math.min(availW / targetW, availH / targetH, 1.25);
     setZoom(Math.max(0.25, Math.round(ratio * 100) / 100));
   }, [draft.width, draft.height]);
 
@@ -216,8 +217,21 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     }
   }, [applyDraftChange, handleDeletePanel, selection]);
 
-  // 键盘快捷键：Undo/Redo、Delete/Backspace 删除选中项、Esc 切回选择
+  // 键盘快捷键：Undo/Redo、Delete/Backspace 删除、Esc 切回选择、PS 单键工具快切
   useEffect(() => {
+    const toolShortcutMap: Record<string, ComicTool> = {
+      v: 'select',
+      h: 'hand',
+      z: 'zoom',
+      r: 'draw-panel',
+      c: 'slice',
+      m: 'frame-image',
+      b: 'bubble',
+      t: 'text',
+      s: 'sticker',
+      p: 'brush',
+      e: 'eraser',
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isEditingText = Boolean(target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable));
@@ -243,6 +257,14 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       if (event.key === 'Escape') {
         setActiveTool('select');
         setSelection(null);
+        return;
+      }
+      if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+        const mapped = toolShortcutMap[event.key.toLowerCase()];
+        if (mapped) {
+          event.preventDefault();
+          setActiveTool(mapped);
+        }
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -664,6 +686,14 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     <div data-agent-view="comic" className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950">
       <ComicToolbar
         draft={draft}
+        activeTool={activeTool}
+        activePanel={selectedPanelForCost}
+        brushColor={brushColor}
+        brushSize={brushSize}
+        brushOpacity={brushOpacity}
+        defaultStickerKind={defaultStickerKind}
+        defaultBubbleShape={defaultBubbleShape}
+        defaultBubbleWritingMode={defaultBubbleWritingMode}
         canUndo={undoStack.length > 0}
         canRedo={redoStack.length > 0}
         exporting={exporting}
@@ -674,6 +704,25 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         onSetCustomPaperSize={handleSetCustomPaperSize}
         onApplyTemplate={tplId => void handleApplyTemplate(tplId)}
         onUpdatePageSettings={patch => applyDraftChange(cur => ({ ...cur, ...patch }), true)}
+        onChangeBrush={patch => {
+          if (patch.color !== undefined) setBrushColor(patch.color);
+          if (patch.size !== undefined) setBrushSize(patch.size);
+          if (patch.opacity !== undefined) setBrushOpacity(patch.opacity);
+        }}
+        onClearStrokes={() => applyDraftChange(cur => ({ ...cur, strokes: [] }), true)}
+        onChangeDefaultStickerKind={setDefaultStickerKind}
+        onChangeDefaultBubbleStyle={patch => {
+          if (patch.shape !== undefined) setDefaultBubbleShape(patch.shape);
+          if (patch.writingMode !== undefined) setDefaultBubbleWritingMode(patch.writingMode);
+        }}
+        onUpdateActivePanelImage={patch => {
+          if (!selectedPanelForCost) return;
+          handleUpdatePanel(selectedPanelForCost.id, p => {
+            if (!p.image) return p;
+            if (patch.reset) return { ...p, image: { ...p.image, offsetX: 0, offsetY: 0, scale: 1 } };
+            return { ...p, image: { ...p.image, ...(patch.scale !== undefined ? { scale: patch.scale } : {}) } };
+          }, Boolean(patch.reset));
+        }}
         onUndo={handleUndo}
         onRedo={handleRedo}
         onToggleInspector={() => setInspectorOpen(open => !open)}
@@ -681,8 +730,15 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         onBack={onBack}
       />
 
-      {/* 两栏主工作区：左侧悬浮工具坞+纯净大画布 + 右侧固定三标签创作工作台 */}
+      {/* 经典 PS 4 列工作区：[全局导航] | [满高竖工具栏] | [点阵绘图桌漫画区] | [右侧宽敞操作区] */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
+        <ComicToolRail
+          activeTool={activeTool}
+          foregroundColor={brushColor}
+          onSelectTool={setActiveTool}
+          onChangeForegroundColor={setBrushColor}
+        />
+
         <div ref={canvasWrapRef} className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ComicCanvas
             draft={draft}
@@ -692,23 +748,8 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             brushColor={brushColor}
             brushSize={brushSize}
             brushOpacity={brushOpacity}
-            defaultStickerKind={defaultStickerKind}
-            defaultBubbleShape={defaultBubbleShape}
-            defaultBubbleWritingMode={defaultBubbleWritingMode}
             generatingPanelId={generatingPanelId}
             livePreviewImage={activeSession?.preview?.image || null}
-            onSelectTool={setActiveTool}
-            onChangeBrush={patch => {
-              if (patch.color !== undefined) setBrushColor(patch.color);
-              if (patch.size !== undefined) setBrushSize(patch.size);
-              if (patch.opacity !== undefined) setBrushOpacity(patch.opacity);
-            }}
-            onClearStrokes={() => applyDraftChange(cur => ({ ...cur, strokes: [] }), true)}
-            onChangeDefaultStickerKind={setDefaultStickerKind}
-            onChangeDefaultBubbleStyle={patch => {
-              if (patch.shape !== undefined) setDefaultBubbleShape(patch.shape);
-              if (patch.writingMode !== undefined) setDefaultBubbleWritingMode(patch.writingMode);
-            }}
             onSelect={handleSelectWithTab}
             onZoomChange={setZoom}
             onZoomFit={() => fitCanvasToViewport()}
@@ -756,7 +797,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         </div>
 
         {inspectorOpen && (
-          <div className="h-[46vh] w-full flex-none border-t border-gray-200 dark:border-gray-800 md:h-full md:w-[348px] md:border-t-0 lg:w-[380px]">
+          <div className="h-[46vh] w-full flex-none border-t border-gray-200 dark:border-gray-800 md:h-full md:w-[376px] md:border-t-0 lg:w-[416px] xl:w-[440px]">
             <ComicInspector
               draft={draft}
               activeTab={inspectorTab}

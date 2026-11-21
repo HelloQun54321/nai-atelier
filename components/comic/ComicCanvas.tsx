@@ -1,19 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Brush,
-  Eraser,
-  Magnet,
-  Maximize2,
-  MessageCircle,
-  MousePointer2,
-  Scissors,
-  SquarePlus,
-  Sticker,
-  Trash2,
-  Type,
-  ZoomIn,
-  ZoomOut,
-} from 'lucide-react';
+import { Magnet, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import {
   clampAnchorCoord,
@@ -26,14 +12,12 @@ import {
 } from '../../services/comic/comicGeometry';
 import type {
   ComicBubbleItem,
-  ComicBubbleShape,
   ComicLayerId,
   ComicPageDraft,
   ComicPanel,
   ComicPoint,
   ComicSelection,
   ComicStickerItem,
-  ComicStickerKind,
   ComicStroke,
   ComicTool,
 } from '../../services/comic/comicTypes';
@@ -46,16 +30,8 @@ interface ComicCanvasProps {
   brushColor: string;
   brushSize: number;
   brushOpacity: number;
-  defaultStickerKind: ComicStickerKind;
-  defaultBubbleShape: ComicBubbleShape;
-  defaultBubbleWritingMode: 'horizontal' | 'vertical';
   generatingPanelId?: string | null;
   livePreviewImage?: string | null;
-  onSelectTool: (tool: ComicTool) => void;
-  onChangeBrush: (patch: { color?: string; size?: number; opacity?: number }) => void;
-  onClearStrokes: () => void;
-  onChangeDefaultStickerKind: (kind: ComicStickerKind) => void;
-  onChangeDefaultBubbleStyle: (patch: { shape?: ComicBubbleShape; writingMode?: 'horizontal' | 'vertical' }) => void;
   onSelect: (selection: ComicSelection) => void;
   onZoomChange: (nextZoom: number) => void;
   onZoomFit: () => void;
@@ -98,38 +74,6 @@ type InlineEditState =
   | { kind: 'bubble'; id: string; value: string }
   | { kind: 'text'; id: string; value: string }
   | null;
-
-const PANEL_TOOLS: Array<{ id: ComicTool; label: string; tip: string; icon: React.ElementType }> = [
-  { id: 'select', label: '选择与移动', tip: '选择与移动（双击气泡/文字改字 · Delete 删除 · Alt+拖格内图 · Space+拖画布）', icon: MousePointer2 },
-  { id: 'draw-panel', label: '自由拉框', tip: '自由拉框：在画布拖出新的分镜格', icon: SquarePlus },
-  { id: 'slice', label: '两点一刀切分', tip: '两点一刀切分：拖线切分划过的画格（按住 Shift 锁 45°）', icon: Scissors },
-];
-
-const POST_TOOLS: Array<{ id: ComicTool; label: string; tip: string; icon: React.ElementType }> = [
-  { id: 'bubble', label: '添加气泡', tip: '添加对白气泡：点击画布放置', icon: MessageCircle },
-  { id: 'text', label: '添加文字', tip: '添加效果字/拟声词：点击画布放置', icon: Type },
-  { id: 'sticker', label: '添加贴纸', tip: '添加漫画贴纸：选好样式后点击画布放置', icon: Sticker },
-  { id: 'brush', label: '画笔', tip: '画笔：在独立手绘层作画（不伤分镜画面）', icon: Brush },
-  { id: 'eraser', label: '橡皮擦', tip: '橡皮擦：擦除手绘层笔迹', icon: Eraser },
-];
-
-const BUBBLE_SHAPES: Array<{ id: ComicBubbleShape; label: string }> = [
-  { id: 'oval', label: '椭圆' },
-  { id: 'shout', label: '吼叫' },
-  { id: 'thought', label: '思考' },
-  { id: 'caption', label: '旁白' },
-];
-
-const STICKER_KINDS: Array<{ id: ComicStickerKind; label: string }> = [
-  { id: 'speedlines', label: '集中线' },
-  { id: 'sweat', label: '汗滴' },
-  { id: 'anger', label: '怒筋' },
-  { id: 'sparkle', label: '星芒' },
-  { id: 'exclamation', label: '惊叹 !' },
-  { id: 'question', label: '问号 ?' },
-  { id: 'shock', label: '震惊线' },
-  { id: 'heart', label: '爱心' },
-];
 
 const bubblePathD = (cx: number, cy: number, rx: number, ry: number, shape: ComicBubbleItem['shape']): string => {
   if (shape === 'caption') {
@@ -263,16 +207,8 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   brushColor,
   brushSize,
   brushOpacity,
-  defaultStickerKind,
-  defaultBubbleShape,
-  defaultBubbleWritingMode,
   generatingPanelId,
   livePreviewImage,
-  onSelectTool,
-  onChangeBrush,
-  onClearStrokes,
-  onChangeDefaultStickerKind,
-  onChangeDefaultBubbleStyle,
   onSelect,
   onZoomChange,
   onZoomFit,
@@ -403,8 +339,10 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     setInlineEdit(null);
   };
 
+  const isPanningMode = spacePressed || activeTool === 'hand';
+
   const handleViewportPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (spacePressed || event.button === 1) {
+    if (isPanningMode || event.button === 1) {
       const scroller = scrollRef.current;
       if (!scroller) return;
       event.preventDefault();
@@ -417,6 +355,12 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
         startScrollLeft: scroller.scrollLeft,
         startScrollTop: scroller.scrollTop,
       });
+      return;
+    }
+    if (activeTool === 'zoom' && event.button === 0) {
+      event.preventDefault();
+      const delta = event.altKey ? -0.15 : 0.15;
+      onZoomChange(Math.max(0.25, Math.min(3, Number((zoom + delta).toFixed(2)))));
     }
   };
 
@@ -430,7 +374,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   };
 
   const handleStagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (spacePressed || event.button === 1) return;
+    if (isPanningMode || activeTool === 'zoom' || event.button === 1) return;
     if (event.button !== 0) return;
     if (inlineEdit) commitInlineEdit();
     const pt = toNormalizedPoint(event.clientX, event.clientY);
@@ -490,7 +434,8 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
           onSelect({ kind: 'panel', id: panel.id });
           if (!draft.layers.panels?.locked && !panel.locked) {
             event.currentTarget.setPointerCapture?.(event.pointerId);
-            if (event.altKey && panel.image?.url) {
+            // 专门的「格内移图 (M)」或选择工具下按住 Alt 直接平移图内构图
+            if ((activeTool === 'frame-image' || event.altKey) && panel.image?.url) {
               setDrag({
                 kind: 'pan-image',
                 panelId: panel.id,
@@ -498,7 +443,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                 origOffsetX: panel.image.offsetX || 0,
                 origOffsetY: panel.image.offsetY || 0,
               });
-            } else {
+            } else if (activeTool === 'select') {
               setDrag({
                 kind: 'move-panel',
                 panelId: panel.id,
@@ -511,7 +456,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
         }
       }
     }
-    onSelect(null);
+    if (activeTool === 'select') onSelect(null);
   };
 
   const handleStagePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -708,13 +653,17 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     return ids;
   }, [drag, draft.panels]);
 
-  const cursorClass = spacePressed
+  const cursorClass = isPanningMode
     ? (drag?.kind === 'pan-viewport' ? 'cursor-grabbing' : 'cursor-grab')
-    : activeTool === 'slice' || activeTool === 'draw-panel' || activeTool === 'brush' || activeTool === 'eraser'
-      ? 'cursor-crosshair'
-      : activeTool === 'bubble' || activeTool === 'text' || activeTool === 'sticker'
-        ? 'cursor-copy'
-        : 'cursor-default';
+    : activeTool === 'zoom'
+      ? 'cursor-zoom-in'
+      : activeTool === 'frame-image'
+        ? 'cursor-move'
+        : activeTool === 'slice' || activeTool === 'draw-panel' || activeTool === 'brush' || activeTool === 'eraser'
+          ? 'cursor-crosshair'
+          : activeTool === 'bubble' || activeTool === 'text' || activeTool === 'sticker'
+            ? 'cursor-copy'
+            : 'cursor-default';
 
   const inlineEditTarget = inlineEdit
     ? inlineEdit.kind === 'bubble'
@@ -722,193 +671,25 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       : draft.texts.find(item => item.id === inlineEdit.id)
     : undefined;
 
-  const showToolSubmenu = activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'sticker' || activeTool === 'bubble';
-
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-100/90 dark:bg-gray-950/90">
-      {/* 左侧悬浮竖条工具坞（吃掉竖页左侧空地，还回画布垂直高度；就近弹出工具小浮条，不打断右侧生图工作台） */}
-      <div className="pointer-events-none absolute left-3 top-1/2 z-30 flex -translate-y-1/2 items-start gap-2">
-        <div
-          role="toolbar"
-          aria-orientation="vertical"
-          aria-label={t('漫画画布工具')}
-          className="appearance-panel pointer-events-auto flex flex-col items-center gap-1 rounded-2xl border border-gray-200/90 bg-white/92 p-1.5 shadow-lg backdrop-blur-md dark:border-gray-700/80 dark:bg-gray-900/92"
-        >
-          {PANEL_TOOLS.map(item => {
-            const Icon = item.icon;
-            const active = activeTool === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                aria-label={t(item.label)}
-                aria-pressed={active}
-                title={t(item.tip)}
-                onClick={() => onSelectTool(item.id)}
-                className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${active ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}
-              >
-                <Icon className="h-4 w-4" aria-hidden="true" />
-              </button>
-            );
-          })}
-          <span className="my-0.5 h-px w-5 bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
-          {POST_TOOLS.map(item => {
-            const Icon = item.icon;
-            const active = activeTool === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                aria-label={t(item.label)}
-                aria-pressed={active}
-                title={t(item.tip)}
-                onClick={() => onSelectTool(item.id)}
-                className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${active ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}
-              >
-                <Icon className="h-4 w-4" aria-hidden="true" />
-              </button>
-            );
-          })}
-        </div>
-
-        {/* 就近悬浮的工具上下文迷你属性卡（仅在画笔/橡皮/贴纸/气泡放置模式出现） */}
-        {showToolSubmenu && (
-          <div className="appearance-panel pointer-events-auto w-52 rounded-2xl border border-gray-200/90 bg-white/95 p-3 text-xs shadow-xl backdrop-blur-md dark:border-gray-700/80 dark:bg-gray-900/95">
-            {(activeTool === 'brush' || activeTool === 'eraser') && (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-gray-800 dark:text-gray-100">
-                    {activeTool === 'brush' ? t('画笔') : t('橡皮擦')}
-                  </span>
-                  {draft.strokes.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={onClearStrokes}
-                      className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"
-                    >
-                      <Trash2 className="h-3 w-3" /> {t('清层')}
-                    </button>
-                  )}
-                </div>
-                <label className="block">
-                  <div className="mb-1 flex justify-between text-[11px] text-gray-500">
-                    <span>{t('粗细')}</span>
-                    <span className="font-mono">{brushSize}px</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={2}
-                    max={64}
-                    value={brushSize}
-                    onChange={e => onChangeBrush({ size: Number(e.target.value) })}
-                    className="w-full accent-indigo-600"
-                  />
-                </label>
-                {activeTool === 'brush' && (
-                  <>
-                    <label className="block">
-                      <div className="mb-1 flex justify-between text-[11px] text-gray-500">
-                        <span>{t('透明度')}</span>
-                        <span className="font-mono">{Math.round(brushOpacity * 100)}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={10}
-                        max={100}
-                        value={Math.round(brushOpacity * 100)}
-                        onChange={e => onChangeBrush({ opacity: Number(e.target.value) / 100 })}
-                        className="w-full accent-indigo-600"
-                      />
-                    </label>
-                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                      {['#111827', '#ffffff', '#ef4444', '#2563eb', '#f59e0b', '#10b981'].map(color => (
-                        <button
-                          key={color}
-                          type="button"
-                          aria-label={color}
-                          onClick={() => onChangeBrush({ color })}
-                          style={{ backgroundColor: color }}
-                          className={`h-5 w-5 rounded-full border-2 ${brushColor === color ? 'border-indigo-500 ring-2 ring-indigo-300' : 'border-gray-300 dark:border-gray-600'}`}
-                        />
-                      ))}
-                      <input
-                        type="color"
-                        aria-label={t('自定义画笔颜色')}
-                        value={brushColor}
-                        onChange={e => onChangeBrush({ color: e.target.value })}
-                        className="h-5 w-6 cursor-pointer rounded border border-gray-300 bg-transparent"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {activeTool === 'sticker' && (
-              <div className="space-y-2">
-                <div className="font-bold text-gray-800 dark:text-gray-100">{t('选择贴纸点击画布放置')}</div>
-                <div className="grid grid-cols-2 gap-1">
-                  {STICKER_KINDS.map(item => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => onChangeDefaultStickerKind(item.id)}
-                      className={`rounded-lg border px-2 py-1 text-[11px] font-medium transition ${defaultStickerKind === item.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}
-                    >
-                      {t(item.label)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {activeTool === 'bubble' && (
-              <div className="space-y-2">
-                <div className="font-bold text-gray-800 dark:text-gray-100">{t('新气泡默认样式')}</div>
-                <div className="grid grid-cols-2 gap-1">
-                  {BUBBLE_SHAPES.map(shape => (
-                    <button
-                      key={shape.id}
-                      type="button"
-                      onClick={() => onChangeDefaultBubbleStyle({ shape: shape.id })}
-                      className={`rounded-lg border px-2 py-1 text-[11px] font-medium transition ${defaultBubbleShape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}
-                    >
-                      {t(shape.label)}
-                    </button>
-                  ))}
-                </div>
-                <div className="grid grid-cols-2 gap-1 pt-0.5">
-                  <button
-                    type="button"
-                    onClick={() => onChangeDefaultBubbleStyle({ writingMode: 'vertical' })}
-                    className={`rounded-lg border px-2 py-1 text-[11px] font-medium ${defaultBubbleWritingMode === 'vertical' ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 dark:border-gray-700'}`}
-                  >
-                    {t('竖排')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onChangeDefaultBubbleStyle({ writingMode: 'horizontal' })}
-                    className={`rounded-lg border px-2 py-1 text-[11px] font-medium ${defaultBubbleWritingMode === 'horizontal' ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 dark:border-gray-700'}`}
-                  >
-                    {t('横排')}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* 安全滚动容器：内部用 w-max h-max min-w-full min-h-full 居中，放大后顶部和左侧永远可完整滚动到边缘 */}
+    <div
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-100 dark:bg-slate-950"
+      style={{
+        // 细微绘图桌点阵底纹：去除纯色死空感，承托漫画画纸
+        backgroundImage: 'radial-gradient(circle, rgba(148, 163, 184, 0.24) 1px, transparent 1px)',
+        backgroundSize: '20px 20px',
+      }}
+    >
+      {/* 安全滚动容器：w-max h-max min-w-full min-h-full 确保放大后顶部和左侧永远可完整滚动到边缘 */}
       <div
         ref={scrollRef}
         onPointerDown={handleViewportPointerDown}
         onPointerMove={handleViewportPointerMove}
         onPointerUp={finishDrag}
         onPointerCancel={finishDrag}
-        className={`relative min-h-0 flex-1 overflow-auto ${spacePressed ? (drag?.kind === 'pan-viewport' ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
+        className={`relative min-h-0 flex-1 overflow-auto ${isPanningMode ? (drag?.kind === 'pan-viewport' ? 'cursor-grabbing' : 'cursor-grab') : activeTool === 'zoom' ? 'cursor-zoom-in' : ''}`}
       >
-        <div className="flex h-max min-h-full w-max min-w-full items-center justify-center p-8 pl-16 md:p-12 md:pl-20">
+        <div className="flex h-max min-h-full w-max min-w-full items-center justify-center p-6 pb-16 md:p-10 md:pb-16">
           <div
             ref={stageRef}
             role="application"
@@ -922,7 +703,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
               height: displayH,
               backgroundColor: draft.backgroundColor || '#ffffff',
             }}
-            className={`relative flex-none touch-none select-none overflow-visible rounded-sm shadow-2xl ring-1 ring-gray-300 dark:ring-gray-700 ${cursorClass}`}
+            className={`relative flex-none touch-none select-none overflow-visible rounded-sm shadow-[0_18px_48px_rgba(0,0,0,0.28)] ring-1 ring-black/10 dark:ring-white/15 ${cursorClass}`}
           >
             <svg
               width={displayW}
@@ -942,7 +723,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                 if (layerId === 'panels') {
                   return (
                     <g key="panels">
-                      {sortedPanels.map(panel => {
+                      {sortedPanels.map((panel, panelOrderIdx) => {
                         const bounds = getPanelBoundingBox(panel.points, pageW, pageH);
                         const isSelected = selection?.kind === 'panel' && selection.id === panel.id;
                         const isSliceTarget = sliceTargetIds.has(panel.id);
@@ -955,6 +736,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                         const drawH = imgH * coverScale;
                         const drawX = bounds.cx - drawW / 2 + (panel.image?.offsetX || 0) * bounds.width;
                         const drawY = bounds.cy - drawH / 2 + (panel.image?.offsetY || 0) * bounds.height;
+                        const badgeNum = String(panelOrderIdx + 1).padStart(2, '0');
 
                         return (
                           <g
@@ -977,15 +759,35 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                 />
                               </g>
                             )}
+                            {/* 空格分镜稿质感：左上角精致格号角标 + 居中画格名 */}
                             {!previewUrl && (
                               <g clipPath={`url(#comic-clip-${panel.id})`}>
+                                <rect
+                                  x={bounds.minX + 10}
+                                  y={bounds.minY + 10}
+                                  width={30}
+                                  height={20}
+                                  rx={4}
+                                  fill={isSelected ? '#4f46e5' : '#e2e8f0'}
+                                />
+                                <text
+                                  x={bounds.minX + 25}
+                                  y={bounds.minY + 20}
+                                  textAnchor="middle"
+                                  dominantBaseline="central"
+                                  fontSize={11}
+                                  fontWeight={700}
+                                  fill={isSelected ? '#ffffff' : '#64748b'}
+                                >
+                                  {badgeNum}
+                                </text>
                                 <text
                                   x={bounds.cx}
                                   y={bounds.cy}
                                   textAnchor="middle"
                                   dominantBaseline="central"
-                                  fontSize={Math.max(12, Math.min(32, Math.min(bounds.width, bounds.height) * 0.14))}
-                                  fontWeight={700}
+                                  fontSize={Math.max(12, Math.min(26, Math.min(bounds.width, bounds.height) * 0.12))}
+                                  fontWeight={600}
                                   fill="#94a3b8"
                                 >
                                   {panel.name}
@@ -1037,7 +839,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                               setInlineEdit({ kind: 'bubble', id: bubble.id, value: bubble.text });
                             }}
                             onPointerDown={event => {
-                              if (spacePressed || activeTool !== 'select' || draft.layers.bubbles?.locked) return;
+                              if (isPanningMode || activeTool !== 'select' || draft.layers.bubbles?.locked) return;
                               event.stopPropagation();
                               const pt = toNormalizedPoint(event.clientX, event.clientY);
                               onSelect({ kind: 'bubble', id: bubble.id });
@@ -1151,7 +953,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                               setInlineEdit({ kind: 'text', id: item.id, value: item.text });
                             }}
                             onPointerDown={event => {
-                              if (spacePressed || activeTool !== 'select' || draft.layers.bubbles?.locked) return;
+                              if (isPanningMode || activeTool !== 'select' || draft.layers.bubbles?.locked) return;
                               event.stopPropagation();
                               const pt = toNormalizedPoint(event.clientX, event.clientY);
                               onSelect({ kind: 'text', id: item.id });
@@ -1200,7 +1002,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                             key={sticker.id}
                             className="pointer-events-auto cursor-move"
                             onPointerDown={event => {
-                              if (spacePressed || activeTool !== 'select' || draft.layers.stickers?.locked) return;
+                              if (isPanningMode || activeTool !== 'select' || draft.layers.stickers?.locked) return;
                               event.stopPropagation();
                               const pt = toNormalizedPoint(event.clientX, event.clientY);
                               onSelect({ kind: 'sticker', id: sticker.id });
@@ -1295,7 +1097,6 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
               }}
             />
 
-            {/* 选中分镜格控制层：画布锚点 + 旋转顶点 + 旋转把手 */}
             {activeTool === 'select' && selectedPanel && !selectedPanel.locked && !draft.layers.panels?.locked && (() => {
               const normBounds = getPanelBoundingBox(selectedPanel.points, 1, 1);
               const aspect = pageW / pageH;
@@ -1408,7 +1209,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
         </div>
       </div>
 
-      {/* 右下角极简缩放与吸附胶囊（告别底部长灰条，把垂直视野完全留给漫画页） */}
+      {/* 右下角极简缩放与吸附悬浮胶囊（保留用户偏好的清爽形态） */}
       <div className="appearance-panel absolute right-3 bottom-3 z-20 flex items-center gap-1 rounded-full border border-gray-200/90 bg-white/92 px-1.5 py-1 shadow-md backdrop-blur dark:border-gray-700/80 dark:bg-gray-900/92">
         <button
           type="button"
@@ -1434,7 +1235,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
           type="button"
           aria-label={t('适配画布缩放')}
           onClick={onZoomFit}
-          title={t('点击适应屏幕（也可用 Ctrl+滚轮缩放，空格+拖拽平移）')}
+          title={t('点击适应屏幕（也可用 Ctrl+滚轮缩放，抓手/空格平移）')}
           className="min-w-11 px-1 text-center font-mono text-xs font-semibold text-gray-700 hover:text-indigo-600 dark:text-gray-200"
         >
           {Math.round(zoom * 100)}%

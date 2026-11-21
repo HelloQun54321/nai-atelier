@@ -13,13 +13,16 @@ export type ComicDialogueMode = 'clean-vector' | 'empty-bubble' | 'ai-text';
 
 export type ComicTool =
   | 'select'
+  | 'hand'
+  | 'zoom'
   | 'draw-panel'
   | 'slice'
-  | 'brush'
-  | 'eraser'
+  | 'frame-image'
   | 'bubble'
   | 'text'
-  | 'sticker';
+  | 'sticker'
+  | 'brush'
+  | 'eraser';
 
 export interface ComicPoint {
   /** 相对页面宽度的归一化坐标（0..1）。 */

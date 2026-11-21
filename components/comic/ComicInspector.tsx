@@ -266,11 +266,11 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
   return (
     <aside className="flex h-full w-full flex-col border-l border-gray-200 bg-white/95 dark:border-gray-800 dark:bg-gray-900/95">
-      {/* 顶部固定三标签导航：稳定不乱跳，随时掌控全页 */}
+      {/* 顶部平铺式三标签导航（去外层套娃胶囊，底边强调线，绝不裁切下方行） */}
       <div
         role="tablist"
         aria-label={t('漫画工作台分区')}
-        className="grid flex-none grid-cols-3 gap-1 border-b border-gray-200 bg-gray-50/70 p-1.5 dark:border-gray-800 dark:bg-gray-900/80"
+        className="grid flex-none grid-cols-3 border-b border-gray-200/90 bg-white/95 dark:border-gray-800/90 dark:bg-gray-900/95"
       >
         {([
           { id: 'panel', label: '分镜生图', icon: Wand2 },
@@ -286,10 +286,11 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
               role="tab"
               aria-selected={active}
               onClick={() => onSelectTab(tab.id)}
-              className={`inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${active ? 'bg-white text-indigo-600 shadow-xs ring-1 ring-gray-200/80 dark:bg-gray-800 dark:text-indigo-300 dark:ring-gray-700' : 'text-gray-500 hover:bg-white/60 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/60 dark:hover:text-gray-200'}`}
+              className={`relative inline-flex h-10 items-center justify-center gap-1.5 px-2 text-xs font-semibold transition ${active ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/50 dark:hover:text-gray-200'}`}
             >
               <Icon className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
               <span className="truncate">{t(tab.label)}</span>
+              {active && <span aria-hidden="true" className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
             </button>
           );
         })}
@@ -298,8 +299,8 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
       {/* ==================== 标签 1：分镜生图（默认首页） ==================== */}
       {activeTab === 'panel' && (
         <>
-          {/* 顶部常驻分镜格快速切换胶囊条 */}
-          <div className="flex flex-none items-center gap-1 overflow-x-auto border-b border-gray-200/80 px-3 py-2 dark:border-gray-800/80">
+          {/* 顶部常驻分镜格快速切换条 */}
+          <div className="flex flex-none items-center gap-1.5 overflow-x-auto border-b border-gray-200/80 bg-gray-50/50 px-3.5 py-2 dark:border-gray-800/80 dark:bg-gray-950/30">
             {draft.panels.map((panel, index) => {
               const isActive = activePanel?.id === panel.id;
               const hasImg = Boolean(panel.image?.url);
@@ -309,7 +310,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                   type="button"
                   aria-pressed={isActive}
                   onClick={() => onSelect({ kind: 'panel', id: panel.id })}
-                  className={`inline-flex flex-none items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${isActive ? 'border-indigo-500 bg-indigo-600 text-white shadow-xs' : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 hover:bg-indigo-50/40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-indigo-500'}`}
+                  className={`inline-flex h-7 min-w-8 flex-none items-center justify-center gap-1 rounded-lg border px-2 text-xs font-semibold transition ${isActive ? 'border-indigo-500 bg-indigo-600 text-white shadow-xs' : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-200 dark:hover:border-indigo-500'}`}
                 >
                   <span>{index + 1}</span>
                   {hasImg && <Check className={`h-3 w-3 ${isActive ? 'text-emerald-200' : 'text-emerald-500'}`} />}
@@ -321,7 +322,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
               aria-label={t('新增分镜格')}
               title={t('新增分镜格')}
               onClick={onQuickAddPanel}
-              className="inline-flex h-7 w-7 flex-none items-center justify-center rounded-full border border-dashed border-gray-300 text-gray-500 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-600 dark:text-gray-400 dark:hover:border-indigo-400 dark:hover:text-indigo-300"
+              className="inline-flex h-7 w-7 flex-none items-center justify-center rounded-lg border border-dashed border-gray-300 text-gray-500 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-600 dark:text-gray-400 dark:hover:border-indigo-400 dark:hover:text-indigo-300"
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
@@ -357,23 +358,23 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
             return (
               <>
-                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3.5 pb-6 text-xs">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3.5 pb-6 text-xs">
                   {/* 当前格标题与快捷动作行 */}
-                  <div className="flex items-center justify-between gap-1">
+                  <div className="flex items-center justify-between gap-2">
                     <input
                       type="text"
                       aria-label={t('分镜格名称')}
                       value={activePanel.name}
                       onChange={e => onUpdatePanel(activePanel.id, p => ({ ...p, name: e.target.value }), false)}
                       onBlur={() => onUpdatePanel(activePanel.id, p => p, true)}
-                      className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-1.5 py-0.5 text-sm font-bold text-gray-800 outline-none hover:border-gray-200 focus:border-indigo-400 focus:bg-white dark:text-gray-100 dark:hover:border-gray-700 dark:focus:bg-gray-800"
+                      className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-sm font-bold text-gray-800 outline-none hover:border-gray-200 focus:border-indigo-400 focus:bg-white dark:text-gray-100 dark:hover:border-gray-700 dark:focus:bg-gray-800"
                     />
                     <div className="flex flex-none items-center gap-0.5">
                       <button
                         type="button"
                         onClick={() => setHistoryPickerOpen(true)}
                         title={t('从生成历史选图填入')}
-                        className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                        className="inline-flex h-7 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
                       >
                         <ImageIcon className="h-3 w-3" /> {t('选图')}
                       </button>
@@ -384,8 +385,8 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     </div>
                   </div>
 
-                  {/* 单格画面提示词 */}
-                  <div className="space-y-2">
+                  {/* 单格画面提示词（去掉多余外框，整洁直写） */}
+                  <div className="space-y-2.5">
                     <label className="block">
                       <span className="mb-1 block font-semibold text-gray-700 dark:text-gray-200">{t('本格画面描述（输入 @ 可搜个人提示词库）')}</span>
                       <TagAutocompleteTextarea
@@ -414,68 +415,72 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     </label>
                   </div>
 
-                  {/* 单格四类空间锚点 */}
-                  <div className="space-y-2 rounded-xl border border-gray-200 bg-gray-50/70 p-2.5 dark:border-gray-700/80 dark:bg-gray-800/40">
+                  {/* 单格四类空间锚点（扁平分割线 + 克制同色中性按钮配微色点，彻底告别 5 色彩虹药丸和盒套盒） */}
+                  <div className="space-y-2.5 border-t border-gray-200/80 pt-3.5 dark:border-gray-800">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-bold text-gray-800 dark:text-gray-100">{t('本格空间锚点')}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${guard.level === 'hard-exceeded' ? 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300' : guard.level === 'soft-warning' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'}`}>
+                      <span className={`text-[11px] font-semibold ${guard.level === 'hard-exceeded' ? 'text-red-500' : guard.level === 'soft-warning' ? 'text-amber-500' : 'text-gray-500 dark:text-gray-400'}`}>
                         {guard.activeCount}/{COMIC_ANCHOR_SOFT_LIMIT}（上限 {COMIC_ANCHOR_HARD_LIMIT}）
                       </span>
                     </div>
 
                     {guard.level === 'soft-warning' && (
-                      <p className="rounded-lg bg-amber-50 px-2 py-1 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                      <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
                         {t('当前格锚点超过 12 个全精甜点区，人物可能自动缩为 Q 版以容纳所有元素。')}
                       </p>
                     )}
                     {guard.level === 'hard-exceeded' && (
-                      <p className="rounded-lg bg-red-50 px-2 py-1 text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                      <p className="rounded-lg bg-red-50 px-2.5 py-1.5 text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
                         {t('单次生图硬上限为 24 个锚点，请停用或删除超出部分后再生成。')}
                       </p>
                     )}
 
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-1.5">
                       <button
                         type="button"
                         disabled={activePanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
                         onClick={() => addAnchorToPanel(activePanel, 'character')}
-                        className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-40 dark:bg-blue-950/60 dark:text-blue-200 dark:hover:bg-blue-900/70"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200/90 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-40 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200 dark:hover:border-indigo-400 dark:hover:text-indigo-300"
                       >
-                        <Plus className="h-3 w-3" /> {t('角色')}
+                        <span className="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
+                        {t('角色')}
                       </button>
                       {hasAnyCharacterChains && (
                         <button
                           type="button"
                           disabled={activePanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
                           onClick={() => setCharacterPickerOpen(open => !open)}
-                          className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-white px-2 py-1 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-50 disabled:opacity-40 dark:border-blue-800 dark:bg-gray-800 dark:text-blue-200 dark:hover:bg-blue-950/60"
+                          className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-40 ${characterPickerOpen ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/50 dark:text-indigo-200' : 'border-gray-200/90 bg-white text-gray-700 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200 dark:hover:border-indigo-400 dark:hover:text-indigo-300'}`}
                         >
-                          <UserPlus className="h-3 w-3" /> {t('角色库')}
+                          <UserPlus className="h-3 w-3 text-blue-500" /> {t('角色库')}
                         </button>
                       )}
                       <button
                         type="button"
                         disabled={activePanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
                         onClick={() => addAnchorToPanel(activePanel, 'scene')}
-                        className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-40 dark:bg-emerald-950/60 dark:text-emerald-200 dark:hover:bg-emerald-900/70"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200/90 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-40 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200 dark:hover:border-indigo-400 dark:hover:text-indigo-300"
                       >
-                        <Plus className="h-3 w-3" /> {t('空镜/道具')}
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />
+                        {t('空镜/道具')}
                       </button>
                       <button
                         type="button"
                         disabled={activePanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
                         onClick={() => addAnchorToPanel(activePanel, 'bubble')}
-                        className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-40 dark:bg-amber-950/60 dark:text-amber-200 dark:hover:bg-amber-900/70"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200/90 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-40 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200 dark:hover:border-indigo-400 dark:hover:text-indigo-300"
                       >
-                        <Plus className="h-3 w-3" /> {t('气泡点')}
+                        <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden="true" />
+                        {t('气泡点')}
                       </button>
                       <button
                         type="button"
                         disabled={activePanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
                         onClick={() => addAnchorToPanel(activePanel, 'inset')}
-                        className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-1 text-[11px] font-semibold text-purple-700 transition hover:bg-purple-100 disabled:opacity-40 dark:bg-purple-950/60 dark:text-purple-200 dark:hover:bg-purple-900/70"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200/90 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-40 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200 dark:hover:border-indigo-400 dark:hover:text-indigo-300"
                       >
-                        <Plus className="h-3 w-3" /> {t('特写叠框')}
+                        <span className="h-2 w-2 rounded-full bg-purple-500" aria-hidden="true" />
+                        {t('特写叠框')}
                       </button>
                     </div>
 
@@ -653,9 +658,9 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     )}
                   </div>
 
-                  {/* 折叠低频的画格样式与图内构图微调，让首屏更干净 */}
-                  <details open={Boolean(activePanel.image?.url)} className="rounded-xl border border-gray-200 p-2.5 dark:border-gray-700">
-                    <summary className="cursor-pointer select-none font-semibold text-gray-700 dark:text-gray-200">
+                  {/* 扁平折叠分割线：画格样式与图内构图微调（去外层套娃框） */}
+                  <details open={Boolean(activePanel.image?.url)} className="border-t border-gray-200/80 pt-3.5 dark:border-gray-800">
+                    <summary className="cursor-pointer select-none font-bold text-gray-700 dark:text-gray-200">
                       {t('画格样式与图内构图微调')}
                     </summary>
                     <div className="mt-2.5 space-y-2.5">
