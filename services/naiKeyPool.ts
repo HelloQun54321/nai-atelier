@@ -53,6 +53,8 @@ export interface NaiKeyPoolConfig {
 }
 
 export interface PoolMemberStatus {
+  /** 在 Key 池中的稳定序号（从 1 开始，按密钥保管箱上下顺序编号）。 */
+  poolIndex: number;
   entry: NaiKeyEntry;
   info: NovelaiSubscriptionInfo | null;
   loading: boolean;
@@ -278,13 +280,14 @@ const getOrInitMemberState = (apiKey: string): MemberRuntimeState => {
 
 const currentPoolMembers = (config = cachedPoolConfig, vault = cachedVaultEntries): NaiKeyEntry[] => {
   if (!config || !config.memberIds.length) return [];
-  const byId = new Map(vault.filter(entry => entry.billingMode !== 'per-use').map(entry => [entry.id, entry]));
-  return config.memberIds.map(id => byId.get(id)).filter((entry): entry is NaiKeyEntry => Boolean(entry));
+  const memberSet = new Set(config.memberIds);
+  // 按保管箱展示顺序排列，保证每把入池密钥的 #1/#2 序号与设置页上下顺序始终一致。
+  return vault.filter(entry => entry.billingMode !== 'per-use' && memberSet.has(entry.id));
 };
 
 const buildMemberStatuses = (): PoolMemberStatus[] => {
   const now = Date.now();
-  return currentPoolMembers().map(entry => {
+  return currentPoolMembers().map((entry, index) => {
     const state = getOrInitMemberState(entry.key);
     const info = state.info;
     const usage = info?.usage;
@@ -300,6 +303,7 @@ const buildMemberStatuses = (): PoolMemberStatus[] => {
       && state.cooldownUntil <= now,
     );
     return {
+      poolIndex: index + 1,
       entry,
       info,
       loading: state.loading,

@@ -772,15 +772,19 @@ describe('GlobalSettings', () => {
     expect(screen.getByRole('button', { name: '加入 Key 池：车位B' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Key 池：按次站/ })).toBeNull();
 
-    // 一键开启时自动把非按次密钥全部入池
+    // 一键开启时自动把非按次密钥全部入池，并按保管箱上下顺序标注 #1/#2 序号
     fireEvent.click(poolSwitch);
     await waitFor(() => expect(poolSwitch.getAttribute('aria-checked')).toBe('true'));
     expect(await screen.findByRole('button', { name: '移出 Key 池：车位A' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '移出 Key 池：车位B' })).toBeTruthy();
+    expect(screen.getByText('#1')).toBeTruthy();
+    expect(screen.getByText('#2')).toBeTruthy();
 
-    // 单独将车位B移出池
+    // 单独将车位B移出池后，仅保留 #1 序号
     fireEvent.click(screen.getByRole('button', { name: '移出 Key 池：车位B' }));
     await screen.findByRole('button', { name: '加入 Key 池：车位B' });
+    expect(screen.getByText('#1')).toBeTruthy();
+    expect(screen.queryByText('#2')).toBeNull();
   });
 
   it('NovelAI 设置不再展示低消耗开关', async () => {

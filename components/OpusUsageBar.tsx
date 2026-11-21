@@ -132,6 +132,9 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
     : health?.missed?.length
       ? `常量同步部分失效：未命中 ${health.missed.join('、')}（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString(getLanguage()) : ''} 同步）`
       : `常量同步正常（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString(getLanguage()) : t('等待首次同步')}）`);
+  const poolBadgeLabel = keyPool.activeMember
+    ? t('池 #{0}', [keyPool.activeMember.poolIndex])
+    : t('池 {0}', [keyPool.members.length]);
   const poolTooltipLine = poolActive
     ? t('Key 池（满圈率优先）：{0}', [keyPool.members.map(member => {
       const cap = member.info?.source === 'gateway' && typeof member.info.usage?.capacity === 'number' && member.info.usage.capacity > 0
@@ -140,7 +143,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
       const pct = member.remainingPercent !== null
         ? `${member.info?.source === 'gateway' ? member.remainingPercent.toFixed(1) : member.remainingPercent}%${cap}`
         : member.error ? t('同步失败') : t('同步中');
-      return `${member.entry.name} ${pct}`;
+      return `#${member.poolIndex} ${member.entry.name} ${pct}`;
     }).join(' · ')])
     : '';
   const title = !info
@@ -215,7 +218,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
         <span className="flex items-center justify-between gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">
           <span className="flex items-center gap-1.5">
             <span>{t(quotaLabel)}</span>
-            {poolActive && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-tiny font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">{t('池 {0}', [keyPool.members.length])}</span>}
+            {poolActive && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-tiny font-bold tabular-nums text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">{poolBadgeLabel}</span>}
           </span>
           <RefreshCw aria-hidden="true" className={`h-3.5 w-3.5 text-gray-500 dark:text-gray-400 ${loading ? 'animate-spin' : ''}`} />
         </span>
@@ -233,6 +236,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
                 : member.error ? t('失败') : '…';
               return (
                 <span key={member.entry.id} className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 ${isCurrent ? 'border-emerald-300 bg-emerald-50/80 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-gray-200 bg-white/70 dark:border-gray-700 dark:bg-gray-900/50'}`}>
+                  <span className="font-bold opacity-75">#{member.poolIndex}</span>
                   <span className="max-w-[7rem] truncate">{member.entry.name}</span>
                   <span className="font-semibold">{pct}</span>
                 </span>
@@ -251,7 +255,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
       {!collapsed && <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
           <span className="truncate">{t(quotaLabel)}</span>
-          {poolActive && <span className="flex-none rounded-full bg-emerald-100 px-1.5 py-0.25 text-tiny font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">{t('池 {0}', [keyPool.members.length])}</span>}
+          {poolActive && <span className="flex-none rounded-full bg-emerald-100 px-1.5 py-0.25 text-tiny font-bold tabular-nums text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">{poolBadgeLabel}</span>}
         </span>
         <span className={`mt-0.5 block truncate text-micro font-normal tabular-nums ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
           {error ? t("同步失败，点击重试") : usage ? refillCompactSuffix ? `${t("≈{0} 张", [images])} · ${refillCompactSuffix}` : t("≈{0} 张", [images]) : t("正在同步…")}

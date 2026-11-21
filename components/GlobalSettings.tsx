@@ -1337,11 +1337,20 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   </div>
                 );
               })()}
-              {keyVault.map(entry => {
+              {(() => {
+                const poolIndexById = new Map<string, number>();
+                let nextPoolIndex = 1;
+                keyVault.forEach(item => {
+                  if (item.billingMode !== 'per-use' && keyPool.config.memberIds.includes(item.id)) {
+                    poolIndexById.set(item.id, nextPoolIndex++);
+                  }
+                });
+                return keyVault.map(entry => {
                 const active = entry.key === apiKey;
                 const revealed = entry.id === revealedKeyId;
                 const eligibleForPool = entry.billingMode !== 'per-use';
                 const inPool = keyPool.config.memberIds.includes(entry.id);
+                const poolIndex = poolIndexById.get(entry.id) || 0;
                 const showPoolButton = eligibleForPool && (keyVault.filter(item => item.billingMode !== 'per-use').length >= 2 || inPool);
                 const poolStatus = keyPool.config.enabled && inPool ? keyPool.members.find(item => item.entry.id === entry.id) : null;
                 // 只对「当前使用」的 key 显示订阅健康（复用轮询结果，不额外探测）；
@@ -1377,6 +1386,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     ) : (
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
+                          {poolIndex > 0 && (
+                            <span className="flex-none rounded-full bg-emerald-100 px-1.5 py-0.5 text-micro font-bold tabular-nums text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" title={t('Key 池序号 #{0}', [poolIndex])}>
+                              #{poolIndex}
+                            </span>
+                          )}
                           <span className="truncate text-sm font-bold text-gray-800 dark:text-gray-100" title={entry.name}>{entry.name}</span>
                           {entry.billingMode === 'per-use'
                             ? <span className="flex-none rounded-full bg-emerald-100 px-1.5 py-0.5 text-micro font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" title={entry.gatewayUrl}>{t("按次")}</span>
@@ -1415,7 +1429,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     </div>
                   </div>
                 );
-              })}
+              });
+              })()}
             </div>
             <div data-agent-private="true" className="mt-3 space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
               <div className="flex items-center justify-between gap-3">

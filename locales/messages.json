@@ -42037,6 +42037,8 @@
   "入池": ["入池", "Pool", "追加", "풀 추가"],
   "Key 池（满圈率优先）：{0}": ["Key 池（滿圈率優先）：{0}", "Key pool (fill ratio first): {0}", "Key プール（満タン率優先）：{0}", "Key 풀 (충전 비율 우선): {0}"],
   "池 {0}": ["池 {0}", "Pool {0}", "プール {0}", "풀 {0}"],
+  "池 #{0}": ["池 #{0}", "Pool #{0}", "プール #{0}", "풀 #{0}"],
+  "Key 池序号 #{0}": ["Key 池序號 #{0}", "Key pool slot #{0}", "Key プール番号 #{0}", "Key 풀 번호 #{0}"],
   "Key 池中还没有可用密钥，请先在全局设置中选择入池密钥或关闭 Key 池": ["Key 池中還沒有可用金鑰，請先在全域設定中選擇入池金鑰或關閉 Key 池", "No keys in the key pool yet. Add keys in Global Settings or disable the key pool.", "Key プールに利用可能なキーがありません。設定でキーを追加するかプールを無効にしてください。", "Key 풀에 사용 가능한 키가 없습니다. 설정에서 키를 추가하거나 Key 풀을 꺼주세요."],
   "Key 池中所有可用密钥的 Opus 额度均已耗尽，已停止生成（未消耗 Anlas）": ["Key 池中所有可用金鑰的 Opus 額度均已耗盡，已停止生成（未消耗 Anlas）", "Opus Usage is exhausted across all pooled keys. Generation stopped without spending Anlas.", "プール内のすべてのキーの Opus 枠を使い切ったため、Anlas を消費せず生成を停止しました。", "풀의 모든 키에서 Opus 할당량이 소진되어 Anlas를 소모하지 않고 생성을 중단했습니다."],
   "Key 池中当前没有可用的 Opus 密钥（可能已过期、冷却中或同步失败），已停止生成": ["Key 池中目前沒有可用的 Opus 金鑰（可能已過期、冷卻中或同步失敗），已停止生成", "No active Opus keys are currently available in the pool (expired, cooling down, or failed to sync). Generation stopped.", "プール内に利用可能な Opus キーがありません（期限切れ・クールダウン中・同期失敗）。生成を停止しました。", "풀에 현재 사용 가능한 Opus 키가 없습니다(만료, 쿨다운 또는 동기화 실패). 생성을 중단했습니다."],

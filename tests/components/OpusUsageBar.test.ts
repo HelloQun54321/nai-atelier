@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_NAI_RUNTIME, NAI_RUNTIME_REFRESH_EVENT, refreshNaiRuntimeConfig } from '../../services/naiRuntime';
 import { naiKeyPoolService } from '../../services/naiKeyPool';
+import { setActiveNaiKey } from '../../services/naiKeyStorage';
 import { naiKeyVault } from '../../services/naiKeyVault';
 import { OpusUsageBar } from '../../components/OpusUsageBar';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
@@ -162,7 +163,7 @@ describe('OpusUsageBar', () => {
     expect(screen.queryByText(/后满/)).toBeNull();
   });
 
-  it('开启 Key 池后侧栏与详情展示池数量角标与成员额度摘要', async () => {
+  it('开启 Key 池后侧栏与详情按保管箱顺序展示当前轮换序号角标与带序号成员摘要', async () => {
     naiKeyVault.invalidateCache();
     sessionStorage.setItem('nai_api_key', 'STA1N-ui-pool-1');
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -179,7 +180,8 @@ describe('OpusUsageBar', () => {
       }
       if (url === '/api/nai-key-vault/pool') {
         if (init?.method === 'PUT') return jsonResponse({ pool: JSON.parse(String(init.body)) });
-        return jsonResponse({ pool: { enabled: true, memberIds: ['u1', 'u2'] } });
+        // 即使 memberIds 逆序保存，编号仍按保管箱从上到下稳定为 #1 / #2
+        return jsonResponse({ pool: { enabled: true, memberIds: ['u2', 'u1'] } });
       }
       const auth = (init?.headers as Record<string, string>)?.Authorization;
       if (auth === 'Bearer STA1N-ui-pool-2') {
@@ -187,15 +189,22 @@ describe('OpusUsageBar', () => {
       }
       return jsonResponse({ source: 'gateway', gatewayManagedWallet: true, tier: 3, active: true, usage: { percent: 25, capacity: 25, isNegative: false, timeUntilNextPercent: 0 } });
     }));
-    await naiKeyPoolService.set({ enabled: true, memberIds: ['u1', 'u2'] });
+    await naiKeyPoolService.set({ enabled: true, memberIds: ['u2', 'u1'] });
     const view = render(React.createElement(OpusUsageBar, { collapsed: false }));
     const card = await screen.findByRole('status', { name: 'Opus 额度 25.0%' });
-    expect(await screen.findByText('池 2')).toBeTruthy();
+    expect(await screen.findByText('池 #1')).toBeTruthy();
     expect(card.title).toContain('Key 池（满圈率优先）');
-    expect(card.title).toContain('车位1');
-    expect(card.title).toContain('车位2');
+    expect(card.title).toContain('#1 车位1');
+    expect(card.title).toContain('#2 车位2');
+
+    // 轮换到第 2 把密钥后，侧栏角标实时更新为 池 #2
+    act(() => { setActiveNaiKey('STA1N-ui-pool-2'); });
+    expect(await screen.findByText('池 #2')).toBeTruthy();
 
     view.rerender(React.createElement(OpusUsageBar, { collapsed: false, showDetails: true }));
+    expect(screen.getByText('池 #2')).toBeTruthy();
+    expect(screen.getByText('#1')).toBeTruthy();
+    expect(screen.getByText('#2')).toBeTruthy();
     expect(screen.getByText('车位1')).toBeTruthy();
     expect(screen.getByText('车位2')).toBeTruthy();
   });
