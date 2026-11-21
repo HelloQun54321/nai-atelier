@@ -6,11 +6,14 @@ const CHATU8_NAME = 'st-chatu8';
 const DEFAULT_URL = 'http://localhost:3000';
 const SYNC_INTERVAL = 10 * 60_000;
 const EVENT_SYNC_DELAY = 3_000;
+const FOCUS_SYNC_COOLDOWN = 30_000;
 let syncing = false;
 let syncTimer = null;
 let presetObserver = null;
 let eventSyncTimer = null;
 let lastStSignature = '';
+let lastAutoSyncAt = 0;
+const vibeReadCache = new Map();
 
 const defaults = () => ({
   baseUrl: DEFAULT_URL,
@@ -107,46 +110,50 @@ const collectArtistPreviews = () => {
 const escapeHtml = value => String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const enhancePresetSelector = () => {
-  const backdrop = document.querySelector('.st-chatu8-workflow-viz-backdrop');
-  if (!backdrop || backdrop.dataset.npmBridgeEnhanced === 'true') return;
-  const toolbar = backdrop.querySelector('.st-chatu8-workflow-viz-toolbar');
-  const search = backdrop.querySelector('.st-chatu8-viz-search-input');
-  if (!toolbar || !search) return;
+  const backdrops = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('.st-chatu8-workflow-viz-backdrop') : [];
+  if (!backdrops.length) return;
   const previews = collectArtistPreviews();
   if (!previews.length) return;
-  backdrop.dataset.npmBridgeEnhanced = 'true';
+  for (const backdrop of backdrops) {
+    // st-chatu8 v3+ 的 Vibe / Vibe 组 / 资产弹窗共用 workflow-viz-backdrop，仅向预设弹窗注入配图筛选。
+    if (backdrop.dataset.npmBridgeEnhanced === 'true' || !backdrop.querySelector('.st-chatu8-preset-viz-container')) continue;
+    const toolbar = backdrop.querySelector('.st-chatu8-workflow-viz-toolbar');
+    const search = backdrop.querySelector('.st-chatu8-viz-search-input');
+    if (!toolbar || !search) continue;
+    backdrop.dataset.npmBridgeEnhanced = 'true';
 
-  const host = document.createElement('div');
-  host.className = 'npm-bridge-preview-host';
-  const trigger = document.createElement('button');
-  trigger.type = 'button';
-  trigger.className = 'npm-bridge-preview-trigger';
-  trigger.innerHTML = `<i class="fa-solid fa-images"></i><span>有配图 ${previews.length}</span>`;
-  trigger.title = '查看由 st-chatu8 与 NAI Atelier 共享的画师串配图';
-  const picker = document.createElement('div');
-  picker.className = 'npm-bridge-preview-picker';
-  picker.hidden = true;
-  picker.innerHTML = previews.map(item => `
-    <button type="button" class="npm-bridge-preview-item" data-name="${escapeHtml(item.name)}">
-      <img src="${escapeHtml(item.path)}" alt="" loading="lazy">
-      <span>${escapeHtml(item.name)}</span>
-    </button>
-  `).join('');
-  trigger.addEventListener('click', event => {
-    event.stopPropagation();
-    picker.hidden = !picker.hidden;
-    trigger.classList.toggle('active', !picker.hidden);
-  });
-  picker.addEventListener('click', event => {
-    const item = event.target.closest('.npm-bridge-preview-item');
-    if (!item) return;
-    search.value = item.dataset.name || '';
-    search.dispatchEvent(new Event('input', { bubbles: true }));
+    const host = document.createElement('div');
+    host.className = 'npm-bridge-preview-host';
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'npm-bridge-preview-trigger';
+    trigger.innerHTML = `<i class="fa-solid fa-images"></i><span>有配图 ${previews.length}</span>`;
+    trigger.title = '查看由 st-chatu8 与 NAI Atelier 共享的画师串配图';
+    const picker = document.createElement('div');
+    picker.className = 'npm-bridge-preview-picker';
     picker.hidden = true;
-    trigger.classList.remove('active');
-  });
-  host.append(trigger, picker);
-  toolbar.appendChild(host);
+    picker.innerHTML = previews.map(item => `
+      <button type="button" class="npm-bridge-preview-item" data-name="${escapeHtml(item.name)}">
+        <img src="${escapeHtml(item.path)}" alt="" loading="lazy">
+        <span>${escapeHtml(item.name)}</span>
+      </button>
+    `).join('');
+    trigger.addEventListener('click', event => {
+      event.stopPropagation();
+      picker.hidden = !picker.hidden;
+      trigger.classList.toggle('active', !picker.hidden);
+    });
+    picker.addEventListener('click', event => {
+      const item = event.target.closest('.npm-bridge-preview-item');
+      if (!item) return;
+      search.value = item.dataset.name || '';
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+      picker.hidden = true;
+      trigger.classList.remove('active');
+    });
+    host.append(trigger, picker);
+    toolbar.appendChild(host);
+  }
 };
 
 const watchPresetSelector = () => {
@@ -213,38 +220,80 @@ const readPersistedArtistSnapshot = async artists => {
   } catch { return incomplete('酒馆设置核对失败，请手动同步重试'); }
 };
 
-const readStoredVibes = async bridgeSettings => {
+const decodeStoredVibeText = raw => {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  if (text.startsWith('{') || text.startsWith('[')) return text;
+  if (text.startsWith('data:')) {
+    const comma = text.indexOf(',');
+    if (comma < 0) return '';
+    const header = text.slice(0, comma);
+    const body = text.slice(comma + 1);
+    if (header.includes(';base64')) {
+      const binary = atob(body);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new TextDecoder('utf-8').decode(bytes);
+    }
+    return decodeURIComponent(body);
+  }
+  try {
+    const binary = atob(text);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch {
+    return text;
+  }
+};
+
+const readStoredVibes = async (bridgeSettings, { force = false } = {}) => {
   const st = chatu8();
   const documents = [];
   const all = new Map();
   const bridgeDuplicates = [];
+  const activeCacheKeys = new Set();
   for (const [name, preset] of Object.entries(st?.vibePresets || {})) {
     const dataId = preset?.vibeDataId;
-    const path = dataId ? st?.configImageStorage?.[dataId]?.path : '';
+    const storageEntry = dataId ? st?.configImageStorage?.[dataId] : null;
+    const path = storageEntry?.path || '';
     if (!path) continue;
+    const cacheKey = `${dataId}|${path}|${Number(storageEntry?.date || 0)}`;
+    activeCacheKeys.add(cacheKey);
     try {
-      const response = await fetch(path, { cache: 'no-store' });
-      if (!response.ok) continue;
-      const text = await response.text();
-      const document = JSON.parse(text);
-      if (document?.identifier !== 'novelai-vibe-transfer' || !document.id) continue;
-      const sourceHash = await canonicalVibeHash(document);
-      if (!/^[a-f0-9]{64}$/.test(sourceHash)) continue;
-      const entry = { name, dataId, document, sourceHash, path, isBridge: /\/npm_bridge_[^/]+$/i.test(path) };
-      const existing = all.get(sourceHash);
+      let parsed = !force ? vibeReadCache.get(cacheKey) : null;
+      if (!parsed) {
+        const response = await fetch(path, { cache: 'no-store' });
+        if (!response.ok) continue;
+        const text = decodeStoredVibeText(await response.text());
+        const document = JSON.parse(text);
+        if (document?.identifier !== 'novelai-vibe-transfer' || !document.id) continue;
+        const sourceHash = await canonicalVibeHash(document);
+        if (!/^[a-f0-9]{64}$/.test(sourceHash)) continue;
+        parsed = { document, sourceHash };
+        vibeReadCache.set(cacheKey, parsed);
+      }
+      const entry = {
+        name, dataId, document: parsed.document, sourceHash: parsed.sourceHash, path,
+        isBridge: /\/(?:cfgimg_)?npm_bridge_[^/]+$/i.test(path),
+      };
+      const existing = all.get(parsed.sourceHash);
       if (existing && (existing.isBridge || entry.isBridge)) {
         if (existing.isBridge && !entry.isBridge) {
           bridgeDuplicates.push(existing);
-          all.set(sourceHash, entry);
+          all.set(parsed.sourceHash, entry);
         } else {
           bridgeDuplicates.push(entry);
         }
         continue;
       }
-      all.set(sourceHash, entry);
+      all.set(parsed.sourceHash, entry);
     } catch (error) {
       console.warn('[NPM Bridge] 无法读取 Vibe:', name, error);
     }
+  }
+  for (const key of vibeReadCache.keys()) {
+    if (!activeCacheKeys.has(key)) vibeReadCache.delete(key);
   }
   for (const entry of all.values()) {
     const preset = st.vibePresets?.[entry.name] || {};
@@ -302,7 +351,7 @@ const collectGroups = (vibeMap, bridgeSettings) => {
   })).filter(group => group.vibes.length);
 };
 
-const uploadVibeText = async (name, text) => {
+const uploadVibeText = async (dataId, text) => {
   const response = await fetch('/api/images/upload', {
     method: 'POST',
     headers: getRequestHeaders(),
@@ -310,7 +359,8 @@ const uploadVibeText = async (name, text) => {
       image: textToBase64(text),
       format: 'png',
       ch_name: 'chatu8_config',
-      filename: `npm_bridge_${String(name).replace(/[\\/:*?"<>|]/g, '_').slice(0, 60)}_${Date.now()}`,
+      // 文件名对齐 dataId，确保最新版 st-chatu8 deleteConfigImage 的路径安全校验放行清理。
+      filename: dataId,
     }),
   });
   if (!response.ok) throw new Error(`SillyTavern 保存 Vibe 失败：${response.status}`);
@@ -335,7 +385,7 @@ const resolvePresetName = (collection, requested, currentName = '', externalId =
   return `${requested} (${index})`;
 };
 
-const uploadArtistPreview = async (name, imageUrl, oldPath = null, externalId = '') => {
+const uploadArtistPreview = async (name, imageUrl, oldPath = null, externalId = '', fileId = '') => {
   const bridgeSettings = settings();
   const url = imageUrl.startsWith('http') ? imageUrl : `${bridgeSettings.baseUrl.replace(/\/$/, '')}${imageUrl}`;
   const imageResponse = await fetch(url, { cache: 'no-store' });
@@ -351,6 +401,7 @@ const uploadArtistPreview = async (name, imageUrl, oldPath = null, externalId = 
     return { path: oldPath, contentHash, unchanged: true };
   }
 
+  const nextId = fileId || `cfgimg_npm_bridge_preview_${crypto.randomUUID()}`;
   const response = await fetch('/api/images/upload', {
     method: 'POST',
     headers: getRequestHeaders(),
@@ -358,14 +409,15 @@ const uploadArtistPreview = async (name, imageUrl, oldPath = null, externalId = 
       image: bytesToBase64(bytes),
       format,
       ch_name: 'chatu8_config',
-      filename: `npm_bridge_preview_${String(name).replace(/[\\/:*?"<>|]/g, '_').slice(0, 60)}_${Date.now()}`,
+      // 文件名对齐 previewImageId，使 st-chatu8 v3+ 删预设时能一并清理磁盘文件。
+      filename: nextId,
     }),
   });
   if (!response.ok) throw new Error(`SillyTavern 保存画师串配图失败：${response.status}`);
   const newPath = (await response.json()).path;
 
   // Clean up old bridge-generated preview file to prevent disk accumulation
-  if (oldPath && oldPath !== newPath && /npm_bridge_preview_/i.test(oldPath)) {
+  if (oldPath && oldPath !== newPath && /(?:cfgimg_)?npm_bridge_preview_/i.test(oldPath)) {
     try {
       await fetch('/api/images/delete', {
         method: 'POST',
@@ -377,7 +429,7 @@ const uploadArtistPreview = async (name, imageUrl, oldPath = null, externalId = 
     }
   }
 
-  return { path: newPath, contentHash, unchanged: false };
+  return { id: nextId, path: newPath, contentHash, unchanged: false };
 };
 
 const applyArtists = async (artists, receipts = []) => {
@@ -412,7 +464,7 @@ const applyArtists = async (artists, receipts = []) => {
         try {
           const result = await uploadArtistPreview(name, artist.previewImage, previousPath, artist.externalId);
           if (!result.unchanged || !previewImageId) {
-            previewImageId = `cfgimg_npm_preview_${crypto.randomUUID()}`;
+            previewImageId = result.id || `cfgimg_npm_bridge_preview_${crypto.randomUUID()}`;
             st.configImageStorage[previewImageId] = { path: result.path, date: Date.now(), type: 'image' };
           }
           bridgeSettings.artistPreviewHashes[artist.externalId] = result.contentHash;
@@ -473,8 +525,8 @@ const applyVibes = async (items, localVibes) => {
     if (!response.ok) throw new Error(`下载 Vibe“${item.name}”失败：${response.status}`);
     const text = await response.text();
     const document = JSON.parse(text);
-    const path = await uploadVibeText(item.name, text);
-    const dataId = `cfgimg_npm_${crypto.randomUUID()}`;
+    const dataId = `cfgimg_npm_bridge_${crypto.randomUUID()}`;
+    const path = await uploadVibeText(dataId, text);
     st.configImageStorage[dataId] = { path, date: Date.now(), type: 'text' };
     const name = uniqueName(st.vibePresets, item.name);
     st.vibePresets[name] = {
@@ -534,10 +586,16 @@ async function syncNow({ quiet = false } = {}) {
       return;
     }
     if (!quiet) setStatus('正在同步风格串、Vibe 与历史索引…', 'working');
+    const currentSignature = stSyncSignature();
+    const localChanged = !lastStSignature || currentSignature !== lastStSignature;
     const artists = await collectArtists(bridgeSettings);
-    await saveSettings();
-    const snapshot = await readPersistedArtistSnapshot(artists);
-    const vibeData = await readStoredVibes(bridgeSettings);
+    if (!quiet || localChanged) await saveSettings();
+    let snapshot = await readPersistedArtistSnapshot(artists);
+    if (quiet && !localChanged && !snapshot.artistSnapshot.complete) {
+      await saveSettings();
+      snapshot = await readPersistedArtistSnapshot(artists);
+    }
+    const vibeData = await readStoredVibes(bridgeSettings, { force: !quiet });
     const response = await fetch(`${baseUrl}/api/integrations/st-chatu8/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -580,8 +638,11 @@ async function syncNow({ quiet = false } = {}) {
     await applyVibes(result.vibes || [], vibeData.all);
     applyGroups(result.groups || [], vibeData.all);
     bridgeSettings.lastSyncAt = Date.now();
+    lastAutoSyncAt = bridgeSettings.lastSyncAt;
     lastStSignature = stSyncSignature();
-    saveSettingsDebounced();
+    if (appliedArtists > 0 || (result.vibes || []).length > 0 || (result.groups || []).length > 0 || (vibeData.bridgeDuplicates || []).length > 0 || localChanged || !quiet) {
+      saveSettingsDebounced();
+    }
     const historyCount = Number(result.status?.linkedHistory || 0);
     const counts = result.artistSync;
     setStatus(counts
@@ -685,6 +746,10 @@ jQuery(async () => {
   scheduleAutoSync();
   watchPresetSelector();
   eventSource.on(event_types.SETTINGS_UPDATED, scheduleChangedSettingsSync);
-  window.addEventListener('focus', () => { if (settings().autoSync !== false) syncNow({ quiet: true }); });
+  window.addEventListener('focus', () => {
+    if (settings().autoSync === false) return;
+    if (lastAutoSyncAt > 0 && Date.now() - lastAutoSyncAt < FOCUS_SYNC_COOLDOWN && stSyncSignature() === lastStSignature) return;
+    syncNow({ quiet: true });
+  });
   setTimeout(() => { if (settings().autoSync !== false) syncNow(); }, 2500);
 });

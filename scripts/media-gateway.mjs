@@ -4114,6 +4114,7 @@ const serveDistFile = async (req, res, url) => {
     projectRoot: process.cwd(),
     requestWorkerJson: (path, options) => requestWorkerJson(path, internalWorkerRequest, workerPort, options),
     requestWorkerBuffer: path => requestWorkerBuffer(path, internalWorkerRequest, workerPort),
+    modelMappings: () => getNaiRuntime().metadataModelMappings || {},
   });
   // Pixiv 图库只在本机 media gateway 提供：worker 部署不含任何 Pixiv 逻辑，
   // /api/pixiv 在 Cloudflare 上必然 401/404（fail closed）。
@@ -4431,7 +4432,23 @@ const serveDistFile = async (req, res, url) => {
             targetUrl: body.targetUrl,
             projectRoot: process.env.NAI_STORAGE_RUNTIME_ROOT || process.cwd(), workspaceRoot: process.cwd(),
           });
-          return sendBridgeJson(req, res, 200, result);
+          // 安装成功后立即持久化并绑定酒馆根目录，使历史零拷贝与封面读取立即可用。
+          await stChatu8Bridge.setRoot(result.sillyTavernRoot || stRoot, { strict: false });
+          if (stChatu8Bridge.enabled) stChatu8Bridge.startHistorySync();
+          return sendBridgeJson(req, res, 200, { ...result, status: stChatu8Bridge.status() });
+        }
+        if (url.pathname === '/api/integrations/st-chatu8/root' && req.method === 'POST') {
+          const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
+          await stChatu8Bridge.setRoot(body.sillyTavernRoot, { strict: true });
+          await stChatu8Bridge.refreshPreferences();
+          if (stChatu8Bridge.enabled) stChatu8Bridge.startHistorySync();
+          return sendBridgeJson(req, res, 200, stChatu8Bridge.status());
+        }
+        if (url.pathname === '/api/integrations/st-chatu8/history/scan' && req.method === 'POST') {
+          await stChatu8Bridge.refreshPreferences();
+          stChatu8Bridge.assertEnabled();
+          await stChatu8Bridge.syncHistory();
+          return sendBridgeJson(req, res, 200, stChatu8Bridge.status());
         }
         if (url.pathname === '/api/integrations/st-chatu8/sync' && req.method === 'POST') {
           const payload = JSON.parse((await readRequestBody(req, 64 * 1024 * 1024)).toString('utf8') || '{}');

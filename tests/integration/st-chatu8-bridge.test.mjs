@@ -11,7 +11,11 @@ import {
   canonicalVibeSourceHash,
   collectStHistoryCandidates,
   computeSillyTavernExtensionTargetDir,
+  computeSillyTavernRootDir,
+  findSillyTavernUserDir,
   installSillyTavernBridgeExtension,
+  readNovelAiMetadata,
+  resolveNovelAiModelFromSource,
   resolveStUserFile,
   StChatu8Bridge,
 } from '../../scripts/st-chatu8-bridge.mjs';
@@ -69,13 +73,22 @@ test('outbound defaults to empty despite legacy full-library links; inbound stil
   assert.equal(f.calls.some(call => call.method === 'DELETE'), false);
 });
 
-test('selected V4.5 and V5 styles export, including Curated; V4 and other types remain excluded', async () => {
+test('selected V4.5 and V5 styles export, including Curated and V5 Medium; V4 and other types remain excluded', async () => {
   const f = artistFixture();
-  f.chains.push(f.local('chosen'), f.local('curated', 'Curated', 'nai-diffusion-4-5-curated'), f.local('hidden'), f.local('v5', 'V5', 'nai-diffusion-5-full'), f.local('v4', 'V4', 'nai-diffusion-4-full'), { ...f.local('character'), type: 'character' });
-  const result = await f.bridge.syncArtists([], ['chosen', 'curated', 'v5', 'v4', 'character', 'deleted']);
-  assert.deepEqual(result.map(item => item.externalId), ['npm:chosen', 'npm:curated', 'npm:v5']);
+  f.chains.push(
+    f.local('chosen'),
+    f.local('curated', 'Curated', 'nai-diffusion-4-5-curated'),
+    f.local('hidden'),
+    f.local('v5', 'V5', 'nai-diffusion-5-full'),
+    f.local('v5m', 'V5 Medium', 'nai-diffusion-5-full-medium'),
+    f.local('v4', 'V4', 'nai-diffusion-4-full'),
+    { ...f.local('character'), type: 'character' },
+  );
+  const result = await f.bridge.syncArtists([], ['chosen', 'curated', 'v5', 'v5m', 'v4', 'character', 'deleted']);
+  assert.deepEqual(result.map(item => item.externalId), ['npm:chosen', 'npm:curated', 'npm:v5', 'npm:v5m']);
   assert.equal(f.bridge.state.artistLinks['npm:hidden'], undefined);
   assert.equal(f.bridge.state.artistLinks['npm:v5'].chainId, 'v5');
+  assert.equal(f.bridge.state.artistLinks['npm:v5m'].chainId, 'v5m');
   assert.equal(f.chains.find(item => item.id === 'v5').params.model, 'nai-diffusion-5-full');
   assert.deepEqual(await f.bridge.syncArtists([], []), []);
 });
@@ -200,9 +213,9 @@ const extensionFixture = async (dom = null) => {
   const events = new Map();
   let persisted = structuredClone(extensionSettings);
   let saveEnabled = true;
-  const extension = runInNewContext(`${source}\n;({ applyArtists, collectArtists, applyGroups, settings, syncNow, renderSettings, setStatus, readPersistedArtistSnapshot });`, {
-    extension_settings: extensionSettings, crypto: webcrypto, TextEncoder, atob, btoa,
-    document: dom?.window.document || { querySelector: () => null, body: {} }, jQuery: callback => { initialize = callback; }, console: { warn() {}, error() {} },
+  const extension = runInNewContext(`${source}\n;({ applyArtists, collectArtists, applyGroups, settings, syncNow, renderSettings, setStatus, readPersistedArtistSnapshot, enhancePresetSelector });`, {
+    extension_settings: extensionSettings, crypto: webcrypto, TextEncoder, TextDecoder, atob, btoa,
+    document: dom?.window.document || { querySelector: () => null, querySelectorAll: () => [], body: {} }, jQuery: callback => { initialize = callback; }, console: { warn() {}, error() {} },
     window: { addEventListener: (name, callback) => events.set(name, callback) },
     eventSource: { on() {} }, event_types: { SETTINGS_UPDATED: 'updated' },
     setInterval: () => 1, clearInterval() {}, clearTimeout() {}, setTimeout: (callback, ms) => { timeouts.push({ callback, ms }); return 1; },
@@ -626,4 +639,103 @@ test('installSillyTavernBridgeExtension 正常安装扩展、注入服务地址�
     await rm(fakeStRoot, { recursive: true, force: true });
     await rm(fakeProject, { recursive: true, force: true });
   }
+});
+
+test('setRoot 支持从子路径反推根目录、识别自定义酒馆用户目录并持久化', async () => {
+  const fakeStRoot = tempRoot('st-custom-user');
+  const customUserDir = join(fakeStRoot, 'data', 'alice');
+  try {
+    await mkdir(join(customUserDir, 'user', 'images'), { recursive: true });
+    await writeFile(join(customUserDir, 'settings.json'), JSON.stringify({ extension_settings: { 'st-chatu8': { yushe: {} } } }), 'utf8');
+    const nested = join(fakeStRoot, 'public', 'scripts', 'extensions', 'third-party', 'npm-bridge');
+    assert.equal(computeSillyTavernRootDir(nested), fakeStRoot);
+    assert.equal(await findSillyTavernUserDir(fakeStRoot), customUserDir);
+
+    const bridge = new StChatu8Bridge({
+      requestWorkerJson: async () => ({}),
+      requestWorkerBuffer: async () => ({ status: 404, buffer: Buffer.alloc(0) }),
+    });
+    bridge.saveState = async () => {};
+    const bound = await bridge.setRoot(nested);
+    assert.equal(bound.connected, true);
+    assert.equal(bound.sillyTavernRoot, fakeStRoot);
+    assert.equal(bridge.state.sillyTavernRoot, fakeStRoot);
+    assert.equal(bridge.resolveStUserPath('/user/images/demo.png'), join(customUserDir, 'user', 'images', 'demo.png'));
+  } finally {
+    await rm(fakeStRoot, { recursive: true, force: true });
+  }
+});
+
+test('readNovelAiMetadata 还原 PNG Source 模型名与 noiseSchedule', async () => {
+  const dir = tempRoot('st-meta');
+  try {
+    await mkdir(dir, { recursive: true });
+    const crc32 = buf => {
+      let c = 0xffffffff;
+      for (const b of buf) {
+        c ^= b;
+        for (let i = 0; i < 8; i++) c = (c >>> 1) ^ (c & 1 ? 0xedb88320 : 0);
+      }
+      return (c ^ 0xffffffff) >>> 0;
+    };
+    const chunk = (type, data) => {
+      const len = Buffer.alloc(4); len.writeUInt32BE(data.length, 0);
+      const t = Buffer.from(type, 'ascii');
+      const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([t, data])), 0);
+      return Buffer.concat([len, t, data, crc]);
+    };
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(1, 0); ihdr.writeUInt32BE(1, 4); ihdr[8] = 8; ihdr[9] = 6;
+    const comment = JSON.stringify({ prompt: '1girl, starry sky', uc: 'lowres', steps: 23, scale: 5, sampler: 'k_euler_ancestral', noise_schedule: 'karras', seed: 42 });
+    const png = Buffer.concat([
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      chunk('IHDR', ihdr),
+      chunk('tEXt', Buffer.from(`Source\0NovelAI Diffusion V5 Full 12345`, 'utf8')),
+      chunk('tEXt', Buffer.from(`Comment\0${comment}`, 'utf8')),
+      chunk('IEND', Buffer.alloc(0)),
+    ]);
+    const filePath = join(dir, 'sample.png');
+    await writeFile(filePath, png);
+    const meta = await readNovelAiMetadata(filePath, { 'NovelAI Diffusion V5 Full 12345': 'nai-diffusion-5-full' });
+    assert.equal(meta.prompt, '1girl, starry sky');
+    assert.equal(meta.negativePrompt, 'lowres');
+    assert.equal(meta.params.model, 'nai-diffusion-5-full');
+    assert.equal(meta.params.noiseSchedule, 'karras');
+    assert.equal(meta.params.steps, 23);
+    assert.equal(resolveNovelAiModelFromSource('NovelAI Diffusion V5 Full Medium'), 'nai-diffusion-5-full-medium');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('st-chatu8 v3.2.1 适配：仅向预设弹窗注入配图筛选且不污染 Vibe 弹窗，上传文件名对齐配置 ID', async () => {
+  const dom = new JSDOM(`
+    <div id="vibe-modal" class="st-chatu8-workflow-viz-backdrop">
+      <div class="st-chatu8-workflow-viz-toolbar"><input class="st-chatu8-viz-search-input" placeholder="搜索 Vibe..."></div>
+    </div>
+    <div id="preset-modal" class="st-chatu8-workflow-viz-backdrop">
+      <div class="st-chatu8-workflow-viz-toolbar"><input class="st-chatu8-viz-search-input" placeholder="搜索预设..."></div>
+      <div class="st-chatu8-preset-viz-container"></div>
+    </div>
+  `);
+  const f = await extensionFixture(dom);
+  const uploadedNames = [];
+  f.setFetch(async (url, options = {}) => {
+    if (url === '/api/images/upload') {
+      const body = JSON.parse(options.body);
+      uploadedNames.push(body.filename);
+      return Response.json({ path: `/user/images/chatu8_config/${body.filename}.${body.format}` });
+    }
+    return new Response(Buffer.from('synthetic-cover-bytes'), { headers: { 'Content-Type': 'image/png' } });
+  });
+  await f.extension.applyArtists([{ externalId: 'npm:v3', name: '新版画风', fixedPrompt: 'artist:v3', fixedPromptEnd: '', negativePrompt: '', previewImage: '/api/assets/v3.png', updatedAt: 1 }]);
+  const preset = f.st.yushe['新版画风'];
+  assert.ok(preset.previewImageId.startsWith('cfgimg_npm_bridge_preview_'));
+  assert.equal(uploadedNames[0], preset.previewImageId);
+  assert.ok(f.st.configImageStorage[preset.previewImageId].path.includes(`/${preset.previewImageId}.`));
+
+  f.extension.enhancePresetSelector();
+  assert.equal(dom.window.document.querySelector('#vibe-modal .npm-bridge-preview-trigger'), null);
+  assert.ok(dom.window.document.querySelector('#preset-modal .npm-bridge-preview-trigger'));
+  dom.window.close();
 });

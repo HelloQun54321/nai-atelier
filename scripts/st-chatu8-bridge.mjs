@@ -1,7 +1,8 @@
 import { vibeStrength } from '../services/vibeProtocol.mjs';
+import { extractPngMetadata } from '../services/pngMetadata.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, open, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import { isStChatu8ExportableChain } from '../worker/stChatu8Policy.mjs';
 
@@ -32,6 +33,7 @@ const clamp = (value, min, max, fallback) => {
 
 const defaultState = () => ({
   version: 1,
+  sillyTavernRoot: '',
   artistLinks: {},
   vibeLinks: {},
   groupLinks: {},
@@ -52,9 +54,50 @@ export const canonicalVibeSourceHash = document => {
   return /^[a-f0-9]{64}$/.test(declared) ? declared : '';
 };
 
-export const resolveStUserFile = (root, publicPath) => {
-  if (!root || typeof publicPath !== 'string' || !publicPath.startsWith('/user/')) return null;
-  const userRoot = resolve(root, 'data', 'default-user', 'user');
+const EXTENSION_SUFFIX_PARTS = ['public', 'scripts', 'extensions', 'third-party', 'npm-bridge'];
+
+/** 从酒馆根目录或各级扩展子目录反推出 SillyTavern 根目录。 */
+export const computeSillyTavernRootDir = stRoot => {
+  const trimmed = String(stRoot || '').trim();
+  if (!trimmed) return '';
+  let current = normalize(trimmed).replace(/[\\/]+$/, '');
+  const lower = current.replaceAll('\\', '/').toLowerCase();
+  for (let depth = EXTENSION_SUFFIX_PARTS.length; depth >= 1; depth--) {
+    const suffix = '/' + EXTENSION_SUFFIX_PARTS.slice(0, depth).join('/');
+    if (lower.endsWith(suffix)) {
+      current = current.slice(0, current.length - suffix.length) || current;
+      break;
+    }
+  }
+  return current;
+};
+
+/** 解析酒馆真实用户目录：优先 data/default-user，兼容多用户或自定义句柄名。 */
+export const findSillyTavernUserDir = async root => {
+  if (!root) return null;
+  const dataDir = resolve(root, 'data');
+  const defaultDir = join(dataDir, 'default-user');
+  try {
+    await stat(join(defaultDir, 'settings.json'));
+    return defaultDir;
+  } catch { /* 继续探测其他用户目录 */ }
+  try {
+    const entries = await readdir(dataDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      const candidate = join(dataDir, entry.name);
+      try {
+        await stat(join(candidate, 'settings.json'));
+        return candidate;
+      } catch { /* 非用户配置目录 */ }
+    }
+  } catch { /* data 目录不存在 */ }
+  return null;
+};
+
+export const resolveStUserFile = (root, publicPath, userDir = null) => {
+  if ((!root && !userDir) || typeof publicPath !== 'string' || !publicPath.startsWith('/user/')) return null;
+  const userRoot = resolve(userDir || join(root, 'data', 'default-user'), 'user');
   const candidate = resolve(userRoot, publicPath.slice('/user/'.length));
   const rel = relative(userRoot, candidate);
   return rel && !rel.startsWith('..') && !isAbsolute(rel) ? candidate : null;
@@ -148,56 +191,67 @@ export const installSillyTavernBridgeExtension = async ({
 
   return {
     success: true,
+    sillyTavernRoot: computeSillyTavernRootDir(stRoot),
     targetPath: targetDir,
     files: ['manifest.json', 'index.js', 'style.css', 'README.md'],
   };
 };
 
-const findSillyTavernRoot = async projectRoot => {
+const findSillyTavernLocation = async (projectRoot, preferredRoot = '') => {
   const candidates = [
-    process.env.SILLY_TAVERN_ROOT,
+    preferredRoot ? computeSillyTavernRootDir(preferredRoot) : '',
+    process.env.SILLY_TAVERN_ROOT ? computeSillyTavernRootDir(process.env.SILLY_TAVERN_ROOT) : '',
     resolve(projectRoot, '..', 'SillyTavern'),
     'D:\\SillyTavern',
   ].filter(Boolean);
   for (const candidate of candidates) {
-    try {
-      const root = resolve(candidate);
-      await stat(join(root, 'data', 'default-user', 'settings.json'));
-      return root;
-    } catch { /* Try the next known location. */ }
+    const root = resolve(candidate);
+    const userDir = await findSillyTavernUserDir(root);
+    if (userDir) return { root, userDir };
   }
-  return null;
+  return { root: null, userDir: null };
 };
 
-const readNovelAiMetadata = async filePath => {
+export const resolveNovelAiModelFromSource = (source, modelMappings = {}) => {
+  const raw = String(source || '').trim();
+  if (!raw) return '';
+  if (modelMappings && typeof modelMappings === 'object' && modelMappings[raw]) {
+    return String(modelMappings[raw]);
+  }
+  const lower = raw.toLowerCase();
+  if (/^nai-diffusion-/i.test(raw)) return raw;
+  if (lower.includes('v5')) {
+    if (lower.includes('curated')) return 'nai-diffusion-5-curated';
+    if (lower.includes('medium')) return 'nai-diffusion-5-full-medium';
+    return 'nai-diffusion-5-full';
+  }
+  if (lower.includes('v4.5') || lower.includes('4.5')) {
+    return lower.includes('curated') ? 'nai-diffusion-4-5-curated' : 'nai-diffusion-4-5-full';
+  }
+  if (lower.includes('v4') || lower.includes('4 ')) {
+    return lower.includes('curated') ? 'nai-diffusion-4-curated-preview' : 'nai-diffusion-4-full';
+  }
+  if (lower.includes('v3') || lower.includes('furry')) {
+    return lower.includes('furry') ? 'nai-diffusion-furry-3' : 'nai-diffusion-3';
+  }
+  return '';
+};
+
+/** 复用公共 PNG/隐写解析器提取提示词、角色、模型与采样参数。 */
+export const readNovelAiMetadata = async (filePath, modelMappings = {}) => {
   if (extname(filePath).toLowerCase() !== '.png') return { prompt: '', negativePrompt: '', params: {} };
-  const handle = await open(filePath, 'r');
   try {
-    const size = Math.min((await handle.stat()).size, 4 * 1024 * 1024);
-    const buffer = Buffer.alloc(size);
-    await handle.read(buffer, 0, size, 0);
-    if (buffer.subarray(1, 4).toString('ascii') !== 'PNG') return { prompt: '', negativePrompt: '', params: {} };
-    let offset = 8;
-    let comment = null;
-    while (offset + 12 <= buffer.length) {
-      const length = buffer.readUInt32BE(offset);
-      const type = buffer.subarray(offset + 4, offset + 8).toString('ascii');
-      const end = offset + 12 + length;
-      if (end > buffer.length) break;
-      if (type === 'tEXt') {
-        const chunk = buffer.subarray(offset + 8, offset + 8 + length);
-        const separator = chunk.indexOf(0);
-        const keyword = separator >= 0 ? chunk.subarray(0, separator).toString('latin1') : '';
-        if (keyword === 'Comment') {
-          comment = chunk.subarray(separator + 1).toString('utf8');
-          break;
-        }
-      }
-      if (type === 'IEND') break;
-      offset = end;
+    const info = await stat(filePath);
+    if (!info.isFile() || info.size <= 0 || info.size > 24 * 1024 * 1024) {
+      return { prompt: '', negativePrompt: '', params: {} };
     }
-    if (!comment) return { prompt: '', negativePrompt: '', params: {} };
-    const parsed = JSON.parse(comment);
+    const buffer = await readFile(filePath);
+    const raw = await extractPngMetadata(buffer);
+    if (!raw) return { prompt: '', negativePrompt: '', params: {} };
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { prompt: '', negativePrompt: '', params: {} };
+    }
     const negativePrompt = String(parsed?.v4_negative_prompt?.caption?.base_caption || parsed?.uc || '');
     const characters = Array.isArray(parsed?.v4_prompt?.caption?.char_captions)
       ? parsed.v4_prompt.caption.char_captions.map((entry, index) => ({
@@ -208,15 +262,21 @@ const readNovelAiMetadata = async filePath => {
           y: Number(entry?.centers?.[0]?.y ?? 0.5),
         }))
       : [];
+    const model = resolveNovelAiModelFromSource(parsed?.Source || parsed?.source || parsed?.model, modelMappings);
+    const noiseSchedule = typeof parsed?.noise_schedule === 'string' && parsed.noise_schedule.trim()
+      ? parsed.noise_schedule.trim()
+      : undefined;
     return {
       prompt: String(parsed?.prompt || parsed?.v4_prompt?.caption?.base_caption || ''),
       negativePrompt,
       params: {
+        ...(model ? { model } : {}),
         width: Number(parsed?.width || 832),
         height: Number(parsed?.height || 1216),
         steps: Number(parsed?.steps || 28),
         scale: Number(parsed?.scale || 5),
         sampler: String(parsed?.sampler || 'k_euler_ancestral'),
+        ...(noiseSchedule ? { noiseSchedule } : {}),
         seed: Number(parsed?.seed || 0),
         cfgRescale: Number(parsed?.cfg_rescale || 0),
         useCoords: parsed?.v4_prompt?.use_coords === true,
@@ -225,8 +285,6 @@ const readNovelAiMetadata = async filePath => {
     };
   } catch {
     return { prompt: '', negativePrompt: '', params: {} };
-  } finally {
-    await handle.close();
   }
 };
 
@@ -286,11 +344,13 @@ const artistToChainBody = (artist, existing) => ({
 });
 
 export class StChatu8Bridge {
-  constructor({ projectRoot = process.cwd(), requestWorkerJson, requestWorkerBuffer }) {
+  constructor({ projectRoot = process.cwd(), requestWorkerJson, requestWorkerBuffer, modelMappings = () => ({}) }) {
     this.projectRoot = projectRoot;
     this.requestWorkerJson = requestWorkerJson;
     this.requestWorkerBuffer = requestWorkerBuffer;
+    this.modelMappings = typeof modelMappings === 'function' ? modelMappings : () => modelMappings || {};
     this.root = null;
+    this.userDir = null;
     this.state = defaultState();
     this.writeQueue = Promise.resolve();
     this.historySyncPromise = null;
@@ -304,8 +364,29 @@ export class StChatu8Bridge {
   }
 
   async init() {
-    this.root = await findSillyTavernRoot(this.projectRoot);
     try { this.state = { ...defaultState(), ...JSON.parse(await readFile(STATE_FILE, 'utf8')) }; } catch { /* First run. */ }
+    const found = await findSillyTavernLocation(this.projectRoot, this.state.sillyTavernRoot);
+    this.root = found.root;
+    this.userDir = found.userDir;
+  }
+
+  async setRoot(inputPath, { strict = true } = {}) {
+    const raw = String(inputPath || '').trim();
+    if (!raw) {
+      if (strict) throw Object.assign(new Error('请提供有效的 SillyTavern 安装根目录'), { status: 400 });
+      return { connected: Boolean(this.root), sillyTavernRoot: this.root };
+    }
+    const candidate = resolve(computeSillyTavernRootDir(raw));
+    const userDir = await findSillyTavernUserDir(candidate);
+    if (!userDir) {
+      if (strict) throw Object.assign(new Error(`未在该目录下找到 SillyTavern 用户配置（data/*/settings.json）：${candidate}`), { status: 404 });
+      return { connected: Boolean(this.root), sillyTavernRoot: this.root };
+    }
+    this.root = candidate;
+    this.userDir = userDir;
+    this.state.sillyTavernRoot = candidate;
+    await this.saveState();
+    return { connected: true, sillyTavernRoot: this.root };
   }
 
   applyPreferences(preferences) {
@@ -386,7 +467,9 @@ export class StChatu8Bridge {
 
   async readStSettings() {
     if (!this.root) throw Object.assign(new Error('未找到 SillyTavern'), { status: 503 });
-    const settingsPath = join(this.root, 'data', 'default-user', 'settings.json');
+    const userDir = this.userDir || await findSillyTavernUserDir(this.root) || join(this.root, 'data', 'default-user');
+    this.userDir = userDir;
+    const settingsPath = join(userDir, 'settings.json');
     const document = JSON.parse(await readFile(settingsPath, 'utf8'));
     return document?.extension_settings?.['st-chatu8'] || {};
   }
@@ -412,7 +495,7 @@ export class StChatu8Bridge {
   }
 
   resolveStUserPath(publicPath) {
-    return resolveStUserFile(this.root, publicPath);
+    return resolveStUserFile(this.root, publicPath, this.userDir);
   }
 
   async syncHistory() {
@@ -434,6 +517,7 @@ export class StChatu8Bridge {
       const result = await this.requestSyncJson(generation, '/api/integrations/st-chatu8/history/known', { method: 'POST', body: { externalIds: batch } });
       for (const id of result.externalIds || []) known.add(id);
     }
+    const mappings = this.modelMappings() || {};
     const pending = [];
     for (const { image, filePath, externalId } of unchecked) {
         this.assertEnabled(generation);
@@ -442,10 +526,11 @@ export class StChatu8Bridge {
           continue;
         }
         try {
-          const metadata = await readNovelAiMetadata(filePath);
+          const metadata = await readNovelAiMetadata(filePath, mappings);
+          const ext = extname(filePath).toLowerCase();
           pending.push({
             externalId,
-            imageType: extname(filePath).toLowerCase() === '.jpg' || extname(filePath).toLowerCase() === '.jpeg' ? 'image/jpeg' : 'image/png',
+            imageType: ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.webp' ? 'image/webp' : 'image/png',
             sourceName: 'st-chatu8',
             createdAt: Number(image.date || Date.now()),
             ...metadata,

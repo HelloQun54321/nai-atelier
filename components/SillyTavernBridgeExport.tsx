@@ -1,5 +1,5 @@
-import { t, useLanguage } from '../services/i18n';
-import React, { useEffect, useState } from 'react';
+import { t, useLanguage, getLanguage } from '../services/i18n';
+import React, { useCallback, useEffect, useState } from 'react';
 import JSZip from 'jszip';
 import {
   CheckCircle2,
@@ -10,6 +10,7 @@ import {
   Info,
   Link2,
   Loader2,
+  RefreshCw,
   Sparkles,
 } from 'lucide-react';
 import { openLocalBackupFolder } from '../services/localBackup';
@@ -33,6 +34,17 @@ const FALLBACK_MANIFEST = JSON.stringify({
   description: '同步工坊精选、酒馆预设、Vibe 与历史图片。',
 }, null, 2);
 
+interface StBridgeStatus {
+  connected: boolean;
+  sillyTavernRoot: string | null;
+  linkedArtists: number;
+  linkedGroups: number;
+  linkedHistory: number;
+  lastSyncAt: number;
+  lastHistorySyncAt: number;
+  historySyncing: boolean;
+}
+
 export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = ({ notify }) => {
   useLanguage();
   const preferences = useStChatu8Preferences();
@@ -44,26 +56,45 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
   });
   const [stRoot, setStRoot] = useState('');
   const [detectedRoot, setDetectedRoot] = useState('');
+  const [bridgeStatus, setBridgeStatus] = useState<StBridgeStatus | null>(null);
   const [installedPath, setInstalledPath] = useState('');
   const [installing, setInstalling] = useState(false);
+  const [savingRoot, setSavingRoot] = useState(false);
+  const [scanningHistory, setScanningHistory] = useState(false);
   const [exporting, setExporting] = useState(false);
   const supportsDirectoryPicker = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 
-  // 自动尝试从本地桥接探测已有的 SillyTavern 根目录
+  const applyStatus = useCallback((data: Partial<StBridgeStatus> | null | undefined, fillInput = false) => {
+    if (!data || typeof data !== 'object') return;
+    const root = typeof data.sillyTavernRoot === 'string' ? data.sillyTavernRoot : null;
+    setBridgeStatus({
+      connected: Boolean(data.connected ?? root),
+      sillyTavernRoot: root,
+      linkedArtists: Number(data.linkedArtists || 0),
+      linkedGroups: Number(data.linkedGroups || 0),
+      linkedHistory: Number(data.linkedHistory || 0),
+      lastSyncAt: Number(data.lastSyncAt || 0),
+      lastHistorySyncAt: Number(data.lastHistorySyncAt || 0),
+      historySyncing: Boolean(data.historySyncing),
+    });
+    if (root) {
+      setDetectedRoot(root);
+      if (fillInput) setStRoot(prev => prev || root);
+    }
+  }, []);
+
+  // 自动尝试从本地桥接探测已有的 SillyTavern 根目录与实时同步状态
   useEffect(() => {
     if (!preferences.enabled) return;
     let active = true;
-    fetch('/api/integrations/st-chatu8/status')
-      .then(res => res.json())
+    fetch('/api/integrations/st-chatu8/status', { cache: 'no-store' })
+      .then(res => (res.ok ? res.json() : null))
       .then(data => {
-        if (active && data?.sillyTavernRoot && typeof data.sillyTavernRoot === 'string') {
-          setDetectedRoot(data.sillyTavernRoot);
-          setStRoot(prev => prev || data.sillyTavernRoot);
-        }
+        if (active && data) applyStatus(data, true);
       })
       .catch(() => {});
     return () => { active = false; };
-  }, [preferences.enabled]);
+  }, [preferences.enabled, applyStatus]);
 
   const handleToggle = async (enabled: boolean) => {
     try { await setStChatu8Enabled(enabled); }
@@ -139,11 +170,52 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
         throw new Error(data?.error || '安装扩展失败');
       }
       setInstalledPath(data.targetPath);
+      if (data.status) applyStatus(data.status, false);
       notify(`已成功安装扩展至：${data.targetPath}，刷新酒馆页面即可生效！`);
     } catch (err: any) {
       notify(`安装失败：${err?.message || '未知错误'}`);
     } finally {
       setInstalling(false);
+    }
+  };
+
+  const handleSaveRoot = async () => {
+    const trimmed = stRoot.trim();
+    if (!trimmed) {
+      notify('请先填写 SillyTavern 的安装根目录');
+      return;
+    }
+    setSavingRoot(true);
+    try {
+      const res = await fetch('/api/integrations/st-chatu8/root', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sillyTavernRoot: trimmed }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || '保存酒馆目录失败');
+      applyStatus(data, false);
+      if (data?.sillyTavernRoot) setStRoot(data.sillyTavernRoot);
+      notify(`已绑定 SillyTavern 目录：${data?.sillyTavernRoot || trimmed}`);
+    } catch (err: any) {
+      notify(`保存目录失败：${err?.message || '未知错误'}`);
+    } finally {
+      setSavingRoot(false);
+    }
+  };
+
+  const handleScanHistory = async () => {
+    setScanningHistory(true);
+    try {
+      const res = await fetch('/api/integrations/st-chatu8/history/scan', { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || '扫描酒馆历史失败');
+      applyStatus(data, false);
+      notify(`酒馆历史扫描完成，共关联 ${Number(data?.linkedHistory || 0)} 张原图`);
+    } catch (err: any) {
+      notify(`扫描历史失败：${err?.message || '未知错误'}`);
+    } finally {
+      setScanningHistory(false);
     }
   };
 
@@ -302,6 +374,42 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
               </code>
             </div>
           </div>
+
+          {bridgeStatus && (
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200/70 pt-2.5 text-meta text-gray-500 dark:border-gray-700/70 dark:text-gray-400">
+              <span>
+                {bridgeStatus.connected
+                  ? t("已连接酒馆目录 · 风格串 {0} · Vibe 组 {1} · 历史 {2} 张", [bridgeStatus.linkedArtists, bridgeStatus.linkedGroups, bridgeStatus.linkedHistory])
+                  : t("未检测到酒馆目录（历史零拷贝与导入封面需绑定有效路径）")}
+                {bridgeStatus.lastSyncAt > 0 && ` · ${t("上次同步 {0}", [new Date(bridgeStatus.lastSyncAt).toLocaleTimeString(getLanguage(), { hour12: false })])}`}
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {stRoot.trim() && stRoot.trim() !== detectedRoot && (
+                  <button
+                    type="button"
+                    data-appearance="control" data-tone="neutral"
+                    disabled={savingRoot}
+                    onClick={() => void handleSaveRoot()}
+                    className="mobile-touch rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-micro font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                  >
+                    {savingRoot ? t("保存中…") : t("保存目录")}
+                  </button>
+                )}
+                {bridgeStatus.connected && (
+                  <button
+                    type="button"
+                    data-appearance="control" data-tone="neutral"
+                    disabled={scanningHistory || bridgeStatus.historySyncing}
+                    onClick={() => void handleScanHistory()}
+                    className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-micro font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${scanningHistory || bridgeStatus.historySyncing ? 'animate-spin' : ''}`} />
+                    {scanningHistory || bridgeStatus.historySyncing ? t("扫描中…") : t("扫描历史")}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 操作按钮区 */}
