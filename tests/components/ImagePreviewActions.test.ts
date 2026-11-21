@@ -106,39 +106,22 @@ describe('小图和全屏大图的共用操作', () => {
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 
-  it.each([false, true])('全屏=%s：圆形上传入口保留于右下，处理中尺寸与名称稳定且禁止重复操作', fullscreen => {
-    const upload = vi.fn();
+  it.each([false, true])('全屏=%s：不再渲染右下角冗余上传按钮，设为封面处理中尺寸与名称稳定且禁止重复操作', fullscreen => {
     const view = render(React.createElement(ImagePreviewActions, {
-      imageUrl: '/image.png', filename: 'NAI.png', onSetCover: vi.fn(), onUploadCover: upload, onBack: fullscreen ? vi.fn() : undefined,
+      imageUrl: '/image.png', filename: 'NAI.png', onSetCover: vi.fn(), onBack: fullscreen ? vi.fn() : undefined,
     }));
-    const button = screen.getByRole('button', { name: '手动上传封面' });
-    const group = button.parentElement!;
-    expect(group.classList.contains('bottom-4')).toBe(true);
-    expect(group.classList.contains('right-4')).toBe(true);
-    // 上传入口与辅助操作共用同一套圆钮 token，并保持中性底色而不是语义色。
-    for (const token of ['nai-float-btn', 'rounded-full', 'mobile-touch', 'mobile-size-locked']) expect(button.classList.contains(token)).toBe(true);
-    expect(tintFamily(button)).toEqual([]);
-    expect(button.querySelector('svg.lucide-upload')).toBeTruthy();
-    expect(button.title).toBe('手动上传封面并保存');
-    const originalClasses = button.className;
-    const input = group.querySelector('input')!;
-    const choose = vi.spyOn(input, 'click');
-    fireEvent.click(button);
-    expect(choose).toHaveBeenCalledOnce();
-    fireEvent.change(input, { target: { files: [new File(['test'], 'cover.png', { type: 'image/png' })] } });
-    expect(upload).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: '手动上传封面' })).toBeNull();
+    const cover = screen.getByRole('button', { name: '设为封面' });
+    const originalClasses = cover.className;
     view.rerender(React.createElement(ImagePreviewActions, {
-      imageUrl: '/image.png', filename: 'NAI.png', onSetCover: vi.fn(), onUploadCover: upload, isUploading: true, onBack: fullscreen ? vi.fn() : undefined,
+      imageUrl: '/image.png', filename: 'NAI.png', onSetCover: vi.fn(), isUploading: true, onBack: fullscreen ? vi.fn() : undefined,
     }));
-    for (const name of ['设为封面', '手动上传封面']) {
-      const busy = screen.getByRole('button', { name });
-      expect((busy as HTMLButtonElement).disabled).toBe(true);
-      expect(busy.getAttribute('aria-busy')).toBe('true');
-      expect(busy.title).toBe('封面处理中…');
-      expect(busy.querySelector('svg.animate-spin')).toBeTruthy();
-    }
-    expect(button.className).toBe(originalClasses);
-    fireEvent.click(button); expect(choose).toHaveBeenCalledOnce();
+    const busy = screen.getByRole('button', { name: '设为封面' });
+    expect((busy as HTMLButtonElement).disabled).toBe(true);
+    expect(busy.getAttribute('aria-busy')).toBe('true');
+    expect(busy.title).toBe('封面处理中…');
+    expect(busy.querySelector('svg.animate-spin')).toBeTruthy();
+    expect(busy.className).toBe(originalClasses);
     expect(screen.getByRole('button', { name: '复制图片' }).hasAttribute('disabled')).toBe(false);
   });
 });
@@ -196,7 +179,7 @@ it('回调及忙碌状态连续更新不重新测量或创建观察器，点击�
   const previous = vi.fn(), latest = vi.fn();
   const element = (callback: () => void, busy = false) => React.createElement('div', null, React.createElement(ImagePreviewActions, {
     imageUrl: '/synthetic.png', filename: 'test.png', onBack: callback, onSetCover: callback,
-    onSaveArtistSample: callback, onUploadCover: callback, savingArtistSample: busy,
+    onSaveArtistSample: callback, savingArtistSample: busy,
   }));
   const view = render(element(previous));
   const reads = width.mock.calls.length, targets = observe.mock.calls.length;
@@ -214,8 +197,7 @@ it('回调及忙碌状态连续更新不重新测量或创建观察器，点击�
   fireEvent.click(screen.getByRole('button', { name: '设为封面' }));
   fireEvent.click(screen.getByRole('button', { name: '返回小图' }));
   fireEvent.click(screen.getByRole('button', { name: '保存为画师样张' }));
-  fireEvent.change(screen.getByLabelText('上传作品封面'), { target: { files: [new File(['test'], 'cover.png')] } });
-  expect(latest).toHaveBeenCalledTimes(4);
+  expect(latest).toHaveBeenCalledTimes(3);
   expect(previous).not.toHaveBeenCalled();
   act(() => callbacks[0]());
   expect(rowSetter).not.toHaveBeenCalled();

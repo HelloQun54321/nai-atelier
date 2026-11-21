@@ -120,7 +120,7 @@ it.each(['text-to-image','image-to-image','inpaint','outpaint'] as const)('%s �
     const [open,setOpen]=useState<string|null>(null);
     const common={isGenerating:false,generationCostLabel:'免费',getDownloadFilename:()=> 'synthetic.png'};
     return <>{operation==='text-to-image'
-      ? <ChainEditorPreview {...common} generatedImage="/synthetic.png" previewImage={undefined} errorMsg={null} handleGenerate={vi.fn()} setLightboxImg={setOpen} isOwner={false} isUploading={false} handleSavePreview={vi.fn()} handleUploadCover={vi.fn()} />
+      ? <ChainEditorPreview {...common} generatedImage="/synthetic.png" previewImage={undefined} errorMsg={null} handleGenerate={vi.fn()} setLightboxImg={setOpen} isOwner={false} isUploading={false} handleSavePreview={vi.fn()} />
       : <ImageEditPreview {...common} operation={operation} image="/synthetic.png" error={null} canGenerate onGenerate={vi.fn()} onOpenLightbox={setOpen} />}
       {open&&<ImageLightbox src={open} onClose={()=>setOpen(null)}/>}</>;
   };

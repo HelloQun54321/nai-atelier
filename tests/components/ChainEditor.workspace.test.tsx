@@ -130,7 +130,6 @@ vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: (props
 vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: (props: React.ComponentProps<typeof import('../../components/ChainEditorPreview').ChainEditorPreview>) => <section aria-label="文生图预览">
   <output aria-label="文生图结果">{props.generatedImage}</output>
   <output aria-label="文生图当前显示">{props.generatedImage || props.previewImage}</output>
-  <input aria-label="合成上传封面" type="file" onChange={props.handleUploadCover} />
   <button onClick={props.handleSavePreview}>合成设为封面</button>
   <output aria-label="文生图步数">{props.generationProgress && `${props.generationProgress.step}/${props.generationProgress.total}`}</output>
   <output aria-label="文生图费用">{props.generationCostLabel}</output>
@@ -603,48 +602,6 @@ describe('自定义封面保存与回显', () => {
     expect(screen.getByLabelText('文生图当前显示').textContent).toBe(item.imageUrl);
   });
 
-  it.each(['character', 'style'] as const)('%s 上传后显示新封面，保留正文参数及全部历史', async type => {
-    const item = { id: 'old-history', imageUrl: '/synthetic/old.png', createdAt: 1, params: {}, prompt: 'old' } as LocalGenItem;
-    const other = { ...item, id: 'other-history', imageUrl: '/synthetic/other.png' };
-    state.history.mockResolvedValue([item, other]);
-    const upload = vi.spyOn(api, 'uploadFile').mockResolvedValue({ url: '/synthetic/new-cover.png' });
-    const view = setup({ ...chain, type, previewImage: '/synthetic/previous-cover.png' });
-    await waitFor(() => expect(screen.getByLabelText('文生图当前显示').textContent).toBe(item.imageUrl));
-    const next = { ...view.props.chain, previewImage: '/synthetic/new-cover.png' };
-    view.props.onUpdateChain.mockImplementation(async () => { view.rerender(<ChainEditor {...view.props} chain={next} />); });
-    const file = new File(['synthetic'], 'new-cover.png', { type: 'image/png' });
-    fireEvent.change(screen.getByLabelText('合成上传封面'), { target: { files: [file] } });
-    await waitFor(() => expect(screen.getByLabelText('文生图当前显示').textContent).toBe(next.previewImage));
-    expect(upload).toHaveBeenCalledExactlyOnceWith(file, 'covers');
-    expect(view.props.onUpdateChain).toHaveBeenCalledWith(chain.id, expect.objectContaining({
-      previewImage: next.previewImage, basePrompt: chain.basePrompt, negativePrompt: chain.negativePrompt,
-      params: expect.objectContaining(chain.params), variableValues: chain.variableValues,
-    }));
-    expect(state.unlinkHistory).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: '浏览下一张' }));
-    expect(screen.getByLabelText('文生图当前显示').textContent).toBe(other.imageUrl);
-  });
-
-  it('上传保存失败保留旧图与草稿，取消后仍可重新选择同一文件', async () => {
-    const item = { id: 'old-history', imageUrl: '/synthetic/old.png', createdAt: 1, params: {}, prompt: 'old' } as LocalGenItem;
-    state.history.mockResolvedValue([item]);
-    const upload = vi.spyOn(api, 'uploadFile').mockResolvedValue({ url: '/synthetic/new-cover.png' });
-    const view = setup({ ...chain, type: 'character' });
-    await waitFor(() => expect(screen.getByLabelText('文生图当前显示').textContent).toBe(item.imageUrl));
-    const input = screen.getByLabelText('合成上传封面') as HTMLInputElement;
-    let inputValue = 'C:\\fakepath\\new-cover.png';
-    Object.defineProperty(input, 'value', { configurable: true, get: () => inputValue, set: value => { inputValue = value; } });
-    const file = new File(['synthetic'], 'new-cover.png', { type: 'image/png' });
-    state.confirm.mockResolvedValueOnce(false);
-    fireEvent.change(input, { target: { files: [file] } });
-    expect(input.value).toBe('');
-    expect(upload).not.toHaveBeenCalled();
-    view.props.onUpdateChain.mockRejectedValueOnce(new Error('synthetic-save-failed'));
-    fireEvent.change(input, { target: { files: [file] } });
-    await waitFor(() => expect(view.props.notify).toHaveBeenCalledWith('上传失败: synthetic-save-failed', 'error'));
-    expect(screen.getByLabelText('文生图当前显示').textContent).toBe(item.imageUrl);
-    expect(state.unlinkHistory).not.toHaveBeenCalled();
-  });
 });
 
 it.each(['文生图', '图生图', '局部重绘', '扩图'])('%s 缺 Key 错误在下次提交时清除，成功后不残留手机红框', async label => {
@@ -2140,7 +2097,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     }));
   };
   const countInput = (regionName = '文生图预览') => {
-    if (!screen.queryByLabelText('生成张数')) fireEvent.keyDown(within(screen.getByRole('region', { name: regionName })).getByRole('button', { name: /^(生成|加入队列).*张/ }), { key: 'ArrowDown', altKey: true });
+    if (!screen.queryByLabelText('生成张数')) fireEvent.click(within(screen.getByRole('region', { name: regionName })).getByRole('button', { name: '生成选项' }));
     return screen.getByLabelText('生成张数');
   };
   const mobileActions = () => within(document.querySelector('.mobile-lab-dock') as HTMLElement);
@@ -2227,22 +2184,22 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     const desktop = within(screen.getByRole('region', { name: operation === 'text-to-image' ? '文生图预览' : operation }));
     fireEvent.click(desktop.getByRole('button', { name: operation === 'text-to-image' ? '生成合成文生图' : operation === 'image-to-image' ? '生成合成编辑' : '生成合成蒙版编辑' }));
     await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
-    const desktopButton = desktop.getByRole('button', { name: /^加入队列/ });
-    const mobileButton = mobileActions().getByRole('button', { name: /^加入队列/ });
+    const desktopButton = desktop.getByRole('button', { name: /^(准备中…|生成中…|等待中…|已暂停)/ });
+    const mobileButton = mobileActions().getByRole('button', { name: /^(准备中…|生成中…|等待中…|已暂停)/ });
     await waitFor(() => {
       expect(desktopButton.classList.contains('generation-action-button--loading')).toBe(true);
       expect(mobileButton.classList.contains('generation-action-button--loading')).toBe(true);
     });
     if (operation === 'text-to-image') {
-      expect(desktopButton.getAttribute('aria-disabled')).toBe('false');
-      expect(mobileButton.getAttribute('aria-disabled')).toBe('false');
+      expect(desktopButton.getAttribute('aria-disabled')).toBe('true');
+      expect(mobileButton.getAttribute('aria-disabled')).toBe('true');
     }
     await waitFor(() => {
       expect(desktopButton.classList.contains('generation-action-button--loading')).toBe(false);
       expect(mobileButton.classList.contains('generation-action-button--loading')).toBe(false);
     }, { timeout: 3000 });
     await waitFor(() => expect(getGenerationSeriesSession(chain.id)).toBeNull(), { timeout: 4000 });
-    expect(desktop.getByRole('button', { name: /^生成.*1 张/ })).toBe(desktopButton);
+    expect(desktop.getByRole('button', { name: '生成' })).toBe(desktopButton);
     expect(mobileActions().getByRole('button', { name: generatePrimaryName })).toBe(mobileButton);
   }, 10000);
 
@@ -2365,8 +2322,8 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     act(() => { sessionStorage.setItem('nai_api_key', 'next-key'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: 'next-key' })); });
     await waitFor(() => expect(getGenerationQueue).toHaveBeenCalledWith('next-key'));
     await act(async () => { pendingPause.resolve({ ...old, paused: true }); });
-    expect(within(screen.getByRole('dialog', { name: '生成选项' })).queryByRole('button', { name: /继续生成/ })).toBeNull();
-    expect(within(screen.getByRole('dialog', { name: '生成选项' })).getByRole('button', { name: /暂停生成/ })).toBeTruthy();
+    expect(within(screen.getByRole('dialog', { name: '生成选项' })).queryByRole('button', { name: /继续生成|暂停生成/ })).toBeNull();
+    expect(mobileActions().getByRole('button', { name: /^生成(?!选项)/ })).toBeTruthy();
   });
 
   it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('%s 只 POST 一次后台任务，描述符保留提示词、模块、来源与编辑元数据', async (operation, label) => {
@@ -2463,7 +2420,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.change(countInput(), { target: { value: '2' } });
     const preview = within(screen.getByRole('region', { name: '文生图预览' }));
-    fireEvent.keyDown(preview.getByRole('button', { name: /^(生成|加入队列).*张/ }), { key: 'ArrowDown', altKey: true });
+    if (!screen.queryByRole('dialog', { name: '生成选项' })) fireEvent.click(preview.getByRole('button', { name: '生成选项' }));
     fireEvent.click(screen.getByRole('button', { name: placement === 'next' ? '排到下一位' : '加入队列' }));
     await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
     expect(state.startJob.mock.calls[0][3]).toBe(2);
@@ -2471,7 +2428,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     expect(state.confirm).toHaveBeenCalledOnce();
     expect(getGenerationSeriesSession(chain.id)).toBeNull();
     const token = state.started[0].token;
-    fireEvent.keyDown(preview.getByRole('button', { name: /^(生成|加入队列).*张/ }), { key: 'ArrowDown', altKey: true });
+    fireEvent.click(preview.getByRole('button', { name: '生成选项' }));
     const queued = within(screen.getByRole('dialog', { name: '生成选项' }));
     expect(queued.getByText('2 张 · 等待第 1 位')).toBeTruthy();
     fireEvent.click(queued.getByRole('button', { name: '取消待生成任务' }));
@@ -2491,9 +2448,10 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
     fireEvent.change(textPrompt(), { target: { value: 'later draft' } });
     const preview = within(screen.getByRole('region', { name: '文生图预览' }));
-    const queueButton = preview.getByRole('button', { name: /^加入队列/ });
-    expect(queueButton.getAttribute('aria-disabled')).toBe('false');
-    fireEvent.click(queueButton);
+    const statusButton = preview.getByRole('button', { name: /^(准备中…|生成中…)/ });
+    expect(statusButton.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(preview.getByRole('button', { name: '生成选项' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '生成选项' })).getByRole('button', { name: '加入队列' }));
     await waitFor(() => expect(state.startJob).toHaveBeenCalledTimes(2));
     expect(state.startJob.mock.calls[1][4]).toBe('end');
     expect(state.buildDescriptor.mock.calls[1][0].prompt).toContain('later draft');
@@ -2682,8 +2640,8 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     vi.mocked(getGenerationQueue).mockResolvedValue({ busy: true, completed: 0, total: 2, paused: false, pausing: false, waiting: [{ token: 'remote-task', total: 2, completed: 0, position: 1 }] });
     setupSeries();
     const preview = within(screen.getByRole('region', { name: '文生图预览' }));
-    await waitFor(() => expect(preview.getByRole('button', { name: /^(生成|加入队列).*张/ })).toBeTruthy());
-    fireEvent.keyDown(preview.getByRole('button', { name: /^(生成|加入队列).*张/ }), { key: 'ArrowDown', altKey: true });
+    await waitFor(() => expect(preview.getByRole('button', { name: '生成选项' })).toBeTruthy());
+    fireEvent.click(preview.getByRole('button', { name: '生成选项' }));
     const panel = within(screen.getByRole('dialog', { name: '生成选项' }));
     await waitFor(() => expect(panel.getByRole('button', { name: '取消待生成任务' })).toBeTruthy());
     fireEvent.click(panel.getByRole('button', { name: '取消待生成任务' }));

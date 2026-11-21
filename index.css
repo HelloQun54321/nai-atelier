@@ -1044,7 +1044,7 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
   .agent-panel-docked .chain-editor-header-main { padding-right: 0; }
   .agent-panel-docked .chain-editor-header .generation-mode-nav > button { padding-inline: 0; }
 
-  /* 窄预览保留完整生成按钮，辅助进度移到下一行，不在图片两侧溢出。 */
+  /* 窄预览保留完整生成按钮，左右外挂翼移到下一行居中排布，不在图片两侧溢出。 */
   .agent-panel-docked .chain-editor-preview .generation-count-control {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -1058,7 +1058,7 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     grid-row: 2;
     justify-self: center;
   }
-  .agent-panel-docked .chain-editor-preview .generation-count-control > div { grid-column: 2; justify-self: end; }
+  .agent-panel-docked .chain-editor-preview .generation-count-control > .generation-count-control__right-wing { grid-column: 2; justify-self: end; }
 
   .agent-panel-docked .aitag-split {
     grid-template-columns: minmax(0, 1fr) !important;

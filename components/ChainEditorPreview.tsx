@@ -25,7 +25,6 @@ interface ChainEditorPreviewProps {
     savingArtistSample?: boolean;
     /** 反推当前预览图，结果追加到全局正面提示词。 */
     onReverseTag?: () => void;
-    handleUploadCover: (e: React.ChangeEvent<HTMLInputElement>) => void;
     getDownloadFilename: () => string;
     generationData?: ImageGenerationData;
     favorite?: CollectionTarget;
@@ -66,7 +65,6 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     onSaveArtistSample,
     savingArtistSample,
     onReverseTag,
-    handleUploadCover,
     getDownloadFilename,
     generationData,
     favorite,
@@ -173,7 +171,6 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                         onRemoveCurrentHistory={onRemoveCurrentHistory}
                         onClearHistoryGroup={onClearHistoryGroup}
                         onSetCover={generatedImage && isOwner && !hideCoverActions ? handleSavePreview : undefined}
-                        onUploadCover={isOwner && !hideCoverActions ? handleUploadCover : undefined}
                         isUploading={isUploading}
                         onSaveArtistSample={onSaveArtistSample}
                         savingArtistSample={savingArtistSample}

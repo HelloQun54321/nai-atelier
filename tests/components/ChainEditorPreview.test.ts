@@ -33,14 +33,14 @@ afterEach(() => {
 const renderPreview = (onGenerate: () => void, isGenerating = false) => renderInDialog(React.createElement(ChainEditorPreview, {
   isGenerating, handleGenerate: onGenerate, errorMsg: null, generatedImage: null, previewImage: undefined,
   setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(),
-  handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png', generationCostLabel: '免费',
+  getDownloadFilename: () => 'test.png', generationCostLabel: '免费',
 }));
 
 describe('四模式的分享入口', () => {
   it('历史前后翻图共用触屏长按显露规则，按钮点击不误开大图', () => {
     const previous = vi.fn(), next = vi.fn(), open = vi.fn();
     renderInDialog(React.createElement(ChainEditorPreview, { isGenerating: false, handleGenerate: vi.fn(), errorMsg: null, generatedImage: '/synthetic.png', previewImage: undefined,
-      setLightboxImg: open, isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png', generationCostLabel: '免费',
+      setLightboxImg: open, isOwner: false, isUploading: false, handleSavePreview: vi.fn(), getDownloadFilename: () => 'test.png', generationCostLabel: '免费',
       canNavigateHistory: true, onPreviousHistory: previous, onNextHistory: next }));
     const image = screen.getByRole('img'); longPress(image);
     expect(image.closest('.press-reveal-surface')?.getAttribute('data-press-revealed')).toBe('true');
@@ -75,7 +75,7 @@ describe('四模式的分享入口', () => {
     const open = vi.fn();
     renderInDialog(React.createElement(ChainEditorPreview, {
       isGenerating: false, handleGenerate: vi.fn(), errorMsg: null, generatedImage: '/synthetic.png', previewImage: undefined,
-      setLightboxImg: open, isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(),
+      setLightboxImg: open, isOwner: false, isUploading: false, handleSavePreview: vi.fn(),
       getDownloadFilename: () => 'test.png', generationCostLabel: '免费',
     }));
     const image = screen.getByRole('img');
@@ -96,7 +96,7 @@ describe('四模式的分享入口', () => {
     renderInDialog(React.createElement(ChainEditorPreview, {
       isGenerating: false, handleGenerate: vi.fn(), errorMsg: null, generatedImage: '/image.png',
       previewImage: undefined, setLightboxImg: onOpen, isOwner: true, isUploading: false,
-      handleSavePreview: onCover, handleUploadCover: vi.fn(), getDownloadFilename: () => 'NAI.png', generationCostLabel: '免费', canManageHistoryGroup: true,
+      handleSavePreview: onCover, getDownloadFilename: () => 'NAI.png', generationCostLabel: '免费', canManageHistoryGroup: true,
     }));
     const cover = screen.getByRole('button', { name: '设为封面' });
     expect(cover.classList.contains('justify-center')).toBe(true);
@@ -128,7 +128,7 @@ describe('四模式的分享入口', () => {
       renderInDialog(React.createElement(ChainEditorPreview, {
         isGenerating: false, handleGenerate: vi.fn(), errorMsg: null, generatedImage: image,
         previewImage: undefined, setLightboxImg: vi.fn(), isOwner: false, isUploading: false,
-        handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'NAI.png', generationCostLabel: '免费',
+        handleSavePreview: vi.fn(), getDownloadFilename: () => 'NAI.png', generationCostLabel: '免费',
       }));
     } else {
       renderInDialog(React.createElement(ImageEditPreview, {
@@ -209,7 +209,7 @@ describe('生成后的操作恢复', () => {
 describe('四模式共用生成状态', () => {
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 备用生成入口保留旧宽高并恢复生成特效，完成后可点击', operation => {
     const generate = vi.fn();
-    const props = { isGenerating: true, handleGenerate: generate, errorMsg: null, generatedImage: null, previewImage: undefined, setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png', generationCostLabel: '免费' };
+    const props = { isGenerating: true, handleGenerate: generate, errorMsg: null, generatedImage: null, previewImage: undefined, setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), getDownloadFilename: () => 'test.png', generationCostLabel: '免费' };
     const editProps = { operation: operation === 'text-to-image' ? 'image-to-image' as const : operation, image: null, error: null, isGenerating: true, canGenerate: true, onGenerate: generate, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', generationCostLabel: '免费' };
     const view = renderInDialog(operation === 'text-to-image' ? React.createElement(ChainEditorPreview, props) : React.createElement(ImageEditPreview, editProps));
     const button = screen.getByRole('button', { name: '生成中…' }) as HTMLButtonElement;
@@ -227,7 +227,7 @@ describe('四模式共用生成状态', () => {
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 桌面排队可取消，开始生成后显示步数，完成即恢复', operation => {
     emitCloudQueueStatus({ taskId: 'shared', phase: 'waiting', position: 2, cancelable: true });
     const common = { isGenerating: true, generationProgress: { step: 8, total: 28 }, generationCostLabel: '消耗 Opus 额度' };
-    const props = { ...common, handleGenerate: vi.fn(), errorMsg: null, generatedImage: null, previewImage: undefined, setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png' };
+    const props = { ...common, handleGenerate: vi.fn(), errorMsg: null, generatedImage: null, previewImage: undefined, setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), getDownloadFilename: () => 'test.png' };
     const editProps = { ...common, operation: operation === 'text-to-image' ? 'image-to-image' as const : operation, image: null, error: null, canGenerate: true, onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png' };
     const view = renderInDialog(operation === 'text-to-image' ? React.createElement(ChainEditorPreview, props) : React.createElement(ImageEditPreview, editProps));
     expect(screen.queryByRole('status')).toBeNull();
@@ -262,29 +262,34 @@ vi.mock('../../services/collectionFavorites', async original => ({
   toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
 }));
 
-it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 忙碌时主按钮直接加入队列，空闲恢复生成，画布未就绪不允许入队', operation => {
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 忙碌时主按钮展示状态防误触，选项菜单可加入队列，空闲恢复生成，画布未就绪不允许入队', operation => {
   const generate = vi.fn(), queue = vi.fn();
   const control = { count: 1, onCountChange: vi.fn(), series: null, onStop: vi.fn(), onQueue: queue, queueDisabled: false };
   const element = (busy: boolean, ready: boolean, cloud: boolean) => {
     const common = { isGenerating: cloud, generationDisabled: busy || !ready, generationCountControl: { ...control, queueDisabled: !ready, queueState: { busy, completed: 0, total: busy ? 1 : 0, paused: false, pausing: false, waiting: [] } }, generationCostLabel: '免费', unavailableLabel: !ready ? '请先选择底图' : busy ? '此 Key 正在生成' : undefined };
     return operation === 'text-to-image'
       ? React.createElement(ChainEditorPreview, { ...common, handleGenerate: generate, errorMsg: null, generatedImage: null, previewImage: undefined,
-        setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png' })
+        setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), getDownloadFilename: () => 'test.png' })
       : React.createElement(ImageEditPreview, { ...common, operation, image: null, error: null, onGenerate: generate, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png' });
   };
   const view = renderInDialog(element(true, true, false));
-  const button = screen.getByRole('button', { name: /加入队列/ }) as HTMLButtonElement;
-  expect(button.disabled).toBe(false); fireEvent.click(button);
+  const statusButton = screen.getByRole('button', { name: '此 Key 正在生成' });
+  expect(statusButton.getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(statusButton);
+  expect(queue).not.toHaveBeenCalled(); expect(generate).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '生成选项' }));
+  fireEvent.click(screen.getByRole('button', { name: '加入队列' }));
   expect(queue).toHaveBeenCalledWith('end'); expect(generate).not.toHaveBeenCalled();
   emitCloudQueueStatus({ taskId: 'synthetic-primary-queue', phase: 'waiting' });
   view.rerender(element(true, true, true));
-  expect((screen.getByRole('button', { name: /加入队列/ }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByRole('button', { name: '此 Key 正在生成' }).getAttribute('aria-disabled')).toBe('true');
   emitCloudQueueStatus({ taskId: 'synthetic-primary-queue', phase: 'completed' });
   view.rerender(element(false, true, false));
   fireEvent.click(screen.getByRole('button', { name: /生成.*免费/ })); expect(generate).toHaveBeenCalledOnce();
   view.rerender(element(true, false, false));
-  expect(screen.queryByRole('button', { name: '加入队列' })).toBeNull();
   expect(screen.getByRole('button', { name: '请先选择底图' }).getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: '生成选项' }));
+  expect((screen.getByRole('button', { name: '加入队列' }) as HTMLButtonElement).disabled).toBe(true);
 });
 
 it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 关闭连续生成后忙碌不能入队，未就绪说明仍优先，空闲只生成单张', operation => {
@@ -295,7 +300,7 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s
     }, generationCostLabel: '免费', unavailableLabel: !ready ? '请先选择底图' : busy ? '此 Key 正在生成' : undefined };
     return operation === 'text-to-image'
       ? React.createElement(ChainEditorPreview, { ...common, handleGenerate: generate, errorMsg: null, generatedImage: null, previewImage: undefined,
-        setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png' })
+        setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), getDownloadFilename: () => 'test.png' })
       : React.createElement(ImageEditPreview, { ...common, operation, image: null, error: null, onGenerate: generate, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png' });
   };
   const view = renderInDialog(element(true, true));
@@ -320,7 +325,7 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s
   }, generationCostLabel: '免费' };
   renderInDialog(operation === 'text-to-image'
     ? React.createElement(ChainEditorPreview, { ...common, handleGenerate: generate, errorMsg: null, generatedImage: null, previewImage: undefined,
-      setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png' })
+      setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), getDownloadFilename: () => 'test.png' })
     : React.createElement(ImageEditPreview, { ...common, operation, image: null, error: null, onGenerate: generate, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', unavailableLabel: '画布加载中…' }));
   expect(screen.queryByRole('button', { name: /^加入队列/ })).toBeNull();
   const button = screen.getByRole('button', { name: operation === 'text-to-image' ? /生成.*免费/ : '画布加载中…' });
@@ -337,7 +342,7 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s
   const common = { isGenerating: true, generationCountControl: control, generationCostLabel: '免费' };
   const element = (stopping: boolean) => operation === 'text-to-image'
     ? React.createElement(ChainEditorPreview, { ...common, generationCountControl: { ...control, series: { ...control.series, stopping } }, handleGenerate: vi.fn(), errorMsg: null, generatedImage: null, previewImage: undefined,
-      setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png' })
+      setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), getDownloadFilename: () => 'test.png' })
     : React.createElement(ImageEditPreview, { ...common, operation, image: null, error: null, generationCountControl: { ...control, series: { ...control.series, stopping } }, onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png' });
   const view = renderInDialog(element(false));
   const button = screen.getByRole('button', { name: '暂停生成' }) as HTMLButtonElement;
@@ -352,7 +357,7 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s
   const common = { isGenerating: true, generationProgress: { step: 28, total: 28 }, generationCountControl: control, generationCostLabel: '免费', getDownloadFilename: () => 'synthetic.png' };
   if (operation === 'text-to-image') renderInDialog(React.createElement(ChainEditorPreview, {
     ...common, handleGenerate: generate, errorMsg: null, generatedImage: '/synthetic-final.png', previewImage: undefined,
-    setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(),
+    setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(),
   }));
   else renderInDialog(React.createElement(ImageEditPreview, { ...common, operation, image: '/synthetic-final.png', error: null, canGenerate: true, onGenerate: generate, onOpenLightbox: vi.fn() }));
   expect(screen.getByRole('img').getAttribute('src')).toBe('/synthetic-final.png');

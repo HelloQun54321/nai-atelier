@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Image as ImageIcon, Images, ListEnd, ListStart, Minus, Pause, Play, Plus, Shuffle, Timer, X } from 'lucide-react';
+import { AlertCircle, ChevronDown, Clock, Image as ImageIcon, Images, ListEnd, ListStart, LoaderCircle, Minus, Pause, Play, Plus, Shuffle, Timer, X } from 'lucide-react';
 import { AnchoredToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
-import { ToolbarButton, IconButton } from './DesignSystem';
+import { ToolbarButton } from './DesignSystem';
 import { CloudQueueButton, useCloudQueueEnabled, useCloudQueueStatus } from './CloudQueueStatus';
 import { isCloudQueueTaskActive } from '../services/cloudQueue';
+import { formatGenerationDuration } from '../services/generationDuration';
 import { MobileBottomSheet } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { t, useLanguage } from '../services/i18n';
@@ -68,18 +69,41 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
   const blocked = onQueue ? Boolean(queueDisabled) : Boolean(disabled);
   const completed = queueState?.completed ?? Math.max(0, series?.current || 0);
   const total = queueState?.total ?? ((series?.total || 0) + waiting.reduce((sum, task) => sum + task.progress.total, 0));
-  const primaryBlocked = continuousGenerationEnabled && occupied && onQueue
-    ? Boolean(queueDisabled)
-    : Boolean(disabled) || occupied || paused;
+  // 生成进行中主按钮专注呈现真实阶段并防误触，中途追加排队走右侧选项面板。
+  const primaryBlocked = Boolean(disabled) || occupied || paused;
   const primaryUnavailableLabel = unavailableLabel || (paused && !occupied ? t("队列已暂停") : undefined);
   const primaryUnavailable = Boolean(primaryBlocked && primaryUnavailableLabel);
-  const showProgress = continuousGenerationEnabled || paused || waiting.length > 0
-    || total - completed > 1 || Boolean(series && series.total - series.current > 1);
+  // 空闲与已全部完成时隐藏左侧进度／暂停控件；关闭连续生成时的单张也不显示无意义的暂停钮。
+  const hasActiveQueue = occupied || paused || waiting.length > 0 || Boolean(series && series.current < series.total);
+  const showProgress = hasActiveQueue && (
+    continuousGenerationEnabled || paused || waiting.length > 0
+    || total - completed > 1 || Boolean(series && series.total - series.current > 1)
+  );
   const dock = layout === 'dock';
   // 底栏始终保留选项入口：费用全文与暂停／进度都在面板里，不挤主按钮。
   const hasMenuContent = continuousGenerationEnabled || waiting.length > 0 || dock;
   const showCloudQueue = showQueueStatus && cloudQueueEnabled && Boolean(queueStatus && (queueStatus.phase !== 'completed' || queueStatus.cleanupError));
   useEffect(() => { if (!hasMenuContent) setOpen(false); }, [hasMenuContent]);
+  const isGeneratingLive = Boolean(
+    occupied && !paused && !queueState?.pausing && !series?.stopping && !saving
+    && (!isCloudQueueTaskActive(queueStatus) || queueStatus?.phase === 'generating')
+    && (generationState === 'generating' || (!generationState && busy)),
+  );
+  const [liveElapsedMs, setLiveElapsedMs] = useState(0);
+  const liveTimerResetKey = `${completed}:${series?.current ?? 0}`;
+  useEffect(() => {
+    if (!isGeneratingLive) {
+      setLiveElapsedMs(0);
+      return;
+    }
+    const startedAt = Date.now();
+    setLiveElapsedMs(0);
+    const timer = window.setInterval(() => {
+      setLiveElapsedMs(Date.now() - startedAt);
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [isGeneratingLive, liveTimerResetKey]);
+  const liveElapsedLabel = !dock && isGeneratingLive && liveElapsedMs >= 100 ? formatGenerationDuration(liveElapsedMs) : '';
   const intervalInputNumber = Number(intervalValue);
   const intervalInputValid = intervalValue.trim() !== '' && Number.isFinite(intervalInputNumber)
     && intervalInputNumber >= 0 && intervalInputNumber <= MAX_GENERATION_INTERVAL_SECONDS
@@ -97,20 +121,51 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     setIntervalValue(next.toFixed(1));
     if (next !== intervalSeconds) onIntervalChange?.(next);
   };
-  const showPrimaryCount = !dock && continuousGenerationEnabled && !primaryUnavailable;
-  const showPrimaryCost = !dock && !primaryUnavailable && (continuousGenerationEnabled || !primaryBlocked);
-  const primaryLabel = primaryUnavailable ? primaryUnavailableLabel
-    : !continuousGenerationEnabled && paused && occupied ? t("继续生成")
-      : !continuousGenerationEnabled && saving ? t("正在保存…")
-      : !continuousGenerationEnabled && occupied ? t("生成中…")
-        : t(occupied && continuousGenerationEnabled ? "加入队列" : "生成");
+  const showPrimaryCount = !dock && continuousGenerationEnabled && !primaryUnavailable && !occupied && count > 1;
+  const showPrimaryCost = !dock && !primaryUnavailable && !occupied && Boolean(costLabel);
+  const primaryStatus: { icon: 'image' | 'spin' | 'pause' | 'clock' | 'timer' | 'alert'; label: string } = (() => {
+    if (primaryUnavailable) return { icon: paused ? 'pause' : 'image', label: primaryUnavailableLabel! };
+    if (series?.stopping) return { icon: 'spin', label: t("正在停止…") };
+    if (queueState?.pausing) return { icon: 'spin', label: saving ? t("正在保存…") : t("暂停中…") };
+    if (paused && occupied) return { icon: 'pause', label: t("已暂停") };
+    if (occupied && generationState === 'awaiting_confirmation') return { icon: 'alert', label: t("等待确认费用") };
+    if (saving) return { icon: 'spin', label: t("正在保存…") };
+    if (occupied && isCloudQueueTaskActive(queueStatus) && queueStatus?.phase === 'waiting') {
+      const pos = queueStatus.position;
+      return { icon: 'spin', label: pos && pos > 0 ? t("云端排队 · 第 {0} 位", [pos]) : t("云端排队中…") };
+    }
+    if (occupied && generationState === 'preparing') return { icon: 'spin', label: t("准备中…") };
+    if (occupied && generationState === 'waiting') {
+      if (series?.position && series.position > 0) return { icon: 'clock', label: t("排队中 · 第 {0} 位", [series.position]) };
+      if (series && series.current > 0 && series.current < series.total) return { icon: 'timer', label: t("等待下一张…") };
+      return { icon: 'clock', label: t("等待中…") };
+    }
+    if (occupied) {
+      return {
+        icon: 'spin',
+        label: generationProgress
+          ? t("采样 {0} / {1}", [generationProgress.step, generationProgress.total])
+          : t("生成中…"),
+      };
+    }
+    return { icon: 'image', label: t("生成") };
+  })();
+  const primaryLabel = primaryStatus.label;
+  const primaryIcon = !dock ? (
+    primaryStatus.icon === 'spin' ? <LoaderCircle aria-hidden="true" className="h-4 w-4 shrink-0 animate-spin" />
+      : primaryStatus.icon === 'pause' ? <Pause aria-hidden="true" className="h-4 w-4 shrink-0" />
+      : primaryStatus.icon === 'clock' ? <Clock aria-hidden="true" className="h-4 w-4 shrink-0" />
+      : primaryStatus.icon === 'timer' ? <Timer aria-hidden="true" className="h-4 w-4 shrink-0" />
+      : primaryStatus.icon === 'alert' ? <AlertCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
+      : <ImageIcon aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={2.2} />
+  ) : null;
   const dockProgressActive = occupied || paused || waiting.length > 0 || Boolean(series && series.current < series.total);
   const dockProgressLabel = dock && dockProgressActive ? (saving ? t('保存') : `${completed}/${total}`) : null;
   const dockShowPause = dock && showProgress;
   const pauseDisabled = pausePending || series?.stopping || queueState?.pausing || (!occupied && !paused);
   const pauseLabel = t(queueState?.pausing ? "暂停中…" : paused ? "继续生成" : "暂停生成");
   const pauseTitle = t(queueState?.pausing ? "当前图片保存后暂停" : paused ? "继续生成" : "暂停生成");
-  const primaryTitle = [primaryLabel, !primaryUnavailable && costLabel ? costLabel : null].filter(Boolean).join(' · ');
+  const primaryTitle = [primaryLabel, !primaryUnavailable && !occupied && costLabel ? costLabel : null].filter(Boolean).join(' · ');
   const panel = <>
     {dock && !primaryUnavailable && costLabel && <p role="status" className="rounded-lg px-2 py-2 text-center text-sm text-gray-600 dark:text-gray-300">{t("预计费用：{0}", [costLabel])}</p>}
     {dockShowPause && <button type="button" disabled={pauseDisabled} onClick={() => { (onTogglePause || onStop)?.(); }}
@@ -187,28 +242,33 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
       </div>)}
     </div>}
   </>;
-  return <div className={'generation-count-control relative inline-flex w-full max-w-full min-w-0 items-stretch gap-1.5 ' + (dock ? '' : 'lg:w-80 ') + (showProgress && showCloudQueue && !dock ? 'lg:max-w-[calc(100%-14rem)]' : showProgress || showCloudQueue ? dock ? '' : 'lg:max-w-[calc(100%-8rem)]' : '')}>
+  const hasRightWing = !dock && (hasMenuContent || showQueueStatus);
+  return <div className={'generation-count-control relative inline-flex w-full max-w-full min-w-0 items-stretch gap-2 ' + (dock ? '' : 'lg:w-80 ') + (showProgress && (showCloudQueue || hasMenuContent) && !dock ? 'lg:max-w-[calc(100%-14rem)]' : (showProgress || showCloudQueue || hasMenuContent) && !dock ? 'lg:max-w-[calc(100%-8rem)]' : '')}>
     {showProgress && !dock && <ToolbarButton onClick={onTogglePause || onStop} disabled={pauseDisabled}
       aria-label={pauseLabel} title={pauseTitle}
-      className="appearance-reading-surface mobile-touch !h-auto min-h-10 !gap-1.5 !px-2.5 !text-xs tabular-nums lg:absolute lg:inset-y-0 lg:right-full lg:mr-3">
-      <Images aria-hidden="true" className="h-3.5 w-3.5" />{continuousGenerationEnabled && <span>{saving ? t("正在保存…") : `${completed}/${total}`}</span>}{paused && !queueState?.pausing ? <Play aria-hidden="true" className="h-3.5 w-3.5" /> : <Pause aria-hidden="true" className="h-3.5 w-3.5" />}
+      className="appearance-reading-surface mobile-touch !h-auto min-h-10 !gap-1.5 !px-3 !text-xs tabular-nums rounded-full lg:rounded-xl lg:absolute lg:inset-y-0 lg:right-full lg:mr-2.5">
+      {continuousGenerationEnabled && <span>{saving ? t("正在保存…") : `${completed}/${total}`}</span>}{paused && !queueState?.pausing ? <Play aria-hidden="true" className="h-3.5 w-3.5" /> : <Pause aria-hidden="true" className="h-3.5 w-3.5" />}
     </ToolbarButton>}
     <div ref={anchorRef} role="group" className={'generation-action-button generation-action-button--workbench flex min-w-0 flex-1 items-stretch overflow-hidden rounded-full text-sm font-semibold lg:rounded-xl ' + (dock ? 'generation-action-button--dock !h-11 !min-h-11 !max-h-11 !min-w-0 ' : '') + (showCloudQueue && !dock ? 'max-lg:!min-w-0 ' : '') + (executing ? 'generation-action-button--loading' : '')}>
       <button type="button" data-agent-action="business" aria-disabled={primaryBlocked}
       {...(dock ? { 'aria-label': primaryTitle, title: primaryTitle } : {})}
-      onClick={() => { if (!primaryBlocked) { close(); if (occupied && continuousGenerationEnabled && onQueue) onQueue('end'); else onGenerate?.(); } }}
+      onClick={() => { if (!primaryBlocked) { close(); onGenerate?.(); } }}
       onKeyDown={event => { if (hasMenuContent && event.altKey && event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); } }}
       className={'mobile-touch relative z-[1] flex min-w-0 flex-1 items-stretch rounded-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 lg:rounded-xl ' + (dock ? '!h-11 ' : '') + (executing ? 'generation-action-button--loading !bg-none !bg-transparent !shadow-none !filter-none' : '')}>
-      <span className={'relative flex min-w-0 flex-1 items-center justify-center gap-x-1.5 ' + (dock ? 'h-11 flex-nowrap overflow-hidden px-3 text-sm' : 'flex-wrap gap-y-0.5 px-4 py-2 ') + (showCloudQueue && !dock ? 'max-lg:!px-2 ' : '') + (primaryBlocked && !executing ? 'opacity-50' : '')}>
-        {!dock && <ImageIcon aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={2.2} />}
+      <span className={'relative flex min-w-0 flex-1 items-center justify-center gap-x-1.5 ' + (dock ? 'h-11 flex-nowrap overflow-hidden px-3 text-sm' : 'flex-wrap gap-y-0.5 px-4 py-2 ') + (showCloudQueue && !dock ? 'max-lg:!px-2 ' : '') + (primaryBlocked && !occupied ? 'opacity-50' : '')}>
+        {primaryIcon}
         <span>{primaryLabel}</span>
+        {liveElapsedLabel && <span className="whitespace-nowrap text-xs font-medium tabular-nums opacity-90">{liveElapsedLabel}</span>}
         {showPrimaryCount && <span className="whitespace-nowrap text-xs font-medium opacity-80">{t("{0} 张", [count])}</span>}
         {showPrimaryCost && costLabel && <span className="generation-action-button__cost whitespace-nowrap">{costLabel}</span>}
       </span>
     </button>
     </div>
-    {hasMenuContent && <IconButton label={t("生成选项")} tone="ghost" aria-haspopup="dialog" aria-expanded={open} className={'!shrink-0 ' + (dock ? '!h-11 !w-11' : '')} onClick={() => setOpen(value => !value)}><ChevronDown aria-hidden="true" className={'h-4 w-4 transition-transform ' + (open ? ' rotate-180' : '')} /></IconButton>}
-    {showQueueStatus && !dock && <CloudQueueButton generationProgress={generationProgress} className="lg:absolute lg:inset-y-0 lg:left-full lg:ml-3" />}
+    {dock && hasMenuContent && <ToolbarButton aria-label={t("生成选项")} title={t("生成选项")} aria-haspopup="dialog" aria-expanded={open} className="appearance-reading-surface mobile-touch !h-11 !w-11 !px-0 justify-center rounded-full shrink-0" onClick={() => setOpen(value => !value)}><ChevronDown aria-hidden="true" className={'h-4 w-4 transition-transform ' + (open ? ' rotate-180' : '')} /></ToolbarButton>}
+    {hasRightWing && <div className="generation-count-control__right-wing flex shrink-0 items-stretch gap-2 lg:absolute lg:inset-y-0 lg:left-full lg:ml-2.5">
+      {hasMenuContent && <ToolbarButton aria-label={t("生成选项")} title={t("生成选项")} aria-haspopup="dialog" aria-expanded={open} className="appearance-reading-surface mobile-touch !h-auto min-h-10 !w-11 !px-0 justify-center rounded-full lg:rounded-xl shrink-0" onClick={() => setOpen(value => !value)}><ChevronDown aria-hidden="true" className={'h-4 w-4 transition-transform ' + (open ? ' rotate-180' : '')} /></ToolbarButton>}
+      {showQueueStatus && <CloudQueueButton generationProgress={generationProgress} />}
+    </div>}
     {open && hasMenuContent && (mobile || dock ? <ImagePreviewPortal><MobileBottomSheet open title={t("生成选项")} onClose={close}>{panel}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={t("生成选项")} above compact width={280} onClose={close}>{panel}</AnchoredToolbarPopover>)}
   </div>;
 };

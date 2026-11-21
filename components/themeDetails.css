@@ -251,6 +251,9 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
   border-color: color-mix(in srgb, var(--nai-panel-border) 22%, transparent) !important;
   border-radius: var(--nai-control-radius, 12px);
 }
+html[data-theme-details='true'] .generation-count-control :is(.generation-action-button, .generation-action-button > button, button[data-appearance='control']) {
+  border-radius: var(--workspace-control-radius);
+}
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .generation-action-button--workbench:not(.generation-action-button--loading) {
   color: var(--nai-on-accent-600);
   background-color: var(--color-indigo-700);

@@ -186,7 +186,8 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     const connectionNoticeRef = useRef('');
     const activeEditOperationRef = useRef<ImageEditOperation | null>(null);
     const promptJobApprovalRef = useRef<(session: GenerationSeriesSession, awaiting: { cost: number; completedCount: number; requestedCount: number }) => Promise<void>>(async () => {});
-    const isGenerating = isImageGenerating || Boolean(generationSeries && generationSeries.current < generationSeries.total);
+    const [preparingGeneration, setPreparingGeneration] = useState(false);
+    const isGenerating = preparingGeneration || isImageGenerating || Boolean(generationSeries && generationSeries.current < generationSeries.total);
     const latestGenerationStateRef = useRef({ apiKey, subscription: novelaiStatus, isGenerating });
     latestGenerationStateRef.current = { apiKey, subscription: novelaiStatus, isGenerating };
     const [queueState, setQueueState] = useState<GenerationQueueSnapshot | null>(null);
@@ -384,7 +385,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     };
     useEffect(() => { setGenerationError(null); }, [activeGenerationMode, chain.id]);
     const generationSession = getGenerationSeriesSession(chain.id);
-    const generationState: GenerationJobState = generationSession?.key === apiKey ? generationSession.state : isImageGenerating ? 'preparing' : 'waiting';
+    const generationState: GenerationJobState = generationSession?.key === apiKey ? generationSession.state : (preparingGeneration || isImageGenerating) ? 'preparing' : 'waiting';
     const generationCountControl = { continuousGenerationEnabled, count: effectiveGenerationCount, onCountChange: setGenerationCount, series: generationSeries, onStop: stopGenerationSeries, queueState, onTogglePause: () => { void toggleQueuePause(); }, pausePending,
         generationState,
         intervalSeconds: queueState?.intervalSeconds, onIntervalChange: (seconds: number) => { void changeGenerationInterval(seconds); }, intervalPending: intervalPending || !apiKey,
@@ -1750,11 +1751,17 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         const count = sampleDraft ? 1 : validateGenerationCount(effectiveGenerationCount);
         let submitKey = apiKey;
         let freshSubscription = novelaiSubscription;
-        const poolCheck = await prepareGenerationWithPool({
-            model: draft.params.model,
-            estimatedCostWithOpus: estimateV45GenerationCost(draft.params, true, false),
-            preserveActiveKey: Boolean(placement),
-        });
+        if (!placement) setPreparingGeneration(true);
+        let poolCheck: Awaited<ReturnType<typeof prepareGenerationWithPool>>;
+        try {
+            poolCheck = await prepareGenerationWithPool({
+                model: draft.params.model,
+                estimatedCostWithOpus: estimateV45GenerationCost(draft.params, true, false),
+                preserveActiveKey: Boolean(placement),
+            });
+        } finally {
+            if (!placement) setPreparingGeneration(false);
+        }
         if (poolCheck.pooled) {
             if (!poolCheck.ok) {
                 setErrorMsg(poolCheck.message);
@@ -1853,16 +1860,22 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         const { sourceWidth, sourceHeight } = preparedEdit;
         let submitKey = apiKey;
         let freshSubscription = latestGenerationStateRef.current.subscription.info;
-        const poolCheck = await prepareGenerationWithPool({
-            model: editParamsSource.model,
-            estimatedCostWithOpus: estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), 3, false, {
-                width: sourceWidth,
-                height: sourceHeight,
-                focusedRect: request.focusedRect,
-                minimumContextArea: request.minimumContextArea,
-            }),
-            preserveActiveKey: Boolean(options?.placement),
-        });
+        if (!options?.placement) setPreparingGeneration(true);
+        let poolCheck: Awaited<ReturnType<typeof prepareGenerationWithPool>>;
+        try {
+            poolCheck = await prepareGenerationWithPool({
+                model: editParamsSource.model,
+                estimatedCostWithOpus: estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), 3, false, {
+                    width: sourceWidth,
+                    height: sourceHeight,
+                    focusedRect: request.focusedRect,
+                    minimumContextArea: request.minimumContextArea,
+                }),
+                preserveActiveKey: Boolean(options?.placement),
+            });
+        } finally {
+            if (!options?.placement) setPreparingGeneration(false);
+        }
         if (poolCheck.pooled) {
             if (!poolCheck.ok) {
                 setErrorMsg(poolCheck.message);
@@ -2161,29 +2174,6 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         }
     };
 
-    const handleUploadCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        e.currentTarget.value = '';
-        if (!file) return;
-        if (await confirmAction({ rememberKey: 'editor.cover-upload',
-            title: '上传更换封面并保存？',
-            message: `将使用“${file.name}”作为新封面，并自动保存当前所有提示词与参数改动；原有上传封面文件将被替换。`,
-            confirmLabel: '上传并保存',
-            tone: 'danger',
-        })) {
-            setIsUploading(true);
-            try {
-                const res = await api.uploadFile(file, 'covers');
-                await savePreviewCover(res.url);
-            } catch (err: unknown) {
-                const errMessage = err instanceof Error ? err.message : String(err);
-                notify('上传失败: ' + errMessage, 'error');
-            } finally {
-                setIsUploading(false);
-            }
-        }
-    };
-
     const copyPromptToClipboard = (value: string, label: string) => {
         navigator.clipboard.writeText(value);
         notify(`${label}已复制`);
@@ -2476,7 +2466,6 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                     onSaveArtistSample={canSaveArtistSample(displayedPreviewItem, artistSampleTarget) ? () => { void handleSaveArtistSample(); } : undefined}
                     savingArtistSample={savingArtistSample}
                     onReverseTag={displayedPreviewImage ? () => { setReverseTagImage(displayedPreviewImage); setReverseTagOpen(true); } : undefined}
-                    handleUploadCover={handleUploadCover}
                     getDownloadFilename={getDownloadFilename}
                     hideCoverActions={chain.id === 'playground'}
                     canNavigateHistory={previewHistory.length > 1 && (chain.id !== 'playground' || Boolean(displayedPreviewImage))}
@@ -2675,7 +2664,6 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                         onRemoveCurrentHistory={() => { void handleRemoveCurrentHistory(lightboxItem); }}
                         onClearHistoryGroup={handleClearHistoryGroup}
                         onSetCover={!activeEditOperation && chain.id !== 'playground' && lightboxImg === displayedPreviewImage ? handleSavePreview : undefined}
-                        onUploadCover={!activeEditOperation && chain.id !== 'playground' ? handleUploadCover : undefined}
                         isUploading={isUploading}
                         onSaveArtistSample={canSaveArtistSample(lightboxItem || undefined, artistSampleTarget) ? () => { void handleSaveArtistSample(lightboxItem || undefined); } : undefined}
                         savingArtistSample={savingArtistSample}

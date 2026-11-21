@@ -63,7 +63,6 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
         isOwner={false}
         isUploading={false}
         handleSavePreview={() => undefined}
-        handleUploadCover={() => undefined}
         getDownloadFilename={getDownloadFilename}
         generationData={generationData} favorite={favorite} notify={notify}
         historyId={historyId} historyCreatedAt={historyCreatedAt}

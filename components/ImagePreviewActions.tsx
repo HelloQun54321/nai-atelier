@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, Image, ImageMinus, ImagePlus, ListX, LoaderCircle, Maximize2, Palette, Upload } from 'lucide-react';
+import { ArrowLeft, Check, Image, ImageMinus, ImagePlus, ListX, LoaderCircle, Maximize2, Palette } from 'lucide-react';
 import { IMAGE_CARD_ACTION_CLASS, IMAGE_CARD_ACTION_TONE, ImageShareActions } from './ImageShareActions';
 import { useConfirmDialog } from './ConfirmDialog';
 import { NAI_UPSCALE_FACTOR, downloadUpscaledImage, upscaleCostHint, upscaleHistoryImage, upscaleSupported } from '../services/naiUpscale';
@@ -36,7 +36,6 @@ interface Props {
   onRemoveCurrentHistory?: () => void;
   onClearHistoryGroup?: () => void;
   onSetCover?: () => void;
-  onUploadCover?: (event: React.ChangeEvent<HTMLInputElement>) => void;
   isUploading?: boolean;
   onSaveArtistSample?: () => void;
   savingArtistSample?: boolean;
@@ -52,11 +51,10 @@ interface Props {
 /** 小图与大图共用操作位置、紧凑尺寸及权限，仅大图增加返回入口。 */
 export const ImagePreviewActions: React.FC<Props> = ({
   imageUrl, filename, generationData, favorite, notify, canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
-  onSetCover, onUploadCover, isUploading = false, onSaveArtistSample, savingArtistSample = false, onReverseTag, onBack, backButtonRef,
+  onSetCover, isUploading = false, onSaveArtistSample, savingArtistSample = false, onReverseTag, onBack, backButtonRef,
   historyId, historyCreatedAt,
 }) => {
   useLanguage();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
   const confirmAction = useConfirmDialog();
   const [upscaling, setUpscaling] = useState(false);
@@ -161,12 +159,6 @@ export const ImagePreviewActions: React.FC<Props> = ({
       {onSetCover && <button type="button" onClick={onSetCover} disabled={isUploading} aria-busy={isUploading} aria-label={t("设为封面")} title={isUploading ? t("封面处理中…") : t("设为封面并保存")} className={`group ${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS} ${IMAGE_CARD_ACTION_TONE.primary}`}>
         {isUploading ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <span className="relative h-4 w-4" aria-hidden="true"><Image className="h-4 w-4" /><Check className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-black/70 group-hover:bg-indigo-600" strokeWidth={3} /></span>}
       </button>}
-    </div>}
-    {onUploadCover && <div data-card-action="true" data-image-preview-footer className={`absolute bottom-4 right-4 z-30 ${visibility}`} onClick={event => event.stopPropagation()}>
-      <input aria-label={t("上传作品封面")} type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={onUploadCover} />
-      <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} aria-busy={isUploading} aria-label={t("手动上传封面")} title={isUploading ? t("封面处理中…") : t("手动上传封面并保存")} className={`${IMAGE_PREVIEW_BUTTON_CLASS} !bg-gray-800/80 hover:!bg-gray-700`}>
-        {isUploading ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Upload className="h-4 w-4" aria-hidden="true" />}
-      </button>
     </div>}
   </div>;
 };
