@@ -12,7 +12,7 @@ NAI Atelier：本地个人 NovelAI 创作工坊。React 19 + TypeScript + Vite +
    - [`VIBER_INTENT.md`](./VIBER_INTENT.md)：产品定位、核心概念与长期取舍（仅在产品方向、工作流或成本／授权边界改变时修订，日常细节不扩写宪法）。
    - [`docs/PRODUCT_DECISIONS.md`](./docs/PRODUCT_DECISIONS.md)：各模块已确认的交互／数据约定与明确拒绝的方案（修改对应模块前必读相关节）。
    - [`PROJECT_AGENT.md`](./PROJECT_AGENT.md)：每次对话直接注入内置创作助手的系统指令（必须高度精炼，避免浪费用户 Token）。
-   - [`README.md`](./README.md)：面向使用者的清晰功能与上手说明；过程记录归 [`CHANGELOG.md`](./CHANGELOG.md) 与 [`AI_WORKLOG.md`](./AI_WORKLOG.md)。
+   - [`README.md`](./README.md)：面向使用者的清晰功能与上手说明；用户可见变更归 [`CHANGELOG.md`](./CHANGELOG.md)。
 2. **修订而非堆叠**：新决定直接并入对应条目、替换过时表述，禁止不断追加补丁段或修 bug 流水账；精简文档不得丢失有效约定或复活已拒绝方案，删除文件须同步清理相关引用。
 3. **写正常人话，拒绝防御性废话**：严禁写入免责律师腔（如“不等于／不代表／不足以证明／不保证”）、常识性废话、省略主谓宾的千字分号电报体，或塞错位置的测试交差报告。无实际指导价值的句子直接删去。
 4. **区分确认与推测**：只把用户明确指令与已确认决定写入规范文档；候选方案或 AI 自行推测不得写成既定规则。
@@ -74,9 +74,7 @@ NAI Atelier：本地个人 NovelAI 创作工坊。React 19 + TypeScript + Vite +
 3. **版本递增**：版本号唯一来源是 `package.json`（前端通过 `__APP_VERSION__` 读取，禁硬编码）。
    - **电脑端迭代每次提交必升版本**：`feat:` 升 `minor`；`fix/perf/refactor/style/docs/chore:` 升 `patch`；不兼容的数据／存储键破坏性变更升 `major`（向后兼容的新增表／列按功能类型升，不单算 major）。提交前读取实时 `package.json` 执行 `node scripts/bump-version.mjs <级别>`，与代码进同一提交。
    - **纯 Android 改动**：不升 `package.json`，单独递增 `android/gradle.properties` 的 `atelierAndroidBuild`（必须高于历史已交付 APK 以保证同签名覆盖安装，即使调回显示版本也不得降低构建号）。
-4. **更新日志与工作日志**：
-   - `CHANGELOG.md`：用户可见的功能与修复写入顶部当日 `## YYYY-MM-DD` 节（日期倒序、同日新在上）。
-   - `AI_WORKLOG.md`（**所有修改必写**，含纯文档／配置／重构）：在顶部当日节追加 `- **模型 / 工具名**：做了什么（附提交主题）。`，与改动同次提交。`git revert` 会自动撤回原条目，不为撤回本身重复写日志。
+4. **更新日志**：用户可见的功能与修复写入 `CHANGELOG.md` 顶部当日 `## YYYY-MM-DD` 节（日期倒序、同日新在上）；`git revert` 会自动撤回原条目，不为撤回本身重复写日志。
 
 ## 官方常量自动同步（保护区）
 
