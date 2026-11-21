@@ -445,15 +445,22 @@ export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob>
           ctx.rotate((bubble.rotation * Math.PI) / 180);
           ctx.translate(-cx, -cy);
         }
-        drawBubbleShapePath(ctx, cx, cy, rx, ry, bubble.shape);
-        ctx.fillStyle = bubble.fillColor;
-        ctx.fill();
-        ctx.lineWidth = bubble.strokeWidth;
-        ctx.strokeStyle = bubble.strokeColor;
-        ctx.stroke();
+        const isTransparentFill = !bubble.fillColor || bubble.fillColor === 'transparent';
+        if (!isTransparentFill || bubble.strokeWidth > 0) {
+          drawBubbleShapePath(ctx, cx, cy, rx, ry, bubble.shape);
+          if (!isTransparentFill) {
+            ctx.fillStyle = bubble.fillColor;
+            ctx.fill();
+          }
+          if (bubble.strokeWidth > 0) {
+            ctx.lineWidth = bubble.strokeWidth;
+            ctx.strokeStyle = bubble.strokeColor;
+            ctx.stroke();
+          }
+        }
 
         // 再覆盖一层无边尾巴接缝让气泡内部过渡干干净净
-        if (bubble.hasTail && bubble.shape === 'oval') {
+        if (bubble.hasTail && bubble.shape === 'oval' && !isTransparentFill) {
           drawBubbleShapePath(ctx, cx, cy, Math.max(1, rx - bubble.strokeWidth * 0.5), Math.max(1, ry - bubble.strokeWidth * 0.5), bubble.shape);
           ctx.fillStyle = bubble.fillColor;
           ctx.fill();

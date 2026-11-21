@@ -40,7 +40,9 @@ import {
   evaluateAnchorGuard,
 } from '../../services/comic/comicPromptBuilder';
 import type { ComicAiZonePlan } from '../../services/comic/comicAiPageEngine';
+import type { ComicInpaintDraft } from '../../services/comic/comicInpaintEngine';
 import type {
+  ComicAiGuidePanel,
   ComicAiPagePlan,
   ComicAiZoneSplitMode,
   ComicAnchor,
@@ -68,12 +70,15 @@ export type ComicInspectorTab = 'panel' | 'style' | 'layers';
 interface ComicInspectorProps {
   draft: ComicPageDraft;
   aiZonePlan: ComicAiZonePlan;
+  inpaintDraft: ComicInpaintDraft | null;
   activeTab: ComicInspectorTab;
   selection: ComicSelection;
   chains: PromptChain[];
   generatingPanelId: string | null;
   planningAiStoryboard: boolean;
   generatingAiPage: boolean;
+  detectingBubbles: boolean;
+  inpaintingAiPage: boolean;
   aiGenerationStageText: string;
   generationStageText: string;
   estimatedCost: number;
@@ -86,6 +91,11 @@ interface ComicInspectorProps {
   onPlanAiStoryboard: () => void;
   onInitAiFromTemplate: () => void;
   onConvertBubbleAnchorsToVector: () => void;
+  onAutoDetectWhiteBubbles: () => void;
+  onOpenInpaint: (guidePanel?: ComicAiGuidePanel) => void;
+  onCloseInpaint: () => void;
+  onUpdateInpaintDraft: (updater: (current: ComicInpaintDraft) => ComicInpaintDraft) => void;
+  onRunInpaint: () => void;
   onGenerateAiPage: () => void;
   onApplyStyleChain: (chain: PromptChain) => void;
   onUpdatePanel: (panelId: string, updater: (panel: ComicPanel) => ComicPanel, commit?: boolean) => void;
@@ -156,12 +166,15 @@ const SPLIT_MODE_OPTIONS: Array<{ id: ComicAiZoneSplitMode; label: string }> = [
 export const ComicInspector: React.FC<ComicInspectorProps> = ({
   draft,
   aiZonePlan,
+  inpaintDraft,
   activeTab,
   selection,
   chains,
   generatingPanelId,
   planningAiStoryboard,
   generatingAiPage,
+  detectingBubbles,
+  inpaintingAiPage,
   aiGenerationStageText,
   generationStageText,
   estimatedCost,
@@ -174,6 +187,11 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   onPlanAiStoryboard,
   onInitAiFromTemplate,
   onConvertBubbleAnchorsToVector,
+  onAutoDetectWhiteBubbles,
+  onOpenInpaint,
+  onCloseInpaint,
+  onUpdateInpaintDraft,
+  onRunInpaint,
   onGenerateAiPage,
   onApplyStyleChain,
   onUpdatePanel,
@@ -582,6 +600,196 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     </button>
                   )}
                 </div>
+
+                {/* 第三期成图精修区：纯白气泡自动识别嵌字 + 框选单格局部重绘 */}
+                {aiPage.generatedPageImage?.url && (
+                  <div className="space-y-2 border-t border-gray-200/80 pt-2.5 dark:border-gray-800">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-gray-800 dark:text-gray-100">{t('成图精修（三期闭环）')}</span>
+                      {inpaintDraft && (
+                        <button
+                          type="button"
+                          onClick={onCloseInpaint}
+                          className="text-[11px] font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                        >
+                          {t('退出重绘')}
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        disabled={detectingBubbles || anyGenerating}
+                        onClick={onAutoDetectWhiteBubbles}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                      >
+                        {detectingBubbles ? <InlineSpinner className="h-3 w-3" /> : <MessageCircle className="h-3.5 w-3.5 text-amber-500" />}
+                        <span>{detectingBubbles ? t('识别中…') : t('自动识别白泡嵌字')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={anyGenerating}
+                        onClick={() => (inpaintDraft ? onCloseInpaint() : onOpenInpaint(aiPage.guidePanels[0]))}
+                        aria-pressed={Boolean(inpaintDraft)}
+                        className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition disabled:opacity-50 ${inpaintDraft ? 'border-rose-500 bg-rose-50 text-rose-700 dark:border-rose-500 dark:bg-rose-950/50 dark:text-rose-200' : 'border-gray-200 bg-white text-gray-700 hover:border-rose-400 hover:text-rose-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}
+                      >
+                        <Wand2 className="h-3.5 w-3.5 text-rose-500" />
+                        <span>{inpaintDraft ? t('重绘模式中') : t('单格局部重绘')}</span>
+                      </button>
+                    </div>
+
+                    {inpaintDraft && (
+                      <div className="space-y-2.5 rounded-xl border border-rose-200/80 bg-rose-50/30 p-2.5 dark:border-rose-900/60 dark:bg-rose-950/20">
+                        <div className="space-y-1">
+                          <span className="block text-[11px] font-medium text-gray-600 dark:text-gray-300">{t('快选目标格（或直接在画布拖红框）')}</span>
+                          <div className="flex flex-wrap gap-1">
+                            {aiPage.guidePanels.map((gp, idx) => (
+                              <button
+                                key={gp.id}
+                                type="button"
+                                onClick={() => onOpenInpaint(gp)}
+                                className="rounded border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-rose-700 hover:border-rose-400 dark:border-rose-900 dark:bg-gray-900 dark:text-rose-300"
+                              >
+                                {t('第 {0} 格', [idx + 1])}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <label className="block">
+                          <span className="mb-1 block text-[11px] font-semibold text-gray-700 dark:text-gray-200">{t('重绘区域画面描述')}</span>
+                          <textarea
+                            rows={2}
+                            aria-label={t('局部重绘描述')}
+                            value={inpaintDraft.prompt}
+                            onChange={e => onUpdateInpaintDraft(cur => ({ ...cur, prompt: e.target.value }))}
+                            placeholder={t('例如：1girl, smiling softly, fixing hand holding umbrella...')}
+                            className="w-full rounded-lg border border-gray-200 bg-white p-1.5 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                          />
+                        </label>
+
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <label className="flex flex-1 items-center gap-1.5 text-gray-600 dark:text-gray-300">
+                            <span>{t('重绘强度')}</span>
+                            <input
+                              type="range"
+                              min={40}
+                              max={99}
+                              value={Math.round(inpaintDraft.strength * 100)}
+                              onChange={e => onUpdateInpaintDraft(cur => ({ ...cur, strength: Number(e.target.value) / 100 }))}
+                              className="flex-1 accent-rose-600"
+                            />
+                            <span className="w-8 font-mono">{inpaintDraft.strength.toFixed(2)}</span>
+                          </label>
+                          <label className="inline-flex cursor-pointer items-center gap-1 text-gray-600 dark:text-gray-300">
+                            <input
+                              type="checkbox"
+                              checked={inpaintDraft.focused}
+                              onChange={e => onUpdateInpaintDraft(cur => ({ ...cur, focused: e.target.checked }))}
+                              className="rounded accent-rose-600"
+                            />
+                            <span>{t('聚焦放大')}</span>
+                          </label>
+                        </div>
+
+                        {/* 重绘区内空间锚点 */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-semibold text-gray-700 dark:text-gray-200">{t('重绘区锚点')} ({inpaintDraft.anchors.length})</span>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => onUpdateInpaintDraft(cur => ({
+                                  ...cur,
+                                  anchors: [...cur.anchors, {
+                                    id: createUuid(),
+                                    kind: 'character',
+                                    label: `重绘角色 ${cur.anchors.length + 1}`,
+                                    prompt: '',
+                                    negativePrompt: '',
+                                    x: 0.5,
+                                    y: 0.5,
+                                    enabled: true,
+                                  }],
+                                }))}
+                                className="inline-flex items-center gap-1 rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-700 hover:border-rose-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                              >
+                                <span className="h-1.5 w-1.5 rounded-full bg-blue-500" /> {t('角色')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onUpdateInpaintDraft(cur => ({
+                                  ...cur,
+                                  anchors: [...cur.anchors, {
+                                    id: createUuid(),
+                                    kind: 'scene',
+                                    label: `重绘物件 ${cur.anchors.length + 1}`,
+                                    prompt: '',
+                                    negativePrompt: '',
+                                    x: 0.5,
+                                    y: 0.5,
+                                    enabled: true,
+                                  }],
+                                }))}
+                                className="inline-flex items-center gap-1 rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-700 hover:border-rose-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                              >
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {t('物件')}
+                              </button>
+                            </div>
+                          </div>
+                          {inpaintDraft.anchors.map((a, idx) => (
+                            <div key={a.id} className="space-y-1 rounded border border-gray-200 bg-white p-1.5 dark:border-gray-700 dark:bg-gray-900">
+                              <div className="flex items-center gap-1 text-[11px]">
+                                <span className="font-mono text-[10px] font-bold text-rose-500">{idx + 1}</span>
+                                <input
+                                  type="text"
+                                  value={a.label}
+                                  onChange={e => onUpdateInpaintDraft(cur => ({
+                                    ...cur,
+                                    anchors: cur.anchors.map(item => item.id === a.id ? { ...item, label: e.target.value } : item),
+                                  }))}
+                                  className="min-w-0 flex-1 bg-transparent font-medium text-gray-800 outline-none dark:text-gray-100"
+                                />
+                                <span className="font-mono text-[10px] text-gray-400">({a.x.toFixed(2)},{a.y.toFixed(2)})</span>
+                                <button
+                                  type="button"
+                                  aria-label={t('删除重绘锚点')}
+                                  onClick={() => onUpdateInpaintDraft(cur => ({
+                                    ...cur,
+                                    anchors: cur.anchors.filter(item => item.id !== a.id),
+                                  }))}
+                                  className="text-gray-400 hover:text-red-500"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
+                              <input
+                                type="text"
+                                value={a.prompt}
+                                onChange={e => onUpdateInpaintDraft(cur => ({
+                                  ...cur,
+                                  anchors: cur.anchors.map(item => item.id === a.id ? { ...item, prompt: e.target.value } : item),
+                                }))}
+                                placeholder={t('输入该重绘锚点的英文外观或动作提示词')}
+                                className="w-full rounded border border-gray-200 bg-gray-50 px-1.5 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                              />
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={anyGenerating || inpaintingAiPage}
+                          onClick={onRunInpaint}
+                          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white shadow-xs transition hover:bg-rose-500 disabled:opacity-50"
+                        >
+                          {inpaintingAiPage ? <InlineSpinner className="h-3.5 w-3.5 text-white" /> : <Wand2 className="h-3.5 w-3.5" />}
+                          <span>{inpaintingAiPage ? (aiGenerationStageText || t('局部重绘中…')) : t('重绘选中区域')}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* 整页四类空间锚点（与画布可拖圆点双向联动） */}

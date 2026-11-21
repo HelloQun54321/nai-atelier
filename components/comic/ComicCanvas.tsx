@@ -11,6 +11,7 @@ import {
   snapComicPoint,
 } from '../../services/comic/comicGeometry';
 import type { ComicAiZonePlan } from '../../services/comic/comicAiPageEngine';
+import { clampInpaintRect, type ComicInpaintDraft, type ComicInpaintRect } from '../../services/comic/comicInpaintEngine';
 import type {
   ComicBubbleItem,
   ComicLayerId,
@@ -26,6 +27,7 @@ import type {
 interface ComicCanvasProps {
   draft: ComicPageDraft;
   aiZonePlan?: ComicAiZonePlan;
+  inpaintDraft?: ComicInpaintDraft | null;
   activeTool: ComicTool;
   selection: ComicSelection;
   zoom: number;
@@ -42,6 +44,8 @@ interface ComicCanvasProps {
   onToggleSnap: () => void;
   onUpdatePanel: (panelId: string, updater: (panel: ComicPanel) => ComicPanel, commit?: boolean) => void;
   onMoveAiAnchor?: (anchorId: string, x: number, y: number, commit?: boolean) => void;
+  onChangeInpaintRect?: (rect: ComicInpaintRect) => void;
+  onMoveInpaintAnchor?: (anchorId: string, x: number, y: number) => void;
   onAddPanel: (points: ComicPoint[]) => void;
   onSliceAtLine: (start: ComicPoint, end: ComicPoint) => void;
   onCommitStroke: (stroke: ComicStroke) => void;
@@ -66,6 +70,10 @@ type DragAction =
   | { kind: 'rotate-panel'; panelId: string; cx: number; cy: number; startAngle: number; origRotation: number }
   | { kind: 'move-anchor'; panelId: string; anchorId: string }
   | { kind: 'move-ai-anchor'; anchorId: string }
+  | { kind: 'draw-inpaint'; startPoint: ComicPoint; currentPoint: ComicPoint }
+  | { kind: 'move-inpaint'; dx: number; dy: number; width: number; height: number }
+  | { kind: 'resize-inpaint'; origX: number; origY: number }
+  | { kind: 'move-inpaint-anchor'; anchorId: string }
   | { kind: 'draw-panel'; startPoint: ComicPoint; currentPoint: ComicPoint }
   | { kind: 'slice'; startPoint: ComicPoint; currentPoint: ComicPoint }
   | { kind: 'move-bubble'; id: string; dx: number; dy: number }
@@ -208,6 +216,7 @@ const renderStickerSvg = (sticker: ComicStickerItem, pageW: number, pageH: numbe
 export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   draft,
   aiZonePlan,
+  inpaintDraft,
   activeTool,
   selection,
   zoom,
@@ -224,6 +233,8 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   onToggleSnap,
   onUpdatePanel,
   onMoveAiAnchor,
+  onChangeInpaintRect,
+  onMoveInpaintAnchor,
   onAddPanel,
   onSliceAtLine,
   onCommitStroke,
@@ -389,6 +400,13 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     if (inlineEdit) commitInlineEdit();
     const pt = toNormalizedPoint(event.clientX, event.clientY);
 
+    // AI 整页局部重绘模式：直接在画布上框选新的局部重绘矩形
+    if (draft.creationMode === 'ai-page' && inpaintDraft && activeTool === 'select') {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      setDrag({ kind: 'draw-inpaint', startPoint: pt, currentPoint: pt });
+      return;
+    }
+
     if (activeTool === 'brush' || activeTool === 'eraser') {
       if (draft.layers.drawing?.locked) return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -533,6 +551,48 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
 
     if (drag.kind === 'move-ai-anchor') {
       onMoveAiAnchor?.(drag.anchorId, clampAnchorCoord(pt.x), clampAnchorCoord(pt.y), false);
+      return;
+    }
+
+    if (drag.kind === 'draw-inpaint') {
+      const next = {
+        x: Math.min(drag.startPoint.x, pt.x),
+        y: Math.min(drag.startPoint.y, pt.y),
+        width: Math.abs(pt.x - drag.startPoint.x),
+        height: Math.abs(pt.y - drag.startPoint.y),
+      };
+      setDrag({ ...drag, currentPoint: pt });
+      if (next.width > 0.04 && next.height > 0.04) {
+        onChangeInpaintRect?.(clampInpaintRect(next));
+      }
+      return;
+    }
+
+    if (drag.kind === 'move-inpaint') {
+      onChangeInpaintRect?.(clampInpaintRect({
+        x: pt.x - drag.dx,
+        y: pt.y - drag.dy,
+        width: drag.width,
+        height: drag.height,
+      }));
+      return;
+    }
+
+    if (drag.kind === 'resize-inpaint') {
+      onChangeInpaintRect?.(clampInpaintRect({
+        x: drag.origX,
+        y: drag.origY,
+        width: Math.max(0.08, pt.x - drag.origX),
+        height: Math.max(0.08, pt.y - drag.origY),
+      }));
+      return;
+    }
+
+    if (drag.kind === 'move-inpaint-anchor' && inpaintDraft) {
+      const r = inpaintDraft.rect;
+      const nx = clampAnchorCoord((pt.x - r.x) / Math.max(0.01, r.width));
+      const ny = clampAnchorCoord((pt.y - r.y) / Math.max(0.01, r.height));
+      onMoveInpaintAnchor?.(drag.anchorId, nx, ny);
       return;
     }
 
@@ -1112,9 +1172,10 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                             <g transform={bubble.rotation ? `rotate(${bubble.rotation} ${cx} ${cy})` : undefined}>
                               <path
                                 d={bubblePathD(cx, cy, rx, ry, bubble.shape)}
-                                fill={bubble.fillColor}
-                                stroke={selected ? '#4f46e5' : bubble.strokeColor}
-                                strokeWidth={selected ? Math.max(bubble.strokeWidth, 3) : bubble.strokeWidth}
+                                fill={bubble.fillColor || 'transparent'}
+                                stroke={selected ? '#4f46e5' : (bubble.strokeWidth > 0 ? bubble.strokeColor : 'none')}
+                                strokeWidth={selected ? Math.max(bubble.strokeWidth, 2) : bubble.strokeWidth}
+                                strokeDasharray={selected && bubble.strokeWidth <= 0 ? '6 4' : undefined}
                               />
                               {!isInlineEditing && (
                                 <foreignObject x={cx - rx * 0.8} y={cy - ry * 0.8} width={rx * 1.6} height={ry * 1.6}>
@@ -1340,7 +1401,77 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
               }}
             />
 
-            {draft.creationMode === 'ai-page' && (draft.aiPage.showGuideOverlay || !draft.aiPage.generatedPageImage?.url) && (
+            {draft.creationMode === 'ai-page' && inpaintDraft && (
+              <div className="pointer-events-none absolute inset-0 z-25 overflow-hidden">
+                {/* 暗化未选中区，聚焦高亮红框重绘区 */}
+                <div
+                  style={{
+                    left: `${inpaintDraft.rect.x * 100}%`,
+                    top: `${inpaintDraft.rect.y * 100}%`,
+                    width: `${inpaintDraft.rect.width * 100}%`,
+                    height: `${inpaintDraft.rect.height * 100}%`,
+                    boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.45)',
+                  }}
+                  onPointerDown={event => {
+                    if (isPanningMode || activeTool !== 'select') return;
+                    event.stopPropagation();
+                    const pt = toNormalizedPoint(event.clientX, event.clientY);
+                    stageRef.current?.setPointerCapture?.(event.pointerId);
+                    setDrag({
+                      kind: 'move-inpaint',
+                      dx: pt.x - inpaintDraft.rect.x,
+                      dy: pt.y - inpaintDraft.rect.y,
+                      width: inpaintDraft.rect.width,
+                      height: inpaintDraft.rect.height,
+                    });
+                  }}
+                  className="pointer-events-auto absolute cursor-move border-2 border-dashed border-rose-500 bg-rose-500/5"
+                >
+                  <span className="pointer-events-none absolute -top-6 left-0 rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow">
+                    {t('单格局部重绘区（拖框移动 / 空白处重拉）')}
+                  </span>
+
+                  {/* 重绘区内部空间锚点 */}
+                  {inpaintDraft.anchors.filter(a => a.enabled).map((anchor, idx) => {
+                    const dotClass = anchor.kind === 'character' ? 'bg-blue-600'
+                      : anchor.kind === 'scene' ? 'bg-emerald-600'
+                        : anchor.kind === 'bubble' ? 'bg-amber-600'
+                          : 'bg-purple-600';
+                    return (
+                      <button
+                        key={anchor.id}
+                        type="button"
+                        aria-label={t('重绘锚点 {0}', [anchor.label])}
+                        title={`${anchor.label} (${anchor.x.toFixed(2)}, ${anchor.y.toFixed(2)})`}
+                        onPointerDown={event => {
+                          event.stopPropagation();
+                          stageRef.current?.setPointerCapture?.(event.pointerId);
+                          setDrag({ kind: 'move-inpaint-anchor', anchorId: anchor.id });
+                        }}
+                        style={{ left: `${anchor.x * 100}%`, top: `${anchor.y * 100}%` }}
+                        className={`pointer-events-auto absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full border-2 border-white text-[10px] font-bold text-white shadow-md hover:scale-110 ${dotClass}`}
+                      >
+                        {idx + 1}
+                      </button>
+                    );
+                  })}
+
+                  {/* 右下角尺寸缩放把手 */}
+                  <button
+                    type="button"
+                    aria-label={t('调整重绘区域大小')}
+                    onPointerDown={event => {
+                      event.stopPropagation();
+                      stageRef.current?.setPointerCapture?.(event.pointerId);
+                      setDrag({ kind: 'resize-inpaint', origX: inpaintDraft.rect.x, origY: inpaintDraft.rect.y });
+                    }}
+                    className="pointer-events-auto absolute -right-2 -bottom-2 h-4 w-4 cursor-nwse-resize rounded-sm border-2 border-white bg-rose-600 shadow"
+                  />
+                </div>
+              </div>
+            )}
+
+            {draft.creationMode === 'ai-page' && !inpaintDraft && (draft.aiPage.showGuideOverlay || !draft.aiPage.generatedPageImage?.url) && (
               <div className="pointer-events-none absolute inset-0 z-20">
                 {draft.aiPage.anchors.map((anchor, idx) => {
                   const isSelected = selection?.kind === 'ai-anchor' && selection.id === anchor.id;

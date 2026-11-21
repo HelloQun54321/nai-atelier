@@ -21,6 +21,13 @@ import {
   buildAiPageZoneRequest,
   planComicAiZones,
 } from '../../services/comic/comicAiPageEngine';
+import {
+  buildEmbeddedBubbleTextItems,
+  detectWhiteBubblesFromPixels,
+} from '../../services/comic/comicBubbleDetector';
+import {
+  buildComicInpaintRequest,
+} from '../../services/comic/comicInpaintEngine';
 import { parseComicStoryboardResponse } from '../../services/comic/comicStoryboardAgent.mjs';
 import { loadComicDraft, saveComicDraft } from '../../services/comic/comicStorage';
 import type { ComicAnchor } from '../../services/comic/comicTypes';
@@ -326,5 +333,91 @@ describe('comicStoryboardAgent & comicAiPageEngine (Phase 2)', () => {
     // 气泡锚点内置 Text: 短台词
     expect(bubbleSlot?.prompt).toContain('Text: 等等!');
     expect(bubbleSlot?.prompt).toContain('jagged speech bubble');
+  });
+});
+
+describe('comicBubbleDetector & comicInpaintEngine (Phase 3)', () => {
+  it('detects interior white speech bubbles while rejecting white page borders and matches anchor dialogue', () => {
+    const w = 200;
+    const h = 300;
+    const pixels = new Uint8ClampedArray(w * h * 4);
+    // 默认整张图填充白纸边距，再在中间铺灰暗漫画画格底色
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+        const inBorder = x < 8 || x >= w - 8 || y < 8 || y >= h - 8;
+        const val = inBorder ? 255 : 90;
+        pixels[idx] = val;
+        pixels[idx + 1] = val;
+        pixels[idx + 2] = val;
+        pixels[idx + 3] = 255;
+      }
+    }
+    const drawWhiteEllipse = (cx: number, cy: number, rx: number, ry: number) => {
+      for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
+        for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
+          if (x < 0 || x >= w || y < 0 || y >= h) continue;
+          const dx = (x - cx) / rx;
+          const dy = (y - cy) / ry;
+          if (dx * dx + dy * dy <= 1) {
+            const idx = (y * w + x) * 4;
+            pixels[idx] = 252;
+            pixels[idx + 1] = 252;
+            pixels[idx + 2] = 252;
+            pixels[idx + 3] = 255;
+          }
+        }
+      }
+    };
+    // 绘制 2 个内部纯白椭圆气泡（右上、左下）
+    drawWhiteEllipse(145, 70, 26, 20);
+    drawWhiteEllipse(60, 210, 28, 22);
+
+    const detected = detectWhiteBubblesFromPixels(pixels, w, h);
+    expect(detected).toHaveLength(2);
+    expect(detected[0].x).toBeCloseTo(145 / w, 1);
+    expect(detected[0].y).toBeCloseTo(70 / h, 1);
+    expect(detected[1].x).toBeCloseTo(60 / w, 1);
+    expect(detected[1].y).toBeCloseTo(210 / h, 1);
+
+    const anchors: ComicAnchor[] = [
+      { id: 'b1', kind: 'bubble', label: '台词1', prompt: '', negativePrompt: '', x: 0.72, y: 0.24, enabled: true, bubbleShape: 'oval', bubbleText: '下雨了呢' },
+      { id: 'b2', kind: 'bubble', label: '台词2', prompt: '', negativePrompt: '', x: 0.30, y: 0.70, enabled: true, bubbleShape: 'shout', bubbleText: '快跑！' },
+    ];
+    const embedded = buildEmbeddedBubbleTextItems(detected, anchors, []);
+    expect(embedded.matchedCount).toBe(2);
+    expect(embedded.items).toHaveLength(2);
+    expect(embedded.items[0].text).toBe('下雨了呢');
+    expect(embedded.items[0].fillColor).toBe('transparent');
+    expect(embedded.items[0].strokeWidth).toBe(0);
+    expect(embedded.items[1].text).toBe('快跑！');
+  });
+
+  it('compiles single-panel inpaint requests with full-page anchor mapping, monochrome stripping, and anti-ghost merge', () => {
+    const draft = createInitialComicDraft('classic-4-121');
+    draft.creationMode = 'ai-page';
+    draft.colorMode = 'monochrome';
+    draft.v5Model = 'nai-diffusion-5-full-medium';
+    draft.aiPage.generatedPageImage = { url: '/api/local-history/h1/image', width: 832, height: 1216 };
+
+    const compiled = buildComicInpaintRequest(draft, {
+      rect: { x: 0.04, y: 0.50, width: 0.44, height: 0.40 },
+      prompt: 'red ribbon, fixing smiling expression',
+      negativePrompt: '',
+      strength: 0.85,
+      focused: true,
+      anchors: [
+        { id: 'ic1', kind: 'character', label: '女主', prompt: '1girl, blue eyes, smiling', negativePrompt: '', x: 0.5, y: 0.5, enabled: true },
+        { id: 'ib1', kind: 'scene', label: '背景', prompt: 'no humans, rain window', negativePrompt: '', x: 0.5, y: 0.5, enabled: true },
+      ],
+    });
+
+    expect(compiled.params.steps).toBe(14);
+    expect(compiled.params.characters).toHaveLength(1);
+    expect(compiled.prompt).toContain('rain window');
+    expect(compiled.prompt.toLowerCase()).not.toContain('red');
+    expect(compiled.params.characters?.[0]?.x).toBeCloseTo(0.04 + 0.5 * 0.44, 2);
+    expect(compiled.params.characters?.[0]?.y).toBeCloseTo(0.50 + 0.5 * 0.40, 2);
+    expect(compiled.focusedRect.width).toBeGreaterThan(200);
   });
 });

@@ -26,6 +26,18 @@ import {
   stitchAiZoneImages,
 } from '../../services/comic/comicAiPageEngine';
 import {
+  buildEmbeddedBubbleTextItems,
+  detectWhiteBubblesFromImageUrl,
+} from '../../services/comic/comicBubbleDetector';
+import {
+  buildComicInpaintRequest,
+  clampInpaintRect,
+  createRectInpaintMaskDataUrl,
+  loadImageAsDataUrl,
+  type ComicInpaintDraft,
+  type ComicInpaintRect,
+} from '../../services/comic/comicInpaintEngine';
+import {
   COMIC_LAYOUT_TEMPLATES,
   COMIC_PANEL_SOFT_MAX,
   COMIC_PAPER_PRESETS,
@@ -178,10 +190,13 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     }
   }, []);
 
-  // 单格生图与 AI 整页生图状态
+  // 单格生图与 AI 整页生图 / 局部重绘状态
   const [generatingPanelId, setGeneratingPanelId] = useState<string | null>(null);
   const [planningAiStoryboard, setPlanningAiStoryboard] = useState(false);
   const [generatingAiPage, setGeneratingAiPage] = useState(false);
+  const [detectingBubbles, setDetectingBubbles] = useState(false);
+  const [inpaintingAiPage, setInpaintingAiPage] = useState(false);
+  const [inpaintDraft, setInpaintDraft] = useState<ComicInpaintDraft | null>(null);
   const [generatingAiZoneIndex, setGeneratingAiZoneIndex] = useState<0 | 1 | null>(null);
   const [aiGenerationStageText, setAiGenerationStageText] = useState('');
   const aiCancelRequestedRef = useRef(false);
@@ -326,6 +341,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       if (event.key === 'Escape') {
         setActiveTool('select');
         setSelection(null);
+        setInpaintDraft(null);
         return;
       }
       if (!event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -1005,6 +1021,230 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     novelaiSubscription,
   ]);
 
+  // 第三期核心 1：纯前端毫秒级纯白气泡连通域自动识别并贴入可编辑文字层
+  const handleAutoDetectWhiteBubbles = useCallback(async () => {
+    const imgUrl = draft.aiPage.generatedPageImage?.url;
+    if (!imgUrl) {
+      notify(t('请先生成 AI 整页图片后再识别空白气泡'), 'error');
+      return;
+    }
+    setDetectingBubbles(true);
+    try {
+      const detected = await detectWhiteBubblesFromImageUrl(imgUrl);
+      const built = buildEmbeddedBubbleTextItems(
+        detected,
+        draft.aiPage.anchors,
+        draft.bubbles,
+        { writingMode: defaultBubbleWritingMode, pageHeight: draft.height },
+      );
+      if (!built.items.length) {
+        notify(t('未识别到新的纯白气泡区域（或对应位置已有嵌字），可手动用气泡工具补充'), 'error');
+        return;
+      }
+      applyDraftChange(cur => ({
+        ...cur,
+        bubbles: [...cur.bubbles, ...built.items],
+      }), true);
+      handleSelectWithTab({ kind: 'bubble', id: built.items[0].id });
+      notify(t('识别到 {0} 个纯白气泡，已自动嵌字 {1} 处（双击画布文字可随时修改）', [built.detectedCount, built.items.length]));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('自动识别纯白气泡失败'), 'error');
+    } finally {
+      setDetectingBubbles(false);
+    }
+  }, [applyDraftChange, defaultBubbleWritingMode, draft.aiPage.anchors, draft.aiPage.generatedPageImage?.url, draft.bubbles, draft.height, handleSelectWithTab, notify]);
+
+  // 第三期核心 2：开启单格局部重绘（可一键对齐某引导格，并自动带入该格内的已有锚点）
+  const handleOpenInpaint = useCallback((guidePanel?: ComicAiGuidePanel) => {
+    const rect: ComicInpaintRect = guidePanel
+      ? clampInpaintRect({ x: guidePanel.x, y: guidePanel.y, width: guidePanel.width, height: guidePanel.height })
+      : { x: 0.08, y: 0.08, width: 0.84, height: 0.34 };
+    // 把落在该引导格内的已有整页锚点映射为重绘区局部锚点，方便直接微调动作与表情
+    const localAnchors = draft.aiPage.anchors
+      .filter(a => a.enabled && a.x >= rect.x - 0.02 && a.x <= rect.x + rect.width + 0.02 && a.y >= rect.y - 0.02 && a.y <= rect.y + rect.height + 0.02)
+      .map(a => ({
+        ...a,
+        id: createUuid(),
+        x: Math.max(0.05, Math.min(0.95, (a.x - rect.x) / Math.max(0.05, rect.width))),
+        y: Math.max(0.05, Math.min(0.95, (a.y - rect.y) / Math.max(0.05, rect.height))),
+      }));
+    setInpaintDraft(prev => ({
+      rect,
+      prompt: prev?.prompt || guidePanel?.summary || '',
+      negativePrompt: prev?.negativePrompt || '',
+      strength: prev?.strength ?? 0.85,
+      focused: prev?.focused ?? true,
+      anchors: localAnchors,
+    }));
+    setActiveTool('select');
+  }, [draft.aiPage.anchors]);
+
+  // 第三期核心 2：执行单格蒙版局部重绘（走统一 Key 池、Opus 守卫、付费确认与后端无缝回贴）
+  const handleRunInpaint = useCallback(async () => {
+    const baseUrl = draft.aiPage.generatedPageImage?.url;
+    if (!baseUrl || !inpaintDraft) return;
+    if (generatingPanelId || generatingAiPage || inpaintingAiPage) {
+      notify(t('当前已有生图任务正在运行，请等待完成'), 'error');
+      return;
+    }
+
+    const compiled = buildComicInpaintRequest(draft, inpaintDraft);
+    if (!compiled.prompt.trim() && !(compiled.params.characters?.length)) {
+      notify(t('请填写重绘区域描述或添加至少一个重绘锚点'), 'error');
+      return;
+    }
+
+    let submitKey = readActiveApiKey();
+    const opusBaseCost = estimateV45GenerationCost(compiled.params, true, false);
+    const poolCheck = await prepareGenerationWithPool({
+      model: compiled.params.model,
+      estimatedCostWithOpus: opusBaseCost,
+    });
+    if (poolCheck.pooled) {
+      if (!poolCheck.ok) {
+        notify(poolCheck.message || t('Key 池当前无可用免费额度'), 'error');
+        return;
+      }
+      submitKey = poolCheck.key;
+    }
+    if (!submitKey) {
+      notify(t('请先在全局设置中配置 NovelAI API Key'), 'error');
+      return;
+    }
+
+    const perUseChannel = getNaiChannelMode() === 'per-use';
+    const opusTier = poolCheck.pooled ? (poolCheck.info?.tier ?? 3) : (novelaiSubscription.info?.tier ?? 3);
+    const exhausted = poolCheck.pooled
+      ? poolCheck.info?.usage?.isNegative === true
+      : await usageForCostEstimate(novelaiSubscription.info?.usage, () => novelaiSubscription.refresh(), compiled.params.model);
+    const cost = perUseChannel ? 0 : estimateV45GenerationCost(compiled.params, opusTier >= 3, exhausted);
+
+    if (cost > 0) {
+      const approved = await confirmAction({
+        rememberKey: 'comic.inpaint-paid',
+        rememberScope: { cost, model: compiled.params.model },
+        title: t('确认消耗 Anlas 进行单格局部重绘'),
+        message: t('本次局部重绘预计消耗 {0}。确认后才会向 NovelAI 提交。', [formatGenerationCostLabel(cost, compiled.params.model)]),
+        confirmLabel: t('消耗 {0} 点重绘', [cost]),
+        tone: 'danger',
+      });
+      if (!approved) return;
+    }
+
+    if (compiled.warnings.length > 0) notify(compiled.warnings[0]);
+
+    setInpaintingAiPage(true);
+    setAiGenerationStageText(t('准备重绘蒙版…'));
+    try {
+      const base = await loadImageAsDataUrl(baseUrl);
+      const maskDataUrl = createRectInpaintMaskDataUrl(base.width, base.height, inpaintDraft.rect);
+      const safeRect = clampInpaintRect(inpaintDraft.rect);
+      const padX = safeRect.width * 0.12;
+      const padY = safeRect.height * 0.12;
+      const fx = Math.max(0, safeRect.x - padX);
+      const fy = Math.max(0, safeRect.y - padY);
+      const fw = Math.min(1 - fx, safeRect.width + padX * 2);
+      const fh = Math.min(1 - fy, safeRect.height + padY * 2);
+      const focusedRect = {
+        x: Math.round(fx * base.width),
+        y: Math.round(fy * base.height),
+        width: Math.max(64, Math.round(fw * base.width)),
+        height: Math.max(64, Math.round(fh * base.height)),
+      };
+
+      setAiGenerationStageText(t('单格局部重绘中…'));
+      const descriptor = await buildGenerationJobDescriptor({
+        operation: 'inpaint',
+        prompt: compiled.prompt,
+        negative: compiled.negative,
+        params: compiled.params,
+        approvedCost: cost,
+        stream: generationStreamPreview,
+        forceEmptySeed,
+        apiKey: submitKey,
+        estimatedCost: cost,
+        edit: {
+          image: base.dataUrl,
+          mask: maskDataUrl,
+          strength: compiled.strength,
+          noise: 0,
+          focused: compiled.focused,
+          focusedRect,
+        },
+        history: {
+          basePrompt: draft.globalBasePrompt,
+          subjectPrompt: inpaintDraft.prompt || '漫画单格局部重绘',
+          sourceChainId: draft.styleChainId || 'comic',
+          sourceChainName: `漫画局部重绘 · ${draft.title || '未命名漫画页'}`,
+          sourceChainType: 'comic',
+        },
+      });
+
+      const { session, settle } = beginGenerationSeries({
+        scope: COMIC_GEN_SCOPE,
+        key: submitKey,
+        count: 1,
+        agent: false,
+        descriptor,
+      });
+      activeSessionRef.current = session;
+
+      const unsubApproval = subscribeGenerationSeries(() => {
+        if (session.state === 'awaiting_confirmation' && session.awaiting) {
+          const nextCost = session.awaiting.cost;
+          void confirmAction({
+            title: t('费用变化确认'),
+            message: t('上游计费已更新为 {0} Anlas，是否继续单格重绘？', [nextCost]),
+            confirmLabel: t('继续重绘'),
+            tone: 'danger',
+          }).then(ok => {
+            if (ok) void approveGenerationSeries(session, nextCost);
+            else stopGenerationSeriesSession(session);
+          });
+        }
+      });
+
+      const result = await settle;
+      unsubApproval();
+      const saved = session.lastSavedItem;
+      if (result.success && saved?.imageUrl) {
+        handleUpdateAiPage(cur => ({
+          ...cur,
+          generatedPageImage: {
+            url: saved.imageUrl,
+            historyId: saved.id,
+            width: saved.params?.width || base.width,
+            height: saved.params?.height || base.height,
+            zoneHistoryIds: cur.generatedPageImage?.zoneHistoryIds,
+          },
+          showGuideOverlay: false,
+        }), true);
+        setInpaintDraft(null);
+        notify(t('单格局部重绘完成并已无缝回贴（可随时 Ctrl+Z 撤销）'));
+      } else if (result.outcome !== 'cancelled') {
+        notify(result.error || t('单格局部重绘失败'), 'error');
+      }
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('单格局部重绘失败'), 'error');
+    } finally {
+      activeSessionRef.current = null;
+      setInpaintingAiPage(false);
+      setAiGenerationStageText('');
+    }
+  }, [
+    confirmAction,
+    draft,
+    forceEmptySeed,
+    generatingAiPage,
+    generatingPanelId,
+    generationStreamPreview,
+    handleUpdateAiPage,
+    inpaintDraft,
+    inpaintingAiPage,
+    notify,
+    novelaiSubscription,
+  ]);
+
   // 核心：单格 V5 生图（走工坊统一 Key 池、Opus 守卫与后端单并发队列）
   const handleGeneratePanel = useCallback(async (panelId: string) => {
     const panel = draft.panels.find(p => p.id === panelId);
@@ -1185,6 +1425,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         onChangeMode={creationMode => {
           applyDraftChange(cur => ({ ...cur, creationMode }), true);
           setInspectorTab('panel');
+          setInpaintDraft(null);
         }}
         onSelectPaperPreset={handleSelectPaperPreset}
         onSetCustomPaperSize={handleSetCustomPaperSize}
@@ -1229,6 +1470,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
           <ComicCanvas
             draft={draft}
             aiZonePlan={aiZonePlan}
+            inpaintDraft={inpaintDraft}
             activeTool={activeTool}
             selection={selection}
             zoom={zoom}
@@ -1245,6 +1487,11 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             onToggleSnap={() => applyDraftChange(cur => ({ ...cur, snapEnabled: !cur.snapEnabled }), true)}
             onUpdatePanel={handleUpdatePanel}
             onMoveAiAnchor={handleMoveAiAnchor}
+            onChangeInpaintRect={rect => setInpaintDraft(cur => cur ? { ...cur, rect } : cur)}
+            onMoveInpaintAnchor={(anchorId, x, y) => setInpaintDraft(cur => cur ? {
+              ...cur,
+              anchors: cur.anchors.map(a => a.id === anchorId ? { ...a, x, y } : a),
+            } : cur)}
             onAddPanel={handleAddPanel}
             onSliceAtLine={handleSliceAtLine}
             onCommitStroke={(stroke: ComicStroke) => applyDraftChange(cur => ({ ...cur, strokes: [...cur.strokes, stroke] }), true)}
@@ -1291,12 +1538,15 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             <ComicInspector
               draft={draft}
               aiZonePlan={aiZonePlan}
+              inpaintDraft={inpaintDraft}
               activeTab={inspectorTab}
               selection={selection}
               chains={chains}
               generatingPanelId={generatingPanelId}
               planningAiStoryboard={planningAiStoryboard}
               generatingAiPage={generatingAiPage}
+              detectingBubbles={detectingBubbles}
+              inpaintingAiPage={inpaintingAiPage}
               aiGenerationStageText={aiGenerationStageText}
               generationStageText={describeStage(activeSession)}
               estimatedCost={estimatedCost}
@@ -1309,6 +1559,11 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
               onPlanAiStoryboard={() => void handlePlanAiStoryboard()}
               onInitAiFromTemplate={handleInitAiFromTemplate}
               onConvertBubbleAnchorsToVector={handleConvertBubbleAnchorsToVector}
+              onAutoDetectWhiteBubbles={() => void handleAutoDetectWhiteBubbles()}
+              onOpenInpaint={handleOpenInpaint}
+              onCloseInpaint={() => setInpaintDraft(null)}
+              onUpdateInpaintDraft={updater => setInpaintDraft(cur => cur ? updater(cur) : cur)}
+              onRunInpaint={() => void handleRunInpaint()}
               onGenerateAiPage={() => void handleGenerateAiPage()}
               onApplyStyleChain={handleApplyStyleChain}
               onUpdatePanel={handleUpdatePanel}
