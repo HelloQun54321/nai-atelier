@@ -41,13 +41,16 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
         <GenerationModeNav activeMode={activeMode} onSelect={onSelectMode} disabled={isGenerating} />
       </div>
       {isLaboratory && onOpenComic && (
-        <IconButton
-          label={t("漫画")}
+        <button
+          type="button"
+          aria-label={t("漫画")}
+          title={t("进入漫画创作模式")}
           onClick={onOpenComic}
-          className="ml-auto flex-none md:hidden"
+          className="mobile-touch ml-auto inline-flex h-8 flex-none items-center gap-1 rounded-lg border border-indigo-200/80 bg-indigo-50/70 px-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-800/70 dark:bg-indigo-950/50 dark:text-indigo-300 md:hidden"
         >
-          <LayoutGrid className="h-4 w-4" />
-        </IconButton>
+          <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
+          <span>{t("漫画")}</span>
+        </button>
       )}
     </div>
   );

@@ -40,13 +40,16 @@ describe('comicGeometry & free Opus resolution matching', () => {
     }
   });
 
-  it('slices a rectangular panel diagonally with gutter spacing', () => {
-    const rect = rectToPolygon(0.1, 0.1, 0.8, 0.8);
-    const result = slicePolygonByLine(rect, { x: 0.05, y: 0.35 }, { x: 0.95, y: 0.65 }, 0.02, 0.02);
+  it('slices a rectangular panel diagonally with gutter spacing and does not cut untouched panels', () => {
+    const rect = rectToPolygon(0.1, 0.1, 0.8, 0.3);
+    const untouchedBottom = rectToPolygon(0.1, 0.6, 0.8, 0.3);
+    const result = slicePolygonByLine(rect, { x: 0.5, y: 0.08 }, { x: 0.5, y: 0.42 }, 0.02, 0.02);
     expect(result).not.toBeNull();
     const [polyA, polyB] = result!;
     expect(polyA.length).toBeGreaterThanOrEqual(3);
     expect(polyB.length).toBeGreaterThanOrEqual(3);
+    // 线段只划过上方格，下方格绝不能被误切
+    expect(slicePolygonByLine(untouchedBottom, { x: 0.5, y: 0.08 }, { x: 0.5, y: 0.42 }, 0.02, 0.02)).toBeNull();
   });
 
   it('snaps points to page margins and sibling panel edges when enabled', () => {

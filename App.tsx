@@ -1352,13 +1352,13 @@ const App = () => {
           onOpenComic={() => void handleNavigate('comic')}
         /></PromptLibraryRequestEnabledContext.Provider>;
       case 'comic':
-        return <ComicStudio
+        return <PromptLibraryRequestEnabledContext.Provider value><ComicStudio
           chains={chains}
           notify={notify}
           forceEmptySeed={appearancePreferences.forceEmptySeed}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           onBack={() => void handleNavigate('playground')}
-        />;
+        /></PromptLibraryRequestEnabledContext.Provider>;
       default:
         return <div>Unknown View</div>;
     }

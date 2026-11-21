@@ -23,6 +23,7 @@ import {
   COMIC_PANEL_SOFT_MAX,
   COMIC_PAPER_PRESETS,
   getPanelBoundingBox,
+  rectToPolygon,
   slicePolygonByLine,
 } from '../../services/comic/comicGeometry';
 import { buildComicPanelGenerationInput } from '../../services/comic/comicPromptBuilder';
@@ -30,6 +31,7 @@ import { exportComicPageAndArchive } from '../../services/comic/comicExporter';
 import { loadComicDraft, saveComicDraft } from '../../services/comic/comicStorage';
 import type {
   ComicBubbleItem,
+  ComicBubbleShape,
   ComicLayerId,
   ComicPageDraft,
   ComicPanel,
@@ -43,7 +45,7 @@ import type {
 } from '../../services/comic/comicTypes';
 import { useConfirmDialog } from '../ConfirmDialog';
 import { ComicCanvas } from './ComicCanvas';
-import { ComicInspector } from './ComicInspector';
+import { ComicInspector, type ComicInspectorTab } from './ComicInspector';
 import { ComicToolbar } from './ComicToolbar';
 
 const MAX_UNDO_STACK = 50;
@@ -93,16 +95,32 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const [undoStack, setUndoStack] = useState<ComicPageDraft[]>([]);
   const [redoStack, setRedoStack] = useState<ComicPageDraft[]>([]);
   const [activeTool, setActiveTool] = useState<ComicTool>('select');
-  const [selection, setSelection] = useState<ComicSelection>(null);
+  const [selection, setSelection] = useState<ComicSelection>(() => {
+    const initial = loadComicDraft();
+    return initial.panels[0] ? { kind: 'panel', id: initial.panels[0].id } : null;
+  });
+  const [inspectorTab, setInspectorTab] = useState<ComicInspectorTab>('panel');
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [zoom, setZoom] = useState(0.62);
   const [exporting, setExporting] = useState(false);
 
-  // 画笔与贴纸默认参数
+  // 画笔、贴纸与气泡默认参数
   const [brushColor, setBrushColor] = useState('#111827');
   const [brushSize, setBrushSize] = useState(6);
   const [brushOpacity, setBrushOpacity] = useState(1);
   const [defaultStickerKind, setDefaultStickerKind] = useState<ComicStickerKind>('speedlines');
+  const [defaultBubbleShape, setDefaultBubbleShape] = useState<ComicBubbleShape>('oval');
+  const [defaultBubbleWritingMode, setDefaultBubbleWritingMode] = useState<'horizontal' | 'vertical'>('vertical');
+
+  const handleSelectWithTab = useCallback((next: ComicSelection) => {
+    setSelection(next);
+    if (!next) return;
+    if (next.kind === 'panel') {
+      setInspectorTab(cur => (cur === 'layers' ? 'panel' : cur));
+    } else {
+      setInspectorTab('layers');
+    }
+  }, []);
 
   // 单格生图状态
   const [generatingPanelId, setGeneratingPanelId] = useState<string | null>(null);
@@ -174,7 +192,31 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     });
   }, []);
 
-  // 键盘快捷键：Undo/Redo、Esc 切回选择、Delete 删除当前选中项
+  const handleDeletePanel = useCallback((panelId: string) => {
+    applyDraftChange(current => ({
+      ...current,
+      panels: current.panels.filter(p => p.id !== panelId),
+    }), true);
+    setSelection(cur => (cur?.kind === 'panel' && cur.id === panelId ? null : cur));
+  }, [applyDraftChange]);
+
+  const handleDeleteSelection = useCallback(() => {
+    if (!selection) return;
+    if (selection.kind === 'panel') {
+      handleDeletePanel(selection.id);
+    } else if (selection.kind === 'bubble') {
+      applyDraftChange(cur => ({ ...cur, bubbles: cur.bubbles.filter(b => b.id !== selection.id) }), true);
+      setSelection(null);
+    } else if (selection.kind === 'text') {
+      applyDraftChange(cur => ({ ...cur, texts: cur.texts.filter(item => item.id !== selection.id) }), true);
+      setSelection(null);
+    } else if (selection.kind === 'sticker') {
+      applyDraftChange(cur => ({ ...cur, stickers: cur.stickers.filter(item => item.id !== selection.id) }), true);
+      setSelection(null);
+    }
+  }, [applyDraftChange, handleDeletePanel, selection]);
+
+  // 键盘快捷键：Undo/Redo、Delete/Backspace 删除选中项、Esc 切回选择
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -191,6 +233,13 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         handleRedo();
         return;
       }
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        if (selection) {
+          event.preventDefault();
+          handleDeleteSelection();
+        }
+        return;
+      }
       if (event.key === 'Escape') {
         setActiveTool('select');
         setSelection(null);
@@ -198,7 +247,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleUndo, handleRedo]);
+  }, [handleUndo, handleRedo, handleDeleteSelection, selection]);
 
   const handleUpdatePanel = useCallback((panelId: string, updater: (panel: ComicPanel) => ComicPanel, commit = true) => {
     applyDraftChange(current => ({
@@ -285,13 +334,15 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     setSelection({ kind: 'panel', id: clone.id });
   }, [applyDraftChange, draft.panels, notify]);
 
-  const handleDeletePanel = useCallback((panelId: string) => {
+  const handleSetCustomPaperSize = useCallback((width: number, height: number) => {
     applyDraftChange(current => ({
       ...current,
-      panels: current.panels.filter(p => p.id !== panelId),
+      paperPresetId: 'custom',
+      width,
+      height,
     }), true);
-    setSelection(cur => (cur?.kind === 'panel' && cur.id === panelId ? null : cur));
-  }, [applyDraftChange]);
+    fitCanvasToViewport(width, height);
+  }, [applyDraftChange, fitCanvasToViewport]);
 
   const handleBringPanelOrder = useCallback((panelId: string, mode: 'front' | 'back') => {
     applyDraftChange(current => {
@@ -381,16 +432,16 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const handleAddBubbleAt = useCallback((pt: ComicPoint) => {
     const created: ComicBubbleItem = {
       id: createUuid(),
-      shape: 'oval',
+      shape: defaultBubbleShape,
       x: pt.x,
       y: pt.y,
       width: 0.28,
       height: 0.14,
-      hasTail: true,
+      hasTail: defaultBubbleShape !== 'caption',
       tailX: Math.min(0.95, pt.x + 0.08),
       tailY: Math.min(0.95, pt.y + 0.11),
       text: '输入台词…',
-      writingMode: 'vertical',
+      writingMode: defaultBubbleWritingMode,
       fontSize: 22,
       textColor: '#111827',
       fillColor: '#ffffff',
@@ -399,9 +450,9 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       rotation: 0,
     };
     applyDraftChange(cur => ({ ...cur, bubbles: [...cur.bubbles, created] }), true);
-    setSelection({ kind: 'bubble', id: created.id });
+    handleSelectWithTab({ kind: 'bubble', id: created.id });
     setActiveTool('select');
-  }, [applyDraftChange]);
+  }, [applyDraftChange, defaultBubbleShape, defaultBubbleWritingMode, handleSelectWithTab]);
 
   const handleAddTextAt = useCallback((pt: ComicPoint) => {
     const created: ComicTextItem = {
@@ -417,9 +468,9 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       bold: true,
     };
     applyDraftChange(cur => ({ ...cur, texts: [...cur.texts, created] }), true);
-    setSelection({ kind: 'text', id: created.id });
+    handleSelectWithTab({ kind: 'text', id: created.id });
     setActiveTool('select');
-  }, [applyDraftChange]);
+  }, [applyDraftChange, handleSelectWithTab]);
 
   const handleAddStickerAt = useCallback((pt: ComicPoint) => {
     const created: ComicStickerItem = {
@@ -434,14 +485,14 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       opacity: 1,
     };
     applyDraftChange(cur => ({ ...cur, stickers: [...cur.stickers, created] }), true);
-    setSelection({ kind: 'sticker', id: created.id });
+    handleSelectWithTab({ kind: 'sticker', id: created.id });
     setActiveTool('select');
-  }, [applyDraftChange, defaultStickerKind]);
+  }, [applyDraftChange, defaultStickerKind, handleSelectWithTab]);
 
-  // 估算当前选中格费用（用于界面展示）
-  const selectedPanelForCost = selection?.kind === 'panel'
+  // 估算当前活跃分镜格费用（用于底部生成栏展示）
+  const selectedPanelForCost = (selection?.kind === 'panel'
     ? draft.panels.find(p => p.id === selection.id)
-    : undefined;
+    : undefined) || draft.panels[0];
   const estimatedCost = useMemo(() => {
     if (!selectedPanelForCost) return 0;
     const compiled = buildComicPanelGenerationInput(draft, selectedPanelForCost);
@@ -613,31 +664,24 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     <div data-agent-view="comic" className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950">
       <ComicToolbar
         draft={draft}
-        activeTool={activeTool}
-        zoom={zoom}
         canUndo={undoStack.length > 0}
         canRedo={redoStack.length > 0}
         exporting={exporting}
         inspectorOpen={inspectorOpen}
-        onSelectTool={setActiveTool}
         onChangeTitle={title => applyDraftChange(cur => ({ ...cur, title }), false)}
         onChangeMode={creationMode => applyDraftChange(cur => ({ ...cur, creationMode }), true)}
         onSelectPaperPreset={handleSelectPaperPreset}
+        onSetCustomPaperSize={handleSetCustomPaperSize}
         onApplyTemplate={tplId => void handleApplyTemplate(tplId)}
-        onToggleSnap={() => applyDraftChange(cur => ({ ...cur, snapEnabled: !cur.snapEnabled }), true)}
+        onUpdatePageSettings={patch => applyDraftChange(cur => ({ ...cur, ...patch }), true)}
         onUndo={handleUndo}
         onRedo={handleRedo}
-        onZoomChange={setZoom}
-        onZoomFit={() => fitCanvasToViewport()}
-        onToggleLayerVisible={handleToggleLayerVisible}
-        onToggleLayerLocked={handleToggleLayerLocked}
-        onMoveLayerOrder={handleMoveLayerOrder}
         onToggleInspector={() => setInspectorOpen(open => !open)}
         onExport={() => void handleExport()}
         onBack={onBack}
       />
 
-      {/* 两栏主工作区：左侧大画布 + 右侧可收起属性与生图栏（手机端上下切换） */}
+      {/* 两栏主工作区：左侧悬浮工具坞+纯净大画布 + 右侧固定三标签创作工作台 */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
         <div ref={canvasWrapRef} className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ComicCanvas
@@ -648,9 +692,27 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             brushColor={brushColor}
             brushSize={brushSize}
             brushOpacity={brushOpacity}
+            defaultStickerKind={defaultStickerKind}
+            defaultBubbleShape={defaultBubbleShape}
+            defaultBubbleWritingMode={defaultBubbleWritingMode}
             generatingPanelId={generatingPanelId}
             livePreviewImage={activeSession?.preview?.image || null}
-            onSelect={setSelection}
+            onSelectTool={setActiveTool}
+            onChangeBrush={patch => {
+              if (patch.color !== undefined) setBrushColor(patch.color);
+              if (patch.size !== undefined) setBrushSize(patch.size);
+              if (patch.opacity !== undefined) setBrushOpacity(patch.opacity);
+            }}
+            onClearStrokes={() => applyDraftChange(cur => ({ ...cur, strokes: [] }), true)}
+            onChangeDefaultStickerKind={setDefaultStickerKind}
+            onChangeDefaultBubbleStyle={patch => {
+              if (patch.shape !== undefined) setDefaultBubbleShape(patch.shape);
+              if (patch.writingMode !== undefined) setDefaultBubbleWritingMode(patch.writingMode);
+            }}
+            onSelect={handleSelectWithTab}
+            onZoomChange={setZoom}
+            onZoomFit={() => fitCanvasToViewport()}
+            onToggleSnap={() => applyDraftChange(cur => ({ ...cur, snapEnabled: !cur.snapEnabled }), true)}
             onUpdatePanel={handleUpdatePanel}
             onAddPanel={handleAddPanel}
             onSliceAtLine={handleSliceAtLine}
@@ -662,6 +724,14 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
               ...cur,
               bubbles: cur.bubbles.map(b => b.id === id ? { ...b, x, y, tailX: b.tailX + (x - b.x), tailY: b.tailY + (y - b.y) } : b),
             }), commit)}
+            onResizeBubble={(id, width, height, commit = false) => applyDraftChange(cur => ({
+              ...cur,
+              bubbles: cur.bubbles.map(b => b.id === id ? { ...b, width, height } : b),
+            }), commit)}
+            onEditBubbleText={(id, text, commit = true) => applyDraftChange(cur => ({
+              ...cur,
+              bubbles: cur.bubbles.map(b => b.id === id ? { ...b, text } : b),
+            }), commit)}
             onMoveBubbleTail={(id, tailX, tailY, commit = false) => applyDraftChange(cur => ({
               ...cur,
               bubbles: cur.bubbles.map(b => b.id === id ? { ...b, tailX, tailY } : b),
@@ -670,34 +740,34 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
               ...cur,
               texts: cur.texts.map(item => item.id === id ? { ...item, x, y } : item),
             }), commit)}
+            onEditFreeText={(id, text, commit = true) => applyDraftChange(cur => ({
+              ...cur,
+              texts: cur.texts.map(item => item.id === id ? { ...item, text } : item),
+            }), commit)}
             onMoveSticker={(id, x, y, commit = false) => applyDraftChange(cur => ({
               ...cur,
               stickers: cur.stickers.map(item => item.id === id ? { ...item, x, y } : item),
+            }), commit)}
+            onResizeSticker={(id, width, height, commit = false) => applyDraftChange(cur => ({
+              ...cur,
+              stickers: cur.stickers.map(item => item.id === id ? { ...item, width, height } : item),
             }), commit)}
           />
         </div>
 
         {inspectorOpen && (
-          <div className="h-[46vh] w-full flex-none border-t border-gray-200 dark:border-gray-800 md:h-full md:w-[340px] md:border-t-0 lg:w-[370px]">
+          <div className="h-[46vh] w-full flex-none border-t border-gray-200 dark:border-gray-800 md:h-full md:w-[348px] md:border-t-0 lg:w-[380px]">
             <ComicInspector
               draft={draft}
-              activeTool={activeTool}
+              activeTab={inspectorTab}
               selection={selection}
               chains={chains}
-              brushColor={brushColor}
-              brushSize={brushSize}
-              brushOpacity={brushOpacity}
-              defaultStickerKind={defaultStickerKind}
               generatingPanelId={generatingPanelId}
               generationStageText={describeStage(activeSession)}
               estimatedCost={estimatedCost}
-              onChangeBrush={patch => {
-                if (patch.color !== undefined) setBrushColor(patch.color);
-                if (patch.size !== undefined) setBrushSize(patch.size);
-                if (patch.opacity !== undefined) setBrushOpacity(patch.opacity);
-              }}
-              onChangeDefaultStickerKind={setDefaultStickerKind}
-              onSelect={setSelection}
+              onSelectTab={setInspectorTab}
+              onSelect={handleSelectWithTab}
+              onQuickAddPanel={() => handleAddPanel(rectToPolygon(0.18, 0.22, 0.64, 0.32))}
               onUpdateDraft={applyDraftChange}
               onApplyStyleChain={handleApplyStyleChain}
               onUpdatePanel={handleUpdatePanel}
@@ -730,7 +800,9 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
                 applyDraftChange(cur => ({ ...cur, stickers: cur.stickers.filter(item => item.id !== id) }), true);
                 setSelection(null);
               }}
-              onClearStrokes={() => applyDraftChange(cur => ({ ...cur, strokes: [] }), true)}
+              onToggleLayerVisible={handleToggleLayerVisible}
+              onToggleLayerLocked={handleToggleLayerLocked}
+              onMoveLayerOrder={handleMoveLayerOrder}
             />
           </div>
         )}

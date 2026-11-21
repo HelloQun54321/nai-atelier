@@ -381,8 +381,48 @@ export const polygonArea = (points: ComicPoint[]): number => {
 };
 
 /**
+ * 判断线段 (a -> b) 是否与多边形相交（任一端点在内部或线段与多边形任一边相交）。
+ * 用于「两点一刀切分」只切分用户切线实际划过的画格，不误伤页面其他区域的无关分镜。
+ */
+const segmentsIntersect = (p1: ComicPoint, p2: ComicPoint, p3: ComicPoint, p4: ComicPoint): boolean => {
+  const cross = (o: ComicPoint, a: ComicPoint, b: ComicPoint) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const d1 = cross(p3, p4, p1);
+  const d2 = cross(p3, p4, p2);
+  const d3 = cross(p1, p2, p3);
+  const d4 = cross(p1, p2, p4);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+    return true;
+  }
+  const onSegment = (a: ComicPoint, b: ComicPoint, p: ComicPoint) =>
+    Math.min(a.x, b.x) - 1e-6 <= p.x && p.x <= Math.max(a.x, b.x) + 1e-6
+    && Math.min(a.y, b.y) - 1e-6 <= p.y && p.y <= Math.max(a.y, b.y) + 1e-6;
+  if (Math.abs(d1) < 1e-7 && onSegment(p3, p4, p1)) return true;
+  if (Math.abs(d2) < 1e-7 && onSegment(p3, p4, p2)) return true;
+  if (Math.abs(d3) < 1e-7 && onSegment(p1, p2, p3)) return true;
+  if (Math.abs(d4) < 1e-7 && onSegment(p1, p2, p4)) return true;
+  return false;
+};
+
+export const doesSegmentIntersectPolygon = (
+  start: ComicPoint,
+  end: ComicPoint,
+  polygon: ComicPoint[],
+): boolean => {
+  if (polygon.length < 3) return false;
+  if (pointInPolygon(start, polygon) || pointInPolygon(end, polygon)) return true;
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % polygon.length];
+    if (segmentsIntersect(start, end, a, b)) return true;
+  }
+  return false;
+};
+
+/**
  * 两点一刀切分多边形：沿 lineStart -> lineEnd 将凸多边形切为两块，
  * 并在切缝法线方向各退让半个 gutter 形成自然漫画留白间距。
+ * 仅当切线段实际划过该多边形时才执行切分。
  */
 export const slicePolygonByLine = (
   polygon: ComicPoint[],
@@ -395,6 +435,7 @@ export const slicePolygonByLine = (
   const dy = lineEnd.y - lineStart.y;
   const len = Math.hypot(dx, dy);
   if (len < 1e-4) return null;
+  if (!doesSegmentIntersectPolygon(lineStart, lineEnd, polygon)) return null;
 
   // 单位法线
   const nx = -dy / len;

@@ -1,15 +1,26 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
+  ArrowDown,
   ArrowDownToLine,
+  ArrowUp,
   ArrowUpToLine,
+  Check,
   Copy,
+  Eye,
+  EyeOff,
   Image as ImageIcon,
   Layers,
+  Lock,
+  MessageCircle,
+  Palette,
   Plus,
   RotateCcw,
+  Search,
   Sparkles,
-  Square,
+  Sticker,
   Trash2,
+  Type,
+  Unlock,
   UserPlus,
   Wand2,
   X,
@@ -35,13 +46,13 @@ import type {
   ComicBubbleShape,
   ComicColorMode,
   ComicDialogueMode,
+  ComicLayerId,
   ComicPageDraft,
   ComicPanel,
   ComicSelection,
   ComicStickerItem,
   ComicStickerKind,
   ComicTextItem,
-  ComicTool,
   ComicV5ModelId,
 } from '../../services/comic/comicTypes';
 import { createUuid } from '../../services/id';
@@ -49,21 +60,19 @@ import { InlineSpinner } from '../DesignSystem';
 import { HistoryImagePicker } from '../HistoryImagePicker';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 
+export type ComicInspectorTab = 'panel' | 'style' | 'layers';
+
 interface ComicInspectorProps {
   draft: ComicPageDraft;
-  activeTool: ComicTool;
+  activeTab: ComicInspectorTab;
   selection: ComicSelection;
   chains: PromptChain[];
-  brushColor: string;
-  brushSize: number;
-  brushOpacity: number;
-  defaultStickerKind: ComicStickerKind;
   generatingPanelId: string | null;
   generationStageText: string;
   estimatedCost: number;
-  onChangeBrush: (patch: { color?: string; size?: number; opacity?: number }) => void;
-  onChangeDefaultStickerKind: (kind: ComicStickerKind) => void;
+  onSelectTab: (tab: ComicInspectorTab) => void;
   onSelect: (selection: ComicSelection) => void;
+  onQuickAddPanel: () => void;
   onUpdateDraft: (updater: (current: ComicPageDraft) => ComicPageDraft, commit?: boolean) => void;
   onApplyStyleChain: (chain: PromptChain) => void;
   onUpdatePanel: (panelId: string, updater: (panel: ComicPanel) => ComicPanel, commit?: boolean) => void;
@@ -78,7 +87,9 @@ interface ComicInspectorProps {
   onDeleteText: (id: string) => void;
   onUpdateSticker: (id: string, updater: (item: ComicStickerItem) => ComicStickerItem, commit?: boolean) => void;
   onDeleteSticker: (id: string) => void;
-  onClearStrokes: () => void;
+  onToggleLayerVisible: (layerId: ComicLayerId) => void;
+  onToggleLayerLocked: (layerId: ComicLayerId) => void;
+  onMoveLayerOrder: (layerId: ComicLayerId, direction: 'up' | 'down') => void;
 }
 
 const ANCHOR_META: Record<ComicAnchorKind, { label: string; dotClass: string; badgeClass: string }> = {
@@ -100,27 +111,39 @@ const STICKER_KINDS: Array<{ id: ComicStickerKind; label: string }> = [
   { id: 'sweat', label: '汗滴' },
   { id: 'anger', label: '怒筋' },
   { id: 'sparkle', label: '星芒' },
-  { id: 'exclamation', label: '惊叹号 !' },
+  { id: 'exclamation', label: '惊叹 !' },
   { id: 'question', label: '问号 ?' },
   { id: 'shock', label: '震惊线' },
   { id: 'heart', label: '爱心' },
 ];
 
+const LAYER_LABELS: Record<ComicLayerId, string> = {
+  panels: '分镜画格',
+  drawing: '手绘涂鸦',
+  bubbles: '气泡与文字',
+  stickers: '效果贴纸',
+};
+
+const POSITIVE_LIBRARY_FIELD = { negative: false } as const;
+const NEGATIVE_LIBRARY_FIELD = { negative: true } as const;
+
+const shortModelLabel = (id: ComicV5ModelId): string => {
+  if (id === 'nai-diffusion-5-full-medium') return 'Medium (14步)';
+  if (id === 'nai-diffusion-5-curated') return 'Curated';
+  return 'High (23步)';
+};
+
 export const ComicInspector: React.FC<ComicInspectorProps> = ({
   draft,
-  activeTool,
+  activeTab,
   selection,
   chains,
-  brushColor,
-  brushSize,
-  brushOpacity,
-  defaultStickerKind,
   generatingPanelId,
   generationStageText,
   estimatedCost,
-  onChangeBrush,
-  onChangeDefaultStickerKind,
+  onSelectTab,
   onSelect,
+  onQuickAddPanel,
   onUpdateDraft,
   onApplyStyleChain,
   onUpdatePanel,
@@ -135,27 +158,61 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   onDeleteText,
   onUpdateSticker,
   onDeleteSticker,
-  onClearStrokes,
+  onToggleLayerVisible,
+  onToggleLayerLocked,
+  onMoveLayerOrder,
 }) => {
   useLanguage();
   const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
+  const [stylePickerOpen, setStylePickerOpen] = useState(false);
+  const [styleQuery, setStyleQuery] = useState('');
+  const [charQuery, setCharQuery] = useState('');
   const [selectedAnchorId, setSelectedAnchorId] = useState<string>('');
   const anchorStageRef = useRef<HTMLDivElement>(null);
   const draggingAnchorRef = useRef<string | null>(null);
 
-  const styleChains = useMemo(
-    () => chains.filter(item => item.type === 'style'),
-    [chains],
+  const styleChains = useMemo(() => {
+    const named = chains.filter(item =>
+      item.type === 'style'
+      && item.id !== 'playground'
+      && item.name.trim()
+      && item.name.trim() !== '生图实验室',
+    );
+    const q = styleQuery.trim().toLowerCase();
+    if (!q) return named.slice(0, 60);
+    return named.filter(item =>
+      item.name.toLowerCase().includes(q)
+      || item.basePrompt?.toLowerCase().includes(q)
+      || item.tags?.some(tag => tag.toLowerCase().includes(q)),
+    ).slice(0, 60);
+  }, [chains, styleQuery]);
+
+  const boundStyleChain = useMemo(
+    () => draft.styleChainId ? chains.find(item => item.id === draft.styleChainId) : undefined,
+    [chains, draft.styleChainId],
   );
-  const characterChains = useMemo(
-    () => chains.filter(item => item.type === 'character'),
+
+  const characterChains = useMemo(() => {
+    const chars = chains.filter(item => item.type === 'character');
+    const q = charQuery.trim().toLowerCase();
+    if (!q) return chars.slice(0, 60);
+    return chars.filter(item =>
+      item.name.toLowerCase().includes(q)
+      || item.basePrompt?.toLowerCase().includes(q),
+    ).slice(0, 60);
+  }, [chains, charQuery]);
+
+  const hasAnyCharacterChains = useMemo(
+    () => chains.some(item => item.type === 'character'),
     [chains],
   );
 
-  const selectedPanel = selection?.kind === 'panel'
+  // 分镜生图标签默认锚定当前选中的格，若当前未选格则自动显示第 1 格
+  const activePanel = (selection?.kind === 'panel'
     ? draft.panels.find(item => item.id === selection.id)
-    : undefined;
+    : undefined) || draft.panels[0];
+
   const selectedBubble = selection?.kind === 'bubble'
     ? draft.bubbles.find(item => item.id === selection.id)
     : undefined;
@@ -165,6 +222,9 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   const selectedSticker = selection?.kind === 'sticker'
     ? draft.stickers.find(item => item.id === selection.id)
     : undefined;
+
+  const orderedLayers = (['panels', 'drawing', 'bubbles', 'stickers'] as ComicLayerId[])
+    .sort((a, b) => (draft.layers[b]?.order ?? 0) - (draft.layers[a]?.order ?? 0));
 
   const addAnchorToPanel = (panel: ComicPanel, kind: ComicAnchorKind, seed?: { label?: string; prompt?: string; negativePrompt?: string; sourceCharacterId?: string }) => {
     if (panel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT) return;
@@ -186,8 +246,8 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   };
 
   const handleSelectHistoryImage = (item: LocalGenItem) => {
-    if (!selectedPanel) return;
-    onUpdatePanel(selectedPanel.id, current => ({
+    if (!activePanel) return;
+    onUpdatePanel(activePanel.id, current => ({
       ...current,
       image: {
         url: item.imageUrl,
@@ -202,872 +262,901 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
     setHistoryPickerOpen(false);
   };
 
-  // 手绘工具上下文面板
-  if ((activeTool === 'brush' || activeTool === 'eraser') && !selectedPanel && !selectedBubble && !selectedText && !selectedSticker) {
-    return (
-      <aside className="flex h-full w-full flex-col overflow-y-auto border-l border-gray-200 bg-white/95 p-3.5 dark:border-gray-800 dark:bg-gray-900/95">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">
-            {activeTool === 'brush' ? t('画笔设置') : t('橡皮擦设置')}
-          </h3>
-          {draft.strokes.length > 0 && (
+  const overlayCount = draft.bubbles.length + draft.texts.length + draft.stickers.length;
+
+  return (
+    <aside className="flex h-full w-full flex-col border-l border-gray-200 bg-white/95 dark:border-gray-800 dark:bg-gray-900/95">
+      {/* 顶部固定三标签导航：稳定不乱跳，随时掌控全页 */}
+      <div
+        role="tablist"
+        aria-label={t('漫画工作台分区')}
+        className="grid flex-none grid-cols-3 gap-1 border-b border-gray-200 bg-gray-50/70 p-1.5 dark:border-gray-800 dark:bg-gray-900/80"
+      >
+        {([
+          { id: 'panel', label: '分镜生图', icon: Wand2 },
+          { id: 'style', label: '画风设定', icon: Palette },
+          { id: 'layers', label: overlayCount > 0 ? `嵌字·图层 (${overlayCount})` : '嵌字·图层', icon: Layers },
+        ] as Array<{ id: ComicInspectorTab; label: string; icon: React.ElementType }>).map(tab => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onSelectTab(tab.id)}
+              className={`inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${active ? 'bg-white text-indigo-600 shadow-xs ring-1 ring-gray-200/80 dark:bg-gray-800 dark:text-indigo-300 dark:ring-gray-700' : 'text-gray-500 hover:bg-white/60 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/60 dark:hover:text-gray-200'}`}
+            >
+              <Icon className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
+              <span className="truncate">{t(tab.label)}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ==================== 标签 1：分镜生图（默认首页） ==================== */}
+      {activeTab === 'panel' && (
+        <>
+          {/* 顶部常驻分镜格快速切换胶囊条 */}
+          <div className="flex flex-none items-center gap-1 overflow-x-auto border-b border-gray-200/80 px-3 py-2 dark:border-gray-800/80">
+            {draft.panels.map((panel, index) => {
+              const isActive = activePanel?.id === panel.id;
+              const hasImg = Boolean(panel.image?.url);
+              return (
+                <button
+                  key={panel.id}
+                  type="button"
+                  aria-pressed={isActive}
+                  onClick={() => onSelect({ kind: 'panel', id: panel.id })}
+                  className={`inline-flex flex-none items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${isActive ? 'border-indigo-500 bg-indigo-600 text-white shadow-xs' : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 hover:bg-indigo-50/40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-indigo-500'}`}
+                >
+                  <span>{index + 1}</span>
+                  {hasImg && <Check className={`h-3 w-3 ${isActive ? 'text-emerald-200' : 'text-emerald-500'}`} />}
+                </button>
+              );
+            })}
             <button
               type="button"
-              onClick={onClearStrokes}
-              className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40"
+              aria-label={t('新增分镜格')}
+              title={t('新增分镜格')}
+              onClick={onQuickAddPanel}
+              className="inline-flex h-7 w-7 flex-none items-center justify-center rounded-full border border-dashed border-gray-300 text-gray-500 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-600 dark:text-gray-400 dark:hover:border-indigo-400 dark:hover:text-indigo-300"
             >
-              <Trash2 className="h-3 w-3" /> {t('清空手绘层')}
+              <Plus className="h-3.5 w-3.5" />
             </button>
-          )}
-        </div>
-        <div className="space-y-3 text-xs">
-          <div>
-            <div className="mb-1 flex justify-between text-gray-600 dark:text-gray-300">
-              <span>{t('笔刷粗细')}</span>
-              <span className="font-mono">{brushSize}px</span>
-            </div>
-            <input
-              type="range"
-              min={2}
-              max={64}
-              value={brushSize}
-              onChange={event => onChangeBrush({ size: Number(event.target.value) })}
-              className="w-full accent-indigo-600"
-            />
           </div>
-          {activeTool === 'brush' && (
-            <>
-              <div>
-                <div className="mb-1 flex justify-between text-gray-600 dark:text-gray-300">
-                  <span>{t('不透明度')}</span>
-                  <span className="font-mono">{Math.round(brushOpacity * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min={10}
-                  max={100}
-                  value={Math.round(brushOpacity * 100)}
-                  onChange={event => onChangeBrush({ opacity: Number(event.target.value) / 100 })}
-                  className="w-full accent-indigo-600"
-                />
+
+          {draft.creationMode === 'ai-page' && (
+            <div className="mx-3 mt-2.5 flex-none rounded-xl border border-indigo-200/80 bg-indigo-50/70 px-2.5 py-2 text-[11px] text-indigo-800 dark:border-indigo-800/80 dark:bg-indigo-950/40 dark:text-indigo-200">
+              <div className="flex items-center gap-1 font-bold">
+                <Sparkles className="h-3 w-3" /> {t('AI 整页编排将在第二期接入此处，当前可先逐格生成')}
               </div>
-              <div>
-                <span className="mb-1.5 block text-gray-600 dark:text-gray-300">{t('画笔颜色')}</span>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {['#111827', '#ffffff', '#ef4444', '#2563eb', '#f59e0b', '#10b981', '#ec4899'].map(color => (
-                    <button
-                      key={color}
-                      type="button"
-                      aria-label={color}
-                      onClick={() => onChangeBrush({ color })}
-                      style={{ backgroundColor: color }}
-                      className={`h-6 w-6 rounded-full border-2 ${brushColor === color ? 'border-indigo-500 ring-2 ring-indigo-300' : 'border-gray-300 dark:border-gray-600'}`}
+            </div>
+          )}
+
+          {activePanel ? (() => {
+            const resolution = getPanelTargetResolution(activePanel, draft.width, draft.height);
+            const bounds = getPanelBoundingBox(activePanel.points, draft.width, draft.height);
+            const panelRatio = Math.max(0.35, Math.min(2.8, bounds.width / Math.max(1, bounds.height)));
+            const guard = evaluateAnchorGuard(activePanel.anchors);
+            const isGeneratingThis = generatingPanelId === activePanel.id;
+            const anyGenerating = Boolean(generatingPanelId);
+            const selectedAnchor = activePanel.anchors.find(a => a.id === selectedAnchorId) || activePanel.anchors[0];
+
+            const moveAnchorFromPointer = (event: React.PointerEvent<HTMLDivElement>, anchorId: string) => {
+              const rect = anchorStageRef.current?.getBoundingClientRect();
+              if (!rect || !rect.width || !rect.height) return;
+              const nx = clampAnchorCoord((event.clientX - rect.left) / rect.width);
+              const ny = clampAnchorCoord((event.clientY - rect.top) / rect.height);
+              onUpdatePanel(activePanel.id, current => ({
+                ...current,
+                anchors: current.anchors.map(a => a.id === anchorId ? { ...a, x: nx, y: ny } : a),
+              }), false);
+            };
+
+            return (
+              <>
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3.5 pb-6 text-xs">
+                  {/* 当前格标题与快捷动作行 */}
+                  <div className="flex items-center justify-between gap-1">
+                    <input
+                      type="text"
+                      aria-label={t('分镜格名称')}
+                      value={activePanel.name}
+                      onChange={e => onUpdatePanel(activePanel.id, p => ({ ...p, name: e.target.value }), false)}
+                      onBlur={() => onUpdatePanel(activePanel.id, p => p, true)}
+                      className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-1.5 py-0.5 text-sm font-bold text-gray-800 outline-none hover:border-gray-200 focus:border-indigo-400 focus:bg-white dark:text-gray-100 dark:hover:border-gray-700 dark:focus:bg-gray-800"
                     />
-                  ))}
+                    <div className="flex flex-none items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setHistoryPickerOpen(true)}
+                        title={t('从生成历史选图填入')}
+                        className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                      >
+                        <ImageIcon className="h-3 w-3" /> {t('选图')}
+                      </button>
+                      <button type="button" title={t('置顶叠框')} aria-label={t('置顶叠框')} onClick={() => onBringPanelOrder(activePanel.id, 'front')} className="rounded p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><ArrowUpToLine className="h-3.5 w-3.5" /></button>
+                      <button type="button" title={t('置底')} aria-label={t('置底')} onClick={() => onBringPanelOrder(activePanel.id, 'back')} className="rounded p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><ArrowDownToLine className="h-3.5 w-3.5" /></button>
+                      <button type="button" title={t('复制分镜格')} aria-label={t('复制分镜格')} onClick={() => onDuplicatePanel(activePanel.id)} className="rounded p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><Copy className="h-3.5 w-3.5" /></button>
+                      <button type="button" title={t('删除分镜格')} aria-label={t('删除分镜格')} onClick={() => onDeletePanel(activePanel.id)} className="rounded p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  </div>
+
+                  {/* 单格画面提示词 */}
+                  <div className="space-y-2">
+                    <label className="block">
+                      <span className="mb-1 block font-semibold text-gray-700 dark:text-gray-200">{t('本格画面描述（输入 @ 可搜个人提示词库）')}</span>
+                      <TagAutocompleteTextarea
+                        rows={3}
+                        libraryField={POSITIVE_LIBRARY_FIELD}
+                        showTranslations={Boolean(activePanel.prompt.trim())}
+                        promptLibraryActions="save"
+                        value={activePanel.prompt}
+                        onValueChange={val => onUpdatePanel(activePanel.id, p => ({ ...p, prompt: val }), false)}
+                        placeholder={t('例如：close-up, rain outside classroom window, looking surprised...')}
+                        className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block font-semibold text-gray-600 dark:text-gray-300">{t('本格补充负面词（可选）')}</span>
+                      <TagAutocompleteTextarea
+                        rows={2}
+                        libraryField={NEGATIVE_LIBRARY_FIELD}
+                        showTranslations={Boolean(activePanel.negativePrompt.trim())}
+                        promptLibraryActions={false}
+                        value={activePanel.negativePrompt}
+                        onValueChange={val => onUpdatePanel(activePanel.id, p => ({ ...p, negativePrompt: val }), false)}
+                        placeholder={t('仅对当前格生效的额外排除项')}
+                        className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                      />
+                    </label>
+                  </div>
+
+                  {/* 单格四类空间锚点 */}
+                  <div className="space-y-2 rounded-xl border border-gray-200 bg-gray-50/70 p-2.5 dark:border-gray-700/80 dark:bg-gray-800/40">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-gray-800 dark:text-gray-100">{t('本格空间锚点')}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${guard.level === 'hard-exceeded' ? 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300' : guard.level === 'soft-warning' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'}`}>
+                        {guard.activeCount}/{COMIC_ANCHOR_SOFT_LIMIT}（上限 {COMIC_ANCHOR_HARD_LIMIT}）
+                      </span>
+                    </div>
+
+                    {guard.level === 'soft-warning' && (
+                      <p className="rounded-lg bg-amber-50 px-2 py-1 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                        {t('当前格锚点超过 12 个全精甜点区，人物可能自动缩为 Q 版以容纳所有元素。')}
+                      </p>
+                    )}
+                    {guard.level === 'hard-exceeded' && (
+                      <p className="rounded-lg bg-red-50 px-2 py-1 text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                        {t('单次生图硬上限为 24 个锚点，请停用或删除超出部分后再生成。')}
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        disabled={activePanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
+                        onClick={() => addAnchorToPanel(activePanel, 'character')}
+                        className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-40 dark:bg-blue-950/60 dark:text-blue-200 dark:hover:bg-blue-900/70"
+                      >
+                        <Plus className="h-3 w-3" /> {t('角色')}
+                      </button>
+                      {hasAnyCharacterChains && (
+                        <button
+                          type="button"
+                          disabled={activePanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
+                          onClick={() => setCharacterPickerOpen(open => !open)}
+                          className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-white px-2 py-1 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-50 disabled:opacity-40 dark:border-blue-800 dark:bg-gray-800 dark:text-blue-200 dark:hover:bg-blue-950/60"
+                        >
+                          <UserPlus className="h-3 w-3" /> {t('角色库')}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={activePanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
+                        onClick={() => addAnchorToPanel(activePanel, 'scene')}
+                        className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-40 dark:bg-emerald-950/60 dark:text-emerald-200 dark:hover:bg-emerald-900/70"
+                      >
+                        <Plus className="h-3 w-3" /> {t('空镜/道具')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={activePanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
+                        onClick={() => addAnchorToPanel(activePanel, 'bubble')}
+                        className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-40 dark:bg-amber-950/60 dark:text-amber-200 dark:hover:bg-amber-900/70"
+                      >
+                        <Plus className="h-3 w-3" /> {t('气泡点')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={activePanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
+                        onClick={() => addAnchorToPanel(activePanel, 'inset')}
+                        className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-1 text-[11px] font-semibold text-purple-700 transition hover:bg-purple-100 disabled:opacity-40 dark:bg-purple-950/60 dark:text-purple-200 dark:hover:bg-purple-900/70"
+                      >
+                        <Plus className="h-3 w-3" /> {t('特写叠框')}
+                      </button>
+                    </div>
+
+                    {characterPickerOpen && hasAnyCharacterChains && (
+                      <div className="space-y-1.5 rounded-lg border border-blue-200 bg-white p-1.5 dark:border-blue-800 dark:bg-gray-900">
+                        <div className="relative">
+                          <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="text"
+                            value={charQuery}
+                            onChange={e => setCharQuery(e.target.value)}
+                            placeholder={t('搜索角色库…')}
+                            className="w-full rounded border border-gray-200 bg-gray-50 py-1 pl-6 pr-2 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                          />
+                        </div>
+                        <div className="max-h-36 space-y-1 overflow-y-auto">
+                          {characterChains.map(char => (
+                            <button
+                              key={char.id}
+                              type="button"
+                              onClick={() => {
+                                addAnchorToPanel(activePanel, 'character', {
+                                  label: char.name,
+                                  prompt: [char.basePrompt, char.variableValues?.subject].filter(Boolean).join(', '),
+                                  negativePrompt: char.negativePrompt || '',
+                                  sourceCharacterId: char.id,
+                                });
+                                setCharacterPickerOpen(false);
+                                setCharQuery('');
+                              }}
+                              className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-[11px] hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                            >
+                              <span className="truncate font-medium text-gray-800 dark:text-gray-100">{char.name}</span>
+                              <span className="ml-2 flex-none text-blue-600 dark:text-blue-400">+ {t('加入')}</span>
+                            </button>
+                          ))}
+                          {!characterChains.length && (
+                            <div className="py-2 text-center text-[11px] text-gray-400">{t('没有匹配的角色')}</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {activePanel.anchors.length > 0 && (
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-center justify-between text-[11px] text-gray-500">
+                          <span>{t('可在此或主画布直接拖动圆点')}</span>
+                          <label className="inline-flex cursor-pointer items-center gap-1">
+                            <input
+                              type="checkbox"
+                              checked={activePanel.useCoords}
+                              onChange={e => onUpdatePanel(activePanel.id, p => ({ ...p, useCoords: e.target.checked }), true)}
+                              className="rounded accent-indigo-600"
+                            />
+                            <span>{t('启用坐标')}</span>
+                          </label>
+                        </div>
+                        <div className="flex justify-center">
+                          <div
+                            ref={anchorStageRef}
+                            style={{ width: Math.min(200, Math.round(120 * panelRatio)), aspectRatio: `${panelRatio}` }}
+                            onPointerMove={e => { if (draggingAnchorRef.current) moveAnchorFromPointer(e, draggingAnchorRef.current); }}
+                            onPointerUp={() => { if (draggingAnchorRef.current) { draggingAnchorRef.current = null; onUpdatePanel(activePanel.id, p => p, true); } }}
+                            onPointerCancel={() => { draggingAnchorRef.current = null; }}
+                            className="relative touch-none overflow-hidden rounded-lg border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-900"
+                          >
+                            {activePanel.image?.url && (
+                              <img src={activePanel.image.url} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-40" />
+                            )}
+                            {activePanel.anchors.map((anchor, idx) => (
+                              <button
+                                key={anchor.id}
+                                type="button"
+                                aria-label={t('定位锚点 {0}', [anchor.label])}
+                                onPointerDown={e => {
+                                  e.stopPropagation();
+                                  setSelectedAnchorId(anchor.id);
+                                  draggingAnchorRef.current = anchor.id;
+                                  anchorStageRef.current?.setPointerCapture?.(e.pointerId);
+                                }}
+                                style={{ left: `${anchor.x * 100}%`, top: `${anchor.y * 100}%` }}
+                                className={`absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full border-2 border-white text-[10px] font-bold text-white shadow ${ANCHOR_META[anchor.kind].dotClass} ${selectedAnchor?.id === anchor.id ? 'ring-2 ring-indigo-500' : ''} ${anchor.enabled ? '' : 'opacity-40'}`}
+                              >
+                                {idx + 1}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          {activePanel.anchors.map((anchor, idx) => (
+                            <div
+                              key={anchor.id}
+                              onClick={() => setSelectedAnchorId(anchor.id)}
+                              className={`rounded-lg border p-2 ${selectedAnchor?.id === anchor.id ? 'border-indigo-400 bg-white dark:border-indigo-500 dark:bg-gray-900' : 'border-gray-200 bg-white/70 dark:border-gray-700 dark:bg-gray-900/50'}`}
+                            >
+                              <div className="mb-1.5 flex items-center gap-1.5">
+                                <input
+                                  type="checkbox"
+                                  checked={anchor.enabled}
+                                  onChange={e => onUpdatePanel(activePanel.id, p => ({
+                                    ...p,
+                                    anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, enabled: e.target.checked } : a),
+                                  }), true)}
+                                  className="rounded accent-indigo-600"
+                                />
+                                <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${ANCHOR_META[anchor.kind].badgeClass}`}>
+                                  {idx + 1} · {t(ANCHOR_META[anchor.kind].label)}
+                                </span>
+                                <input
+                                  type="text"
+                                  value={anchor.label}
+                                  onChange={e => onUpdatePanel(activePanel.id, p => ({
+                                    ...p,
+                                    anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, label: e.target.value } : a),
+                                  }), false)}
+                                  className="min-w-0 flex-1 bg-transparent text-xs font-medium text-gray-800 outline-none dark:text-gray-100"
+                                />
+                                <span className="font-mono text-[10px] text-gray-400">({anchor.x.toFixed(2)}, {anchor.y.toFixed(2)})</span>
+                                <button
+                                  type="button"
+                                  aria-label={t('删除锚点')}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    onUpdatePanel(activePanel.id, p => ({
+                                      ...p,
+                                      anchors: p.anchors.filter(a => a.id !== anchor.id),
+                                    }), true);
+                                  }}
+                                  className="rounded p-0.5 text-gray-400 hover:text-red-500"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
+                              <textarea
+                                rows={2}
+                                value={anchor.prompt}
+                                onChange={e => onUpdatePanel(activePanel.id, p => ({
+                                  ...p,
+                                  anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, prompt: e.target.value } : a),
+                                }), false)}
+                                placeholder={anchor.kind === 'bubble' ? t('气泡补充说明（如 tail pointing right）') : t('输入该锚点的外观、动作、物件或景别提示词')}
+                                className="w-full rounded border border-gray-200 bg-gray-50/70 p-1.5 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                              />
+                              {anchor.kind === 'bubble' && (
+                                <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                                  <select
+                                    value={anchor.bubbleShape || 'oval'}
+                                    onChange={e => onUpdatePanel(activePanel.id, p => ({
+                                      ...p,
+                                      anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, bubbleShape: e.target.value as ComicBubbleShape } : a),
+                                    }), true)}
+                                    className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                                  >
+                                    {BUBBLE_SHAPES.map(shape => <option key={shape.id} value={shape.id}>{t(shape.label)}</option>)}
+                                  </select>
+                                  {draft.dialogueMode === 'ai-text' && (
+                                    <input
+                                      type="text"
+                                      value={anchor.bubbleText || ''}
+                                      onChange={e => onUpdatePanel(activePanel.id, p => ({
+                                        ...p,
+                                        anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, bubbleText: e.target.value } : a),
+                                      }), false)}
+                                      placeholder={t('短台词（2-6字）')}
+                                      className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                                    />
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 折叠低频的画格样式与图内构图微调，让首屏更干净 */}
+                  <details open={Boolean(activePanel.image?.url)} className="rounded-xl border border-gray-200 p-2.5 dark:border-gray-700">
+                    <summary className="cursor-pointer select-none font-semibold text-gray-700 dark:text-gray-200">
+                      {t('画格样式与图内构图微调')}
+                    </summary>
+                    <div className="mt-2.5 space-y-2.5">
+                      {activePanel.image?.url && (
+                        <div className="space-y-1.5 border-b border-gray-200 pb-2.5 dark:border-gray-700">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-gray-500">{t('格内缩放')} {Math.round((activePanel.image.scale || 1) * 100)}%（Alt+拖平移）</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => onUpdatePanel(activePanel.id, p => p.image ? ({ ...p, image: { ...p.image, offsetX: 0, offsetY: 0, scale: 1 } }) : p, true)}
+                                className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                              >
+                                <RotateCcw className="h-3 w-3" /> {t('重置')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onUpdatePanel(activePanel.id, p => ({ ...p, image: undefined }), true)}
+                                className="rounded px-1.5 py-0.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"
+                              >
+                                {t('清图')}
+                              </button>
+                            </div>
+                          </div>
+                          <input
+                            type="range"
+                            min={100}
+                            max={250}
+                            value={Math.round((activePanel.image.scale || 1) * 100)}
+                            onChange={e => onUpdatePanel(activePanel.id, p => p.image ? ({ ...p, image: { ...p.image, scale: Number(e.target.value) / 100 } }) : p, false)}
+                            className="w-full accent-indigo-600"
+                          />
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="block">
+                          <span className="mb-1 block text-gray-500">{t('旋转')} {activePanel.rotation}°</span>
+                          <input
+                            type="range"
+                            min={-45}
+                            max={45}
+                            value={activePanel.rotation}
+                            onChange={e => onUpdatePanel(activePanel.id, p => ({ ...p, rotation: Number(e.target.value) }), false)}
+                            className="w-full accent-indigo-600"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-gray-500">{t('边框')} {activePanel.borderWidth}px</span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={12}
+                            value={activePanel.borderWidth}
+                            onChange={e => onUpdatePanel(activePanel.id, p => ({ ...p, borderWidth: Number(e.target.value) }), false)}
+                            className="w-full accent-indigo-600"
+                          />
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-4 text-[11px] text-gray-600 dark:text-gray-300">
+                        <label className="flex items-center gap-1.5">
+                          <span>{t('边框色')}</span>
+                          <input
+                            type="color"
+                            aria-label={t('画格边框颜色')}
+                            value={activePanel.borderColor || '#111827'}
+                            onChange={e => onUpdatePanel(activePanel.id, p => ({ ...p, borderColor: e.target.value }), true)}
+                            className="h-5 w-7 cursor-pointer rounded border border-gray-300 bg-transparent"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1.5">
+                          <span>{t('底色')}</span>
+                          <input
+                            type="color"
+                            aria-label={t('画格背景底色')}
+                            value={activePanel.backgroundColor || '#f8fafc'}
+                            onChange={e => onUpdatePanel(activePanel.id, p => ({ ...p, backgroundColor: e.target.value }), true)}
+                            className="h-5 w-7 cursor-pointer rounded border border-gray-300 bg-transparent"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+
+                {/* 底部常驻「生成当前格」主操作栏 */}
+                <div className="flex-none border-t border-gray-200 bg-white/95 p-3 dark:border-gray-800 dark:bg-gray-900/95">
+                  <div className="mb-1.5 flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
+                    <span>{t('自动免费尺寸')}：{resolution.width} × {resolution.height}</span>
+                    <span>{formatGenerationCostLabel(estimatedCost, draft.v5Model)}</span>
+                  </div>
+                  {isGeneratingThis ? (
+                    <div className="flex items-center gap-2">
+                      <div className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-bold text-white">
+                        <InlineSpinner className="h-3.5 w-3.5 text-white" />
+                        <span className="truncate">{generationStageText || t('生成中…')}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onCancelGeneration}
+                        className="rounded-xl border border-red-300 bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
+                      >
+                        {t('停止')}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={anyGenerating || guard.level === 'hard-exceeded'}
+                      onClick={() => onGeneratePanel(activePanel.id)}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Wand2 className="h-4 w-4" />
+                      <span>{t('生成当前格')}</span>
+                      <span className="rounded-md bg-white/15 px-1.5 py-0.5 text-[11px] font-medium">
+                        {activePanel.name}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </>
+            );
+          })() : (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-xs text-gray-400">
+              <p>{t('当前页面还没有分镜格')}</p>
+              <button
+                type="button"
+                onClick={onQuickAddPanel}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 font-semibold text-white hover:bg-indigo-500"
+              >
+                + {t('新建分镜格')}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ==================== 标签 2：画风设定 ==================== */}
+      {activeTab === 'style' && (
+        <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-3.5 pb-6 text-xs">
+          {/* 优先放最高频的风格串载入与公共画风词 */}
+          <div className="space-y-1.5">
+            <span className="block font-semibold text-gray-700 dark:text-gray-200">{t('载入风格串画风')}</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                aria-label={t('选择风格串')}
+                aria-expanded={stylePickerOpen}
+                onClick={() => setStylePickerOpen(open => !open)}
+                className="flex min-w-0 flex-1 items-center justify-between rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-left text-xs text-gray-800 transition hover:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+              >
+                <span className="truncate">{boundStyleChain ? boundStyleChain.name : t('点击搜索并载入风格串…')}</span>
+                <Search className="ml-2 h-3.5 w-3.5 flex-none text-gray-400" />
+              </button>
+              {boundStyleChain && (
+                <button
+                  type="button"
+                  aria-label={t('解除风格串绑定')}
+                  onClick={() => onUpdateDraft(cur => ({ ...cur, styleChainId: undefined }), true)}
+                  className="flex h-8 w-8 flex-none items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            {stylePickerOpen && (
+              <div className="space-y-1.5 rounded-xl border border-indigo-200 bg-white p-2 shadow-sm dark:border-indigo-800 dark:bg-gray-900">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                   <input
-                    type="color"
-                    aria-label={t('自定义画笔颜色')}
-                    value={brushColor}
-                    onChange={event => onChangeBrush({ color: event.target.value })}
-                    className="h-6 w-8 cursor-pointer rounded border border-gray-300 bg-transparent"
+                    type="text"
+                    autoFocus
+                    aria-label={t('搜索风格串')}
+                    value={styleQuery}
+                    onChange={e => setStyleQuery(e.target.value)}
+                    placeholder={t('按名称、画师或标签筛选风格串…')}
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-7 pr-2 text-xs text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                   />
                 </div>
+                <div className="max-h-44 space-y-1 overflow-y-auto">
+                  {styleChains.map(chain => (
+                    <button
+                      key={chain.id}
+                      type="button"
+                      onClick={() => {
+                        onApplyStyleChain(chain);
+                        setStylePickerOpen(false);
+                        setStyleQuery('');
+                      }}
+                      className={`flex w-full flex-col rounded-lg px-2 py-1.5 text-left transition ${draft.styleChainId === chain.id ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+                    >
+                      <span className="truncate font-semibold text-gray-800 dark:text-gray-100">{chain.name}</span>
+                      {chain.basePrompt && <span className="truncate text-[10px] text-gray-400">{chain.basePrompt}</span>}
+                    </button>
+                  ))}
+                  {!styleChains.length && (
+                    <div className="py-3 text-center text-[11px] text-gray-400">{t('没有找到匹配的风格串')}</div>
+                  )}
+                </div>
               </div>
-            </>
-          )}
-          <p className="rounded-lg bg-gray-50 p-2.5 text-[11px] leading-relaxed text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">
-            {t('提示：手绘与橡皮仅作用于独立手绘层，不会破坏下方已生成的漫画分镜画面。')}
-          </p>
-        </div>
-      </aside>
-    );
-  }
-
-  // 贴纸工具预选面板
-  if (activeTool === 'sticker' && !selectedSticker) {
-    return (
-      <aside className="flex h-full w-full flex-col overflow-y-auto border-l border-gray-200 bg-white/95 p-3.5 dark:border-gray-800 dark:bg-gray-900/95">
-        <h3 className="mb-2 text-sm font-bold text-gray-800 dark:text-gray-100">{t('选择贴纸后在画布点击放置')}</h3>
-        <div className="grid grid-cols-2 gap-1.5">
-          {STICKER_KINDS.map(item => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onChangeDefaultStickerKind(item.id)}
-              className={`rounded-lg border px-2.5 py-2 text-xs font-medium transition ${defaultStickerKind === item.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}
-            >
-              {t(item.label)}
-            </button>
-          ))}
-        </div>
-      </aside>
-    );
-  }
-
-  // 选中气泡编辑
-  if (selectedBubble) {
-    return (
-      <aside className="flex h-full w-full flex-col overflow-y-auto border-l border-gray-200 bg-white/95 p-3.5 dark:border-gray-800 dark:bg-gray-900/95">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">{t('编辑对白气泡')}</h3>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              aria-label={t('删除气泡')}
-              onClick={() => onDeleteBubble(selectedBubble.id)}
-              className="rounded-lg p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-            <button type="button" aria-label={t('返回全页设置')} onClick={() => onSelect(null)} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
-              <X className="h-4 w-4" />
-            </button>
+            )}
           </div>
-        </div>
-        <div className="space-y-3 text-xs">
+
           <label className="block">
-            <span className="mb-1 block font-semibold text-gray-600 dark:text-gray-300">{t('台词内容')}</span>
-            <textarea
+            <span className="mb-1 block font-semibold text-gray-700 dark:text-gray-200">{t('全页公共画风提示词')}</span>
+            <TagAutocompleteTextarea
               rows={3}
-              value={selectedBubble.text}
-              onChange={event => onUpdateBubble(selectedBubble.id, item => ({ ...item, text: event.target.value }), false)}
-              onBlur={() => onUpdateBubble(selectedBubble.id, item => item, true)}
+              libraryField={POSITIVE_LIBRARY_FIELD}
+              showTranslations={Boolean(draft.globalBasePrompt.trim())}
+              promptLibraryActions="save"
+              value={draft.globalBasePrompt}
+              onValueChange={val => onUpdateDraft(cur => ({ ...cur, globalBasePrompt: val }), false)}
+              placeholder={t('输入画师串与全页统一画风，每格生图自动带上')}
               className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
             />
           </label>
-          <div>
-            <span className="mb-1 block font-semibold text-gray-600 dark:text-gray-300">{t('气泡形状')}</span>
-            <div className="grid grid-cols-2 gap-1.5">
-              {BUBBLE_SHAPES.map(shape => (
-                <button
-                  key={shape.id}
-                  type="button"
-                  onClick={() => onUpdateBubble(selectedBubble.id, item => ({ ...item, shape: shape.id }), true)}
-                  className={`rounded-lg border px-2 py-1.5 font-medium ${selectedBubble.shape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 text-gray-700 dark:border-gray-700 dark:text-gray-300'}`}
-                >
-                  {t(shape.label)}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => onUpdateBubble(selectedBubble.id, item => ({ ...item, writingMode: item.writingMode === 'vertical' ? 'horizontal' : 'vertical' }), true)}
-              className="rounded-lg border border-gray-200 px-2.5 py-1.5 font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-            >
-              {selectedBubble.writingMode === 'vertical' ? t('排版：竖排') : t('排版：横排')}
-            </button>
-            <button
-              type="button"
-              onClick={() => onUpdateBubble(selectedBubble.id, item => ({ ...item, hasTail: !item.hasTail }), true)}
-              className="rounded-lg border border-gray-200 px-2.5 py-1.5 font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-            >
-              {selectedBubble.hasTail ? t('指向尾巴：开') : t('指向尾巴：关')}
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="mb-1 block text-gray-500">{t('宽')} {Math.round(selectedBubble.width * 100)}%</span>
-              <input type="range" min={10} max={75} value={Math.round(selectedBubble.width * 100)} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, width: Number(e.target.value) / 100 }), false)} className="w-full accent-indigo-600" />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-gray-500">{t('高')} {Math.round(selectedBubble.height * 100)}%</span>
-              <input type="range" min={8} max={60} value={Math.round(selectedBubble.height * 100)} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, height: Number(e.target.value) / 100 }), false)} className="w-full accent-indigo-600" />
-            </label>
-          </div>
           <label className="block">
-            <span className="mb-1 block text-gray-500">{t('字号')} {selectedBubble.fontSize}px</span>
-            <input type="range" min={12} max={56} value={selectedBubble.fontSize} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, fontSize: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+            <span className="mb-1 block font-semibold text-gray-600 dark:text-gray-300">{t('全页公共负面词')}</span>
+            <TagAutocompleteTextarea
+              rows={2}
+              libraryField={NEGATIVE_LIBRARY_FIELD}
+              showTranslations={Boolean(draft.globalNegativePrompt.trim())}
+              promptLibraryActions={false}
+              value={draft.globalNegativePrompt}
+              onValueChange={val => onUpdateDraft(cur => ({ ...cur, globalNegativePrompt: val }), false)}
+              placeholder={t('全页公共排除词（自动过滤压制网点的冲突词）')}
+              className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+            />
           </label>
-          <p className="rounded-lg bg-gray-50 p-2 text-[11px] text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">
-            {t('提示：在画布上拖动气泡上的橙色圆点可直接调整尾巴指向说话人。')}
-          </p>
-        </div>
-      </aside>
-    );
-  }
 
-  // 选中自由文字编辑
-  if (selectedText) {
-    return (
-      <aside className="flex h-full w-full flex-col overflow-y-auto border-l border-gray-200 bg-white/95 p-3.5 dark:border-gray-800 dark:bg-gray-900/95">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">{t('编辑文字')}</h3>
-          <div className="flex items-center gap-1">
-            <button type="button" aria-label={t('删除文字')} onClick={() => onDeleteText(selectedText.id)} className="rounded-lg p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40">
-              <Trash2 className="h-4 w-4" />
-            </button>
-            <button type="button" aria-label={t('返回全页设置')} onClick={() => onSelect(null)} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-        <div className="space-y-3 text-xs">
-          <textarea
-            rows={3}
-            value={selectedText.text}
-            onChange={e => onUpdateText(selectedText.id, i => ({ ...i, text: e.target.value }), false)}
-            onBlur={() => onUpdateText(selectedText.id, i => i, true)}
-            className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => onUpdateText(selectedText.id, i => ({ ...i, writingMode: i.writingMode === 'vertical' ? 'horizontal' : 'vertical' }), true)}
-              className="rounded-lg border border-gray-200 px-2 py-1.5 font-medium dark:border-gray-700"
-            >
-              {selectedText.writingMode === 'vertical' ? t('竖排') : t('横排')}
-            </button>
-            <button
-              type="button"
-              onClick={() => onUpdateText(selectedText.id, i => ({ ...i, bold: !i.bold }), true)}
-              className="rounded-lg border border-gray-200 px-2 py-1.5 font-medium dark:border-gray-700"
-            >
-              {selectedText.bold ? t('粗体：开') : t('粗体：关')}
-            </button>
-          </div>
-          <label className="block">
-            <span className="mb-1 block text-gray-500">{t('字号')} {selectedText.fontSize}px</span>
-            <input type="range" min={14} max={96} value={selectedText.fontSize} onChange={e => onUpdateText(selectedText.id, i => ({ ...i, fontSize: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
-          </label>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5">
-              <span>{t('字色')}</span>
-              <input type="color" value={selectedText.color} onChange={e => onUpdateText(selectedText.id, i => ({ ...i, color: e.target.value }), true)} className="h-6 w-8 rounded border" />
-            </label>
-            <label className="flex items-center gap-1.5">
-              <span>{t('描边')}</span>
-              <input type="color" value={selectedText.strokeColor || '#ffffff'} onChange={e => onUpdateText(selectedText.id, i => ({ ...i, strokeColor: e.target.value }), true)} className="h-6 w-8 rounded border" />
-            </label>
-          </div>
-        </div>
-      </aside>
-    );
-  }
-
-  // 选中贴纸编辑
-  if (selectedSticker) {
-    return (
-      <aside className="flex h-full w-full flex-col overflow-y-auto border-l border-gray-200 bg-white/95 p-3.5 dark:border-gray-800 dark:bg-gray-900/95">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">{t('编辑贴纸')}</h3>
-          <div className="flex items-center gap-1">
-            <button type="button" aria-label={t('删除贴纸')} onClick={() => onDeleteSticker(selectedSticker.id)} className="rounded-lg p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40">
-              <Trash2 className="h-4 w-4" />
-            </button>
-            <button type="button" aria-label={t('返回全页设置')} onClick={() => onSelect(null)} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-        <div className="space-y-3 text-xs">
-          <div className="grid grid-cols-2 gap-1.5">
-            {STICKER_KINDS.map(item => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onUpdateSticker(selectedSticker.id, s => ({ ...s, kind: item.id }), true)}
-                className={`rounded-lg border px-2 py-1.5 font-medium ${selectedSticker.kind === item.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 dark:border-gray-700'}`}
-              >
-                {t(item.label)}
-              </button>
-            ))}
-          </div>
-          <label className="block">
-            <span className="mb-1 block text-gray-500">{t('尺寸')} {Math.round(selectedSticker.width * 100)}%</span>
-            <input type="range" min={6} max={90} value={Math.round(selectedSticker.width * 100)} onChange={e => { const v = Number(e.target.value) / 100; onUpdateSticker(selectedSticker.id, s => ({ ...s, width: v, height: v }), false); }} className="w-full accent-indigo-600" />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-gray-500">{t('旋转')} {selectedSticker.rotation}°</span>
-            <input type="range" min={-180} max={180} value={selectedSticker.rotation} onChange={e => onUpdateSticker(selectedSticker.id, s => ({ ...s, rotation: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
-          </label>
-          <label className="flex items-center gap-2">
-            <span>{t('颜色')}</span>
-            <input type="color" value={selectedSticker.color} onChange={e => onUpdateSticker(selectedSticker.id, s => ({ ...s, color: e.target.value }), true)} className="h-6 w-8 rounded border" />
-          </label>
-        </div>
-      </aside>
-    );
-  }
-
-  // 选中分镜格面板：单格生图与锚点精控
-  if (selectedPanel) {
-    const resolution = getPanelTargetResolution(selectedPanel, draft.width, draft.height);
-    const bounds = getPanelBoundingBox(selectedPanel.points, draft.width, draft.height);
-    const panelRatio = Math.max(0.35, Math.min(2.8, bounds.width / Math.max(1, bounds.height)));
-    const guard = evaluateAnchorGuard(selectedPanel.anchors);
-    const isGeneratingThis = generatingPanelId === selectedPanel.id;
-    const anyGenerating = Boolean(generatingPanelId);
-    const selectedAnchor = selectedPanel.anchors.find(a => a.id === selectedAnchorId) || selectedPanel.anchors[0];
-
-    const moveAnchorFromPointer = (event: React.PointerEvent<HTMLDivElement>, anchorId: string) => {
-      const rect = anchorStageRef.current?.getBoundingClientRect();
-      if (!rect || !rect.width || !rect.height) return;
-      const nx = clampAnchorCoord((event.clientX - rect.left) / rect.width);
-      const ny = clampAnchorCoord((event.clientY - rect.top) / rect.height);
-      onUpdatePanel(selectedPanel.id, current => ({
-        ...current,
-        anchors: current.anchors.map(a => a.id === anchorId ? { ...a, x: nx, y: ny } : a),
-      }), false);
-    };
-
-    return (
-      <aside className="flex h-full w-full flex-col border-l border-gray-200 bg-white/95 dark:border-gray-800 dark:bg-gray-900/95">
-        <div className="flex flex-none items-center justify-between gap-2 border-b border-gray-200 px-3.5 py-2.5 dark:border-gray-800">
-          <input
-            type="text"
-            aria-label={t('分镜格名称')}
-            value={selectedPanel.name}
-            onChange={e => onUpdatePanel(selectedPanel.id, p => ({ ...p, name: e.target.value }), false)}
-            onBlur={() => onUpdatePanel(selectedPanel.id, p => p, true)}
-            className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm font-bold text-gray-800 outline-none focus:border-indigo-400 focus:bg-white dark:text-gray-100 dark:focus:bg-gray-800"
-          />
-          <div className="flex flex-none items-center gap-0.5">
-            <button type="button" title={t('置顶叠框')} aria-label={t('置顶叠框')} onClick={() => onBringPanelOrder(selectedPanel.id, 'front')} className="rounded p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><ArrowUpToLine className="h-3.5 w-3.5" /></button>
-            <button type="button" title={t('置底')} aria-label={t('置底')} onClick={() => onBringPanelOrder(selectedPanel.id, 'back')} className="rounded p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><ArrowDownToLine className="h-3.5 w-3.5" /></button>
-            <button type="button" title={t('复制分镜格')} aria-label={t('复制分镜格')} onClick={() => onDuplicatePanel(selectedPanel.id)} className="rounded p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><Copy className="h-3.5 w-3.5" /></button>
-            <button type="button" title={t('删除分镜格')} aria-label={t('删除分镜格')} onClick={() => onDeletePanel(selectedPanel.id)} className="rounded p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"><Trash2 className="h-3.5 w-3.5" /></button>
-            <button type="button" title={t('返回全页设置')} aria-label={t('返回全页设置')} onClick={() => onSelect(null)} className="rounded p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><X className="h-3.5 w-3.5" /></button>
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3.5 text-xs">
-          {/* 自动匹配 Opus 免费分辨率提示 */}
-          <div className="flex items-center justify-between rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2 dark:border-indigo-900/50 dark:bg-indigo-950/30">
+          {/* 紧凑版 V5 模型 / 色彩 / 对白策略（不再占半屏） */}
+          <div className="space-y-2.5 rounded-xl border border-gray-200/80 bg-gray-50/60 p-2.5 dark:border-gray-800 dark:bg-gray-800/40">
             <div>
-              <div className="font-semibold text-indigo-800 dark:text-indigo-200">
-                {t('自动匹配分辨率')}：{resolution.width} × {resolution.height}
+              <span className="mb-1 block text-[11px] font-semibold text-gray-500 dark:text-gray-400">{t('V5 模型档位（独立于实验室）')}</span>
+              <div className="grid grid-cols-3 gap-1">
+                {COMIC_V5_MODELS.map(model => {
+                  const active = draft.v5Model === model.id;
+                  return (
+                    <button
+                      key={model.id}
+                      type="button"
+                      onClick={() => onUpdateDraft(cur => ({
+                        ...cur,
+                        v5Model: model.id as ComicV5ModelId,
+                        steps: model.id === 'nai-diffusion-5-full-medium' ? 14 : 23,
+                      }), true)}
+                      className={`rounded-lg border px-1.5 py-1.5 text-center text-[11px] font-semibold transition ${active ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}
+                    >
+                      {shortModelLabel(model.id)}
+                    </button>
+                  );
+                })}
               </div>
-              <div className="text-[11px] text-indigo-600/80 dark:text-indigo-300/80">
-                {COMIC_V5_MODELS.find(m => m.id === draft.v5Model)?.label} · {formatGenerationCostLabel(estimatedCost, draft.v5Model)}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setHistoryPickerOpen(true)}
-              className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-800 dark:text-indigo-300"
-            >
-              <ImageIcon className="h-3 w-3" /> {t('历史选图')}
-            </button>
-          </div>
-
-          {/* 单格正向 / 负面提示词（复用 @ 提示词库与 Tag 补全） */}
-          <div className="space-y-2">
-            <label className="block">
-              <span className="mb-1 block font-semibold text-gray-700 dark:text-gray-200">{t('本格画面描述（支持 @ 检索提示词库）')}</span>
-              <TagAutocompleteTextarea
-                rows={4}
-                value={selectedPanel.prompt}
-                onValueChange={val => onUpdatePanel(selectedPanel.id, p => ({ ...p, prompt: val }), false)}
-                placeholder={t('例如：close-up, rain outside classroom window, looking surprised, dramatic lighting...')}
-                className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block font-semibold text-gray-600 dark:text-gray-300">{t('本格补充负面词（可选）')}</span>
-              <TagAutocompleteTextarea
-                rows={2}
-                value={selectedPanel.negativePrompt}
-                onValueChange={val => onUpdatePanel(selectedPanel.id, p => ({ ...p, negativePrompt: val }), false)}
-                placeholder={t('仅对当前格生效的额外排除项')}
-                className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-              />
-            </label>
-          </div>
-
-          {/* 单格四类空间锚点 */}
-          <div className="space-y-2 rounded-xl border border-gray-200 bg-gray-50/70 p-2.5 dark:border-gray-700/80 dark:bg-gray-800/40">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-bold text-gray-800 dark:text-gray-100">{t('本格空间锚点')}</span>
-              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${guard.level === 'hard-exceeded' ? 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300' : guard.level === 'soft-warning' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'}`}>
-                {guard.activeCount}/{COMIC_ANCHOR_SOFT_LIMIT}（上限 {COMIC_ANCHOR_HARD_LIMIT}）
-              </span>
             </div>
 
-            {guard.level === 'soft-warning' && (
-              <p className="rounded-lg bg-amber-50 px-2 py-1 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                {t('当前格锚点超过 12 个全精甜点区，人物可能自动缩为 Q 版以容纳所有元素。')}
-              </p>
-            )}
-            {guard.level === 'hard-exceeded' && (
-              <p className="rounded-lg bg-red-50 px-2 py-1 text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                {t('单次生图硬上限为 24 个锚点，请停用或删除超出部分后再生成。')}
-              </p>
-            )}
-
-            <div className="flex flex-wrap gap-1">
-              <button
-                type="button"
-                disabled={selectedPanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
-                onClick={() => addAnchorToPanel(selectedPanel, 'character')}
-                className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-40 dark:bg-blue-950/50 dark:text-blue-300"
-              >
-                <Plus className="h-3 w-3" /> {t('角色')}
-              </button>
-              {characterChains.length > 0 && (
-                <button
-                  type="button"
-                  disabled={selectedPanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
-                  onClick={() => setCharacterPickerOpen(open => !open)}
-                  className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-white px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-40 dark:border-blue-800 dark:bg-gray-800 dark:text-blue-300"
-                >
-                  <UserPlus className="h-3 w-3" /> {t('角色库')}
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={selectedPanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
-                onClick={() => addAnchorToPanel(selectedPanel, 'scene')}
-                className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-40 dark:bg-emerald-950/50 dark:text-emerald-300"
-              >
-                <Plus className="h-3 w-3" /> {t('空镜/道具')}
-              </button>
-              <button
-                type="button"
-                disabled={selectedPanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
-                onClick={() => addAnchorToPanel(selectedPanel, 'bubble')}
-                className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-40 dark:bg-amber-950/50 dark:text-amber-300"
-              >
-                <Plus className="h-3 w-3" /> {t('气泡点')}
-              </button>
-              <button
-                type="button"
-                disabled={selectedPanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
-                onClick={() => addAnchorToPanel(selectedPanel, 'inset')}
-                className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-1 text-[11px] font-semibold text-purple-700 hover:bg-purple-100 disabled:opacity-40 dark:bg-purple-950/50 dark:text-purple-300"
-              >
-                <Plus className="h-3 w-3" /> {t('特写叠框')}
-              </button>
-            </div>
-
-            {characterPickerOpen && characterChains.length > 0 && (
-              <div className="max-h-36 space-y-1 overflow-y-auto rounded-lg border border-blue-200 bg-white p-1.5 dark:border-blue-800 dark:bg-gray-900">
-                {characterChains.map(char => (
+            <div>
+              <span className="mb-1 block text-[11px] font-semibold text-gray-500 dark:text-gray-400">{t('色彩模式')}</span>
+              <div className="grid grid-cols-2 gap-1.5">
+                {([
+                  { id: 'color', label: '全彩漫画' },
+                  { id: 'monochrome', label: '黑白网点漫' },
+                ] as Array<{ id: ComicColorMode; label: string }>).map(item => (
                   <button
-                    key={char.id}
+                    key={item.id}
                     type="button"
-                    onClick={() => {
-                      addAnchorToPanel(selectedPanel, 'character', {
-                        label: char.name,
-                        prompt: [char.basePrompt, char.variableValues?.subject].filter(Boolean).join(', '),
-                        negativePrompt: char.negativePrompt || '',
-                        sourceCharacterId: char.id,
-                      });
-                      setCharacterPickerOpen(false);
-                    }}
-                    className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-[11px] hover:bg-blue-50 dark:hover:bg-blue-950/40"
+                    onClick={() => onUpdateDraft(cur => ({ ...cur, colorMode: item.id }), true)}
+                    className={`rounded-lg border px-2 py-1.5 font-semibold transition ${draft.colorMode === item.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}
                   >
-                    <span className="truncate font-medium text-gray-800 dark:text-gray-100">{char.name}</span>
-                    <span className="ml-2 flex-none text-blue-600 dark:text-blue-400">+ {t('加入')}</span>
+                    {t(item.label)}
                   </button>
                 ))}
               </div>
-            )}
+              {draft.colorMode === 'monochrome' && (
+                <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                  {t('生图时会自动剥离发送副本中的彩色词并压制色相，绝不修改角色库原资料。')}
+                </p>
+              )}
+            </div>
 
-            {/* 单格迷你锚点拖拽画板 */}
-            {selectedPanel.anchors.length > 0 && (
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center justify-between text-[11px] text-gray-500">
-                  <span>{t('拖动圆点调整单格站位')}</span>
-                  <label className="inline-flex cursor-pointer items-center gap-1">
-                    <input
-                      type="checkbox"
-                      checked={selectedPanel.useCoords}
-                      onChange={e => onUpdatePanel(selectedPanel.id, p => ({ ...p, useCoords: e.target.checked }), true)}
-                      className="rounded accent-indigo-600"
-                    />
-                    <span>{t('启用坐标')}</span>
-                  </label>
-                </div>
-                <div className="flex justify-center">
-                  <div
-                    ref={anchorStageRef}
-                    style={{ width: Math.min(220, Math.round(130 * panelRatio)), aspectRatio: `${panelRatio}` }}
-                    onPointerMove={e => { if (draggingAnchorRef.current) moveAnchorFromPointer(e, draggingAnchorRef.current); }}
-                    onPointerUp={() => { if (draggingAnchorRef.current) { draggingAnchorRef.current = null; onUpdatePanel(selectedPanel.id, p => p, true); } }}
-                    onPointerCancel={() => { draggingAnchorRef.current = null; }}
-                    className="relative touch-none overflow-hidden rounded-lg border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-900"
-                  >
-                    {selectedPanel.image?.url && (
-                      <img src={selectedPanel.image.url} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-40" />
-                    )}
-                    {selectedPanel.anchors.map((anchor, idx) => (
-                      <button
-                        key={anchor.id}
-                        type="button"
-                        aria-label={t('定位锚点 {0}', [anchor.label])}
-                        onPointerDown={e => {
-                          e.stopPropagation();
-                          setSelectedAnchorId(anchor.id);
-                          draggingAnchorRef.current = anchor.id;
-                          anchorStageRef.current?.setPointerCapture?.(e.pointerId);
-                        }}
-                        style={{ left: `${anchor.x * 100}%`, top: `${anchor.y * 100}%` }}
-                        className={`absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full border-2 border-white text-[10px] font-bold text-white shadow ${ANCHOR_META[anchor.kind].dotClass} ${selectedAnchor?.id === anchor.id ? 'ring-2 ring-indigo-500' : ''} ${anchor.enabled ? '' : 'opacity-40'}`}
-                      >
-                        {idx + 1}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 锚点列表 */}
-                <div className="space-y-1.5">
-                  {selectedPanel.anchors.map((anchor, idx) => (
-                    <div
-                      key={anchor.id}
-                      onClick={() => setSelectedAnchorId(anchor.id)}
-                      className={`rounded-lg border p-2 ${selectedAnchor?.id === anchor.id ? 'border-indigo-400 bg-white dark:border-indigo-500 dark:bg-gray-900' : 'border-gray-200 bg-white/70 dark:border-gray-700 dark:bg-gray-900/50'}`}
-                    >
-                      <div className="mb-1.5 flex items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          checked={anchor.enabled}
-                          onChange={e => onUpdatePanel(selectedPanel.id, p => ({
-                            ...p,
-                            anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, enabled: e.target.checked } : a),
-                          }), true)}
-                          className="rounded accent-indigo-600"
-                        />
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${ANCHOR_META[anchor.kind].badgeClass}`}>
-                          {idx + 1} · {t(ANCHOR_META[anchor.kind].label)}
-                        </span>
-                        <input
-                          type="text"
-                          value={anchor.label}
-                          onChange={e => onUpdatePanel(selectedPanel.id, p => ({
-                            ...p,
-                            anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, label: e.target.value } : a),
-                          }), false)}
-                          className="min-w-0 flex-1 bg-transparent text-xs font-medium text-gray-800 outline-none dark:text-gray-100"
-                        />
-                        <span className="font-mono text-[10px] text-gray-400">({anchor.x.toFixed(2)}, {anchor.y.toFixed(2)})</span>
-                        <button
-                          type="button"
-                          aria-label={t('删除锚点')}
-                          onClick={e => {
-                            e.stopPropagation();
-                            onUpdatePanel(selectedPanel.id, p => ({
-                              ...p,
-                              anchors: p.anchors.filter(a => a.id !== anchor.id),
-                            }), true);
-                          }}
-                          className="rounded p-0.5 text-gray-400 hover:text-red-500"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                      <textarea
-                        rows={2}
-                        value={anchor.prompt}
-                        onChange={e => onUpdatePanel(selectedPanel.id, p => ({
-                          ...p,
-                          anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, prompt: e.target.value } : a),
-                        }), false)}
-                        placeholder={anchor.kind === 'bubble' ? t('气泡补充说明（如 tail pointing right）') : t('输入该锚点的外观、动作、物件或景别提示词')}
-                        className="w-full rounded border border-gray-200 bg-gray-50/70 p-1.5 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                      />
-                      {anchor.kind === 'bubble' && (
-                        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                          <select
-                            value={anchor.bubbleShape || 'oval'}
-                            onChange={e => onUpdatePanel(selectedPanel.id, p => ({
-                              ...p,
-                              anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, bubbleShape: e.target.value as ComicBubbleShape } : a),
-                            }), true)}
-                            className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                          >
-                            {BUBBLE_SHAPES.map(shape => <option key={shape.id} value={shape.id}>{t(shape.label)}</option>)}
-                          </select>
-                          {draft.dialogueMode === 'ai-text' && (
-                            <input
-                              type="text"
-                              value={anchor.bubbleText || ''}
-                              onChange={e => onUpdatePanel(selectedPanel.id, p => ({
-                                ...p,
-                                anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, bubbleText: e.target.value } : a),
-                              }), false)}
-                              placeholder={t('短台词（2-6字）')}
-                              className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                            />
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-semibold text-gray-500 dark:text-gray-400">{t('对白与气泡策略')}</span>
+              <select
+                value={draft.dialogueMode}
+                onChange={e => onUpdateDraft(cur => ({ ...cur, dialogueMode: e.target.value as ComicDialogueMode }), true)}
+                className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+              >
+                <option value="clean-vector">{t('无气泡纯画面 + 画布矢量气泡')}</option>
+                <option value="empty-bubble">{t('空白气泡直出 + 后期嵌字')}</option>
+                <option value="ai-text">{t('AI 锚点直出短字 / 拟声词')}</option>
+              </select>
+            </label>
           </div>
+        </div>
+      )}
 
-          {/* 构图微调（已填图时） */}
-          {selectedPanel.image?.url && (
-            <div className="space-y-2 rounded-xl border border-gray-200 p-2.5 dark:border-gray-700">
+      {/* ==================== 标签 3：嵌字与图层 ==================== */}
+      {activeTab === 'layers' && (
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3.5 pb-6 text-xs">
+          {/* 当前选中的气泡 / 文字 / 贴纸属性编辑 */}
+          {selectedBubble && (
+            <div className="space-y-2.5 rounded-xl border border-indigo-200/80 bg-indigo-50/30 p-3 dark:border-indigo-900/60 dark:bg-indigo-950/20">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-gray-700 dark:text-gray-200">{t('格内构图微调（Alt+拖拽可平移）')}</span>
-                <div className="flex items-center gap-1">
+                <span className="font-bold text-gray-800 dark:text-gray-100">{t('当前对白气泡')}</span>
+                <button type="button" aria-label={t('删除气泡')} onClick={() => onDeleteBubble(selectedBubble.id)} className="rounded p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <textarea
+                rows={2}
+                value={selectedBubble.text}
+                onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, text: e.target.value }), false)}
+                onBlur={() => onUpdateBubble(selectedBubble.id, i => i, true)}
+                className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              />
+              <div className="grid grid-cols-2 gap-1.5">
+                {BUBBLE_SHAPES.map(shape => (
                   <button
+                    key={shape.id}
                     type="button"
-                    onClick={() => onUpdatePanel(selectedPanel.id, p => p.image ? ({ ...p, image: { ...p.image, offsetX: 0, offsetY: 0, scale: 1 } }) : p, true)}
-                    className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, shape: shape.id }), true)}
+                    className={`rounded-lg border px-2 py-1 font-medium ${selectedBubble.shape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
                   >
-                    <RotateCcw className="h-3 w-3" /> {t('重置')}
+                    {t(shape.label)}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => onUpdatePanel(selectedPanel.id, p => ({ ...p, image: undefined }), true)}
-                    className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"
-                  >
-                    {t('清图')}
-                  </button>
-                </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, writingMode: i.writingMode === 'vertical' ? 'horizontal' : 'vertical' }), true)}
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-1 font-medium dark:border-gray-700 dark:bg-gray-800"
+                >
+                  {selectedBubble.writingMode === 'vertical' ? t('排版：竖排') : t('排版：横排')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, hasTail: !i.hasTail }), true)}
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-1 font-medium dark:border-gray-700 dark:bg-gray-800"
+                >
+                  {selectedBubble.hasTail ? t('指向尾巴：开') : t('指向尾巴：关')}
+                </button>
               </div>
               <label className="block">
-                <span className="mb-1 block text-gray-500">{t('缩放')} {Math.round((selectedPanel.image.scale || 1) * 100)}%</span>
-                <input
-                  type="range"
-                  min={100}
-                  max={250}
-                  value={Math.round((selectedPanel.image.scale || 1) * 100)}
-                  onChange={e => onUpdatePanel(selectedPanel.id, p => p.image ? ({ ...p, image: { ...p.image, scale: Number(e.target.value) / 100 } }) : p, false)}
-                  className="w-full accent-indigo-600"
-                />
+                <span className="mb-1 block text-gray-500">{t('字号')} {selectedBubble.fontSize}px</span>
+                <input type="range" min={12} max={56} value={selectedBubble.fontSize} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, fontSize: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
               </label>
             </div>
           )}
 
-          {/* 边框与旋转微调 */}
-          <div className="grid grid-cols-2 gap-2 rounded-xl border border-gray-200 p-2.5 dark:border-gray-700">
-            <label className="block">
-              <span className="mb-1 block text-gray-500">{t('旋转角度')} {selectedPanel.rotation}°</span>
-              <input
-                type="range"
-                min={-45}
-                max={45}
-                value={selectedPanel.rotation}
-                onChange={e => onUpdatePanel(selectedPanel.id, p => ({ ...p, rotation: Number(e.target.value) }), false)}
-                className="w-full accent-indigo-600"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-gray-500">{t('边框粗细')} {selectedPanel.borderWidth}px</span>
-              <input
-                type="range"
-                min={0}
-                max={12}
-                value={selectedPanel.borderWidth}
-                onChange={e => onUpdatePanel(selectedPanel.id, p => ({ ...p, borderWidth: Number(e.target.value) }), false)}
-                className="w-full accent-indigo-600"
-              />
-            </label>
-          </div>
-        </div>
-
-        {/* 底部固定生成操作栏 */}
-        <div className="flex-none border-t border-gray-200 bg-white/95 p-3 dark:border-gray-800 dark:bg-gray-900/95">
-          {isGeneratingThis ? (
-            <div className="flex items-center gap-2">
-              <div className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-bold text-white">
-                <InlineSpinner className="h-3.5 w-3.5 text-white" />
-                <span className="truncate">{generationStageText || t('生成中…')}</span>
+          {selectedText && (
+            <div className="space-y-2.5 rounded-xl border border-indigo-200/80 bg-indigo-50/30 p-3 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-800 dark:text-gray-100">{t('当前效果文字')}</span>
+                <button type="button" aria-label={t('删除文字')} onClick={() => onDeleteText(selectedText.id)} className="rounded p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={onCancelGeneration}
-                className="rounded-xl border border-red-300 bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
-              >
-                {t('停止')}
-              </button>
+              <textarea
+                rows={2}
+                value={selectedText.text}
+                onChange={e => onUpdateText(selectedText.id, i => ({ ...i, text: e.target.value }), false)}
+                onBlur={() => onUpdateText(selectedText.id, i => i, true)}
+                className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              />
+              <div className="grid grid-cols-2 gap-1.5">
+                <button type="button" onClick={() => onUpdateText(selectedText.id, i => ({ ...i, writingMode: i.writingMode === 'vertical' ? 'horizontal' : 'vertical' }), true)} className="rounded-lg border border-gray-200 bg-white px-2 py-1 font-medium dark:border-gray-700 dark:bg-gray-800">
+                  {selectedText.writingMode === 'vertical' ? t('竖排') : t('横排')}
+                </button>
+                <button type="button" onClick={() => onUpdateText(selectedText.id, i => ({ ...i, bold: !i.bold }), true)} className="rounded-lg border border-gray-200 bg-white px-2 py-1 font-medium dark:border-gray-700 dark:bg-gray-800">
+                  {selectedText.bold ? t('粗体：开') : t('粗体：关')}
+                </button>
+              </div>
+              <label className="block">
+                <span className="mb-1 block text-gray-500">{t('字号')} {selectedText.fontSize}px</span>
+                <input type="range" min={14} max={96} value={selectedText.fontSize} onChange={e => onUpdateText(selectedText.id, i => ({ ...i, fontSize: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+              </label>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-1.5"><span>{t('字色')}</span><input type="color" value={selectedText.color} onChange={e => onUpdateText(selectedText.id, i => ({ ...i, color: e.target.value }), true)} className="h-5 w-7 rounded border" /></label>
+                <label className="flex items-center gap-1.5"><span>{t('描边')}</span><input type="color" value={selectedText.strokeColor || '#ffffff'} onChange={e => onUpdateText(selectedText.id, i => ({ ...i, strokeColor: e.target.value }), true)} className="h-5 w-7 rounded border" /></label>
+              </div>
             </div>
-          ) : (
-            <button
-              type="button"
-              disabled={anyGenerating || guard.level === 'hard-exceeded'}
-              onClick={() => onGeneratePanel(selectedPanel.id)}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Wand2 className="h-4 w-4" />
-              <span>{t('生成当前格')}</span>
-              <span className="rounded-md bg-white/15 px-1.5 py-0.5 text-[11px] font-medium">
-                {resolution.width}×{resolution.height}
-              </span>
-            </button>
           )}
-        </div>
 
-        <HistoryImagePicker
-          open={historyPickerOpen}
-          allowImportParams={false}
-          onClose={() => setHistoryPickerOpen(false)}
-          onSelect={item => handleSelectHistoryImage(item)}
-        />
-      </aside>
-    );
-  }
+          {selectedSticker && (
+            <div className="space-y-2.5 rounded-xl border border-indigo-200/80 bg-indigo-50/30 p-3 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-800 dark:text-gray-100">{t('当前贴纸')}</span>
+                <button type="button" aria-label={t('删除贴纸')} onClick={() => onDeleteSticker(selectedSticker.id)} className="rounded p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                {STICKER_KINDS.map(item => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onUpdateSticker(selectedSticker.id, s => ({ ...s, kind: item.id }), true)}
+                    className={`rounded-lg border px-2 py-1 font-medium ${selectedSticker.kind === item.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'}`}
+                  >
+                    {t(item.label)}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="mb-1 block text-gray-500">{t('尺寸')} {Math.round(selectedSticker.width * 100)}%</span>
+                  <input type="range" min={6} max={90} value={Math.round(selectedSticker.width * 100)} onChange={e => { const v = Number(e.target.value) / 100; onUpdateSticker(selectedSticker.id, s => ({ ...s, width: v, height: v }), false); }} className="w-full accent-indigo-600" />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-gray-500">{t('旋转')} {selectedSticker.rotation}°</span>
+                  <input type="range" min={-180} max={180} value={selectedSticker.rotation} onChange={e => onUpdateSticker(selectedSticker.id, s => ({ ...s, rotation: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+                </label>
+              </div>
+              <label className="flex items-center gap-2">
+                <span>{t('颜色')}</span>
+                <input type="color" value={selectedSticker.color} onChange={e => onUpdateSticker(selectedSticker.id, s => ({ ...s, color: e.target.value }), true)} className="h-5 w-7 rounded border" />
+              </label>
+            </div>
+          )}
 
-  // 默认：全页画风与 V5 统一配置面板
-  return (
-    <aside className="flex h-full w-full flex-col overflow-y-auto border-l border-gray-200 bg-white/95 p-3.5 dark:border-gray-800 dark:bg-gray-900/95">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">{t('全页画风与 V5 设置')}</h3>
-        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
-          {draft.panels.length} {t('格')}
-        </span>
-      </div>
-
-      {draft.creationMode === 'ai-page' && (
-        <div className="mb-3 rounded-xl border border-indigo-200 bg-indigo-50/70 p-2.5 text-xs text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200">
-          <div className="mb-1 flex items-center gap-1.5 font-bold">
-            <Sparkles className="h-3.5 w-3.5" /> {t('AI 整页锚点一图成型（第二期即将上线）')}
+          {/* 本页气泡 / 文字 / 贴纸大纲列表 */}
+          <div className="space-y-1.5">
+            <div className="font-bold text-gray-700 dark:text-gray-200">{t('页面嵌字与贴纸')}</div>
+            {overlayCount === 0 ? (
+              <p className="rounded-lg border border-dashed border-gray-200 p-3 text-center text-[11px] text-gray-400 dark:border-gray-700">
+                {t('使用画布左侧工具坞添加气泡、文字或贴纸后，将在此集中管理')}
+              </p>
+            ) : (
+              <div className="max-h-44 space-y-1 overflow-y-auto">
+                {draft.bubbles.map(b => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => onSelect({ kind: 'bubble', id: b.id })}
+                    className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left ${selection?.kind === 'bubble' && selection.id === b.id ? 'border-indigo-400 bg-indigo-50/60 dark:border-indigo-500 dark:bg-indigo-950/40' : 'border-gray-200/80 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800/70'}`}
+                  >
+                    <MessageCircle className="h-3.5 w-3.5 flex-none text-amber-500" />
+                    <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-100">{b.text || t('空白气泡')}</span>
+                  </button>
+                ))}
+                {draft.texts.map(item => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onSelect({ kind: 'text', id: item.id })}
+                    className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left ${selection?.kind === 'text' && selection.id === item.id ? 'border-indigo-400 bg-indigo-50/60 dark:border-indigo-500 dark:bg-indigo-950/40' : 'border-gray-200/80 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800/70'}`}
+                  >
+                    <Type className="h-3.5 w-3.5 flex-none text-indigo-500" />
+                    <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-100">{item.text}</span>
+                  </button>
+                ))}
+                {draft.stickers.map(st => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    onClick={() => onSelect({ kind: 'sticker', id: st.id })}
+                    className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left ${selection?.kind === 'sticker' && selection.id === st.id ? 'border-indigo-400 bg-indigo-50/60 dark:border-indigo-500 dark:bg-indigo-950/40' : 'border-gray-200/80 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800/70'}`}
+                  >
+                    <Sticker className="h-3.5 w-3.5 flex-none text-purple-500" />
+                    <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-100">
+                      {t(STICKER_KINDS.find(k => k.id === st.kind)?.label || st.kind)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          <p className="text-[11px] leading-relaxed opacity-90">
-            {t('当前第一期已完整打通分镜画布、自由切格与手动逐格 V5 生图。点击画布任意分镜格即可立刻设词生图，第二期将在此接入 AI 编排整页剧本与四类可视化锚点。')}
-          </p>
+
+          {/* 常驻 4 大图层管理 */}
+          <div className="space-y-1.5 border-t border-gray-200 pt-3 dark:border-gray-800">
+            <div className="font-bold text-gray-700 dark:text-gray-200">{t('图层顺序（上层优先显示）')}</div>
+            <div className="space-y-1.5">
+              {orderedLayers.map((layerId, index) => {
+                const layer = draft.layers[layerId];
+                return (
+                  <div
+                    key={layerId}
+                    className="flex items-center justify-between gap-1 rounded-lg border border-gray-200/80 bg-gray-50/80 px-2.5 py-1.5 dark:border-gray-700 dark:bg-gray-800/80"
+                  >
+                    <span className={`min-w-0 flex-1 truncate font-medium ${layer.visible ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 line-through'}`}>
+                      {t(LAYER_LABELS[layerId])}
+                    </span>
+                    <div className="flex items-center gap-0.5">
+                      <button type="button" aria-label={t('上移图层')} disabled={index === 0} onClick={() => onMoveLayerOrder(layerId, 'up')} className="rounded p-1 text-gray-500 hover:bg-gray-200 disabled:opacity-30 dark:hover:bg-gray-700"><ArrowUp className="h-3 w-3" /></button>
+                      <button type="button" aria-label={t('下移图层')} disabled={index === orderedLayers.length - 1} onClick={() => onMoveLayerOrder(layerId, 'down')} className="rounded p-1 text-gray-500 hover:bg-gray-200 disabled:opacity-30 dark:hover:bg-gray-700"><ArrowDown className="h-3 w-3" /></button>
+                      <button type="button" aria-label={layer.locked ? t('解锁图层') : t('锁定图层')} onClick={() => onToggleLayerLocked(layerId)} className={`rounded p-1 ${layer.locked ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>{layer.locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}</button>
+                      <button type="button" aria-label={layer.visible ? t('隐藏图层') : t('显示图层')} onClick={() => onToggleLayerVisible(layerId)} className={`rounded p-1 ${layer.visible ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>{layer.visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
-      <div className="space-y-3.5 text-xs">
-        {/* V5 模型档位 */}
-        <div>
-          <span className="mb-1.5 block font-semibold text-gray-700 dark:text-gray-200">{t('NovelAI V5 模型（仅漫画模式独立生效）')}</span>
-          <div className="grid grid-cols-1 gap-1.5">
-            {COMIC_V5_MODELS.map(model => {
-              const active = draft.v5Model === model.id;
-              return (
-                <button
-                  key={model.id}
-                  type="button"
-                  onClick={() => onUpdateDraft(cur => ({
-                    ...cur,
-                    v5Model: model.id as ComicV5ModelId,
-                    steps: model.id === 'nai-diffusion-5-full-medium' ? 14 : 23,
-                  }), true)}
-                  className={`flex items-center justify-between rounded-lg border px-2.5 py-2 text-left transition ${active ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}
-                >
-                  <span className="font-semibold">{model.label}</span>
-                  <span className="text-[11px] opacity-75">{t(model.badge)}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* 色彩模式：全彩 / 黑白网点漫 */}
-        <div>
-          <span className="mb-1.5 block font-semibold text-gray-700 dark:text-gray-200">{t('漫画色彩模式')}</span>
-          <div className="grid grid-cols-2 gap-1.5">
-            {([
-              { id: 'color', label: '全彩漫画' },
-              { id: 'monochrome', label: '黑白网点漫' },
-            ] as Array<{ id: ComicColorMode; label: string }>).map(item => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onUpdateDraft(cur => ({ ...cur, colorMode: item.id }), true)}
-                className={`rounded-lg border px-2.5 py-1.5 font-semibold transition ${draft.colorMode === item.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}
-              >
-                {t(item.label)}
-              </button>
-            ))}
-          </div>
-          {draft.colorMode === 'monochrome' && (
-            <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-              {t('生图时会自动剥离发送副本中的彩色词并压制色相，绝不修改角色库原资料。')}
-            </p>
-          )}
-        </div>
-
-        {/* 三选一对白文字策略 */}
-        <div>
-          <span className="mb-1.5 block font-semibold text-gray-700 dark:text-gray-200">{t('对白与气泡策略')}</span>
-          <div className="space-y-1">
-            {([
-              { id: 'clean-vector', label: '无气泡纯画面 + 画布矢量气泡', desc: '画面零杂字，气泡用画布工具自由排版' },
-              { id: 'empty-bubble', label: '空白气泡直出 + 后期嵌字', desc: 'AI 画纯白空气泡，出图后再填字' },
-              { id: 'ai-text', label: 'AI 锚点直出短字 / 拟声词', desc: '通过气泡锚点把短台词融入画风绘出' },
-            ] as Array<{ id: ComicDialogueMode; label: string; desc: string }>).map(mode => (
-              <button
-                key={mode.id}
-                type="button"
-                onClick={() => onUpdateDraft(cur => ({ ...cur, dialogueMode: mode.id }), true)}
-                className={`flex w-full flex-col rounded-lg border px-2.5 py-1.5 text-left transition ${draft.dialogueMode === mode.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}
-              >
-                <span className="font-semibold">{t(mode.label)}</span>
-                <span className="text-[11px] opacity-75">{t(mode.desc)}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 引用工坊风格串 */}
-        <div>
-          <span className="mb-1.5 block font-semibold text-gray-700 dark:text-gray-200">{t('载入风格串画风')}</span>
-          <select
-            aria-label={t('选择风格串')}
-            value={draft.styleChainId || ''}
-            onChange={event => {
-              const found = styleChains.find(c => c.id === event.target.value);
-              if (found) onApplyStyleChain(found);
-              else onUpdateDraft(cur => ({ ...cur, styleChainId: undefined }), true);
-            }}
-            className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-          >
-            <option value="">{t('不绑定风格串（手动填写全局画风）')}</option>
-            {styleChains.map(chain => (
-              <option key={chain.id} value={chain.id}>{chain.name}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* 全局画风正负面词 */}
-        <label className="block">
-          <span className="mb-1 block font-semibold text-gray-700 dark:text-gray-200">{t('全页公共画风提示词')}</span>
-          <TagAutocompleteTextarea
-            rows={3}
-            value={draft.globalBasePrompt}
-            onValueChange={val => onUpdateDraft(cur => ({ ...cur, globalBasePrompt: val }), false)}
-            placeholder={t('输入画师串与全页统一画风，每格生图自动带上')}
-            className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1 block font-semibold text-gray-600 dark:text-gray-300">{t('全页公共负面词')}</span>
-          <TagAutocompleteTextarea
-            rows={2}
-            value={draft.globalNegativePrompt}
-            onValueChange={val => onUpdateDraft(cur => ({ ...cur, globalNegativePrompt: val }), false)}
-            placeholder={t('全页公共排除词（自动过滤压制网点的冲突词）')}
-            className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-          />
-        </label>
-
-        {/* 分镜格快速列表（方便点选与手机端操作） */}
-        <div className="border-t border-gray-200 pt-3 dark:border-gray-800">
-          <div className="mb-1.5 flex items-center gap-1.5 font-semibold text-gray-700 dark:text-gray-200">
-            <Layers className="h-3.5 w-3.5 text-indigo-500" />
-            {t('分镜格列表（点击选中单格生图）')}
-          </div>
-          <div className="space-y-1">
-            {draft.panels.map(panel => (
-              <button
-                key={panel.id}
-                type="button"
-                onClick={() => onSelect({ kind: 'panel', id: panel.id })}
-                className="flex w-full items-center justify-between rounded-lg border border-gray-200/80 bg-gray-50/70 px-2.5 py-1.5 text-left transition hover:border-indigo-400 hover:bg-indigo-50/40 dark:border-gray-700 dark:bg-gray-800/70"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <Square className="h-3.5 w-3.5 flex-none text-indigo-500" />
-                  <span className="truncate font-medium text-gray-800 dark:text-gray-100">{panel.name}</span>
-                </div>
-                <span className={`ml-2 flex-none text-[11px] ${panel.image?.url ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`}>
-                  {panel.image?.url ? t('已成图') : t('待生图')}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+      <HistoryImagePicker
+        open={historyPickerOpen}
+        allowImportParams={false}
+        onClose={() => setHistoryPickerOpen(false)}
+        onSelect={item => handleSelectHistoryImage(item)}
+      />
     </aside>
   );
 };
