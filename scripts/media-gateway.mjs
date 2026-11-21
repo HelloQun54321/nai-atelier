@@ -65,6 +65,8 @@ const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
 // 官方独立放大器：线性 2×（像素面积 4×），不走扩散重绘，只接受 V5 系列模型，倍率由接口固定。
 const NAI_UPSCALE_URL = 'https://image.novelai.net/ai/upscale';
 const NAI_UPSCALE_MODEL = 'nai-diffusion-5-full';
+// 拼车等成员网关按官方网页默认校验 nai-diffusion-5-curated，拒收 5-full。
+const NAI_GATEWAY_UPSCALE_MODEL = 'nai-diffusion-5-curated';
 // 原图 24 MB 足以覆盖 4K 以上成品；4× 结果按 4096² PNG 上限预留余量。
 const MAX_UPSCALE_SOURCE_BYTES = 24 * 1024 * 1024;
 const MAX_UPSCALE_RESULT_BYTES = 128 * 1024 * 1024;
@@ -1103,6 +1105,123 @@ export const fetchNovelAiGenerationStream = (payload, authorization, signal = Ab
   signal,
   ...(targetUrl !== NAI_GENERATE_STREAM_URL ? { redirect: 'error' } : {}),
 });
+
+const sniffBinaryImageMime = bytes => {
+  if (!bytes || bytes.length < 12) return '';
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp';
+  return '';
+};
+
+const readMsgpackValue = (buffer, start, end, depth = 0) => {
+  if (depth > 16 || start >= end) throw new Error('MsgPack 数据无效或超出范围');
+  const tag = buffer[start];
+  let offset = start + 1;
+  const requireBytes = count => {
+    if (offset + count > end) throw new Error('MsgPack 数据被截断');
+    const pos = offset;
+    offset += count;
+    return pos;
+  };
+  if (tag <= 0x7f) return { value: tag, next: offset };
+  if (tag >= 0xe0) return { value: tag - 256, next: offset };
+  if ((tag & 0xe0) === 0xa0) {
+    const len = tag & 0x1f;
+    const pos = requireBytes(len);
+    return { value: buffer.toString('utf8', pos, pos + len), next: offset };
+  }
+  if ((tag & 0xf0) === 0x80 || tag === 0xde || tag === 0xdf) {
+    const count = tag === 0xde ? buffer.readUInt16BE(requireBytes(2))
+      : tag === 0xdf ? buffer.readUInt32BE(requireBytes(4))
+      : tag & 0x0f;
+    const map = {};
+    for (let i = 0; i < count; i++) {
+      const k = readMsgpackValue(buffer, offset, end, depth + 1);
+      const v = readMsgpackValue(buffer, k.next, end, depth + 1);
+      offset = v.next;
+      if (typeof k.value === 'string' && k.value !== '__proto__' && k.value !== 'constructor' && k.value !== 'prototype') {
+        map[k.value] = v.value;
+      }
+    }
+    return { value: map, next: offset };
+  }
+  if ((tag & 0xf0) === 0x90 || tag === 0xdc || tag === 0xdd) {
+    const count = tag === 0xdc ? buffer.readUInt16BE(requireBytes(2))
+      : tag === 0xdd ? buffer.readUInt32BE(requireBytes(4))
+      : tag & 0x0f;
+    const items = [];
+    for (let i = 0; i < count; i++) {
+      const item = readMsgpackValue(buffer, offset, end, depth + 1);
+      offset = item.next;
+      items.push(item.value);
+    }
+    return { value: items, next: offset };
+  }
+  switch (tag) {
+    case 0xc0: return { value: null, next: offset };
+    case 0xc2: return { value: false, next: offset };
+    case 0xc3: return { value: true, next: offset };
+    case 0xc4: { const len = buffer[requireBytes(1)]; const pos = requireBytes(len); return { value: buffer.subarray(pos, pos + len), next: offset }; }
+    case 0xc5: { const len = buffer.readUInt16BE(requireBytes(2)); const pos = requireBytes(len); return { value: buffer.subarray(pos, pos + len), next: offset }; }
+    case 0xc6: { const len = buffer.readUInt32BE(requireBytes(4)); const pos = requireBytes(len); return { value: buffer.subarray(pos, pos + len), next: offset }; }
+    case 0xca: return { value: buffer.readFloatBE(requireBytes(4)), next: offset };
+    case 0xcb: return { value: buffer.readDoubleBE(requireBytes(8)), next: offset };
+    case 0xcc: return { value: buffer[requireBytes(1)], next: offset };
+    case 0xcd: return { value: buffer.readUInt16BE(requireBytes(2)), next: offset };
+    case 0xce: return { value: buffer.readUInt32BE(requireBytes(4)), next: offset };
+    case 0xcf: return { value: Number(buffer.readBigUInt64BE(requireBytes(8))), next: offset };
+    case 0xd0: return { value: buffer.readInt8(requireBytes(1)), next: offset };
+    case 0xd1: return { value: buffer.readInt16BE(requireBytes(2)), next: offset };
+    case 0xd2: return { value: buffer.readInt32BE(requireBytes(4)), next: offset };
+    case 0xd3: return { value: Number(buffer.readBigInt64BE(requireBytes(8))), next: offset };
+    case 0xd9: { const len = buffer[requireBytes(1)]; const pos = requireBytes(len); return { value: buffer.toString('utf8', pos, pos + len), next: offset }; }
+    case 0xda: { const len = buffer.readUInt16BE(requireBytes(2)); const pos = requireBytes(len); return { value: buffer.toString('utf8', pos, pos + len), next: offset }; }
+    case 0xdb: { const len = buffer.readUInt32BE(requireBytes(4)); const pos = requireBytes(len); return { value: buffer.toString('utf8', pos, pos + len), next: offset }; }
+    case 0xd4: requireBytes(2); return { value: null, next: offset };
+    case 0xd5: requireBytes(3); return { value: null, next: offset };
+    case 0xd6: requireBytes(5); return { value: null, next: offset };
+    case 0xd7: requireBytes(9); return { value: null, next: offset };
+    case 0xd8: requireBytes(17); return { value: null, next: offset };
+    case 0xc7: { const len = buffer[requireBytes(1)]; requireBytes(1 + len); return { value: null, next: offset }; }
+    case 0xc8: { const len = buffer.readUInt16BE(requireBytes(2)); requireBytes(1 + len); return { value: null, next: offset }; }
+    case 0xc9: { const len = buffer.readUInt32BE(requireBytes(4)); requireBytes(1 + len); return { value: null, next: offset }; }
+    default: throw new Error(`不支持的 MsgPack 类型 0x${tag.toString(16)}`);
+  }
+};
+
+/**
+ * 解析拼车网关 / 官方 MsgPack 流式帧（每帧 4 字节大端长度前缀 + MsgPack Map）。
+ * 兼容只含 final 帧的成员网关以及带 intermediate 预览帧的标准 MsgPack 流。
+ */
+export const parseNovelAiMsgpackStream = buffer => {
+  const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+  const frames = [];
+  if (!bytes.length) return frames;
+  const firstLen = bytes.length >= 4 ? bytes.readUInt32BE(0) : 0;
+  if (firstLen > 0 && 4 + firstLen <= bytes.length) {
+    let offset = 0;
+    while (offset + 4 <= bytes.length) {
+      const length = bytes.readUInt32BE(offset);
+      offset += 4;
+      if (!length || offset + length > bytes.length) break;
+      try {
+        const { value } = readMsgpackValue(bytes, offset, offset + length);
+        if (value && typeof value === 'object' && !Array.isArray(value)) frames.push(value);
+      } catch {
+        break;
+      }
+      offset += length;
+    }
+    if (frames.length) return frames;
+  }
+  try {
+    const { value } = readMsgpackValue(bytes, 0, bytes.length);
+    if (value && typeof value === 'object' && !Array.isArray(value)) frames.push(value);
+  } catch { /* 非有效 MsgPack */ }
+  return frames;
+};
 
 /** 网关只需观察事件名；图片正文保持原字节流转发，避免二次编码。 */
 export const createSseEventObserver = onEvent => {
@@ -2437,9 +2556,9 @@ const prepareGenerationReferences = async (payload, req, workerPort, { generatio
     delete payload.parameters.reference_image_multiple;
     delete payload.parameters.reference_information_extracted_multiple;
     delete payload.parameters.reference_image_multiple_cached;
-    // 中转与官方不能共用远端缓存命中；完整发送已有编码，不因缓存拒绝重发生图。
+    // 中转／成员网关与官方不能共用远端缓存命中；完整发送已有编码，不因缓存拒绝重发生图。
     payload.parameters.reference_image_multiple_cached = buildCachedVibeReferences(resolvedVibeEncodings,
-      generationProxyUrl ? new Set(resolvedVibeEncodings.map(getVibeCacheSecretKey)) : null);
+      (generationProxyUrl || gatewayUrl) ? new Set(resolvedVibeEncodings.map(getVibeCacheSecretKey)) : null);
     payload.parameters.reference_strength_multiple = localVibes.normalizeStrengths === false
       ? slots.map(slot => slot.strength)
       : normalizeVibeStrengths(slots);
@@ -2820,7 +2939,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     generationSignal.throwIfAborted();
     generationSubmitted = true;
     const upstreamStartedAt = Date.now();
-    const upstream = !generationProxyUrl && (resolvedVibeEncodings?.length || preciseReferenceImages?.length || baseImageKeysOmitted?.size)
+    const upstream = !gatewayUrl && !generationProxyUrl && (resolvedVibeEncodings?.length || preciseReferenceImages?.length || baseImageKeysOmitted?.size)
       ? await generateWithCacheRetry(payload, authorization,
         { vibeEncodings: resolvedVibeEncodings || [], vibeCacheKeysSentWithData, preciseImages: preciseReferenceImages, preciseCacheKeysSentWithData, baseImageOriginals },
         (nextPayload, nextAuthorization) => fetchNovelAiGenerationStream(nextPayload, nextAuthorization, generationSignal, requestRemote, streamUrl))
@@ -2843,33 +2962,98 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
       ...(billing.subscription ? { 'X-Nai-Anlas-Estimated-Spent': String(billingForPayload(settlementPayload, billing.runtime, billing.opusSubscriber, billing.exhausted).cost) } : {}),
       ...(queueEnabled ? { 'X-Nai-Queue-Task-Id': queueTaskId } : {}),
     });
-    const decoder = new TextDecoder();
+    const upstreamContentType = String(upstream.headers.get('content-type') || '').toLowerCase();
+    const isBinaryStream = upstreamContentType.includes('application/octet-stream')
+      || upstreamContentType.includes('msgpack')
+      || upstreamContentType.includes('application/zip')
+      || upstreamContentType.startsWith('image/');
     let finalSeen = false;
     let finalDurationMs;
     let upstreamErrorSeen = false;
-    const observer = createSseEventObserver(event => {
-      if (event === 'final') {
-        finalSeen = true;
-        if (finalDurationMs === undefined) finalDurationMs = Math.max(1, Date.now() - upstreamStartedAt);
+    let upstreamErrorMessage = '';
+    if (!isBinaryStream) {
+      const decoder = new TextDecoder();
+      const observer = createSseEventObserver(event => {
+        if (event === 'final') {
+          finalSeen = true;
+          if (finalDurationMs === undefined) finalDurationMs = Math.max(1, Date.now() - upstreamStartedAt);
+        }
+        if (event === 'error') upstreamErrorSeen = true;
+      });
+      const reader = upstream.body.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          observer.push(decoder.decode(value, { stream: !done }));
+          if (value?.byteLength && !res.destroyed) res.write(Buffer.from(value.buffer, value.byteOffset, value.byteLength));
+          if (done) break;
+        }
+      } catch (cause) {
+        // 完整 final 已交付后仍应结算；上游收尾断开不能跳过本地记账。
+        if (!finalSeen) throw cause;
+      } finally { reader.releaseLock(); }
+      observer.finish();
+    } else {
+      // 拼车等成员网关的 /ai/generate-image-stream 返回二进制 MsgPack 帧（或 ZIP / 原图）；
+      // 统一解包并转为标准 SSE 事件交付前端，同时保留未标 Content-Type 的纯文本 SSE 兼容。
+      const upstreamBytes = Buffer.from(await upstream.arrayBuffer());
+      const headText = upstreamBytes.subarray(0, 64).toString('utf8').trimStart();
+      if (/^(?:event:|data:|:)/.test(headText)) {
+        const observer = createSseEventObserver(event => {
+          if (event === 'final') {
+            finalSeen = true;
+            if (finalDurationMs === undefined) finalDurationMs = Math.max(1, Date.now() - upstreamStartedAt);
+          }
+          if (event === 'error') upstreamErrorSeen = true;
+        });
+        observer.push(upstreamBytes.toString('utf8'));
+        observer.finish();
+        if (!res.destroyed) res.write(upstreamBytes);
+      } else {
+        const emitImageEvent = (eventType, imageBytes, extra = {}) => {
+          const buf = Buffer.isBuffer(imageBytes) ? imageBytes : Buffer.from(imageBytes);
+          if (!buf.length) return;
+          const mime = sniffBinaryImageMime(buf) || 'image/png';
+          const image = `data:${mime};base64,${buf.toString('base64')}`;
+          if (eventType === 'final') {
+            finalSeen = true;
+            if (finalDurationMs === undefined) finalDurationMs = Math.max(1, Date.now() - upstreamStartedAt);
+          }
+          if (!res.destroyed) {
+            res.write(`event: ${eventType}\ndata: ${JSON.stringify({ image, ...(eventType === 'final' && finalDurationMs !== undefined ? { durationMs: finalDurationMs } : {}), ...extra })}\n\n`);
+          }
+        };
+        const rawMime = sniffBinaryImageMime(upstreamBytes);
+        if (rawMime) {
+          emitImageEvent('final', upstreamBytes);
+        } else if (upstreamBytes.length >= 4 && upstreamBytes[0] === 0x50 && upstreamBytes[1] === 0x4b) {
+          const output = await readGenerationResponse(new Response(upstreamBytes));
+          emitImageEvent('final', output.bytes, output.seed === undefined ? {} : { seed: output.seed });
+        } else {
+          const frames = parseNovelAiMsgpackStream(upstreamBytes);
+          for (const frame of frames) {
+            const type = String(frame.event_type || '').toLowerCase();
+            if ((type === 'intermediate' || type === 'final') && frame.image) {
+              const imageBytes = Buffer.isBuffer(frame.image) || frame.image instanceof Uint8Array
+                ? frame.image
+                : typeof frame.image === 'string' ? Buffer.from(frame.image, 'base64') : null;
+              if (imageBytes?.length) {
+                emitImageEvent(type, imageBytes, {
+                  ...(Number.isFinite(frame.step_ix) ? { step_ix: frame.step_ix } : {}),
+                  ...(Number.isFinite(frame.seed) ? { seed: frame.seed } : {}),
+                });
+              }
+            } else if (type === 'error') {
+              upstreamErrorSeen = true;
+              upstreamErrorMessage = String(frame.message || '').trim();
+            }
+          }
+        }
       }
-      if (event === 'error') upstreamErrorSeen = true;
-    });
-    const reader = upstream.body.getReader();
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        observer.push(decoder.decode(value, { stream: !done }));
-        if (value?.byteLength && !res.destroyed) res.write(Buffer.from(value.buffer, value.byteOffset, value.byteLength));
-        if (done) break;
-      }
-    } catch (cause) {
-      // 完整 final 已交付后仍应结算；上游收尾断开不能跳过本地记账。
-      if (!finalSeen) throw cause;
-    } finally { reader.releaseLock(); }
-    observer.finish();
+    }
 
     if (!finalSeen) {
-      const message = upstreamErrorSeen ? 'NovelAI 流式生成失败' : '流式响应结束但没有最终图片';
+      const message = upstreamErrorMessage || (upstreamErrorSeen ? 'NovelAI 流式生成失败' : '流式响应结束但没有最终图片');
       if (queueEnabled) cloudQueue.update(keyHash, queueTaskId, { phase: 'error', error: message, cancelable: false, controller: null });
       res.write(`\n\nevent: error\ndata: ${JSON.stringify({ message })}\n\n`);
       await releaseQueue();
@@ -3036,10 +3220,11 @@ export const handleNaiUpscaleRequest = async (req, res, lanSecret, workerPort, r
     const original = await requestWorkerBuffer(`/api/local-history/${encodeURIComponent(historyId)}/image`, req, workerPort);
     if (original.status >= 400 || !original.buffer.length) return sendJson(res, original.status || 404, { error: '原图不存在，无法放大' });
     if (original.buffer.length > MAX_UPSCALE_SOURCE_BYTES) return sendJson(res, 413, { error: '原图过大，无法放大' });
+    const upscaleModel = gatewayUrl ? NAI_GATEWAY_UPSCALE_MODEL : NAI_UPSCALE_MODEL;
     const response = await requestRemote(gatewayUrl ? `${gatewayUrl}/ai/upscale` : NAI_UPSCALE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': authorization },
-      body: JSON.stringify({ image: original.buffer.toString('base64'), model: NAI_UPSCALE_MODEL, declared_blur_sigma: 0 }),
+      body: JSON.stringify({ image: original.buffer.toString('base64'), model: upscaleModel, declared_blur_sigma: 0 }),
       signal: AbortSignal.timeout(300_000),
       ...(gatewayUrl ? { redirect: 'error' } : {}),
     });
@@ -3065,7 +3250,7 @@ export const handleNaiUpscaleRequest = async (req, res, lanSecret, workerPort, r
     if (output.length < 1024 || output.length > MAX_UPSCALE_RESULT_BYTES) return sendJson(res, 502, { error: 'NovelAI 返回的放大结果大小异常' });
     res.writeHead(200, {
       'Content-Type': 'image/png', 'Content-Length': output.length,
-      'Cache-Control': 'no-store', 'X-Nai-Upscale-Model': NAI_UPSCALE_MODEL,
+      'Cache-Control': 'no-store', 'X-Nai-Upscale-Model': upscaleModel,
     });
     return res.end(output);
   } catch (error) {

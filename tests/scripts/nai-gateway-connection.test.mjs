@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createServer, request as httpRequest } from 'node:http';
 import { once } from 'node:events';
 import { normalizeNaiGatewayUrl, resolveNaiGatewayUrl, validateNaiApiKey } from '../../worker/naiConnection.mjs';
-import { fetchGatewayMemberQuota, fetchNovelAiSubscription, readNaiGatewayUrl, sanitizeNovelAiSubscription, selectBackendPoolMember, createMediaGateway, toCachedPreciseReferenceParameters, isSubscriptionUnsupported, getVibeCacheSecretKey, cacheNovelAiSubscription, estimateNovelAiGenerationCost } from '../../scripts/media-gateway.mjs';
+import { fetchGatewayMemberQuota, fetchNovelAiSubscription, readNaiGatewayUrl, sanitizeNovelAiSubscription, selectBackendPoolMember, createMediaGateway, toCachedPreciseReferenceParameters, isSubscriptionUnsupported, getVibeCacheSecretKey, cacheNovelAiSubscription, estimateNovelAiGenerationCost, parseNovelAiMsgpackStream } from '../../scripts/media-gateway.mjs';
 import sharp from 'sharp';
 import { MockAgent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 
@@ -477,5 +477,189 @@ test('批量生图（如 Roll 串多张）在开启 Key 池时逐张按满圈率
     setGlobalDispatcher(originalDispatcher); await mock.close();
     cacheNovelAiSubscription('Bearer STA1N-batch-1', null);
     cacheNovelAiSubscription('Bearer STA1N-batch-2', null);
+  }
+});
+
+test('流式接口兼容拼车网关二进制 MsgPack 响应与 Vibe 完整编码透传', async () => {
+  const encodeStr = value => {
+    const bytes = Buffer.from(String(value), 'utf8');
+    const head = Buffer.alloc(5);
+    head[0] = 0xdb;
+    head.writeUInt32BE(bytes.length, 1);
+    return Buffer.concat([head, bytes]);
+  };
+  const encodeBin = bytes => {
+    const head = Buffer.alloc(5);
+    head[0] = 0xc6;
+    head.writeUInt32BE(bytes.length, 1);
+    return Buffer.concat([head, bytes]);
+  };
+  const wrapFrame = parts => {
+    const payload = Buffer.concat(parts);
+    const prefix = Buffer.alloc(4);
+    prefix.writeUInt32BE(payload.length, 0);
+    return Buffer.concat([prefix, payload]);
+  };
+
+  const pngBuffer = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#38bdf8' } }).png().toBuffer();
+  // 与 novelai-shared-gateway/server/native-stream.js 完全一致的 4 字节长度前缀 MsgPack 帧
+  const msgpackFinal = wrapFrame([
+    Buffer.from([0x83]),
+    encodeStr('event_type'), encodeStr('final'),
+    encodeStr('samp_ix'), Buffer.from([0]),
+    encodeStr('image'), encodeBin(pngBuffer),
+  ]);
+  const msgpackError = wrapFrame([
+    Buffer.from([0x83]),
+    encodeStr('event_type'), encodeStr('error'),
+    encodeStr('samp_ix'), Buffer.from([0]),
+    encodeStr('message'), encodeStr('配额不足'),
+  ]);
+
+  const parsed = parseNovelAiMsgpackStream(msgpackFinal);
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0].event_type, 'final');
+  assert.equal(Buffer.compare(Buffer.from(parsed[0].image), pngBuffer), 0);
+
+  const originalDispatcher = getGlobalDispatcher(), mock = new MockAgent();
+  mock.disableNetConnect(); mock.enableNetConnect(host => host.startsWith('127.0.0.1:'));
+  setGlobalDispatcher(mock);
+  const member = mock.get('https://gateway.example');
+  const seenVibePayloads = [];
+  member.intercept({ path: '/v1/ai/generate-image-stream', method: 'POST' }).reply(200, options => {
+    seenVibePayloads.push(JSON.parse(options.body).parameters.reference_image_multiple_cached);
+    return msgpackFinal;
+  }, { headers: { 'content-type': 'application/octet-stream' } }).times(2);
+  member.intercept({ path: '/v1/ai/generate-image-stream', method: 'POST' }).reply(200, () => msgpackError, {
+    headers: { 'content-type': 'application/octet-stream' },
+  });
+
+  const vibeEncoding = Buffer.alloc(160, 7).toString('base64');
+  const worker = createServer(async (req, res) => {
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/api/nai-key-vault/connection') return res.end('{"gatewayUrl":"https://gateway.example/v1"}');
+    if (req.url === '/api/vibes/v1/encodings/e1/data') {
+      return res.end(JSON.stringify({ variant: { model: 'nai-diffusion-4-5-full' }, encoding: vibeEncoding }));
+    }
+    if (req.url === '/api/nai-accounting') {
+      const chunks = []; for await (const chunk of req) chunks.push(chunk);
+      const body = JSON.parse(Buffer.concat(chunks));
+      return res.end(JSON.stringify({ receiptId: body.receiptId, budget: { remaining: 1666 } }));
+    }
+    res.end('{"remaining":1666}');
+  });
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  let server;
+  try {
+    cacheNovelAiSubscription('Bearer STA1N-msgpack', { source: 'gateway', active: true, tier: 3 });
+    server = await createMediaGateway({ port: 0, workerPort: worker.address().port });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    await fetch(base + '/api/generation-queue/preferences', {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer STA1N-msgpack', 'Content-Type': 'application/json' },
+      body: '{"generationIntervalSeconds":0}',
+    });
+    const body = {
+      model: 'nai-diffusion-4-5-full',
+      action: 'generate',
+      parameters: {
+        width: 832, height: 1216, steps: 23,
+        _local_vibes: { enabled: true, slots: [{ vibeId: 'v1', encodingId: 'e1', strength: 0.6 }] },
+      },
+    };
+    for (let i = 0; i < 2; i++) {
+      const response = await fetch(base + '/api/generate-stream', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer STA1N-msgpack', 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get('content-type') || '', /text\/event-stream/);
+      const text = await response.text();
+      assert.match(text, /event: final/);
+      assert.ok(text.includes(pngBuffer.toString('base64')));
+      assert.match(text, /event: nai_usage/);
+    }
+    // 连续两次流式请求均须附带完整 Vibe data，不因缓存键省略导致拼车网关 422。
+    assert.equal(seenVibePayloads.length, 2);
+    assert.equal(seenVibePayloads[0]?.[0]?.data, vibeEncoding);
+    assert.equal(seenVibePayloads[1]?.[0]?.data, vibeEncoding);
+
+    // 仅含 error 帧的 MsgPack 响应应转成 SSE error 事件透传原因。
+    const errRes = await fetch(base + '/api/generate-stream', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer STA1N-msgpack', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'nai-diffusion-4-5-full', action: 'generate', parameters: { width: 832, height: 1216, steps: 23 } }),
+    });
+    const errText = await errRes.text();
+    assert.match(errText, /event: error/);
+    assert.match(errText, /配额不足/);
+    mock.assertNoPendingInterceptors();
+  } finally {
+    server?.closeAllConnections(); worker.closeAllConnections();
+    await Promise.all([server && new Promise(resolve => server.close(resolve)), new Promise(resolve => worker.close(resolve))]);
+    setGlobalDispatcher(originalDispatcher); await mock.close();
+    cacheNovelAiSubscription('Bearer STA1N-msgpack', null);
+  }
+});
+
+test('独立 2× 放大对拼车成员网关发送 nai-diffusion-5-curated，官方直连保持 nai-diffusion-5-full', async () => {
+  const originalDispatcher = getGlobalDispatcher(), mock = new MockAgent();
+  mock.disableNetConnect(); mock.enableNetConnect(host => host.startsWith('127.0.0.1:'));
+  setGlobalDispatcher(mock);
+  const seenModels = {};
+  const sourcePng = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#6366f1' } }).png().toBuffer();
+  const resultPng = await sharp(randomBytes(64 * 64 * 3), { raw: { width: 64, height: 64, channels: 3 } }).png().toBuffer();
+  const JSZip = (await import('jszip')).default;
+  const zip = new JSZip();
+  zip.file('image_0.png', resultPng);
+  const zipBody = await zip.generateAsync({ type: 'nodebuffer' });
+
+  mock.get('https://gateway.example').intercept({ path: '/v1/ai/upscale', method: 'POST' }).reply(200, options => {
+    seenModels.gateway = JSON.parse(options.body).model;
+    return zipBody;
+  }, { headers: { 'content-type': 'application/zip' } });
+  mock.get('https://image.novelai.net').intercept({ path: '/ai/upscale', method: 'POST' }).reply(200, options => {
+    seenModels.official = JSON.parse(options.body).model;
+    return zipBody;
+  }, { headers: { 'content-type': 'application/zip' } });
+
+  const worker = createServer((req, res) => {
+    if (req.url === '/api/nai-key-vault/connection') {
+      return res.end(req.headers.authorization === 'Bearer STA1N-up' ? '{"gatewayUrl":"https://gateway.example/v1"}' : '{"gatewayUrl":""}');
+    }
+    if (req.url === '/api/local-history/h1/image') return res.end(sourcePng);
+    res.writeHead(404); res.end();
+  });
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  let server;
+  try {
+    server = await createMediaGateway({ port: 0, workerPort: worker.address().port });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const memberRes = await fetch(base + '/api/nai/upscale', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer STA1N-up', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ historyId: 'h1' }),
+    });
+    assert.equal(memberRes.status, 200, await memberRes.clone().text());
+    assert.equal(memberRes.headers.get('x-nai-upscale-model'), 'nai-diffusion-5-curated');
+    assert.equal(Buffer.compare(Buffer.from(await memberRes.arrayBuffer()), resultPng), 0);
+
+    const officialRes = await fetch(base + '/api/nai/upscale', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer pst-up', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ historyId: 'h1' }),
+    });
+    assert.equal(officialRes.status, 200, await officialRes.clone().text());
+    assert.equal(officialRes.headers.get('x-nai-upscale-model'), 'nai-diffusion-5-full');
+    assert.equal(Buffer.compare(Buffer.from(await officialRes.arrayBuffer()), resultPng), 0);
+
+    assert.equal(seenModels.gateway, 'nai-diffusion-5-curated');
+    assert.equal(seenModels.official, 'nai-diffusion-5-full');
+    mock.assertNoPendingInterceptors();
+  } finally {
+    server?.closeAllConnections(); worker.closeAllConnections();
+    await Promise.all([server && new Promise(resolve => server.close(resolve)), new Promise(resolve => worker.close(resolve))]);
+    setGlobalDispatcher(originalDispatcher); await mock.close();
   }
 });
