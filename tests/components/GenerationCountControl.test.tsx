@@ -192,6 +192,21 @@ it('短间隔显示等待下一张并保留特效，排队或云端等待时停�
   fireEvent.click(within(screen.getByRole('dialog', { name: '生成选项' })).getByRole('button', { name: '排到下一位' }));
   expect(queue).toHaveBeenCalledWith('next');
 });
+
+it('拼车网关／中转（proxy: true）等待响应时按正常生成展示，保留扫光特效与实时计时，不误报云端排队', () => {
+  vi.useFakeTimers();
+  try {
+    emitCloudQueueStatus({ taskId: 'gateway-task', phase: 'waiting', proxy: true, position: null, queueSize: null, cancelable: true });
+    render(<GenerationCountControl {...props} busy generationState="generating" queueState={state} />);
+    const main = screen.getByRole('button', { name: '生成中…' });
+    expect(main.textContent).not.toContain('云端排队');
+    expect(actionSurface(main).classList.contains('generation-action-button--loading')).toBe(true);
+    act(() => { vi.advanceTimersByTime(1400); });
+    expect(screen.getByRole('button', { name: /生成中….*1\.4s/ })).toBe(main);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 it.each([1280, 390])('%s 宽度间隔默认显示 2.0 秒，保留一位小数、失焦保存，可设 0，非法输入恢复且不触发生图', width => {
   vi.stubGlobal('innerWidth', width); const interval = vi.fn(), generate = vi.fn();
   const view = render(<GenerationCountControl {...props} onGenerate={generate} onIntervalChange={interval} queueState={state} />);

@@ -61,11 +61,13 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
   const occupied = Boolean(busy || saving || generationState === 'preparing' || generationState === 'generating' || (queueState && queueState.total > queueState.completed)
     || (series && series.current < series.total) || waiting.length > 0);
   const paused = Boolean(queueState?.paused);
+  // 仅真实「公共队列」等待时抑制执行动效与计时；中转／拼车成员网关（proxy: true）无法区分排队与画图，按正常生成展示。
+  const cloudQueueWaiting = Boolean(isCloudQueueTaskActive(queueStatus) && !queueStatus?.proxy && queueStatus?.phase !== 'generating');
   // 已保存后的短间隔延续动效；排队、暂停与费用待确认不能冒充正在执行。
   const executing = Boolean((generationState === 'preparing' || generationState === 'generating' || generationState === 'saving'
     || (generationState === 'waiting' && !series?.position && series && series.current > 0 && series.current < series.total))
     && (!paused || queueState?.pausing)
-    && (!isCloudQueueTaskActive(queueStatus) || queueStatus?.phase === 'generating'));
+    && !cloudQueueWaiting);
   const blocked = onQueue ? Boolean(queueDisabled) : Boolean(disabled);
   const completed = queueState?.completed ?? Math.max(0, series?.current || 0);
   const total = queueState?.total ?? ((series?.total || 0) + waiting.reduce((sum, task) => sum + task.progress.total, 0));
@@ -86,7 +88,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
   useEffect(() => { if (!hasMenuContent) setOpen(false); }, [hasMenuContent]);
   const isGeneratingLive = Boolean(
     occupied && !paused && !queueState?.pausing && !series?.stopping && !saving
-    && (!isCloudQueueTaskActive(queueStatus) || queueStatus?.phase === 'generating')
+    && !cloudQueueWaiting
     && (generationState === 'generating' || (!generationState && busy)),
   );
   const [liveElapsedMs, setLiveElapsedMs] = useState(0);
@@ -130,7 +132,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     if (paused && occupied) return { icon: 'pause', label: t("已暂停") };
     if (occupied && generationState === 'awaiting_confirmation') return { icon: 'alert', label: t("等待确认费用") };
     if (saving) return { icon: 'spin', label: t("正在保存…") };
-    if (occupied && isCloudQueueTaskActive(queueStatus) && queueStatus?.phase === 'waiting') {
+    if (occupied && cloudQueueWaiting && queueStatus?.phase === 'waiting') {
       const pos = queueStatus.position;
       return { icon: 'spin', label: pos && pos > 0 ? t("云端排队 · 第 {0} 位", [pos]) : t("云端排队中…") };
     }

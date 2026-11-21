@@ -238,6 +238,9 @@ describe('四模式共用生成状态', () => {
     act(() => emitCloudQueueStatus({ taskId: 'shared', phase: 'generating', cancelable: false }));
     expect(screen.getByRole('status').textContent).toContain('生成中 8/28');
     expect(screen.queryByRole('button', { name: '取消排队' })).toBeNull();
+    act(() => emitCloudQueueStatus({ taskId: 'proxy-wait', phase: 'waiting', proxy: true, cancelable: true }));
+    expect((view.container.querySelector('.generation-action-button') as HTMLButtonElement).classList.contains('generation-action-button--loading')).toBe(true);
+    act(() => emitCloudQueueStatus({ taskId: 'proxy-wait', phase: 'completed' }));
     act(() => emitCloudQueueStatus({ taskId: 'shared', phase: 'completed' }));
     view.rerender(operation === 'text-to-image' ? React.createElement(ChainEditorPreview, { ...props, isGenerating: false }) : React.createElement(ImageEditPreview, { ...editProps, isGenerating: false }));
     expect((screen.getByRole('button', { name: /^生成.*消耗 Opus 额度$/ }) as HTMLButtonElement).disabled).toBe(false);
