@@ -129,6 +129,9 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
       const next = await readStyleBundle(file, reportProgress);
       setPreview(next); setPreviewVersion(version => version + 1); setQuery(''); setVisibleCount(100); setSelected(new Set(next.entries.map(entry => entry.id)));
       setImported(new Set()); setFailures({});
+      setFolderMode('new');
+      setFolderParentId('');
+      setTargetFolders([]);
       setFolderName(file.name.replace(/\.naia$/i, '').slice(0, 60));
       setTargetLocked(false); setUnfiledIds([]); setFiledFolder(''); targetPlan.current = null;
     } catch (failure) {
