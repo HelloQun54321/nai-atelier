@@ -188,33 +188,80 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     const promptJobApprovalRef = useRef<(session: GenerationSeriesSession, awaiting: { cost: number; completedCount: number; requestedCount: number }) => Promise<void>>(async () => {});
     const [preparingStage, setPreparingStage] = useState<'preparing' | GenerationJobStage | null>(null);
     const preparingGeneration = preparingStage !== null;
-    const isGenerating = preparingGeneration || isImageGenerating || Boolean(generationSeries && generationSeries.current < generationSeries.total);
+    const isGenerating = preparingGeneration || isImageGenerating || Boolean(generationSeries);
+    // 图片编辑本地底图／蒙版预处理尚未发往后端，仍允许用户切回其它模式（迟到错误按提交模式丢弃）。
+    const modeSwitchLocked = (preparingGeneration && preparingStage !== 'preparing_references') || isImageGenerating || Boolean(generationSeries);
     const latestGenerationStateRef = useRef({ apiKey, subscription: novelaiStatus, isGenerating });
     latestGenerationStateRef.current = { apiKey, subscription: novelaiStatus, isGenerating };
-    const [queueState, setQueueState] = useState<GenerationQueueSnapshot | null>(null);
+    const [queueSnapshot, setQueueSnapshot] = useState<{ state: GenerationQueueSnapshot; epoch: number } | null>(null);
     const [pausePending, setPausePending] = useState(false);
     const [intervalPending, setIntervalPending] = useState(false);
     const intervalRevisionRef = useRef(0);
+    const queueEpochRef = useRef(0);
+    const minExternalQueueEpochRef = useRef(0);
+    const postGenSyncEpochRef = useRef(0);
+    const prevGeneratingRef = useRef(false);
+    if (prevGeneratingRef.current && !isGenerating) {
+      // 本页刚刚结束生成：拿到结束之后的新队列回执前，不拿生图期间的旧快照误报「此 Key 正在生成」。
+      const nextEpoch = ++queueEpochRef.current;
+      minExternalQueueEpochRef.current = nextEpoch;
+      postGenSyncEpochRef.current = nextEpoch;
+    }
+    prevGeneratingRef.current = isGenerating;
+    const refreshQueueRef = useRef<((force?: boolean) => void) | null>(null);
     useEffect(() => {
-      setQueueState(null);
+      setQueueSnapshot(null);
       setPausePending(false);
       setIntervalPending(false);
       intervalRevisionRef.current++;
-      if (!apiKey) return;
-      let cancelled = false, reading = false, lastRead = -Infinity, busy = false;
+      minExternalQueueEpochRef.current = ++queueEpochRef.current;
+      postGenSyncEpochRef.current = 0;
+      if (!apiKey) { refreshQueueRef.current = null; return; }
+      let cancelled = false, reading = false, pendingForce = false, lastRead = -Infinity, busy = false;
       const refresh = async (force = false) => {
-        if (reading || document.hidden || (!force && Date.now() - lastRead < (busy || latestGenerationStateRef.current.isGenerating ? 1000 : 5000))) return;
+        if (cancelled || document.hidden) return;
+        if (reading) {
+          if (force) pendingForce = true;
+          return;
+        }
+        if (!force && Date.now() - lastRead < (busy || latestGenerationStateRef.current.isGenerating ? 1000 : 5000)) return;
         reading = true; lastRead = Date.now();
         const revision = intervalRevisionRef.current;
-        try { const status = await getGenerationQueue(apiKey); if (!cancelled && revision === intervalRevisionRef.current && Number.isSafeInteger(status.total) && typeof status.paused === 'boolean') { busy = status.total > status.completed; setQueueState(status); } }
+        const startedEpoch = queueEpochRef.current;
+        try {
+          const status = await getGenerationQueue(apiKey);
+          if (!cancelled && revision === intervalRevisionRef.current && Number.isSafeInteger(status.total) && typeof status.paused === 'boolean') {
+            busy = status.total > status.completed;
+            setQueueSnapshot({ state: status, epoch: startedEpoch });
+          }
+        }
         catch { /* 保留最后已知进度，接口异常由提交与暂停操作明确提示。 */ }
-        finally { reading = false; }
+        finally {
+          reading = false;
+          if (!cancelled && pendingForce) {
+            pendingForce = false;
+            void refresh(true);
+          }
+        }
       };
+      refreshQueueRef.current = force => { void refresh(force); };
       const onVisible = () => { if (!document.hidden) void refresh(true); };
       void refresh(true); const timer = setInterval(() => { void refresh(); }, 1000);
       document.addEventListener('visibilitychange', onVisible);
-      return () => { cancelled = true; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+      return () => { cancelled = true; refreshQueueRef.current = null; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
     }, [apiKey]);
+    const queueFreshForExternalCheck = Boolean(queueSnapshot && queueSnapshot.epoch >= minExternalQueueEpochRef.current);
+    const queueState: GenerationQueueSnapshot | null = queueSnapshot
+      ? (!isGenerating && !queueFreshForExternalCheck
+        ? { ...queueSnapshot.state, busy: queueSnapshot.state.paused, completed: queueSnapshot.state.total, pausing: false }
+        : queueSnapshot.state)
+      : null;
+    const postGenSyncTargetEpoch = !isGenerating ? postGenSyncEpochRef.current : 0;
+    useEffect(() => {
+      if (!apiKey || isGenerating || postGenSyncTargetEpoch <= 0) return;
+      if ((queueSnapshot?.epoch ?? 0) >= postGenSyncTargetEpoch) return;
+      refreshQueueRef.current?.(true);
+    }, [apiKey, isGenerating, postGenSyncTargetEpoch]);
     const toggleQueuePause = async () => {
       if (pausePending) return;
       setPausePending(true);
@@ -222,7 +269,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         const state = queueState || await getGenerationQueue(apiKey);
         if (typeof state.paused !== 'boolean') throw new Error('后端尚未支持暂停队列，请重启工坊后再试');
         const next = await setGenerationQueuePaused(apiKey, !state.paused);
-        if (latestGenerationStateRef.current.apiKey === apiKey) setQueueState(next);
+        if (latestGenerationStateRef.current.apiKey === apiKey) setQueueSnapshot({ state: next, epoch: queueEpochRef.current });
       } catch (error) { if (latestGenerationStateRef.current.apiKey === apiKey) notify((error as Error).message, 'error'); }
       finally { if (latestGenerationStateRef.current.apiKey === apiKey) setPausePending(false); }
     };
@@ -232,11 +279,11 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
       setIntervalPending(true);
       try {
         const next = await setGenerationInterval(apiKey, seconds, jitterPercent);
-        if (latestGenerationStateRef.current.apiKey === apiKey && revision === intervalRevisionRef.current) setQueueState(next);
+        if (latestGenerationStateRef.current.apiKey === apiKey && revision === intervalRevisionRef.current) setQueueSnapshot({ state: next, epoch: queueEpochRef.current });
       } catch (error) { if (latestGenerationStateRef.current.apiKey === apiKey) notify((error as Error).message, 'error'); }
       finally { if (latestGenerationStateRef.current.apiKey === apiKey && revision === intervalRevisionRef.current) { intervalRevisionRef.current++; setIntervalPending(false); } }
     };
-    const externalGenerationBusy = Boolean(queueState && queueState.total > queueState.completed) && !isGenerating;
+    const externalGenerationBusy = queueFreshForExternalCheck && Boolean(queueState && queueState.total > queueState.completed) && !isGenerating;
     const generationUnavailableLabel = externalGenerationBusy ? t("此 Key 正在生成") : queueState?.paused ? t("队列已暂停") : undefined;
     const stopGenerationSeries = React.useCallback(() => {
         if (!generationSeriesRef.current) return;
@@ -386,7 +433,9 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     };
     useEffect(() => { setGenerationError(null); }, [activeGenerationMode, chain.id]);
     const generationSession = getGenerationSeriesSession(chain.id);
-    const generationState: GenerationJobState = generationSession?.key === apiKey ? generationSession.state : (preparingGeneration || isImageGenerating) ? 'preparing' : 'waiting';
+    const generationState: GenerationJobState = generationSession?.key === apiKey
+        ? (generationSession.state === 'waiting' && generationSession.progress.current >= generationSession.progress.total ? 'saving' : generationSession.state)
+        : (preparingGeneration || isImageGenerating) ? 'preparing' : 'waiting';
     const generationStage: GenerationJobStage | undefined = generationSession?.key === apiKey
         ? generationSession.stage
         : (preparingStage && preparingStage !== 'preparing' ? preparingStage : undefined);
@@ -1009,7 +1058,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
 
     const selectGenerationMode = async (mode: GenerationMode) => {
         // 生成进行中不允许切换模式：视觉层（模式导航禁用）+ 逻辑层（此处拦截）双保险
-        if (isGenerating || modeTransitionRef.current || mode === activeGenerationMode) return;
+        if (modeSwitchLocked || modeTransitionRef.current || mode === activeGenerationMode) return;
         modeTransitionRef.current = true;
         setIsSwitchingMode(true);
         try {
@@ -2260,7 +2309,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 onTagAssistEnabledChange={onTagAssistEnabledChange}
                 activeGenerationMode={activeGenerationMode}
                 selectGenerationMode={selectGenerationMode}
-                isGenerating={isGenerating || isSwitchingMode}
+                isGenerating={modeSwitchLocked || isSwitchingMode}
                 onBack={onBack}
                 handleReset={handleReset}
                 handleFork={handleFork}

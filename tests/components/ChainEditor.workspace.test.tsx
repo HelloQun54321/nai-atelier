@@ -2676,6 +2676,44 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     expect(state.started[0].count).toBe(1);
   });
 
+  it('本页生图刚完成时立即丢弃生图期间的旧队列快照并补查，绝不闪现「此 Key 正在生成」', async () => {
+    prepare();
+    scriptJobs([{ state: 'generating', completedCount: 0, requestedCount: 1, historyIds: [] }]);
+    let queueCalls = 0;
+    let resolvePostGenQueue!: (value: GenerationQueueSnapshot) => void;
+    vi.mocked(getGenerationQueue).mockImplementation(() => {
+      queueCalls += 1;
+      if (queueCalls === 1) return Promise.resolve({ busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] });
+      if (queueCalls === 2) return Promise.resolve({ busy: true, completed: 0, total: 1, paused: false, pausing: false, waiting: [] });
+      return new Promise<GenerationQueueSnapshot>(resolve => { resolvePostGenQueue = resolve; });
+    });
+    let push!: (snapshot: GenerationJobSnapshot) => void | Promise<void>;
+    let finish = () => {};
+    state.observeJob.mockImplementation((_key, _token, _signal, onSnapshot) => {
+      push = onSnapshot; return new Promise<void>(resolve => { finish = resolve; });
+    });
+    setupSeries();
+    await waitFor(() => expect(queueCalls).toBe(1));
+    fireEvent.click(screen.getByRole('button', { name: '生成合成文生图' }));
+    await waitFor(() => expect(state.observeJob).toHaveBeenCalledOnce());
+    const token = state.started[0].token;
+    await act(async () => { await push({ token, state: 'generating', completedCount: 0, requestedCount: 1, historyIds: [] }); });
+    // 模拟生图进行中时队列轮询已回传 { total: 1, completed: 0 }
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await waitFor(() => expect(queueCalls).toBe(2));
+    // 本页生图落盘结束，但结束后的队列查询尚未回包：此时不得闪现「此 Key 正在生成」
+    await act(async () => {
+      await push({ ...backgroundResult('job-1', 1, { historyIds: ['job-1'] }), token }); finish();
+    });
+    await waitFor(() => expect(getGenerationSeriesSession(chain.id)).toBeNull());
+    await waitFor(() => expect(queueCalls).toBe(3));
+    expect(screen.getByLabelText('生成不可用原因').textContent).toBe('');
+    expect((screen.getByText('生成合成文生图') as HTMLButtonElement).disabled).toBe(false);
+    // 若结束后的新回执确认确实有外部任务，则准确显示「此 Key 正在生成」
+    await act(async () => { resolvePostGenQueue({ busy: true, completed: 0, total: 2, paused: false, pausing: false, waiting: [] }); });
+    await waitFor(() => expect(screen.getByLabelText('生成不可用原因').textContent).toBe('此 Key 正在生成'));
+  });
+
   it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('后端返回占用时 %s 的 Agent 回执为 blocked，不误报用户取消', async (operation, label) => {
     prepare(); vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
     setupSeries(); if (label !== '文生图') await switchTo(label);
