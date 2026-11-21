@@ -1,4 +1,7 @@
 ## 2026-11-21
+- 优化「酒馆同步」设置卡片排版并修复后台扫描状态不自动刷新的问题：
+  - 将「酒馆目录」调整为独占整行（完整显示长路径，标题与「已自动检测」徽标单行不折行），下方将「服务连接地址」与「扩展安装路径」等高对齐排布；为「选择目录」「保存目录」「扫描历史」统一补齐胶囊按钮底板样式，并收紧状态列表间距。
+  - 当智慧姬或柏宝绘正在后台扫描历史（`historySyncing`）时每 2 秒自动刷新状态，扫描结束后自动恢复按钮并更新最新历史张数，且两者扫描互不互相禁用按钮。
 - 适配 **TauriTavern**（桌面原生版酒馆）与智慧姬／柏宝绘联动：
   - **放行本机 Tauri WebView 跨域源**：桌面网关在保留本机回环校验的前提下，放行 `http(s)://tauri.localhost` 与 `tauri://localhost` 的同步接口、Vibe 与封面预检／读取请求。
   - **自动识别 TauriTavern 目录与扩展安装位**：支持自动探测 Windows／macOS／Linux 默认 `com.tauritavern.client` 目录、便携版（`portable.flag`）以及通过 `tauritavern-runtime.json` 迁移的自定义 `data_root`；一键安装与目录导出自动写入 `<userDir>/extensions/npm-bridge/`（原生 SillyTavern 保持 `public/scripts/extensions/third-party/npm-bridge/`）；输入框旁新增系统「选择目录」按钮（支持弹出文件夹选择框自动回填并绑定），同时装有原生 SillyTavern 与 TauriTavern 时支持一键切换。

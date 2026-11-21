@@ -143,6 +143,31 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
     return () => { active = false; };
   }, [baiBaiPreferences.enabled, applyTargetStatus]);
 
+  // 后台历史扫描进行中时每 2 秒轻刷新状态，扫描结束自动恢复按钮并更新张数。
+  useEffect(() => {
+    if (!chatu8Preferences.enabled || !chatu8Status?.historySyncing) return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      fetch('/api/integrations/st-chatu8/status', { cache: 'no-store' })
+        .then(res => (res.ok ? res.json() : null))
+        .then(data => { if (active && data) applyTargetStatus('st-chatu8', data, false); })
+        .catch(() => {});
+    }, 2000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [chatu8Preferences.enabled, chatu8Status?.historySyncing, applyTargetStatus]);
+
+  useEffect(() => {
+    if (!baiBaiPreferences.enabled || !baiBaiStatus?.historySyncing) return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      fetch('/api/integrations/st-baibai/status', { cache: 'no-store' })
+        .then(res => (res.ok ? res.json() : null))
+        .then(data => { if (active && data) applyTargetStatus('st-baibai', data, false); })
+        .catch(() => {});
+    }, 2000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [baiBaiPreferences.enabled, baiBaiStatus?.historySyncing, applyTargetStatus]);
+
   const handleToggleChatu8 = async (enabled: boolean) => {
     try { await setStChatu8Enabled(enabled); }
     catch (error) { notify(error instanceof Error ? error.message : '保存智慧姬同步设置失败'); }
@@ -422,149 +447,153 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
       {baiBaiPreferences.error && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400"><span>{t(baiBaiPreferences.error)}</span><button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void refreshStBaiBaiPreferences(); }} disabled={baiBaiPreferences.busy} className="mobile-touch shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 underline transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t("重新读取")}</button></div>}
 
       {anyEnabled && <>
-        <div className="appearance-group rounded-xl border border-gray-200 bg-gray-50/70 p-3 text-xs dark:border-gray-700/60 dark:bg-gray-800/50">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {/* 酒馆根目录（兼容 SillyTavern / TauriTavern） */}
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <label className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
-                  <Folder className="h-3.5 w-3.5 text-gray-400" />
-                  <span>{t("酒馆目录（SillyTavern / TauriTavern）：")}</span>
-                </label>
-                {detectedRoot && stRoot === detectedRoot && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-micro font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                    <CheckCircle2 className="h-3 w-3" />
-                    {detectedKind === 'tauritavern' ? t("已自动检测 · TauriTavern") : t("已自动检测")}</span>
-                )}
-              </div>
-              <div className="mt-1.5 flex items-center gap-1.5">
-                <input
-                  type="text"
-                  value={stRoot}
-                  onChange={e => setStRoot(e.target.value)}
-                  placeholder={t("例如：D:\\SillyTavern 或 TauriTavern 数据目录")}
-                  className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 font-mono text-xs outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                  title={t("SillyTavern 本地安装根目录")}
-                />
+        <div className="appearance-group space-y-3 rounded-xl border border-gray-200 bg-gray-50/70 p-3.5 text-xs dark:border-gray-700/60 dark:bg-gray-800/50">
+          {/* 第一行：酒馆目录独占整行，避免长路径被截断或标题/徽标折行导致错位 */}
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <label className="flex min-w-0 items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+                <Folder className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                <span className="truncate">{t("酒馆目录")}</span>
+              </label>
+              {detectedRoot && stRoot === detectedRoot && (
+                <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-emerald-50 px-2 py-0.5 text-micro font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                  <CheckCircle2 className="h-3 w-3 shrink-0" />
+                  {detectedKind === 'tauritavern' ? t("已自动检测 · TauriTavern") : t("已自动检测")}
+                </span>
+              )}
+            </div>
+            <div className="mt-1.5 flex items-center gap-2">
+              <input
+                type="text"
+                value={stRoot}
+                onChange={e => setStRoot(e.target.value)}
+                placeholder={t("例如：D:\\SillyTavern 或 TauriTavern 数据目录")}
+                className="h-9 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2.5 font-mono text-xs outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                title={t("SillyTavern 本地安装根目录")}
+              />
+              <button
+                type="button"
+                data-appearance="control" data-tone="neutral"
+                disabled={pickingRoot || savingRoot || installing}
+                onClick={() => void handlePickRootDirectory()}
+                aria-label={t("选择本地酒馆目录")}
+                title={t("选择本地酒馆目录")}
+                className="appearance-group mobile-touch inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                {pickingRoot ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderOpen className="h-3.5 w-3.5" />}
+                <span>{pickingRoot ? t("正在选择…") : t("选择目录")}</span>
+              </button>
+              {stRoot.trim() && stRoot.trim() !== detectedRoot && (
                 <button
                   type="button"
                   data-appearance="control" data-tone="neutral"
-                  disabled={pickingRoot || savingRoot || installing}
-                  onClick={() => void handlePickRootDirectory()}
-                  aria-label={t("选择本地酒馆目录")}
-                  title={t("选择本地酒馆目录")}
-                  className="mobile-touch inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                  disabled={savingRoot}
+                  onClick={() => void handleSaveRoot()}
+                  className="appearance-group mobile-touch inline-flex h-9 shrink-0 items-center rounded-lg border border-gray-300 bg-white px-3 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
                 >
-                  {pickingRoot ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderOpen className="h-3.5 w-3.5" />}
-                  <span>{pickingRoot ? t("正在选择…") : t("选择目录")}</span>
+                  {savingRoot ? t("保存中…") : t("保存目录")}
                 </button>
-              </div>
-              {detectedRoots.length > 1 && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-micro text-gray-500 dark:text-gray-400">
-                  <span>{t("快速切换：")}</span>
-                  {detectedRoots.map(item => (
-                    <button
-                      key={item.root}
-                      type="button"
-                      disabled={savingRoot}
-                      onClick={() => { setStRoot(item.root); void handleSaveRoot(item.root); }}
-                      title={item.root}
-                      className={`mobile-touch rounded-md border px-2 py-0.5 font-semibold transition ${stRoot === item.root ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/50 dark:text-indigo-200' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}
-                    >
-                      {item.kind === 'tauritavern' ? 'TauriTavern' : 'SillyTavern'}
-                    </button>
-                  ))}
-                </div>
               )}
             </div>
-
-            {/* 服务连接地址 */}
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <label className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
-                  <Link2 className="h-3.5 w-3.5 text-gray-400" />
-                  <span>{t("服务连接地址：")}</span>
-                </label>
-                <span className="text-micro text-gray-400 dark:text-gray-500">
-                  {t("写入扩展作为默认值")}</span>
+            {detectedRoots.length > 1 && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-micro text-gray-500 dark:text-gray-400">
+                <span>{t("快速切换：")}</span>
+                {detectedRoots.map(item => (
+                  <button
+                    key={item.root}
+                    type="button"
+                    disabled={savingRoot}
+                    onClick={() => { setStRoot(item.root); void handleSaveRoot(item.root); }}
+                    title={item.root}
+                    className={`appearance-group mobile-touch rounded-md border px-2 py-0.5 font-semibold transition ${stRoot === item.root ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/50 dark:text-indigo-200' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}
+                  >
+                    {item.kind === 'tauritavern' ? 'TauriTavern' : 'SillyTavern'}
+                  </button>
+                ))}
               </div>
+            )}
+          </div>
+
+          {/* 第二行：服务连接地址（定宽） + 扩展安装路径（占满余宽），两列单行标题且控件等高对齐 */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[210px_minmax(0,1fr)]">
+            <div>
+              <label className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+                <Link2 className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                <span className="truncate">{t("服务连接地址")}</span>
+              </label>
               <input
                 type="text"
                 value={serverUrl}
                 onChange={e => setServerUrl(e.target.value)}
                 placeholder="http://localhost:3000"
-                className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 font-mono text-xs outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                className="mt-1.5 h-9 w-full rounded-lg border border-gray-300 bg-white px-2.5 font-mono text-xs outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                 title={t("SillyTavern 连接器向本项目通信所使用的 HTTP 地址")}
               />
             </div>
-          </div>
 
-          {/* 自动补全路径预览 */}
-          <div className="mt-3 flex items-start gap-1.5 border-t border-gray-200/70 pt-2.5 text-meta text-gray-500 dark:border-gray-700/70 dark:text-gray-400">
-            <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-indigo-500" />
-            <div className="min-w-0 flex-1">
-              <span>{t("安装目标路径（共用同一扩展，自动识别已启用的酒馆插件）：")}</span>
-              <code className="appearance-group mt-0.5 block truncate rounded bg-gray-200/70 px-1.5 py-0.5 font-mono text-meta text-gray-800 dark:bg-gray-700 dark:text-gray-200" title={currentTargetPath}>
-                {currentTargetPath}
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+                <Info className="h-3.5 w-3.5 shrink-0 text-indigo-500" />
+                <span className="truncate">{t("扩展安装路径")}</span>
+              </div>
+              <code
+                className="appearance-group mt-1.5 flex h-9 items-center truncate rounded-lg border border-gray-200/80 bg-gray-200/60 px-2.5 font-mono text-meta text-gray-800 dark:border-gray-700/80 dark:bg-gray-700/70 dark:text-gray-200"
+                title={currentTargetPath}
+              >
+                <span className="truncate">{currentTargetPath}</span>
               </code>
             </div>
-            {stRoot.trim() && stRoot.trim() !== detectedRoot && (
-              <button
-                type="button"
-                data-appearance="control" data-tone="neutral"
-                disabled={savingRoot}
-                onClick={() => void handleSaveRoot()}
-                className="mobile-touch shrink-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-micro font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-              >
-                {savingRoot ? t("保存中…") : t("保存目录")}
-              </button>
-            )}
           </div>
 
-          {chatu8Preferences.enabled && chatu8Status && (
-            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200/70 pt-2.5 text-meta text-gray-500 dark:border-gray-700/70 dark:text-gray-400">
-              <span>
-                {chatu8Status.connected
-                  ? t("智慧姬 · 风格串 {0} · Vibe 组 {1} · 历史 {2} 张", [chatu8Status.linkedArtists, chatu8Status.linkedGroups, chatu8Status.linkedHistory])
-                  : t("智慧姬：未检测到酒馆目录（历史零拷贝与导入封面需绑定有效路径）")}
-                {chatu8Status.lastSyncAt > 0 && ` · ${t("上次同步 {0}", [new Date(chatu8Status.lastSyncAt).toLocaleTimeString(getLanguage(), { hour12: false })])}`}
-              </span>
-              {chatu8Status.connected && (
-                <button
-                  type="button"
-                  data-appearance="control" data-tone="neutral"
-                  aria-label={t("扫描智慧姬历史")}
-                  disabled={scanningTarget !== null || chatu8Status.historySyncing}
-                  onClick={() => void handleScanHistory('st-chatu8')}
-                  className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-micro font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                >
-                  <RefreshCw className={`h-3 w-3 ${scanningTarget === 'st-chatu8' || chatu8Status.historySyncing ? 'animate-spin' : ''}`} />
-                  {scanningTarget === 'st-chatu8' || chatu8Status.historySyncing ? t("扫描中…") : t("扫描历史")}
-                </button>
+          {/* 第三行：紧凑同步状态列表 */}
+          {((chatu8Preferences.enabled && chatu8Status) || (baiBaiPreferences.enabled && baiBaiStatus)) && (
+            <div className="space-y-2 border-t border-gray-200/70 pt-2.5 text-meta text-gray-500 dark:border-gray-700/70 dark:text-gray-400">
+              {chatu8Preferences.enabled && chatu8Status && (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="min-w-0">
+                    {chatu8Status.connected
+                      ? t("智慧姬 · 风格串 {0} · Vibe 组 {1} · 历史 {2} 张", [chatu8Status.linkedArtists, chatu8Status.linkedGroups, chatu8Status.linkedHistory])
+                      : t("智慧姬：未检测到酒馆目录（历史零拷贝与导入封面需绑定有效路径）")}
+                    {chatu8Status.lastSyncAt > 0 && ` · ${t("上次同步 {0}", [new Date(chatu8Status.lastSyncAt).toLocaleTimeString(getLanguage(), { hour12: false })])}`}
+                  </span>
+                  {chatu8Status.connected && (
+                    <button
+                      type="button"
+                      data-appearance="control" data-tone="neutral"
+                      aria-label={t("扫描智慧姬历史")}
+                      disabled={scanningTarget === 'st-chatu8' || chatu8Status.historySyncing}
+                      onClick={() => void handleScanHistory('st-chatu8')}
+                      className="appearance-group mobile-touch inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 text-micro font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${scanningTarget === 'st-chatu8' || chatu8Status.historySyncing ? 'animate-spin' : ''}`} />
+                      {scanningTarget === 'st-chatu8' || chatu8Status.historySyncing ? t("扫描中…") : t("扫描历史")}
+                    </button>
+                  )}
+                </div>
               )}
-            </div>
-          )}
 
-          {baiBaiPreferences.enabled && baiBaiStatus && (
-            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200/70 pt-2.5 text-meta text-gray-500 dark:border-gray-700/70 dark:text-gray-400">
-              <span>
-                {baiBaiStatus.connected
-                  ? t("柏宝绘 · 风格串 {0} · Vibe {1} · 历史 {2} 张", [baiBaiStatus.linkedArtists, baiBaiStatus.linkedVibes, baiBaiStatus.linkedHistory])
-                  : t("柏宝绘：未检测到酒馆目录（历史零拷贝与导入封面需绑定有效路径）")}
-                {baiBaiStatus.lastSyncAt > 0 && ` · ${t("上次同步 {0}", [new Date(baiBaiStatus.lastSyncAt).toLocaleTimeString(getLanguage(), { hour12: false })])}`}
-              </span>
-              {baiBaiStatus.connected && (
-                <button
-                  type="button"
-                  data-appearance="control" data-tone="neutral"
-                  aria-label={t("扫描柏宝绘历史")}
-                  disabled={scanningTarget !== null || baiBaiStatus.historySyncing}
-                  onClick={() => void handleScanHistory('st-baibai')}
-                  className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-micro font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                >
-                  <RefreshCw className={`h-3 w-3 ${scanningTarget === 'st-baibai' || baiBaiStatus.historySyncing ? 'animate-spin' : ''}`} />
-                  {scanningTarget === 'st-baibai' || baiBaiStatus.historySyncing ? t("扫描中…") : t("扫描历史")}
-                </button>
+              {baiBaiPreferences.enabled && baiBaiStatus && (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="min-w-0">
+                    {baiBaiStatus.connected
+                      ? t("柏宝绘 · 风格串 {0} · Vibe {1} · 历史 {2} 张", [baiBaiStatus.linkedArtists, baiBaiStatus.linkedVibes, baiBaiStatus.linkedHistory])
+                      : t("柏宝绘：未检测到酒馆目录（历史零拷贝与导入封面需绑定有效路径）")}
+                    {baiBaiStatus.lastSyncAt > 0 && ` · ${t("上次同步 {0}", [new Date(baiBaiStatus.lastSyncAt).toLocaleTimeString(getLanguage(), { hour12: false })])}`}
+                  </span>
+                  {baiBaiStatus.connected && (
+                    <button
+                      type="button"
+                      data-appearance="control" data-tone="neutral"
+                      aria-label={t("扫描柏宝绘历史")}
+                      disabled={scanningTarget === 'st-baibai' || baiBaiStatus.historySyncing}
+                      onClick={() => void handleScanHistory('st-baibai')}
+                      className="appearance-group mobile-touch inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 text-micro font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${scanningTarget === 'st-baibai' || baiBaiStatus.historySyncing ? 'animate-spin' : ''}`} />
+                      {scanningTarget === 'st-baibai' || baiBaiStatus.historySyncing ? t("扫描中…") : t("扫描历史")}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )}

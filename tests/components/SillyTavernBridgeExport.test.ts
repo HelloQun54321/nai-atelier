@@ -125,4 +125,30 @@ describe('设置里的智慧姬同步开关', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/integrations/st-baibai/root', expect.objectContaining({ method: 'POST' }));
     expect(notify).toHaveBeenCalledWith('已绑定 TauriTavern 目录：E:\\CustomTTData');
   });
+  it('后台历史扫描进行中时自动轮询并在完成后恢复按钮与最新张数', async () => {
+    vi.useFakeTimers();
+    try {
+      preferences.enabled = true;
+      let calls = 0;
+      const fetchMock = vi.fn().mockImplementation(async () => {
+        calls++;
+        return new Response(JSON.stringify({
+          connected: true,
+          sillyTavernRoot: 'D:\\SyntheticTavern',
+          linkedArtists: 10,
+          linkedGroups: 1,
+          linkedHistory: calls === 1 ? 100 : 128,
+          historySyncing: calls === 1,
+        }));
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      render(React.createElement(SillyTavernBridgeExport, { notify: vi.fn() }));
+      await vi.waitFor(() => expect(screen.getByRole('button', { name: '扫描智慧姬历史' }).textContent).toContain('扫描中…'));
+      await vi.advanceTimersByTimeAsync(2100);
+      await vi.waitFor(() => expect(screen.getByRole('button', { name: '扫描智慧姬历史' }).textContent).toContain('扫描历史'));
+      expect(screen.getByText(/历史 128 张/)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
