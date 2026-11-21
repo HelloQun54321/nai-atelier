@@ -73,12 +73,18 @@ export function ensureHistoryRecycleSchema(db: D1Database): Promise<void> {
     const pointer = table === 'inspirations' ? "OR NEW.image_key = NULLIF(b.image_key,'') OR (NEW.source_type IN ('history','local-history') AND NEW.source_id = b.id)"
       : table === 'artists' ? "OR NEW.preview_url IN (SELECT value FROM json_each(urls))" : '';
     for (const action of ['INSERT','UPDATE']) {
-     await db.prepare(`CREATE TRIGGER IF NOT EXISTS history_bin_reference_${table}_${action.toLowerCase()} BEFORE ${action} ON ${table}
+     const triggerName = `history_bin_reference_${table}_${action.toLowerCase()}`;
+     const existingTrigger = await db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?").bind(triggerName).first<{sql?:string}>();
+     if (existingTrigger?.sql && !existingTrigger.sql.includes('st-baibai')) {
+      await db.prepare(`DROP TRIGGER IF EXISTS ${triggerName}`).run();
+     }
+     await db.prepare(`CREATE TRIGGER IF NOT EXISTS ${triggerName} BEFORE ${action} ON ${table}
       WHEN ${when} AND EXISTS (SELECT 1 FROM (SELECT b.*, json_array('/api/local-history/' || b.id || '/image',
        '/api/assets/' || b.image_key,
        '/api/assets/' || replace(replace(replace(b.image_key,'%','%25'),'/','%2F'),' ','%20'),
        '/api/assets/' || replace(replace(b.image_key,'%','%25'),' ','%20'),
-       CASE WHEN b.external_id IS NOT NULL AND b.external_id <> '' THEN '/api/integrations/st-chatu8/history/' || b.external_id || '/image' END) AS urls
+       CASE WHEN b.external_id IS NOT NULL AND b.external_id <> '' THEN '/api/integrations/st-chatu8/history/' || b.external_id || '/image' END,
+       CASE WHEN b.external_id IS NOT NULL AND b.external_id <> '' THEN '/api/integrations/st-baibai/history/' || b.external_id || '/image' END) AS urls
        FROM local_generation_recycle_bin b) b
       WHERE ${direct} IN (SELECT value FROM json_each(urls)) ${pointer}
        OR EXISTS(SELECT 1 FROM json_each(${document}) docs,

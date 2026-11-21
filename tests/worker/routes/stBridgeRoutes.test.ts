@@ -9,14 +9,21 @@ function fixture(enabled = true) {
   sqlite.exec("INSERT INTO settings (key, value) VALUES ('unrelated', 'preserve')");
   if (enabled) sqlite.exec(`INSERT INTO settings (key, value) VALUES ('st_chatu8_preferences_v1', '{"enabled":true}')`);
   sqlite.prepare('INSERT INTO chains (id, name, type, params) VALUES (?, ?, ?, ?)').run('v5', 'V5 原条目', 'style', JSON.stringify({ model: 'nai-diffusion-5-full' }));
-  const db = { prepare(query: string) {
-    let values: any[] = [];
-    return { bind(...next: any[]) { values = next; return this; },
-      async first() { return sqlite.prepare(query).get(...values) || null; },
-      async all() { return { results: sqlite.prepare(query).all(...values) }; },
-      async run() { return { success: true, meta: { changes: Number(sqlite.prepare(query).run(...values).changes) } }; },
-    };
-  } } as unknown as D1Database;
+  const db = {
+    prepare(query: string) {
+      let values: any[] = [];
+      return { bind(...next: any[]) { values = next; return this; },
+        async first() { return sqlite.prepare(query).get(...values) || null; },
+        async all() { return { results: sqlite.prepare(query).all(...values) }; },
+        async run() { return { success: true, meta: { changes: Number(sqlite.prepare(query).run(...values).changes) } }; },
+      };
+    },
+    async batch(statements: any[]) {
+      const results = [];
+      for (const stmt of statements) results.push(await stmt.run());
+      return results;
+    },
+  } as unknown as D1Database;
   const invoke = (method = 'GET', body?: unknown, role = 'user', path = '/api/st-chatu8/export-selection') => {
     const request = new Request(`http://localhost${path}`, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return handleStBridgeRoute({ path, method, request, db, env: { LOCAL_HISTORY_ENABLED: 'true' }, currentUser: { id: 'owner', role } } as RouteContext);
@@ -88,6 +95,29 @@ describe('本机持久化智慧姬同步设置与发送范围（隔离存储）'
       f.sqlite.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('st_chatu8_preferences_v1', saved);
       expect(await (await f.invoke('GET', undefined, 'user', pref))?.json()).toEqual({ enabled: false });
     }
+    f.sqlite.close();
+  });
+  it('柏宝绘路由与智慧姬独立隔离：各自开关、待同步列表与 external_source 互不干扰', async () => {
+    const f = fixture(false);
+    const bbPref = '/api/st-baibai/preferences';
+    const bbWs = '/api/st-baibai/workspace';
+    const bbKnown = '/api/integrations/st-baibai/history/known';
+    const bbImport = '/api/integrations/st-baibai/history/import';
+    const extId = 'a'.repeat(64);
+    expect(await (await f.invoke('GET', undefined, 'user', bbPref))?.json()).toEqual({ enabled: false });
+    expect((await f.invoke('POST', { action: 'enqueue', chainIds: ['a'] }, 'user', bbWs))?.status).toBe(409);
+    await f.invoke('POST', { enabled: true }, 'user', bbPref);
+    // 开启柏宝绘不影响智慧姬开关
+    expect(await (await f.invoke('GET', undefined, 'user', '/api/st-chatu8/preferences'))?.json()).toEqual({ enabled: false });
+    const queued = await (await f.invoke('POST', { action: 'enqueue', chainIds: ['a', 'v5'] }, 'user', bbWs))?.json();
+    expect(queued.chainIds).toEqual(['a', 'v5']);
+    expect(await (await f.invoke('GET', undefined, 'user', '/api/st-chatu8/workspace'))?.json()).toMatchObject({ chainIds: [] });
+    const imported = await (await f.invoke('POST', { items: [{ externalId: extId, prompt: '1girl', sourceName: '柏宝绘 · Alice', createdAt: 1700000000000 }] }, 'user', bbImport))?.json();
+    expect(imported).toEqual({ imported: 1, skipped: 0 });
+    const known = await (await f.invoke('POST', { externalIds: [extId] }, 'user', bbKnown))?.json();
+    expect(known).toEqual({ externalIds: [extId] });
+    const row = f.sqlite.prepare('SELECT id, external_source, source_chain_name FROM local_generation_history WHERE external_id = ?').get(extId) as any;
+    expect(row).toMatchObject({ id: `st-baibai-${extId.slice(0, 32)}`, external_source: 'st-baibai', source_chain_name: '柏宝绘 · Alice' });
     f.sqlite.close();
   });
 });

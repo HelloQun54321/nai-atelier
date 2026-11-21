@@ -197,7 +197,7 @@ export const installSillyTavernBridgeExtension = async ({
   };
 };
 
-const findSillyTavernLocation = async (projectRoot, preferredRoot = '') => {
+export const findSillyTavernLocation = async (projectRoot, preferredRoot = '') => {
   const candidates = [
     preferredRoot ? computeSillyTavernRootDir(preferredRoot) : '',
     process.env.SILLY_TAVERN_ROOT ? computeSillyTavernRootDir(process.env.SILLY_TAVERN_ROOT) : '',

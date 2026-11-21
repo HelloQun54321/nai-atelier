@@ -7,6 +7,7 @@ import { WisdomSyncToolbar } from '../../components/WisdomSyncToolbar';
 
 const entry = { chainId: 'pending-a', requestId: 'request-a', status: 'pending' as const, requestedAt: 1, confirmedAt: 0, lastVerifiedAt: 0 };
 const selection = (overrides: Partial<WisdomSyncSelection> = {}): WisdomSyncSelection => ({
+  target: 'st-chatu8', targetLabel: '智慧姬',
   open: true, view: 'pick', setView: vi.fn(), recordFilter: 'all', setRecordFilter: vi.fn(), selecting: true,
   busy: false, error: '', entries: new Map(), pending: [entry], records: [], selected: new Set(['a']), available: new Set(['a', 'b']),
   savedCount: 1, lastSnapshotAt: 0, begin: vi.fn(), cancel: vi.fn(), toggle: vi.fn(), setFiltered: vi.fn(),

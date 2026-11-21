@@ -218,8 +218,8 @@ export function localHistoryEnabled(env: Env) {
 }
 
 export function localHistoryImageUrl(row: any) {
-  return row.external_source === 'st-chatu8' && row.external_id
-    ? `/api/integrations/st-chatu8/history/${encodeURIComponent(row.external_id)}/image`
+  return (row.external_source === 'st-chatu8' || row.external_source === 'st-baibai') && row.external_id
+    ? `/api/integrations/${row.external_source}/history/${encodeURIComponent(row.external_id)}/image`
     : `/api/local-history/${encodeURIComponent(row.id)}/image`;
 }
 

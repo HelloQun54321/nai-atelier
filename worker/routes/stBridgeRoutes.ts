@@ -11,38 +11,83 @@ import { localHistoryEnabled, ensureLocalHistorySchema } from './historyRoutes';
 import { isStChatu8ExportableChain } from '../stChatu8Policy.mjs';
 import { applyStSyncUpdates, enqueueStSync, readStSyncChains, readStSyncWorkspace, removeStSyncPending, updateStSyncWorkspace, type StSyncUpdate } from '../stChatu8Workspace';
 
-const preferenceKey = 'st_chatu8_preferences_v1';
-const isEnabled = async (db: RouteContext['db']) => {
+interface StBridgeTargetConfig {
+  source: 'st-chatu8' | 'st-baibai';
+  label: string;
+  preferenceKey: string;
+  workspaceKey: string;
+  legacyWorkspaceKey: string;
+  prefPath: string;
+  workspacePath: string;
+  legacySelectionPath: string;
+  recordsPath: string;
+  historyKnownPath: string;
+  historyImportPath: string;
+}
+
+const TARGETS: StBridgeTargetConfig[] = [
+  {
+    source: 'st-chatu8',
+    label: '智慧姬',
+    preferenceKey: 'st_chatu8_preferences_v1',
+    workspaceKey: 'st_chatu8_sync_workspace_v1',
+    legacyWorkspaceKey: 'st_chatu8_export_selection_v1',
+    prefPath: '/api/st-chatu8/preferences',
+    workspacePath: '/api/st-chatu8/workspace',
+    legacySelectionPath: '/api/st-chatu8/export-selection',
+    recordsPath: '/api/integrations/st-chatu8/artist-records',
+    historyKnownPath: '/api/integrations/st-chatu8/history/known',
+    historyImportPath: '/api/integrations/st-chatu8/history/import',
+  },
+  {
+    source: 'st-baibai',
+    label: '柏宝绘',
+    preferenceKey: 'st_baibai_preferences_v1',
+    workspaceKey: 'st_baibai_sync_workspace_v1',
+    legacyWorkspaceKey: '',
+    prefPath: '/api/st-baibai/preferences',
+    workspacePath: '/api/st-baibai/workspace',
+    legacySelectionPath: '',
+    recordsPath: '/api/integrations/st-baibai/artist-records',
+    historyKnownPath: '/api/integrations/st-baibai/history/known',
+    historyImportPath: '/api/integrations/st-baibai/history/import',
+  },
+];
+
+const isEnabled = async (db: RouteContext['db'], preferenceKey: string) => {
   const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(preferenceKey).first<{ value: string }>();
   return parseStoredJson(row?.value, {})?.enabled === true;
 };
 
-export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response | null> {
+async function handleTargetBridgeRoute(ctx: RouteContext, target: StBridgeTargetConfig): Promise<Response | null> {
   const { request, env, db, path, method, currentUser } = ctx;
 
-  if (path === '/api/st-chatu8/preferences') {
+  if (path === target.prefPath) {
     if (currentUser.role === 'guest') return error('Forbidden', 403);
-    if (method === 'GET') return json({ enabled: await isEnabled(db) });
+    if (method === 'GET') return json({ enabled: await isEnabled(db, target.preferenceKey) });
     if (method !== 'POST') return error('Method not allowed', 405);
     const body = await request.json().catch(() => null) as { enabled?: unknown } | null;
-    if (typeof body?.enabled !== 'boolean') return error('智慧姬同步开关无效', 400);
+    if (typeof body?.enabled !== 'boolean') return error(`${target.label}同步开关无效`, 400);
     await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
-      .bind(preferenceKey, JSON.stringify({ enabled: body.enabled })).run();
+      .bind(target.preferenceKey, JSON.stringify({ enabled: body.enabled })).run();
     return json({ enabled: body.enabled });
   }
 
   // 队列与接收记录共用既有设置表，无 schema 迁移；旧范围可继续读取。
-  if (path === '/api/st-chatu8/export-selection' || path === '/api/st-chatu8/workspace' || path === '/api/integrations/st-chatu8/artist-records') {
+  if ((target.legacySelectionPath && path === target.legacySelectionPath) || path === target.workspacePath || path === target.recordsPath) {
     if (currentUser.role === 'guest') return error('Forbidden', 403);
-    const legacy = path.endsWith('/export-selection');
-    const internal = path.endsWith('/artist-records');
-    if (method === 'GET' && !internal) { const result = await readStSyncWorkspace(db); return json(legacy ? { chainIds: result.chainIds } : result); }
+    const legacy = Boolean(target.legacySelectionPath && path === target.legacySelectionPath);
+    const internal = path === target.recordsPath;
+    if (method === 'GET' && !internal) {
+      const result = await readStSyncWorkspace(db, target.workspaceKey, target.legacyWorkspaceKey);
+      return json(legacy ? { chainIds: result.chainIds } : result);
+    }
     if (method !== 'POST') return error('Method not allowed', 405);
-    if (!await isEnabled(db)) return error('请先在设置中开启智慧姬同步', 409);
+    if (!await isEnabled(db, target.preferenceKey)) return error(`请先在设置中开启${target.label}同步`, 409);
     const body = await request.json().catch(() => null) as { chainIds?: unknown; action?: string; updates?: StSyncUpdate[]; verifiedAt?: number } | null;
     if (internal) {
       if (!Array.isArray(body?.updates) || body.updates.some(item => !item || typeof item.chainId !== 'string' || typeof item.requestId !== 'string' || (item.status !== undefined && !['synced', 'removed'].includes(item.status)) || (item.error !== undefined && typeof item.error !== 'string') || (item.onlyPending !== undefined && typeof item.onlyPending !== 'boolean')) || !Number.isFinite(body.verifiedAt) || Number(body.verifiedAt) < 0) return error('同步回执无效', 400);
-      const result = await updateStSyncWorkspace(db, value => applyStSyncUpdates(value, body.updates!, Number(body.verifiedAt)));
+      const result = await updateStSyncWorkspace(db, value => applyStSyncUpdates(value, body.updates!, Number(body.verifiedAt)), target.workspaceKey, target.legacyWorkspaceKey);
       return json(result);
     }
     if (!Array.isArray(body?.chainIds) || body.chainIds.some(id => typeof id !== 'string' || !id || id.length > 200)) return error('同步范围无效', 400);
@@ -54,13 +99,13 @@ export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response |
       if (legacy) removeStSyncPending(value, value.entries.filter(entry => entry.status === 'pending' && !chainIds.includes(entry.chainId)).map(entry => entry.chainId));
       if (body.action === 'remove') removeStSyncPending(value, chainIds);
       else enqueueStSync(value, chainIds, body.action === 'requeue');
-    });
+    }, target.workspaceKey, target.legacyWorkspaceKey);
     return json(legacy ? { chainIds: result.chainIds } : result);
   }
 
-  if (path === '/api/integrations/st-chatu8/history/known' && method === 'POST') {
+  if (path === target.historyKnownPath && method === 'POST') {
     if (currentUser.role === 'guest') return error('Forbidden', 403);
-    if (!await isEnabled(db)) return error('智慧姬同步已关闭', 409);
+    if (!await isEnabled(db, target.preferenceKey)) return error(`${target.label}同步已关闭`, 409);
     if (!localHistoryEnabled(env)) return error('Local history is disabled', 404);
     await ensureLocalHistorySchema(db);
     const body = await request.json() as any;
@@ -70,14 +115,14 @@ export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response |
     if (!ids.length) return json({ externalIds: [] });
     const placeholders = ids.map(() => '?').join(',');
     const rows = await db.prepare(`SELECT external_id FROM ${HISTORY_ALL}
-      WHERE user_id = ? AND external_source = 'st-chatu8' AND external_id IN (${placeholders})`)
-      .bind(currentUser.id, ...ids).all<{external_id: string}>();
+      WHERE user_id = ? AND external_source = ? AND external_id IN (${placeholders})`)
+      .bind(currentUser.id, target.source, ...ids).all<{external_id: string}>();
     return json({ externalIds: rows.results.map(row => row.external_id) });
   }
 
-  if (path === '/api/integrations/st-chatu8/history/import' && method === 'POST') {
+  if (path === target.historyImportPath && method === 'POST') {
     if (currentUser.role === 'guest') return error('Forbidden', 403);
-    if (!await isEnabled(db)) return error('智慧姬同步已关闭', 409);
+    if (!await isEnabled(db, target.preferenceKey)) return error(`${target.label}同步已关闭`, 409);
     if (!localHistoryEnabled(env)) return error('Local history is disabled', 404);
     await ensureLocalHistorySchema(db);
     const body = await request.json() as any;
@@ -89,29 +134,37 @@ export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response |
       const externalId = String(item?.externalId || '').trim();
       if (!/^[a-f0-9]{64}$/i.test(externalId)) { skipped++; continue; }
       const existing = await db.prepare(`SELECT id FROM ${HISTORY_ALL}
-        WHERE user_id = ? AND external_source = 'st-chatu8' AND external_id = ?`)
-        .bind(currentUser.id, externalId).first<{id: string}>();
+        WHERE user_id = ? AND external_source = ? AND external_id = ?`)
+        .bind(currentUser.id, target.source, externalId).first<{id: string}>();
       if (existing) { skipped++; continue; }
-      const id = `st-chatu8-${externalId.slice(0, 32)}`;
-      const release = await claimHistoryWrite(db,id,currentUser.id,'st-chatu8',externalId);
+      const id = `${target.source}-${externalId.slice(0, 32)}`;
+      const release = await claimHistoryWrite(db, id, currentUser.id, target.source, externalId);
       if (!release) { skipped++; continue; }
       try {
-      if (await db.prepare(`SELECT id FROM ${HISTORY_ALL} WHERE id = ? OR (user_id = ? AND external_source = 'st-chatu8' AND external_id = ?)`).bind(id,currentUser.id,externalId).first()) { skipped++; continue; }
-      const result = await db.prepare(`INSERT OR IGNORE INTO local_generation_history (
+        if (await db.prepare(`SELECT id FROM ${HISTORY_ALL} WHERE id = ? OR (user_id = ? AND external_source = ? AND external_id = ?)`).bind(id, currentUser.id, target.source, externalId).first()) { skipped++; continue; }
+        const result = await db.prepare(`INSERT OR IGNORE INTO local_generation_history (
         id, user_id, image_key, image_type, prompt, negative_prompt, params,
         source_chain_id, source_chain_name, source_chain_type, external_source, external_id, created_at
-      ) VALUES (?, ?, '', ?, ?, ?, ?, NULL, ?, 'playground', 'st-chatu8', ?, ?)`)
-        .bind(
-          id, currentUser.id, String(item.imageType || 'image/png'), String(item.prompt || ''),
-          String(item.negativePrompt || ''), JSON.stringify(item.params || {}),
-          String(item.sourceName || 'st-chatu8'), externalId, Number.isFinite(Number(item.createdAt)) ? Number(item.createdAt) : Date.now()
-        ).run();
-      // INSERT OR IGNORE 可能因主键冲突静默忽略：按实际写入行数计数，统计才准确
-      if ((result.meta?.changes || 0) > 0) imported++; else skipped++;
+      ) VALUES (?, ?, '', ?, ?, ?, ?, NULL, ?, 'playground', ?, ?, ?)`)
+          .bind(
+            id, currentUser.id, String(item.imageType || 'image/png'), String(item.prompt || ''),
+            String(item.negativePrompt || ''), JSON.stringify(item.params || {}),
+            String(item.sourceName || target.source), target.source, externalId, Number.isFinite(Number(item.createdAt)) ? Number(item.createdAt) : Date.now()
+          ).run();
+        // INSERT OR IGNORE 可能因主键冲突静默忽略：按实际写入行数计数，统计才准确
+        if ((result.meta?.changes || 0) > 0) imported++; else skipped++;
       } finally { await release(); }
     }
     return json({ imported, skipped });
   }
 
+  return null;
+}
+
+export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response | null> {
+  for (const target of TARGETS) {
+    const response = await handleTargetBridgeRoute(ctx, target);
+    if (response) return response;
+  }
   return null;
 }

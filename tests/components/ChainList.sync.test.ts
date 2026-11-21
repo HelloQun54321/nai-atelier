@@ -12,11 +12,12 @@ import { copySharedImage } from '../../services/imageSharing';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}) }));
 
-const { get, post, put, preferences } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), preferences: { enabled: true } }));
+const { get, post, put, preferences, baiBaiPreferences } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), preferences: { enabled: true }, baiBaiPreferences: { enabled: false } }));
 const confirmAction = vi.hoisted(() => vi.fn(async () => false));
 const collectionState = vi.hoisted(() => ({ rows: [] as any[], revision: 0, listeners: new Set<() => void>() }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => preferences }));
+vi.mock('../../services/stBaiBaiPreferences', () => ({ useStBaiBaiPreferences: () => baiBaiPreferences }));
 vi.mock('../../services/api', () => ({ api: { get, post, put } }));
 // 文件夹的真实读写由 ChainList.folders.test.tsx 覆盖，酒馆测试只统计酒馆请求。
 vi.mock('../../services/useChainFolders', () => ({ useChainFolders: () => ({ state: { revision: 0, folders: [], assignments: {} }, ready: true, busy: false, error: '', reload: vi.fn(), save: vi.fn() }) }));
@@ -102,7 +103,7 @@ it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操�
   expect(p.onDelete).not.toHaveBeenCalled();
 });
 beforeEach(() => {
-  localStorage.clear(); preferences.enabled = true;
+  localStorage.clear(); preferences.enabled = true; baiBaiPreferences.enabled = false;
   collectionState.rows = []; collectionState.revision = 0; collectionState.listeners.clear();
   confirmAction.mockReset(); confirmAction.mockResolvedValue(false);
   get.mockReset(); post.mockReset(); get.mockResolvedValue({ entries: [], lastSnapshotAt: 0 });
@@ -788,4 +789,19 @@ it('手机顶栏不常驻批量导入按钮，入口唯一出现在「更多」�
   const entry = await clickOverflowItem(/批量导入/, 'mobile');
   expect(entry).toBeTruthy();
   expect(screen.getAllByRole('button', { name: '批量导入' })).toHaveLength(1);
+});
+
+it('开启柏宝绘同步后显示独立队列入口，双开时可在工具栏切换目标', async () => {
+  preferences.enabled = true;
+  baiBaiPreferences.enabled = true;
+  get.mockResolvedValue({ entries: [], lastSnapshotAt: 0 });
+  render(React.createElement(ChainList, props()));
+  const baiBaiEntry = await clickOverflowItem(/柏宝绘同步/);
+  fireEvent.click(baiBaiEntry);
+  await screen.findByRole('toolbar', { name: '柏宝绘同步操作' });
+  await screen.findByRole('checkbox', { name: '柏宝绘同步：风格 A' });
+  const switcher = screen.getByRole('group', { name: '切换同步目标' });
+  fireEvent.click(within(switcher).getByRole('button', { name: '智慧姬' }));
+  await screen.findByRole('toolbar', { name: '智慧姬同步操作' });
+  await screen.findByRole('checkbox', { name: '智慧姬同步：风格 A' });
 });

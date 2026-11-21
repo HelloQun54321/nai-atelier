@@ -1,4 +1,68 @@
 {
+  "柏宝绘": ["柏寶繪", "ST-BaiBai-Image", "ST-BaiBai-Image", "ST-BaiBai-Image"],
+  "智慧姬": ["智慧姬", "st-chatu8", "st-chatu8", "st-chatu8"],
+  "柏宝绘同步": ["柏寶繪同步", "ST-BaiBai-Image Sync", "ST-BaiBai-Image 同期", "ST-BaiBai-Image 동기화"],
+  "接收柏宝绘预设、Vibe 与历史图；仅在酒馆手动点击「立即同步」时写回，写入后需刷新酒馆页面生效。": [
+    "接收柏寶繪預設、Vibe 與歷史圖；僅在酒館手動點擊「立即同步」時寫回，寫入後需重新整理酒館頁面生效。",
+    "Receive ST-BaiBai-Image presets, Vibes, and history; write-back happens only on manual Sync Now in SillyTavern, then refresh the SillyTavern page.",
+    "ST-BaiBai-Image のプリセット・Vibe・履歴を受信します。書き戻しは SillyTavern で手動「今すぐ同期」した時のみ行われ、反映にはページ再読み込みが必要です。",
+    "ST-BaiBai-Image 프리셋·Vibe·기록을 수신합니다. 쓰기 반영은 SillyTavern에서 수동 「지금 동기화」 시에만 수행되며, 적용하려면 페이지를 새로고침하세요."
+  ],
+  "安装目标路径（共用同一扩展，自动识别已启用的酒馆插件）：": [
+    "安裝目標路徑（共用同一擴充，自動識別已啟用的酒館外掛）：",
+    "Install Target Path (shared extension, auto-detects enabled SillyTavern plugins):",
+    "インストール先パス（共通拡張機能で有効なプラグインを自動検出）：",
+    "설치 대상 경로(공용 확장으로 활성화된 SillyTavern 플러그인 자동 감지):"
+  ],
+  "智慧姬 · 风格串 {0} · Vibe 组 {1} · 历史 {2} 张": [
+    "智慧姬 · 風格串 {0} · Vibe 組 {1} · 歷史 {2} 張",
+    "st-chatu8 · Styles {0} · Vibe Groups {1} · History {2}",
+    "st-chatu8 · スタイル {0} · Vibe グループ {1} · 履歴 {2} 枚",
+    "st-chatu8 · 스타일 {0} · Vibe 그룹 {1} · 기록 {2}장"
+  ],
+  "智慧姬：未检测到酒馆目录（历史零拷贝与导入封面需绑定有效路径）": [
+    "智慧姬：未偵測到酒館目錄（歷史零拷貝與匯入封面需綁定有效路徑）",
+    "st-chatu8: SillyTavern folder not detected (valid path needed for zero-copy history and covers)",
+    "st-chatu8：SillyTavern フォルダ未検出（ゼロコピー履歴とカバー取り込みには有効なパスが必要）",
+    "st-chatu8: SillyTavern 폴더 미감지(제로 카피 기록 및 커버 가져오기에 유효한 경로 필요)"
+  ],
+  "扫描智慧姬历史": ["掃描智慧姬歷史", "Scan st-chatu8 history", "st-chatu8 履歴をスキャン", "st-chatu8 기록 스캔"],
+  "柏宝绘 · 风格串 {0} · Vibe {1} · 历史 {2} 张": [
+    "柏寶繪 · 風格串 {0} · Vibe {1} · 歷史 {2} 張",
+    "ST-BaiBai-Image · Styles {0} · Vibes {1} · History {2}",
+    "ST-BaiBai-Image · スタイル {0} · Vibe {1} · 履歴 {2} 枚",
+    "ST-BaiBai-Image · 스타일 {0} · Vibe {1} · 기록 {2}장"
+  ],
+  "柏宝绘：未检测到酒馆目录（历史零拷贝与导入封面需绑定有效路径）": [
+    "柏寶繪：未偵測到酒館目錄（歷史零拷貝與匯入封面需綁定有效路徑）",
+    "ST-BaiBai-Image: SillyTavern folder not detected (valid path needed for zero-copy history and covers)",
+    "ST-BaiBai-Image：SillyTavern フォルダ未検出（ゼロコピー履歴とカバー取り込みには有効なパスが必要）",
+    "ST-BaiBai-Image: SillyTavern 폴더 미감지(제로 카피 기록 및 커버 가져오기에 유효한 경로 필요)"
+  ],
+  "扫描柏宝绘历史": ["掃描柏寶繪歷史", "Scan ST-BaiBai-Image history", "ST-BaiBai-Image 履歴をスキャン", "ST-BaiBai-Image 기록 스캔"],
+  "切换同步目标": ["切換同步目標", "Switch sync target", "同期先を切り替え", "동기화 대상 전환"],
+  "柏宝绘同步操作": ["柏寶繪同步操作", "ST-BaiBai-Image sync actions", "ST-BaiBai-Image 同期操作", "ST-BaiBai-Image 동기화 작업"],
+  "柏宝绘同步视图": ["柏寶繪同步檢視", "ST-BaiBai-Image sync views", "ST-BaiBai-Image 同期ビュー", "ST-BaiBai-Image 동기화 보기"],
+  "在酒馆连接器点击「立即同步」写入，完成后请刷新酒馆页面": [
+    "在酒館連接器點擊「立即同步」寫入，完成後請重新整理酒館頁面",
+    "Click \"Sync Now\" in the SillyTavern bridge to write back, then refresh the SillyTavern page",
+    "SillyTavern 連携パネルで「今すぐ同期」を押して書き込み後、ページを再読み込みしてください",
+    "SillyTavern 브리지에서 「지금 동기화」를 눌러 반영한 뒤 페이지를 새로고침하세요"
+  ],
+  "柏宝绘中已移除": ["柏寶繪中已移除", "Removed in ST-BaiBai-Image", "ST-BaiBai-Image で削除済み", "ST-BaiBai-Image에서 제거됨"],
+  "柏宝绘同步：{0}": ["柏寶繪同步：{0}", "ST-BaiBai-Image sync: {0}", "ST-BaiBai-Image 同期：{0}", "ST-BaiBai-Image 동기화: {0}"],
+  "柏宝绘同步设置响应无效": ["柏寶繪同步設定回應無效", "Invalid ST-BaiBai-Image sync preference response", "ST-BaiBai-Image 同期設定の応答が無効です", "ST-BaiBai-Image 동기화 설정 응답이 잘못되었습니다"],
+  "读取柏宝绘同步设置失败": ["讀取柏寶繪同步設定失敗", "Failed to load ST-BaiBai-Image sync preferences", "ST-BaiBai-Image 同期設定の読み込みに失敗しました", "ST-BaiBai-Image 동기화 설정을 불러오지 못했습니다"],
+  "保存柏宝绘同步设置失败": ["儲存柏寶繪同步設定失敗", "Failed to save ST-BaiBai-Image sync preferences", "ST-BaiBai-Image 同期設定の保存に失敗しました", "ST-BaiBai-Image 동기화 설정을 저장하지 못했습니다"],
+  "柏宝绘同步列表响应无效": ["柏寶繪同步列表回應無效", "Invalid ST-BaiBai-Image sync list response", "ST-BaiBai-Image 同期リストの応答が無効です", "ST-BaiBai-Image 동기화 목록 응답이 잘못되었습니다"],
+  "读取柏宝绘同步列表失败": ["讀取柏寶繪同步列表失敗", "Failed to load ST-BaiBai-Image sync list", "ST-BaiBai-Image 同期リストの読み込みに失敗しました", "ST-BaiBai-Image 동기화 목록을 불러오지 못했습니다"],
+  "更新柏宝绘同步列表失败": ["更新柏寶繪同步列表失敗", "Failed to update ST-BaiBai-Image sync list", "ST-BaiBai-Image 同期リストの更新に失敗しました", "ST-BaiBai-Image 동기화 목록을 업데이트하지 못했습니다"],
+  "已加入待同步，请在酒馆连接器手动点击「立即同步」并刷新页面": [
+    "已加入待同步，請在酒館連接器手動點擊「立即同步」並重新整理頁面",
+    "Added to pending sync. Click \"Sync Now\" in SillyTavern and refresh the page.",
+    "同期待ちに追加しました。SillyTavern で「今すぐ同期」を押してページを再読み込みしてください。",
+    "동기화 대기에 추가했습니다. SillyTavern에서 「지금 동기화」를 누르고 페이지를 새로고침하세요."
+  ],
   "准备中…": ["準備中…", "Preparing…", "準備中…", "준비 중…"],
   "轮询密钥额度…": ["輪詢金鑰額度…", "Polling key quotas…", "キー残高を照会中…", "키 한도 조회 중…"],
   "核实额度中…": ["核實額度中…", "Checking quota…", "残高を確認中…", "한도 확인 중…"],

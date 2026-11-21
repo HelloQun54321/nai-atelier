@@ -4,16 +4,37 @@ import type { StSyncEntry, StSyncWorkspace } from '../worker/stChatu8Workspace';
 import { api } from './api';
 import { isStChatu8ExportableChain } from '../worker/stChatu8Policy.mjs';
 
-const path = '/st-chatu8/workspace';
-const empty: StSyncWorkspace = { entries: [], lastSnapshotAt: 0 };
-const readWorkspace = (value: StSyncWorkspace): StSyncWorkspace => {
-  if (!Array.isArray(value?.entries) || value.entries.some(entry => !entry || typeof entry.chainId !== 'string' || typeof entry.requestId !== 'string' || !['pending', 'synced', 'removed'].includes(entry.status)) || !Number.isFinite(value.lastSnapshotAt)) throw new Error('智慧姬同步列表响应无效');
-  return value;
-};
+export type StSyncTarget = 'st-chatu8' | 'st-baibai';
 export type WisdomSyncView = 'pick' | 'pending' | 'records';
 
+const TARGET_META: Record<StSyncTarget, { path: string; label: string; invalidMsg: string; loadFailMsg: string; updateFailMsg: string; enqueueOkMsg: string }> = {
+  'st-chatu8': {
+    path: '/st-chatu8/workspace',
+    label: '智慧姬',
+    invalidMsg: '智慧姬同步列表响应无效',
+    loadFailMsg: '读取智慧姬同步列表失败',
+    updateFailMsg: '更新智慧姬同步列表失败',
+    enqueueOkMsg: '已加入待同步，等待智慧姬接收确认',
+  },
+  'st-baibai': {
+    path: '/st-baibai/workspace',
+    label: '柏宝绘',
+    invalidMsg: '柏宝绘同步列表响应无效',
+    loadFailMsg: '读取柏宝绘同步列表失败',
+    updateFailMsg: '更新柏宝绘同步列表失败',
+    enqueueOkMsg: '已加入待同步，请在酒馆连接器手动点击「立即同步」并刷新页面',
+  },
+};
+
+const empty: StSyncWorkspace = { entries: [], lastSnapshotAt: 0 };
+const readWorkspace = (value: StSyncWorkspace, invalidMsg: string): StSyncWorkspace => {
+  if (!Array.isArray(value?.entries) || value.entries.some(entry => !entry || typeof entry.chainId !== 'string' || typeof entry.requestId !== 'string' || !['pending', 'synced', 'removed'].includes(entry.status)) || !Number.isFinite(value.lastSnapshotAt)) throw new Error(invalidMsg);
+  return value;
+};
+
 /** 挑选草稿、待同步与接收记录分开；服务端回执是状态的唯一依据。 */
-export function useStChatu8Selection(enabled: boolean, chains: PromptChain[], notify: (message: string, type?: 'success' | 'error') => void) {
+export function useStBridgeSelection(target: StSyncTarget, enabled: boolean, chains: PromptChain[], notify: (message: string, type?: 'success' | 'error') => void) {
+  const meta = TARGET_META[target];
   const [workspace, setWorkspace] = useState<StSyncWorkspace>(empty);
   const [draft, setDraft] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
@@ -37,12 +58,12 @@ export function useStChatu8Selection(enabled: boolean, chains: PromptChain[], no
     const ticket = ++revision.current;
     working.current = true; setBusy(true);
     try {
-      const result = readWorkspace(await api.get(path, { cache: 'no-store' }));
+      const result = readWorkspace(await api.get(meta.path, { cache: 'no-store' }), meta.invalidMsg);
       if (ticket === revision.current) { setWorkspace(result); setError(''); }
     } catch (cause) {
-      if (ticket === revision.current) setError(cause instanceof Error ? cause.message : '读取智慧姬同步列表失败');
+      if (ticket === revision.current) setError(cause instanceof Error ? cause.message : meta.loadFailMsg);
     } finally { if (ticket === revision.current) { working.current = false; setBusy(false); } }
-  }, []);
+  }, [meta.path, meta.invalidMsg, meta.loadFailMsg]);
 
   useEffect(() => {
     if (enabled) void load();
@@ -77,21 +98,27 @@ export function useStChatu8Selection(enabled: boolean, chains: PromptChain[], no
     const ticket = ++revision.current;
     working.current = true; setBusy(true);
     try {
-      const next = readWorkspace(await api.post(path, { action, chainIds: ids }));
+      const next = readWorkspace(await api.post(meta.path, { action, chainIds: ids }), meta.invalidMsg);
       if (ticket !== revision.current) return;
       setWorkspace(next); setError('');
       if (action === 'enqueue') { setDraft(new Set()); setView('pending'); }
       if (action === 'requeue') setView('pending');
-      notifyRef.current(action === 'remove' ? '已移出待同步，原风格串保留' : '已加入待同步，等待智慧姬接收确认', 'success');
+      notifyRef.current(action === 'remove' ? '已移出待同步，原风格串保留' : meta.enqueueOkMsg, 'success');
     } catch (cause) {
-      if (ticket === revision.current) { const message = cause instanceof Error ? cause.message : '更新智慧姬同步列表失败'; setError(message); notifyRef.current(message, 'error'); }
+      if (ticket === revision.current) { const message = cause instanceof Error ? cause.message : meta.updateFailMsg; setError(message); notifyRef.current(message, 'error'); }
     } finally { if (ticket === revision.current) { working.current = false; setBusy(false); } }
   };
   const save = () => actOnEntries('enqueue', [...selected]);
   const accepts = (chainId: string) => !open || view === 'pick' || (view === 'pending'
     ? entries.get(chainId)?.status === 'pending'
     : !!entries.get(chainId) && entries.get(chainId)?.status !== 'pending' && (recordFilter === 'all' || entries.get(chainId)?.status === recordFilter));
-  return { open, view, setView, recordFilter, setRecordFilter, selecting: open && view === 'pick', busy, error, entries, pending, records, selected, available, savedCount: pending.length, lastSnapshotAt: workspace.lastSnapshotAt, begin, cancel, toggle, setFiltered, save, load, actOnEntries, accepts };
+  return { target, targetLabel: meta.label, open, view, setView, recordFilter, setRecordFilter, selecting: open && view === 'pick', busy, error, entries, pending, records, selected, available, savedCount: pending.length, lastSnapshotAt: workspace.lastSnapshotAt, begin, cancel, toggle, setFiltered, save, load, actOnEntries, accepts };
 }
-export type WisdomSyncSelection = ReturnType<typeof useStChatu8Selection>;
-export const wisdomEntryLabel = (entry: StSyncEntry) => entry.status === 'synced' ? '已同步' : entry.status === 'removed' ? '智慧姬中已移除' : entry.error ? '等待重试' : '待同步';
+
+export function useStChatu8Selection(enabled: boolean, chains: PromptChain[], notify: (message: string, type?: 'success' | 'error') => void, target: StSyncTarget = 'st-chatu8') {
+  return useStBridgeSelection(target, enabled, chains, notify);
+}
+
+export type WisdomSyncSelection = ReturnType<typeof useStBridgeSelection>;
+export const wisdomEntryLabel = (entry: StSyncEntry, target: StSyncTarget = 'st-chatu8') =>
+  entry.status === 'synced' ? '已同步' : entry.status === 'removed' ? (target === 'st-baibai' ? '柏宝绘中已移除' : '智慧姬中已移除') : entry.error ? '等待重试' : '待同步';

@@ -20,6 +20,7 @@ const referenceContext = (target: string, encodedUrl = '?', segmentedUrl = '?') 
  SELECT t.id AS history_id, u.value AS url FROM target t, json_each(json_array(
   '/api/local-history/' || t.id || '/image',
   '/api/integrations/st-chatu8/history/' || t.external_id || '/image',
+  '/api/integrations/st-baibai/history/' || t.external_id || '/image',
   '/api/assets/' || NULLIF(t.image_key,''),
   CASE WHEN t.image_key <> '' THEN ${encodedUrl} END,
   CASE WHEN t.image_key <> '' THEN ${segmentedUrl} END
@@ -229,7 +230,7 @@ async function previewRecycleCandidates(ctx: RouteContext, ids: string[], protec
  return { allowed, skipped };
 }
 const binVersion = (row:any) => digest(rowVersion(row)+':'+row.moved_at+':'+(row.move_nonce||''));
-const mapBin = async (row: any) => ({version:await binVersion(row),...mapLocalHistoryRow(row), imageUrl:row.external_source==='st-chatu8' ? `/api/integrations/st-chatu8/history/${encodeURIComponent(row.external_id)}/image` : `/api/local-history/recycle-bin/${encodeURIComponent(row.id)}/image`, movedAt:Number(row.moved_at)});
+const mapBin = async (row: any) => ({version:await binVersion(row),...mapLocalHistoryRow(row), imageUrl:(row.external_source==='st-chatu8'||row.external_source==='st-baibai') ? `/api/integrations/${row.external_source}/history/${encodeURIComponent(row.external_id)}/image` : `/api/local-history/recycle-bin/${encodeURIComponent(row.id)}/image`, movedAt:Number(row.moved_at)});
 export async function handleRecycleRoute(ctx: RouteContext): Promise<Response|null> {
  const {db,path,method,request,currentUser,url,env}=ctx; const root='/api/local-history/recycle-bin';
  if (!path.startsWith(root)) return null;

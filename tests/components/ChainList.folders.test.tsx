@@ -15,6 +15,7 @@ vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confi
 vi.mock('../../services/api', () => ({ api: { get, put, post: vi.fn() } }));
 vi.mock('../../services/collectionFavorites', () => ({ ensureCollection: ensureFavorites, collectionSnapshot: () => favorites, readLegacyFavoriteIds: () => new Set(), subscribeCollection: (listener: () => void) => { favoriteListeners.add(listener); return () => { favoriteListeners.delete(listener); }; } }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => ({ enabled: false }) }));
+vi.mock('../../services/stBaiBaiPreferences', () => ({ useStBaiBaiPreferences: () => ({ enabled: false }) }));
 vi.mock('../../services/stChatu8Sync', () => ({ useStChatu8Selection: () => ({ open: false, selecting: false, busy: false, entries: new Map(), available: new Set(), selected: new Set(), accepts: () => true, cancel: vi.fn() }), wisdomEntryLabel: () => '' }));
 vi.mock('../../services/appearancePreferences', () => ({ useGalleryFrostedCaption: () => false }));
 vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({}) }));

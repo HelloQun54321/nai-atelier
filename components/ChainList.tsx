@@ -25,8 +25,9 @@ import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { FolderBatchImportModal } from './chain/FolderBatchImportModal';
 import { StyleCollectorControl } from './StyleCollectorControl';
-import { useStChatu8Selection, wisdomEntryLabel } from '../services/stChatu8Sync';
+import { useStChatu8Selection, wisdomEntryLabel, type StSyncTarget } from '../services/stChatu8Sync';
 import { useStChatu8Preferences } from '../services/stChatu8Preferences';
+import { useStBaiBaiPreferences } from '../services/stBaiBaiPreferences';
 import { isStChatu8ExportableChain } from '../worker/stChatu8Policy.mjs';
 import { WisdomSyncToolbar } from './WisdomSyncToolbar';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
@@ -131,8 +132,38 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const filterHostRef = useRef<HTMLDivElement>(null);
   const [visibleCount, setVisibleCount] = useState(RENDER_BATCH_SIZE);
   const syncPreferences = useStChatu8Preferences(!isGuest && type === 'style');
-  const canSync = !isGuest && type === 'style' && syncPreferences.enabled;
-  const syncSelection = useStChatu8Selection(canSync, chains, notify);
+  const baiBaiPreferences = useStBaiBaiPreferences(!isGuest && type === 'style');
+  const canSyncChatu8 = !isGuest && type === 'style' && syncPreferences.enabled;
+  const canSyncBaiBai = !isGuest && type === 'style' && baiBaiPreferences.enabled;
+  const canSync = canSyncChatu8 || canSyncBaiBai;
+  const chatu8SyncSelection = useStChatu8Selection(canSyncChatu8, chains, notify, 'st-chatu8');
+  const baiBaiSyncSelection = useStChatu8Selection(canSyncBaiBai, chains, notify, 'st-baibai');
+  const syncSelection = baiBaiSyncSelection.open ? baiBaiSyncSelection : chatu8SyncSelection;
+  const availableSyncTargets: StSyncTarget[] = [
+    ...(canSyncChatu8 ? ['st-chatu8' as const] : []),
+    ...(canSyncBaiBai ? ['st-baibai' as const] : []),
+  ];
+  const toggleSyncTarget = (target: StSyncTarget) => {
+    if (target === 'st-baibai') {
+      if (chatu8SyncSelection.open) chatu8SyncSelection.cancel();
+      if (baiBaiSyncSelection.open) baiBaiSyncSelection.cancel();
+      else baiBaiSyncSelection.begin();
+    } else {
+      if (baiBaiSyncSelection.open) baiBaiSyncSelection.cancel();
+      if (chatu8SyncSelection.open) chatu8SyncSelection.cancel();
+      else chatu8SyncSelection.begin();
+    }
+  };
+  const switchSyncTarget = (target: StSyncTarget) => {
+    if (target === syncSelection.target && syncSelection.open) return;
+    if (target === 'st-baibai') {
+      chatu8SyncSelection.cancel();
+      baiBaiSyncSelection.begin();
+    } else {
+      baiBaiSyncSelection.cancel();
+      chatu8SyncSelection.begin();
+    }
+  };
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
@@ -394,7 +425,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     <PressRevealSurface pressDisabled={syncSelection.open || selecting} key={chain.id} data-safe-mode-work="true" data-return-item-id={chain.id}
       role={selecting || syncSelection.selecting ? 'checkbox' : 'button'}
       data-agent-action={selecting || syncSelection.selecting ? 'select' : 'browse'}
-      aria-label={selecting ? t('选择风格串：{0}', [chain.name]) : syncSelection.selecting ? t("智慧姬同步：{0}", [chain.name]) : t("打开{0}：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}
+      aria-label={selecting ? t('选择风格串：{0}', [chain.name]) : syncSelection.selecting ? t(syncSelection.target === 'st-baibai' ? "柏宝绘同步：{0}" : "智慧姬同步：{0}", [chain.name]) : t("打开{0}：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}
       aria-checked={selecting ? selectedIds.has(chain.id) : syncSelection.selecting ? syncSelection.selected.has(chain.id) : undefined}
       aria-disabled={selecting ? bulkDeleteBusy : syncSelection.selecting ? syncSelection.busy || !syncSelection.available.has(chain.id) : undefined}
       tabIndex={0}
@@ -483,7 +514,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       </div>
       {syncSelection.open && syncSelection.entries.has(chain.id) && <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800" onClick={event => event.stopPropagation()}>
         <div className="flex items-center justify-between gap-2">
-          <span className={`truncate text-xs font-medium ${syncSelection.entries.get(chain.id)?.status === 'synced' ? 'text-emerald-700 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'}`}>{wisdomEntryLabel(syncSelection.entries.get(chain.id)!)}</span>
+          <span className={`truncate text-xs font-medium ${syncSelection.entries.get(chain.id)?.status === 'synced' ? 'text-emerald-700 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'}`}>{wisdomEntryLabel(syncSelection.entries.get(chain.id)!, syncSelection.target)}</span>
           {syncSelection.view !== 'pick' && <div className="flex flex-none gap-2">
             {syncSelection.entries.get(chain.id)?.status === 'pending' ? <>
               {syncSelection.entries.get(chain.id)?.error && isStChatu8ExportableChain(chain) && <button type="button" disabled={syncSelection.busy} onClick={() => void syncSelection.actOnEntries('requeue', [chain.id])} className="min-h-8 text-xs text-indigo-600 disabled:opacity-40 dark:text-indigo-300" aria-label={t("重试：{0}", [chain.name])}>{t("重试")}</button>}
@@ -518,7 +549,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     ...(!isGuest && type === 'style' ? [{ label: '查找相似', icon: <ScanSearch />, onClick: () => setSimilarityOpen(true) }] : []),
     ...(!isGuest && type === 'style' ? [{ label: '风格串分享包', icon: <Package />, onClick: () => setBundleScope('all') }] : []),
     ...(!isGuest && type === 'style' ? [{ label: '批量导入', icon: <FolderDown />, onClick: () => setIsFolderImportOpen(true) }] : []),
-    ...(canSync ? [{ label: '智慧姬同步', hint: syncSelection.savedCount > 0 ? `待同步 ${syncSelection.savedCount}` : '', icon: <Link2 />, onClick: syncSelection.open ? syncSelection.cancel : syncSelection.begin, disabled: syncSelection.busy && !syncSelection.open }] : []),
+    ...(canSyncChatu8 ? [{ label: '智慧姬同步', hint: chatu8SyncSelection.savedCount > 0 ? `待同步 ${chatu8SyncSelection.savedCount}` : '', icon: <Link2 />, onClick: () => toggleSyncTarget('st-chatu8'), disabled: chatu8SyncSelection.busy && !chatu8SyncSelection.open }] : []),
+    ...(canSyncBaiBai ? [{ label: '柏宝绘同步', hint: baiBaiSyncSelection.savedCount > 0 ? `待同步 ${baiBaiSyncSelection.savedCount}` : '', icon: <Link2 />, onClick: () => toggleSyncTarget('st-baibai'), disabled: baiBaiSyncSelection.busy && !baiBaiSyncSelection.open }] : []),
   ];
   // 桌面弹层与手机抽屉共享筛选内容，切换视图也保持同一份筛选状态。
   const renderFilterContent = (close: () => void, mobile: boolean) => <div className="space-y-4">
@@ -585,12 +617,13 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             ...(!isGuest && type === 'style' ? [{ label: '查找相似', icon: <ScanSearch />, onClick: () => setSimilarityOpen(true) }] : []),
             ...(!isGuest && type === 'style' ? [{ label: '风格串分享包', icon: <Package />, onClick: () => setBundleScope('all') }] : []),
             ...(!isGuest && type === 'style' ? [{ label: '批量导入', icon: <FolderDown />, onClick: () => setIsFolderImportOpen(true) }] : []),
-            ...(canSync ? [{ label: '智慧姬同步', hint: syncSelection.savedCount > 0 ? `待同步 ${syncSelection.savedCount}` : '', icon: <Link2 />, onClick: syncSelection.open ? syncSelection.cancel : syncSelection.begin, disabled: syncSelection.busy && !syncSelection.open }] : []),
+            ...(canSyncChatu8 ? [{ label: '智慧姬同步', hint: chatu8SyncSelection.savedCount > 0 ? `待同步 ${chatu8SyncSelection.savedCount}` : '', icon: <Link2 />, onClick: () => toggleSyncTarget('st-chatu8'), disabled: chatu8SyncSelection.busy && !chatu8SyncSelection.open }] : []),
+    ...(canSyncBaiBai ? [{ label: '柏宝绘同步', hint: baiBaiSyncSelection.savedCount > 0 ? `待同步 ${baiBaiSyncSelection.savedCount}` : '', icon: <Link2 />, onClick: () => toggleSyncTarget('st-baibai'), disabled: baiBaiSyncSelection.busy && !baiBaiSyncSelection.open }] : []),
           ]} className="md:hidden" />
           </>}
         </WorkspaceToolbar>
 
-        {!selecting && canSync && syncSelection.open && <WisdomSyncToolbar sync={syncSelection} filteredIds={filteredChains.map(chain => chain.id)} />}
+        {!selecting && canSync && syncSelection.open && <WisdomSyncToolbar sync={syncSelection} filteredIds={filteredChains.map(chain => chain.id)} availableTargets={availableSyncTargets} onSwitchTarget={switchSyncTarget} />}
 
         </WorkspaceChrome>
         <div data-workspace-body className="flex min-h-0 flex-1 flex-col md:flex-row">

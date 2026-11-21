@@ -128,11 +128,11 @@ const isLoopbackHostname = hostname => {
 };
 const jsonText = value => [{ type: 'text', text: JSON.stringify(value) }];
 const historyBinImagePath = (id, item) => {
-  if (item.externalSource !== 'st-chatu8') return `/api/local-history/recycle-bin/${encodeURIComponent(id)}/image`;
+  if (item.externalSource !== 'st-chatu8' && item.externalSource !== 'st-baibai') return `/api/local-history/recycle-bin/${encodeURIComponent(id)}/image`;
   // 酒馆条目没有 R2 副本；只接受与条目外部 ID 一致的同源原图索引。
-  const { externalId, imageUrl } = item;
+  const { externalId, imageUrl, externalSource } = item;
   if (typeof externalId === 'string' && /^[a-f0-9]{64}$/.test(externalId)
-    && imageUrl === `/api/integrations/st-chatu8/history/${externalId}/image`) return imageUrl;
+    && imageUrl === `/api/integrations/${externalSource}/history/${externalId}/image`) return imageUrl;
 };
 // 历史可能是酒馆原图索引；不要用活动历史的路径替代回收站原图。
 const projectImagePath = (kind, base, id, item) => kind === 'chain' ? item.previewImage

@@ -16,6 +16,7 @@ import {
 import { openLocalBackupFolder } from '../services/localBackup';
 import { beginExportTarget } from '../services/exportLocation';
 import { refreshStChatu8Preferences, setStChatu8Enabled, useStChatu8Preferences } from '../services/stChatu8Preferences';
+import { refreshStBaiBaiPreferences, setStBaiBaiEnabled, useStBaiBaiPreferences } from '../services/stBaiBaiPreferences';
 
 interface SillyTavernBridgeExportProps {
   notify: (message: string) => void;
@@ -23,21 +24,22 @@ interface SillyTavernBridgeExportProps {
 
 const BRIDGE_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
 const FALLBACK_MANIFEST = JSON.stringify({
-  display_name: '智慧姬同步',
+  display_name: '酒馆同步（智慧姬 / 柏宝绘）',
   loading_order: 110,
   requires: [],
-  optional: ['st-chatu8'],
+  optional: ['st-chatu8', 'ST-BaiBai-Image'],
   js: `index.js?v=${BRIDGE_VERSION}`,
   css: `style.css?v=${BRIDGE_VERSION}`,
   author: 'HelloQun54321',
   version: BRIDGE_VERSION,
-  description: '同步工坊精选、酒馆预设、Vibe 与历史图片。',
+  description: '同步工坊精选风格串、Vibe 与历史图片（支持智慧姬 / 柏宝绘）。',
 }, null, 2);
 
 interface StBridgeStatus {
   connected: boolean;
   sillyTavernRoot: string | null;
   linkedArtists: number;
+  linkedVibes: number;
   linkedGroups: number;
   linkedHistory: number;
   lastSyncAt: number;
@@ -47,7 +49,10 @@ interface StBridgeStatus {
 
 export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = ({ notify }) => {
   useLanguage();
-  const preferences = useStChatu8Preferences();
+  const chatu8Preferences = useStChatu8Preferences();
+  const baiBaiPreferences = useStBaiBaiPreferences();
+  const anyEnabled = chatu8Preferences.enabled || baiBaiPreferences.enabled;
+
   const [serverUrl, setServerUrl] = useState(() => {
     if (typeof window !== 'undefined' && window.location?.origin) {
       return window.location.origin;
@@ -56,49 +61,74 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
   });
   const [stRoot, setStRoot] = useState('');
   const [detectedRoot, setDetectedRoot] = useState('');
-  const [bridgeStatus, setBridgeStatus] = useState<StBridgeStatus | null>(null);
+  const [chatu8Status, setChatu8Status] = useState<StBridgeStatus | null>(null);
+  const [baiBaiStatus, setBaiBaiStatus] = useState<StBridgeStatus | null>(null);
   const [installedPath, setInstalledPath] = useState('');
   const [installing, setInstalling] = useState(false);
   const [savingRoot, setSavingRoot] = useState(false);
-  const [scanningHistory, setScanningHistory] = useState(false);
+  const [scanningTarget, setScanningTarget] = useState<'st-chatu8' | 'st-baibai' | null>(null);
   const [exporting, setExporting] = useState(false);
   const supportsDirectoryPicker = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 
-  const applyStatus = useCallback((data: Partial<StBridgeStatus> | null | undefined, fillInput = false) => {
-    if (!data || typeof data !== 'object') return;
+  const normalizeStatus = (data: Partial<StBridgeStatus> | null | undefined): StBridgeStatus | null => {
+    if (!data || typeof data !== 'object') return null;
     const root = typeof data.sillyTavernRoot === 'string' ? data.sillyTavernRoot : null;
-    setBridgeStatus({
+    return {
       connected: Boolean(data.connected ?? root),
       sillyTavernRoot: root,
       linkedArtists: Number(data.linkedArtists || 0),
+      linkedVibes: Number(data.linkedVibes || 0),
       linkedGroups: Number(data.linkedGroups || 0),
       linkedHistory: Number(data.linkedHistory || 0),
       lastSyncAt: Number(data.lastSyncAt || 0),
       lastHistorySyncAt: Number(data.lastHistorySyncAt || 0),
       historySyncing: Boolean(data.historySyncing),
-    });
-    if (root) {
-      setDetectedRoot(root);
-      if (fillInput) setStRoot(prev => prev || root);
+    };
+  };
+
+  const applyTargetStatus = useCallback((target: 'st-chatu8' | 'st-baibai', data: Partial<StBridgeStatus> | null | undefined, fillInput = false) => {
+    const normalized = normalizeStatus(data);
+    if (!normalized) return;
+    if (target === 'st-chatu8') setChatu8Status(normalized);
+    else setBaiBaiStatus(normalized);
+    if (normalized.sillyTavernRoot) {
+      setDetectedRoot(normalized.sillyTavernRoot);
+      if (fillInput) setStRoot(prev => prev || normalized.sillyTavernRoot!);
     }
   }, []);
 
-  // 自动尝试从本地桥接探测已有的 SillyTavern 根目录与实时同步状态
   useEffect(() => {
-    if (!preferences.enabled) return;
+    if (!chatu8Preferences.enabled) return;
     let active = true;
     fetch('/api/integrations/st-chatu8/status', { cache: 'no-store' })
       .then(res => (res.ok ? res.json() : null))
       .then(data => {
-        if (active && data) applyStatus(data, true);
+        if (active && data) applyTargetStatus('st-chatu8', data, true);
       })
       .catch(() => {});
     return () => { active = false; };
-  }, [preferences.enabled, applyStatus]);
+  }, [chatu8Preferences.enabled, applyTargetStatus]);
 
-  const handleToggle = async (enabled: boolean) => {
+  useEffect(() => {
+    if (!baiBaiPreferences.enabled) return;
+    let active = true;
+    fetch('/api/integrations/st-baibai/status', { cache: 'no-store' })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (active && data) applyTargetStatus('st-baibai', data, true);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [baiBaiPreferences.enabled, applyTargetStatus]);
+
+  const handleToggleChatu8 = async (enabled: boolean) => {
     try { await setStChatu8Enabled(enabled); }
     catch (error) { notify(error instanceof Error ? error.message : '保存智慧姬同步设置失败'); }
+  };
+
+  const handleToggleBaiBai = async (enabled: boolean) => {
+    try { await setStBaiBaiEnabled(enabled); }
+    catch (error) { notify(error instanceof Error ? error.message : '保存柏宝绘同步设置失败'); }
   };
 
   const computeTargetDir = (root: string) => {
@@ -114,9 +144,11 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
     return `${trimmed.replace(/[\\/]+$/, '')}${sep}public${sep}scripts${sep}extensions${sep}third-party${sep}npm-bridge`;
   };
 
+  const primaryBridgePrefix = chatu8Preferences.enabled ? '/api/integrations/st-chatu8' : '/api/integrations/st-baibai';
+
   const fetchExtensionFiles = async (): Promise<Record<string, string>> => {
     try {
-      const res = await fetch('/api/integrations/st-chatu8/extension/files');
+      const res = await fetch(`${primaryBridgePrefix}/extension/files`);
       if (res.ok) {
         const data = await res.json();
         if (data.files && typeof data.files === 'object') {
@@ -128,7 +160,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
     }
     return {
       'manifest.json': FALLBACK_MANIFEST,
-      'README.md': '# 智慧姬同步扩展 (npm-bridge)\n\n请参考项目文档完成安装。',
+      'README.md': '# 酒馆同步扩展 (npm-bridge)\n\n请参考项目文档完成安装。',
     };
   };
 
@@ -137,7 +169,6 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
     const prepared: Record<string, string> = { ...rawFiles };
     const targetUrl = serverUrl.trim().replace(/\/$/, '') || 'http://localhost:3000';
     if (prepared['index.js']) {
-      // 注入指定的服务连接地址
       prepared['index.js'] = prepared['index.js'].replace(
         /const DEFAULT_URL = 'http:\/\/localhost:3000';/,
         `const DEFAULT_URL = '${targetUrl}';`
@@ -146,9 +177,6 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
     return prepared;
   };
 
-  /**
-   * 服务端直接一键安装/更新到 SillyTavern
-   */
   const handleInstallExtension = async () => {
     const rootToUse = stRoot.trim() || detectedRoot;
     if (!rootToUse) {
@@ -157,7 +185,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
     }
     setInstalling(true);
     try {
-      const res = await fetch('/api/integrations/st-chatu8/extension/install', {
+      const res = await fetch(`${primaryBridgePrefix}/extension/install`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -170,7 +198,10 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
         throw new Error(data?.error || '安装扩展失败');
       }
       setInstalledPath(data.targetPath);
-      if (data.status) applyStatus(data.status, false);
+      if (data.chatu8Status) applyTargetStatus('st-chatu8', data.chatu8Status, false);
+      else if (chatu8Preferences.enabled && data.status) applyTargetStatus('st-chatu8', data.status, false);
+      if (data.baiBaiStatus) applyTargetStatus('st-baibai', data.baiBaiStatus, false);
+      else if (baiBaiPreferences.enabled && data.status) applyTargetStatus('st-baibai', data.status, false);
       notify(`已成功安装扩展至：${data.targetPath}，刷新酒馆页面即可生效！`);
     } catch (err: any) {
       notify(`安装失败：${err?.message || '未知错误'}`);
@@ -187,14 +218,15 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
     }
     setSavingRoot(true);
     try {
-      const res = await fetch('/api/integrations/st-chatu8/root', {
+      const res = await fetch(`${primaryBridgePrefix}/root`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sillyTavernRoot: trimmed }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || '保存酒馆目录失败');
-      applyStatus(data, false);
+      if (chatu8Preferences.enabled) applyTargetStatus('st-chatu8', data, false);
+      if (baiBaiPreferences.enabled) applyTargetStatus('st-baibai', data, false);
       if (data?.sillyTavernRoot) setStRoot(data.sillyTavernRoot);
       notify(`已绑定 SillyTavern 目录：${data?.sillyTavernRoot || trimmed}`);
     } catch (err: any) {
@@ -204,18 +236,18 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
     }
   };
 
-  const handleScanHistory = async () => {
-    setScanningHistory(true);
+  const handleScanHistory = async (target: 'st-chatu8' | 'st-baibai') => {
+    setScanningTarget(target);
     try {
-      const res = await fetch('/api/integrations/st-chatu8/history/scan', { method: 'POST' });
+      const res = await fetch(`/api/integrations/${target}/history/scan`, { method: 'POST' });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || '扫描酒馆历史失败');
-      applyStatus(data, false);
-      notify(`酒馆历史扫描完成，共关联 ${Number(data?.linkedHistory || 0)} 张原图`);
+      applyTargetStatus(target, data, false);
+      notify(`${target === 'st-baibai' ? '柏宝绘' : '智慧姬'}历史扫描完成，共关联 ${Number(data?.linkedHistory || 0)} 张原图`);
     } catch (err: any) {
       notify(`扫描历史失败：${err?.message || '未知错误'}`);
     } finally {
-      setScanningHistory(false);
+      setScanningTarget(null);
     }
   };
 
@@ -262,7 +294,6 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
         mode: 'readwrite',
       });
 
-      // 智能路径补全：若用户选中 SillyTavern 根目录，自动创建与进入子扩展目录
       let targetDirHandle = dirHandle;
       const nameLower = String(dirHandle.name || '').toLowerCase();
       if (nameLower === 'sillytavern') {
@@ -306,18 +337,31 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
 
   return (
     <div className="space-y-3">
+      {/* 智慧姬同步独立开关 */}
       <label className="flex cursor-pointer items-start justify-between gap-4">
         <span className="min-w-0">
           <span className="block font-semibold text-gray-900 dark:text-white">{t("智慧姬同步")}</span>
           <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">
             {t("发送工坊精选，接收酒馆预设；关闭保留资料。")}</span>
         </span>
-        <input type="checkbox" aria-label={t("智慧姬同步")} checked={preferences.enabled} disabled={!preferences.ready || preferences.busy || installing || exporting}
-          onChange={event => { void handleToggle(event.target.checked); }} className="mt-1 h-5 w-5 shrink-0 accent-indigo-600 disabled:opacity-40" />
+        <input type="checkbox" aria-label={t("智慧姬同步")} checked={chatu8Preferences.enabled} disabled={!chatu8Preferences.ready || chatu8Preferences.busy || installing || exporting}
+          onChange={event => { void handleToggleChatu8(event.target.checked); }} className="mt-1 h-5 w-5 shrink-0 accent-indigo-600 disabled:opacity-40" />
       </label>
-      {preferences.error && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400"><span>{t(preferences.error)}</span><button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void refreshStChatu8Preferences(); }} disabled={preferences.busy} className="mobile-touch shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 underline transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t("重新读取")}</button></div>}
+      {chatu8Preferences.error && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400"><span>{t(chatu8Preferences.error)}</span><button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void refreshStChatu8Preferences(); }} disabled={chatu8Preferences.busy} className="mobile-touch shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 underline transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t("重新读取")}</button></div>}
 
-      {preferences.enabled && <>
+      {/* 柏宝绘同步独立开关 */}
+      <label className="flex cursor-pointer items-start justify-between gap-4 border-t border-gray-200/70 pt-3 dark:border-gray-700/70">
+        <span className="min-w-0">
+          <span className="block font-semibold text-gray-900 dark:text-white">{t("柏宝绘同步")}</span>
+          <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">
+            {t("接收柏宝绘预设、Vibe 与历史图；仅在酒馆手动点击「立即同步」时写回，写入后需刷新酒馆页面生效。")}</span>
+        </span>
+        <input type="checkbox" aria-label={t("柏宝绘同步")} checked={baiBaiPreferences.enabled} disabled={!baiBaiPreferences.ready || baiBaiPreferences.busy || installing || exporting}
+          onChange={event => { void handleToggleBaiBai(event.target.checked); }} className="mt-1 h-5 w-5 shrink-0 accent-indigo-600 disabled:opacity-40" />
+      </label>
+      {baiBaiPreferences.error && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400"><span>{t(baiBaiPreferences.error)}</span><button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void refreshStBaiBaiPreferences(); }} disabled={baiBaiPreferences.busy} className="mobile-touch shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 underline transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t("重新读取")}</button></div>}
+
+      {anyEnabled && <>
         <div className="appearance-group rounded-xl border border-gray-200 bg-gray-50/70 p-3 text-xs dark:border-gray-700/60 dark:bg-gray-800/50">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {/* 酒馆根目录 */}
@@ -368,46 +412,69 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
           <div className="mt-3 flex items-start gap-1.5 border-t border-gray-200/70 pt-2.5 text-meta text-gray-500 dark:border-gray-700/70 dark:text-gray-400">
             <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-indigo-500" />
             <div className="min-w-0 flex-1">
-              <span>{t("安装目标路径（自动补全）：")}</span>
+              <span>{t("安装目标路径（共用同一扩展，自动识别已启用的酒馆插件）：")}</span>
               <code className="appearance-group mt-0.5 block truncate rounded bg-gray-200/70 px-1.5 py-0.5 font-mono text-meta text-gray-800 dark:bg-gray-700 dark:text-gray-200" title={currentTargetPath}>
                 {currentTargetPath}
               </code>
             </div>
+            {stRoot.trim() && stRoot.trim() !== detectedRoot && (
+              <button
+                type="button"
+                data-appearance="control" data-tone="neutral"
+                disabled={savingRoot}
+                onClick={() => void handleSaveRoot()}
+                className="mobile-touch shrink-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-micro font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                {savingRoot ? t("保存中…") : t("保存目录")}
+              </button>
+            )}
           </div>
 
-          {bridgeStatus && (
+          {chatu8Preferences.enabled && chatu8Status && (
             <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200/70 pt-2.5 text-meta text-gray-500 dark:border-gray-700/70 dark:text-gray-400">
               <span>
-                {bridgeStatus.connected
-                  ? t("已连接酒馆目录 · 风格串 {0} · Vibe 组 {1} · 历史 {2} 张", [bridgeStatus.linkedArtists, bridgeStatus.linkedGroups, bridgeStatus.linkedHistory])
-                  : t("未检测到酒馆目录（历史零拷贝与导入封面需绑定有效路径）")}
-                {bridgeStatus.lastSyncAt > 0 && ` · ${t("上次同步 {0}", [new Date(bridgeStatus.lastSyncAt).toLocaleTimeString(getLanguage(), { hour12: false })])}`}
+                {chatu8Status.connected
+                  ? t("智慧姬 · 风格串 {0} · Vibe 组 {1} · 历史 {2} 张", [chatu8Status.linkedArtists, chatu8Status.linkedGroups, chatu8Status.linkedHistory])
+                  : t("智慧姬：未检测到酒馆目录（历史零拷贝与导入封面需绑定有效路径）")}
+                {chatu8Status.lastSyncAt > 0 && ` · ${t("上次同步 {0}", [new Date(chatu8Status.lastSyncAt).toLocaleTimeString(getLanguage(), { hour12: false })])}`}
               </span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {stRoot.trim() && stRoot.trim() !== detectedRoot && (
-                  <button
-                    type="button"
-                    data-appearance="control" data-tone="neutral"
-                    disabled={savingRoot}
-                    onClick={() => void handleSaveRoot()}
-                    className="mobile-touch rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-micro font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                  >
-                    {savingRoot ? t("保存中…") : t("保存目录")}
-                  </button>
-                )}
-                {bridgeStatus.connected && (
-                  <button
-                    type="button"
-                    data-appearance="control" data-tone="neutral"
-                    disabled={scanningHistory || bridgeStatus.historySyncing}
-                    onClick={() => void handleScanHistory()}
-                    className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-micro font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                  >
-                    <RefreshCw className={`h-3 w-3 ${scanningHistory || bridgeStatus.historySyncing ? 'animate-spin' : ''}`} />
-                    {scanningHistory || bridgeStatus.historySyncing ? t("扫描中…") : t("扫描历史")}
-                  </button>
-                )}
-              </div>
+              {chatu8Status.connected && (
+                <button
+                  type="button"
+                  data-appearance="control" data-tone="neutral"
+                  aria-label={t("扫描智慧姬历史")}
+                  disabled={scanningTarget !== null || chatu8Status.historySyncing}
+                  onClick={() => void handleScanHistory('st-chatu8')}
+                  className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-micro font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                >
+                  <RefreshCw className={`h-3 w-3 ${scanningTarget === 'st-chatu8' || chatu8Status.historySyncing ? 'animate-spin' : ''}`} />
+                  {scanningTarget === 'st-chatu8' || chatu8Status.historySyncing ? t("扫描中…") : t("扫描历史")}
+                </button>
+              )}
+            </div>
+          )}
+
+          {baiBaiPreferences.enabled && baiBaiStatus && (
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200/70 pt-2.5 text-meta text-gray-500 dark:border-gray-700/70 dark:text-gray-400">
+              <span>
+                {baiBaiStatus.connected
+                  ? t("柏宝绘 · 风格串 {0} · Vibe {1} · 历史 {2} 张", [baiBaiStatus.linkedArtists, baiBaiStatus.linkedVibes, baiBaiStatus.linkedHistory])
+                  : t("柏宝绘：未检测到酒馆目录（历史零拷贝与导入封面需绑定有效路径）")}
+                {baiBaiStatus.lastSyncAt > 0 && ` · ${t("上次同步 {0}", [new Date(baiBaiStatus.lastSyncAt).toLocaleTimeString(getLanguage(), { hour12: false })])}`}
+              </span>
+              {baiBaiStatus.connected && (
+                <button
+                  type="button"
+                  data-appearance="control" data-tone="neutral"
+                  aria-label={t("扫描柏宝绘历史")}
+                  disabled={scanningTarget !== null || baiBaiStatus.historySyncing}
+                  onClick={() => void handleScanHistory('st-baibai')}
+                  className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-micro font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                >
+                  <RefreshCw className={`h-3 w-3 ${scanningTarget === 'st-baibai' || baiBaiStatus.historySyncing ? 'animate-spin' : ''}`} />
+                  {scanningTarget === 'st-baibai' || baiBaiStatus.historySyncing ? t("扫描中…") : t("扫描历史")}
+                </button>
+              )}
             </div>
           )}
         </div>

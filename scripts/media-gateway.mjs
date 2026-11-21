@@ -18,6 +18,7 @@ import { promisify } from 'node:util';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { PromptAgentService } from './prompt-agent.mjs';
 import { StChatu8Bridge, installSillyTavernBridgeExtension } from './st-chatu8-bridge.mjs';
+import { StBaiBaiBridge } from './st-baibai-bridge.mjs';
 import { ImageTaggerService } from './image-tagger.mjs';
 import { MEDIA_REMOTE_HOSTS, CODEX_MEDIA_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist.mjs';
 import { fetchCodexData } from '../worker/codexRemote.mjs';
@@ -3136,6 +3137,7 @@ export const createThumbnailPreWarmer = ({ cache, loadOriginal, concurrency = PR
 };
 
 const stChatu8HistoryImageId = source => /^\/api\/integrations\/st-chatu8\/history\/([a-f0-9]{64})\/image$/i.exec(source)?.[1];
+const stBaiBaiHistoryImageId = source => /^\/api\/integrations\/st-baibai\/history\/([a-f0-9]{64})\/image$/i.exec(source)?.[1];
 
 export const getValidatedSource = value => {  const source = String(value || '');
   if (!source || source.length > SOURCE_LIMIT || /[\r\n]/.test(source)) throw new Error('Invalid image source');
@@ -3153,6 +3155,8 @@ export const getValidatedSource = value => {  const source = String(value || '')
   if (/^\/api\/(?:local-history\/[^/]+\/image|inspirations\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail))(?:\?.*)?$/.test(source)) return { type: 'local', source };
   const externalId = stChatu8HistoryImageId(source);
   if (externalId) return { type: 'st-chatu8-history', source, externalId: externalId.toLowerCase() };
+  const baiBaiExternalId = stBaiBaiHistoryImageId(source);
+  if (baiBaiExternalId) return { type: 'st-baibai-history', source, externalId: baiBaiExternalId.toLowerCase() };
   let url;
   try { url = new URL(source); } catch { throw new Error('Unsupported image source'); }
   const host = url.hostname.toLowerCase();
@@ -3225,15 +3229,18 @@ const readLanStChatu8HistoryImage = (req, lanSecret, bridge, externalId, options
   return bridge.readHistoryImage(externalId, options);
 };
 
-export const requestAgentProjectImage = async (source, maxBytes, { req, workerPort, lanSecret, stChatu8Bridge, signal }) => {
+export const requestAgentProjectImage = async (source, maxBytes, { req, workerPort, lanSecret, stChatu8Bridge, stBaiBaiBridge, signal }) => {
   signal?.throwIfAborted();
   const limit = Math.min(maxBytes, INPUT_LIMIT);
   let buffer, header;
   const externalId = stChatu8HistoryImageId(source);
-  if (externalId) {
+  const baiBaiExternalId = stBaiBaiHistoryImageId(source);
+  if (externalId || baiBaiExternalId) {
     // 同源酒馆原图属于网关而不是 Worker；只读同步索引对应的原文件。
     try {
-      ({ buffer, contentType: header } = await readLanStChatu8HistoryImage(req, lanSecret, stChatu8Bridge, externalId, { maxBytes: limit, signal }));
+      const bridge = externalId ? stChatu8Bridge : stBaiBaiBridge;
+      if (!bridge) throw Object.assign(new Error('读取项目图片失败'), { status: 404 });
+      ({ buffer, contentType: header } = await readLanStChatu8HistoryImage(req, lanSecret, bridge, (externalId || baiBaiExternalId).toLowerCase(), { maxBytes: limit, signal }));
     } catch (error) {
       signal?.throwIfAborted();
       if (error?.status === 401 || error?.status === 413) throw error;
@@ -3685,7 +3692,7 @@ class ThumbnailCache {
   keyFor(source, variant, previewTransform = '') {
     const version = variant === 'thumb-960' && (
       /^\/api\/local-history\/(?:recycle-bin\/)?[^/]+\/image$/i.test(source)
-      || /^\/api\/integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image$/i.test(source)
+      || /^\/api\/integrations\/(?:st-chatu8|st-baibai)\/history\/[a-f0-9]{64}\/image$/i.test(source)
     ) ? HISTORY_THUMBNAIL_CACHE_VERSION : CACHE_VERSION;
     return createHash('sha256').update(`${version}|${variant}|${source}${previewTransform ? `|${previewTransform}` : ''}`).digest('hex');
   }
@@ -4116,6 +4123,12 @@ const serveDistFile = async (req, res, url) => {
     requestWorkerBuffer: path => requestWorkerBuffer(path, internalWorkerRequest, workerPort),
     modelMappings: () => getNaiRuntime().metadataModelMappings || {},
   });
+  const stBaiBaiBridge = new StBaiBaiBridge({
+    projectRoot: process.cwd(),
+    requestWorkerJson: (path, options) => requestWorkerJson(path, internalWorkerRequest, workerPort, options),
+    requestWorkerBuffer: path => requestWorkerBuffer(path, internalWorkerRequest, workerPort),
+    modelMappings: () => getNaiRuntime().metadataModelMappings || {},
+  });
   // Pixiv 图库只在本机 media gateway 提供：worker 部署不含任何 Pixiv 逻辑，
   // /api/pixiv 在 Cloudflare 上必然 401/404（fail closed）。
   const pixivGallery = new PixivGalleryService({
@@ -4133,9 +4146,11 @@ const serveDistFile = async (req, res, url) => {
   await cache.init();
   await promptAgent.init();
   await stChatu8Bridge.init();
+  await stBaiBaiBridge.init();
   await pixivGallery.init();
   await recoverPendingVibeEncodings(workerPort);
   stChatu8Bridge.startHistorySync();
+  stBaiBaiBridge.startHistorySync();
   // 后台同步官方 Web 应用常量（模型清单、限额换算、免费门槛、成本系数）。
   // 走网关代理分流（remoteFetch）：与订阅接口一致，避免直连被 TUN 出口抖动黑洞导致部分提取失败。
   void initNaiRuntimeSync(remoteFetch);
@@ -4171,6 +4186,12 @@ const serveDistFile = async (req, res, url) => {
         : validated.type === 'artist-sample' ? artistSamples.readImage(validated.source)
         : validated.type === 'st-chatu8-history'
           ? stChatu8Bridge.readHistoryImage(validated.externalId).then(image => ({
+            status: 200,
+            buffer: image.buffer,
+            headers: { 'content-type': image.contentType },
+          }))
+        : validated.type === 'st-baibai-history'
+          ? stBaiBaiBridge.readHistoryImage(validated.externalId).then(image => ({
             status: 200,
             buffer: image.buffer,
             headers: { 'content-type': image.contentType },
@@ -4239,7 +4260,7 @@ const serveDistFile = async (req, res, url) => {
     assertVibeEncodingIdle(vibeId);
     if (tasks.size || [...generationJobs.jobs.values()].some(job => !['succeeded', 'cancelled', 'failed'].includes(job.state))
       || [...activeWrites, ...activeHandlers].some(other => other !== req && !['GET', 'HEAD', 'OPTIONS'].includes(other.method))
-      || promptAgent.activeAgents.size || promptAgent.startingAgents.size || styleCollector.run || stChatu8Bridge.historySyncPromise) {
+      || promptAgent.activeAgents.size || promptAgent.startingAgents.size || styleCollector.run || stChatu8Bridge.historySyncPromise || stBaiBaiBridge.historySyncPromise) {
       throw Object.assign(new Error('生成、助手、收集或资料写入尚未完成，暂时不能永久删除 Vibe'), { status: 409, code: 'vibe_delete_busy' });
     }
   };
@@ -4355,26 +4376,33 @@ const serveDistFile = async (req, res, url) => {
       });
       return res.end();
     }
-    if (url.pathname === '/api/st-chatu8/preferences') {
+    if (url.pathname === '/api/st-chatu8/preferences' || url.pathname === '/api/st-baibai/preferences') {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       if (!['GET', 'POST'].includes(req.method)) return sendJson(res, 405, { error: 'Method not allowed' });
+      const isBaiBai = url.pathname === '/api/st-baibai/preferences';
+      const bridge = isBaiBai ? stBaiBaiBridge : stChatu8Bridge;
       try {
         const preferences = req.method === 'POST'
-          ? await stChatu8Bridge.setPreferences(async () => {
+          ? await bridge.setPreferences(async () => {
             const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
-            return requestWorkerJson('/api/st-chatu8/preferences', req, workerPort, { method: 'POST', body });
+            return requestWorkerJson(url.pathname, req, workerPort, { method: 'POST', body });
           })
-          : await stChatu8Bridge.refreshPreferences(() => requestWorkerJson('/api/st-chatu8/preferences', req, workerPort));
+          : await bridge.refreshPreferences(() => requestWorkerJson(url.pathname, req, workerPort));
         sendJson(res, 200, preferences);
-        if (req.method === 'POST' && preferences.enabled) stChatu8Bridge.startHistorySync();
+        if (req.method === 'POST' && preferences.enabled) bridge.startHistorySync();
         return;
       } catch (error) {
-        return sendJson(res, Number(error.status) || 400, { error: error.message || '智慧姬同步设置失败' });
+        return sendJson(res, Number(error.status) || 400, { error: error.message || (isBaiBai ? '柏宝绘同步设置失败' : '智慧姬同步设置失败') });
       }
     }
-    if (url.pathname.startsWith('/api/integrations/st-chatu8/')) {
+    if (url.pathname.startsWith('/api/integrations/st-chatu8/') || url.pathname.startsWith('/api/integrations/st-baibai/')) {
+      const isBaiBai = url.pathname.startsWith('/api/integrations/st-baibai/');
+      const bridge = isBaiBai ? stBaiBaiBridge : stChatu8Bridge;
+      const otherBridge = isBaiBai ? stChatu8Bridge : stBaiBaiBridge;
+      const prefix = isBaiBai ? '/api/integrations/st-baibai' : '/api/integrations/st-chatu8';
+      const bridgeLabel = isBaiBai ? '柏宝绘' : 'st-chatu8';
       const isLocalRequest = isLoopbackIp(req.socket.remoteAddress);
-      const historyImageId = stChatu8HistoryImageId(url.pathname);
+      const historyImageId = isBaiBai ? stBaiBaiHistoryImageId(url.pathname) : stChatu8HistoryImageId(url.pathname);
       if (req.method === 'OPTIONS') {
         if (!isLocalRequest || !isLoopbackOrigin(req.headers.origin)) return sendJson(res, 403, { error: 'Forbidden' });
         res.writeHead(204, {
@@ -4388,7 +4416,7 @@ const serveDistFile = async (req, res, url) => {
       }
       if (historyImageId) {
         try {
-          const image = await readLanStChatu8HistoryImage(req, lanSecret, stChatu8Bridge, historyImageId);
+          const image = await readLanStChatu8HistoryImage(req, lanSecret, bridge, historyImageId);
           res.writeHead(200, {
             'Content-Type': image.contentType,
             'Content-Length': image.buffer.length,
@@ -4398,16 +4426,16 @@ const serveDistFile = async (req, res, url) => {
           return res.end(image.buffer);
         } catch (error) {
           if (error.code === 'LAN_ACCESS_REQUIRED') return sendJson(res, 401, { error: error.message, code: error.code });
-          return sendJson(res, Number(error.status) || 404, { error: error.message || 'st-chatu8 原图不存在' });
+          return sendJson(res, Number(error.status) || 404, { error: error.message || `${bridgeLabel} 原图不存在` });
         }
       }
-      if (!isLocalRequest) return sendJson(res, 403, { error: 'st-chatu8 桥接只允许本机 SillyTavern 使用' });
+      if (!isLocalRequest) return sendJson(res, 403, { error: `${bridgeLabel} 桥接只允许本机 SillyTavern 使用` });
       try {
-        if (url.pathname === '/api/integrations/st-chatu8/status' && req.method === 'GET') {
-          await stChatu8Bridge.refreshPreferences();
-          return sendBridgeJson(req, res, 200, stChatu8Bridge.status());
+        if (url.pathname === `${prefix}/status` && req.method === 'GET') {
+          await bridge.refreshPreferences();
+          return sendBridgeJson(req, res, 200, bridge.status());
         }
-        if (url.pathname === '/api/integrations/st-chatu8/extension/files' && req.method === 'GET') {
+        if (url.pathname === `${prefix}/extension/files` && req.method === 'GET') {
           const extensionDir = join(process.env.NAI_STORAGE_RUNTIME_ROOT || process.cwd(), 'sillytavern-extension', 'npm-bridge');
           const [manifest, index, style, readme] = await Promise.all([
             readFile(join(extensionDir, 'manifest.json'), 'utf8'),
@@ -4424,43 +4452,48 @@ const serveDistFile = async (req, res, url) => {
             },
           });
         }
-        if (url.pathname === '/api/integrations/st-chatu8/extension/install' && req.method === 'POST') {
+        if (url.pathname === `${prefix}/extension/install` && req.method === 'POST') {
           const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
-          const stRoot = String(body.sillyTavernRoot || '').trim() || stChatu8Bridge.root;
+          const stRoot = String(body.sillyTavernRoot || '').trim() || bridge.root || otherBridge.root;
           const result = await installSillyTavernBridgeExtension({
             sillyTavernRoot: stRoot,
             targetUrl: body.targetUrl,
             projectRoot: process.env.NAI_STORAGE_RUNTIME_ROOT || process.cwd(), workspaceRoot: process.cwd(),
           });
-          // 安装成功后立即持久化并绑定酒馆根目录，使历史零拷贝与封面读取立即可用。
-          await stChatu8Bridge.setRoot(result.sillyTavernRoot || stRoot, { strict: false });
-          if (stChatu8Bridge.enabled) stChatu8Bridge.startHistorySync();
-          return sendBridgeJson(req, res, 200, { ...result, status: stChatu8Bridge.status() });
+          // 安装成功后同步绑定两边桥接的酒馆根目录，使历史零拷贝与封面读取立即可用。
+          const resolvedRoot = result.sillyTavernRoot || stRoot;
+          await bridge.setRoot(resolvedRoot, { strict: false });
+          await otherBridge.setRoot(resolvedRoot, { strict: false });
+          if (bridge.enabled) bridge.startHistorySync();
+          if (otherBridge.enabled) otherBridge.startHistorySync();
+          return sendBridgeJson(req, res, 200, { ...result, status: bridge.status(), baiBaiStatus: stBaiBaiBridge.status(), chatu8Status: stChatu8Bridge.status() });
         }
-        if (url.pathname === '/api/integrations/st-chatu8/root' && req.method === 'POST') {
+        if (url.pathname === `${prefix}/root` && req.method === 'POST') {
           const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
-          await stChatu8Bridge.setRoot(body.sillyTavernRoot, { strict: true });
-          await stChatu8Bridge.refreshPreferences();
-          if (stChatu8Bridge.enabled) stChatu8Bridge.startHistorySync();
-          return sendBridgeJson(req, res, 200, stChatu8Bridge.status());
+          await bridge.setRoot(body.sillyTavernRoot, { strict: true });
+          await otherBridge.setRoot(body.sillyTavernRoot, { strict: false });
+          await bridge.refreshPreferences();
+          if (bridge.enabled) bridge.startHistorySync();
+          if (otherBridge.enabled) otherBridge.startHistorySync();
+          return sendBridgeJson(req, res, 200, bridge.status());
         }
-        if (url.pathname === '/api/integrations/st-chatu8/history/scan' && req.method === 'POST') {
-          await stChatu8Bridge.refreshPreferences();
-          stChatu8Bridge.assertEnabled();
-          await stChatu8Bridge.syncHistory();
-          return sendBridgeJson(req, res, 200, stChatu8Bridge.status());
+        if (url.pathname === `${prefix}/history/scan` && req.method === 'POST') {
+          await bridge.refreshPreferences();
+          bridge.assertEnabled();
+          await bridge.syncHistory();
+          return sendBridgeJson(req, res, 200, bridge.status());
         }
-        if (url.pathname === '/api/integrations/st-chatu8/sync' && req.method === 'POST') {
+        if (url.pathname === `${prefix}/sync` && req.method === 'POST') {
           const payload = JSON.parse((await readRequestBody(req, 64 * 1024 * 1024)).toString('utf8') || '{}');
-          return sendBridgeJson(req, res, 200, await stChatu8Bridge.sync(payload));
+          return sendBridgeJson(req, res, 200, await bridge.sync(payload));
         }
-        if (url.pathname === '/api/integrations/st-chatu8/artist-receipts' && req.method === 'POST') {
+        if (url.pathname === `${prefix}/artist-receipts` && req.method === 'POST') {
           const payload = JSON.parse((await readRequestBody(req, 64 * 1024 * 1024)).toString('utf8') || '{}');
-          return sendBridgeJson(req, res, 200, await stChatu8Bridge.acknowledgeArtists(payload));
+          return sendBridgeJson(req, res, 200, await bridge.acknowledgeArtists(payload));
         }
-        const vibeFileMatch = url.pathname.match(/^\/api\/integrations\/st-chatu8\/vibes\/([^/]+)\/file$/);
+        const vibeFileMatch = url.pathname.match(isBaiBai ? /^\/api\/integrations\/st-baibai\/vibes\/([^/]+)\/file$/ : /^\/api\/integrations\/st-chatu8\/vibes\/([^/]+)\/file$/);
         if (vibeFileMatch && req.method === 'GET') {
-          const file = await stChatu8Bridge.readVibeFile(decodeURIComponent(vibeFileMatch[1]));
+          const file = await bridge.readVibeFile(decodeURIComponent(vibeFileMatch[1]));
           const origin = isLoopbackOrigin(req.headers.origin) ? req.headers.origin : '';
           res.writeHead(200, {
             'Content-Type': file.contentType,
@@ -4470,9 +4503,9 @@ const serveDistFile = async (req, res, url) => {
           });
           return res.end(file.buffer);
         }
-        return sendBridgeJson(req, res, 404, { error: 'st-chatu8 桥接接口不存在' });
+        return sendBridgeJson(req, res, 404, { error: `${bridgeLabel} 桥接接口不存在` });
       } catch (error) {
-        return sendBridgeJson(req, res, Number(error.status) || 400, { error: error.message || 'st-chatu8 同步失败' });
+        return sendBridgeJson(req, res, Number(error.status) || 400, { error: error.message || `${bridgeLabel} 同步失败` });
       }
     }
     // 局域网密码：解锁与改密由网关实时读取 local-data/lan-access.json 承载，
@@ -4756,7 +4789,7 @@ const serveDistFile = async (req, res, url) => {
               getStyleCollectorState: () => styleCollector.state(),
               controlStyleCollector: (action, id) => styleCollector.command(action, id),
               tagDictionary: method => requestTagDictionaryControl(method),
-              requestBuffer: (path, maxBytes, signal) => requestAgentProjectImage(path, maxBytes, { req, workerPort, lanSecret, stChatu8Bridge, signal }),
+              requestBuffer: (path, maxBytes, signal) => requestAgentProjectImage(path, maxBytes, { req, workerPort, lanSecret, stChatu8Bridge, stBaiBaiBridge, signal }),
             });
 
           } catch (error) {
@@ -5146,6 +5179,12 @@ const serveDistFile = async (req, res, url) => {
             buffer: image.buffer,
             headers: { 'content-type': image.contentType },
           }))
+        : validated.type === 'st-baibai-history'
+          ? stBaiBaiBridge.readHistoryImage(validated.externalId).then(image => ({
+            status: 200,
+            buffer: image.buffer,
+            headers: { 'content-type': image.contentType },
+          }))
         : requestRemoteBuffer(validated.source, remoteFetch);
 
       if (variant === 'original') {
@@ -5240,14 +5279,14 @@ const serveDistFile = async (req, res, url) => {
     const otherRequest = req => !String(req.url).startsWith('/api/local-maintenance/storage');
     const writingHandler = req => otherRequest(req) && !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
     if (tasks.size || [...activeWrites].some(otherRequest) || [...activeHandlers].some(writingHandler) || localBackupService.status.running || promptAgent.activeAgents.size || promptAgent.startingAgents.size
-      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || artistSamples.busy() || stChatu8Bridge.historySyncPromise || historyIndexStatus.running || cache.activeJobs) {
+      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || artistSamples.busy() || stChatu8Bridge.historySyncPromise || stBaiBaiBridge.historySyncPromise || historyIndexStatus.running || cache.activeJobs) {
       throw new Error('请先结束生成、助手、收集、备份、模型或词库任务，再切换存储位置');
     }
     updating = true;
   };
   server.prepareUpdate = () => {
     if (tasks.size || activeWrites.size || activeHandlers.size || localBackupService.status.running || promptAgent.activeAgents.size || promptAgent.startingAgents.size
-      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || artistSamples.busy() || stChatu8Bridge.historySyncPromise || historyIndexStatus.running) {
+      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || artistSamples.busy() || stChatu8Bridge.historySyncPromise || stBaiBaiBridge.historySyncPromise || historyIndexStatus.running) {
       throw new Error('生成、Agent、收集、备份或数据写入仍在进行，请完成并关闭收集模式后再安装');
     }
     updating = true;

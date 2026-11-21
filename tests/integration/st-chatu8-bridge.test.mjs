@@ -627,7 +627,8 @@ test('installSillyTavernBridgeExtension 正常安装扩展、注入服务地址�
 
     // 验证文件存在且正确注入自定义服务地址
     const installedManifest = JSON.parse(await readFile(join(result.targetPath, 'manifest.json'), 'utf8'));
-    assert.equal(installedManifest.display_name, '智慧姬同步');
+    const sourceManifest = JSON.parse(await readFile(new URL('../../sillytavern-extension/npm-bridge/manifest.json', import.meta.url), 'utf8'));
+    assert.equal(installedManifest.display_name, sourceManifest.display_name);
     const projectVersion = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).version;
     assert.equal(installedManifest.version, projectVersion);
     assert.equal(installedManifest.js, `index.js?v=${projectVersion}`);

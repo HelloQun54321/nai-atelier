@@ -20,6 +20,7 @@ vi.mock('../../services/collectionFavorites', () => ({
   collectionTargetActive: () => false, readLegacyFavoriteIds: (key: string) => new Set(JSON.parse(localStorage.getItem(key) || '[]')), subscribeCollection: () => () => {},
 }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => ({ enabled: false }) }));
+vi.mock('../../services/stBaiBaiPreferences', () => ({ useStBaiBaiPreferences: () => ({ enabled: false }) }));
 vi.mock('../../services/stChatu8Sync', () => ({ useStChatu8Selection: () => syncSelection, wisdomEntryLabel: () => '' }));
 vi.mock('../../services/api', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('../../services/appearancePreferences', () => ({ useGalleryFrostedCaption: () => false }));

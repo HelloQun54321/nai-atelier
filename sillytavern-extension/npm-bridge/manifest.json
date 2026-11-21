@@ -1,13 +1,14 @@
 {
-  "display_name": "智慧姬同步",
+  "display_name": "酒馆同步（智慧姬 / 柏宝绘）",
   "loading_order": 110,
   "requires": [],
   "optional": [
-    "st-chatu8"
+    "st-chatu8",
+    "ST-BaiBai-Image"
   ],
-  "js": "index.js?v=1.212.1",
-  "css": "style.css?v=1.212.1",
+  "js": "index.js?v=1.213.0",
+  "css": "style.css?v=1.213.0",
   "author": "HelloQun54321",
-  "version": "1.212.1",
-  "description": "同步工坊精选、酒馆预设、Vibe 与历史图片。"
+  "version": "1.213.0",
+  "description": "同步工坊精选风格串、Vibe 与历史图片（支持智慧姬 / 柏宝绘）。"
 }

@@ -19,16 +19,17 @@ export interface StSyncUpdate {
   error?: string;
   onlyPending?: boolean;
 }
-const key = 'st_chatu8_sync_workspace_v1';
-const legacyKey = 'st_chatu8_export_selection_v1';
+const defaultKey = 'st_chatu8_sync_workspace_v1';
+const defaultLegacyKey = 'st_chatu8_export_selection_v1';
 
-const readStored = async (db: D1Database) => {
-  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+const readStored = async (db: D1Database, storageKey = defaultKey, fallbackLegacyKey = defaultLegacyKey) => {
+  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(storageKey).first<{ value: string }>();
   if (row) {
     const value = parseStoredJson(row.value, {}) as Partial<StSyncWorkspace>;
     return { raw: row.value, workspace: { entries: Array.isArray(value?.entries) ? value.entries.filter(entry => entry && typeof entry.chainId === 'string' && typeof entry.requestId === 'string' && ['pending', 'synced', 'removed'].includes(entry.status)) : [], lastSnapshotAt: Number(value?.lastSnapshotAt) || 0 } };
   }
-  const legacy = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(legacyKey).first<{ value: string }>();
+  if (!fallbackLegacyKey) return { raw: null, workspace: { entries: [] as StSyncEntry[], lastSnapshotAt: 0 } };
+  const legacy = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(fallbackLegacyKey).first<{ value: string }>();
   const ids = parseStoredJson(legacy?.value, []);
   // 旧范围没有接收凭据，先视为待同步；读取不改写旧数据。
   const entries: StSyncEntry[] = Array.isArray(ids) ? [...new Set(ids.filter(id => typeof id === 'string' && id))].map(chainId => ({
@@ -37,8 +38,8 @@ const readStored = async (db: D1Database) => {
   return { raw: null, workspace: { entries, lastSnapshotAt: 0 } };
 };
 
-export async function readStSyncWorkspace(db: D1Database) {
-  const { workspace } = await readStored(db);
+export async function readStSyncWorkspace(db: D1Database, storageKey = defaultKey, fallbackLegacyKey = defaultLegacyKey) {
+  const { workspace } = await readStored(db, storageKey, fallbackLegacyKey);
   const rows = await readStSyncChains(db, workspace.entries.map(entry => entry.chainId));
   const existing = new Set(rows.map(row => row.id));
   const available = new Set(rows.filter(row => isStChatu8ExportableChain({ params: parseStoredJson(row.params, {}) })).map(row => row.id));
@@ -59,15 +60,15 @@ export async function readStSyncChains(db: D1Database, ids: string[]) {
 }
 
 /** 设置表内的条件写入保护跨页面操作，不覆盖同时到达的接收回执。 */
-export async function updateStSyncWorkspace(db: D1Database, change: (workspace: StSyncWorkspace) => void) {
+export async function updateStSyncWorkspace(db: D1Database, change: (workspace: StSyncWorkspace) => void, storageKey = defaultKey, fallbackLegacyKey = defaultLegacyKey) {
   for (let attempt = 0; attempt < 8; attempt++) {
-    const { raw, workspace } = await readStored(db);
+    const { raw, workspace } = await readStored(db, storageKey, fallbackLegacyKey);
     change(workspace);
     const value = JSON.stringify(workspace);
     const result = raw === null
-      ? await db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').bind(key, value).run()
-      : await db.prepare('UPDATE settings SET value = ? WHERE key = ? AND value = ?').bind(value, key, raw).run();
-    if (result.meta?.changes) return readStSyncWorkspace(db);
+      ? await db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').bind(storageKey, value).run()
+      : await db.prepare('UPDATE settings SET value = ? WHERE key = ? AND value = ?').bind(value, storageKey, raw).run();
+    if (result.meta?.changes) return readStSyncWorkspace(db, storageKey, fallbackLegacyKey);
   }
   throw new Error('同步列表正在更新，请稍后再操作');
 }

@@ -4,13 +4,22 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SillyTavernBridgeExport } from '../../components/SillyTavernBridgeExport';
 
-const { preferences, save, refresh } = vi.hoisted(() => ({ preferences: { enabled: false, ready: true, busy: false, error: '' }, save: vi.fn(), refresh: vi.fn() }));
+const { preferences, save, refresh, baiBaiPreferences, saveBaiBai, refreshBaiBai } = vi.hoisted(() => ({
+  preferences: { enabled: false, ready: true, busy: false, error: '' },
+  save: vi.fn(),
+  refresh: vi.fn(),
+  baiBaiPreferences: { enabled: false, ready: true, busy: false, error: '' },
+  saveBaiBai: vi.fn(),
+  refreshBaiBai: vi.fn(),
+}));
 const download = vi.hoisted(() => vi.fn());
 vi.mock('../../services/fileDownload', () => ({ downloadFile: download }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => preferences, setStChatu8Enabled: save, refreshStChatu8Preferences: refresh }));
+vi.mock('../../services/stBaiBaiPreferences', () => ({ useStBaiBaiPreferences: () => baiBaiPreferences, setStBaiBaiEnabled: saveBaiBai, refreshStBaiBaiPreferences: refreshBaiBai }));
 vi.mock('../../services/localBackup', () => ({ openLocalBackupFolder: vi.fn() }));
 beforeEach(() => {
   Object.assign(preferences, { enabled: false, ready: true, busy: false, error: '' }); save.mockReset(); refresh.mockReset();
+  Object.assign(baiBaiPreferences, { enabled: false, ready: true, busy: false, error: '' }); saveBaiBai.mockReset(); refreshBaiBai.mockReset();
   download.mockReset();
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ sillyTavernRoot: 'D:\\SyntheticTavern' }))));
 });
@@ -55,5 +64,21 @@ describe('设置里的智慧姬同步开关', () => {
     expect(screen.getByText('读取失败')).toBeTruthy(); fireEvent.click(screen.getByRole('button', { name: '重新读取' })); expect(refresh).toHaveBeenCalledTimes(1);
     save.mockRejectedValueOnce(new Error('保存失败')); fireEvent.click(toggle);
     await waitFor(() => expect(notify).toHaveBeenCalledWith('保存失败'));
+  });
+  it('柏宝绘同步独立开关互不干扰，单独开启时共享目录与扩展安装入口', async () => {
+    const view = render(React.createElement(SillyTavernBridgeExport, { notify: vi.fn() }));
+    const chatu8Toggle = screen.getByRole('checkbox', { name: '智慧姬同步' }) as HTMLInputElement;
+    const baiBaiToggle = screen.getByRole('checkbox', { name: '柏宝绘同步' }) as HTMLInputElement;
+    expect(chatu8Toggle.checked).toBe(false);
+    expect(baiBaiToggle.checked).toBe(false);
+    fireEvent.click(baiBaiToggle);
+    expect(saveBaiBai).toHaveBeenCalledWith(true);
+    expect(save).not.toHaveBeenCalled();
+    baiBaiPreferences.enabled = true;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ connected: true, sillyTavernRoot: 'D:\\SyntheticTavern', linkedArtists: 2, linkedVibes: 3, linkedHistory: 5 }))));
+    view.rerender(React.createElement(SillyTavernBridgeExport, { notify: vi.fn() }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '扫描柏宝绘历史' })).toBeTruthy());
+    expect(screen.getByRole('button', { name: '一键安装 / 更新扩展' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '扫描智慧姬历史' })).toBeNull();
   });
 });
