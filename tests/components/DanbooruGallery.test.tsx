@@ -86,6 +86,14 @@ it('首次首屏请求等待中不显示空结果，成功空结果与失败保�
   const failed = render(<DanbooruGallery active currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={vi.fn()} />);
   await screen.findByText('合成请求失败');
   expect(screen.queryByText('没有找到匹配图片')).toBeNull();
+  expect(screen.queryByText('已全部加载')).toBeNull();
+  const failedQuery = search.mock.calls.at(-1)?.[0];
+  if (!failedQuery) throw new Error('缺少首次请求记录');
+  search.mockResolvedValueOnce(result());
+  fireEvent.click(screen.getByRole('button', { name: '重试加载' }));
+  await screen.findByText('没有找到匹配图片');
+  expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ query: failedQuery.query, page: failedQuery.page }));
+  expect(screen.queryByText('合成请求失败')).toBeNull();
   failed.unmount();
 });
 const openFilters = () => fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
