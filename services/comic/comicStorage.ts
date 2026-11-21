@@ -16,8 +16,17 @@ const normalizeAiPage = (raw: unknown, width: number, height: number, gutterPx: 
   const rawGuides = Array.isArray(raw.guidePanels) && raw.guidePanels.length > 0
     ? raw.guidePanels as ComicAiPagePlan['guidePanels']
     : fallback.guidePanels;
-  // 自愈修复：旧版 getPanelBoundingBox 曾把归一化宽高错误钳成 1×1，遇到多格全为 1×1 的脏缓存自动重建
-  const hasCorruptedGuides = rawGuides.length > 1 && rawGuides.every(g => Number(g?.width) >= 0.99 && Number(g?.height) >= 0.99);
+  // 自愈修复：若任何引导格越出画纸边界（如旧版 getPanelBoundingBox 产生的 1×1 溢出缓存）或尺寸非法，自动重建
+  const hasCorruptedGuides = rawGuides.some(g => {
+    const x = Number(g?.x);
+    const y = Number(g?.y);
+    const w = Number(g?.width);
+    const h = Number(g?.height);
+    return !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)
+      || w <= 0.02 || h <= 0.02
+      || x < 0 || y < 0
+      || x + w > 1.005 || y + h > 1.005;
+  });
   return {
     storyPrompt: typeof raw.storyPrompt === 'string' ? raw.storyPrompt : '',
     targetPanelCount: Number.isFinite(Number(raw.targetPanelCount)) ? Math.max(2, Math.min(8, Math.round(Number(raw.targetPanelCount)))) : 4,

@@ -151,7 +151,8 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getByRole('button', { name: /生成 AI 整页/ })).toBeTruthy();
 
     // 勾选出场角色并输入剧情，点击 AI 编排分镜与锚点
-    fireEvent.click(screen.getByRole('button', { name: '银发女主' }));
+    fireEvent.click(screen.getByRole('button', { name: /选择出场角色/ }));
+    fireEvent.click(screen.getByRole('button', { name: /银发女主/ }));
     fireEvent.change(screen.getByRole('textbox', { name: '漫画整页剧情描述' }), {
       target: { value: '放学后下雨，银发少女递伞给少年' },
     });

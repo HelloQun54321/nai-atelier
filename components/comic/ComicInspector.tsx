@@ -195,6 +195,8 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   useLanguage();
   const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
+  const [castPickerOpen, setCastPickerOpen] = useState(false);
+  const [castQuery, setCastQuery] = useState('');
   const [stylePickerOpen, setStylePickerOpen] = useState(false);
   const [styleQuery, setStyleQuery] = useState('');
   const [charQuery, setCharQuery] = useState('');
@@ -400,34 +402,90 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                   </div>
                 </div>
 
-                {/* 本页出场角色库快选（勾中后 AI 自动代入角色外观串） */}
-                {allCharacterChains.length > 0 && (
-                  <div className="space-y-1">
-                    <span className="block text-[11px] font-medium text-gray-500 dark:text-gray-400">{t('本页出场角色（可选，自动带入角色库外观）')}</span>
-                    <div className="flex flex-wrap gap-1">
-                      {allCharacterChains.slice(0, 12).map(char => {
-                        const checked = aiPage.castCharacterIds.includes(char.id);
-                        return (
-                          <button
+                {/* 本页出场角色：紧凑可搜选择器（只展示已选角色，不堆满一屏角色卡片） */}
+                {allCharacterChains.length > 0 && (() => {
+                  const selectedCast = aiPage.castCharacterIds
+                    .map(id => allCharacterChains.find(c => c.id === id))
+                    .filter((c): c is PromptChain => Boolean(c));
+                  const q = castQuery.trim().toLowerCase();
+                  const filteredCast = q
+                    ? allCharacterChains.filter(c => c.name.toLowerCase().includes(q) || c.basePrompt?.toLowerCase().includes(q)).slice(0, 40)
+                    : allCharacterChains.slice(0, 40);
+                  return (
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">{t('出场角色')}</span>
+                        {selectedCast.map(char => (
+                          <span
                             key={char.id}
-                            type="button"
-                            aria-pressed={checked}
-                            onClick={() => onUpdateAiPage(cur => ({
-                              ...cur,
-                              castCharacterIds: checked
-                                ? cur.castCharacterIds.filter(id => id !== char.id)
-                                : [...cur.castCharacterIds, char.id],
-                            }), true)}
-                            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium transition ${checked ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                            className="inline-flex items-center gap-1 rounded-md border border-indigo-400/70 bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-700 dark:border-indigo-500/70 dark:bg-indigo-950/60 dark:text-indigo-200"
                           >
-                            {checked && <Check className="h-3 w-3" />}
                             <span className="max-w-24 truncate">{char.name}</span>
-                          </button>
-                        );
-                      })}
+                            <button
+                              type="button"
+                              aria-label={t('移除角色 {0}', [char.name])}
+                              onClick={() => onUpdateAiPage(cur => ({
+                                ...cur,
+                                castCharacterIds: cur.castCharacterIds.filter(id => id !== char.id),
+                              }), true)}
+                              className="rounded hover:text-red-500"
+                            >
+                              <X className="h-2.5 w-2.5" />
+                            </button>
+                          </span>
+                        ))}
+                        <button
+                          type="button"
+                          aria-expanded={castPickerOpen}
+                          onClick={() => setCastPickerOpen(open => !open)}
+                          className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-medium text-gray-600 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                        >
+                          <UserPlus className="h-3 w-3 text-indigo-500" />
+                          <span>{t('选择出场角色')}</span>
+                        </button>
+                      </div>
+                      {castPickerOpen && (
+                        <div className="space-y-1.5 rounded-lg border border-indigo-200 bg-white p-1.5 dark:border-indigo-800 dark:bg-gray-900">
+                          <div className="relative">
+                            <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
+                            <input
+                              type="text"
+                              value={castQuery}
+                              onChange={e => setCastQuery(e.target.value)}
+                              placeholder={t('搜索角色库…')}
+                              className="w-full rounded border border-gray-200 bg-gray-50 py-1 pl-6 pr-2 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                            />
+                          </div>
+                          <div className="max-h-36 space-y-0.5 overflow-y-auto">
+                            {filteredCast.map(char => {
+                              const checked = aiPage.castCharacterIds.includes(char.id);
+                              return (
+                                <button
+                                  key={char.id}
+                                  type="button"
+                                  aria-pressed={checked}
+                                  onClick={() => onUpdateAiPage(cur => ({
+                                    ...cur,
+                                    castCharacterIds: checked
+                                      ? cur.castCharacterIds.filter(id => id !== char.id)
+                                      : [...cur.castCharacterIds, char.id],
+                                  }), true)}
+                                  className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-[11px] transition ${checked ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800'}`}
+                                >
+                                  <span className="min-w-0 flex-1 truncate font-medium">{char.name}</span>
+                                  {char.basePrompt && (
+                                    <span className="max-w-28 truncate text-[10px] text-gray-400">{char.basePrompt}</span>
+                                  )}
+                                  {checked && <Check className="h-3 w-3 flex-none text-indigo-500" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 <div className="flex items-center gap-1.5">
                   <button

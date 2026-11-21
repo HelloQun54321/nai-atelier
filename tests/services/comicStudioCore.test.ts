@@ -213,6 +213,18 @@ describe('comicStorage auto-draft isolation', () => {
     expect(loaded.aiPage.anchors).toHaveLength(1);
     expect(loaded.aiPage.anchors[0].label).toBe('女主-格1');
   });
+
+  it('auto-repairs corrupted overflowing guidePanels cached in localStorage', () => {
+    const draft = createInitialComicDraft('classic-4-121');
+    draft.creationMode = 'ai-page';
+    draft.aiPage.guidePanels = [
+      { id: 'bad-1', label: '第 1 格', summary: '', x: 0.04, y: 0.04, width: 1, height: 1 },
+      { id: 'bad-2', label: '第 2 格', summary: '', x: 0.51, y: 0.35, width: 1, height: 1 },
+    ];
+    expect(saveComicDraft(draft)).toBe(true);
+    const loaded = loadComicDraft();
+    expect(loaded.aiPage.guidePanels.every(g => g.x + g.width <= 1.0 && g.y + g.height <= 1.0)).toBe(true);
+  });
 });
 
 describe('comicStoryboardAgent & comicAiPageEngine (Phase 2)', () => {

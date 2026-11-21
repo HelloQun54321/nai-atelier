@@ -730,6 +730,9 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
               className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
             >
               <defs>
+                <clipPath id="comic-page-bounds">
+                  <rect x={0} y={0} width={pageW} height={pageH} />
+                </clipPath>
                 {sortedPanels.map(panel => (
                   <clipPath key={panel.id} id={`comic-clip-${panel.id}`}>
                     <polygon points={panel.points.map(p => `${p.x * pageW},${p.y * pageH}`).join(' ')} />
@@ -745,7 +748,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                     const showGuides = aiPage.showGuideOverlay || !hasGenerated;
                     const activeZoneRect = aiZonePlan?.zones[generatingAiZoneIndex ?? 0]?.rect || { x: 0, y: 0, width: 1, height: 1 };
                     return (
-                      <g key="panels">
+                      <g key="panels" clipPath="url(#comic-page-bounds)">
                         {aiPage.generatedPageImage?.url && (
                           <image
                             href={aiPage.generatedPageImage.url}
