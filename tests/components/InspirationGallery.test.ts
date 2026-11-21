@@ -930,6 +930,23 @@ describe('InspirationGallery 来源筛选与未整理心智', () => {
     expect(screen.queryByText('已整理角色图')).toBeNull();
   });
 
+  it('法典来源入口同时收录法典书目和共创广场收藏', () => {
+    render(React.createElement(InspirationGallery, {
+      currentUser: mockUser,
+      inspirationsData: [
+        { ...mockInspirations[0], id: 'from-book', sourceId: 'book', title: '书目收藏样张', sourceType: 'codex' },
+        { ...mockInspirations[0], id: 'from-community', sourceId: 'community', title: '广场收藏样张', sourceType: 'codex-community' },
+        { ...mockInspirations[0], id: 'from-pixiv', sourceId: 'pixiv', title: '其他收藏样张', sourceType: 'pixiv' },
+      ],
+      onRefresh: vi.fn(),
+      notify: vi.fn(),
+    }));
+    fireEvent.click(screen.getByRole('button', { name: /^法典\s+2$/ }));
+    expect(screen.getByText('书目收藏样张')).toBeTruthy();
+    expect(screen.getByText('广场收藏样张')).toBeTruthy();
+    expect(screen.queryByText('其他收藏样张')).toBeNull();
+  });
+
   it('侧栏来源导航包含 Danbooru 与 Pixiv 并可按来源精确筛选', () => {
     render(
       React.createElement(InspirationGallery, {
