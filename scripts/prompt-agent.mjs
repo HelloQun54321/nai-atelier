@@ -1773,6 +1773,7 @@ export const assemblePromptContext = ({ systemPolicy = '', runtimeContext = '', 
 
 export class PromptAgentService {
   constructor({ lanSecret, outboundProxyUrl = '', configFile = '', getDefaultExportDirectory = async () => '', runtimePlatform = 'desktop' }) {
+    this.outboundProxyUrl = outboundProxyUrl;
     this.runtimePlatform = runtimePlatform;
     this.runtimeStartedAt = Date.now();
     this.getDefaultExportDirectory = getDefaultExportDirectory;
