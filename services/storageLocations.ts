@@ -24,7 +24,7 @@ const action = async <T,>(body: { action: string; [key: string]: unknown }): Pro
     throw error;
   } finally { clearTimeout(timer); }
 };
-export const pickStorageDirectory = (kind: 'data' | 'cache' | 'backup' | 'export') => action<{ path: string; cancelled: boolean }>({ action: 'pickDirectory', kind });
+export const pickStorageDirectory = (kind: 'data' | 'cache' | 'backup' | 'export' | 'tavern', initialPath?: string) => action<{ path: string; cancelled: boolean }>({ action: 'pickDirectory', kind, ...(initialPath ? { initialPath } : {}) });
 export const openStorageDirectory = (path: string) => action<{ success: boolean }>({ action: 'openDirectory', path });
 export const switchStorageDataDirectory = (directory: string, operation: 'migrate' | 'open') => action<{ restartRequired: boolean }>({ action: 'switchData', directory, operation });
 export const setStorageCacheDirectory = (directory: string) => action<{ restartRequired: boolean }>({ action: 'setCacheDir', directory });

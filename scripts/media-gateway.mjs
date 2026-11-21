@@ -4330,7 +4330,7 @@ const serveDistFile = async (req, res, url) => {
       if (req.method === 'GET') return sendJson(res, 200, await storageLocationStatus({ anchor, dataDir, workspace, mode, canManage }));
       if (!canManage || req.method !== 'POST' || req.headers['x-nai-local-control'] !== 'true') return sendJson(res, 403, { error: '存储管理只允许 Windows 电脑本机页面操作' });
       const body = await readJsonBody(req, 8192);
-      if (body.action === 'pickDirectory') return sendJson(res, 200, await pickDirectory());
+      if (body.action === 'pickDirectory') return sendJson(res, 200, await pickDirectory(typeof body.initialPath === 'string' ? body.initialPath : ''));
       if (body.action === 'openDirectory') { await openInExplorer(body.path); return sendJson(res, 200, { success: true }); }
       if (!requestStorageSwitch) throw new Error('请使用完整工坊启动入口管理存储位置');
       const preferences = await getStoragePreferences(workspace);

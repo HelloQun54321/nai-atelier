@@ -6,6 +6,7 @@ import {
   Download,
   ExternalLink,
   Folder,
+  FolderOpen,
   FolderOutput,
   Info,
   Link2,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 import { openLocalBackupFolder } from '../services/localBackup';
 import { beginExportTarget } from '../services/exportLocation';
+import { pickStorageDirectory } from '../services/storageLocations';
 import { refreshStChatu8Preferences, setStChatu8Enabled, useStChatu8Preferences } from '../services/stChatu8Preferences';
 import { refreshStBaiBaiPreferences, setStBaiBaiEnabled, useStBaiBaiPreferences } from '../services/stBaiBaiPreferences';
 
@@ -78,6 +80,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
   const [installedPath, setInstalledPath] = useState('');
   const [installing, setInstalling] = useState(false);
   const [savingRoot, setSavingRoot] = useState(false);
+  const [pickingRoot, setPickingRoot] = useState(false);
   const [scanningTarget, setScanningTarget] = useState<'st-chatu8' | 'st-baibai' | null>(null);
   const [exporting, setExporting] = useState(false);
   const supportsDirectoryPicker = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
@@ -265,6 +268,20 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
     }
   };
 
+  const handlePickRootDirectory = async () => {
+    setPickingRoot(true);
+    try {
+      const result = await pickStorageDirectory('tavern', stRoot.trim() || detectedRoot || undefined);
+      if (result.cancelled || !result.path) return;
+      setStRoot(result.path);
+      await handleSaveRoot(result.path);
+    } catch (err: any) {
+      notify(`选择目录失败：${err?.message || '请手动填写本地绝对路径'}`);
+    } finally {
+      setPickingRoot(false);
+    }
+  };
+
   const handleScanHistory = async (target: 'st-chatu8' | 'st-baibai') => {
     setScanningTarget(target);
     try {
@@ -420,14 +437,28 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
                     {detectedKind === 'tauritavern' ? t("已自动检测 · TauriTavern") : t("已自动检测")}</span>
                 )}
               </div>
-              <input
-                type="text"
-                value={stRoot}
-                onChange={e => setStRoot(e.target.value)}
-                placeholder={t("例如：D:\\SillyTavern 或 TauriTavern 数据目录")}
-                className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 font-mono text-xs outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                title={t("SillyTavern 本地安装根目录")}
-              />
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={stRoot}
+                  onChange={e => setStRoot(e.target.value)}
+                  placeholder={t("例如：D:\\SillyTavern 或 TauriTavern 数据目录")}
+                  className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 font-mono text-xs outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  title={t("SillyTavern 本地安装根目录")}
+                />
+                <button
+                  type="button"
+                  data-appearance="control" data-tone="neutral"
+                  disabled={pickingRoot || savingRoot || installing}
+                  onClick={() => void handlePickRootDirectory()}
+                  aria-label={t("选择本地酒馆目录")}
+                  title={t("选择本地酒馆目录")}
+                  className="mobile-touch inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                >
+                  {pickingRoot ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderOpen className="h-3.5 w-3.5" />}
+                  <span>{pickingRoot ? t("正在选择…") : t("选择目录")}</span>
+                </button>
+              </div>
               {detectedRoots.length > 1 && (
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-micro text-gray-500 dark:text-gray-400">
                   <span>{t("快速切换：")}</span>

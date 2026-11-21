@@ -13,7 +13,9 @@ const { preferences, save, refresh, baiBaiPreferences, saveBaiBai, refreshBaiBai
   refreshBaiBai: vi.fn(),
 }));
 const download = vi.hoisted(() => vi.fn());
+const pickDir = vi.hoisted(() => vi.fn());
 vi.mock('../../services/fileDownload', () => ({ downloadFile: download }));
+vi.mock('../../services/storageLocations', () => ({ pickStorageDirectory: pickDir }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => preferences, setStChatu8Enabled: save, refreshStChatu8Preferences: refresh }));
 vi.mock('../../services/stBaiBaiPreferences', () => ({ useStBaiBaiPreferences: () => baiBaiPreferences, setStBaiBaiEnabled: saveBaiBai, refreshStBaiBaiPreferences: refreshBaiBai }));
 vi.mock('../../services/localBackup', () => ({ openLocalBackupFolder: vi.fn() }));
@@ -21,6 +23,7 @@ beforeEach(() => {
   Object.assign(preferences, { enabled: false, ready: true, busy: false, error: '' }); save.mockReset(); refresh.mockReset();
   Object.assign(baiBaiPreferences, { enabled: false, ready: true, busy: false, error: '' }); saveBaiBai.mockReset(); refreshBaiBai.mockReset();
   download.mockReset();
+  pickDir.mockReset();
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ sillyTavernRoot: 'D:\\SyntheticTavern' }))));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
@@ -101,5 +104,25 @@ describe('设置里的智慧姬同步开关', () => {
     const stSwitch = screen.getByRole('button', { name: 'SillyTavern' });
     fireEvent.click(stSwitch);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/integrations/st-baibai/root', expect.objectContaining({ method: 'POST' })));
+  });
+  it('点击「选择目录」可调起系统目录选择器并自动回填绑定', async () => {
+    baiBaiPreferences.enabled = true;
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+      connected: true,
+      sillyTavernRoot: 'E:\\CustomTTData',
+      tavernKind: 'tauritavern',
+      extensionTargetDir: 'E:\\CustomTTData\\default-user\\extensions\\npm-bridge',
+      linkedArtists: 0, linkedVibes: 0, linkedHistory: 0,
+    })));
+    vi.stubGlobal('fetch', fetchMock);
+    pickDir.mockResolvedValueOnce({ path: 'E:\\CustomTTData', cancelled: false });
+    const notify = vi.fn();
+    render(React.createElement(SillyTavernBridgeExport, { notify }));
+    fireEvent.click(screen.getByRole('button', { name: '选择本地酒馆目录' }));
+    await waitFor(() => expect(pickDir).toHaveBeenCalledTimes(1));
+    expect(pickDir.mock.calls[0][0]).toBe('tavern');
+    await waitFor(() => expect(screen.getByTitle('SillyTavern 本地安装根目录').getAttribute('value')).toBe('E:\\CustomTTData'));
+    expect(fetchMock).toHaveBeenCalledWith('/api/integrations/st-baibai/root', expect.objectContaining({ method: 'POST' }));
+    expect(notify).toHaveBeenCalledWith('已绑定 TauriTavern 目录：E:\\CustomTTData');
   });
 });
