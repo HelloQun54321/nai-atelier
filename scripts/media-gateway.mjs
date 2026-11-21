@@ -9,13 +9,13 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, rename, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { createServer, request as httpRequest } from 'node:http';
-import { connect as connectSocket } from 'node:net';
+import { BlockList, connect as connectSocket, isIPv4 } from 'node:net';
 import { availableParallelism, tmpdir, totalmem } from 'node:os';
 import { dirname, extname, isAbsolute, join, normalize, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { Agent, ProxyAgent, fetch as undiciFetch } from 'undici';
 import { PromptAgentService } from './prompt-agent.mjs';
 import { StChatu8Bridge, installSillyTavernBridgeExtension } from './st-chatu8-bridge.mjs';
 import { StBaiBaiBridge } from './st-baibai-bridge.mjs';
@@ -37,6 +37,71 @@ import { getLanUrls } from './local-server-runtime.mjs';
 import { storageLocationStatus, getStoragePreferences, updateStoragePreferences, getDefaultExportDirectory, pickStorageDirectory, validateStorageSwitch } from './storage-locations.mjs';
 import { createArtistSamples, validateArtistSampleSource, pickArtistSampleFile } from './artist-samples.mjs';
 import { handleExportLocationRequest } from './export-locations.mjs';
+
+// 启用备用线路后，Danbooru 指定域名仅在连接异常时用加密 DNS 解析，并验证 TLS 后直连重试。
+export const createDanbooruRemoteFetch = (configuredFetch, directFetch = undiciFetch) => {
+  const danbooruHosts = new Set(['danbooru.donmai.us', 'cdn.donmai.us']);
+  const blockedAddresses = new BlockList();
+  for (const [address, prefix] of [
+    ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8],
+    ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.168.0.0', 16],
+    ['198.18.0.0', 15], ['224.0.0.0', 3],
+  ]) {
+    blockedAddresses.addSubnet(address, prefix);
+  }
+
+  return async (url, options = {}) => {
+    try {
+      return await configuredFetch(url, options);
+    } catch (error) {
+      const target = new URL(url);
+      const method = (options.method || 'GET').toUpperCase();
+      if (target.protocol !== 'https:' || target.port || !danbooruHosts.has(target.hostname)
+          || !['GET', 'HEAD'].includes(method) || options.signal?.aborted) {
+        throw error;
+      }
+
+      const timeout = AbortSignal.timeout(12_000);
+      const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+      const dnsUrl = new URL('https://dns.google/resolve');
+      dnsUrl.searchParams.set('name', target.hostname);
+      dnsUrl.searchParams.set('type', 'A');
+      const dnsResponse = await configuredFetch(dnsUrl, { signal, redirect: 'error' });
+      if (!dnsResponse.ok) {
+        await dnsResponse.body?.cancel();
+        throw error;
+      }
+      const dns = await dnsResponse.json();
+      const addresses = (Array.isArray(dns.Answer) ? dns.Answer : [])
+        .filter(({ name, type, data }) => type === 1 && name === target.hostname + '.'
+          && typeof data === 'string' && isIPv4(data) && !blockedAddresses.check(data))
+        .map(({ data }) => ({ address: data, family: 4 }));
+      if (dns.Status !== 0 || !addresses.length) throw error;
+
+      const dispatcher = new Agent({
+        connect: {
+          lookup(hostname, lookupOptions, callback) {
+            if (hostname !== target.hostname) {
+              callback(new Error('Unexpected Danbooru fallback hostname'));
+            } else if (lookupOptions.all) {
+              callback(null, addresses);
+            } else {
+              callback(null, addresses[0].address, 4);
+            }
+          },
+        },
+      });
+      try {
+        const response = await directFetch(target, { ...options, redirect: 'manual', signal, dispatcher });
+        void dispatcher.close().catch(() => {});
+        return response;
+      } catch (fallbackError) {
+        await dispatcher.destroy().catch(() => {});
+        throw fallbackError;
+      }
+    }
+  };
+};
 
 const CACHE_VERSION = 'v1';
 const HISTORY_THUMBNAIL_CACHE_VERSION = 'v2';
@@ -4082,7 +4147,9 @@ const serveDistFile = async (req, res, url) => {
   return true;
 };
   const proxyAgent = outboundProxyUrl ? new ProxyAgent(outboundProxyUrl) : null;
-  const remoteFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
+  const configuredFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
+  const remoteFetch = process.env.NAI_DANBOORU_DIRECT_FALLBACK === '1'
+    ? createDanbooruRemoteFetch(configuredFetch) : configuredFetch;
   const artistSamples = createArtistSamples({ cacheDir: join(process.env.NAI_RESOURCE_ROOT || join(process.cwd(), 'local-cache'), 'artist-samples'), loadPreferences: () => getStoragePreferences(), savePreferences: patch => updateStoragePreferences(patch), pickFile: pickArtistFile, fetchRemote: remoteFetch });
   const danbooruResponseCache = createResponseMemoryCache({
     maxEntries: 256, maxBytes: 64 * 1024 * 1024,

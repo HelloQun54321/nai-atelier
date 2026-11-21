@@ -2135,3 +2135,40 @@ test('prompt agent: reviseSessionMessage audit log records sha256 and length ins
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+import { createDanbooruRemoteFetch } from '../../scripts/media-gateway.mjs';
+
+test('Danbooru fallback preserves HTTP errors and skips unrelated or cancelled requests', async () => {
+  const target = 'https://danbooru.donmai.us/posts.json';
+  const denied = new Response(null, { status: 403 });
+  const failing = new Error('test connection reset');
+  const configuredCalls = [];
+  const wrappedFetch = createDanbooruRemoteFetch(async (url, options) => {
+    configuredCalls.push(String(url));
+    if (String(url) === target && !options.method && !options.signal) return denied;
+    throw failing;
+  }, () => assert.fail('Unexpected direct connection'));
+
+  assert.equal(await wrappedFetch(target), denied);
+  await assert.rejects(wrappedFetch(target, { method: 'POST' }), error => error === failing);
+  await assert.rejects(wrappedFetch(target, { signal: AbortSignal.abort() }), error => error === failing);
+  await assert.rejects(wrappedFetch('https://example.com'), error => error === failing);
+  assert.equal(configuredCalls.length, 4);
+});
+
+test('Danbooru fallback resolves only the requested hostname and rejects private DNS answers', async () => {
+  const target = 'https://cdn.donmai.us/sample.png';
+  const failing = new Error('test connection reset');
+  const dnsRequests = [];
+  const wrappedFetch = createDanbooruRemoteFetch(async url => {
+    if (url === target) throw failing;
+    dnsRequests.push(String(url));
+    return Response.json({ Status: 0, Answer: [
+      { name: 'cdn.donmai.us.', type: 1, data: '127.0.0.1' },
+      { name: 'other.example.', type: 1, data: '104.26.10.39' },
+    ] });
+  }, () => assert.fail('Unexpected direct connection'));
+
+  await assert.rejects(wrappedFetch(target), error => error === failing);
+  assert.deepEqual(dnsRequests, ['https://dns.google/resolve?name=cdn.donmai.us&type=A']);
+});
