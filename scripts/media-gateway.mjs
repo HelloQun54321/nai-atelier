@@ -16,6 +16,8 @@ import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { createNovelAiRemoteFetch } from './novelai-generation-network.mjs';
+import { fetchNovelAiSubscription } from './novelai-subscription-network.mjs';
 import { PromptAgentService } from './prompt-agent.mjs';
 import { StChatu8Bridge, installSillyTavernBridgeExtension } from './st-chatu8-bridge.mjs';
 import { StBaiBaiBridge } from './st-baibai-bridge.mjs';
@@ -77,7 +79,6 @@ export const NAI_SUBSCRIPTION_URLS = [
   'https://image.novelai.net/user/subscription',
   'https://text.novelai.net/user/subscription',
 ];
-const NAI_SUBSCRIPTION_URL = NAI_SUBSCRIPTION_URLS[0];
 const CLOUD_QUEUE_URL = '';
 const CLOUD_QUEUE_POLL_INTERVAL = 1000;
 const CLOUD_QUEUE_WAIT_TIMEOUT = 300_000;
@@ -1248,26 +1249,7 @@ export const createSseEventObserver = onEvent => {
   };
 };
 
-export const fetchNovelAiSubscription = async (authorization, signal = AbortSignal.timeout(30_000), requestRemote = fetch, gatewayUrl = '') => {
-  if (gatewayUrl) return requestRemote(`${gatewayUrl}/user/subscription`, {
-    method: 'GET',
-    headers: { 'Authorization': authorization },
-    signal,
-    redirect: 'error',
-  });
-  // 逐个官方域名尝试：400 表示该域名已弃用，网络错误表示当前线路不可达，两者都换下一个；
-  // 401/403 才是真正的鉴权问题，直接返回让上层报失败。
-  let lastFailure;
-  for (const url of NAI_SUBSCRIPTION_URLS) {
-    try {
-      const response = await requestRemote(url, { method: 'GET', headers: { 'Authorization': authorization }, signal });
-      if (response.status === 400) { lastFailure = response; continue; }
-      return response;
-    } catch (error) { lastFailure = error; }
-  }
-  if (lastFailure instanceof Error) throw lastFailure;
-  return lastFailure;
-};
+export { fetchNovelAiSubscription };
 
 // 只读取所选 Key 的接入地址，不把整个保管箱带入请求链。
 export const readNaiGatewayUrl = async (req, workerPort) => {
@@ -4082,7 +4064,7 @@ const serveDistFile = async (req, res, url) => {
   return true;
 };
   const proxyAgent = outboundProxyUrl ? new ProxyAgent(outboundProxyUrl) : null;
-  const remoteFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
+  const remoteFetch = createNovelAiRemoteFetch({ requestRemote: undiciFetch, ProxyAgent, proxyUrl: outboundProxyUrl, sharedAgent: proxyAgent });
   const artistSamples = createArtistSamples({ cacheDir: join(process.env.NAI_RESOURCE_ROOT || join(process.cwd(), 'local-cache'), 'artist-samples'), loadPreferences: () => getStoragePreferences(), savePreferences: patch => updateStoragePreferences(patch), pickFile: pickArtistFile, fetchRemote: remoteFetch });
   const danbooruResponseCache = createResponseMemoryCache({
     maxEntries: 256, maxBytes: 64 * 1024 * 1024,
