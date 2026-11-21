@@ -20,9 +20,11 @@ await mkdir(path.join(stage, 'public'), { recursive: true });
 await cp(path.join(root, 'public/app-icon.png'), path.join(stage, 'public/app-icon.png'));
 const sources = {};
 for (const name of ['scripts/prompt-agent.mjs', 'scripts/novelai-agent-knowledge.mjs', 'scripts/agent-runtime.mjs', 'scripts/agent-compaction.mjs', 'scripts/agent-local-images.mjs', 'scripts/agent-creative-read.mjs', 'scripts/agent-directories.mjs', 'scripts/agent-ui-bridge.mjs', 'scripts/agent-page-tools.mjs', 'scripts/agent-prompt-library.mjs', 'services/agentLabSync.mjs', 'services/agentPromptChanges.mjs', 'services/agentOperation.mjs', 'services/agentThinking.mjs', 'services/agentConnection.mjs', 'services/promptClassification.mjs', 'services/promptSegments.mjs', 'services/promptTags.mjs', 'services/vibeProtocol.mjs', 'services/promptExtraction.mjs', 'services/promptLibraryTree.mjs', 'services/directoryTree.mjs', 'services/promptPurposes.mjs', 'PROJECT_AGENT.md', 'package.json']) sources[name] = await readFile(path.join(root, name), 'utf8');
-const gatewayExports = ['getNaiRuntime','applyNaiRuntimeOverride','computeNaiRuntimeSync','extractNaiRuntimeChunkPaths','fetchNaiRuntimeText','sanitizeNovelAiSubscription','cacheNovelAiSubscription','fetchNovelAiSubscription','isSubscriptionUnsupported','estimateNovelAiGenerationCost','CloudQueueCoordinator','normalizeCloudQueuePreferences','keyHashFromAuthorization','handleGenerationTaskRequest','handleGenerateRequest','handleGenerateStreamRequest','handleVibeEncodeRequest','selectPreciseReferenceCanvas','recoverPendingVibeEncodings','assertVibeEncodingIdle','safeGenerationQueueSnapshot','runAgentGenerationQueue','sendJson','hasValidLanCookie'];
+const gatewayExports = ['getNaiRuntime','applyNaiRuntimeOverride','computeNaiRuntimeSync','extractNaiRuntimeChunkPaths','fetchNaiRuntimeText','sanitizeNovelAiSubscription','cacheNovelAiSubscription','isSubscriptionUnsupported','estimateNovelAiGenerationCost','CloudQueueCoordinator','normalizeCloudQueuePreferences','keyHashFromAuthorization','handleGenerationTaskRequest','handleGenerateRequest','handleGenerateStreamRequest','handleVibeEncodeRequest','selectPreciseReferenceCanvas','recoverPendingVibeEncodings','assertVibeEncodingIdle','safeGenerationQueueSnapshot','runAgentGenerationQueue','sendJson','hasValidLanCookie'];
 const gatewaySource = extractAndroidShared(path.join(root, 'scripts/media-gateway.mjs'), gatewayExports,
-  `import { vibeBaseModel,vibeModelKey } from '/services/vibeProtocol.mjs';
+  `import { fetchNovelAiSubscription } from '/scripts/novelai-subscription-network.mjs';
+export { fetchNovelAiSubscription };
+import { vibeBaseModel,vibeModelKey } from '/services/vibeProtocol.mjs';
 import { createHash,createHmac,randomUUID,randomBytes,timingSafeEqual } from '/mobile/shims/crypto.mjs';
 import { Buffer } from 'buffer';
 import { readGenerationResponse } from 'mobile:generation-output';
@@ -76,6 +78,7 @@ import {normalizeLanguage} from '/locales/index.mjs';`,{
 const dictionaryGenerator=androidDictionaryGenerator(path.join(root,'scripts/update-tag-dictionary.mjs'));
 const shim = name => path.join(root, 'mobile/shims', name + '.mjs');
 const aliases = [
+  { find: /^node:timers\/promises$/, replacement: shim('timers') },
   { find: /^(node:)?crypto$/, replacement: shim('crypto') },
   { find: /^(node:)?fs(?:\/promises)?$/, replacement: shim('fs') },
   { find: /^(node:)?path$/, replacement: path.join(root, 'node_modules/path-browserify/index.js') },
@@ -83,7 +86,7 @@ const aliases = [
   { find: /.*\/agent-web\.mjs$/, replacement: path.join(root, 'mobile/agent-web.mjs') },
 ];
 await build(mergeConfig(config, {
-  configFile: false, publicDir: path.join(stage, 'public'),
+  root, configFile: false, publicDir: path.join(stage, 'public'),
   build: { target:'es2022', outDir: path.join(stage, 'web'), emptyOutDir: true, rollupOptions: { input: path.join(root, 'index.html') } },
   resolve: { alias: aliases },
   define: { 'process.env': '{}', 'process.pid': '1', 'process.platform': '"android"' },
