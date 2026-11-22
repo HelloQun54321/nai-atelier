@@ -348,7 +348,7 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.queryByText('图层组 1')).toBeNull();
   });
 
-  it('flags mixed-in character tags in imported style chains locally without AI and supports one-click removal with undo', () => {
+  it('flags mixed-in character tags in imported style chains inside the built-in prompt delete mode without extra banners', () => {
     const notify = vi.fn();
     const mixedChain: PromptChain = {
       ...mockChains[0],
@@ -370,20 +370,23 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: /带人物混写画风/ }));
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('已自动剔除 1 个独立角色槽'));
 
-    // 翻译区直接标红 3 个角色/外貌/服饰词，并展示标红提醒条
-    const alert = screen.getByRole('status', { name: '画风角色词提醒' });
-    expect(alert.textContent).toContain('检测到 3 处疑似角色/主体词');
-    const flaggedCapsules = document.querySelectorAll('[data-warning-tag="true"]');
-    expect(flaggedCapsules.length).toBe(3);
-
-    // 一键移除仅剔除角色词并保留画风词，且支持原位撤销恢复
-    fireEvent.click(within(alert).getByRole('button', { name: '一键移除' }));
+    // 翻译区直接标红 3 个角色/外貌/服饰词，不另起独立提醒卡
     const styleInput = screen.getByRole('combobox', { name: '全页公共画风提示词' }) as HTMLTextAreaElement;
-    expect(styleInput.value).toBe('artist:example, anime coloring');
+    const promptContainer = styleInput.closest('div')!.parentElement!;
     expect(screen.queryByRole('status', { name: '画风角色词提醒' })).toBeNull();
+    expect(promptContainer.querySelectorAll('[data-warning-tag="true"]').length).toBe(3);
 
-    fireEvent.click(screen.getByRole('button', { name: '撤销移除' }));
+    // 直接通过提示词菜单自带的「删除模式」按钮（带 3 处标红计数）进入删除并自动预选全部标红词
+    const deleteModeBtn = within(promptContainer).getByRole('button', { name: '删除模式' });
+    expect(deleteModeBtn.textContent).toContain('3');
+    fireEvent.click(deleteModeBtn);
+    fireEvent.click(within(promptContainer).getByRole('button', { name: '删除 3 个 Tag' }));
+    expect(styleInput.value).toBe('artist:example, anime coloring');
+    expect(promptContainer.querySelectorAll('[data-warning-tag="true"]').length).toBe(0);
+
+    // 直接复用提示词菜单自带的「撤销」按钮恢复原串
+    fireEvent.click(within(promptContainer).getByRole('button', { name: '撤销' }));
     expect(styleInput.value).toBe('artist:example, anime coloring, 1girl, silver hair, sailor uniform');
-    expect(screen.getByRole('status', { name: '画风角色词提醒' })).toBeTruthy();
+    expect(promptContainer.querySelectorAll('[data-warning-tag="true"]').length).toBe(3);
   });
 });

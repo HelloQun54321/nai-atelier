@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowDownToLine,
   ArrowRight,
@@ -57,7 +56,6 @@ import {
   buildStyleWarningTagMap,
   detectStyleCharacterTags,
   inspectStyleCharacterTags,
-  removeFlaggedStyleTags,
   type StyleCharacterHit,
 } from '../../services/comic/comicStyleGuard';
 import type { ComicBubbleCandidate } from '../../services/comic/comicBubbleDetector';
@@ -363,7 +361,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   const draggingAnchorRef = useRef<string | null>(null);
   const syncStyleHits = useMemo(() => detectStyleCharacterTags(draft.globalBasePrompt), [draft.globalBasePrompt]);
   const [dictStyleHits, setDictStyleHits] = useState<{ prompt: string; hits: StyleCharacterHit[] } | null>(null);
-  const [lastCleanedStyle, setLastCleanedStyle] = useState<{ pageId: string; previous: string; count: number } | null>(null);
 
   useEffect(() => {
     const prompt = draft.globalBasePrompt;
@@ -2479,85 +2476,10 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
             promptTidy={promptTidyOption}
             warningTags={styleWarningMap}
             value={draft.globalBasePrompt}
-            onChange={val => {
-              setLastCleanedStyle(null);
-              onUpdateDraft(cur => ({ ...cur, globalBasePrompt: val }), false);
-            }}
+            onChange={val => onUpdateDraft(cur => ({ ...cur, globalBasePrompt: val }), false)}
             onCopy={copyPrompt}
             placeholder={t('输入画师串与全页统一画风，每格生图自动带上')}
           />
-
-          {/* 纯本地角色/主体词标红报警条：不调 AI，支持一键剔除并可原位撤销 */}
-          {styleCharacterHits.length > 0 && (
-            <div
-              role="status"
-              aria-label={t('画风角色词提醒')}
-              className="space-y-1.5 rounded-xl border border-red-200/90 bg-red-50/80 p-2.5 text-[11px] text-red-700 dark:border-red-900/70 dark:bg-red-950/35 dark:text-red-300"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold">
-                  <AlertTriangle className="h-3.5 w-3.5 flex-none text-red-500" aria-hidden="true" />
-                  <span className="truncate">{t('检测到 {0} 处疑似角色/主体词（已标红）', [styleCharacterHits.length])}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const previous = draft.globalBasePrompt;
-                    const cleaned = removeFlaggedStyleTags(previous, styleCharacterHits);
-                    setLastCleanedStyle({ pageId: draft.id, previous, count: styleCharacterHits.length });
-                    onUpdateDraft(cur => ({ ...cur, globalBasePrompt: cleaned }), true);
-                    notify?.(t('已从全页画风移除 {0} 处疑似角色/主体词', [styleCharacterHits.length]), 'success');
-                  }}
-                  className="inline-flex flex-none items-center gap-1 rounded-md bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white shadow-xs transition hover:bg-red-500"
-                >
-                  <Trash2 className="h-3 w-3" aria-hidden="true" />
-                  <span>{t('一键移除')}</span>
-                </button>
-              </div>
-              <div className="flex flex-wrap items-center gap-1">
-                {styleCharacterHits.slice(0, 8).map(hit => (
-                  <button
-                    key={`${hit.token.start}:${hit.token.end}`}
-                    type="button"
-                    title={t('点击单独移除「{0}」（{1}）', [hit.token.displayTag, hit.reasonLabel])}
-                    onClick={() => {
-                      const previous = draft.globalBasePrompt;
-                      const cleaned = removeFlaggedStyleTags(previous, [hit]);
-                      setLastCleanedStyle({ pageId: draft.id, previous, count: 1 });
-                      onUpdateDraft(cur => ({ ...cur, globalBasePrompt: cleaned }), true);
-                    }}
-                    className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white/90 px-1.5 py-0.5 font-mono text-[10px] text-red-700 transition hover:border-red-400 hover:bg-red-100 dark:border-red-800/80 dark:bg-red-950/60 dark:text-red-200 dark:hover:bg-red-900/60"
-                  >
-                    <span>{hit.token.displayTag}</span>
-                    <X className="h-2.5 w-2.5 opacity-70" aria-hidden="true" />
-                  </button>
-                ))}
-                {styleCharacterHits.length > 8 && (
-                  <span className="text-[10px] text-red-500/90 dark:text-red-400">
-                    +{styleCharacterHits.length - 8}
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {styleCharacterHits.length === 0 && lastCleanedStyle && lastCleanedStyle.pageId === draft.id && (
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200/80 bg-emerald-50/70 px-2.5 py-1.5 text-[11px] text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
-              <span>{t('已移除 {0} 处疑似角色/主体词', [lastCleanedStyle.count])}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  const restore = lastCleanedStyle.previous;
-                  setLastCleanedStyle(null);
-                  onUpdateDraft(cur => ({ ...cur, globalBasePrompt: restore }), true);
-                }}
-                className="inline-flex items-center gap-1 font-semibold underline hover:text-emerald-900 dark:hover:text-emerald-100"
-              >
-                <RotateCcw className="h-3 w-3" aria-hidden="true" />
-                <span>{t('撤销移除')}</span>
-              </button>
-            </div>
-          )}
           <ComicPromptField
             label={t('全页公共负面词')}
             rows={2}

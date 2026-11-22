@@ -217,6 +217,10 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     });
     return tokens;
   }, [parsedTokens, value, selectedTagIds]);
+  const warningTokens = useMemo(
+    () => (warningTags?.size ? promptTokens.filter(token => warningTags.has(token.lookupTag)) : []),
+    [promptTokens, warningTags],
+  );
   // 翻译异步返回，但标签位置始终来自当前原文，避免旧结果指向其他词。
   const currentTranslations = useMemo(() => {
     const cached = new Map(translations.map(item => [item.lookupTag, item]));
@@ -1327,7 +1331,22 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-40 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50">
                 <EyeOff aria-hidden="true" className="h-4 w-4" />
               </button>
-              <button type="button" aria-label={t("删除模式")} title={t("删除模式")} disabled={!editable || !promptTokens.length} onClick={() => { clearSelection(); setMuteMode(false); setDeleteMode(true); }} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-40 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50"><Trash2 className="h-4 w-4" /></button>
+              <button
+                type="button"
+                aria-label={t("删除模式")}
+                title={warningTokens.length ? t("检测到 {0} 处标红词：点击进入删除模式并预选待删项", [warningTokens.length]) : t("删除模式")}
+                disabled={!editable || !promptTokens.length}
+                onClick={() => {
+                  setMuteMode(false);
+                  setDeleteMode(true);
+                  if (warningTokens.length) setSelectedTagIds(new Set(warningTokens.map(token => token.id)));
+                  else clearSelection();
+                }}
+                className={`mobile-touch flex h-8 shrink-0 items-center justify-center gap-1 rounded-md transition-colors disabled:opacity-40 ${warningTokens.length ? 'bg-red-600 px-2 text-white shadow-xs hover:bg-red-500' : 'w-8 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50'}`}
+              >
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                {warningTokens.length > 0 && <span className="font-mono text-xs font-bold leading-none">{warningTokens.length}</span>}
+              </button>
             </div>
             </>}
           </div>
