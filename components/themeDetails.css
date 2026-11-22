@@ -168,7 +168,7 @@ html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-ma
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-html[data-theme-material='glass'] .lab-preview-stage {
+html:is([data-theme-material='glass'], [data-theme-material='frosted']) .lab-preview-stage {
   border: 1px solid color-mix(in srgb, var(--nai-panel-border) 32%, transparent);
   border-radius: var(--nai-panel-radius, 22px);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / .22);

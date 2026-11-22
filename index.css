@@ -870,60 +870,66 @@ body,
 /* 分类模式的加号贴在分页条末尾，给窄屏留出位置；宽屏改到分页条外侧，避免被拉成整页标签。 */
 .workspace-mode-tabs:has(> span) { padding-right: 2.75rem !important; }
 .workspace-mode-tabs > button { height: 100% !important; }
-/* 经典实色实验室：统一左右画布底色，拉出「画布 → 纯白卡片／预览画框 → 输入框」层次，
-   并让连体导航条的选中胶囊清晰可读，不与纯白顶栏融成一片。 */
-html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']) .chain-editor-workspace :is(.chain-editor-body, .chain-editor-main, .chain-editor-preview) {
-  background-color: var(--nai-canvas);
+/* 非高级玻璃材质下的实验室（涵盖实色与普通透光）：统一左右画布底色，
+   让整块可折叠卡片浮在浅灰画布上、右侧预览区拥有清晰圆角画框，导航选中胶囊也清晰可读。 */
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']) .chain-editor-workspace :is(.chain-editor-body, .chain-editor-main, .chain-editor-preview) {
+  background-color: var(--color-gray-100, #eef1f7) !important;
 }
-html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']) .chain-editor-workspace .chain-editor-main {
-  border-color: color-mix(in srgb, var(--color-gray-300) 55%, transparent);
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']).dark .chain-editor-workspace :is(.chain-editor-body, .chain-editor-main, .chain-editor-preview) {
+  background-color: var(--nai-canvas, #0d0f14) !important;
 }
-html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']).dark .chain-editor-workspace .chain-editor-main {
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']) .chain-editor-workspace .chain-editor-main {
+  border-color: color-mix(in srgb, var(--color-gray-300) 60%, transparent);
+}
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']).dark .chain-editor-workspace .chain-editor-main {
   border-color: rgb(255 255 255 / 0.06);
 }
-html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']) .lab-editor-surface .lab-module-section {
-  background-color: var(--nai-panel-solid-surface) !important;
-  border: 1px solid color-mix(in srgb, var(--color-gray-300) 58%, transparent) !important;
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']) .lab-editor-surface .lab-module-section {
+  background-color: var(--nai-panel-solid-surface, #ffffff) !important;
+  border: 1px solid color-mix(in srgb, var(--color-gray-300) 75%, transparent) !important;
   border-radius: var(--workspace-card-radius, 1rem);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 12px rgb(15 23 42 / 0.03) !important;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.06), 0 6px 16px rgb(15 23 42 / 0.04) !important;
 }
-html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']).dark .lab-editor-surface .lab-module-section {
-  border-color: rgb(255 255 255 / 0.08) !important;
-  box-shadow: 0 2px 10px rgb(0 0 0 / 0.24) !important;
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']).dark .lab-editor-surface .lab-module-section {
+  background-color: var(--nai-panel-solid-surface, #171b24) !important;
+  border-color: rgb(255 255 255 / 0.09) !important;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.28) !important;
 }
-html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']) .lab-preview-stage {
-  border: 1px solid color-mix(in srgb, var(--color-gray-300) 65%, transparent);
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']) .lab-preview-stage {
+  border: 1px solid color-mix(in srgb, var(--color-gray-300) 80%, transparent) !important;
   border-radius: var(--workspace-card-radius, 1rem);
-  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) 74%, var(--nai-canvas));
+  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) 88%, var(--nai-canvas)) !important;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.04) !important;
 }
-html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']).dark .lab-preview-stage {
-  border-color: rgb(255 255 255 / 0.08);
-  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) 60%, var(--nai-canvas));
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']).dark .lab-preview-stage {
+  border-color: rgb(255 255 255 / 0.09) !important;
+  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) 68%, var(--nai-canvas)) !important;
+  box-shadow: none !important;
 }
-html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']) .lab-preview-empty {
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']) .lab-preview-empty {
   color: var(--color-gray-500);
 }
-html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']).dark .lab-preview-empty {
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']).dark .lab-preview-empty {
   color: var(--color-gray-400);
 }
-html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']) .chain-editor-header[data-lab-navigation='joined'] .lab-navigation-surface {
-  filter: drop-shadow(0 1px 0 color-mix(in srgb, var(--color-gray-300) 55%, transparent));
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']) .chain-editor-header[data-lab-navigation='joined'] .lab-navigation-surface {
+  filter: drop-shadow(0 1px 0 color-mix(in srgb, var(--color-gray-300) 60%, transparent));
 }
-html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']).dark .chain-editor-header[data-lab-navigation='joined'] .lab-navigation-surface {
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']).dark .chain-editor-header[data-lab-navigation='joined'] .lab-navigation-surface {
   filter: drop-shadow(0 1px 0 rgb(255 255 255 / 0.07));
 }
-html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']):not([data-control-style='filled']) :is(.generation-mode-nav[data-mode-chrome='segmented'] > button[aria-current='page'], .workspace-mode-tabs > button[aria-selected='true']) {
-  background-color: color-mix(in srgb, var(--nai-accent) 11%, transparent);
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']):not([data-control-style='filled']) :is(.generation-mode-nav[data-mode-chrome='segmented'] > button[aria-current='page'], .workspace-mode-tabs > button[aria-selected='true']) {
+  background-color: color-mix(in srgb, var(--nai-accent) 12%, transparent);
   color: var(--nai-accent-text-700);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--nai-accent) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--nai-accent) 24%, transparent);
 }
-html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']):not([data-control-style='filled']).dark :is(.generation-mode-nav[data-mode-chrome='segmented'] > button[aria-current='page'], .workspace-mode-tabs > button[aria-selected='true']) {
+html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']):not([data-control-style='filled']).dark :is(.generation-mode-nav[data-mode-chrome='segmented'] > button[aria-current='page'], .workspace-mode-tabs > button[aria-selected='true']) {
   background-color: color-mix(in srgb, var(--nai-accent) 18%, transparent);
   color: var(--nai-accent-text-300);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--nai-accent) 28%, transparent);
 }
 @media (hover: hover) and (pointer: fine) {
-  html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']):not([data-control-style='filled']) :is(.generation-mode-nav[data-mode-chrome='segmented'] > button:not([aria-current='page']):not(:disabled):hover, .workspace-mode-tabs > button:not([aria-selected='true']):not(:disabled):hover) {
+  html:root[data-design-theme='nai-atelier']:not([data-theme-material='glass']):not([data-theme-material='frosted']):not([data-control-style='filled']) :is(.generation-mode-nav[data-mode-chrome='segmented'] > button:not([aria-current='page']):not(:disabled):hover, .workspace-mode-tabs > button:not([aria-selected='true']):not(:disabled):hover) {
     background-color: color-mix(in srgb, var(--color-gray-400) 11%, transparent);
   }
 }
