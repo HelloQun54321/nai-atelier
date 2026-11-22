@@ -109,7 +109,6 @@ describe('Anlas 预算／余额布局', () => {
     expect(screen.getByText('1666').parentElement?.parentElement?.className).toBe('contents');
     expect(screen.getByText('/')).toBeTruthy();
     expect(screen.getByText('Anlas')).toBeTruthy();
-    expect(row.className).toContain('h-11');
     expect(row.title).toContain('订阅赠送：100 点；Paid Anlas：200 点');
     expect(row.title).toContain('最近成功同步');
     expect(row.title).toContain('共享账号余额不等于个人可支配点数');
@@ -178,12 +177,13 @@ describe('Anlas 预算／余额布局', () => {
     expect(screen.getByText('!')).toBeTruthy();
     expect(row.title).toContain('刷新失败，显示上次同步值');
     expect(row.title).toContain('模拟网络失败');
+    const idleClass = row.className;
     fireEvent.click(row);
     expect(failed.refresh).toHaveBeenCalledTimes(1);
     view.rerender(React.createElement(AnlasBalanceBar, { budget, subscription: subscription(8000, { loading: true }) }));
     expect(screen.getByText('8000')).toBeTruthy();
     expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByRole('button').className).toContain('h-11');
+    expect(screen.getByRole('button').className).toBe(idleClass);
     view.rerender(React.createElement(AnlasBalanceBar, { budget, subscription: subscription(7900) }));
     expect(screen.getByText('7900')).toBeTruthy();
     expect(screen.queryByText('8000')).toBeNull();

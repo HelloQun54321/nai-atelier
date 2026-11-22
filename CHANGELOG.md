@@ -1,5 +1,7 @@
 ## 2026-11-22
-- 统一左侧全局侧边栏文字排版与 Windows 渲染清晰度：将侧栏导航项、子菜单与「创作助手」统一为 `12px`（`text-xs`）＋ `font-medium`/`font-bold` 并对齐 18px 图标与 `10px` 间距，与底部状态卡及全站工作区视觉一致；非玻璃材质侧栏取消无意义的 `backdrop-filter`，恢复 Windows ClearType 锐利字形。
+- 精修左侧全局侧边栏比例、行高与 Windows 渲染清晰度：
+  - 修复 `themeDetails.css` 中 `@media (any-pointer: coarse)` 误伤带触屏／手写板的 Windows 电脑导致侧栏所有按钮被强行锁死在 `44px` 高、出现竖向滚动条并裁切「创作足迹」的问题（改为只对窄屏或主输入为触控的设备启用 `44px` 底线，桌面行高真正跟随密度落到 `38px / 34px / 28px`）；
+  - 将侧栏主导航统一为 `13px` ＋ `16px` 图标（`font-medium`/`font-bold`），同步收轻底部「创作助手」「Anlas」「Opus 额度」「安全模式」「全局设置」桌面行高并缓解窄栏下 `Opus 额度` 截断；非玻璃材质侧栏取消无意义的 `backdrop-filter`，恢复 Windows ClearType 锐利字形。
 - 精修漫画模式右侧栏窄容器排版与视觉层次：
   - 给漫画侧栏内的提示词原文框与翻译区设置合理高度上限（`128px`／紧凑框 `96px`），避免长风格串撑爆整屏及出现三重滚动条，确保垃圾桶角标在首屏可见；
   - `TagAutocompleteTextarea` 新增窄栏紧凑双行工具条（`compactToolbar`），将原松散三行权重与操作栏压实为紧凑两行，消除孤立底行；

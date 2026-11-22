@@ -537,7 +537,8 @@ html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-them
   from { opacity: 0; transform: scale(.92, .86); -webkit-backdrop-filter: var(--nai-glass-filter); backdrop-filter: var(--nai-glass-filter); }
   to { opacity: 1; transform: scale(1); -webkit-backdrop-filter: var(--nai-glass-filter); backdrop-filter: var(--nai-glass-filter); }
 }
-@media (max-width: 767px), (any-pointer: coarse) {
+/* 仅对窄屏或主输入为触控的设备（手机/平板）锁 44px 底线，避免误伤带触屏的 Windows 鼠键电脑。 */
+@media (max-width: 767px), (pointer: coarse) {
   html[data-control-style='filled'] :is([role='tablist'], .appearance-segmented) > button,
   html[data-theme-details='true'] [data-appearance='control'],
   html[data-theme-details='true'] :where(input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file']), select) { min-height: 44px; }

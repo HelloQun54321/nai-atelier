@@ -212,7 +212,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
       title={collapsed ? title : t("{0}（点击立即刷新）", [title])}
       aria-busy={loading}
       aria-label={t(!info ? '生成额度 {0}' : 'Opus 额度 {0}', [syncBroken ? t('同步失败') : !usage ? t('正在同步') : negative ? t('已用尽') : `${displayPercent}%`]) + (runtimeSyncBroken ? ` · ${t('计费规则同步异常')}` : '')}
-      className={`group relative min-h-14 w-full cursor-pointer select-none text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:hover:bg-gray-800 ${showDetails && !collapsed ? 'appearance-group rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70' : `flex items-center border-b border-gray-200 dark:border-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}`}
+      className={`group relative min-h-12 w-full cursor-pointer select-none text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:hover:bg-gray-800 ${showDetails && !collapsed ? 'appearance-group rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70' : `flex items-center border-b border-gray-200 py-1.5 dark:border-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2 px-2.5'}`}`}
     >
       {showDetails && !collapsed ? <>
         <span className="flex items-center justify-between gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">

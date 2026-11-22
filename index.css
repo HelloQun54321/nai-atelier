@@ -752,9 +752,9 @@ html[data-surfaces='translucent'] .appearance-panel {
   backdrop-filter: blur(22px) saturate(130%);
 }
 
-html[data-density='comfortable'] { --spacing: 0.275rem; --workspace-toolbar-height: 60px; --nai-sidebar-item-height: 42px; --nai-sidebar-item-gap: 4px; }
-html[data-density='standard'] { --spacing: 0.25rem; --workspace-toolbar-height: 56px; --nai-sidebar-item-height: 36px; --nai-sidebar-item-gap: 3px; }
-html[data-density='compact'] { --spacing: 0.225rem; --workspace-toolbar-height: 52px; --nai-sidebar-item-height: 30px; --nai-sidebar-item-gap: 2px; }
+html[data-density='comfortable'] { --spacing: 0.275rem; --workspace-toolbar-height: 60px; --nai-sidebar-item-height: 38px; --nai-sidebar-item-gap: 3px; }
+html[data-density='standard'] { --spacing: 0.25rem; --workspace-toolbar-height: 56px; --nai-sidebar-item-height: 34px; --nai-sidebar-item-gap: 2px; }
+html[data-density='compact'] { --spacing: 0.225rem; --workspace-toolbar-height: 52px; --nai-sidebar-item-height: 28px; --nai-sidebar-item-gap: 1px; }
 
 html[data-corners='soft'] {
   --radius-xs: 0.25rem;

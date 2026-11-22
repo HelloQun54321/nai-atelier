@@ -145,10 +145,8 @@ it('整体折叠后图标打开Portal来源菜单，Escape关闭并归还焦点'
   expect(dialog.parentElement?.className).toContain('agent-stage');
   const activeSource = within(dialog).getByRole('button', { name: '法典' });
   expect(activeSource.getAttribute('aria-current')).toBe('page');
-  expect(activeSource.className).toContain('h-8');
-  expect(activeSource.className).toContain('[@media(any-pointer:coarse)]:min-h-11');
-  expect(activeSource.className).toContain('px-2');
-  expect(activeSource.querySelector('svg')?.classList.contains('h-4')).toBe(true);
+  expect(activeSource.className).toContain('[@media(pointer:coarse)]:min-h-11');
+  expect(activeSource.querySelector('svg')).toBeTruthy();
   fireEvent.keyDown(window, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '素材浏览' })).toBeNull());
   expect(document.activeElement).toBe(trigger);

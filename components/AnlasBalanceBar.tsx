@@ -99,7 +99,7 @@ export const AnlasBalanceBar: React.FC<AnlasBalanceBarProps> = ({ collapsed = fa
     <button type="button" onClick={refreshAll} disabled={loading} title={title}
       aria-label={refreshLabel}
       aria-busy={loading}
-      className={`flex w-full cursor-pointer select-none items-center border-b border-gray-200 text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 disabled:cursor-wait dark:border-gray-800/80 dark:hover:bg-gray-800/70 ${collapsed ? 'h-[60px] justify-center px-0' : 'h-11 justify-between gap-2 px-3'} ${className}`}>
+      className={`flex w-full cursor-pointer select-none items-center border-b border-gray-200 text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 disabled:cursor-wait dark:border-gray-800/80 dark:hover:bg-gray-800/70 ${collapsed ? 'h-[60px] justify-center px-0' : 'h-9 justify-between gap-2 px-2.5'} ${className}`}>
       <span className={collapsed ? 'flex min-w-0 flex-col items-center gap-1' : 'contents'} aria-hidden="true">
         <span className={`flex shrink-0 items-center ${collapsed ? '' : 'gap-1.5'}`}>
           <span className="relative flex shrink-0 text-indigo-600 dark:text-indigo-300">
