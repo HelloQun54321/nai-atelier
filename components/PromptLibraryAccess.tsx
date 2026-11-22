@@ -397,7 +397,8 @@ export function PromptLibraryFieldActions({ value, onText, field, disabled, mode
     return () => window.removeEventListener(FIELD_ACTION_EVENT, onOther);
   }, [open]);
   if (!library) return null;
-  return <>{mode !== 'save' && <IconButton label="使用提示词" disabled={disabled} onClick={() => setOpen('use')}><BookOpen className="h-4 w-4" /></IconButton>}<IconButton label="收录提示词" disabled={disabled || !value.trim()} onClick={() => setOpen('save')}><BookmarkPlus className="h-4 w-4" /></IconButton>
+  const fieldIconClass = 'mobile-touch flex h-7 w-7 items-center justify-center rounded-md p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100';
+  return <>{mode !== 'save' && <button type="button" aria-label={t('使用提示词')} title={t('使用提示词')} disabled={disabled} onClick={() => setOpen('use')} className={fieldIconClass}><BookOpen className="h-4 w-4" /></button>}<button type="button" aria-label={t('收录提示词')} title={t('收录提示词')} disabled={disabled || !value.trim()} onClick={() => setOpen('save')} className={fieldIconClass}><BookmarkPlus className="h-4 w-4" /></button>
     {open === 'use' && <PromptLibraryChooser value={value} onText={onText} field={field} onClose={() => setOpen(null)} />}
     {open === 'save' && <PromptLibrarySaveDialog text={value} field={field} onClose={() => setOpen(null)} />}
   </>;

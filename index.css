@@ -479,16 +479,16 @@ html[data-design-theme='nai-atelier'] ::selection {
   max-height: 2.75rem;
 }
 
-/* 主要生成按钮：静止时保持轻量，交互和生成中才提高强调度。 */
+/* 主要生成按钮：实心强调色承托全页视觉重心，交互与生成中保持清透层次。 */
 .generation-action-button {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--nai-accent, #0d8bf2) 28%, transparent);
-  color: var(--nai-accent-text-800);
-  background-color: color-mix(in srgb, var(--nai-accent, #0d8bf2) 9%, transparent);
+  border: 1px solid transparent;
+  color: var(--nai-on-accent-700, white);
+  background-color: var(--color-indigo-700, #0b75cb);
   background-image: none;
-  box-shadow: 0 1px 2px rgb(15 23 42 / .06);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--nai-accent, #0d8bf2) 24%, transparent);
   transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease, filter 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
@@ -514,10 +514,10 @@ html[data-design-theme='nai-atelier'] ::selection {
 }
 
 .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) {
-  color: var(--nai-on-action, white);
+  color: var(--nai-on-accent-600, white);
   border-color: transparent;
-  background-color: var(--nai-action-deep, #0b75cb);
-  filter: saturate(1.05) brightness(1.04);
+  background-color: var(--color-indigo-600, #0c80df);
+  filter: saturate(1.04) brightness(1.03);
   box-shadow: 0 8px 18px var(--nai-action-shadow, rgb(13 139 242 / .28));
   transform: translateY(-1px);
 }
@@ -534,20 +534,20 @@ html[data-design-theme='nai-atelier'] ::selection {
 .generation-action-button__cost {
   position: relative;
   z-index: 1;
-  padding: .125rem .5rem;
+  padding: .0625rem .45rem;
   border-radius: 999px;
-  color: var(--nai-accent-text-800);
-  background: transparent;
+  color: inherit;
+  background: rgb(255 255 255 / .16);
   font-size: .6875rem;
   font-weight: 700;
-  line-height: 1.25rem;
+  line-height: 1.2rem;
   transition: color 180ms ease, background-color 180ms ease;
 }
 
 .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) .generation-action-button__cost,
 .generation-action-button--loading .generation-action-button__cost {
   color: inherit;
-  background: transparent;
+  background: rgb(255 255 255 / .2);
 }
 
 .generation-action-button--loading {
@@ -587,25 +587,26 @@ html[data-design-theme='nai-atelier'] ::selection {
 }
 
 html[data-design-theme='nai-atelier'].dark .generation-action-button:not(.generation-action-button--loading) {
-  color: var(--nai-accent-text-300);
-  border-color: color-mix(in srgb, var(--nai-accent, #818cf8) 34%, transparent);
-  background-color: color-mix(in srgb, var(--nai-accent, #818cf8) 14%, transparent);
+  color: var(--nai-on-accent-700, white);
+  border-color: transparent;
+  background-color: var(--color-indigo-700, #0d5fa3);
+  box-shadow: 0 6px 16px rgb(0 0 0 / .28);
 }
 
 html[data-design-theme='nai-atelier'].dark .generation-action-button:not(.generation-action-button--loading) .generation-action-button__cost {
-  color: var(--nai-accent-text-300);
-  background: transparent;
+  color: inherit;
+  background: rgb(255 255 255 / .14);
 }
 
 html[data-design-theme='nai-atelier'].dark .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) {
-  color: var(--nai-on-action, white);
+  color: var(--nai-on-accent-600, white);
   border-color: transparent;
-  background-color: var(--nai-action-deep, #4f46e5);
+  background-color: var(--color-indigo-600, #0e6ec0);
 }
 
 html[data-design-theme='nai-atelier'].dark .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) .generation-action-button__cost {
   color: inherit;
-  background: transparent;
+  background: rgb(255 255 255 / .2);
 }
 
 html[data-motion='full'] .generation-action-button--loading {
@@ -866,15 +867,62 @@ body,
 /* 分类模式的加号贴在分页条末尾，给窄屏留出位置；宽屏改到分页条外侧，避免被拉成整页标签。 */
 .workspace-mode-tabs:has(> span) { padding-right: 2.75rem !important; }
 .workspace-mode-tabs > button { height: 100% !important; }
-.workspace-mode-tabs > button[aria-selected='false'] + button[aria-selected='false']::before {
-  content: '';
-  position: absolute;
-  left: -3px;
-  top: 28%;
-  bottom: 28%;
-  width: 1px;
-  background: var(--nai-control-border, var(--color-gray-400));
-  pointer-events: none;
+/* 经典实色实验室：统一左右画布底色，拉出「画布 → 纯白卡片／预览画框 → 输入框」层次，
+   并让连体导航条的选中胶囊清晰可读，不与纯白顶栏融成一片。 */
+html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']) .chain-editor-workspace :is(.chain-editor-body, .chain-editor-main, .chain-editor-preview) {
+  background-color: var(--nai-canvas);
+}
+html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']) .chain-editor-workspace .chain-editor-main {
+  border-color: color-mix(in srgb, var(--color-gray-300) 55%, transparent);
+}
+html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']).dark .chain-editor-workspace .chain-editor-main {
+  border-color: rgb(255 255 255 / 0.06);
+}
+html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']) .lab-editor-surface .lab-module-section {
+  background-color: var(--nai-panel-solid-surface) !important;
+  border: 1px solid color-mix(in srgb, var(--color-gray-300) 58%, transparent) !important;
+  border-radius: var(--workspace-card-radius, 1rem);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 12px rgb(15 23 42 / 0.03) !important;
+}
+html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']).dark .lab-editor-surface .lab-module-section {
+  border-color: rgb(255 255 255 / 0.08) !important;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.24) !important;
+}
+html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']) .lab-preview-stage {
+  border: 1px solid color-mix(in srgb, var(--color-gray-300) 65%, transparent);
+  border-radius: var(--workspace-card-radius, 1rem);
+  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) 74%, var(--nai-canvas));
+}
+html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']).dark .lab-preview-stage {
+  border-color: rgb(255 255 255 / 0.08);
+  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) 60%, var(--nai-canvas));
+}
+html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']) .lab-preview-empty {
+  color: var(--color-gray-500);
+}
+html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']).dark .lab-preview-empty {
+  color: var(--color-gray-400);
+}
+html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']) .chain-editor-header[data-lab-navigation='joined'] .lab-navigation-surface {
+  filter: drop-shadow(0 1px 0 color-mix(in srgb, var(--color-gray-300) 55%, transparent));
+}
+html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']).dark .chain-editor-header[data-lab-navigation='joined'] .lab-navigation-surface {
+  filter: drop-shadow(0 1px 0 rgb(255 255 255 / 0.07));
+}
+html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']):not([data-control-style='filled']) :is(.generation-mode-nav[data-mode-chrome='segmented'] > button[aria-current='page'], .workspace-mode-tabs > button[aria-selected='true']) {
+  background-color: color-mix(in srgb, var(--nai-accent) 11%, transparent);
+  color: var(--nai-accent-text-700);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--nai-accent) 22%, transparent);
+}
+html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']):not([data-control-style='filled']).dark :is(.generation-mode-nav[data-mode-chrome='segmented'] > button[aria-current='page'], .workspace-mode-tabs > button[aria-selected='true']) {
+  background-color: color-mix(in srgb, var(--nai-accent) 18%, transparent);
+  color: var(--nai-accent-text-300);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--nai-accent) 28%, transparent);
+}
+@media (hover: hover) and (pointer: fine) {
+  html:root[data-design-theme='nai-atelier']:not([data-surfaces='translucent']):not([data-control-style='filled']) :is(.generation-mode-nav[data-mode-chrome='segmented'] > button:not([aria-current='page']):not(:disabled):hover, .workspace-mode-tabs > button:not([aria-selected='true']):not(:disabled):hover) {
+    background-color: color-mix(in srgb, var(--color-gray-400) 11%, transparent);
+  }
 }
 /* 顶栏收起后共用底板随之隐藏：三分区自带顶栏材质，避免按钮直接裸在壁纸上。 */
 html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='true'] {
@@ -1278,9 +1326,6 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     background: transparent !important;
     box-shadow: none !important;
     color: var(--color-gray-500) !important;
-  }
-  .workspace-mode-tabs > button[aria-selected='false'] + button[aria-selected='false']::before {
-    content: none;
   }
   .workspace-mode-tabs > button[aria-current='page'],
   .workspace-mode-tabs > button[aria-selected='true'] {

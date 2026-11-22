@@ -11,7 +11,7 @@ export const PromptCopyButton: React.FC<{ onClick: () => void; title: string }> 
     <button
         type="button"
         onClick={onClick}
-        className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-200"
+        className="flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-200"
         title={title}
     >
         <Copy className="h-4 w-4" />

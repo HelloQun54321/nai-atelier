@@ -869,7 +869,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     title={t(clearUndo ? '撤销清空' : '清空当前提示词')}
     onMouseDown={event => event.preventDefault()}
     onClick={() => { if (clearUndo) moveHistory(); else clearPrompt(); textareaRef.current?.focus(); }}
-    className="mobile-touch flex h-7 w-7 items-center justify-center rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-700 dark:hover:text-gray-200">
+    className="mobile-touch flex h-7 w-7 items-center justify-center rounded-md p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100">
     {clearUndo ? <RotateCcw aria-hidden="true" className="h-4 w-4" /> : <Eraser aria-hidden="true" className="h-4 w-4" />}
   </button>;
   const tagInputField = <span key="tag-input" className="inline-grid min-w-[4ch] max-w-full grid-cols-[minmax(0,1fr)] rounded-md border border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_8%,transparent)] font-mono text-micro leading-tight ring-1 ring-[var(--nai-accent)]">
@@ -941,7 +941,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     : null;
   const reverseAction = reverseTag
     ? <button type="button" aria-label={t('从图片反推 Tag 到这一栏')} title={t('上传或粘贴图片，识别后追加到这一栏')} disabled={!editable || reverseTag.disabled} onClick={event => { event.stopPropagation(); reverseTag.onReverse(); }}
-      className="rounded p-0.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"><ImagePlus className="h-4 w-4" /></button>
+      className="mobile-touch flex h-7 w-7 items-center justify-center rounded-md p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"><ImagePlus className="h-4 w-4" /></button>
     : null;
   const promptActions = <>{reverseAction}{tidyAction}{libraryAction}{clearAction}</>;
 
@@ -1053,7 +1053,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             if (text.trim()) { event.preventDefault(); insertTags(text); }
           }}>
           {/* 触屏通过框外把手调高，内容区仍允许滚动传递，鼠标保留原生右下角拖拽。 */}
-          <div ref={tagListRef} className={`flex min-h-10 flex-wrap content-start items-start gap-1.5 overflow-y-auto pr-1.5 pb-1.5 ${translationAutoHeight ? 'h-auto' : currentTranslations.length ? 'h-36' : 'h-10'} ${translationAutoHeight ? 'overscroll-contain' : 'pointer-fine:resize-y pointer-fine:overscroll-contain'}`} style={translationAutoHeight ? { maxHeight: PROMPT_AUTO_HEIGHT_MAX } : undefined}>
+          <div ref={tagListRef} data-empty={currentTranslations.length === 0 ? 'true' : 'false'} className={`flex flex-wrap content-start items-start gap-1.5 overflow-y-auto pr-1.5 ${currentTranslations.length ? 'min-h-10 pb-1.5' : 'min-h-7 pb-0.5'} ${translationAutoHeight ? 'h-auto' : currentTranslations.length ? 'h-36' : 'h-7'} ${translationAutoHeight ? 'overscroll-contain' : 'pointer-fine:resize-y pointer-fine:overscroll-contain'}`} style={translationAutoHeight ? { maxHeight: PROMPT_AUTO_HEIGHT_MAX } : undefined}>
             {(() => {
               // 权重组按连续区间渲染为单个胶囊：中间无间隔、强调色贯穿，选择粒度也是整组。
               const nodes: React.ReactNode[] = [];
@@ -1223,20 +1223,20 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             </div> : <>
             <div className="flex shrink-0 items-center gap-1 whitespace-nowrap">
               <span className="text-meta text-gray-500 dark:text-gray-400">{t("权重类型")}</span>
-              <div role="group" aria-label={t("权重类型")} className="appearance-group appearance-segmented flex h-8 shrink-0 items-stretch gap-0.5 overflow-hidden rounded-md bg-gray-100 p-0.5 ring-1 ring-inset ring-gray-300 max-md:h-11 dark:bg-gray-800 dark:ring-gray-600">
+              <div role="group" aria-label={t("权重类型")} className="appearance-group appearance-segmented flex h-8 shrink-0 items-stretch gap-0.5 overflow-hidden rounded-md bg-gray-100/90 p-0.5 ring-1 ring-inset ring-gray-200 max-md:h-11 dark:bg-gray-800/90 dark:ring-gray-700">
               <button
                 type="button"
                 data-appearance="control"
                 onClick={() => setWeightKind('brace')}
                 aria-pressed={weightKind === 'brace'}
-                className={`mobile-touch inline-flex h-full shrink-0 items-center justify-center rounded-sm px-2.5 text-meta font-bold leading-none transition-colors ${weightKind === 'brace' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+                className={`mobile-touch inline-flex h-full shrink-0 items-center justify-center rounded-sm px-2.5 text-meta font-bold leading-none transition-colors ${weightKind === 'brace' ? 'bg-white text-[var(--nai-accent)] shadow-xs dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
               >{t("括号")}</button>
               <button
                 type="button"
                 data-appearance="control"
                 onClick={() => setWeightKind('numeric')}
                 aria-pressed={weightKind === 'numeric'}
-                className={`mobile-touch inline-flex h-full shrink-0 items-center justify-center rounded-sm px-2.5 text-meta font-bold leading-none transition-colors ${weightKind === 'numeric' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+                className={`mobile-touch inline-flex h-full shrink-0 items-center justify-center rounded-sm px-2.5 text-meta font-bold leading-none transition-colors ${weightKind === 'numeric' ? 'bg-white text-[var(--nai-accent)] shadow-xs dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
               >{t("数值")}</button>
               </div>
               <button
@@ -1249,16 +1249,16 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                   setWeightInputEdited(false);
                 }}
                 disabled={!editable || !selectedTokens.length}
-                className="mobile-touch h-8 rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none disabled:opacity-40"
+                className={`mobile-touch h-8 rounded-md border px-2 py-1 text-meta font-semibold transition-colors disabled:pointer-events-none disabled:opacity-45 ${selectedTokens.length ? 'border-[color-mix(in_srgb,var(--nai-accent)_45%,transparent)] text-[var(--nai-accent)] hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)]' : 'border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'}`}
                 title={t("把选中的 Tag 按当前选择的类型添加/转换权重")}
               >{t("添加权重")}</button>
             </div>
-            <div className={`flex h-8 shrink-0 items-stretch overflow-hidden whitespace-nowrap rounded-md ring-1 ring-inset transition-colors max-md:h-11 [&>button]:shrink-0 ${selectedTokens.length ? 'ring-[var(--nai-accent)]' : 'ring-gray-300 opacity-40 dark:ring-gray-600'}`}>
+            <div className={`flex h-8 shrink-0 items-stretch overflow-hidden whitespace-nowrap rounded-md ring-1 ring-inset transition-colors max-md:h-11 [&>button]:shrink-0 ${selectedTokens.length ? 'ring-[color-mix(in_srgb,var(--nai-accent)_45%,transparent)]' : 'ring-gray-200 opacity-50 dark:ring-gray-700'}`}>
               <button
                 type="button"
                 onClick={event => applyWeight('down', undefined, event.shiftKey ? 0.01 : 0.1)}
                 disabled={!editable || !selectedTokens.length}
-                className="mobile-touch h-full px-2 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none"
+                className={`mobile-touch h-full px-2 text-meta font-bold transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none ${selectedTokens.length ? 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`}
                 title={t("减弱权重：括号减一层，数值减 0.1（Shift 为 0.01）")}
               >−</button>
               {weightKind === 'numeric' ? <input
@@ -1284,7 +1284,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 type="button"
                 onClick={event => applyWeight('up', undefined, event.shiftKey ? 0.01 : 0.1)}
                 disabled={!editable || !selectedTokens.length}
-                className="mobile-touch h-full px-2 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none"
+                className={`mobile-touch h-full px-2 text-meta font-bold transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none ${selectedTokens.length ? 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`}
                 title={t("增强权重：括号加一层，数值加 0.1（Shift 为 0.01）")}
               >+</button>
             </div>
@@ -1292,7 +1292,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               type="button"
               onClick={() => applyWeight('remove')}
               disabled={!editable || !selectedTokens.length}
-              className="mobile-touch h-8 shrink-0 whitespace-nowrap rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none disabled:opacity-40"
+              className={`mobile-touch h-8 shrink-0 whitespace-nowrap rounded-md border px-2 py-1 text-meta font-semibold transition-colors disabled:pointer-events-none disabled:opacity-45 ${selectedTokens.length ? 'border-[color-mix(in_srgb,var(--nai-accent)_45%,transparent)] text-[var(--nai-accent)] hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)]' : 'border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'}`}
             >{t("移除权重")}</button>
             {translationError && <InfoPopover label={t("翻译失败详情")} preserveSelection content={translationError} className="mobile-touch h-8 min-w-0 flex-1 truncate text-left text-micro text-red-500 underline decoration-dotted underline-offset-2">{translationError}</InfoPopover>}
             {allowAiTranslation && editable && missingTags.length > 0 && (

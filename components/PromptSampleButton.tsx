@@ -8,7 +8,7 @@ import { getNaiModelDisplayLabel } from '../services/naiModels';
 import { createPromptSampleSnapshot, getPromptSampleSettings, PROMPT_SAMPLE_CHARACTER_LIMIT, PROMPT_SAMPLE_TEXT_LIMIT, updatePromptSampleSettings, usePromptSampleSettings, type PromptSampleBridge } from '../services/promptSampleSettings';
 import type { NAIParams } from '../types';
 
-const ICON_CLASS = 'mobile-touch flex h-7 w-7 items-center justify-center rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-700 dark:hover:text-gray-200';
+const ICON_CLASS = 'mobile-touch flex h-7 w-7 items-center justify-center rounded-md p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100';
 const LEGEND_CLASS = 'mb-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400';
 const HINT_CLASS = 'mt-1 text-micro leading-relaxed text-gray-400';
 const FIELD_CLASS = 'w-full resize-y rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 font-mono text-xs text-gray-800 outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100';

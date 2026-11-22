@@ -32,7 +32,7 @@ export const LabModuleSection: React.FC<LabModuleSectionProps> = ({ moduleId, la
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
       </span>
     </summary>
-    <div className="lab-module-section__body space-y-4 px-4 pb-4 pt-1">{children}</div>
+    <div className="lab-module-section__body space-y-4 px-4 pb-4 pt-0">{children}</div>
   </details>;
 };
 

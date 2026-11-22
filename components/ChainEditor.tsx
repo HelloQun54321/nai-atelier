@@ -2450,7 +2450,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                             className={!sectionedActive && mobileEditorTab === 'global' ? 'block' : 'hidden'}
                         >
                         <section className={isNaiMediumModel(params.model) ? 'nai-model-locked' : undefined} title={isNaiMediumModel(params.model) ? t('Medium 不支持负面提示词') : undefined}>
-                            <div className="mb-2 flex items-center justify-between gap-3">
+                            <div className="mb-1.5 flex items-center justify-between gap-3">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <PresetSourceBadge source={presetSources.negative} />
                                 </div>

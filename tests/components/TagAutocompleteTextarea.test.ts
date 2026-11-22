@@ -180,7 +180,8 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     document.documentElement.dataset.promptTranslationAutoHeight = 'false';
     render(React.createElement(Harness, { showTranslations: true }));
     const list = () => screen.getByLabelText('提示词中文翻译').firstElementChild as HTMLElement;
-    expect(list().classList.contains('h-10')).toBe(true);
+    expect(list().dataset.empty).toBe('true');
+    expect(list().classList.contains('h-36')).toBe(false);
     // 关闭跟随后电脑可用原生角标；不再提供触屏高度把手。
     expect(list().classList.contains('resize-y')).toBe(false);
     expect(list().classList.contains('pointer-fine:resize-y')).toBe(true);
@@ -190,9 +191,11 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     expect(screen.queryByRole('button', { name: '调整翻译区高度' })).toBeNull();
     expect(screen.queryByRole('button', { name: '调整输入框高度' })).toBeNull();
     fireEvent.change(screen.getByRole('combobox', { name: 'Prompt' }), { target: { value: 'masterpiece' } });
-    await waitFor(() => expect(list().classList.contains('h-36')).toBe(true));
+    await waitFor(() => expect(list().dataset.empty).toBe('false'));
+    expect(list().classList.contains('h-36')).toBe(true);
     fireEvent.change(screen.getByRole('combobox', { name: 'Prompt' }), { target: { value: '' } });
-    await waitFor(() => expect(list().classList.contains('h-10')).toBe(true));
+    await waitFor(() => expect(list().dataset.empty).toBe('true'));
+    expect(list().classList.contains('h-36')).toBe(false);
     expect(screen.getByRole('button', { name: '撤销' })).toBeTruthy();
     delete document.documentElement.dataset.promptInputAutoHeight;
     delete document.documentElement.dataset.promptTranslationAutoHeight;

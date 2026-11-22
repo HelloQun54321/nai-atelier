@@ -98,11 +98,12 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
     markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab, notify, sample, onReversePromptTag,
 }) => {
     useLanguage();
+    const activeSources = Object.fromEntries(Object.entries({ base: presetSources.base, subject: presetSources.subject })
+        .filter((entry): entry is [string, PresetSource] => Boolean(entry[1])));
     const content = <section hidden={mobileEditorTab !== 'global'} className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>
-            <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
-                <PresetSourceBadges sources={Object.fromEntries(Object.entries({ base: presetSources.base, subject: presetSources.subject })
-                    .filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />
-            </div>
+            {Object.keys(activeSources).length > 0 && <div className="mb-1.5 flex min-w-0 flex-wrap items-center gap-2">
+                <PresetSourceBadges sources={activeSources} />
+            </div>}
             <div className="flex flex-col gap-3">
                 <PromptField label="全局正面提示词" onReverseTag={onReversePromptTag} hideLabel={!embedded} value={getEditableGlobalPrompt(prompt, supplementPrompt)} placeholder="全局正面提示词" disabled={!canEdit}
                     tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} tidy={notify && { notify, sample }} onChange={value => {
