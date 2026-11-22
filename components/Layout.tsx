@@ -442,7 +442,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
                     className={`app-sidebar-nav-item relative flex h-11 w-full items-center rounded-xl outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'} ${active ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' : 'font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}
                   >
                     {active && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-indigo-500" />}
-                    <item.icon aria-hidden="true" className="h-4 w-4 flex-none" strokeWidth={1.85} />
+                    <item.icon aria-hidden="true" className={`${sidebarCollapsed ? 'h-[18px] w-[18px]' : 'h-4 w-4'} flex-none`} strokeWidth={1.85} />
                     <span aria-hidden={sidebarCollapsed} className="app-sidebar-label ml-2.5 flex min-w-0 flex-1 flex-col overflow-hidden text-left text-[13px]">
                       <span className="truncate">{t(item.label)}</span>
                       {!externalBrowseExpanded && externalActiveItem && <span className="truncate text-micro font-normal text-gray-400">{t(externalActiveItem.label)}</span>}
@@ -474,7 +474,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
               const active = activeView === item.id;
               return <button key={item.id} type="button" title={sidebarCollapsed ? t(item.label) : undefined} aria-label={t(item.label)} aria-current={active ? 'page' : undefined} onClick={() => onNavigate(item.id as AppView)} className={`app-sidebar-nav-item relative flex h-11 w-full items-center rounded-xl outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'} ${active ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' : 'font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}>
                 {active && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-indigo-500" />}
-                <item.icon aria-hidden="true" className="h-4 w-4 flex-none" strokeWidth={1.85} />
+                <item.icon aria-hidden="true" className={`${sidebarCollapsed ? 'h-[18px] w-[18px]' : 'h-4 w-4'} flex-none`} strokeWidth={1.85} />
                 <span aria-hidden={sidebarCollapsed} className="app-sidebar-label ml-2.5 min-w-0 truncate text-[13px]">{t(item.label)}</span>
               </button>;
             })}</div>
