@@ -94,6 +94,16 @@ const setup = async (options = {}) => {
 const filterBy = (name: string) => { fireEvent.click(screen.getByRole('button', { name: /^筛选/ })); fireEvent.click(screen.getByRole('button', { name })); };
 const pending = () => filterBy('待生成');
 
+it('候选详情复制已选候选的画师串与权重', async () => {
+  const writeText = vi.fn(async () => {});
+  vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+  const { props } = await setup();
+  fireEvent.click(screen.getByRole('button', { name: '查看候选 1' }));
+  fireEvent.click(screen.getByRole('button', { name: '复制画风' }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith('1.0::artist:alpha ::'));
+  expect(props.notify).toHaveBeenCalledWith('已复制提示词', 'success');
+});
+
 it.each([false, true])('详情按当前排序前后浏览且到边界后隐藏翻页按钮，手机=%s', async mobile => {
   mocks.mobile = mobile;
   await setup(); fireEvent.click(screen.getByRole('button', { name: '查看候选 2' }));

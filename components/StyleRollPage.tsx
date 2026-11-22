@@ -1,12 +1,13 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { flushSync } from 'react-dom';
+import { copyTagText } from '../services/externalImageTags';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ChevronLeft, ChevronRight, CopyPlus, Folder, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Copy, CopyPlus, Folder, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { MobileBottomSheet, MobileOverflowMenu } from './MobileUI';
 import { getLanguage, t, useLanguage } from '../services/i18n';
 import { formatGenerationDuration, readGenerationDurationMs } from '../services/generationDuration';
-import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateToChain, rollExperimentSummary, rollRoundSourceChainIds, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
+import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateToChain, rollExperimentSummary, rollRoundSourceChainIds, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
 import { getRollSeries, nextRollSeriesStep, ROLL_SERIES_STOP_LABELS, rollSeriesWouldOverflow, startRollSeries, stopRollSeries, type RollSeriesStopReason } from '../services/styleRollSeries';
 import { buildRollChainArtistSource } from '../services/styleRollChainArtists';
@@ -781,6 +782,9 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   /** 详情页的三个主动作收进标题栏，统一用透明底线条图标；已保存的条目用品牌色前景区分。 */
   const detailActions = selected ? <>
     <IconButton label={t(selectedSavedChain ? '打开风格串' : selectedImage ? '存为风格串' : '生成后可保存')} tone="ghost" className={selectedSavedChain ? '!text-indigo-600 dark:!text-indigo-400' : '!text-emerald-600 dark:!text-emerald-400'} disabled={busy || loading || (!selectedImage && !selectedSavedChain)} onClick={selectedSavedChain ? () => onOpenChain(selected.savedChainId!) : selectedImage ? () => saveCandidate() : undefined}><Save /></IconButton>
+    <IconButton label={t('复制画风')} tone="ghost" onClick={() => void copyTagText(formatRollStyle(selected.tags))
+      .then(() => notify(t('已复制提示词'), 'success'))
+      .catch(() => notify(t('复制失败，请检查浏览器剪贴板权限'), 'error'))}><Copy /></IconButton>
     <IconButton label={t('送往实验室')} tone="ghost" disabled={busy} onClick={() => { try { sendToLab(); } catch (cause) { setError((cause as Error).message); } }}><FlaskConical /></IconButton>
     <IconButton label={t('新建记录 · 固定这些画师')} tone="ghost" disabled={busy || loading || selected.archived} onClick={() => createPinnedRecord(selected)}><CopyPlus /></IconButton>
   </> : null;
