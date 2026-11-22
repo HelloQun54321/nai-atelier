@@ -1,4 +1,5 @@
 import { createDefaultLayers, createInitialAiPagePlan, createInitialComicDraft } from './comicGeometry';
+import { syncComicLayerStack } from './comicLayers';
 import type { ComicAiPagePlan, ComicAiZoneSplitMode, ComicPageDraft } from './comicTypes';
 
 const COMIC_DRAFT_STORAGE_KEY = 'nai_comic_studio_draft_v1';
@@ -57,7 +58,7 @@ export const normalizeComicDraft = (raw: unknown): ComicPageDraft => {
     ? raw.v5Model
     : 'nai-diffusion-5-full';
 
-  return {
+  return syncComicLayerStack({
     ...fallback,
     id: typeof raw.id === 'string' && raw.id ? raw.id : fallback.id,
     title: typeof raw.title === 'string' ? raw.title : fallback.title,
@@ -95,10 +96,13 @@ export const normalizeComicDraft = (raw: unknown): ComicPageDraft => {
     bubbles: Array.isArray(raw.bubbles) ? raw.bubbles : [],
     texts: Array.isArray(raw.texts) ? raw.texts : [],
     stickers: Array.isArray(raw.stickers) ? raw.stickers : [],
+    drawingLayers: Array.isArray(raw.drawingLayers) ? raw.drawingLayers as ComicPageDraft['drawingLayers'] : undefined,
+    imageLayers: Array.isArray(raw.imageLayers) ? raw.imageLayers as ComicPageDraft['imageLayers'] : undefined,
+    layerStack: Array.isArray(raw.layerStack) ? raw.layerStack as ComicPageDraft['layerStack'] : undefined,
     layers: isRecord(raw.layers) ? { ...createDefaultLayers(), ...(raw.layers as ComicPageDraft['layers']) } : createDefaultLayers(),
     snapEnabled: raw.snapEnabled !== false,
     updatedAt: Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : Date.now(),
-  };
+  });
 };
 
 export const loadComicDraft = (): ComicPageDraft => {

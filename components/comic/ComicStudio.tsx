@@ -67,6 +67,18 @@ import {
   type ComicFontCatalogState,
 } from '../../services/comic/comicFonts';
 import { getBubbleShapeMeta } from '../../services/comic/comicArtwork';
+import {
+  appendStrokeToDrawingLayer,
+  createDrawingLayerInDraft,
+  createGroupLayerInDraft,
+  createImageLayerInDraft,
+  deleteLayerInDraft,
+  duplicateLayerInDraft,
+  mergeLayerDownInDraft,
+  reorderLayerStack,
+  resolveActiveDrawingLayerId,
+  syncComicLayerStack,
+} from '../../services/comic/comicLayers';
 import { buildComicPanelGenerationInput, parseDanbooruCastId } from '../../services/comic/comicPromptBuilder';
 import {
   exportComicBookAsZip,
@@ -90,9 +102,11 @@ import { loadComicDraft, normalizeComicDraft, saveComicDraft } from '../../servi
 import type {
   ComicAiGuidePanel,
   ComicAiPagePlan,
+  ComicAnchor,
   ComicBubbleItem,
   ComicBubbleShape,
-  ComicLayerId,
+  ComicImageLayerItem,
+  ComicLayerNode,
   ComicPageDraft,
   ComicPanel,
   ComicPoint,
@@ -261,9 +275,9 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const handleSelectWithTab = useCallback((next: ComicSelection) => {
     setSelection(next);
     if (!next) return;
-    if (next.kind === 'panel' || next.kind === 'ai-anchor') {
+    if (next.kind === 'panel' || next.kind === 'ai-anchor' || next.kind === 'panel-anchor') {
       setInspectorTab(cur => (cur === 'layers' ? 'panel' : cur));
-    } else {
+    } else if (next.kind === 'bubble' || next.kind === 'text' || next.kind === 'sticker' || next.kind === 'image') {
       setInspectorTab('layers');
     }
   }, []);
@@ -359,8 +373,10 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const applyDraftChange = useCallback((updater: (current: ComicPageDraft) => ComicPageDraft, commit = true) => {
     dirtyBeforeServerLoadRef.current = true;
     setDraft(current => {
-      const next = updater(current);
-      if (commit && next !== current) {
+      const rawNext = updater(current);
+      if (rawNext === current) return current;
+      const next = syncComicLayerStack(rawNext);
+      if (commit) {
         setUndoStack(stack => [...stack.slice(-(MAX_UNDO_STACK - 1)), current]);
         setRedoStack([]);
       }
@@ -413,6 +429,16 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         },
       }), true);
       setSelection(null);
+    } else if (selection.kind === 'panel-anchor') {
+      applyDraftChange(cur => ({
+        ...cur,
+        panels: cur.panels.map(p => (
+          p.id === selection.panelId
+            ? { ...p, anchors: p.anchors.filter(a => a.id !== selection.id) }
+            : p
+        )),
+      }), true);
+      setSelection({ kind: 'panel', id: selection.panelId });
     } else if (selection.kind === 'bubble') {
       applyDraftChange(cur => ({ ...cur, bubbles: cur.bubbles.filter(b => b.id !== selection.id) }), true);
       setSelection(null);
@@ -421,6 +447,9 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       setSelection(null);
     } else if (selection.kind === 'sticker') {
       applyDraftChange(cur => ({ ...cur, stickers: cur.stickers.filter(item => item.id !== selection.id) }), true);
+      setSelection(null);
+    } else if (selection.kind === 'image') {
+      applyDraftChange(cur => ({ ...cur, imageLayers: (cur.imageLayers || []).filter(item => item.id !== selection.id) }), true);
       setSelection(null);
     }
   }, [applyDraftChange, handleDeletePanel, selection]);
@@ -728,36 +757,177 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     notify(t('已载入风格串「{0}」', [chain.name]));
   }, [applyDraftChange, notify]);
 
-  const handleToggleLayerVisible = useCallback((layerId: ComicLayerId) => {
-    applyDraftChange(current => ({
-      ...current,
-      layers: { ...current.layers, [layerId]: { ...current.layers[layerId], visible: !current.layers[layerId].visible } },
-    }), true);
-  }, [applyDraftChange]);
+  // ==================== 仿 Photoshop 独立图层栈操作 ====================
+  const handleSelectLayer = useCallback((node: ComicLayerNode) => {
+    if (node.kind === 'panels') {
+      handleSelectWithTab(draft.panels[0] ? { kind: 'panel', id: draft.panels[0].id } : null);
+    } else if (node.kind === 'drawing' && node.refId) {
+      handleSelectWithTab({ kind: 'drawing', id: node.refId });
+    } else if (node.kind === 'bubble' && node.refId) {
+      handleSelectWithTab({ kind: 'bubble', id: node.refId });
+    } else if (node.kind === 'text' && node.refId) {
+      handleSelectWithTab({ kind: 'text', id: node.refId });
+    } else if (node.kind === 'sticker' && node.refId) {
+      handleSelectWithTab({ kind: 'sticker', id: node.refId });
+    } else if (node.kind === 'image' && node.refId) {
+      handleSelectWithTab({ kind: 'image', id: node.refId });
+    } else if (node.kind === 'group') {
+      handleSelectWithTab({ kind: 'group', id: node.id });
+    }
+  }, [draft.panels, handleSelectWithTab]);
 
-  const handleToggleLayerLocked = useCallback((layerId: ComicLayerId) => {
-    applyDraftChange(current => ({
-      ...current,
-      layers: { ...current.layers, [layerId]: { ...current.layers[layerId], locked: !current.layers[layerId].locked } },
-    }), true);
-  }, [applyDraftChange]);
-
-  const handleMoveLayerOrder = useCallback((layerId: ComicLayerId, direction: 'up' | 'down') => {
+  const handleUpdateLayerNode = useCallback((layerId: string, updater: (node: ComicLayerNode) => ComicLayerNode, commit = true) => {
     applyDraftChange(current => {
-      const ordered = (['panels', 'drawing', 'bubbles', 'stickers'] as ComicLayerId[])
-        .sort((a, b) => (current.layers[b]?.order ?? 0) - (current.layers[a]?.order ?? 0));
-      const idx = ordered.indexOf(layerId);
-      const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= ordered.length) return current;
-      const nextOrder = [...ordered];
-      [nextOrder[idx], nextOrder[swapIdx]] = [nextOrder[swapIdx], nextOrder[idx]];
-      const nextLayers = { ...current.layers };
-      nextOrder.forEach((id, rank) => {
-        nextLayers[id] = { ...nextLayers[id], order: nextOrder.length - 1 - rank };
-      });
-      return { ...current, layers: nextLayers };
+      const synced = syncComicLayerStack(current);
+      return {
+        ...synced,
+        layerStack: (synced.layerStack || []).map(node => (node.id === layerId ? updater(node) : node)),
+      };
+    }, commit);
+  }, [applyDraftChange]);
+
+  const handleReorderLayer = useCallback((sourceId: string, targetId: string, position: 'above' | 'below' | 'inside') => {
+    applyDraftChange(current => {
+      const synced = syncComicLayerStack(current);
+      const nextStack = reorderLayerStack(synced.layerStack || [], sourceId, targetId, position);
+      return { ...synced, layerStack: nextStack };
     }, true);
   }, [applyDraftChange]);
+
+  const handleCreateDrawingLayer = useCallback(() => {
+    const res = createDrawingLayerInDraft(draft);
+    applyDraftChange(() => res.draft, true);
+    setSelection({ kind: 'drawing', id: res.drawingId });
+    notify(t('已新建手绘图层'));
+  }, [applyDraftChange, draft, notify]);
+
+  const handleImportImageLayer = useCallback(async (file: File) => {
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error(t('读取图片文件失败')));
+        reader.readAsDataURL(file);
+      });
+      if (!dataUrl) return;
+      let width = 0.55;
+      let height = 0.55;
+      try {
+        const dims = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve({ w: img.naturalWidth || 1, h: img.naturalHeight || 1 });
+          img.onerror = () => reject(new Error('load failed'));
+          img.src = dataUrl;
+        });
+        const imgAspect = dims.w / Math.max(1, dims.h);
+        const pageAspect = draft.width / Math.max(1, draft.height);
+        const normAspect = imgAspect / pageAspect;
+        if (normAspect >= 1) {
+          width = 0.65;
+          height = Math.min(0.85, Math.max(0.12, Number((width / normAspect).toFixed(3))));
+        } else {
+          height = 0.65;
+          width = Math.min(0.85, Math.max(0.12, Number((height * normAspect).toFixed(3))));
+        }
+      } catch {
+        // 测试或无图像解码环境回退默认方框尺寸
+      }
+      const cleanName = file.name.replace(/\.[^.]+$/, '') || t('导入图片');
+      const res = createImageLayerInDraft(draft, {
+        name: cleanName,
+        url: dataUrl,
+        width,
+        height,
+      });
+      applyDraftChange(() => res.draft, true);
+      handleSelectWithTab({ kind: 'image', id: res.imageItem.id });
+      notify(t('已导入图片图层「{0}」', [cleanName]));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('导入图片图层失败'), 'error');
+    }
+  }, [applyDraftChange, draft, handleSelectWithTab, notify]);
+
+  const handleCreateGroupLayer = useCallback((wrapLayerId?: string) => {
+    const res = createGroupLayerInDraft(draft, wrapLayerId);
+    applyDraftChange(() => res.draft, true);
+    setSelection({ kind: 'group', id: res.group.id });
+    notify(t('已新建图层组'));
+  }, [applyDraftChange, draft, notify]);
+
+  const handleDuplicateLayer = useCallback((layerId: string) => {
+    const res = duplicateLayerInDraft(draft, layerId);
+    if (!res.newLayer) return;
+    applyDraftChange(() => res.draft, true);
+    handleSelectLayer(res.newLayer);
+    notify(t('已复制图层'));
+  }, [applyDraftChange, draft, handleSelectLayer, notify]);
+
+  const handleMergeLayerDown = useCallback((layerId: string) => {
+    const res = mergeLayerDownInDraft(draft, layerId);
+    if (res.merged) {
+      applyDraftChange(() => res.draft, true);
+      notify(t('已向下合并图层'));
+    } else {
+      notify(t('当前图层无法与下方图层合并（支持相邻手绘图层合并或解散图层组）'), 'error');
+    }
+  }, [applyDraftChange, draft, notify]);
+
+  const handleDeleteLayer = useCallback((layerId: string) => {
+    const res = deleteLayerInDraft(draft, layerId);
+    if (res.deleted) {
+      applyDraftChange(() => res.draft, true);
+      setSelection(null);
+      notify(t('已删除图层'));
+    } else {
+      notify(t('分镜底图与最后一个手绘图层不可删除'), 'error');
+    }
+  }, [applyDraftChange, draft, notify]);
+
+  const handleDuplicateBubble = useCallback((bubbleId: string) => {
+    const source = draft.bubbles.find(b => b.id === bubbleId);
+    if (!source) return;
+    const dx = Math.min(0.92 - source.x, 0.03);
+    const dy = Math.min(0.92 - source.y, 0.03);
+    const clone: ComicBubbleItem = {
+      ...structuredClone(source),
+      id: createUuid(),
+      x: source.x + dx,
+      y: source.y + dy,
+      tailX: Math.min(0.98, source.tailX + dx),
+      tailY: Math.min(0.98, source.tailY + dy),
+    };
+    applyDraftChange(cur => ({ ...cur, bubbles: [...cur.bubbles, clone] }), true);
+    handleSelectWithTab({ kind: 'bubble', id: clone.id });
+  }, [applyDraftChange, draft.bubbles, handleSelectWithTab]);
+
+  const handleUpdateImageLayer = useCallback((id: string, updater: (item: ComicImageLayerItem) => ComicImageLayerItem, commit = true) => {
+    applyDraftChange(cur => ({
+      ...cur,
+      imageLayers: (cur.imageLayers || []).map(item => (item.id === id ? updater(item) : item)),
+    }), commit);
+  }, [applyDraftChange]);
+
+  const handleDeleteImageLayer = useCallback((id: string) => {
+    applyDraftChange(cur => ({
+      ...cur,
+      imageLayers: (cur.imageLayers || []).filter(item => item.id !== id),
+    }), true);
+    setSelection(null);
+  }, [applyDraftChange]);
+
+  const handleClearActiveDrawingLayer = useCallback(() => {
+    applyDraftChange(cur => {
+      const synced = syncComicLayerStack(cur);
+      const targetId = resolveActiveDrawingLayerId(synced, selection);
+      return {
+        ...synced,
+        strokes: [],
+        drawingLayers: (synced.drawingLayers || []).map(d => (
+          !targetId || d.id === targetId ? { ...d, strokes: [] } : d
+        )),
+      };
+    }, true);
+  }, [applyDraftChange, selection]);
 
   const preferredMangaFontId = useMemo(() => {
     const installed = fontCatalog.fonts.find(f => f.installed);
@@ -911,6 +1081,21 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       ...cur,
       anchors: cur.anchors.map(a => a.id === anchorId ? { ...a, x, y } : a),
     }), commit);
+  }, [handleUpdateAiPage]);
+
+  const handleUpdateAiAnchor = useCallback((anchorId: string, updater: (anchor: ComicAnchor) => ComicAnchor, commit = true) => {
+    handleUpdateAiPage(cur => ({
+      ...cur,
+      anchors: cur.anchors.map(a => a.id === anchorId ? updater(a) : a),
+    }), commit);
+  }, [handleUpdateAiPage]);
+
+  const handleDeleteAiAnchor = useCallback((anchorId: string) => {
+    handleUpdateAiPage(cur => ({
+      ...cur,
+      anchors: cur.anchors.filter(a => a.id !== anchorId),
+    }), true);
+    setSelection(cur => (cur?.kind === 'ai-anchor' && cur.id === anchorId ? null : cur));
   }, [handleUpdateAiPage]);
 
   const handleUpdateGuidePanel = useCallback((
@@ -1086,6 +1271,76 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     handleSelectWithTab({ kind: 'bubble', id: created[0].id });
     notify(t('已将 {0} 个气泡锚点转为可编辑矢量气泡', [created.length]));
   }, [applyDraftChange, defaultBubbleShape, defaultBubbleWritingMode, draft.aiPage.anchors, draft.bubbles, handleSelectWithTab, notify, preferredMangaFontId]);
+
+  const handleConvertSingleAnchorBubbleToVector = useCallback((
+    target: { kind: 'ai-anchor'; anchorId: string } | { kind: 'panel-anchor'; panelId: string; anchorId: string },
+  ) => {
+    let x = 0.5;
+    let y = 0.5;
+    let width = 0.26;
+    let height = 0.14;
+    let anchor: ComicAnchor | undefined;
+    if (target.kind === 'ai-anchor') {
+      anchor = draft.aiPage.anchors.find(a => a.id === target.anchorId);
+      if (!anchor) return;
+      x = anchor.x;
+      y = anchor.y;
+      width = anchor.bubbleWidth ?? 0.24;
+      height = anchor.bubbleHeight ?? 0.14;
+    } else {
+      const panel = draft.panels.find(p => p.id === target.panelId);
+      anchor = panel?.anchors.find(a => a.id === target.anchorId);
+      if (!panel || !anchor) return;
+      const pb = getPanelBoundingBox(panel.points, 1, 1);
+      x = pb.minX + anchor.x * pb.width;
+      y = pb.minY + anchor.y * pb.height;
+      width = anchor.bubbleWidth ?? Math.min(0.45, Math.max(0.18, pb.width * 0.48));
+      height = anchor.bubbleHeight ?? Math.min(0.32, Math.max(0.11, pb.height * 0.34));
+    }
+
+    const shape: ComicBubbleShape = anchor.bubbleShape || defaultBubbleShape;
+    const created: ComicBubbleItem = {
+      id: createUuid(),
+      shape,
+      x,
+      y,
+      width,
+      height,
+      hasTail: getBubbleShapeMeta(shape).supportsTail,
+      tailX: anchor.bubbleTailX ?? Math.min(0.95, x + 0.06),
+      tailY: anchor.bubbleTailY ?? Math.min(0.95, y + height / 2 + 0.05),
+      text: anchor.bubbleText?.trim() || '输入台词…',
+      writingMode: anchor.bubbleWritingMode || defaultBubbleWritingMode,
+      fontFamily: preferredMangaFontId,
+      fontSize: anchor.bubbleFontSize ?? 22,
+      textColor: '#111827',
+      fillColor: '#ffffff',
+      strokeColor: '#111827',
+      strokeWidth: 3,
+      rotation: 0,
+    };
+
+    applyDraftChange(cur => ({
+      ...cur,
+      bubbles: [...cur.bubbles, created],
+      ...(target.kind === 'ai-anchor'
+        ? {
+          aiPage: {
+            ...cur.aiPage,
+            anchors: cur.aiPage.anchors.filter(a => a.id !== target.anchorId),
+          },
+        }
+        : {
+          panels: cur.panels.map(p => (
+            p.id === target.panelId
+              ? { ...p, anchors: p.anchors.filter(a => a.id !== target.anchorId) }
+              : p
+          )),
+        }),
+    }), true);
+    handleSelectWithTab({ kind: 'bubble', id: created.id });
+    notify(t('已转为正式矢量漫画气泡，可在图层面板与画布自由编辑'));
+  }, [applyDraftChange, defaultBubbleShape, defaultBubbleWritingMode, draft.aiPage.anchors, draft.panels, handleSelectWithTab, notify, preferredMangaFontId]);
 
   // 抽离双区无缝拼合与归档逻辑（供全页生成、单区重画与手动重拼共用）
   const stitchAndCommitZones = useCallback(async (
@@ -2262,7 +2517,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
           if (patch.size !== undefined) setBrushSize(patch.size);
           if (patch.opacity !== undefined) setBrushOpacity(patch.opacity);
         }}
-        onClearStrokes={() => applyDraftChange(cur => ({ ...cur, strokes: [] }), true)}
+        onClearStrokes={handleClearActiveDrawingLayer}
         onChangeDefaultStickerKind={setDefaultStickerKind}
         onChangeDefaultBubbleStyle={patch => {
           if (patch.shape !== undefined) setDefaultBubbleShape(patch.shape);
@@ -2315,6 +2570,9 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             onToggleSnap={() => applyDraftChange(cur => ({ ...cur, snapEnabled: !cur.snapEnabled }), true)}
             onUpdatePanel={handleUpdatePanel}
             onMoveAiAnchor={handleMoveAiAnchor}
+            onUpdateAiAnchor={handleUpdateAiAnchor}
+            onDeleteAiAnchor={handleDeleteAiAnchor}
+            onConvertAnchorBubbleToVector={handleConvertSingleAnchorBubbleToVector}
             onUpdateGuidePanel={handleUpdateGuidePanel}
             onToggleBubbleCandidate={id => setBubbleCandidates(cur => cur ? cur.map(c => c.id === id ? { ...c, selected: !c.selected } : c) : cur)}
             onWheelScalePanelImage={handleWheelScalePanelImage}
@@ -2325,10 +2583,26 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             } : cur)}
             onAddPanel={handleAddPanel}
             onSliceAtLine={handleSliceAtLine}
-            onCommitStroke={(stroke: ComicStroke) => applyDraftChange(cur => ({ ...cur, strokes: [...cur.strokes, stroke] }), true)}
+            onCommitStroke={(stroke: ComicStroke, drawingLayerId?: string) => applyDraftChange(
+              cur => appendStrokeToDrawingLayer(
+                cur,
+                drawingLayerId || resolveActiveDrawingLayerId(cur, selection) || 'draw-1',
+                stroke,
+              ),
+              true,
+            )}
             onAddBubbleAt={handleAddBubbleAt}
             onAddTextAt={handleAddTextAt}
             onAddStickerAt={handleAddStickerAt}
+            onUpdateBubble={(id, updater, commit = true) => applyDraftChange(cur => ({
+              ...cur,
+              bubbles: cur.bubbles.map(b => b.id === id ? updater(b) : b),
+            }), commit)}
+            onDuplicateBubble={handleDuplicateBubble}
+            onDeleteBubble={id => {
+              applyDraftChange(cur => ({ ...cur, bubbles: cur.bubbles.filter(b => b.id !== id) }), true);
+              setSelection(null);
+            }}
             onMoveBubble={(id, x, y, commit = false) => applyDraftChange(cur => ({
               ...cur,
               bubbles: cur.bubbles.map(b => b.id === id ? { ...b, x, y, tailX: b.tailX + (x - b.x), tailY: b.tailY + (y - b.y) } : b),
@@ -2361,6 +2635,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
               ...cur,
               stickers: cur.stickers.map(item => item.id === id ? { ...item, width, height } : item),
             }), commit)}
+            onUpdateImageLayer={handleUpdateImageLayer}
           />
         </div>
 
@@ -2484,9 +2759,18 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
                     applyDraftChange(cur => ({ ...cur, stickers: cur.stickers.filter(item => item.id !== id) }), true);
                     setSelection(null);
                   }}
-                  onToggleLayerVisible={handleToggleLayerVisible}
-                  onToggleLayerLocked={handleToggleLayerLocked}
-                  onMoveLayerOrder={handleMoveLayerOrder}
+                  onUpdateImageLayer={handleUpdateImageLayer}
+                  onDeleteImageLayer={handleDeleteImageLayer}
+                  onSelectLayer={handleSelectLayer}
+                  onUpdateLayerNode={handleUpdateLayerNode}
+                  onReorderLayer={handleReorderLayer}
+                  onCreateDrawingLayer={handleCreateDrawingLayer}
+                  onImportImageLayer={file => void handleImportImageLayer(file)}
+                  onCreateGroupLayer={handleCreateGroupLayer}
+                  onDuplicateLayer={handleDuplicateLayer}
+                  onMergeLayerDown={handleMergeLayerDown}
+                  onDeleteLayer={handleDeleteLayer}
+                  onConvertSingleAnchorBubbleToVector={handleConvertSingleAnchorBubbleToVector}
                   fontCatalog={fontCatalog}
                   downloadingFontId={downloadingFontId}
                   onDownloadFont={id => void handleDownloadFont(id)}

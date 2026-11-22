@@ -69,6 +69,13 @@ export interface ComicAnchor {
   enabled: boolean;
   bubbleShape?: ComicBubbleShape;
   bubbleText?: string;
+  /** 可视化气泡锚点在画布上的实际尺寸与尾巴/排布（不再是盲点圆点）。 */
+  bubbleWidth?: number;
+  bubbleHeight?: number;
+  bubbleTailX?: number;
+  bubbleTailY?: number;
+  bubbleWritingMode?: 'horizontal' | 'vertical';
+  bubbleFontSize?: number;
   sourceCharacterId?: string;
 }
 
@@ -176,6 +183,53 @@ export interface ComicStickerItem {
   opacity: number;
 }
 
+export type ComicBlendMode =
+  | 'normal'
+  | 'multiply'
+  | 'screen'
+  | 'overlay'
+  | 'darken'
+  | 'lighten'
+  | 'soft-light'
+  | 'hard-light'
+  | 'difference';
+
+export interface ComicDrawingLayerData {
+  id: string;
+  strokes: ComicStroke[];
+}
+
+export interface ComicImageLayerItem {
+  id: string;
+  name: string;
+  url: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+}
+
+export type ComicLayerNodeKind = 'panels' | 'drawing' | 'bubble' | 'text' | 'sticker' | 'image' | 'group';
+
+/** PS 风格独立图层节点（支持不透明度、混合模式、拖拽排序、文件夹分组与显隐锁定）。 */
+export interface ComicLayerNode {
+  id: string;
+  kind: ComicLayerNodeKind;
+  /** 指向底层实体 ID（panels 固定为 'panels'；drawing/bubble/text/sticker/image 对应其 ID；group 无 refId）。 */
+  refId?: string;
+  name: string;
+  visible: boolean;
+  locked: boolean;
+  /** 0..1 */
+  opacity: number;
+  blendMode: ComicBlendMode;
+  /** 所属图层组 ID（顶层为 undefined）。 */
+  parentId?: string;
+  /** 仅 group 使用：文件夹是否展开。 */
+  expanded?: boolean;
+}
+
 export type ComicLayerId = 'panels' | 'drawing' | 'bubbles' | 'stickers';
 
 export interface ComicLayerConfig {
@@ -264,6 +318,12 @@ export interface ComicPageDraft {
   bubbles: ComicBubbleItem[];
   texts: ComicTextItem[];
   stickers: ComicStickerItem[];
+  /** 多手绘图层数据（旧版 strokes 自动迁移进首个手绘图层）。 */
+  drawingLayers?: ComicDrawingLayerData[];
+  /** 导入的独立图片图层（支持网点/参考/叠加特效图）。 */
+  imageLayers?: ComicImageLayerItem[];
+  /** PS 风格真实图层栈（数组顺序 = 从底到顶渲染顺序；面板展示按 PS 习惯从顶到底倒序显示）。 */
+  layerStack?: ComicLayerNode[];
   layers: ComicLayerState;
   snapEnabled: boolean;
   updatedAt: number;
@@ -272,7 +332,11 @@ export interface ComicPageDraft {
 export type ComicSelection =
   | { kind: 'panel'; id: string }
   | { kind: 'ai-anchor'; id: string }
+  | { kind: 'panel-anchor'; panelId: string; id: string }
   | { kind: 'bubble'; id: string }
   | { kind: 'text'; id: string }
   | { kind: 'sticker'; id: string }
+  | { kind: 'image'; id: string }
+  | { kind: 'drawing'; id: string }
+  | { kind: 'group'; id: string }
   | null;

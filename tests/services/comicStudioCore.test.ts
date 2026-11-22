@@ -47,7 +47,19 @@ import {
 } from '../../services/comic/comicInpaintEngine';
 import { parseComicStoryboardResponse } from '../../services/comic/comicStoryboardAgent.mjs';
 import { loadComicDraft, saveComicDraft } from '../../services/comic/comicStorage';
-import type { ComicAnchor } from '../../services/comic/comicTypes';
+import {
+  appendStrokeToDrawingLayer,
+  createDrawingLayerInDraft,
+  createGroupLayerInDraft,
+  createImageLayerInDraft,
+  deleteLayerInDraft,
+  duplicateLayerInDraft,
+  mergeLayerDownInDraft,
+  reorderLayerStack,
+  resolveEffectiveLayerProps,
+  syncComicLayerStack,
+} from '../../services/comic/comicLayers';
+import type { ComicAnchor, ComicStroke } from '../../services/comic/comicTypes';
 
 describe('comicGeometry & free Opus resolution matching', () => {
   it('matches Opus-free 64-aligned resolutions for portrait, landscape, square, and extreme strip panels', () => {
@@ -572,5 +584,84 @@ describe('Comic Studio polish upgrades (layout preservation, visualNote, smart b
     const parsed = parseDanbooruCastId(encoded);
     expect(parsed).toEqual({ tag: 'hatsune_miku', label: '初音未来', prompt: 'hatsune miku' });
     expect(parseDanbooruCastId('custom-chain-1')).toBeNull();
+  });
+});
+
+describe('PS-style independent comicLayers engine', () => {
+  it('migrates legacy strokes into drawingLayers, synchronizes stack nodes, and cascades group properties', () => {
+    const legacyStroke: ComicStroke = {
+      id: 'st-1',
+      tool: 'brush',
+      color: '#111827',
+      size: 4,
+      opacity: 1,
+      points: [{ x: 0.1, y: 0.1 }, { x: 0.4, y: 0.4 }],
+    };
+    const base = createInitialComicDraft('classic-4-121');
+    base.strokes = [legacyStroke];
+    base.drawingLayers = undefined;
+    base.layerStack = undefined;
+
+    const synced = syncComicLayerStack(base);
+    expect(synced.drawingLayers).toHaveLength(1);
+    expect(synced.drawingLayers?.[0].strokes).toHaveLength(1);
+    expect(synced.layerStack?.some(n => n.kind === 'panels')).toBe(true);
+    expect(synced.layerStack?.some(n => n.kind === 'drawing')).toBe(true);
+
+    // 新建第二个手绘图层、导入图片图层与图层组
+    const { draft: d2, drawingId: draw2Id, layer: draw2Node } = createDrawingLayerInDraft(synced, '网点层');
+    expect(d2.drawingLayers).toHaveLength(2);
+    const d2WithStroke = appendStrokeToDrawingLayer(d2, draw2Id, { ...legacyStroke, id: 'st-2' });
+    expect(d2WithStroke.drawingLayers?.find(dl => dl.id === draw2Id)?.strokes).toHaveLength(1);
+
+    const { draft: d3, layer: imgNode } = createImageLayerInDraft(d2WithStroke, {
+      name: '集中线素材',
+      url: 'data:image/png;base64,AAA',
+      width: 0.5,
+      height: 0.5,
+    });
+    expect(d3.imageLayers).toHaveLength(1);
+
+    const { draft: d4, group } = createGroupLayerInDraft(d3, imgNode.id);
+    const updatedStack = (d4.layerStack || []).map(n => (
+      n.id === group.id ? { ...n, opacity: 0.5, blendMode: 'multiply' as const, locked: true } : n
+    ));
+    const childInGroup = updatedStack.find(n => n.id === imgNode.id)!;
+    expect(childInGroup.parentId).toBe(group.id);
+    const eff = resolveEffectiveLayerProps(childInGroup, updatedStack);
+    expect(eff.opacity).toBeCloseTo(0.5, 4);
+    expect(eff.blendMode).toBe('multiply');
+    expect(eff.locked).toBe(true);
+    expect(eff.depth).toBe(1);
+
+    // 拖拽排序：把 draw2Node 移进组内，且禁止把组移入自身子孙
+    const movedIntoGroup = reorderLayerStack(updatedStack, draw2Node.id, group.id, 'inside');
+    expect(movedIntoGroup.find(n => n.id === draw2Node.id)?.parentId).toBe(group.id);
+    const selfNestBlocked = reorderLayerStack(movedIntoGroup, group.id, draw2Node.id, 'inside');
+    expect(selfNestBlocked.find(n => n.id === group.id)?.parentId).toBeUndefined();
+  });
+
+  it('duplicates, merges drawing layers down, and protects base panels and last drawing layer from deletion', () => {
+    const base = syncComicLayerStack(createInitialComicDraft('classic-4-121'));
+    const panelsNode = base.layerStack!.find(n => n.kind === 'panels')!;
+    const draw1Node = base.layerStack!.find(n => n.kind === 'drawing')!;
+
+    // 底图不可删除；删除最后一个手绘层时自动保留一个空白默认手绘层，确保画笔不失效
+    expect(deleteLayerInDraft(base, panelsNode.id).deleted).toBe(false);
+    const resetDraw = deleteLayerInDraft(base, draw1Node.id);
+    expect(resetDraw.draft.drawingLayers).toHaveLength(1);
+    expect(resetDraw.draft.drawingLayers?.[0].strokes).toHaveLength(0);
+
+    // 写入笔画 -> 复制手绘图层 -> 向下合并两个相邻手绘图层
+    const s1: ComicStroke = { id: 'a', tool: 'brush', color: '#000', size: 3, opacity: 1, points: [{ x: 0.2, y: 0.2 }] };
+    const withStroke = appendStrokeToDrawingLayer(base, draw1Node.refId!, s1);
+    const dup = duplicateLayerInDraft(withStroke, draw1Node.id);
+    expect(dup.newLayer).toBeTruthy();
+    expect(dup.draft.drawingLayers).toHaveLength(2);
+
+    const merged = mergeLayerDownInDraft(dup.draft, dup.newLayer!.id);
+    expect(merged.merged).toBe(true);
+    expect(merged.draft.drawingLayers).toHaveLength(1);
+    expect(merged.draft.drawingLayers?.[0].strokes).toHaveLength(2);
   });
 });

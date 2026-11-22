@@ -9,14 +9,16 @@ import {
 } from './comicArtwork';
 import type { ComicBook } from './comicBookshelf';
 import { getPanelBoundingBox } from './comicGeometry';
+import {
+  blendModeToCanvasOp,
+  resolveEffectiveLayerProps,
+  syncComicLayerStack,
+} from './comicLayers';
 import type {
-  ComicBubbleItem,
   ComicFontFamily,
-  ComicLayerId,
   ComicPageDraft,
   ComicPanel,
   ComicStickerItem,
-  ComicTextItem,
 } from './comicTypes';
 
 const loadImageElement = (url: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
@@ -265,8 +267,9 @@ const drawSticker = (ctx: CanvasRenderingContext2D, sticker: ComicStickerItem, p
   ctx.restore();
 };
 
-/** 将当前漫画页所有可见图层合成导出为高清 PNG Blob。 */
-export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob> => {
+/** 将当前漫画页按 PS 图层栈顺序、不透明度与混合模式合成导出为高清 PNG Blob。 */
+export const renderComicPageToBlob = async (rawPage: ComicPageDraft): Promise<Blob> => {
+  const page = syncComicLayerStack(rawPage);
   const canvas = document.createElement('canvas');
   canvas.width = page.width;
   canvas.height = page.height;
@@ -277,8 +280,9 @@ export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob>
   ctx.fillStyle = page.backgroundColor || '#ffffff';
   ctx.fillRect(0, 0, page.width, page.height);
 
-  // 预加载分镜格图片（含 AI 整页成图）
+  // 预加载分镜格图片、AI 整页成图与导入的图片图层
   const imageMap = new Map<string, HTMLImageElement>();
+  const customImageMap = new Map<string, HTMLImageElement>();
   let aiWholeImage: HTMLImageElement | null = null;
   await Promise.all([
     ...(page.creationMode === 'ai-page' && page.aiPage?.generatedPageImage?.url
@@ -294,14 +298,33 @@ export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob>
           // 某张外链图片失败时不阻塞整页导出
         }
       }),
+    ...(page.imageLayers || []).map(async item => {
+      try {
+        const img = await loadImageElement(item.url);
+        customImageMap.set(item.id, img);
+      } catch {
+        // 忽略失效图片层
+      }
+    }),
   ]);
 
-  const orderedLayers = (['panels', 'drawing', 'bubbles', 'stickers'] as ComicLayerId[])
-    .filter(id => page.layers[id]?.visible !== false)
-    .sort((a, b) => (page.layers[a]?.order ?? 0) - (page.layers[b]?.order ?? 0));
+  const stack = page.layerStack || [];
+  const drawingMap = new Map((page.drawingLayers || []).map(d => [d.id, d]));
+  const bubbleMap = new Map(page.bubbles.map(b => [b.id, b]));
+  const textMap = new Map(page.texts.map(t => [t.id, t]));
+  const stickerMap = new Map(page.stickers.map(s => [s.id, s]));
+  const customImgItemMap = new Map((page.imageLayers || []).map(img => [img.id, img]));
 
-  for (const layerId of orderedLayers) {
-    if (layerId === 'panels') {
+  for (const node of stack) {
+    if (node.kind === 'group') continue;
+    const eff = resolveEffectiveLayerProps(node, stack);
+    if (!eff.visible || eff.opacity <= 0) continue;
+
+    ctx.save();
+    ctx.globalAlpha = eff.opacity;
+    ctx.globalCompositeOperation = blendModeToCanvasOp(eff.blendMode);
+
+    if (node.kind === 'panels') {
       if (page.creationMode === 'ai-page') {
         if (aiWholeImage) {
           const img = aiWholeImage as HTMLImageElement;
@@ -310,97 +333,123 @@ export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob>
           const drawH = img.naturalHeight * coverScale;
           ctx.drawImage(img, (page.width - drawW) / 2, (page.height - drawH) / 2, drawW, drawH);
         }
-        continue;
-      }
-      const sortedPanels = [...page.panels].sort((a, b) => a.zIndex - b.zIndex);
-      for (const panel of sortedPanels) {
-        if (panel.points.length < 3) continue;
-        const bounds = getPanelBoundingBox(panel.points, page.width, page.height);
-        ctx.save();
-        if (panel.rotation) {
-          ctx.translate(bounds.cx, bounds.cy);
-          ctx.rotate((panel.rotation * Math.PI) / 180);
-          ctx.translate(-bounds.cx, -bounds.cy);
-        }
-        tracePanelPath(ctx, panel, page.width, page.height);
-        ctx.fillStyle = panel.backgroundColor || '#f8fafc';
-        ctx.fill();
-
-        const img = imageMap.get(panel.id);
-        if (img && panel.image) {
+      } else {
+        const sortedPanels = [...page.panels].sort((a, b) => a.zIndex - b.zIndex);
+        for (const panel of sortedPanels) {
+          if (panel.points.length < 3) continue;
+          const bounds = getPanelBoundingBox(panel.points, page.width, page.height);
           ctx.save();
+          if (panel.rotation) {
+            ctx.translate(bounds.cx, bounds.cy);
+            ctx.rotate((panel.rotation * Math.PI) / 180);
+            ctx.translate(-bounds.cx, -bounds.cy);
+          }
           tracePanelPath(ctx, panel, page.width, page.height);
-          ctx.clip();
-          const coverScale = Math.max(bounds.width / img.naturalWidth, bounds.height / img.naturalHeight) * (panel.image.scale || 1);
-          const drawW = img.naturalWidth * coverScale;
-          const drawH = img.naturalHeight * coverScale;
-          const drawX = bounds.cx - drawW / 2 + (panel.image.offsetX || 0) * bounds.width;
-          const drawY = bounds.cy - drawH / 2 + (panel.image.offsetY || 0) * bounds.height;
-          ctx.drawImage(img, drawX, drawY, drawW, drawH);
+          ctx.fillStyle = panel.backgroundColor || '#f8fafc';
+          ctx.fill();
+
+          const img = imageMap.get(panel.id);
+          if (img && panel.image) {
+            ctx.save();
+            tracePanelPath(ctx, panel, page.width, page.height);
+            ctx.clip();
+            const coverScale = Math.max(bounds.width / img.naturalWidth, bounds.height / img.naturalHeight) * (panel.image.scale || 1);
+            const drawW = img.naturalWidth * coverScale;
+            const drawH = img.naturalHeight * coverScale;
+            const drawX = bounds.cx - drawW / 2 + (panel.image.offsetX || 0) * bounds.width;
+            const drawY = bounds.cy - drawH / 2 + (panel.image.offsetY || 0) * bounds.height;
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
+            ctx.restore();
+          }
+
+          if (panel.borderWidth > 0) {
+            tracePanelPath(ctx, panel, page.width, page.height);
+            ctx.strokeStyle = panel.borderColor || '#111827';
+            ctx.lineWidth = panel.borderWidth;
+            ctx.lineJoin = 'miter';
+            ctx.stroke();
+          }
           ctx.restore();
         }
+      }
+      ctx.restore();
+      continue;
+    }
 
-        if (panel.borderWidth > 0) {
-          tracePanelPath(ctx, panel, page.width, page.height);
-          ctx.strokeStyle = panel.borderColor || '#111827';
-          ctx.lineWidth = panel.borderWidth;
-          ctx.lineJoin = 'miter';
-          ctx.stroke();
+    if (node.kind === 'drawing' && node.refId) {
+      const dl = drawingMap.get(node.refId);
+      if (dl && dl.strokes.length > 0) {
+        const drawLayer = document.createElement('canvas');
+        drawLayer.width = page.width;
+        drawLayer.height = page.height;
+        const dctx = drawLayer.getContext('2d');
+        if (dctx) {
+          for (const stroke of dl.strokes) {
+            if (stroke.points.length === 0) continue;
+            dctx.save();
+            dctx.lineCap = 'round';
+            dctx.lineJoin = 'round';
+            dctx.lineWidth = stroke.size;
+            if (stroke.tool === 'eraser') {
+              dctx.globalCompositeOperation = 'destination-out';
+              dctx.strokeStyle = 'rgba(0,0,0,1)';
+            } else {
+              dctx.globalCompositeOperation = 'source-over';
+              dctx.globalAlpha = stroke.opacity;
+              dctx.strokeStyle = stroke.color;
+            }
+            dctx.beginPath();
+            stroke.points.forEach((pt, idx) => {
+              const x = pt.x * page.width;
+              const y = pt.y * page.height;
+              if (idx === 0) dctx.moveTo(x, y);
+              else dctx.lineTo(x, y);
+            });
+            if (stroke.points.length === 1) {
+              dctx.lineTo(stroke.points[0].x * page.width + 0.1, stroke.points[0].y * page.height + 0.1);
+            }
+            dctx.stroke();
+            dctx.restore();
+          }
+          ctx.drawImage(drawLayer, 0, 0);
         }
+      }
+      ctx.restore();
+      continue;
+    }
+
+    if (node.kind === 'image' && node.refId) {
+      const item = customImgItemMap.get(node.refId);
+      const img = customImageMap.get(node.refId);
+      if (item && img) {
+        const cx = item.x * page.width;
+        const cy = item.y * page.height;
+        const w = item.width * page.width;
+        const h = item.height * page.height;
+        ctx.save();
+        if (item.rotation) {
+          ctx.translate(cx, cy);
+          ctx.rotate((item.rotation * Math.PI) / 180);
+          ctx.translate(-cx, -cy);
+        }
+        ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
         ctx.restore();
       }
+      ctx.restore();
       continue;
     }
 
-    if (layerId === 'drawing' && page.strokes.length > 0) {
-      // 独立透明离屏层绘制笔迹，确保橡皮擦只擦除手绘层、不伤下方分镜画面
-      const drawLayer = document.createElement('canvas');
-      drawLayer.width = page.width;
-      drawLayer.height = page.height;
-      const dctx = drawLayer.getContext('2d');
-      if (dctx) {
-        for (const stroke of page.strokes) {
-          if (stroke.points.length === 0) continue;
-          dctx.save();
-          dctx.lineCap = 'round';
-          dctx.lineJoin = 'round';
-          dctx.lineWidth = stroke.size;
-          if (stroke.tool === 'eraser') {
-            dctx.globalCompositeOperation = 'destination-out';
-            dctx.strokeStyle = 'rgba(0,0,0,1)';
-          } else {
-            dctx.globalCompositeOperation = 'source-over';
-            dctx.globalAlpha = stroke.opacity;
-            dctx.strokeStyle = stroke.color;
-          }
-          dctx.beginPath();
-          stroke.points.forEach((pt, idx) => {
-            const x = pt.x * page.width;
-            const y = pt.y * page.height;
-            if (idx === 0) dctx.moveTo(x, y);
-            else dctx.lineTo(x, y);
-          });
-          if (stroke.points.length === 1) {
-            dctx.lineTo(stroke.points[0].x * page.width + 0.1, stroke.points[0].y * page.height + 0.1);
-          }
-          dctx.stroke();
-          dctx.restore();
-        }
-        ctx.drawImage(drawLayer, 0, 0);
-      }
-      continue;
-    }
-
-    if (layerId === 'bubbles') {
-      for (const bubble of page.bubbles) {
+    if (node.kind === 'bubble' && node.refId) {
+      const bubble = bubbleMap.get(node.refId);
+      if (bubble) {
         const cx = bubble.x * page.width;
         const cy = bubble.y * page.height;
         const rx = (bubble.width * page.width) / 2;
         const ry = (bubble.height * page.height) / 2;
         const tx = bubble.tailX * page.width;
         const ty = bubble.tailY * page.height;
-
         const isTransparentFill = !bubble.fillColor || bubble.fillColor === 'transparent';
+
         ctx.save();
         let localTx = tx;
         let localTy = ty;
@@ -453,8 +502,13 @@ export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob>
         );
         ctx.restore();
       }
+      ctx.restore();
+      continue;
+    }
 
-      for (const item of page.texts) {
+    if (node.kind === 'text' && node.refId) {
+      const item = textMap.get(node.refId);
+      if (item) {
         const cx = item.x * page.width;
         const cy = item.y * page.height;
         ctx.save();
@@ -479,14 +533,17 @@ export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob>
         );
         ctx.restore();
       }
+      ctx.restore();
       continue;
     }
 
-    if (layerId === 'stickers') {
-      for (const sticker of page.stickers) {
-        drawSticker(ctx, sticker, page.width, page.height);
+    if (node.kind === 'sticker' && node.refId) {
+      const sticker = stickerMap.get(node.refId);
+      if (sticker) {
+        drawSticker(ctx, { ...sticker, opacity: sticker.opacity * eff.opacity }, page.width, page.height);
       }
     }
+    ctx.restore();
   }
 
   return new Promise<Blob>((resolve, reject) => {

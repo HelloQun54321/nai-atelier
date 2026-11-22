@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Magnet, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Copy, Magnet, Maximize2, MessageCircle, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import {
   clampAnchorCoord,
@@ -12,16 +12,26 @@ import {
 } from '../../services/comic/comicGeometry';
 import {
   buildComicBubbleRenderModel,
+  COMIC_BUBBLE_SHAPES,
   computeAutoFitFontSize,
+  getBubbleShapeMeta,
   resolveComicFont,
   seededUnit,
 } from '../../services/comic/comicArtwork';
+import {
+  resolveActiveDrawingLayerId,
+  resolveEffectiveLayerProps,
+  syncComicLayerStack,
+} from '../../services/comic/comicLayers';
 import type { ComicAiZonePlan } from '../../services/comic/comicAiPageEngine';
 import type { ComicBubbleCandidate } from '../../services/comic/comicBubbleDetector';
 import { clampInpaintRect, type ComicInpaintDraft, type ComicInpaintRect } from '../../services/comic/comicInpaintEngine';
 import type {
+  ComicAnchor,
+  ComicBlendMode,
   ComicBubbleItem,
-  ComicLayerId,
+  ComicBubbleShape,
+  ComicImageLayerItem,
   ComicPageDraft,
   ComicPanel,
   ComicPoint,
@@ -30,6 +40,7 @@ import type {
   ComicStroke,
   ComicTool,
 } from '../../services/comic/comicTypes';
+import { ComicBubbleShapeIcon } from './ComicBubbleShapeIcon';
 
 interface ComicCanvasProps {
   draft: ComicPageDraft;
@@ -53,6 +64,9 @@ interface ComicCanvasProps {
   onToggleSnap: () => void;
   onUpdatePanel: (panelId: string, updater: (panel: ComicPanel) => ComicPanel, commit?: boolean) => void;
   onMoveAiAnchor?: (anchorId: string, x: number, y: number, commit?: boolean) => void;
+  onUpdateAiAnchor?: (anchorId: string, updater: (anchor: ComicAnchor) => ComicAnchor, commit?: boolean) => void;
+  onDeleteAiAnchor?: (anchorId: string) => void;
+  onConvertAnchorBubbleToVector?: (source: { kind: 'ai-anchor'; anchorId: string } | { kind: 'panel-anchor'; panelId: string; anchorId: string }) => void;
   onUpdateGuidePanel?: (guideId: string, patch: { x: number; y: number; width: number; height: number }, commit?: boolean) => void;
   onToggleBubbleCandidate?: (candidateId: string) => void;
   onWheelScalePanelImage?: (panelId: string, delta: number) => void;
@@ -60,10 +74,13 @@ interface ComicCanvasProps {
   onMoveInpaintAnchor?: (anchorId: string, x: number, y: number) => void;
   onAddPanel: (points: ComicPoint[]) => void;
   onSliceAtLine: (start: ComicPoint, end: ComicPoint) => void;
-  onCommitStroke: (stroke: ComicStroke) => void;
+  onCommitStroke: (stroke: ComicStroke, drawingLayerId?: string) => void;
   onAddBubbleAt: (point: ComicPoint) => void;
   onAddTextAt: (point: ComicPoint) => void;
   onAddStickerAt: (point: ComicPoint) => void;
+  onUpdateBubble?: (id: string, updater: (item: ComicBubbleItem) => ComicBubbleItem, commit?: boolean) => void;
+  onDuplicateBubble?: (id: string) => void;
+  onDeleteBubble?: (id: string) => void;
   onMoveBubble: (id: string, x: number, y: number, commit?: boolean) => void;
   onResizeBubble: (id: string, width: number, height: number, commit?: boolean) => void;
   onEditBubbleText: (id: string, text: string, commit?: boolean) => void;
@@ -72,7 +89,10 @@ interface ComicCanvasProps {
   onEditFreeText: (id: string, text: string, commit?: boolean) => void;
   onMoveSticker: (id: string, x: number, y: number, commit?: boolean) => void;
   onResizeSticker: (id: string, width: number, height: number, commit?: boolean) => void;
+  onUpdateImageLayer?: (id: string, updater: (item: ComicImageLayerItem) => ComicImageLayerItem, commit?: boolean) => void;
 }
+
+type ResizeHandleDir = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 type DragAction =
   | { kind: 'pan-viewport'; startClientX: number; startClientY: number; startScrollLeft: number; startScrollTop: number }
@@ -81,7 +101,9 @@ type DragAction =
   | { kind: 'vertex'; panelId: string; vertexIndex: number }
   | { kind: 'rotate-panel'; panelId: string; cx: number; cy: number; startAngle: number; origRotation: number }
   | { kind: 'move-anchor'; panelId: string; anchorId: string }
+  | { kind: 'resize-panel-anchor-bubble'; panelId: string; anchorId: string; cx: number; cy: number }
   | { kind: 'move-ai-anchor'; anchorId: string }
+  | { kind: 'resize-ai-anchor-bubble'; anchorId: string; cx: number; cy: number }
   | { kind: 'move-guide-panel'; guideId: string; dx: number; dy: number; width: number; height: number }
   | { kind: 'resize-guide-panel'; guideId: string; origX: number; origY: number }
   | { kind: 'draw-inpaint'; startPoint: ComicPoint; currentPoint: ComicPoint }
@@ -91,17 +113,85 @@ type DragAction =
   | { kind: 'draw-panel'; startPoint: ComicPoint; currentPoint: ComicPoint }
   | { kind: 'slice'; startPoint: ComicPoint; currentPoint: ComicPoint }
   | { kind: 'move-bubble'; id: string; dx: number; dy: number }
-  | { kind: 'resize-bubble'; id: string; origX: number; origY: number }
+  | { kind: 'resize-bubble'; id: string; handle: ResizeHandleDir; startPoint: ComicPoint; origX: number; origY: number; origW: number; origH: number }
+  | { kind: 'rotate-bubble'; id: string; cx: number; cy: number; startAngle: number; origRotation: number }
   | { kind: 'move-bubble-tail'; id: string }
   | { kind: 'move-text'; id: string; dx: number; dy: number }
   | { kind: 'move-sticker'; id: string; dx: number; dy: number }
   | { kind: 'resize-sticker'; id: string; origX: number; origY: number }
-  | { kind: 'stroke'; stroke: ComicStroke };
+  | { kind: 'move-image-layer'; id: string; dx: number; dy: number }
+  | { kind: 'resize-image-layer'; id: string; origX: number; origY: number }
+  | { kind: 'stroke'; drawingLayerId: string; stroke: ComicStroke };
 
 type InlineEditState =
   | { kind: 'bubble'; id: string; value: string }
   | { kind: 'text'; id: string; value: string }
+  | { kind: 'ai-anchor-bubble'; anchorId: string; value: string }
+  | { kind: 'panel-anchor-bubble'; panelId: string; anchorId: string; value: string }
   | null;
+
+const blendModeToCss = (mode: ComicBlendMode): React.CSSProperties['mixBlendMode'] =>
+  mode === 'normal' ? 'normal' : mode;
+
+/** 独立手绘图层渲染组件：支持每层独立橡皮擦（destination-out）、不透明度与 PS 混合模式。 */
+const DrawingLayerCanvas: React.FC<{
+  strokes: ComicStroke[];
+  activeStroke?: ComicStroke | null;
+  pageW: number;
+  pageH: number;
+  opacity: number;
+  blendMode: ComicBlendMode;
+}> = ({ strokes, activeStroke, pageW, pageH, opacity, blendMode }) => {
+  const ref = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const list = activeStroke ? [...strokes, activeStroke] : strokes;
+    for (const stroke of list) {
+      if (!stroke.points.length) continue;
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = stroke.size;
+      if (stroke.tool === 'eraser') {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.strokeStyle = 'rgba(0,0,0,1)';
+      } else {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = stroke.opacity;
+        ctx.strokeStyle = stroke.color;
+      }
+      ctx.beginPath();
+      stroke.points.forEach((pt, idx) => {
+        const x = pt.x * pageW;
+        const y = pt.y * pageH;
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      if (stroke.points.length === 1) {
+        ctx.lineTo(stroke.points[0].x * pageW + 0.1, stroke.points[0].y * pageH + 0.1);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  }, [strokes, activeStroke, pageW, pageH]);
+
+  return (
+    <foreignObject
+      x={0}
+      y={0}
+      width={pageW}
+      height={pageH}
+      style={{ pointerEvents: 'none', opacity, mixBlendMode: blendModeToCss(blendMode) }}
+    >
+      <canvas ref={ref} width={pageW} height={pageH} style={{ width: '100%', height: '100%', display: 'block' }} />
+    </foreignObject>
+  );
+};
 
 const renderStickerSvg = (sticker: ComicStickerItem, pageW: number, pageH: number) => {
   const cx = sticker.x * pageW;
@@ -270,6 +360,9 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   onToggleSnap,
   onUpdatePanel,
   onMoveAiAnchor,
+  onUpdateAiAnchor,
+  onDeleteAiAnchor,
+  onConvertAnchorBubbleToVector,
   onUpdateGuidePanel,
   onToggleBubbleCandidate,
   onWheelScalePanelImage,
@@ -281,6 +374,9 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   onAddBubbleAt,
   onAddTextAt,
   onAddStickerAt,
+  onUpdateBubble,
+  onDuplicateBubble,
+  onDeleteBubble,
   onMoveBubble,
   onResizeBubble,
   onEditBubbleText,
@@ -289,15 +385,28 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   onEditFreeText,
   onMoveSticker,
   onResizeSticker,
+  onUpdateImageLayer,
 }) => {
   useLanguage();
   const scrollRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
-  const drawCanvasRef = useRef<HTMLCanvasElement>(null);
   const [drag, setDrag] = useState<DragAction | null>(null);
   const [snapGuide, setSnapGuide] = useState<{ x?: number; y?: number }>({});
   const [spacePressed, setSpacePressed] = useState(false);
   const [inlineEdit, setInlineEdit] = useState<InlineEditState>(null);
+  const [shapePopoverOpen, setShapePopoverOpen] = useState(false);
+
+  const syncedDraft = useMemo(() => syncComicLayerStack(draft), [draft]);
+  const layerStack = useMemo(() => syncedDraft.layerStack || [], [syncedDraft.layerStack]);
+  const panelsLayerProps = useMemo(() => {
+    const node = layerStack.find(n => n.kind === 'panels');
+    return node ? resolveEffectiveLayerProps(node, layerStack) : { visible: true, locked: false, opacity: 1, blendMode: 'normal' as ComicBlendMode, depth: 0 };
+  }, [layerStack]);
+
+  // 切换选中目标时自动收起气泡快捷框形浮层
+  useEffect(() => {
+    setShapePopoverOpen(false);
+  }, [selection?.kind, selection && 'id' in selection ? selection.id : '']);
 
   const pageW = draft.width;
   const pageH = draft.height;
@@ -360,44 +469,6 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     return () => el.removeEventListener('wheel', onWheel);
   }, [zoom, onZoomChange, activeTool, draft.creationMode, draft.panels, selection, onWheelScalePanelImage]);
 
-  // 渲染透明手绘层笔迹
-  useEffect(() => {
-    const canvas = drawCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!draft.layers.drawing?.visible) return;
-    const allStrokes = drag?.kind === 'stroke' ? [...draft.strokes, drag.stroke] : draft.strokes;
-    for (const stroke of allStrokes) {
-      if (!stroke.points.length) continue;
-      ctx.save();
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = stroke.size;
-      if (stroke.tool === 'eraser') {
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.strokeStyle = 'rgba(0,0,0,1)';
-      } else {
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = stroke.opacity;
-        ctx.strokeStyle = stroke.color;
-      }
-      ctx.beginPath();
-      stroke.points.forEach((pt, idx) => {
-        const x = pt.x * pageW;
-        const y = pt.y * pageH;
-        if (idx === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      if (stroke.points.length === 1) {
-        ctx.lineTo(stroke.points[0].x * pageW + 0.1, stroke.points[0].y * pageH + 0.1);
-      }
-      ctx.stroke();
-      ctx.restore();
-    }
-  }, [draft.strokes, draft.layers.drawing?.visible, drag, pageW, pageH]);
-
   const toNormalizedPoint = (clientX: number, clientY: number): ComicPoint => {
     const rect = stageRef.current?.getBoundingClientRect();
     if (!rect || !rect.width || !rect.height) return { x: 0.5, y: 0.5 };
@@ -409,8 +480,18 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
 
   const commitInlineEdit = () => {
     if (!inlineEdit) return;
-    if (inlineEdit.kind === 'bubble') onEditBubbleText(inlineEdit.id, inlineEdit.value, true);
-    else onEditFreeText(inlineEdit.id, inlineEdit.value, true);
+    if (inlineEdit.kind === 'bubble') {
+      onEditBubbleText(inlineEdit.id, inlineEdit.value, true);
+    } else if (inlineEdit.kind === 'text') {
+      onEditFreeText(inlineEdit.id, inlineEdit.value, true);
+    } else if (inlineEdit.kind === 'ai-anchor-bubble') {
+      onUpdateAiAnchor?.(inlineEdit.anchorId, cur => ({ ...cur, bubbleText: inlineEdit.value }), true);
+    } else if (inlineEdit.kind === 'panel-anchor-bubble') {
+      onUpdatePanel(inlineEdit.panelId, panel => ({
+        ...panel,
+        anchors: panel.anchors.map(a => a.id === inlineEdit.anchorId ? { ...a, bubbleText: inlineEdit.value } : a),
+      }), true);
+    }
     setInlineEdit(null);
   };
 
@@ -462,10 +543,12 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     }
 
     if (activeTool === 'brush' || activeTool === 'eraser') {
-      if (draft.layers.drawing?.locked) return;
+      const targetDrawingId = resolveActiveDrawingLayerId(syncedDraft, selection);
+      if (!targetDrawingId) return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
       setDrag({
         kind: 'stroke',
+        drawingLayerId: targetDrawingId,
         stroke: {
           id: `stroke_${Date.now()}`,
           tool: activeTool,
@@ -479,7 +562,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     }
 
     if (activeTool === 'draw-panel') {
-      if (draft.creationMode !== 'manual' || draft.layers.panels?.locked) return;
+      if (draft.creationMode !== 'manual' || panelsLayerProps.locked) return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
       const snapped = snapComicPoint(pt, draft.panels, draft.snapEnabled);
       setSnapGuide({ x: snapped.guideX, y: snapped.guideY });
@@ -488,33 +571,33 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     }
 
     if (activeTool === 'slice') {
-      if (draft.creationMode !== 'manual' || draft.layers.panels?.locked) return;
+      if (draft.creationMode !== 'manual' || panelsLayerProps.locked) return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
       setDrag({ kind: 'slice', startPoint: pt, currentPoint: pt });
       return;
     }
 
     if (activeTool === 'bubble') {
-      if (!draft.layers.bubbles?.locked) onAddBubbleAt(pt);
+      onAddBubbleAt(pt);
       return;
     }
 
     if (activeTool === 'text') {
-      if (!draft.layers.bubbles?.locked) onAddTextAt(pt);
+      onAddTextAt(pt);
       return;
     }
 
     if (activeTool === 'sticker') {
-      if (!draft.layers.stickers?.locked) onAddStickerAt(pt);
+      onAddStickerAt(pt);
       return;
     }
 
-    if (draft.creationMode === 'manual' && draft.layers.panels?.visible) {
+    if (draft.creationMode === 'manual' && panelsLayerProps.visible) {
       for (let i = sortedPanels.length - 1; i >= 0; i--) {
         const panel = sortedPanels[i];
         if (hitTestPanel(pt, panel, pageW, pageH)) {
           onSelect({ kind: 'panel', id: panel.id });
-          if (!draft.layers.panels?.locked && !panel.locked) {
+          if (!panelsLayerProps.locked && !panel.locked) {
             event.currentTarget.setPointerCapture?.(event.pointerId);
             // 专门的「格内移图 (M)」或选择工具下按住 Alt 直接平移图内构图
             if ((activeTool === 'frame-image' || event.altKey) && panel.image?.url) {
@@ -723,13 +806,66 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       return;
     }
     if (drag.kind === 'resize-bubble') {
-      const nextW = Math.min(0.85, Math.max(0.1, Math.abs(pt.x - drag.origX) * 2));
-      const nextH = Math.min(0.65, Math.max(0.07, Math.abs(pt.y - drag.origY) * 2));
+      // PS 8 方向自由变换缩放（左右边只改宽，上下边只改高，四角同时改宽高）
+      const h = drag.handle;
+      const dx = pt.x - drag.startPoint.x;
+      const dy = pt.y - drag.startPoint.y;
+      let nextW = drag.origW;
+      let nextH = drag.origH;
+      if (h.includes('e')) nextW = Math.min(0.9, Math.max(0.08, drag.origW + dx * 2));
+      if (h.includes('w')) nextW = Math.min(0.9, Math.max(0.08, drag.origW - dx * 2));
+      if (h.includes('s')) nextH = Math.min(0.75, Math.max(0.06, drag.origH + dy * 2));
+      if (h.includes('n')) nextH = Math.min(0.75, Math.max(0.06, drag.origH - dy * 2));
       onResizeBubble(drag.id, Number(nextW.toFixed(3)), Number(nextH.toFixed(3)), false);
+      return;
+    }
+    if (drag.kind === 'rotate-bubble') {
+      const angle = (Math.atan2((pt.y - drag.cy) * pageH, (pt.x - drag.cx) * pageW) * 180) / Math.PI;
+      let nextRot = drag.origRotation + (angle - drag.startAngle);
+      if (Math.abs(nextRot % 15) < 2.5) nextRot = Math.round(nextRot / 15) * 15;
+      nextRot = Math.max(-45, Math.min(45, Math.round(nextRot)));
+      onUpdateBubble?.(drag.id, cur => ({ ...cur, rotation: nextRot }), false);
       return;
     }
     if (drag.kind === 'move-bubble-tail') {
       onMoveBubbleTail(drag.id, Math.min(0.99, Math.max(0.01, pt.x)), Math.min(0.99, Math.max(0.01, pt.y)), false);
+      return;
+    }
+    if (drag.kind === 'resize-ai-anchor-bubble') {
+      const nextW = Math.min(0.85, Math.max(0.1, Math.abs(pt.x - drag.cx) * 2));
+      const nextH = Math.min(0.6, Math.max(0.07, Math.abs(pt.y - drag.cy) * 2));
+      onUpdateAiAnchor?.(drag.anchorId, cur => ({
+        ...cur,
+        bubbleWidth: Number(nextW.toFixed(3)),
+        bubbleHeight: Number(nextH.toFixed(3)),
+      }), false);
+      return;
+    }
+    if (drag.kind === 'resize-panel-anchor-bubble') {
+      const nextW = Math.min(0.85, Math.max(0.1, Math.abs(pt.x - drag.cx) * 2));
+      const nextH = Math.min(0.6, Math.max(0.07, Math.abs(pt.y - drag.cy) * 2));
+      onUpdatePanel(drag.panelId, panel => ({
+        ...panel,
+        anchors: panel.anchors.map(a => a.id === drag.anchorId ? {
+          ...a,
+          bubbleWidth: Number(nextW.toFixed(3)),
+          bubbleHeight: Number(nextH.toFixed(3)),
+        } : a),
+      }), false);
+      return;
+    }
+    if (drag.kind === 'move-image-layer') {
+      onUpdateImageLayer?.(drag.id, cur => ({
+        ...cur,
+        x: Math.min(0.98, Math.max(0.02, pt.x - drag.dx)),
+        y: Math.min(0.98, Math.max(0.02, pt.y - drag.dy)),
+      }), false);
+      return;
+    }
+    if (drag.kind === 'resize-image-layer') {
+      const nextW = Math.min(1, Math.max(0.06, Math.abs(pt.x - drag.origX) * 2));
+      const nextH = Math.min(1, Math.max(0.06, Math.abs(pt.y - drag.origY) * 2));
+      onUpdateImageLayer?.(drag.id, cur => ({ ...cur, width: Number(nextW.toFixed(3)), height: Number(nextH.toFixed(3)) }), false);
       return;
     }
     if (drag.kind === 'move-text') {
@@ -749,7 +885,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   const finishDrag = () => {
     if (!drag) return;
     if (drag.kind === 'stroke' && drag.stroke.points.length > 0) {
-      onCommitStroke(drag.stroke);
+      onCommitStroke(drag.stroke, drag.drawingLayerId);
     } else if (drag.kind === 'draw-panel') {
       const minX = Math.min(drag.startPoint.x, drag.currentPoint.x);
       const minY = Math.min(drag.startPoint.y, drag.currentPoint.y);
@@ -762,11 +898,13 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       if (Math.hypot(drag.currentPoint.x - drag.startPoint.x, drag.currentPoint.y - drag.startPoint.y) > 0.04) {
         onSliceAtLine(drag.startPoint, drag.currentPoint);
       }
-    } else if (drag.kind === 'move-panel' || drag.kind === 'vertex' || drag.kind === 'rotate-panel' || drag.kind === 'pan-image' || drag.kind === 'move-anchor') {
+    } else if (drag.kind === 'move-panel' || drag.kind === 'vertex' || drag.kind === 'rotate-panel' || drag.kind === 'pan-image' || drag.kind === 'move-anchor' || drag.kind === 'resize-panel-anchor-bubble') {
       onUpdatePanel(drag.panelId, panel => panel, true);
     } else if (drag.kind === 'move-ai-anchor') {
       const anchor = draft.aiPage.anchors.find(item => item.id === drag.anchorId);
       if (anchor) onMoveAiAnchor?.(anchor.id, anchor.x, anchor.y, true);
+    } else if (drag.kind === 'resize-ai-anchor-bubble') {
+      onUpdateAiAnchor?.(drag.anchorId, cur => cur, true);
     } else if (drag.kind === 'move-guide-panel' || drag.kind === 'resize-guide-panel') {
       const gp = draft.aiPage.guidePanels.find(item => item.id === drag.guideId);
       if (gp) onUpdateGuidePanel?.(gp.id, { x: gp.x, y: gp.y, width: gp.width, height: gp.height }, true);
@@ -776,9 +914,13 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     } else if (drag.kind === 'resize-bubble') {
       const b = draft.bubbles.find(item => item.id === drag.id);
       if (b) onResizeBubble(b.id, b.width, b.height, true);
+    } else if (drag.kind === 'rotate-bubble') {
+      onUpdateBubble?.(drag.id, cur => cur, true);
     } else if (drag.kind === 'move-bubble-tail') {
       const b = draft.bubbles.find(item => item.id === drag.id);
       if (b) onMoveBubbleTail(b.id, b.tailX, b.tailY, true);
+    } else if (drag.kind === 'move-image-layer' || drag.kind === 'resize-image-layer') {
+      onUpdateImageLayer?.(drag.id, cur => cur, true);
     } else if (drag.kind === 'move-text') {
       const txt = draft.texts.find(item => item.id === drag.id);
       if (txt) onMoveText(txt.id, txt.x, txt.y, true);
@@ -793,13 +935,11 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     setSnapGuide({});
   };
 
-  const orderedLayers = (['panels', 'drawing', 'bubbles', 'stickers'] as ComicLayerId[])
-    .filter(id => draft.layers[id]?.visible !== false)
-    .sort((a, b) => (draft.layers[a]?.order ?? 0) - (draft.layers[b]?.order ?? 0));
-
   const selectedPanel = selection?.kind === 'panel'
     ? draft.panels.find(p => p.id === selection.id)
-    : undefined;
+    : selection?.kind === 'panel-anchor'
+      ? draft.panels.find(p => p.id === selection.panelId)
+      : undefined;
 
   const sliceTargetIds = useMemo(() => {
     if (drag?.kind !== 'slice') return new Set<string>();
@@ -834,20 +974,163 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
             ? 'cursor-copy'
             : 'cursor-default';
 
-  const inlineEditTarget = inlineEdit
-    ? inlineEdit.kind === 'bubble'
-      ? draft.bubbles.find(b => b.id === inlineEdit.id)
-      : draft.texts.find(item => item.id === inlineEdit.id)
-    : undefined;
-
   const hasRenderedImages = draft.creationMode === 'ai-page'
     ? Boolean(
       draft.aiPage.generatedPageImage?.url
       || draft.aiPage.zoneImages?.['0']?.url
       || draft.aiPage.zoneImages?.['1']?.url
+      || (syncedDraft.imageLayers?.length ?? 0) > 0
       || livePreviewImage,
     )
-    : (draft.panels.some(p => Boolean(p.image?.url)) || Boolean(livePreviewImage));
+    : (draft.panels.some(p => Boolean(p.image?.url)) || (syncedDraft.imageLayers?.length ?? 0) > 0 || Boolean(livePreviewImage));
+
+  const drawingMap = useMemo(() => new Map((syncedDraft.drawingLayers || []).map(d => [d.id, d])), [syncedDraft.drawingLayers]);
+  const bubbleMap = useMemo(() => new Map(draft.bubbles.map(b => [b.id, b])), [draft.bubbles]);
+  const textMap = useMemo(() => new Map(draft.texts.map(t => [t.id, t])), [draft.texts]);
+  const stickerMap = useMemo(() => new Map(draft.stickers.map(s => [s.id, s])), [draft.stickers]);
+  const imageLayerMap = useMemo(() => new Map((syncedDraft.imageLayers || []).map(img => [img.id, img])), [syncedDraft.imageLayers]);
+
+  // 选中气泡（正式矢量气泡 OR 可视化气泡锚点）用于画布上的 PS 上下文悬浮迷你工具条
+  const activeFloatingBubble = useMemo(() => {
+    if (selection?.kind === 'bubble') {
+      const b = bubbleMap.get(selection.id);
+      if (b) {
+        return {
+          mode: 'vector' as const,
+          id: b.id,
+          x: b.x,
+          y: b.y,
+          width: b.width,
+          height: b.height,
+          shape: b.shape,
+          writingMode: b.writingMode,
+          hasTail: b.hasTail,
+          fontSize: b.fontSize,
+        };
+      }
+    }
+    if (selection?.kind === 'ai-anchor') {
+      const a = draft.aiPage.anchors.find(item => item.id === selection.id && item.kind === 'bubble');
+      if (a) {
+        return {
+          mode: 'ai-anchor' as const,
+          id: a.id,
+          x: a.x,
+          y: a.y,
+          width: a.bubbleWidth ?? 0.24,
+          height: a.bubbleHeight ?? 0.14,
+          shape: (a.bubbleShape || 'soft') as ComicBubbleShape,
+          writingMode: a.bubbleWritingMode || 'vertical',
+          hasTail: true,
+          fontSize: a.bubbleFontSize ?? 20,
+        };
+      }
+    }
+    if (selection?.kind === 'panel-anchor') {
+      const p = draft.panels.find(item => item.id === selection.panelId);
+      const a = p?.anchors.find(item => item.id === selection.id && item.kind === 'bubble');
+      if (p && a) {
+        const pb = getPanelBoundingBox(p.points, 1, 1);
+        return {
+          mode: 'panel-anchor' as const,
+          panelId: p.id,
+          id: a.id,
+          x: pb.minX + a.x * pb.width,
+          y: pb.minY + a.y * pb.height,
+          width: a.bubbleWidth ?? Math.min(0.45, Math.max(0.18, pb.width * 0.48)),
+          height: a.bubbleHeight ?? Math.min(0.32, Math.max(0.11, pb.height * 0.34)),
+          shape: (a.bubbleShape || 'soft') as ComicBubbleShape,
+          writingMode: a.bubbleWritingMode || 'vertical',
+          hasTail: true,
+          fontSize: a.bubbleFontSize ?? 19,
+        };
+      }
+    }
+    return null;
+  }, [bubbleMap, draft.aiPage.anchors, draft.panels, selection]);
+
+  // 所见即所得原地编辑目标定位（支持正式矢量气泡、自由文字、AI/手动气泡锚点）
+  const inlineEditTarget = useMemo(() => {
+    if (!inlineEdit) return null;
+    if (inlineEdit.kind === 'bubble') {
+      const b = bubbleMap.get(inlineEdit.id);
+      if (!b) return null;
+      const bw = b.width * pageW;
+      const bh = b.height * pageH;
+      const fontSize = computeAutoFitFontSize(inlineEdit.value || b.text, b.fontSize, bw * 0.68, bh * 0.66, b.writingMode);
+      return {
+        x: b.x,
+        y: b.y,
+        width: b.width * 0.72,
+        height: b.height * 0.68,
+        fontFamily: resolveComicFont(b.fontFamily).cssFamily,
+        fontSize: Math.max(11, Math.round(fontSize * zoom)),
+        color: b.textColor || '#111827',
+        writingMode: b.writingMode,
+        rotation: b.rotation || 0,
+        transparent: true,
+      };
+    }
+    if (inlineEdit.kind === 'text') {
+      const txt = textMap.get(inlineEdit.id);
+      if (!txt) return null;
+      return {
+        x: txt.x,
+        y: txt.y,
+        width: 0.28,
+        height: 0.1,
+        fontFamily: resolveComicFont(txt.fontFamily).cssFamily,
+        fontSize: Math.max(12, Math.round(txt.fontSize * zoom)),
+        color: txt.color || '#111827',
+        writingMode: txt.writingMode || 'horizontal',
+        rotation: txt.rotation || 0,
+        transparent: false,
+      };
+    }
+    if (inlineEdit.kind === 'ai-anchor-bubble') {
+      const a = draft.aiPage.anchors.find(item => item.id === inlineEdit.anchorId);
+      if (!a) return null;
+      const w = a.bubbleWidth ?? 0.24;
+      const h = a.bubbleHeight ?? 0.14;
+      const writingMode = a.bubbleWritingMode || 'vertical';
+      const fontSize = computeAutoFitFontSize(inlineEdit.value || a.bubbleText || '', a.bubbleFontSize ?? 20, w * pageW * 0.68, h * pageH * 0.66, writingMode);
+      return {
+        x: a.x,
+        y: a.y,
+        width: w * 0.72,
+        height: h * 0.68,
+        fontFamily: resolveComicFont('comic-sans').cssFamily,
+        fontSize: Math.max(11, Math.round(fontSize * zoom)),
+        color: '#111827',
+        writingMode,
+        rotation: 0,
+        transparent: true,
+      };
+    }
+    if (inlineEdit.kind === 'panel-anchor-bubble') {
+      const p = draft.panels.find(item => item.id === inlineEdit.panelId);
+      const a = p?.anchors.find(item => item.id === inlineEdit.anchorId);
+      if (!p || !a) return null;
+      const pb = getPanelBoundingBox(p.points, 1, 1);
+      const w = a.bubbleWidth ?? Math.min(0.45, Math.max(0.18, pb.width * 0.48));
+      const h = a.bubbleHeight ?? Math.min(0.32, Math.max(0.11, pb.height * 0.34));
+      const writingMode = a.bubbleWritingMode || 'vertical';
+      const fontSize = computeAutoFitFontSize(inlineEdit.value || a.bubbleText || '', a.bubbleFontSize ?? 19, w * pageW * 0.68, h * pageH * 0.66, writingMode);
+      return {
+        x: pb.minX + a.x * pb.width,
+        y: pb.minY + a.y * pb.height,
+        width: w * 0.72,
+        height: h * 0.68,
+        fontFamily: resolveComicFont('comic-sans').cssFamily,
+        fontSize: Math.max(11, Math.round(fontSize * zoom)),
+        color: '#111827',
+        writingMode,
+        rotation: 0,
+        transparent: true,
+      };
+    }
+    return null;
+  }, [bubbleMap, draft.aiPage.anchors, draft.panels, inlineEdit, pageH, pageW, textMap, zoom]);
 
   return (
     <div
@@ -901,8 +1184,16 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                 ))}
               </defs>
 
-              {orderedLayers.map(layerId => {
-                if (layerId === 'panels') {
+              {layerStack.map(layerNode => {
+                if (layerNode.kind === 'group') return null;
+                const eff = resolveEffectiveLayerProps(layerNode, layerStack);
+                if (!eff.visible || eff.opacity <= 0) return null;
+                const layerStyle: React.CSSProperties = {
+                  opacity: eff.opacity,
+                  mixBlendMode: blendModeToCss(eff.blendMode),
+                };
+
+                if (layerNode.kind === 'panels') {
                   if (draft.creationMode === 'ai-page') {
                     const aiPage = draft.aiPage;
                     const displayBaseUrl = comparingOriginalAiImage && aiPage.originalGeneratedPageImage?.url
@@ -912,7 +1203,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                     const showGuides = aiPage.showGuideOverlay || !displayBaseUrl;
                     const activeZoneRect = aiZonePlan?.zones[generatingAiZoneIndex ?? 0]?.rect || { x: 0, y: 0, width: 1, height: 1 };
                     return (
-                      <g key="panels" clipPath="url(#comic-page-bounds)">
+                      <g key={layerNode.id} clipPath="url(#comic-page-bounds)" style={layerStyle}>
                         {displayBaseUrl ? (
                           <image
                             href={displayBaseUrl}
@@ -1146,7 +1437,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                     );
                   }
                   return (
-                    <g key="panels">
+                    <g key={layerNode.id} style={layerStyle}>
                       {sortedPanels.map((panel, panelOrderIdx) => {
                         const bounds = getPanelBoundingBox(panel.points, pageW, pageH);
                         const isSelected = selection?.kind === 'panel' && selection.id === panel.id;
@@ -1238,328 +1529,652 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                   );
                 }
 
-                if (layerId === 'bubbles') {
+                if (layerNode.kind === 'drawing' && layerNode.refId) {
+                  const dl = drawingMap.get(layerNode.refId);
+                  if (!dl) return null;
+                  const activeStroke = drag?.kind === 'stroke' && drag.drawingLayerId === dl.id ? drag.stroke : null;
+                  if (dl.strokes.length === 0 && !activeStroke) return null;
                   return (
-                    <g key="bubbles">
-                      {draft.bubbles.map(bubble => {
-                        const cx = bubble.x * pageW;
-                        const cy = bubble.y * pageH;
-                        const rx = (bubble.width * pageW) / 2;
-                        const ry = (bubble.height * pageH) / 2;
-                        const tx = bubble.tailX * pageW;
-                        const ty = bubble.tailY * pageH;
-                        const selected = selection?.kind === 'bubble' && selection.id === bubble.id;
-                        const isInlineEditing = inlineEdit?.kind === 'bubble' && inlineEdit.id === bubble.id;
-                        const isTransparentFill = !bubble.fillColor || bubble.fillColor === 'transparent';
-                        const strokeColor = selected ? '#4f46e5' : (bubble.strokeWidth > 0 ? bubble.strokeColor : 'none');
-                        const strokeW = selected ? Math.max(bubble.strokeWidth, 2) : bubble.strokeWidth;
+                    <DrawingLayerCanvas
+                      key={layerNode.id}
+                      strokes={dl.strokes}
+                      activeStroke={activeStroke}
+                      pageW={pageW}
+                      pageH={pageH}
+                      opacity={eff.opacity}
+                      blendMode={eff.blendMode}
+                    />
+                  );
+                }
 
-                        let localTx = tx;
-                        let localTy = ty;
-                        if (bubble.rotation) {
-                          const rad = (-bubble.rotation * Math.PI) / 180;
-                          const dx = tx - cx;
-                          const dy = ty - cy;
-                          localTx = cx + dx * Math.cos(rad) - dy * Math.sin(rad);
-                          localTy = cy + dx * Math.sin(rad) + dy * Math.cos(rad);
-                        }
-
-                        const model = buildComicBubbleRenderModel(cx, cy, rx, ry, bubble.shape, bubble.id, {
-                          enabled: bubble.hasTail && !isTransparentFill,
-                          tx: localTx,
-                          ty: localTy,
-                        });
-                        const fontMeta = resolveComicFont(bubble.fontFamily);
-                        const fittedSize = computeAutoFitFontSize(
-                          bubble.text,
-                          bubble.fontSize,
-                          rx * 1.54,
-                          ry * 1.54,
-                          bubble.writingMode,
-                        );
-                        return (
-                          <g
-                            key={bubble.id}
-                            className="pointer-events-auto cursor-move"
-                            onDoubleClick={event => {
-                              if (draft.layers.bubbles?.locked) return;
-                              event.stopPropagation();
-                              onSelect({ kind: 'bubble', id: bubble.id });
-                              setInlineEdit({ kind: 'bubble', id: bubble.id, value: bubble.text });
-                            }}
+                if (layerNode.kind === 'image' && layerNode.refId) {
+                  const imgLayer = imageLayerMap.get(layerNode.refId);
+                  if (!imgLayer) return null;
+                  const selected = selection?.kind === 'image' && selection.id === imgLayer.id;
+                  const cx = imgLayer.x * pageW;
+                  const cy = imgLayer.y * pageH;
+                  const w = imgLayer.width * pageW;
+                  const h = imgLayer.height * pageH;
+                  return (
+                    <g
+                      key={layerNode.id}
+                      style={layerStyle}
+                      transform={imgLayer.rotation ? `rotate(${imgLayer.rotation} ${cx} ${cy})` : undefined}
+                      className="pointer-events-auto cursor-move"
+                      onPointerDown={event => {
+                        if (isPanningMode || activeTool !== 'select' || eff.locked) return;
+                        event.stopPropagation();
+                        const pt = toNormalizedPoint(event.clientX, event.clientY);
+                        onSelect({ kind: 'image', id: imgLayer.id });
+                        stageRef.current?.setPointerCapture?.(event.pointerId);
+                        setDrag({ kind: 'move-image-layer', id: imgLayer.id, dx: pt.x - imgLayer.x, dy: pt.y - imgLayer.y });
+                      }}
+                    >
+                      <image
+                        href={imgLayer.url}
+                        x={cx - w / 2}
+                        y={cy - h / 2}
+                        width={w}
+                        height={h}
+                        preserveAspectRatio="xMidYMid meet"
+                      />
+                      {selected && !eff.locked && (
+                        <>
+                          <rect
+                            x={cx - w / 2}
+                            y={cy - h / 2}
+                            width={w}
+                            height={h}
+                            fill="none"
+                            stroke="#4f46e5"
+                            strokeWidth={2}
+                          />
+                          <rect
+                            x={cx + w / 2 - 7}
+                            y={cy + h / 2 - 7}
+                            width={14}
+                            height={14}
+                            rx={3}
+                            fill="#4f46e5"
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                            className="cursor-nwse-resize"
                             onPointerDown={event => {
-                              if (isPanningMode || activeTool !== 'select' || draft.layers.bubbles?.locked) return;
                               event.stopPropagation();
-                              const pt = toNormalizedPoint(event.clientX, event.clientY);
-                              onSelect({ kind: 'bubble', id: bubble.id });
                               stageRef.current?.setPointerCapture?.(event.pointerId);
-                              setDrag({ kind: 'move-bubble', id: bubble.id, dx: pt.x - bubble.x, dy: pt.y - bubble.y });
+                              setDrag({ kind: 'resize-image-layer', id: imgLayer.id, origX: imgLayer.x, origY: imgLayer.y });
                             }}
-                          >
-                            <g transform={bubble.rotation ? `rotate(${bubble.rotation} ${cx} ${cy})` : undefined}>
-                              {/* FramePlanner2 意识放射细线 */}
-                              {model.radialLines && strokeW > 0 && (
-                                <g opacity={0.72}>
-                                  {model.radialLines.map((seg, idx) => (
-                                    <line
-                                      key={idx}
-                                      x1={seg.x1}
-                                      y1={seg.y1}
-                                      x2={seg.x2}
-                                      y2={seg.y2}
-                                      stroke={strokeColor}
-                                      strokeWidth={Math.max(1, strokeW * 0.42)}
-                                      strokeLinecap="round"
-                                    />
-                                  ))}
-                                </g>
-                              )}
-
-                              {/* 先双倍描边（尾巴 + 主体）再内部填充覆盖，实现 FramePlanner2 级无缝尾巴融合 */}
-                              {model.tailPath && strokeW > 0 && model.strokeBody && (
-                                <path
-                                  d={model.tailPath}
-                                  fill="none"
-                                  stroke={strokeColor}
-                                  strokeWidth={strokeW * 2}
-                                  strokeLinejoin="round"
-                                  strokeLinecap="round"
-                                />
-                              )}
-                              {strokeW > 0 && (model.strokeBody || selected) && (
-                                <path
-                                  d={model.bodyPath}
-                                  fill="none"
-                                  stroke={strokeColor}
-                                  strokeWidth={model.strokeBody ? (isTransparentFill ? strokeW : strokeW * 2) : 1.5}
-                                  strokeLinejoin="round"
-                                  strokeLinecap="round"
-                                  strokeDasharray={(!model.strokeBody || (selected && bubble.strokeWidth <= 0)) ? '6 4' : undefined}
-                                />
-                              )}
-                              {model.tailPath && !isTransparentFill && (
-                                <path d={model.tailPath} fill={bubble.fillColor} stroke="none" />
-                              )}
-                              {!isTransparentFill && (
-                                <path d={model.bodyPath} fill={bubble.fillColor} stroke="none" />
-                              )}
-
-                              {/* FramePlanner2 思考云朵 4 颗渐变尾泡 */}
-                              {model.trailPaths && model.trailPaths.map((tp, idx) => (
-                                <g key={idx}>
-                                  {strokeW > 0 && (
-                                    <path
-                                      d={tp}
-                                      fill="none"
-                                      stroke={strokeColor}
-                                      strokeWidth={strokeW * 1.6}
-                                      strokeLinejoin="round"
-                                    />
-                                  )}
-                                  {!isTransparentFill && (
-                                    <path d={tp} fill={bubble.fillColor} stroke="none" />
-                                  )}
-                                </g>
-                              ))}
-
-                              {/* FramePlanner2 手绘延伸单线 / 心理双线 */}
-                              {model.overrunLines && strokeW > 0 && (
-                                <g>
-                                  {model.overrunLines.map((seg, idx) => (
-                                    <line
-                                      key={idx}
-                                      x1={seg.x1}
-                                      y1={seg.y1}
-                                      x2={seg.x2}
-                                      y2={seg.y2}
-                                      stroke={strokeColor}
-                                      strokeWidth={Math.max(1.2, strokeW * 0.85)}
-                                      strokeLinecap="round"
-                                      opacity={0.92}
-                                    />
-                                  ))}
-                                </g>
-                              )}
-
-                              {!isInlineEditing && (
-                                <foreignObject x={cx - rx * 0.78} y={cy - ry * 0.78} width={rx * 1.56} height={ry * 1.56}>
-                                  <div
-                                    style={{
-                                      width: '100%',
-                                      height: '100%',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      textAlign: 'center',
-                                      color: bubble.textColor,
-                                      fontFamily: fontMeta.cssFamily,
-                                      fontSize: `${fittedSize}px`,
-                                      fontWeight: fontMeta.defaultWeight,
-                                      lineHeight: 1.22,
-                                      writingMode: bubble.writingMode === 'vertical' ? 'vertical-rl' : 'horizontal-tb',
-                                      wordBreak: 'break-word',
-                                      overflow: 'hidden',
-                                      userSelect: 'none',
-                                    }}
-                                  >
-                                    {bubble.text}
-                                  </div>
-                                </foreignObject>
-                              )}
-                            </g>
-                            {selected && bubble.hasTail && model.supportsTail && (
-                              <circle
-                                cx={tx}
-                                cy={ty}
-                                r={9}
-                                fill="#f59e0b"
-                                stroke="#ffffff"
-                                strokeWidth={2.5}
-                                className="cursor-grab"
-                                onPointerDown={event => {
-                                  event.stopPropagation();
-                                  stageRef.current?.setPointerCapture?.(event.pointerId);
-                                  setDrag({ kind: 'move-bubble-tail', id: bubble.id });
-                                }}
-                              />
-                            )}
-                            {selected && (
-                              <rect
-                                x={cx + rx - 7}
-                                y={cy + ry - 7}
-                                width={14}
-                                height={14}
-                                rx={3}
-                                fill="#4f46e5"
-                                stroke="#ffffff"
-                                strokeWidth={2}
-                                className="cursor-nwse-resize"
-                                onPointerDown={event => {
-                                  event.stopPropagation();
-                                  stageRef.current?.setPointerCapture?.(event.pointerId);
-                                  setDrag({ kind: 'resize-bubble', id: bubble.id, origX: bubble.x, origY: bubble.y });
-                                }}
-                              />
-                            )}
-                          </g>
-                        );
-                      })}
-
-                      {draft.texts.map(item => {
-                        const cx = item.x * pageW;
-                        const cy = item.y * pageH;
-                        const selected = selection?.kind === 'text' && selection.id === item.id;
-                        const isInlineEditing = inlineEdit?.kind === 'text' && inlineEdit.id === item.id;
-                        return (
-                          <g
-                            key={item.id}
-                            transform={`translate(${cx} ${cy}) rotate(${item.rotation})`}
-                            className="pointer-events-auto cursor-move"
-                            onDoubleClick={event => {
-                              if (draft.layers.bubbles?.locked) return;
-                              event.stopPropagation();
-                              onSelect({ kind: 'text', id: item.id });
-                              setInlineEdit({ kind: 'text', id: item.id, value: item.text });
-                            }}
-                            onPointerDown={event => {
-                              if (isPanningMode || activeTool !== 'select' || draft.layers.bubbles?.locked) return;
-                              event.stopPropagation();
-                              const pt = toNormalizedPoint(event.clientX, event.clientY);
-                              onSelect({ kind: 'text', id: item.id });
-                              stageRef.current?.setPointerCapture?.(event.pointerId);
-                              setDrag({ kind: 'move-text', id: item.id, dx: pt.x - item.x, dy: pt.y - item.y });
-                            }}
-                          >
-                            {!isInlineEditing && (
-                              <text
-                                x={0}
-                                y={0}
-                                textAnchor="middle"
-                                dominantBaseline="central"
-                                fontFamily={resolveComicFont(item.fontFamily || 'impact').cssFamily}
-                                fontSize={item.fontSize}
-                                fontWeight={item.bold ? 900 : 600}
-                                fill={item.color}
-                                stroke={item.strokeColor || undefined}
-                                strokeWidth={item.strokeColor ? Math.max(2, item.fontSize * 0.14) : 0}
-                                strokeLinejoin="round"
-                                paintOrder="stroke"
-                                style={{ writingMode: item.writingMode === 'vertical' ? 'vertical-rl' : 'horizontal-tb' }}
-                              >
-                                {item.text || t('双击编辑文字')}
-                              </text>
-                            )}
-                            {selected && (
-                              <circle cx={0} cy={-item.fontSize * 0.9} r={6} fill="#4f46e5" stroke="#fff" strokeWidth={2} />
-                            )}
-                          </g>
-                        );
-                      })}
+                          />
+                        </>
+                      )}
                     </g>
                   );
                 }
 
-                if (layerId === 'stickers') {
+                if (layerNode.kind === 'bubble' && layerNode.refId) {
+                  const bubble = bubbleMap.get(layerNode.refId);
+                  if (!bubble) return null;
+                  const cx = bubble.x * pageW;
+                  const cy = bubble.y * pageH;
+                  const rx = (bubble.width * pageW) / 2;
+                  const ry = (bubble.height * pageH) / 2;
+                  const tx = bubble.tailX * pageW;
+                  const ty = bubble.tailY * pageH;
+                  const selected = selection?.kind === 'bubble' && selection.id === bubble.id;
+                  const isInlineEditing = inlineEdit?.kind === 'bubble' && inlineEdit.id === bubble.id;
+                  const isTransparentFill = !bubble.fillColor || bubble.fillColor === 'transparent';
+                  const strokeColor = bubble.strokeWidth > 0 ? bubble.strokeColor : 'none';
+                  const strokeW = bubble.strokeWidth;
+
+                  let localTx = tx;
+                  let localTy = ty;
+                  if (bubble.rotation) {
+                    const rad = (-bubble.rotation * Math.PI) / 180;
+                    const dx = tx - cx;
+                    const dy = ty - cy;
+                    localTx = cx + dx * Math.cos(rad) - dy * Math.sin(rad);
+                    localTy = cy + dx * Math.sin(rad) + dy * Math.cos(rad);
+                  }
+
+                  const model = buildComicBubbleRenderModel(cx, cy, rx, ry, bubble.shape, bubble.id, {
+                    enabled: bubble.hasTail && !isTransparentFill,
+                    tx: localTx,
+                    ty: localTy,
+                  });
+                  const fontMeta = resolveComicFont(bubble.fontFamily);
+                  const fittedSize = computeAutoFitFontSize(
+                    bubble.text,
+                    bubble.fontSize,
+                    rx * 1.54,
+                    ry * 1.54,
+                    bubble.writingMode,
+                  );
+
+                  const resizeHandles: Array<{ dir: ResizeHandleDir; hx: number; hy: number; cursor: string }> = [
+                    { dir: 'nw', hx: cx - rx, hy: cy - ry, cursor: 'cursor-nwse-resize' },
+                    { dir: 'n', hx: cx, hy: cy - ry, cursor: 'cursor-ns-resize' },
+                    { dir: 'ne', hx: cx + rx, hy: cy - ry, cursor: 'cursor-nesw-resize' },
+                    { dir: 'e', hx: cx + rx, hy: cy, cursor: 'cursor-ew-resize' },
+                    { dir: 'se', hx: cx + rx, hy: cy + ry, cursor: 'cursor-nwse-resize' },
+                    { dir: 's', hx: cx, hy: cy + ry, cursor: 'cursor-ns-resize' },
+                    { dir: 'sw', hx: cx - rx, hy: cy + ry, cursor: 'cursor-nesw-resize' },
+                    { dir: 'w', hx: cx - rx, hy: cy, cursor: 'cursor-ew-resize' },
+                  ];
+
                   return (
-                    <g key="stickers">
-                      {draft.stickers.map(sticker => {
-                        const selected = selection?.kind === 'sticker' && selection.id === sticker.id;
-                        const cx = sticker.x * pageW;
-                        const cy = sticker.y * pageH;
-                        const w = sticker.width * pageW;
-                        const h = sticker.height * pageH;
-                        return (
-                          <g
-                            key={sticker.id}
-                            className="pointer-events-auto cursor-move"
-                            onPointerDown={event => {
-                              if (isPanningMode || activeTool !== 'select' || draft.layers.stickers?.locked) return;
-                              event.stopPropagation();
-                              const pt = toNormalizedPoint(event.clientX, event.clientY);
-                              onSelect({ kind: 'sticker', id: sticker.id });
-                              stageRef.current?.setPointerCapture?.(event.pointerId);
-                              setDrag({ kind: 'move-sticker', id: sticker.id, dx: pt.x - sticker.x, dy: pt.y - sticker.y });
-                            }}
-                          >
-                            {renderStickerSvg(sticker, pageW, pageH)}
-                            {selected && (
-                              <>
-                                <rect
-                                  x={cx - w / 2}
-                                  y={cy - h / 2}
-                                  width={w}
-                                  height={h}
-                                  fill="none"
-                                  stroke="#4f46e5"
-                                  strokeWidth={2}
-                                  strokeDasharray="6 4"
-                                />
-                                <rect
-                                  x={cx + w / 2 - 7}
-                                  y={cy + h / 2 - 7}
-                                  width={14}
-                                  height={14}
-                                  rx={3}
-                                  fill="#4f46e5"
-                                  stroke="#ffffff"
-                                  strokeWidth={2}
-                                  className="cursor-nwse-resize"
-                                  onPointerDown={event => {
-                                    event.stopPropagation();
-                                    stageRef.current?.setPointerCapture?.(event.pointerId);
-                                    setDrag({ kind: 'resize-sticker', id: sticker.id, origX: sticker.x, origY: sticker.y });
-                                  }}
-                                />
-                              </>
+                    <g
+                      key={layerNode.id}
+                      style={layerStyle}
+                      className={eff.locked ? 'pointer-events-none' : 'pointer-events-auto cursor-move'}
+                      onDoubleClick={event => {
+                        if (eff.locked) return;
+                        event.stopPropagation();
+                        onSelect({ kind: 'bubble', id: bubble.id });
+                        setInlineEdit({ kind: 'bubble', id: bubble.id, value: bubble.text });
+                      }}
+                      onPointerDown={event => {
+                        if (isPanningMode || activeTool !== 'select' || eff.locked) return;
+                        event.stopPropagation();
+                        const pt = toNormalizedPoint(event.clientX, event.clientY);
+                        onSelect({ kind: 'bubble', id: bubble.id });
+                        stageRef.current?.setPointerCapture?.(event.pointerId);
+                        setDrag({ kind: 'move-bubble', id: bubble.id, dx: pt.x - bubble.x, dy: pt.y - bubble.y });
+                      }}
+                    >
+                      <g transform={bubble.rotation ? `rotate(${bubble.rotation} ${cx} ${cy})` : undefined}>
+                        {model.radialLines && strokeW > 0 && (
+                          <g opacity={0.72}>
+                            {model.radialLines.map((seg, idx) => (
+                              <line
+                                key={idx}
+                                x1={seg.x1}
+                                y1={seg.y1}
+                                x2={seg.x2}
+                                y2={seg.y2}
+                                stroke={strokeColor}
+                                strokeWidth={Math.max(1, strokeW * 0.42)}
+                                strokeLinecap="round"
+                              />
+                            ))}
+                          </g>
+                        )}
+
+                        {model.tailPath && strokeW > 0 && model.strokeBody && (
+                          <path
+                            d={model.tailPath}
+                            fill="none"
+                            stroke={strokeColor}
+                            strokeWidth={strokeW * 2}
+                            strokeLinejoin="round"
+                            strokeLinecap="round"
+                          />
+                        )}
+                        {strokeW > 0 && model.strokeBody && (
+                          <path
+                            d={model.bodyPath}
+                            fill="none"
+                            stroke={strokeColor}
+                            strokeWidth={isTransparentFill ? strokeW : strokeW * 2}
+                            strokeLinejoin="round"
+                            strokeLinecap="round"
+                          />
+                        )}
+                        {model.tailPath && !isTransparentFill && (
+                          <path d={model.tailPath} fill={bubble.fillColor} stroke="none" />
+                        )}
+                        {!isTransparentFill && (
+                          <path d={model.bodyPath} fill={bubble.fillColor} stroke="none" />
+                        )}
+
+                        {model.trailPaths && model.trailPaths.map((tp, idx) => (
+                          <g key={idx}>
+                            {strokeW > 0 && (
+                              <path d={tp} fill="none" stroke={strokeColor} strokeWidth={strokeW * 1.6} strokeLinejoin="round" />
+                            )}
+                            {!isTransparentFill && (
+                              <path d={tp} fill={bubble.fillColor} stroke="none" />
                             )}
                           </g>
-                        );
-                      })}
+                        ))}
+
+                        {model.overrunLines && strokeW > 0 && (
+                          <g>
+                            {model.overrunLines.map((seg, idx) => (
+                              <line
+                                key={idx}
+                                x1={seg.x1}
+                                y1={seg.y1}
+                                x2={seg.x2}
+                                y2={seg.y2}
+                                stroke={strokeColor}
+                                strokeWidth={Math.max(1.2, strokeW * 0.85)}
+                                strokeLinecap="round"
+                                opacity={0.92}
+                              />
+                            ))}
+                          </g>
+                        )}
+
+                        {!isInlineEditing && (
+                          <foreignObject x={cx - rx * 0.78} y={cy - ry * 0.78} width={rx * 1.56} height={ry * 1.56}>
+                            <div
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                textAlign: 'center',
+                                color: bubble.textColor,
+                                fontFamily: fontMeta.cssFamily,
+                                fontSize: `${fittedSize}px`,
+                                fontWeight: fontMeta.defaultWeight,
+                                lineHeight: 1.22,
+                                writingMode: bubble.writingMode === 'vertical' ? 'vertical-rl' : 'horizontal-tb',
+                                wordBreak: 'break-word',
+                                overflow: 'hidden',
+                                userSelect: 'none',
+                              }}
+                            >
+                              {bubble.text}
+                            </div>
+                          </foreignObject>
+                        )}
+
+                        {/* PS 自由变换框：蓝色选框 + 8 方向缩放柄 + 顶部旋转柄 */}
+                        {selected && !eff.locked && !isInlineEditing && (
+                          <g>
+                            <rect
+                              x={cx - rx}
+                              y={cy - ry}
+                              width={rx * 2}
+                              height={ry * 2}
+                              fill="none"
+                              stroke="#4f46e5"
+                              strokeWidth={2}
+                              strokeDasharray={isTransparentFill ? '6 4' : undefined}
+                            />
+                            {/* 顶部旋转连杆与圆柄 */}
+                            <line x1={cx} y1={cy - ry} x2={cx} y2={cy - ry - 26} stroke="#4f46e5" strokeWidth={2} />
+                            <circle
+                              cx={cx}
+                              cy={cy - ry - 28}
+                              r={8}
+                              fill="#ffffff"
+                              stroke="#4f46e5"
+                              strokeWidth={2.5}
+                              className="cursor-grab"
+                              onPointerDown={event => {
+                                event.stopPropagation();
+                                const pt = toNormalizedPoint(event.clientX, event.clientY);
+                                const startAngle = (Math.atan2((pt.y - bubble.y) * pageH, (pt.x - bubble.x) * pageW) * 180) / Math.PI;
+                                stageRef.current?.setPointerCapture?.(event.pointerId);
+                                setDrag({
+                                  kind: 'rotate-bubble',
+                                  id: bubble.id,
+                                  cx: bubble.x,
+                                  cy: bubble.y,
+                                  startAngle,
+                                  origRotation: bubble.rotation || 0,
+                                });
+                              }}
+                            />
+                            {/* 8 方向缩放柄 */}
+                            {resizeHandles.map(handle => (
+                              <rect
+                                key={handle.dir}
+                                x={handle.hx - 5.5}
+                                y={handle.hy - 5.5}
+                                width={11}
+                                height={11}
+                                rx={2}
+                                fill="#ffffff"
+                                stroke="#4f46e5"
+                                strokeWidth={2.2}
+                                className={handle.cursor}
+                                onPointerDown={event => {
+                                  event.stopPropagation();
+                                  const pt = toNormalizedPoint(event.clientX, event.clientY);
+                                  stageRef.current?.setPointerCapture?.(event.pointerId);
+                                  setDrag({
+                                    kind: 'resize-bubble',
+                                    id: bubble.id,
+                                    handle: handle.dir,
+                                    startPoint: pt,
+                                    origX: bubble.x,
+                                    origY: bubble.y,
+                                    origW: bubble.width,
+                                    origH: bubble.height,
+                                  });
+                                }}
+                              />
+                            ))}
+                          </g>
+                        )}
+                      </g>
+
+                      {selected && !eff.locked && bubble.hasTail && model.supportsTail && !isTransparentFill && (
+                        <circle
+                          cx={tx}
+                          cy={ty}
+                          r={8.5}
+                          fill="#f59e0b"
+                          stroke="#ffffff"
+                          strokeWidth={2.5}
+                          className="cursor-grab"
+                          onPointerDown={event => {
+                            event.stopPropagation();
+                            stageRef.current?.setPointerCapture?.(event.pointerId);
+                            setDrag({ kind: 'move-bubble-tail', id: bubble.id });
+                          }}
+                        />
+                      )}
+                    </g>
+                  );
+                }
+
+                if (layerNode.kind === 'text' && layerNode.refId) {
+                  const item = textMap.get(layerNode.refId);
+                  if (!item) return null;
+                  const cx = item.x * pageW;
+                  const cy = item.y * pageH;
+                  const selected = selection?.kind === 'text' && selection.id === item.id;
+                  const isInlineEditing = inlineEdit?.kind === 'text' && inlineEdit.id === item.id;
+                  return (
+                    <g
+                      key={layerNode.id}
+                      style={layerStyle}
+                      transform={`translate(${cx} ${cy}) rotate(${item.rotation})`}
+                      className={eff.locked ? 'pointer-events-none' : 'pointer-events-auto cursor-move'}
+                      onDoubleClick={event => {
+                        if (eff.locked) return;
+                        event.stopPropagation();
+                        onSelect({ kind: 'text', id: item.id });
+                        setInlineEdit({ kind: 'text', id: item.id, value: item.text });
+                      }}
+                      onPointerDown={event => {
+                        if (isPanningMode || activeTool !== 'select' || eff.locked) return;
+                        event.stopPropagation();
+                        const pt = toNormalizedPoint(event.clientX, event.clientY);
+                        onSelect({ kind: 'text', id: item.id });
+                        stageRef.current?.setPointerCapture?.(event.pointerId);
+                        setDrag({ kind: 'move-text', id: item.id, dx: pt.x - item.x, dy: pt.y - item.y });
+                      }}
+                    >
+                      {!isInlineEditing && (
+                        <text
+                          x={0}
+                          y={0}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fontFamily={resolveComicFont(item.fontFamily || 'impact').cssFamily}
+                          fontSize={item.fontSize}
+                          fontWeight={item.bold ? 900 : 600}
+                          fill={item.color}
+                          stroke={item.strokeColor || undefined}
+                          strokeWidth={item.strokeColor ? Math.max(2, item.fontSize * 0.14) : 0}
+                          strokeLinejoin="round"
+                          paintOrder="stroke"
+                          style={{ writingMode: item.writingMode === 'vertical' ? 'vertical-rl' : 'horizontal-tb' }}
+                        >
+                          {item.text || t('双击编辑文字')}
+                        </text>
+                      )}
+                      {selected && !eff.locked && (
+                        <circle cx={0} cy={-item.fontSize * 0.9} r={6} fill="#4f46e5" stroke="#fff" strokeWidth={2} />
+                      )}
+                    </g>
+                  );
+                }
+
+                if (layerNode.kind === 'sticker' && layerNode.refId) {
+                  const sticker = stickerMap.get(layerNode.refId);
+                  if (!sticker) return null;
+                  const selected = selection?.kind === 'sticker' && selection.id === sticker.id;
+                  const cx = sticker.x * pageW;
+                  const cy = sticker.y * pageH;
+                  const w = sticker.width * pageW;
+                  const h = sticker.height * pageH;
+                  return (
+                    <g
+                      key={layerNode.id}
+                      style={layerStyle}
+                      className={eff.locked ? 'pointer-events-none' : 'pointer-events-auto cursor-move'}
+                      onPointerDown={event => {
+                        if (isPanningMode || activeTool !== 'select' || eff.locked) return;
+                        event.stopPropagation();
+                        const pt = toNormalizedPoint(event.clientX, event.clientY);
+                        onSelect({ kind: 'sticker', id: sticker.id });
+                        stageRef.current?.setPointerCapture?.(event.pointerId);
+                        setDrag({ kind: 'move-sticker', id: sticker.id, dx: pt.x - sticker.x, dy: pt.y - sticker.y });
+                      }}
+                    >
+                      {renderStickerSvg(sticker, pageW, pageH)}
+                      {selected && !eff.locked && (
+                        <>
+                          <rect
+                            x={cx - w / 2}
+                            y={cy - h / 2}
+                            width={w}
+                            height={h}
+                            fill="none"
+                            stroke="#4f46e5"
+                            strokeWidth={2}
+                            strokeDasharray="6 4"
+                          />
+                          <rect
+                            x={cx + w / 2 - 7}
+                            y={cy + h / 2 - 7}
+                            width={14}
+                            height={14}
+                            rx={3}
+                            fill="#4f46e5"
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                            className="cursor-nwse-resize"
+                            onPointerDown={event => {
+                              event.stopPropagation();
+                              stageRef.current?.setPointerCapture?.(event.pointerId);
+                              setDrag({ kind: 'resize-sticker', id: sticker.id, origX: sticker.x, origY: sticker.y });
+                            }}
+                          />
+                        </>
+                      )}
                     </g>
                   );
                 }
                 return null;
               })}
+
+              {/* 可视化空间气泡锚点（直接在漫画画布显示真实半透明 FramePlanner2 气泡，单击选框、双击改字，彻底取代盲点橙色圆点） */}
+              {draft.creationMode === 'ai-page' && !inpaintDraft && (draft.aiPage.showGuideOverlay || !draft.aiPage.generatedPageImage?.url) && (
+                <g>
+                  {draft.aiPage.anchors.filter(a => a.enabled && a.kind === 'bubble').map(anchor => {
+                    const cx = anchor.x * pageW;
+                    const cy = anchor.y * pageH;
+                    const rx = ((anchor.bubbleWidth ?? 0.24) * pageW) / 2;
+                    const ry = ((anchor.bubbleHeight ?? 0.14) * pageH) / 2;
+                    const shape = (anchor.bubbleShape || 'soft') as ComicBubbleShape;
+                    const writingMode = anchor.bubbleWritingMode || 'vertical';
+                    const isSelected = selection?.kind === 'ai-anchor' && selection.id === anchor.id;
+                    const isEditing = inlineEdit?.kind === 'ai-anchor-bubble' && inlineEdit.anchorId === anchor.id;
+                    const model = buildComicBubbleRenderModel(cx, cy, rx, ry, shape, `ai-anchor-${anchor.id}`);
+                    const textVal = anchor.bubbleText?.trim() || '';
+                    const fittedSize = computeAutoFitFontSize(textVal || '双击输入台词', anchor.bubbleFontSize ?? 20, rx * 1.5, ry * 1.5, writingMode);
+                    return (
+                      <g
+                        key={`vis-ai-bubble-${anchor.id}`}
+                        opacity={0.88}
+                        className="pointer-events-auto cursor-move"
+                        onDoubleClick={event => {
+                          event.stopPropagation();
+                          onSelect({ kind: 'ai-anchor', id: anchor.id });
+                          setInlineEdit({ kind: 'ai-anchor-bubble', anchorId: anchor.id, value: anchor.bubbleText || '' });
+                        }}
+                        onPointerDown={event => {
+                          if (isPanningMode || activeTool !== 'select') return;
+                          event.stopPropagation();
+                          onSelect({ kind: 'ai-anchor', id: anchor.id });
+                          stageRef.current?.setPointerCapture?.(event.pointerId);
+                          setDrag({ kind: 'move-ai-anchor', anchorId: anchor.id });
+                        }}
+                      >
+                        <path
+                          d={model.bodyPath}
+                          fill="rgba(255, 251, 235, 0.9)"
+                          stroke={isSelected ? '#4f46e5' : '#d97706'}
+                          strokeWidth={isSelected ? 3.5 : 2.5}
+                          strokeDasharray="8 5"
+                          strokeLinejoin="round"
+                        />
+                        {!isEditing && (
+                          <foreignObject x={cx - rx * 0.78} y={cy - ry * 0.78} width={rx * 1.56} height={ry * 1.56}>
+                            <div
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                textAlign: 'center',
+                                color: textVal ? '#111827' : '#9ca3af',
+                                fontSize: `${fittedSize}px`,
+                                fontWeight: 700,
+                                lineHeight: 1.22,
+                                writingMode: writingMode === 'vertical' ? 'vertical-rl' : 'horizontal-tb',
+                                wordBreak: 'break-word',
+                                overflow: 'hidden',
+                                userSelect: 'none',
+                              }}
+                            >
+                              {textVal || t('双击输入台词')}
+                            </div>
+                          </foreignObject>
+                        )}
+                        <rect x={cx - rx} y={cy - ry - 20} width={56} height={18} rx={4} fill={isSelected ? '#4f46e5' : '#d97706'} />
+                        <text x={cx - rx + 28} y={cy - ry - 11} textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={700} fill="#ffffff">
+                          {t('AI 气泡')}
+                        </text>
+                        {isSelected && (
+                          <rect
+                            x={cx + rx - 6.5}
+                            y={cy + ry - 6.5}
+                            width={13}
+                            height={13}
+                            rx={2.5}
+                            fill="#ffffff"
+                            stroke="#4f46e5"
+                            strokeWidth={2.5}
+                            className="cursor-nwse-resize"
+                            onPointerDown={event => {
+                              event.stopPropagation();
+                              stageRef.current?.setPointerCapture?.(event.pointerId);
+                              setDrag({ kind: 'resize-ai-anchor-bubble', anchorId: anchor.id, cx: anchor.x, cy: anchor.y });
+                            }}
+                          />
+                        )}
+                      </g>
+                    );
+                  })}
+                </g>
+              )}
+
+              {draft.creationMode === 'manual' && selectedPanel && (
+                <g>
+                  {selectedPanel.anchors.filter(a => a.enabled && a.kind === 'bubble').map(anchor => {
+                    const pb = getPanelBoundingBox(selectedPanel.points, 1, 1);
+                    const ax = pb.minX + anchor.x * pb.width;
+                    const ay = pb.minY + anchor.y * pb.height;
+                    const cx = ax * pageW;
+                    const cy = ay * pageH;
+                    const normW = anchor.bubbleWidth ?? Math.min(0.45, Math.max(0.18, pb.width * 0.48));
+                    const normH = anchor.bubbleHeight ?? Math.min(0.32, Math.max(0.11, pb.height * 0.34));
+                    const rx = (normW * pageW) / 2;
+                    const ry = (normH * pageH) / 2;
+                    const shape = (anchor.bubbleShape || 'soft') as ComicBubbleShape;
+                    const writingMode = anchor.bubbleWritingMode || 'vertical';
+                    const isSelected = selection?.kind === 'panel-anchor' && selection.panelId === selectedPanel.id && selection.id === anchor.id;
+                    const isEditing = inlineEdit?.kind === 'panel-anchor-bubble' && inlineEdit.panelId === selectedPanel.id && inlineEdit.anchorId === anchor.id;
+                    const model = buildComicBubbleRenderModel(cx, cy, rx, ry, shape, `panel-anchor-${anchor.id}`);
+                    const textVal = anchor.bubbleText?.trim() || '';
+                    const fittedSize = computeAutoFitFontSize(textVal || '双击输入台词', anchor.bubbleFontSize ?? 19, rx * 1.5, ry * 1.5, writingMode);
+                    return (
+                      <g
+                        key={`vis-panel-bubble-${anchor.id}`}
+                        opacity={0.88}
+                        className="pointer-events-auto cursor-move"
+                        onDoubleClick={event => {
+                          event.stopPropagation();
+                          onSelect({ kind: 'panel-anchor', panelId: selectedPanel.id, id: anchor.id });
+                          setInlineEdit({ kind: 'panel-anchor-bubble', panelId: selectedPanel.id, anchorId: anchor.id, value: anchor.bubbleText || '' });
+                        }}
+                        onPointerDown={event => {
+                          if (isPanningMode || activeTool !== 'select') return;
+                          event.stopPropagation();
+                          onSelect({ kind: 'panel-anchor', panelId: selectedPanel.id, id: anchor.id });
+                          stageRef.current?.setPointerCapture?.(event.pointerId);
+                          setDrag({ kind: 'move-anchor', panelId: selectedPanel.id, anchorId: anchor.id });
+                        }}
+                      >
+                        <path
+                          d={model.bodyPath}
+                          fill="rgba(255, 251, 235, 0.9)"
+                          stroke={isSelected ? '#4f46e5' : '#d97706'}
+                          strokeWidth={isSelected ? 3.5 : 2.5}
+                          strokeDasharray="8 5"
+                          strokeLinejoin="round"
+                        />
+                        {!isEditing && (
+                          <foreignObject x={cx - rx * 0.78} y={cy - ry * 0.78} width={rx * 1.56} height={ry * 1.56}>
+                            <div
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                textAlign: 'center',
+                                color: textVal ? '#111827' : '#9ca3af',
+                                fontSize: `${fittedSize}px`,
+                                fontWeight: 700,
+                                lineHeight: 1.22,
+                                writingMode: writingMode === 'vertical' ? 'vertical-rl' : 'horizontal-tb',
+                                wordBreak: 'break-word',
+                                overflow: 'hidden',
+                                userSelect: 'none',
+                              }}
+                            >
+                              {textVal || t('双击输入台词')}
+                            </div>
+                          </foreignObject>
+                        )}
+                        <rect x={cx - rx} y={cy - ry - 20} width={56} height={18} rx={4} fill={isSelected ? '#4f46e5' : '#d97706'} />
+                        <text x={cx - rx + 28} y={cy - ry - 11} textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={700} fill="#ffffff">
+                          {t('气泡预演')}
+                        </text>
+                        {isSelected && (
+                          <rect
+                            x={cx + rx - 6.5}
+                            y={cy + ry - 6.5}
+                            width={13}
+                            height={13}
+                            rx={2.5}
+                            fill="#ffffff"
+                            stroke="#4f46e5"
+                            strokeWidth={2.5}
+                            className="cursor-nwse-resize"
+                            onPointerDown={event => {
+                              event.stopPropagation();
+                              stageRef.current?.setPointerCapture?.(event.pointerId);
+                              setDrag({ kind: 'resize-panel-anchor-bubble', panelId: selectedPanel.id, anchorId: anchor.id, cx: ax, cy: ay });
+                            }}
+                          />
+                        )}
+                      </g>
+                    );
+                  })}
+                </g>
+              )}
 
               {snapGuide.x !== undefined && (
                 <line x1={snapGuide.x * pageW} y1={0} x2={snapGuide.x * pageW} y2={pageH} stroke="#6366f1" strokeWidth={1.5} strokeDasharray="6 4" />
@@ -1597,16 +2212,6 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                 </g>
               )}
             </svg>
-
-            <canvas
-              ref={drawCanvasRef}
-              width={pageW}
-              height={pageH}
-              className="pointer-events-none absolute inset-0 h-full w-full"
-              style={{
-                zIndex: (draft.layers.drawing?.order ?? 1) > (draft.layers.panels?.order ?? 0) ? 10 : 1,
-              }}
-            />
 
             {draft.creationMode === 'ai-page' && inpaintDraft && (
               <div className="pointer-events-none absolute inset-0 z-25 overflow-hidden">
@@ -1757,14 +2362,12 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                 ))}
 
                 {draft.aiPage.anchors.map((anchor, idx) => {
+                  // 气泡锚点已直接在 SVG 画布上渲染为所见即所得的真实漫画气泡，不再退化为无可视化圆点
+                  if (anchor.kind === 'bubble') return null;
                   const isSelected = selection?.kind === 'ai-anchor' && selection.id === anchor.id;
                   const dotClass = anchor.kind === 'character' ? 'bg-blue-600'
                     : anchor.kind === 'scene' ? 'bg-emerald-600'
-                      : anchor.kind === 'bubble' ? 'bg-amber-600'
-                        : 'bg-purple-600';
-                  const shortText = anchor.kind === 'bubble' && anchor.bubbleText?.trim()
-                    ? `「${anchor.bubbleText.trim().slice(0, 8)}」`
-                    : anchor.label;
+                      : 'bg-purple-600';
                   return (
                     <button
                       key={anchor.id}
@@ -1784,14 +2387,14 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                       <span className={`flex h-5 w-5 flex-none items-center justify-center rounded-full text-[10px] font-bold text-white ${dotClass}`}>
                         {idx + 1}
                       </span>
-                      <span className="max-w-24 truncate">{shortText}</span>
+                      <span className="max-w-24 truncate">{anchor.label}</span>
                     </button>
                   );
                 })}
               </div>
             )}
 
-            {draft.creationMode === 'manual' && activeTool === 'select' && selectedPanel && !selectedPanel.locked && !draft.layers.panels?.locked && (() => {
+            {draft.creationMode === 'manual' && activeTool === 'select' && selectedPanel && !selectedPanel.locked && !panelsLayerProps.locked && (() => {
               const normBounds = getPanelBoundingBox(selectedPanel.points, 1, 1);
               const aspect = pageW / pageH;
               const center = { x: normBounds.cx, y: normBounds.cy };
@@ -1803,7 +2406,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
               );
               return (
                 <div className="pointer-events-none absolute inset-0 z-20">
-                  {selectedPanel.anchors.filter(a => a.enabled).map((anchor, idx) => {
+                  {selectedPanel.anchors.filter(a => a.enabled && a.kind !== 'bubble').map((anchor, idx) => {
                     const localPt = {
                       x: normBounds.minX + anchor.x * normBounds.width,
                       y: normBounds.minY + anchor.y * normBounds.height,
@@ -1811,8 +2414,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                     const rotated = rotatePointAround(localPt, center, selectedPanel.rotation, aspect);
                     const colorClass = anchor.kind === 'character' ? 'bg-blue-600'
                       : anchor.kind === 'scene' ? 'bg-emerald-600'
-                        : anchor.kind === 'bubble' ? 'bg-amber-600'
-                          : 'bg-purple-600';
+                        : 'bg-purple-600';
                     return (
                       <button
                         key={anchor.id}
@@ -1878,24 +2480,224 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
               );
             })()}
 
+            {/* PS 上下文悬浮气泡迷你工具条：点击气泡立即可切换 12 种日漫框形、横竖排、尾巴、字号、复制、删除 */}
+            {activeFloatingBubble && !inlineEdit && !drag && activeTool === 'select' && (() => {
+              const fb = activeFloatingBubble;
+              const anchorTop = Math.max(0.03, fb.y - fb.height / 2);
+              const showBelow = anchorTop < 0.14;
+              const barTopPct = showBelow ? Math.min(0.95, fb.y + fb.height / 2) * 100 : anchorTop * 100;
+              const barLeftPct = Math.min(82, Math.max(18, fb.x * 100));
+              const shapeMeta = getBubbleShapeMeta(fb.shape);
+
+              const updateShape = (shape: ComicBubbleShape) => {
+                if (fb.mode === 'vector') {
+                  onUpdateBubble?.(fb.id, cur => ({ ...cur, shape }), true);
+                } else if (fb.mode === 'ai-anchor') {
+                  onUpdateAiAnchor?.(fb.id, cur => ({ ...cur, bubbleShape: shape }), true);
+                } else {
+                  onUpdatePanel(fb.panelId, panel => ({
+                    ...panel,
+                    anchors: panel.anchors.map(a => a.id === fb.id ? { ...a, bubbleShape: shape } : a),
+                  }), true);
+                }
+                setShapePopoverOpen(false);
+              };
+
+              const toggleWritingMode = () => {
+                const next = fb.writingMode === 'vertical' ? 'horizontal' : 'vertical';
+                if (fb.mode === 'vector') {
+                  onUpdateBubble?.(fb.id, cur => ({ ...cur, writingMode: next }), true);
+                } else if (fb.mode === 'ai-anchor') {
+                  onUpdateAiAnchor?.(fb.id, cur => ({ ...cur, bubbleWritingMode: next }), true);
+                } else {
+                  onUpdatePanel(fb.panelId, panel => ({
+                    ...panel,
+                    anchors: panel.anchors.map(a => a.id === fb.id ? { ...a, bubbleWritingMode: next } : a),
+                  }), true);
+                }
+              };
+
+              const adjustFontSize = (delta: number) => {
+                const next = Math.max(12, Math.min(54, fb.fontSize + delta));
+                if (fb.mode === 'vector') {
+                  onUpdateBubble?.(fb.id, cur => ({ ...cur, fontSize: next }), true);
+                } else if (fb.mode === 'ai-anchor') {
+                  onUpdateAiAnchor?.(fb.id, cur => ({ ...cur, bubbleFontSize: next }), true);
+                } else {
+                  onUpdatePanel(fb.panelId, panel => ({
+                    ...panel,
+                    anchors: panel.anchors.map(a => a.id === fb.id ? { ...a, bubbleFontSize: next } : a),
+                  }), true);
+                }
+              };
+
+              const handleDelete = () => {
+                if (fb.mode === 'vector') {
+                  onDeleteBubble?.(fb.id);
+                } else if (fb.mode === 'ai-anchor') {
+                  onDeleteAiAnchor?.(fb.id);
+                } else {
+                  onUpdatePanel(fb.panelId, panel => ({
+                    ...panel,
+                    anchors: panel.anchors.filter(a => a.id !== fb.id),
+                  }), true);
+                  onSelect({ kind: 'panel', id: fb.panelId });
+                }
+              };
+
+              return (
+                <div
+                  role="toolbar"
+                  aria-label={t('气泡快捷编辑条')}
+                  style={{
+                    left: `${barLeftPct}%`,
+                    top: `${barTopPct}%`,
+                    transform: showBelow ? 'translate(-50%, 10px)' : 'translate(-50%, calc(-100% - 14px))',
+                  }}
+                  onPointerDown={e => e.stopPropagation()}
+                  className="appearance-panel absolute z-30 flex items-center gap-1 rounded-xl border border-gray-200/95 bg-white/95 px-1.5 py-1 shadow-xl backdrop-blur dark:border-gray-700/90 dark:bg-gray-900/95"
+                >
+                  <div className="relative">
+                    <button
+                      type="button"
+                      aria-label={t('切换气泡样式')}
+                      onClick={() => setShapePopoverOpen(v => !v)}
+                      className="flex h-7 items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-1.5 text-[11px] font-semibold text-gray-700 hover:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                    >
+                      <ComicBubbleShapeIcon shape={fb.shape} className="h-4 w-5 text-gray-800 dark:text-gray-100" />
+                      <span className="max-w-16 truncate">{t(shapeMeta.label)}</span>
+                    </button>
+                    {shapePopoverOpen && (
+                      <div className="appearance-panel absolute left-0 top-full z-40 mt-1.5 grid w-64 grid-cols-4 gap-1 rounded-xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-gray-700 dark:bg-gray-900/98">
+                        {COMIC_BUBBLE_SHAPES.map(meta => (
+                          <button
+                            key={meta.id}
+                            type="button"
+                            onClick={() => updateShape(meta.id)}
+                            className={`flex flex-col items-center rounded-lg border p-1 transition ${fb.shape === meta.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-transparent text-gray-600 hover:border-gray-200 hover:bg-gray-50 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800'}`}
+                          >
+                            <ComicBubbleShapeIcon shape={meta.id} className="h-5 w-7" />
+                            <span className="mt-0.5 w-full truncate text-center text-[9px] font-medium">{t(meta.label)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    aria-label={t('切换横排竖排')}
+                    title={t('切换横排竖排')}
+                    onClick={toggleWritingMode}
+                    className="flex h-7 items-center rounded-lg px-1.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                  >
+                    {fb.writingMode === 'vertical' ? t('竖排') : t('横排')}
+                  </button>
+
+                  {fb.mode === 'vector' && (
+                    <button
+                      type="button"
+                      aria-label={t('切换气泡尾巴')}
+                      title={t('切换气泡尾巴')}
+                      onClick={() => onUpdateBubble?.(fb.id, cur => ({ ...cur, hasTail: !cur.hasTail }), true)}
+                      className={`flex h-7 items-center rounded-lg px-1.5 text-[11px] font-semibold transition ${fb.hasTail ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}
+                    >
+                      {t('尾巴')}
+                    </button>
+                  )}
+
+                  <div className="flex items-center rounded-lg border border-gray-200/80 dark:border-gray-700/80">
+                    <button
+                      type="button"
+                      aria-label={t('缩小字号')}
+                      onClick={() => adjustFontSize(-2)}
+                      className="flex h-7 w-6 items-center justify-center text-[11px] font-bold text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                    >
+                      A-
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={t('放大字号')}
+                      onClick={() => adjustFontSize(2)}
+                      className="flex h-7 w-6 items-center justify-center border-l border-gray-200/80 text-[11px] font-bold text-gray-600 hover:bg-gray-100 dark:border-gray-700/80 dark:text-gray-300 dark:hover:bg-gray-800"
+                    >
+                      A+
+                    </button>
+                  </div>
+
+                  {fb.mode !== 'vector' && onConvertAnchorBubbleToVector && (
+                    <button
+                      type="button"
+                      aria-label={t('转为正式矢量气泡')}
+                      title={t('转为可精细调色与压层的正式漫画矢量气泡')}
+                      onClick={() => onConvertAnchorBubbleToVector(
+                        fb.mode === 'ai-anchor'
+                          ? { kind: 'ai-anchor', anchorId: fb.id }
+                          : { kind: 'panel-anchor', panelId: fb.panelId, anchorId: fb.id },
+                      )}
+                      className="flex h-7 items-center gap-1 rounded-lg bg-amber-500 px-2 text-[11px] font-semibold text-white hover:bg-amber-600"
+                    >
+                      <MessageCircle className="h-3 w-3" />
+                      <span>{t('转正式气泡')}</span>
+                    </button>
+                  )}
+
+                  {fb.mode === 'vector' && onDuplicateBubble && (
+                    <button
+                      type="button"
+                      aria-label={t('复制气泡')}
+                      title={t('复制气泡')}
+                      onClick={() => onDuplicateBubble(fb.id)}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    aria-label={t('删除气泡')}
+                    title={t('删除气泡')}
+                    onClick={handleDelete}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              );
+            })()}
+
+            {/* 真·所见即所得气泡内原地文本编辑器：直接叠在气泡内部，同字体同排向 */}
             {inlineEdit && inlineEditTarget && (
               <div
-                style={{ left: `${inlineEditTarget.x * 100}%`, top: `${inlineEditTarget.y * 100}%` }}
+                style={{
+                  left: `${inlineEditTarget.x * 100}%`,
+                  top: `${inlineEditTarget.y * 100}%`,
+                  width: `${Math.max(12, inlineEditTarget.width * 100)}%`,
+                  height: `${Math.max(8, inlineEditTarget.height * 100)}%`,
+                  transform: `translate(-50%, -50%) rotate(${inlineEditTarget.rotation}deg)`,
+                }}
                 onPointerDown={e => e.stopPropagation()}
-                className="absolute z-30 -translate-x-1/2 -translate-y-1/2"
+                className="absolute z-35 flex items-center justify-center"
               >
                 <textarea
                   autoFocus
-                  rows={2}
                   aria-label={t('原地编辑文字')}
                   value={inlineEdit.value}
+                  placeholder={t('输入台词…')}
                   onChange={e => setInlineEdit({ ...inlineEdit, value: e.target.value })}
                   onBlur={commitInlineEdit}
                   onKeyDown={e => {
                     if (e.key === 'Escape') { e.preventDefault(); setInlineEdit(null); }
                     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); commitInlineEdit(); }
                   }}
-                  className="min-w-36 rounded-lg border-2 border-indigo-500 bg-white/95 p-1.5 text-center text-xs font-semibold text-gray-900 shadow-xl outline-none"
+                  style={{
+                    fontFamily: inlineEditTarget.fontFamily,
+                    fontSize: `${inlineEditTarget.fontSize}px`,
+                    color: inlineEditTarget.color,
+                    writingMode: inlineEditTarget.writingMode === 'vertical' ? 'vertical-rl' : 'horizontal-tb',
+                  }}
+                  className={`h-full w-full resize-none rounded-lg border-2 border-indigo-500/80 p-1 text-center font-bold leading-snug outline-none ${inlineEditTarget.transparent ? 'bg-white/75 backdrop-blur-[1px]' : 'bg-white/95 shadow-xl'}`}
                 />
               </div>
             )}

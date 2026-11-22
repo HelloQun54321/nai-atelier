@@ -36,6 +36,7 @@ import { searchCharacterDictionary, type CharacterDictionaryEntry } from '../../
 import { COMIC_BUBBLE_SHAPES, COMIC_FONT_PRESETS } from '../../services/comic/comicArtwork';
 import type { ComicFontCatalogState } from '../../services/comic/comicFonts';
 import { ComicBubbleShapeIcon } from './ComicBubbleShapeIcon';
+import { ComicLayersPanel } from './ComicLayersPanel';
 import {
   clampAnchorCoord,
   getPanelBoundingBox,
@@ -63,7 +64,8 @@ import type {
   ComicColorMode,
   ComicDialogueMode,
   ComicFontFamily,
-  ComicLayerId,
+  ComicImageLayerItem,
+  ComicLayerNode,
   ComicPageDraft,
   ComicPanel,
   ComicSelection,
@@ -139,9 +141,18 @@ interface ComicInspectorProps {
   onDeleteText: (id: string) => void;
   onUpdateSticker: (id: string, updater: (item: ComicStickerItem) => ComicStickerItem, commit?: boolean) => void;
   onDeleteSticker: (id: string) => void;
-  onToggleLayerVisible: (layerId: ComicLayerId) => void;
-  onToggleLayerLocked: (layerId: ComicLayerId) => void;
-  onMoveLayerOrder: (layerId: ComicLayerId, direction: 'up' | 'down') => void;
+  onUpdateImageLayer: (id: string, updater: (item: ComicImageLayerItem) => ComicImageLayerItem, commit?: boolean) => void;
+  onDeleteImageLayer: (id: string) => void;
+  onSelectLayer: (node: ComicLayerNode) => void;
+  onUpdateLayerNode: (layerId: string, updater: (node: ComicLayerNode) => ComicLayerNode, commit?: boolean) => void;
+  onReorderLayer: (sourceId: string, targetId: string, position: 'above' | 'below' | 'inside') => void;
+  onCreateDrawingLayer: () => void;
+  onImportImageLayer: (file: File) => void;
+  onCreateGroupLayer: (wrapLayerId?: string) => void;
+  onDuplicateLayer: (layerId: string) => void;
+  onMergeLayerDown: (layerId: string) => void;
+  onDeleteLayer: (layerId: string) => void;
+  onConvertSingleAnchorBubbleToVector: (target: { kind: 'ai-anchor'; anchorId: string } | { kind: 'panel-anchor'; panelId: string; anchorId: string }) => void;
   fontCatalog: ComicFontCatalogState;
   downloadingFontId: string | null;
   onDownloadFont: (id: string) => void;
@@ -166,13 +177,6 @@ const STICKER_KINDS: Array<{ id: ComicStickerKind; label: string }> = [
   { id: 'shock', label: '震惊线' },
   { id: 'heart', label: '爱心' },
 ];
-
-const LAYER_LABELS: Record<ComicLayerId, string> = {
-  panels: '分镜画格',
-  drawing: '手绘涂鸦',
-  bubbles: '气泡与文字',
-  stickers: '效果贴纸',
-};
 
 const POSITIVE_LIBRARY_FIELD = { negative: false } as const;
 const NEGATIVE_LIBRARY_FIELD = { negative: true } as const;
@@ -250,9 +254,18 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   onDeleteText,
   onUpdateSticker,
   onDeleteSticker,
-  onToggleLayerVisible,
-  onToggleLayerLocked,
-  onMoveLayerOrder,
+  onUpdateImageLayer,
+  onDeleteImageLayer,
+  onSelectLayer,
+  onUpdateLayerNode,
+  onReorderLayer,
+  onCreateDrawingLayer,
+  onImportImageLayer,
+  onCreateGroupLayer,
+  onDuplicateLayer,
+  onMergeLayerDown,
+  onDeleteLayer,
+  onConvertSingleAnchorBubbleToVector,
   fontCatalog,
   downloadingFontId,
   onDownloadFont,
@@ -276,6 +289,27 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   const [selectedAnchorId, setSelectedAnchorId] = useState<string>('');
   const anchorStageRef = useRef<HTMLDivElement>(null);
   const draggingAnchorRef = useRef<string | null>(null);
+  const [layersCollapsed, setLayersCollapsed] = useState(false);
+  const [layersHeight, setLayersHeight] = useState(250);
+  const asideRef = useRef<HTMLElement>(null);
+
+  const handleSplitterPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (layersCollapsed) return;
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = layersHeight;
+    const maxHeight = Math.max(220, Math.round((asideRef.current?.clientHeight || 720) * 0.65));
+    const onMove = (ev: PointerEvent) => {
+      const next = Math.max(140, Math.min(maxHeight, startHeight + (startY - ev.clientY)));
+      setLayersHeight(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
 
   // 搜索 Danbooru 角色词库（AI 整页出场角色）
   useEffect(() => {
@@ -355,7 +389,9 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   // 分镜生图标签默认锚定当前选中的格，若当前未选格则自动显示第 1 格
   const activePanel = (selection?.kind === 'panel'
     ? draft.panels.find(item => item.id === selection.id)
-    : undefined) || draft.panels[0];
+    : selection?.kind === 'panel-anchor'
+      ? draft.panels.find(item => item.id === selection.panelId)
+      : undefined) || draft.panels[0];
 
   const selectedBubble = selection?.kind === 'bubble'
     ? draft.bubbles.find(item => item.id === selection.id)
@@ -366,9 +402,9 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   const selectedSticker = selection?.kind === 'sticker'
     ? draft.stickers.find(item => item.id === selection.id)
     : undefined;
-
-  const orderedLayers = (['panels', 'drawing', 'bubbles', 'stickers'] as ComicLayerId[])
-    .sort((a, b) => (draft.layers[b]?.order ?? 0) - (draft.layers[a]?.order ?? 0));
+  const selectedImageLayer = selection?.kind === 'image'
+    ? (draft.imageLayers || []).find(item => item.id === selection.id)
+    : undefined;
 
   const addAnchorToPanel = (panel: ComicPanel, kind: ComicAnchorKind, seed?: { label?: string; prompt?: string; negativePrompt?: string; sourceCharacterId?: string }) => {
     if (panel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT) return;
@@ -382,11 +418,14 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
       x: 0.5,
       y: 0.5,
       enabled: true,
-      ...(kind === 'bubble' ? { bubbleShape: 'oval' as ComicBubbleShape, bubbleText: '' } : {}),
+      ...(kind === 'bubble' ? { bubbleShape: 'soft' as ComicBubbleShape, bubbleText: '', bubbleWritingMode: 'vertical' as const } : {}),
       ...(seed?.sourceCharacterId ? { sourceCharacterId: seed.sourceCharacterId } : {}),
     };
     onUpdatePanel(panel.id, current => ({ ...current, anchors: [...current.anchors, next] }), true);
     setSelectedAnchorId(next.id);
+    if (kind === 'bubble') {
+      onSelect({ kind: 'panel-anchor', panelId: panel.id, id: next.id });
+    }
   };
 
   const addAnchorToAiPage = (kind: ComicAnchorKind, seed?: { label?: string; prompt?: string; negativePrompt?: string; sourceCharacterId?: string }) => {
@@ -402,7 +441,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
       x: clampAnchorCoord(0.32 + offset),
       y: clampAnchorCoord(0.28 + offset),
       enabled: true,
-      ...(kind === 'bubble' ? { bubbleShape: 'oval' as ComicBubbleShape, bubbleText: '' } : {}),
+      ...(kind === 'bubble' ? { bubbleShape: 'soft' as ComicBubbleShape, bubbleText: '', bubbleWritingMode: 'vertical' as const } : {}),
       ...(seed?.sourceCharacterId ? { sourceCharacterId: seed.sourceCharacterId } : {}),
     };
     onUpdateAiPage(cur => ({
@@ -438,7 +477,9 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   const overlayCount = draft.bubbles.length + draft.texts.length + draft.stickers.length;
 
   return (
-    <aside className="appearance-panel flex h-full w-full flex-col border-l border-gray-200 bg-white/90 dark:border-gray-800 dark:bg-gray-900/90">
+    <aside ref={asideRef} className="appearance-panel flex h-full w-full flex-col border-l border-gray-200 bg-white/90 dark:border-gray-800 dark:bg-gray-900/90">
+      {/* 上半区：属性 / 生图 / 气泡与字体面板（PS 上下分栏结构） */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* 顶部平铺式三标签导航（去外层套娃胶囊，底边强调线，绝不裁切下方行） */}
       <div
         role="tablist"
@@ -446,9 +487,9 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
         className="grid flex-none grid-cols-3 border-b border-gray-200/80 bg-transparent dark:border-gray-800/80"
       >
         {([
-          { id: 'panel', label: draft.creationMode === 'ai-page' ? 'AI 整页编排' : '分镜生图', icon: draft.creationMode === 'ai-page' ? Sparkles : Wand2 },
-          { id: 'style', label: '画风设定', icon: Palette },
-          { id: 'layers', label: overlayCount > 0 ? `嵌字·图层 (${overlayCount})` : '嵌字·图层', icon: Layers },
+          { id: 'panel', label: draft.creationMode === 'ai-page' ? t('AI 整页编排') : t('分镜生图'), icon: draft.creationMode === 'ai-page' ? Sparkles : Wand2 },
+          { id: 'style', label: t('画风设定'), icon: Palette },
+          { id: 'layers', label: overlayCount > 0 ? t('嵌字·字体 ({0})', [overlayCount]) : t('嵌字·字体'), icon: Layers },
         ] as Array<{ id: ComicInspectorTab; label: string; icon: React.ElementType }>).map(tab => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
@@ -462,7 +503,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
               className={`relative inline-flex h-10 items-center justify-center gap-1.5 px-2 text-xs font-semibold transition ${active ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/50 dark:hover:text-gray-200'}`}
             >
               <Icon className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
-              <span className="truncate">{t(tab.label)}</span>
+              <span className="truncate">{tab.label}</span>
               {active && <span aria-hidden="true" className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
             </button>
           );
@@ -1254,27 +1295,54 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                                 className="w-full rounded border border-gray-200 bg-gray-50/70 p-1.5 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                               />
                               {anchor.kind === 'bubble' && (
-                                <div className="grid grid-cols-2 gap-1.5">
-                                  <select
-                                    value={anchor.bubbleShape || 'oval'}
-                                    onChange={e => onUpdateAiPage(cur => ({
-                                      ...cur,
-                                      anchors: cur.anchors.map(a => a.id === anchor.id ? { ...a, bubbleShape: e.target.value as ComicBubbleShape } : a),
-                                    }), true)}
-                                    className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                                  >
-                                    {COMIC_BUBBLE_SHAPES.map(shape => <option key={shape.id} value={shape.id}>{t(shape.label)}</option>)}
-                                  </select>
+                                <div className="space-y-1.5 rounded-lg border border-amber-200/80 bg-amber-50/40 p-2 dark:border-amber-900/50 dark:bg-amber-950/20">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="text-[10px] font-medium text-amber-800 dark:text-amber-200">
+                                      {t('画布已实时显示气泡：单击调大小、双击改台词')}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        onConvertSingleAnchorBubbleToVector({ kind: 'ai-anchor', anchorId: anchor.id });
+                                      }}
+                                      className="flex-none rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold text-white hover:bg-amber-600"
+                                    >
+                                      {t('转正式气泡')}
+                                    </button>
+                                  </div>
                                   <input
                                     type="text"
                                     value={anchor.bubbleText || ''}
+                                    onClick={e => e.stopPropagation()}
                                     onChange={e => onUpdateAiPage(cur => ({
                                       ...cur,
                                       anchors: cur.anchors.map(a => a.id === anchor.id ? { ...a, bubbleText: e.target.value } : a),
                                     }), false)}
-                                    placeholder={draft.dialogueMode === 'ai-text' ? t('短台词（直出）') : t('备用台词（可转矢量）')}
-                                    className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                                    placeholder={draft.dialogueMode === 'ai-text' ? t('短台词（直出）') : t('台词内容（画布上双击气泡也可直接编辑）')}
+                                    className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                                   />
+                                  <div className="grid grid-cols-4 gap-1">
+                                    {COMIC_BUBBLE_SHAPES.map(shape => (
+                                      <button
+                                        key={shape.id}
+                                        type="button"
+                                        title={t(shape.label)}
+                                        aria-pressed={(anchor.bubbleShape || 'soft') === shape.id}
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          onUpdateAiPage(cur => ({
+                                            ...cur,
+                                            anchors: cur.anchors.map(a => a.id === anchor.id ? { ...a, bubbleShape: shape.id } : a),
+                                          }), true);
+                                        }}
+                                        className={`flex flex-col items-center rounded border px-1 py-0.5 text-[9px] transition ${(anchor.bubbleShape || 'soft') === shape.id ? 'border-amber-500 bg-white font-semibold text-amber-700 shadow-xs dark:bg-amber-950/60 dark:text-amber-200' : 'border-transparent bg-white/60 text-gray-600 hover:border-amber-300 dark:bg-gray-900/50 dark:text-gray-300'}`}
+                                      >
+                                        <ComicBubbleShapeIcon shape={shape.id} className="h-4 w-6" />
+                                        <span className="w-full truncate text-center">{t(shape.label)}</span>
+                                      </button>
+                                    ))}
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -1679,7 +1747,12 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                           {activePanel.anchors.map((anchor, idx) => (
                             <div
                               key={anchor.id}
-                              onClick={() => setSelectedAnchorId(anchor.id)}
+                              onClick={() => {
+                                setSelectedAnchorId(anchor.id);
+                                if (anchor.kind === 'bubble') {
+                                  onSelect({ kind: 'panel-anchor', panelId: activePanel.id, id: anchor.id });
+                                }
+                              }}
                               className={`rounded-lg border p-2 ${selectedAnchor?.id === anchor.id ? 'border-indigo-400 bg-white dark:border-indigo-500 dark:bg-gray-900' : 'border-gray-200 bg-white/70 dark:border-gray-700 dark:bg-gray-900/50'}`}
                             >
                               <div className="mb-1.5 flex items-center gap-1.5">
@@ -1731,29 +1804,54 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                                 className="w-full rounded border border-gray-200 bg-gray-50/70 p-1.5 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                               />
                               {anchor.kind === 'bubble' && (
-                                <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                                  <select
-                                    value={anchor.bubbleShape || 'oval'}
+                                <div className="mt-1.5 space-y-1.5 rounded-lg border border-amber-200/80 bg-amber-50/40 p-2 dark:border-amber-900/50 dark:bg-amber-950/20">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="text-[10px] font-medium text-amber-800 dark:text-amber-200">
+                                      {t('画布已实时显示气泡：单击调大小、双击改台词')}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        onConvertSingleAnchorBubbleToVector({ kind: 'panel-anchor', panelId: activePanel.id, anchorId: anchor.id });
+                                      }}
+                                      className="flex-none rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold text-white hover:bg-amber-600"
+                                    >
+                                      {t('转正式气泡')}
+                                    </button>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={anchor.bubbleText || ''}
+                                    onClick={e => e.stopPropagation()}
                                     onChange={e => onUpdatePanel(activePanel.id, p => ({
                                       ...p,
-                                      anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, bubbleShape: e.target.value as ComicBubbleShape } : a),
-                                    }), true)}
-                                    className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                                  >
-                                    {COMIC_BUBBLE_SHAPES.map(shape => <option key={shape.id} value={shape.id}>{t(shape.label)}</option>)}
-                                  </select>
-                                  {draft.dialogueMode === 'ai-text' && (
-                                    <input
-                                      type="text"
-                                      value={anchor.bubbleText || ''}
-                                      onChange={e => onUpdatePanel(activePanel.id, p => ({
-                                        ...p,
-                                        anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, bubbleText: e.target.value } : a),
-                                      }), false)}
-                                      placeholder={t('短台词（2-6字）')}
-                                      className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                                    />
-                                  )}
+                                      anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, bubbleText: e.target.value } : a),
+                                    }), false)}
+                                    placeholder={draft.dialogueMode === 'ai-text' ? t('短台词（2-6字）') : t('台词内容（画布上双击气泡也可直接编辑）')}
+                                    className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                                  />
+                                  <div className="grid grid-cols-4 gap-1">
+                                    {COMIC_BUBBLE_SHAPES.map(shape => (
+                                      <button
+                                        key={shape.id}
+                                        type="button"
+                                        title={t(shape.label)}
+                                        aria-pressed={(anchor.bubbleShape || 'soft') === shape.id}
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          onUpdatePanel(activePanel.id, p => ({
+                                            ...p,
+                                            anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, bubbleShape: shape.id } : a),
+                                          }), true);
+                                        }}
+                                        className={`flex flex-col items-center rounded border px-1 py-0.5 text-[9px] transition ${(anchor.bubbleShape || 'soft') === shape.id ? 'border-amber-500 bg-white font-semibold text-amber-700 shadow-xs dark:bg-amber-950/60 dark:text-amber-200' : 'border-transparent bg-white/60 text-gray-600 hover:border-amber-300 dark:bg-gray-900/50 dark:text-gray-300'}`}
+                                      >
+                                        <ComicBubbleShapeIcon shape={shape.id} className="h-4 w-6" />
+                                        <span className="w-full truncate text-center">{t(shape.label)}</span>
+                                      </button>
+                                    ))}
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -2487,6 +2585,31 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
             </div>
           )}
 
+          {selectedImageLayer && (
+            <div className="space-y-2.5 rounded-xl border border-indigo-200/80 bg-indigo-50/30 p-3 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+              <div className="flex items-center justify-between">
+                <span className="truncate font-bold text-gray-800 dark:text-gray-100">{t('当前图片图层')} · {selectedImageLayer.name}</span>
+                <button type="button" aria-label={t('删除图片图层')} onClick={() => onDeleteImageLayer(selectedImageLayer.id)} className="rounded p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="mb-1 block text-gray-500">{t('宽度')} {Math.round(selectedImageLayer.width * 100)}%</span>
+                  <input type="range" min={8} max={100} value={Math.round(selectedImageLayer.width * 100)} onChange={e => onUpdateImageLayer(selectedImageLayer.id, item => ({ ...item, width: Number(e.target.value) / 100 }), false)} className="w-full accent-indigo-600" />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-gray-500">{t('高度')} {Math.round(selectedImageLayer.height * 100)}%</span>
+                  <input type="range" min={8} max={100} value={Math.round(selectedImageLayer.height * 100)} onChange={e => onUpdateImageLayer(selectedImageLayer.id, item => ({ ...item, height: Number(e.target.value) / 100 }), false)} className="w-full accent-indigo-600" />
+                </label>
+              </div>
+              <label className="block">
+                <span className="mb-1 block text-gray-500">{t('旋转')} {selectedImageLayer.rotation}°</span>
+                <input type="range" min={-180} max={180} value={selectedImageLayer.rotation} onChange={e => onUpdateImageLayer(selectedImageLayer.id, item => ({ ...item, rotation: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+              </label>
+            </div>
+          )}
+
           {/* 本页气泡 / 文字 / 贴纸大纲列表 */}
           <div className="space-y-1.5">
             <div className="font-bold text-gray-700 dark:text-gray-200">{t('页面嵌字与贴纸')}</div>
@@ -2673,34 +2796,45 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
               </div>
             )}
           </div>
-
-          {/* 常驻 4 大图层管理 */}
-          <div className="space-y-1.5 border-t border-gray-200 pt-3 dark:border-gray-800">
-            <div className="font-bold text-gray-700 dark:text-gray-200">{t('图层顺序（上层优先显示）')}</div>
-            <div className="space-y-1.5">
-              {orderedLayers.map((layerId, index) => {
-                const layer = draft.layers[layerId];
-                return (
-                  <div
-                    key={layerId}
-                    className="flex items-center justify-between gap-1 rounded-lg border border-gray-200/80 bg-gray-50/80 px-2.5 py-1.5 dark:border-gray-700 dark:bg-gray-800/80"
-                  >
-                    <span className={`min-w-0 flex-1 truncate font-medium ${layer.visible ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 line-through'}`}>
-                      {t(LAYER_LABELS[layerId])}
-                    </span>
-                    <div className="flex items-center gap-0.5">
-                      <button type="button" aria-label={t('上移图层')} disabled={index === 0} onClick={() => onMoveLayerOrder(layerId, 'up')} className="rounded p-1 text-gray-500 hover:bg-gray-200 disabled:opacity-30 dark:hover:bg-gray-700"><ArrowUp className="h-3 w-3" /></button>
-                      <button type="button" aria-label={t('下移图层')} disabled={index === orderedLayers.length - 1} onClick={() => onMoveLayerOrder(layerId, 'down')} className="rounded p-1 text-gray-500 hover:bg-gray-200 disabled:opacity-30 dark:hover:bg-gray-700"><ArrowDown className="h-3 w-3" /></button>
-                      <button type="button" aria-label={layer.locked ? t('解锁图层') : t('锁定图层')} onClick={() => onToggleLayerLocked(layerId)} className={`rounded p-1 ${layer.locked ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>{layer.locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}</button>
-                      <button type="button" aria-label={layer.visible ? t('隐藏图层') : t('显示图层')} onClick={() => onToggleLayerVisible(layerId)} className={`rounded p-1 ${layer.visible ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>{layer.visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}</button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         </div>
       )}
+      </div>
+
+      {/* PS 上下分栏可拖拽分隔条 */}
+      {!layersCollapsed && (
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label={t('调整图层面板高度')}
+          title={t('上下拖拽调整图层面板高度')}
+          onPointerDown={handleSplitterPointerDown}
+          className="group flex h-2 flex-none cursor-row-resize items-center justify-center border-t border-gray-200/90 bg-gray-50/70 transition hover:bg-indigo-100/80 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:bg-indigo-950/60"
+        >
+          <span className="h-0.5 w-8 rounded-full bg-gray-300 transition group-hover:bg-indigo-500 dark:bg-gray-700" />
+        </div>
+      )}
+
+      {/* 下半区：常驻仿 Photoshop 图层面板 */}
+      <div
+        className="flex flex-none flex-col overflow-hidden"
+        style={{ height: layersCollapsed ? 34 : layersHeight }}
+      >
+        <ComicLayersPanel
+          draft={draft}
+          selection={selection}
+          collapsed={layersCollapsed}
+          onToggleCollapsed={() => setLayersCollapsed(c => !c)}
+          onSelectLayer={onSelectLayer}
+          onUpdateLayerNode={onUpdateLayerNode}
+          onReorderLayer={onReorderLayer}
+          onCreateDrawingLayer={onCreateDrawingLayer}
+          onImportImageLayer={onImportImageLayer}
+          onCreateGroupLayer={onCreateGroupLayer}
+          onDuplicateLayer={onDuplicateLayer}
+          onMergeLayerDown={onMergeLayerDown}
+          onDeleteLayer={onDeleteLayer}
+        />
+      </div>
 
       <HistoryImagePicker
         open={historyPickerOpen}

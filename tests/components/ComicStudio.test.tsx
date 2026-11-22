@@ -121,10 +121,13 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     fireEvent.keyDown(window, { key: 'm' });
     expect(screen.getByRole('button', { name: '格内移图' }).getAttribute('aria-pressed')).toBe('true');
 
-    // 切到「嵌字·图层」标签管理 4 大图层
-    fireEvent.click(screen.getByRole('tab', { name: /嵌字·图层/ }));
-    expect(screen.getByText('分镜画格')).toBeTruthy();
-    expect(screen.getByText('手绘涂鸦')).toBeTruthy();
+    // 切到「嵌字·字体」标签，同时右侧下半区常驻 Photoshop 风格图层面板（支持多手绘图层、图层组、混合模式与不透明度）
+    fireEvent.click(screen.getByRole('tab', { name: /嵌字·字体/ }));
+    expect(screen.getByRole('region', { name: 'PS 图层面板' })).toBeTruthy();
+    expect(screen.getAllByText('分镜画格底图').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('手绘图层 1').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('combobox', { name: '图层混合模式' })).toBeTruthy();
+    expect(screen.getByRole('slider', { name: '图层不透明度' })).toBeTruthy();
   });
 
   it('supports Phase 2 AI whole-page storyboard orchestration, dual-zone preview, and bubble-to-vector conversion', async () => {
@@ -165,10 +168,11 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(planSpy.mock.calls[0][0].preserveExistingLayout).toBe(true);
     expect(planSpy.mock.calls[0][0].existingGuidePanels?.length).toBeGreaterThan(0);
 
-    // 画布渲染整页可拖锚点
+    // 画布渲染整页可拖锚点，且气泡锚点直接在漫画上可视化显示真实台词气泡（而非盲猜橙色圆点）
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '整页锚点 银发女主-格1' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: '整页锚点 台词-格2' })).toBeTruthy();
+      expect(screen.getByText('一起走吧')).toBeTruthy();
+      expect(screen.getByText('AI 气泡')).toBeTruthy();
     });
 
     // 切换上下双区，按钮展示「2 区拼合」且提供单区独立精修入口
@@ -255,5 +259,36 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getByRole('slider', { name: '气泡旋转角度' })).toBeTruthy();
     expect(screen.getByRole('slider', { name: '气泡边框粗细' })).toBeTruthy();
     expect(screen.getByLabelText('气泡底色')).toBeTruthy();
+  });
+
+  it('renders live WYSIWYG bubble anchor with PS floating toolbar and supports full PS Layers panel operations', () => {
+    renderStudio();
+
+    // 在手动模式下添加「气泡点」：不再只有盲猜圆点，直接在画布渲染可视化漫画气泡并弹出快捷编辑条
+    fireEvent.click(screen.getByRole('button', { name: '气泡点' }));
+    expect(screen.getByText('气泡预演')).toBeTruthy();
+    expect(screen.getByRole('toolbar', { name: '气泡快捷编辑条' })).toBeTruthy();
+
+    // 一键转为正式矢量漫画气泡，立刻进入 PS 图层栈
+    fireEvent.click(screen.getByRole('button', { name: '转为正式矢量气泡' }));
+    expect(screen.getByText('当前对白气泡')).toBeTruthy();
+
+    // 常驻 PS 图层面板操作：新建手绘层、新建图层组、调混合模式与不透明度、复制与删除图层
+    const blendSelect = screen.getByRole('combobox', { name: '图层混合模式' }) as HTMLSelectElement;
+    fireEvent.change(blendSelect, { target: { value: 'multiply' } });
+    expect(blendSelect.value).toBe('multiply');
+
+    const opacitySlider = screen.getByRole('slider', { name: '图层不透明度' }) as HTMLInputElement;
+    fireEvent.change(opacitySlider, { target: { value: '65' } });
+    expect(opacitySlider.value).toBe('65');
+
+    fireEvent.click(screen.getByRole('button', { name: '新建手绘图层' }));
+    expect(screen.getAllByText('手绘图层 2').length).toBeGreaterThanOrEqual(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '新建图层组' }));
+    expect(screen.getAllByText('图层组 1').length).toBeGreaterThanOrEqual(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '删除当前图层' }));
+    expect(screen.queryByText('图层组 1')).toBeNull();
   });
 });
