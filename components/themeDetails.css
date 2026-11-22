@@ -373,6 +373,17 @@ html[data-control-style='filled'] :is(input, select, textarea):focus-visible {
   outline: 3px solid color-mix(in srgb, var(--nai-accent) 35%, transparent);
   outline-offset: 1px;
 }
+html[data-control-style='filled'] .toolbar-search-field > input {
+  border-radius: 0;
+  box-shadow: none;
+}
+html[data-control-style='filled'] .toolbar-search-field > input:focus-visible {
+  outline: none;
+}
+html[data-control-style='filled'] .toolbar-search-field:has(> input:focus-visible) {
+  outline: 3px solid color-mix(in srgb, var(--nai-accent) 35%, transparent);
+  outline-offset: 1px;
+}
 html[data-control-style='filled'] :is([role='tablist'], .appearance-segmented) {
   gap: 2px; padding: 3px; border: 0;
   border-radius: calc(var(--workspace-control-radius) + 3px);

@@ -46,8 +46,9 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
   const [sort, setSort] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [filterOpen, setFilterOpen] = useState(false), [favorites, setFavorites] = useState(new Set<string>());
   const [artistsOpen, setArtistsOpen] = useState(false);
+  const [artistQuery, setArtistQuery] = useState('');
   const artistsAnchor = useRef<HTMLDivElement>(null);
-  const closeArtists = useCallback(() => setArtistsOpen(false), []);
+  const closeArtists = useCallback(() => { setArtistsOpen(false); setArtistQuery(''); }, []);
   const [favoriteStatus, setFavoriteStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle'), [favoriteError, setFavoriteError] = useState(''), [favoriteRetry, setFavoriteRetry] = useState(0);
   const filterAnchor = useRef<HTMLDivElement>(null);
   const closeFilters = useCallback(() => setFilterOpen(false), []);
@@ -215,11 +216,26 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
         <div ref={artistsAnchor} className="ml-auto min-w-0"><ToolbarButton className="!px-2 !text-xs" aria-label={t('画师 Tag')} title={t('画师 Tag')} disabled={!pool.artists.length} aria-expanded={artistsOpen} aria-haspopup="dialog" onClick={() => { setFilterOpen(false); setArtistsOpen(value => !value); }}><span aria-live="polite">{t('已选 {0} 串 · {1} 位画师', [pool.chainIds.length, chosen.length])}</span><ChevronDown /></ToolbarButton></div>
       </div>
       {artistsOpen && active && pool.artists.length > 0 && <AnchoredToolbarPopover anchorRef={artistsAnchor} title={t('画师 Tag')} width={440} allowMobile onClose={closeArtists}>
-        <div className="mb-2 flex items-center gap-3 text-xs"><button type="button" className="mobile-touch" onClick={() => setUnchecked(new Set())}>{t('全选')}</button><button type="button" className="mobile-touch" onClick={() => setUnchecked(new Set(available.map(artist => artist.tag)))}>{t('取消全选')}</button></div>
-        <div className="flex max-h-[50dvh] flex-wrap gap-2 overflow-y-auto">{pool.artists.map(({ tag, count }) => {
-          const banned = blockedKeys.has(normalizeArtistUsageKey(tag));
-          return <label key={tag} className="mobile-touch flex max-w-full items-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs dark:border-gray-700"><input type="checkbox" aria-label={tag} disabled={banned} checked={!banned && !unchecked.has(tag)} onChange={() => setUnchecked(current => { const next = new Set(current); if (next.has(tag)) next.delete(tag); else next.add(tag); return next; })} /><span className="min-w-0 [overflow-wrap:anywhere]">{tag}</span><span className="shrink-0 text-gray-500">{t('出现 {0} 次', [count])}</span>{banned && <span className="text-red-500">{t('已屏蔽 · 不参与 Roll')}</span>}</label>;
-        })}</div>
+        {(() => {
+          const normalizedArtistQuery = artistQuery.trim().toLowerCase();
+          const filteredArtists = normalizedArtistQuery
+            ? pool.artists.filter(({ tag }) => tag.toLowerCase().includes(normalizedArtistQuery))
+            : pool.artists;
+          const filteredAvailable = filteredArtists.filter(artist => !blockedKeys.has(normalizeArtistUsageKey(artist.tag)));
+          return <>
+            {pool.artists.length > 12 && <div className="mb-2"><ToolbarSearch aria-label={t('搜索已选画师')} placeholder={t('搜索已选画师')} value={artistQuery} onChange={event => setArtistQuery(event.target.value)} containerClassName="w-full !max-w-none" /></div>}
+            <div className="mb-2 flex items-center gap-3 text-xs">
+              <button type="button" className="mobile-touch" onClick={() => setUnchecked(current => { const next = new Set(current); filteredAvailable.forEach(artist => next.delete(artist.tag)); return next; })}>{t('全选')}</button>
+              <button type="button" className="mobile-touch" onClick={() => setUnchecked(current => { const next = new Set(current); filteredAvailable.forEach(artist => next.add(artist.tag)); return next; })}>{t('取消全选')}</button>
+              {normalizedArtistQuery && <span className="ml-auto tabular-nums text-gray-400">{t('匹配 {0} 位', [filteredArtists.length])}</span>}
+            </div>
+            <div className="flex max-h-[50dvh] flex-wrap gap-2 overflow-y-auto">{filteredArtists.map(({ tag, count }) => {
+              const banned = blockedKeys.has(normalizeArtistUsageKey(tag));
+              return <label key={tag} className="mobile-touch flex max-w-full items-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs dark:border-gray-700"><input type="checkbox" aria-label={tag} disabled={banned} checked={!banned && !unchecked.has(tag)} onChange={() => setUnchecked(current => { const next = new Set(current); if (next.has(tag)) next.delete(tag); else next.add(tag); return next; })} /><span className="min-w-0 [overflow-wrap:anywhere]">{tag}</span><span className="shrink-0 text-gray-500">{t('出现 {0} 次', [count])}</span>{banned && <span className="text-red-500">{t('已屏蔽 · 不参与 Roll')}</span>}</label>;
+            })}</div>
+            {!filteredArtists.length && <p className="py-3 text-center text-xs text-gray-500">{t('没有匹配的画师')}</p>}
+          </>;
+        })()}
       </AnchoredToolbarPopover>}
       {!loading && !error && missingSources > 0 && <p role="status" className="px-3 pb-2 text-xs text-amber-600">{t('有 {0} 条来源风格串不可用，将按现有条目重新计算', [missingSources])}</p>}
       {error && <p role="alert" className="px-3 pb-2 text-xs text-red-500">{error}{!chains.length && <button type="button" className="mobile-touch ml-2 underline" onClick={() => setRetry(value => value + 1)}>{t('重试')}</button>}</p>}

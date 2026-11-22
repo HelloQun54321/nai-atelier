@@ -11,7 +11,16 @@ import { PressRevealSurface } from '../PressRevealSurface';
 import { SmartImage } from '../SmartImage';
 import { IMAGE_CARD_ACTION_CLASS, IMAGE_CARD_ACTION_TONE, ImageShareActions } from '../ImageShareActions';
 import { ImageCardActions } from '../ImageCardActions';
-import { EmptyState, InlineSpinner } from '../DesignSystem';
+import { EmptyState, InlineSpinner, ToolbarButton } from '../DesignSystem';
+
+export interface RollGalleryEmptyState {
+  title: string;
+  hint?: string;
+  actionLabel?: string;
+  actionPrimary?: boolean;
+  actionDisabled?: boolean;
+  onAction?: () => void;
+}
 
 interface Props {
   experiment: RollExperiment; candidates: RollCandidate[]; images: Map<string, LocalGenItem>; selectedId: string; selectionFocusEnabled: boolean;
@@ -42,6 +51,7 @@ interface Props {
   onApprove?: () => void;
   /** 已收藏图片的候选；多选时卡片上的爱心被勾选框替换，靠它标出收藏状态。 */
   favoriteIds?: ReadonlySet<string>;
+  emptyState?: RollGalleryEmptyState;
   scrollRef: React.RefObject<HTMLDivElement | null>; onScroll: () => void;
   notify: (message: string, type?: 'success' | 'error') => void;
 }
@@ -49,9 +59,9 @@ interface Props {
 const GEN_PRIMARY = 'mobile-touch inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:opacity-40';
 const GEN_SECONDARY = 'mobile-touch inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white/90 px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-200 dark:hover:bg-gray-800';
 
-export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, roundNumbers, positions, generationState, onGenerate, onPause, onResume, onCancel, onApprove, favoriteIds, scrollRef, onScroll, notify }) => {
+export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, roundNumbers, positions, generationState, onGenerate, onPause, onResume, onCancel, onApprove, favoriteIds, emptyState, scrollRef, onScroll, notify }) => {
   const display = useMobileImageDisplayPreferences('roll');
-  const requestedColumns = useMasonryColumnCount(display, undefined, scrollRef, 220);
+  const requestedColumns = useMasonryColumnCount(display, undefined, scrollRef, 220, false, Boolean(selectedId));
   const columns = display.desktopColumns === 'auto' ? Math.min(4, requestedColumns) : requestedColumns;
   const frosted = useGalleryFrostedCaption();
   const [ratios, setRatios] = useState<Record<string, number>>({});
@@ -178,18 +188,22 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
 
 
-      {/* 卡片底栏：只露画师名与剩余数量，权重留到详情——挑图时不关心 0.7 还是 1.3。 */}
+      {/* 卡片底栏：按权重优先展示前 2 位主画师与剩余数量，保证 4～5 列下也能读清名字；颜色继续锚定原串序号与详情、色带一一对应。 */}
       <div className="gallery-card-caption flex items-center justify-between px-3 py-2 gap-2 bg-white/95 dark:bg-gray-850/95 border-t border-gray-100 dark:border-gray-800" style={frosted ? { paddingBottom: '1.75rem' } : undefined}>
         <div className="flex w-full flex-nowrap items-center gap-1 overflow-hidden min-w-0 flex-1" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
-          {candidate.tags.slice(0, 3).map((entry, entryIndex) => (
-            <span key={entry.tag} className="gallery-card-badge inline-flex min-w-0 shrink items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-1 py-0.5 text-micro font-medium text-gray-700 dark:text-gray-200 border border-gray-200/50 dark:border-gray-700/50">
-              <span className="inline-block h-1 w-1 shrink-0 rounded-full" style={{ backgroundColor: rollChipColor(entryIndex) }} />
+          {candidate.tags
+            .map((entry, originalIndex) => ({ entry, originalIndex }))
+            .sort((a, b) => b.entry.weight - a.entry.weight || a.originalIndex - b.originalIndex)
+            .slice(0, 2)
+            .map(({ entry, originalIndex }) => (
+            <span key={entry.tag} className="gallery-card-badge inline-flex min-w-0 shrink items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-micro font-medium text-gray-700 dark:text-gray-200 border border-gray-200/50 dark:border-gray-700/50">
+              <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: rollChipColor(originalIndex) }} />
               <span className="truncate">{entry.tag}</span>
             </span>
           ))}
-          {candidate.tags.length > 3 && (
+          {candidate.tags.length > 2 && (
             <span className="gallery-card-badge shrink-0 rounded-md bg-gray-100 px-1.5 py-0.5 text-micro font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-              +{candidate.tags.length - 3}
+              +{candidate.tags.length - 2}
             </span>
           )}
         </div>
@@ -200,6 +214,11 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
   return <section ref={scrollRef} onScroll={onScroll} aria-label={t('候选图库')} className="workspace-scroll-viewport min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-5">
     {candidates.length ? display.layout === 'masonry' ? <ShortestColumnMasonry items={candidates} columns={columns} getItemKey={candidate => candidate.id} estimateItemHeight={(candidate, width) => width / ratio(candidate) + (frosted ? 2 : 80)} renderItem={renderCard} />
       : <div className={`${mobileGalleryClassName(display)} workspace-card-grid workspace-roll-grid`} style={mobileGalleryStyle(display, columns)}>{candidates.map(renderCard)}</div>
-      : <EmptyState className="h-full min-h-60" title={t('暂无匹配候选')} />}
+      : <EmptyState
+        className="h-full min-h-60"
+        title={emptyState?.title ?? t('暂无匹配候选')}
+        hint={emptyState?.hint}
+        action={emptyState?.actionLabel && emptyState.onAction ? <ToolbarButton tone={emptyState.actionPrimary ? 'primary' : 'neutral'} disabled={emptyState.actionDisabled} onClick={emptyState.onAction}>{emptyState.actionLabel}</ToolbarButton> : undefined}
+      />}
   </section>;
 };

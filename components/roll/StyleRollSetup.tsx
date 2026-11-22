@@ -20,11 +20,11 @@ import { useMobileHistoryLayer } from '../MobileUI';
 
 const field = 'mobile-touch min-w-0 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950';
 
-interface Props { initial: RollExperiment; libraryCount?: number; libraryLoading?: boolean; libraryError?: string; blockedTags?: string[]; library?: ArtistDictionaryEntry[]; onBlockedChange: (tags: string[]) => Promise<void>; enforceFreeStepLimit: boolean; forceEmptySeed?: boolean; onForceEmptySeedChange?: (enabled: boolean) => void; onSave: (value: RollExperiment) => Promise<void>; onClose: () => void }
+interface Props { initial: RollExperiment; initialSection?: 'pool' | 'template'; libraryCount?: number; libraryLoading?: boolean; libraryError?: string; blockedTags?: string[]; library?: ArtistDictionaryEntry[]; onBlockedChange: (tags: string[]) => Promise<void>; enforceFreeStepLimit: boolean; forceEmptySeed?: boolean; onForceEmptySeedChange?: (enabled: boolean) => void; onSave: (value: RollExperiment) => Promise<void>; onClose: () => void }
 
 export const StyleRollSetup: React.FC<Props> = props => <ImagePreviewPortal><SetupForm {...props} /></ImagePreviewPortal>;
 
-const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading = false, libraryError, blockedTags = [], library = [], onBlockedChange, enforceFreeStepLimit, forceEmptySeed = false, onForceEmptySeedChange, onSave, onClose }) => {
+const SetupForm: React.FC<Props> = ({ initial, initialSection = 'pool', libraryCount = 0, libraryLoading = false, libraryError, blockedTags = [], library = [], onBlockedChange, enforceFreeStepLimit, forceEmptySeed = false, onForceEmptySeedChange, onSave, onClose }) => {
   useLanguage();
   const [draft, setDraft] = useState(() => structuredClone({ ...initial, drawPlan: undefined, pinnedArtists: getRollPinnedArtists(initial), rules: { ...initial.rules, ...getRollArtistRange(initial) } }));
   const excludedArtistTags = useMemo(() => draft.artists.filter(artist => artist.excluded).map(artist => artist.tag), [draft.artists]);
@@ -33,7 +33,7 @@ const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading 
   const active = useContext(ImageActivityContext);
   const knownArtists = useMemo(() => new Set(library.map(artist => normalizeArtistUsageKey(artist.name))), [library]);
   useEffect(() => { if (!active) setChainDialogOpen(false); }, [active]);
-  const [section, setSection] = useState<'pool' | 'template'>('pool');
+  const [section, setSection] = useState<'pool' | 'template'>(initialSection);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [presetBusy, setPresetBusy] = useState(false);
   const editingBusy = busy || presetBusy;

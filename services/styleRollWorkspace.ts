@@ -20,6 +20,7 @@ export function rollWorkspaceCandidates(experiment: RollExperiment, images: Map<
     if (candidate.archived) return false;
     if (view.filter === 'pending' && images.has(candidate.id)) return false;
     if (view.filter === 'unsaved' && (!images.has(candidate.id) || candidate.savedChainId)) return false;
+    if (view.filter === 'saved' && !candidate.savedChainId) return false;
     if (view.filter === 'favorited' && !rollFavoriteMatches(candidate, images, favoriteIds, true)) return false;
     return !query || String(index + 1) === query || `#${index + 1}` === query || candidate.tags.some(tag =>
       normalized(tag.tag).includes(query) || (chineseNames?.get(normalized(tag.tag)) || '').toLowerCase().includes(query));

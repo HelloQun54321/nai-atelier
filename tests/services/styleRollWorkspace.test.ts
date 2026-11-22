@@ -67,3 +67,10 @@ it('收藏筛选只看已出图候选，未出图配方不算未收藏图片，�
   expect(e.candidates.filter(candidate => rollFavoriteMatches(candidate, images, favorites, false)).map(item => item.id)).toEqual(['old']);
   expect(e.candidates.filter(candidate => rollFavoriteMatches(candidate, images, favorites, true)).map(item => item.id)).toEqual(['saved', 'trash']);
 });
+
+it('已保存筛选只返回已关联风格串且未归档的候选', () => {
+  const { e, images } = fixture();
+  e.candidates[3].savedChainId = 'archived-chain';
+  expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'saved' }).map(item => item.id)).toEqual(['saved']);
+  expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'saved', roundId: 'old-round' })).toEqual([]);
+});

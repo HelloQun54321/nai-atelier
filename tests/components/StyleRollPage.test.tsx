@@ -1470,3 +1470,54 @@ it('手机记录按钮打开底部面板，选中记录后面板收起', async (
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '画风记录' })).toBeNull());
   expect(screen.getByRole('button', { name: '切换画风记录' }).getAttribute('title') || '').toContain('另一记录');
 });
+
+it('候选详情展示基础元信息并支持直接固定或屏蔽画师到下一轮', async () => {
+  const seeded = structuredClone(experiment);
+  seeded.candidates[0].savedChainId = 'chain-saved';
+  seeded.rounds = [{ id: 'round-1', candidateIds: [seeded.candidates[0].id], createdAt: 1 }];
+  mocks.loadOne.mockResolvedValue(seeded);
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: '查看候选 1' }));
+  const meta = screen.getByLabelText('候选生成信息');
+  expect(meta.textContent).toContain('R1');
+  expect(meta.textContent).toContain('832×1216');
+  expect(meta.textContent).toContain('Seed 0');
+
+  const pinButton = screen.getByRole('button', { name: '固定画师 alpha' });
+  fireEvent.click(pinButton);
+  expect(screen.getByRole('button', { name: '取消固定画师 alpha' }).getAttribute('aria-pressed')).toBe('true');
+
+  fireEvent.click(screen.getByRole('button', { name: '屏蔽画师 alpha' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '取消屏蔽画师 alpha' }).getAttribute('aria-pressed')).toBe('true'));
+  // 屏蔽自动解除该画师的固定状态并禁用固定按钮。
+  const unpinnedButton = screen.getByRole('button', { name: '固定画师 alpha' }) as HTMLButtonElement;
+  expect(unpinnedButton.getAttribute('aria-pressed')).toBe('false');
+  expect(unpinnedButton.disabled).toBe(true);
+});
+
+it('筛选支持已保存、空结果提供一键重置并禁用多选，顶栏设置可直接调整偏好与有样张开关', async () => {
+  const withSaved = structuredClone(experiment);
+  withSaved.candidates[0].savedChainId = 'chain-saved';
+  mocks.loadOne.mockResolvedValue(withSaved);
+  await setup();
+
+  // 顶栏设置直接调整只抽收藏画师、偏好倍率、保底人数与有样张开关。
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
+  fireEvent.change(screen.getByRole('spinbutton', { name: '偏好抽中倍率' }), { target: { value: '12' } });
+  fireEvent.change(screen.getByRole('spinbutton', { name: '每串偏好保底人数' }), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('checkbox', { name: '只从有样张的画师中抽取' }));
+  expect((screen.getByRole('checkbox', { name: '只从有样张的画师中抽取' }) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
+
+  // 已保存筛选仅保留关联了风格串的候选。
+  filterBy('已保存');
+  expect(screen.getByRole('button', { name: '查看候选 1' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '查看候选 2' })).toBeNull();
+
+  // 搜索无结果时禁用多选，并提供就地「重置筛选」按钮。
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师、中文名或编号' }), { target: { value: '不存在的画师' } });
+  expect((screen.getByRole('button', { name: '批量选择候选' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '查看候选 2' })).toBeTruthy());
+  expect((screen.getByRole('button', { name: '批量选择候选' }) as HTMLButtonElement).disabled).toBe(false);
+});

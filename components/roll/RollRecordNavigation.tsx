@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FolderOpen, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Check, FolderOpen, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { getLanguage, t, useLanguage } from '../../services/i18n';
 import type { RollExperimentSummary } from '../../services/styleRoll';
 
@@ -83,17 +83,17 @@ export const RollRecordNavigation: React.FC<RollRecordNavigationProps> = ({ reco
             <input aria-label={t('记录名称')} autoFocus maxLength={120} value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setRenamingId(''); }}
               className="mobile-touch h-8 w-full rounded-md border border-gray-200 bg-white px-2 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
             <div className="mt-1 flex justify-end gap-1">
-              <button type="button" className={actionClass} aria-label={t('取消重命名')} title={t('取消重命名')} onClick={() => setRenamingId('')}><Trash2 /></button>
-              <button type="submit" className={actionClass} aria-label={t('保存记录名称')} title={t('保存记录名称')} disabled={!draft.trim()}><Pencil /></button>
+              <button type="button" className={actionClass} aria-label={t('取消重命名')} title={t('取消重命名')} onClick={() => setRenamingId('')}><X /></button>
+              <button type="submit" className={`${actionClass} !text-indigo-600 dark:!text-indigo-400`} aria-label={t('保存记录名称')} title={t('保存记录名称')} disabled={!draft.trim()}><Check /></button>
             </div>
           </form>;
-          return <div key={item.id} role="listitem" className={`group/record flex items-stretch rounded-lg transition-colors ${current ? 'bg-indigo-50 dark:bg-indigo-950/50' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+          return <div key={item.id} role="listitem" className={`group/record relative flex items-stretch rounded-lg transition-colors ${current ? 'bg-indigo-50 dark:bg-indigo-950/50' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
             <button type="button" aria-pressed={current} aria-label={t('打开画风记录：{0}', [item.name])} onClick={() => onSelect(item.id)}
               className={`min-w-0 flex-1 rounded-lg px-2 text-left ${mobile ? 'py-2' : 'py-1.5'}`}>
               <span className={`block truncate text-sm ${current ? 'font-semibold text-indigo-700 dark:text-indigo-200' : 'text-gray-700 dark:text-gray-200'}`}>{item.name}</span>
               <span className={`mt-0.5 block truncate text-micro tabular-nums ${current ? 'text-indigo-500/80 dark:text-indigo-300/70' : 'text-gray-400'}`}>{rowMeta(item)}</span>
             </button>
-            <div className={`flex flex-none items-center gap-0.5 pr-1 ${mobile ? '' : 'opacity-0 group-hover/record:opacity-100 focus-within:opacity-100'}`}>
+            <div className={`flex flex-none items-center gap-0.5 pr-1 ${mobile ? '' : `pointer-events-none absolute right-0.5 top-1/2 -translate-y-1/2 rounded-md pl-2 opacity-0 transition-opacity group-hover/record:pointer-events-auto group-hover/record:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 ${current ? 'bg-indigo-50/95 dark:bg-indigo-950/95' : 'bg-gray-100/95 dark:bg-gray-800/95'}`}`}>
               <button type="button" className={actionClass} aria-label={t('重命名记录：{0}', [item.name])} title={t('重命名记录')} disabled={busy} onClick={() => startRename(item)}><Pencil /></button>
               <button type="button" className={actionClass} aria-label={t('删除记录：{0}', [item.name])} title={t('删除记录')} disabled={busy} onClick={() => onDelete(item.id)}><Trash2 /></button>
             </div>
