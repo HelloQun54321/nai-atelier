@@ -250,17 +250,44 @@ export interface ComicPaperPreset {
 
 export type ComicAiZoneSplitMode = 'auto' | 'single' | 'dual-vertical' | 'dual-horizontal';
 
+export type ComicAiLayoutLockMode = 'img2img' | 'txt2img';
+export type ComicAiGutterStyle = 'white' | 'black-flashback';
+
+export interface ComicBreakoutZone {
+  id: string;
+  label: string;
+  /** 归一化页面矩形包围盒（0..1）。 */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** 可选前景微色调底色；缺省使用中性灰不偏色。 */
+  tintColor?: string;
+  /** 可选绑定的角色/物件锚点 ID。 */
+  anchorId?: string;
+}
+
 export interface ComicAiGuidePanel {
   id: string;
   label: string;
   summary: string;
   /** 英文镜头/景别/环境光影词，会在生图时馈入该格对应锚点，确保构图与氛围连贯。 */
   visualNote?: string;
-  /** 相对整页的半透明构图引导区（0..1）。 */
+  /** 相对整页的半透明构图引导区包围盒（0..1）。 */
   x: number;
   y: number;
   width: number;
   height: number;
+  /** 可选任意多边形顶点（支持斜切分镜，向后兼容旧矩形 x/y/width/height）。 */
+  points?: ComicPoint[];
+  /** 出血格：紧贴画布边不留外白边。 */
+  bleed?: boolean;
+  /** 画中画叠框：叠在普通格上层，先描 14px 白外边再描 5px 黑内框。 */
+  inset?: boolean;
+  /** 格内预埋半透明放射速度线（#5c606b, opacity 0.55）。 */
+  speedlines?: boolean;
+  /** 可选格内自定义氛围底色；缺省使用中性灰 #b6b9c0（黑底回忆杀用 #6d7380）。 */
+  fillColor?: string;
 }
 
 export interface ComicAiGeneratedPageImage {
@@ -285,6 +312,22 @@ export interface ComicAiPagePlan {
   /** 双区模式下分别保留区 1 / 区 2 已生成成图，支持单区重画与中途断点保留。 */
   zoneImages?: Partial<Record<'0' | '1', ComicAiGeneratedPageImage>>;
   showGuideOverlay: boolean;
+  /** 版式锁定策略：默认 img2img 硬锁画布分镜框；可切回 txt2img 自由发挥。 */
+  layoutLockMode?: ComicAiLayoutLockMode;
+  /** 图生图锁框重绘强度（缺省自动按全彩 0.85 / 黑白 0.82 / 含破格 0.86 取甜点值）。 */
+  layoutLockStrength?: number;
+  /** 格缝风格：白底常规 或 黑底回忆杀。 */
+  gutterStyle?: ComicAiGutterStyle;
+  /** 在气泡锚点处自动在底图预挖纯白无噪点避让椭圆，防人物遮脸。 */
+  carveBubbleHoles?: boolean;
+  /** 将手绘图层粗色块草图投影进底图分镜格内作构图/光影引导。 */
+  projectSketchLayer?: boolean;
+  /** 将页面拟声词轻压进底图交由 V5 融画渲染成手绘笔触音效字。 */
+  projectSfxText?: boolean;
+  /** 整页统一环境/光照英文词（自动补进未写背景的格主锚点，杜绝双区光照割裂）。 */
+  sceneAtmosphere?: string;
+  /** 叠在分镜边框最上层的破格前景块列表。 */
+  breakoutZones?: ComicBreakoutZone[];
 }
 
 export interface ComicPageDraft {
@@ -333,6 +376,7 @@ export type ComicSelection =
   | { kind: 'panel'; id: string }
   | { kind: 'ai-anchor'; id: string }
   | { kind: 'panel-anchor'; panelId: string; id: string }
+  | { kind: 'breakout-zone'; id: string }
   | { kind: 'bubble'; id: string }
   | { kind: 'text'; id: string }
   | { kind: 'sticker'; id: string }

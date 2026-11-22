@@ -24,6 +24,7 @@ import {
   syncComicLayerStack,
 } from '../../services/comic/comicLayers';
 import type { ComicAiZonePlan } from '../../services/comic/comicAiPageEngine';
+import { getGuidePanelPolygon } from '../../services/comic/comicLayoutTemplateRenderer';
 import type { ComicBubbleCandidate } from '../../services/comic/comicBubbleDetector';
 import { clampInpaintRect, type ComicInpaintDraft, type ComicInpaintRect } from '../../services/comic/comicInpaintEngine';
 import type {
@@ -68,6 +69,7 @@ interface ComicCanvasProps {
   onDeleteAiAnchor?: (anchorId: string) => void;
   onConvertAnchorBubbleToVector?: (source: { kind: 'ai-anchor'; anchorId: string } | { kind: 'panel-anchor'; panelId: string; anchorId: string }) => void;
   onUpdateGuidePanel?: (guideId: string, patch: { x: number; y: number; width: number; height: number }, commit?: boolean) => void;
+  onUpdateBreakoutZone?: (zoneId: string, patch: { x: number; y: number; width: number; height: number }, commit?: boolean) => void;
   onToggleBubbleCandidate?: (candidateId: string) => void;
   onWheelScalePanelImage?: (panelId: string, delta: number) => void;
   onChangeInpaintRect?: (rect: ComicInpaintRect) => void;
@@ -106,6 +108,8 @@ type DragAction =
   | { kind: 'resize-ai-anchor-bubble'; anchorId: string; cx: number; cy: number }
   | { kind: 'move-guide-panel'; guideId: string; dx: number; dy: number; width: number; height: number }
   | { kind: 'resize-guide-panel'; guideId: string; origX: number; origY: number }
+  | { kind: 'move-breakout'; zoneId: string; dx: number; dy: number; width: number; height: number }
+  | { kind: 'resize-breakout'; zoneId: string; origX: number; origY: number }
   | { kind: 'draw-inpaint'; startPoint: ComicPoint; currentPoint: ComicPoint }
   | { kind: 'move-inpaint'; dx: number; dy: number; width: number; height: number }
   | { kind: 'resize-inpaint'; origX: number; origY: number }
@@ -364,6 +368,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   onDeleteAiAnchor,
   onConvertAnchorBubbleToVector,
   onUpdateGuidePanel,
+  onUpdateBreakoutZone,
   onToggleBubbleCandidate,
   onWheelScalePanelImage,
   onChangeInpaintRect,
@@ -571,7 +576,8 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     }
 
     if (activeTool === 'slice') {
-      if (draft.creationMode !== 'manual' || panelsLayerProps.locked) return;
+      // 同时支持手动逐格与 AI 整页模式的两点一刀斜切分镜
+      if (panelsLayerProps.locked) return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
       setDrag({ kind: 'slice', startPoint: pt, currentPoint: pt });
       return;
@@ -707,6 +713,30 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       const width = Math.max(0.12, Math.min(0.98 - drag.origX, pt.x - drag.origX));
       const height = Math.max(0.10, Math.min(0.98 - drag.origY, pt.y - drag.origY));
       onUpdateGuidePanel?.(drag.guideId, {
+        x: drag.origX,
+        y: drag.origY,
+        width: Math.round(width * 1000) / 1000,
+        height: Math.round(height * 1000) / 1000,
+      }, false);
+      return;
+    }
+
+    if (drag.kind === 'move-breakout') {
+      const x = Math.max(0.01, Math.min(0.99 - drag.width, pt.x - drag.dx));
+      const y = Math.max(0.01, Math.min(0.99 - drag.height, pt.y - drag.dy));
+      onUpdateBreakoutZone?.(drag.zoneId, {
+        x: Math.round(x * 1000) / 1000,
+        y: Math.round(y * 1000) / 1000,
+        width: drag.width,
+        height: drag.height,
+      }, false);
+      return;
+    }
+
+    if (drag.kind === 'resize-breakout') {
+      const width = Math.max(0.1, Math.min(0.99 - drag.origX, pt.x - drag.origX));
+      const height = Math.max(0.1, Math.min(0.99 - drag.origY, pt.y - drag.origY));
+      onUpdateBreakoutZone?.(drag.zoneId, {
         x: drag.origX,
         y: drag.origY,
         width: Math.round(width * 1000) / 1000,
@@ -908,6 +938,9 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     } else if (drag.kind === 'move-guide-panel' || drag.kind === 'resize-guide-panel') {
       const gp = draft.aiPage.guidePanels.find(item => item.id === drag.guideId);
       if (gp) onUpdateGuidePanel?.(gp.id, { x: gp.x, y: gp.y, width: gp.width, height: gp.height }, true);
+    } else if (drag.kind === 'move-breakout' || drag.kind === 'resize-breakout') {
+      const bz = (draft.aiPage.breakoutZones || []).find(item => item.id === drag.zoneId);
+      if (bz) onUpdateBreakoutZone?.(bz.id, { x: bz.x, y: bz.y, width: bz.width, height: bz.height }, true);
     } else if (drag.kind === 'move-bubble') {
       const b = draft.bubbles.find(item => item.id === drag.id);
       if (b) onMoveBubble(b.id, b.x, b.y, true);
@@ -944,6 +977,15 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   const sliceTargetIds = useMemo(() => {
     if (drag?.kind !== 'slice') return new Set<string>();
     const ids = new Set<string>();
+    if (draft.creationMode === 'ai-page') {
+      for (const gp of draft.aiPage.guidePanels) {
+        const poly = getGuidePanelPolygon(gp);
+        if (doesSegmentIntersectPolygon(drag.startPoint, drag.currentPoint, poly)) {
+          ids.add(gp.id);
+        }
+      }
+      return ids;
+    }
     const aspect = pageW / Math.max(1, pageH);
     for (const panel of draft.panels) {
       if (panel.locked) continue;
@@ -960,7 +1002,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       }
     }
     return ids;
-  }, [drag, draft.panels, pageW, pageH]);
+  }, [drag, draft.aiPage.guidePanels, draft.creationMode, draft.panels, pageW, pageH]);
 
   const cursorClass = isPanningMode
     ? (drag?.kind === 'pan-viewport' ? 'cursor-grabbing' : 'cursor-grab')
@@ -1255,78 +1297,163 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                         )}
                         {showGuides && (
                           <g>
-                            {aiPage.guidePanels.map((gp, idx) => {
-                              const gx = gp.x * pageW;
-                              const gy = gp.y * pageH;
-                              const gw = gp.width * pageW;
-                              const gh = gp.height * pageH;
-                              const badgeNum = String(idx + 1).padStart(2, '0');
+                            {(() => {
+                              const isFlashback = aiPage.gutterStyle === 'black-flashback';
+                              const orderedGuides = [
+                                ...aiPage.guidePanels.map((gp, idx) => ({ gp, idx })).filter(item => !item.gp.inset),
+                                ...aiPage.guidePanels.map((gp, idx) => ({ gp, idx })).filter(item => item.gp.inset),
+                              ];
                               return (
-                                <g key={gp.id}>
-                                  <rect
-                                    x={gx}
-                                    y={gy}
-                                    width={gw}
-                                    height={gh}
-                                    rx={4}
-                                    fill={hasGenerated ? 'rgba(99, 102, 241, 0.06)' : '#f8fafc'}
-                                    stroke="#6366f1"
-                                    strokeOpacity={hasGenerated ? 0.65 : 0.45}
-                                    strokeWidth={2.5}
-                                    strokeDasharray="10 6"
-                                  />
-                                  <rect
-                                    x={gx + 10}
-                                    y={gy + 10}
-                                    width={30}
-                                    height={20}
-                                    rx={4}
-                                    fill="rgba(79, 70, 229, 0.88)"
-                                  />
-                                  <text
-                                    x={gx + 25}
-                                    y={gy + 20}
-                                    textAnchor="middle"
-                                    dominantBaseline="central"
-                                    fontSize={11}
-                                    fontWeight={700}
-                                    fill="#ffffff"
-                                  >
-                                    {badgeNum}
-                                  </text>
-                                  {!hasGenerated && (
-                                    <>
-                                      <text
-                                        x={gx + 48}
-                                        y={gy + 20}
-                                        dominantBaseline="central"
-                                        fontSize={13}
-                                        fontWeight={700}
-                                        fill="#475569"
-                                      >
-                                        {gp.label}
-                                      </text>
-                                      {gp.summary && (
-                                        <foreignObject x={gx + 14} y={gy + 38} width={Math.max(40, gw - 28)} height={Math.max(24, gh - 48)}>
-                                          <div
-                                            style={{
-                                              color: '#64748b',
-                                              fontSize: '13px',
-                                              lineHeight: 1.4,
-                                              fontWeight: 500,
-                                              overflow: 'hidden',
-                                              userSelect: 'none',
-                                            }}
-                                          >
-                                            {gp.summary}
-                                          </div>
-                                        </foreignObject>
-                                      )}
-                                    </>
+                                <>
+                                  {!hasGenerated && isFlashback && (
+                                    <rect x={0} y={0} width={pageW} height={pageH} fill="#08080a" />
                                   )}
-                                </g>
+                                  {orderedGuides.map(({ gp, idx }) => {
+                                    const poly = getGuidePanelPolygon(gp);
+                                    const b = getPanelBoundingBox(poly, pageW, pageH);
+                                    const pointsAttr = poly.map(pt => `${(pt.x * pageW).toFixed(1)},${(pt.y * pageH).toFixed(1)}`).join(' ');
+                                    const badgeNum = String(idx + 1).padStart(2, '0');
+                                    const isSliceHit = sliceTargetIds.has(gp.id);
+                                    const baseFill = hasGenerated
+                                      ? 'rgba(99, 102, 241, 0.06)'
+                                      : (gp.fillColor?.trim() || (isFlashback ? '#3f4552' : '#eef1f6'));
+                                    const strokeColor = isSliceHit
+                                      ? '#ef4444'
+                                      : gp.inset
+                                        ? '#0a0a0a'
+                                        : (isFlashback ? '#e2e8f0' : '#4f46e5');
+                                    return (
+                                      <g key={gp.id}>
+                                        {gp.inset && !hasGenerated && (
+                                          <polygon
+                                            points={pointsAttr}
+                                            fill="none"
+                                            stroke="#ffffff"
+                                            strokeWidth={14}
+                                            strokeLinejoin="miter"
+                                          />
+                                        )}
+                                        <polygon
+                                          points={pointsAttr}
+                                          fill={baseFill}
+                                          stroke={strokeColor}
+                                          strokeOpacity={isSliceHit ? 0.95 : (hasGenerated ? 0.72 : 0.78)}
+                                          strokeWidth={isSliceHit ? 4 : (aiPage.layoutLockMode !== 'txt2img' ? 4 : 2.5)}
+                                          strokeDasharray={aiPage.layoutLockMode !== 'txt2img' && !hasGenerated ? undefined : '10 6'}
+                                        />
+                                        {gp.speedlines && !hasGenerated && (
+                                          <g opacity={0.35} stroke="#475569" strokeWidth={1.4}>
+                                            {Array.from({ length: 16 }).map((_, rayIdx) => {
+                                              const ang = (rayIdx / 16) * Math.PI * 2;
+                                              const r1 = Math.min(b.width, b.height) * 0.22;
+                                              const r2 = Math.min(b.width, b.height) * 0.46;
+                                              return (
+                                                <line
+                                                  key={rayIdx}
+                                                  x1={b.cx + Math.cos(ang) * r1}
+                                                  y1={b.cy + Math.sin(ang) * r1}
+                                                  x2={b.cx + Math.cos(ang) * r2}
+                                                  y2={b.cy + Math.sin(ang) * r2}
+                                                />
+                                              );
+                                            })}
+                                          </g>
+                                        )}
+                                        <rect
+                                          x={b.minX + 10}
+                                          y={b.minY + 10}
+                                          width={30}
+                                          height={20}
+                                          rx={4}
+                                          fill={gp.inset ? 'rgba(147, 51, 234, 0.9)' : 'rgba(79, 70, 229, 0.88)'}
+                                        />
+                                        <text
+                                          x={b.minX + 25}
+                                          y={b.minY + 20}
+                                          textAnchor="middle"
+                                          dominantBaseline="central"
+                                          fontSize={11}
+                                          fontWeight={700}
+                                          fill="#ffffff"
+                                        >
+                                          {badgeNum}
+                                        </text>
+                                        {!hasGenerated && (
+                                          <>
+                                            <text
+                                              x={b.minX + 48}
+                                              y={b.minY + 20}
+                                              dominantBaseline="central"
+                                              fontSize={13}
+                                              fontWeight={700}
+                                              fill={isFlashback ? '#e2e8f0' : '#334155'}
+                                            >
+                                              {gp.label}
+                                              {gp.bleed ? ` · ${t('出血')}` : ''}
+                                              {gp.inset ? ` · ${t('叠框')}` : ''}
+                                              {gp.speedlines ? ` · ${t('速度线')}` : ''}
+                                            </text>
+                                            {gp.summary && (
+                                              <foreignObject x={b.minX + 14} y={b.minY + 38} width={Math.max(40, b.width - 28)} height={Math.max(24, b.height - 48)}>
+                                                <div
+                                                  style={{
+                                                    color: isFlashback ? '#cbd5e1' : '#64748b',
+                                                    fontSize: '13px',
+                                                    lineHeight: 1.4,
+                                                    fontWeight: 500,
+                                                    overflow: 'hidden',
+                                                    userSelect: 'none',
+                                                  }}
+                                                >
+                                                  {gp.summary}
+                                                </div>
+                                              </foreignObject>
+                                            )}
+                                          </>
+                                        )}
+                                      </g>
+                                    );
+                                  })}
+                                  {(aiPage.breakoutZones || []).map((bz, idx) => {
+                                    const bx = bz.x * pageW;
+                                    const by = bz.y * pageH;
+                                    const bw = bz.width * pageW;
+                                    const bh = bz.height * pageH;
+                                    const isSel = selection?.kind === 'breakout-zone' && selection.id === bz.id;
+                                    return (
+                                      <g key={`breakout-svg-${bz.id}`}>
+                                        <rect
+                                          x={bx}
+                                          y={by}
+                                          width={bw}
+                                          height={bh}
+                                          rx={16}
+                                          fill={hasGenerated ? 'rgba(244, 63, 94, 0.08)' : (bz.tintColor?.trim() || 'rgba(182, 185, 192, 0.85)')}
+                                          stroke="#ffffff"
+                                          strokeWidth={12}
+                                          strokeLinejoin="round"
+                                        />
+                                        <rect
+                                          x={bx}
+                                          y={by}
+                                          width={bw}
+                                          height={bh}
+                                          rx={16}
+                                          fill="none"
+                                          stroke={isSel ? '#e11d48' : '#f43f5e'}
+                                          strokeWidth={isSel ? 3.5 : 2.5}
+                                          strokeDasharray="10 5"
+                                        />
+                                        <rect x={bx + 8} y={by + 8} width={82} height={20} rx={5} fill="rgba(225, 29, 72, 0.9)" />
+                                        <text x={bx + 49} y={by + 18} textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700} fill="#ffffff">
+                                          {t('破格前景')} {idx + 1}
+                                        </text>
+                                      </g>
+                                    );
+                                  })}
+                                </>
                               );
-                            })}
+                            })()}
                             {/* 自动/手动双区拆分可视分割线：让用户在生图前一眼看到免费双区的拼接缝 */}
                             {aiZonePlan && aiZonePlan.zones.length === 2 && (
                               aiZonePlan.effectiveSplit === 'dual-vertical' ? (
@@ -2357,6 +2484,55 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                         setDrag({ kind: 'resize-guide-panel', guideId: gp.id, origX: gp.x, origY: gp.y });
                       }}
                       className="pointer-events-auto absolute -right-1.5 -bottom-1.5 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border-2 border-white bg-indigo-500 shadow hover:scale-125"
+                    />
+                  </div>
+                ))}
+
+                {/* 破格前景块画布拖拽与右下角缩放把手 */}
+                {activeTool === 'select' && onUpdateBreakoutZone && (draft.aiPage.breakoutZones || []).map((bz, idx) => (
+                  <div
+                    key={`breakout-ctrl-${bz.id}`}
+                    style={{
+                      left: `${bz.x * 100}%`,
+                      top: `${bz.y * 100}%`,
+                      width: `${bz.width * 100}%`,
+                      height: `${bz.height * 100}%`,
+                    }}
+                    className="pointer-events-none absolute"
+                  >
+                    <button
+                      type="button"
+                      aria-label={t('移动破格前景块 {0}', [bz.label || `#${idx + 1}`])}
+                      title={t('拖拽移动破格前景块位置')}
+                      onPointerDown={event => {
+                        if (isPanningMode) return;
+                        event.stopPropagation();
+                        onSelect({ kind: 'breakout-zone', id: bz.id });
+                        const pt = toNormalizedPoint(event.clientX, event.clientY);
+                        stageRef.current?.setPointerCapture?.(event.pointerId);
+                        setDrag({
+                          kind: 'move-breakout',
+                          zoneId: bz.id,
+                          dx: pt.x - bz.x,
+                          dy: pt.y - bz.y,
+                          width: bz.width,
+                          height: bz.height,
+                        });
+                      }}
+                      className="pointer-events-auto absolute top-1.5 left-1.5 h-6 w-24 cursor-move rounded bg-transparent hover:bg-rose-500/20"
+                    />
+                    <button
+                      type="button"
+                      aria-label={t('调整破格前景块 {0} 大小', [bz.label || `#${idx + 1}`])}
+                      title={t('拖拽调整破格前景块宽高')}
+                      onPointerDown={event => {
+                        if (isPanningMode) return;
+                        event.stopPropagation();
+                        onSelect({ kind: 'breakout-zone', id: bz.id });
+                        stageRef.current?.setPointerCapture?.(event.pointerId);
+                        setDrag({ kind: 'resize-breakout', zoneId: bz.id, origX: bz.x, origY: bz.y });
+                      }}
+                      className="pointer-events-auto absolute -right-1.5 -bottom-1.5 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border-2 border-white bg-rose-500 shadow hover:scale-125"
                     />
                   </div>
                 ))}

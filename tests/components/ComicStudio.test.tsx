@@ -181,6 +181,17 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getByRole('button', { name: /仅画区 1/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /仅画区 2/ })).toBeTruthy();
 
+    // 验证 V5 img2img 硬锁版式控件：默认开启、可切黑底回忆杀、填统一光照词并添加破格前景块
+    const lockToggle = screen.getByRole('checkbox', { name: '按画布分镜框硬锁版式（图生图）' }) as HTMLInputElement;
+    expect(lockToggle.checked).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '黑底回忆杀' }));
+    expect(screen.getByRole('button', { name: '黑底回忆杀' }).getAttribute('aria-pressed')).toBe('true');
+    const atmosInput = screen.getByRole('textbox', { name: '全页统一环境光照词' }) as HTMLInputElement;
+    fireEvent.change(atmosInput, { target: { value: 'warm afternoon library sunlight' } });
+    expect(atmosInput.value).toBe('warm afternoon library sunlight');
+    fireEvent.click(screen.getByRole('button', { name: '破格前景块' }));
+    expect(screen.getAllByText(/破格前景 1/).length).toBeGreaterThanOrEqual(1);
+
     // 一键将气泡锚点转为可编辑矢量气泡
     fireEvent.click(screen.getByRole('button', { name: /气泡点转矢量嵌字/ }));
     expect(screen.getByText('当前对白气泡')).toBeTruthy();

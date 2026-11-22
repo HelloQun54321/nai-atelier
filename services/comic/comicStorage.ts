@@ -28,13 +28,45 @@ const normalizeAiPage = (raw: unknown, width: number, height: number, gutterPx: 
       || x < 0 || y < 0
       || x + w > 1.005 || y + h > 1.005;
   });
+  const rawStrength = Number(raw.layoutLockStrength);
+  const layoutLockStrength = Number.isFinite(rawStrength) && rawStrength >= 0.6 && rawStrength <= 0.98
+    ? Math.round(rawStrength * 100) / 100
+    : undefined;
+  const normalizedGuides = (hasCorruptedGuides ? fallback.guidePanels : rawGuides).map(g => {
+    const validPoints = Array.isArray(g.points) && g.points.length >= 3
+      && g.points.every(pt => Number.isFinite(Number(pt?.x)) && Number.isFinite(Number(pt?.y)))
+      ? g.points.map(pt => ({ x: Math.max(0, Math.min(1, Number(pt.x))), y: Math.max(0, Math.min(1, Number(pt.y))) }))
+      : undefined;
+    return {
+      ...g,
+      ...(validPoints ? { points: validPoints } : {}),
+      ...(g.bleed ? { bleed: true } : {}),
+      ...(g.inset ? { inset: true } : {}),
+      ...(g.speedlines ? { speedlines: true } : {}),
+      ...(typeof g.fillColor === 'string' && g.fillColor.trim() ? { fillColor: g.fillColor.trim() } : {}),
+    };
+  });
+  const breakoutZones = Array.isArray(raw.breakoutZones)
+    ? (raw.breakoutZones as Array<Record<string, unknown>>)
+      .filter(item => isRecord(item) && typeof item.id === 'string' && Number.isFinite(Number(item.x)) && Number.isFinite(Number(item.y)))
+      .map(item => ({
+        id: String(item.id),
+        label: typeof item.label === 'string' && item.label.trim() ? item.label : '破格前景',
+        x: Math.max(0, Math.min(0.95, Number(item.x))),
+        y: Math.max(0, Math.min(0.95, Number(item.y))),
+        width: Math.max(0.06, Math.min(1, Number(item.width) || 0.3)),
+        height: Math.max(0.06, Math.min(1, Number(item.height) || 0.35)),
+        ...(typeof item.tintColor === 'string' && item.tintColor.trim() ? { tintColor: item.tintColor.trim() } : {}),
+        ...(typeof item.anchorId === 'string' && item.anchorId.trim() ? { anchorId: item.anchorId.trim() } : {}),
+      }))
+    : [];
   return {
     storyPrompt: typeof raw.storyPrompt === 'string' ? raw.storyPrompt : '',
     targetPanelCount: Number.isFinite(Number(raw.targetPanelCount)) ? Math.max(2, Math.min(8, Math.round(Number(raw.targetPanelCount)))) : 4,
     castCharacterIds: Array.isArray(raw.castCharacterIds) ? raw.castCharacterIds.filter((id): id is string => typeof id === 'string') : [],
     splitMode,
     layoutHint: typeof raw.layoutHint === 'string' && raw.layoutHint.trim() ? raw.layoutHint : fallback.layoutHint,
-    guidePanels: hasCorruptedGuides ? fallback.guidePanels : rawGuides,
+    guidePanels: normalizedGuides,
     anchors: Array.isArray(raw.anchors) ? raw.anchors as ComicAiPagePlan['anchors'] : [],
     generatedPageImage: isRecord(raw.generatedPageImage) && typeof raw.generatedPageImage.url === 'string'
       ? raw.generatedPageImage as unknown as ComicAiPagePlan['generatedPageImage']
@@ -46,6 +78,14 @@ const normalizeAiPage = (raw: unknown, width: number, height: number, gutterPx: 
       ? raw.zoneImages as unknown as ComicAiPagePlan['zoneImages']
       : undefined,
     showGuideOverlay: raw.showGuideOverlay !== false,
+    layoutLockMode: raw.layoutLockMode === 'txt2img' ? 'txt2img' : 'img2img',
+    ...(layoutLockStrength !== undefined ? { layoutLockStrength } : {}),
+    gutterStyle: raw.gutterStyle === 'black-flashback' ? 'black-flashback' : 'white',
+    carveBubbleHoles: raw.carveBubbleHoles === true,
+    projectSketchLayer: raw.projectSketchLayer === true,
+    projectSfxText: raw.projectSfxText === true,
+    sceneAtmosphere: typeof raw.sceneAtmosphere === 'string' ? raw.sceneAtmosphere : '',
+    breakoutZones,
   };
 };
 

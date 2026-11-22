@@ -1,5 +1,6 @@
 import type { CharacterParams, NAIParams } from '../../types';
 import { getDefaultStepsForModel, isNaiMediumModel } from '../naiModels';
+import { joinNaiTextPrompt, splitNaiTextPrompt } from '../transparentBackground.mjs';
 import { clampAnchorCoord, getPanelTargetResolution } from './comicGeometry';
 import type {
   ComicAnchor,
@@ -106,46 +107,84 @@ const bubbleShapeTags = (shape: ComicBubbleShape | undefined): string => {
   }
 };
 
+/**
+ * V5 `Text:` 提示词语法硬约束：
+ * 使用 `splitNaiTextPrompt` / `joinNaiTextPrompt` 拆分所有片段中的 `Text:` 画面字，
+ * 确保任意普通 Tag（含 monochrome / greyscale / 氛围词）永远拼在描述区，
+ * `Text: ...` 永远位于整段 caption 绝对末尾，绝不被 V5 当成画面字原样印出。
+ */
+export const assembleV5TextSafePrompt = (
+  parts: Array<string | undefined | null>,
+  options?: { monochrome?: boolean; explicitText?: string },
+): string => {
+  const descriptions: string[] = [];
+  const textClauses: string[] = [];
+  for (const raw of parts) {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) continue;
+    const { description, text } = splitNaiTextPrompt(trimmed);
+    const cleanedDesc = options?.monochrome ? stripColorTagsForMonochrome(description) : description.trim();
+    if (cleanedDesc) descriptions.push(cleanedDesc);
+    if (text.trim()) textClauses.push(text.trim());
+  }
+  if (options?.explicitText?.trim()) {
+    const rawExplicit = options.explicitText.trim();
+    const clause = /^text:/i.test(rawExplicit) ? rawExplicit : `Text: ${rawExplicit}`;
+    if (!textClauses.includes(clause)) textClauses.push(clause);
+  }
+  const mergedDesc = cleanCommaList(descriptions.join(', '));
+  if (!textClauses.length) return mergedDesc;
+  const mergedText = textClauses.join('\n');
+  return mergedDesc ? joinNaiTextPrompt(mergedDesc, mergedText) : mergedText;
+};
+
 const compileAnchorCaption = (
   anchor: ComicAnchor,
   dialogueMode: ComicDialogueMode,
   monochrome: boolean,
 ): { prompt: string; negative: string } => {
-  const basePrompt = monochrome ? stripColorTagsForMonochrome(anchor.prompt) : anchor.prompt.trim();
   const baseNeg = anchor.negativePrompt.trim();
 
   if (anchor.kind === 'bubble') {
     const shape = bubbleShapeTags(anchor.bubbleShape);
     if (dialogueMode === 'ai-text' && anchor.bubbleText?.trim()) {
-      const textClause = `Text: ${anchor.bubbleText.trim()}`;
       return {
-        prompt: cleanCommaList([shape, basePrompt, textClause].filter(Boolean).join(', ')),
+        prompt: assembleV5TextSafePrompt([shape, anchor.prompt], {
+          monochrome,
+          explicitText: anchor.bubbleText.trim(),
+        }),
         negative: baseNeg,
       };
     }
     return {
-      prompt: cleanCommaList([shape, 'empty speech bubble, blank speech bubble, no text inside bubble', basePrompt].filter(Boolean).join(', ')),
+      prompt: assembleV5TextSafePrompt(
+        [shape, 'empty speech bubble, blank speech bubble, no text inside bubble', anchor.prompt],
+        { monochrome },
+      ),
       negative: cleanCommaList([baseNeg, 'text, letters, gibberish, watermark'].filter(Boolean).join(', ')),
     };
   }
 
   if (anchor.kind === 'inset') {
     return {
-      prompt: cleanCommaList(['inset panel, white bordered close-up box, picture-in-picture', basePrompt].filter(Boolean).join(', ')),
+      prompt: assembleV5TextSafePrompt(
+        ['inset panel, white bordered close-up box, picture-in-picture', anchor.prompt],
+        { monochrome },
+      ),
       negative: monochrome ? cleanCommaList([baseNeg, MONOCHROME_NEGATIVE_TAGS].filter(Boolean).join(', ')) : baseNeg,
     };
   }
 
   if (anchor.kind === 'scene') {
     return {
-      prompt: cleanCommaList(basePrompt),
+      prompt: assembleV5TextSafePrompt([anchor.prompt], { monochrome }),
       negative: monochrome ? cleanCommaList([baseNeg, MONOCHROME_NEGATIVE_TAGS].filter(Boolean).join(', ')) : baseNeg,
     };
   }
 
   // character
   return {
-    prompt: cleanCommaList(basePrompt),
+    prompt: assembleV5TextSafePrompt([anchor.prompt], { monochrome }),
     negative: monochrome ? cleanCommaList([baseNeg, MONOCHROME_NEGATIVE_TAGS].filter(Boolean).join(', ')) : baseNeg,
   };
 };
@@ -223,13 +262,6 @@ export const buildComicPanelGenerationInput = (
   const guard = evaluateAnchorGuard(panel.anchors);
   const cappedAnchors = keptAnchors.slice(0, COMIC_ANCHOR_HARD_LIMIT);
 
-  const stylePrompt = monochrome
-    ? stripColorTagsForMonochrome(page.globalBasePrompt)
-    : page.globalBasePrompt.trim();
-  const panelPrompt = monochrome
-    ? stripColorTagsForMonochrome(panel.prompt)
-    : panel.prompt.trim();
-
   const modeFramingTags: string[] = [];
   if (monochrome) {
     modeFramingTags.push('monochrome, greyscale, manga, screentone, crisp ink lineart');
@@ -239,11 +271,11 @@ export const buildComicPanelGenerationInput = (
   }
 
   const promptParts = [
-    stylePrompt,
+    page.globalBasePrompt,
     ...modeFramingTags,
-    panelPrompt,
-    ...mergedSceneNotes.map(note => monochrome ? stripColorTagsForMonochrome(note) : note),
-  ].filter(Boolean);
+    panel.prompt,
+    ...mergedSceneNotes,
+  ];
 
   const globalNeg = sanitizeComicNegativeConflicts(page.globalNegativePrompt, monochrome);
   const panelNeg = sanitizeComicNegativeConflicts(panel.negativePrompt, monochrome);
@@ -289,7 +321,7 @@ export const buildComicPanelGenerationInput = (
   };
 
   return {
-    prompt: cleanCommaList(promptParts.join(', ')),
+    prompt: assembleV5TextSafePrompt(promptParts, { monochrome }),
     negative: cleanCommaList(negParts.filter(Boolean).join(', ')),
     params,
     guard,

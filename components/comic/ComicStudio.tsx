@@ -3,6 +3,7 @@ import { PanelRightOpen, X } from 'lucide-react';
 import type { PromptChain } from '../../types';
 import { t, useLanguage } from '../../services/i18n';
 import {
+  estimateImageEditCost,
   estimateV45GenerationCost,
   formatGenerationCostLabel,
   usageForCostEstimate,
@@ -26,6 +27,11 @@ import {
   planComicAiZones,
   stitchAiZoneImages,
 } from '../../services/comic/comicAiPageEngine';
+import {
+  getGuidePanelPolygon,
+  renderComicZoneLayoutTemplate,
+  resolveLayoutLockConfig,
+} from '../../services/comic/comicLayoutTemplateRenderer';
 import {
   commitBubbleCandidates,
   detectWhiteBubblesFromImageUrl,
@@ -275,7 +281,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const handleSelectWithTab = useCallback((next: ComicSelection) => {
     setSelection(next);
     if (!next) return;
-    if (next.kind === 'panel' || next.kind === 'ai-anchor' || next.kind === 'panel-anchor') {
+    if (next.kind === 'panel' || next.kind === 'ai-anchor' || next.kind === 'panel-anchor' || next.kind === 'breakout-zone') {
       setInspectorTab(cur => (cur === 'layers' ? 'panel' : cur));
     } else if (next.kind === 'bubble' || next.kind === 'text' || next.kind === 'sticker' || next.kind === 'image') {
       setInspectorTab('layers');
@@ -429,6 +435,15 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         },
       }), true);
       setSelection(null);
+    } else if (selection.kind === 'breakout-zone') {
+      applyDraftChange(cur => ({
+        ...cur,
+        aiPage: {
+          ...cur.aiPage,
+          breakoutZones: (cur.aiPage.breakoutZones || []).filter(bz => bz.id !== selection.id),
+        },
+      }), true);
+      setSelection(null);
     } else if (selection.kind === 'panel-anchor') {
       applyDraftChange(cur => ({
         ...cur,
@@ -544,6 +559,55 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const handleSliceAtLine = useCallback((start: ComicPoint, end: ComicPoint) => {
     const gx = draft.gutterPx / draft.width;
     const gy = draft.gutterPx / draft.height;
+    if (draft.creationMode === 'ai-page') {
+      let slicedCount = 0;
+      const nextGuides: ComicAiGuidePanel[] = [];
+      for (const gp of draft.aiPage.guidePanels) {
+        const poly = getGuidePanelPolygon(gp);
+        const split = slicePolygonByLine(poly, start, end, gx, gy);
+        if (split && nextGuides.length + 2 <= COMIC_PANEL_SOFT_MAX) {
+          slicedCount += 1;
+          const b0 = getPanelBoundingBox(split[0], 1, 1);
+          const b1 = getPanelBoundingBox(split[1], 1, 1);
+          nextGuides.push({
+            ...gp,
+            x: Math.round(b0.minX * 1000) / 1000,
+            y: Math.round(b0.minY * 1000) / 1000,
+            width: Math.round(b0.width * 1000) / 1000,
+            height: Math.round(b0.height * 1000) / 1000,
+            points: split[0].map(pt => ({ x: Math.round(pt.x * 1000) / 1000, y: Math.round(pt.y * 1000) / 1000 })),
+          });
+          nextGuides.push({
+            ...gp,
+            id: createUuid(),
+            label: `${gp.label}-分格`,
+            x: Math.round(b1.minX * 1000) / 1000,
+            y: Math.round(b1.minY * 1000) / 1000,
+            width: Math.round(b1.width * 1000) / 1000,
+            height: Math.round(b1.height * 1000) / 1000,
+            points: split[1].map(pt => ({ x: Math.round(pt.x * 1000) / 1000, y: Math.round(pt.y * 1000) / 1000 })),
+          });
+        } else {
+          nextGuides.push(gp);
+        }
+      }
+      if (slicedCount > 0) {
+        applyDraftChange(current => ({
+          ...current,
+          aiPage: {
+            ...current.aiPage,
+            targetPanelCount: nextGuides.length,
+            guidePanels: nextGuides,
+            showGuideOverlay: true,
+          },
+        }), true);
+        notify(t('已沿切线斜切 {0} 个 AI 分镜引导格', [slicedCount]));
+      } else {
+        notify(t('切线未穿过可切分的分镜格'), 'error');
+      }
+      return;
+    }
+
     const aspect = draft.width / Math.max(1, draft.height);
     let slicedCount = 0;
     const nextPanels: ComicPanel[] = [];
@@ -583,7 +647,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     } else {
       notify(t('切线未穿过可切分的分镜格'), 'error');
     }
-  }, [applyDraftChange, draft.gutterPx, draft.height, draft.panels, draft.width, notify]);
+  }, [applyDraftChange, draft.aiPage.guidePanels, draft.creationMode, draft.gutterPx, draft.height, draft.panels, draft.width, notify]);
 
   const handleDuplicatePanel = useCallback((panelId: string) => {
     if (draft.panels.length >= COMIC_PANEL_SOFT_MAX) {
@@ -1061,10 +1125,23 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
 
   const aiZonePlan = useMemo(() => planComicAiZones(draft), [draft]);
   const aiEstimatedCost = useMemo(() => {
-    const isOpus = (novelaiSubscription.info?.tier ?? 3) >= 3;
+    const opusTier = novelaiSubscription.info?.tier ?? 3;
+    const isOpus = opusTier >= 3;
     const exhausted = novelaiSubscription.info?.usage?.isNegative === true;
+    const lockCfg = resolveLayoutLockConfig(draft);
     return aiZonePlan.zones.reduce((sum, zone) => {
       const compiled = buildAiPageZoneRequest(draft, zone, aiZonePlan.zones.length);
+      if (lockCfg.enabled) {
+        return sum + estimateImageEditCost(
+          compiled.params,
+          'image-to-image',
+          lockCfg.strength,
+          false,
+          opusTier,
+          exhausted,
+          { width: zone.resolution.width, height: zone.resolution.height },
+        );
+      }
       return sum + estimateV45GenerationCost(compiled.params, isOpus, exhausted);
     }, 0);
   }, [aiZonePlan, draft, novelaiSubscription.info]);
@@ -1105,7 +1182,31 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   ) => {
     handleUpdateAiPage(cur => ({
       ...cur,
-      guidePanels: cur.guidePanels.map(gp => gp.id === guideId ? { ...gp, ...patch } : gp),
+      guidePanels: cur.guidePanels.map(gp => {
+        if (gp.id !== guideId) return gp;
+        // 若引导格已斜切为多边形，移动或缩放时按比例同步映射顶点，保持斜切形态不丢
+        if (gp.points && gp.points.length >= 3) {
+          const oldW = Math.max(1e-4, gp.width);
+          const oldH = Math.max(1e-4, gp.height);
+          const nextPoints = gp.points.map(pt => ({
+            x: Math.round((patch.x + ((pt.x - gp.x) / oldW) * patch.width) * 1000) / 1000,
+            y: Math.round((patch.y + ((pt.y - gp.y) / oldH) * patch.height) * 1000) / 1000,
+          }));
+          return { ...gp, ...patch, points: nextPoints };
+        }
+        return { ...gp, ...patch };
+      }),
+    }), commit);
+  }, [handleUpdateAiPage]);
+
+  const handleUpdateBreakoutZone = useCallback((
+    zoneId: string,
+    patch: { x: number; y: number; width: number; height: number },
+    commit = false,
+  ) => {
+    handleUpdateAiPage(cur => ({
+      ...cur,
+      breakoutZones: (cur.breakoutZones || []).map(bz => (bz.id === zoneId ? { ...bz, ...patch } : bz)),
     }), commit);
   }, [handleUpdateAiPage]);
 
@@ -1179,16 +1280,24 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         preserveExistingLayout: preserveGuideLayout,
       });
 
-      const nextGuides: ComicAiGuidePanel[] = planned.guidePanels.map((gp, idx) => ({
-        id: existingGuidePanels && draft.aiPage.guidePanels[idx]?.id ? draft.aiPage.guidePanels[idx].id : createUuid(),
-        label: gp.label,
-        summary: gp.summary,
-        visualNote: gp.visualNote || '',
-        x: gp.x,
-        y: gp.y,
-        width: gp.width,
-        height: gp.height,
-      }));
+      const nextGuides: ComicAiGuidePanel[] = planned.guidePanels.map((gp, idx) => {
+        const prev = existingGuidePanels ? draft.aiPage.guidePanels[idx] : undefined;
+        return {
+          id: prev?.id || createUuid(),
+          label: gp.label,
+          summary: gp.summary,
+          visualNote: gp.visualNote || '',
+          x: gp.x,
+          y: gp.y,
+          width: gp.width,
+          height: gp.height,
+          ...(prev?.points ? { points: prev.points } : {}),
+          ...(prev?.bleed ? { bleed: true } : {}),
+          ...(prev?.inset ? { inset: true } : {}),
+          ...(prev?.speedlines ? { speedlines: true } : {}),
+          ...(prev?.fillColor ? { fillColor: prev.fillColor } : {}),
+        };
+      });
       const nextAnchors = planned.anchors.map(a => ({
         id: createUuid(),
         kind: a.kind,
@@ -1351,13 +1460,14 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   ) => {
     setAiGenerationStageText(t('正在无缝拼合双区整页…'));
     const splitAxis = aiZonePlan.effectiveSplit === 'dual-horizontal' ? 'dual-horizontal' : 'dual-vertical';
+    const stitchBg = draft.aiPage.gutterStyle === 'black-flashback' ? '#08080a' : draft.backgroundColor;
     const stitchedBlob = await stitchAiZoneImages(
       [z0.url, z1.url],
       splitAxis,
       aiZonePlan.splitRatio,
       draft.width,
       draft.height,
-      draft.backgroundColor,
+      stitchBg,
       draft.gutterPx,
     );
 
@@ -1442,9 +1552,15 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       return;
     }
 
+    // 双区一致性修复：未锁种子时自动生成本页共享临时 Seed，让上下/左右两区保持统一光照与画风
+    const sharedSeed = draft.seed !== undefined
+      ? draft.seed
+      : (aiZonePlan.zones.length > 1 ? Math.floor(Math.random() * 2_000_000_000) : undefined);
+    const lockCfg = resolveLayoutLockConfig(draft);
+
     const compiledZones = targetZones.map(zone => ({
       zone,
-      compiled: buildAiPageZoneRequest(draft, zone, aiZonePlan.zones.length),
+      compiled: buildAiPageZoneRequest(draft, zone, aiZonePlan.zones.length, { sharedSeed }),
     }));
     const hasAnyContent = compiledZones.some(z => z.compiled.prompt.trim() || (z.compiled.params.characters?.length ?? 0) > 0);
     if (!hasAnyContent) {
@@ -1453,8 +1569,19 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     }
 
     let submitKey = readActiveApiKey();
-    const firstCompiled = compiledZones[0].compiled;
-    const opusBaseCost = estimateV45GenerationCost(firstCompiled.params, true, false);
+    const firstZone = compiledZones[0];
+    const firstCompiled = firstZone.compiled;
+    const opusBaseCost = lockCfg.enabled
+      ? estimateImageEditCost(
+        firstCompiled.params,
+        'image-to-image',
+        lockCfg.strength,
+        false,
+        3,
+        false,
+        { width: firstZone.zone.resolution.width, height: firstZone.zone.resolution.height },
+      )
+      : estimateV45GenerationCost(firstCompiled.params, true, false);
     const poolCheck = await prepareGenerationWithPool({
       model: firstCompiled.params.model,
       estimatedCostWithOpus: opusBaseCost,
@@ -1478,7 +1605,19 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       : await usageForCostEstimate(novelaiSubscription.info?.usage, () => novelaiSubscription.refresh(), firstCompiled.params.model);
 
     const zoneCosts = compiledZones.map(item => (
-      perUseChannel ? 0 : estimateV45GenerationCost(item.compiled.params, opusTier >= 3, exhausted)
+      perUseChannel
+        ? 0
+        : lockCfg.enabled
+          ? estimateImageEditCost(
+            item.compiled.params,
+            'image-to-image',
+            lockCfg.strength,
+            false,
+            opusTier,
+            exhausted,
+            { width: item.zone.resolution.width, height: item.zone.resolution.height },
+          )
+          : estimateV45GenerationCost(item.compiled.params, opusTier >= 3, exhausted)
     ));
     const totalCost = zoneCosts.reduce((acc, c) => acc + c, 0);
 
@@ -1515,18 +1654,32 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         setGeneratingAiZoneIndex(zone.zoneIndex);
         setAiGenerationStageText(aiZonePlan.zones.length === 2
           ? t('区 {0}/2 · {1} 生成中…', [zone.zoneIndex + 1, zone.label])
-          : t('整页生成中…'));
+          : lockCfg.enabled ? t('硬锁分镜整页生成中…') : t('整页生成中…'));
+
+        // 核心升级：硬锁版式模式渲染「纯白/黑底格缝 + 粗边框 + 中性灰确定性轻颗粒」底图走 V5 img2img
+        const layoutTemplate = lockCfg.enabled
+          ? renderComicZoneLayoutTemplate(draft, zone, { seed: sharedSeed ?? 1337 })
+          : null;
 
         const descriptor = await buildGenerationJobDescriptor({
-          operation: 'text-to-image',
+          operation: layoutTemplate ? 'image-to-image' : 'text-to-image',
           prompt: compiled.prompt,
           negative: compiled.negative,
           params: compiled.params,
           approvedCost: zoneCost,
           stream: generationStreamPreview,
-          forceEmptySeed: draft.seed !== undefined ? false : forceEmptySeed,
+          forceEmptySeed: sharedSeed !== undefined ? false : forceEmptySeed,
           apiKey: submitKey,
           estimatedCost: zoneCost,
+          ...(layoutTemplate
+            ? {
+              edit: {
+                image: layoutTemplate.dataUrl,
+                strength: lockCfg.strength,
+                noise: lockCfg.noise,
+              },
+            }
+            : {}),
           history: {
             basePrompt: draft.globalBasePrompt,
             subjectPrompt: draft.aiPage.storyPrompt || zone.label,
@@ -2320,7 +2473,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     const refPage = target.pages[target.pages.length - 1] || draft;
     const created = createInitialComicDraft();
     created.title = `第 ${target.pages.length + 1} 页`;
-    // 继承当前话的画幅、风格串、V5 模型与色彩策略，确保整话风格连贯
+    // 继承当前话的画幅、风格串、V5 模型、色彩策略、出场角色 DNA、格缝风格、锁框模式、统一光照与可选锁定 Seed，实现跨页连载不换脸
     created.paperPresetId = refPage.paperPresetId;
     created.width = refPage.width;
     created.height = refPage.height;
@@ -2331,6 +2484,15 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     created.styleChainId = refPage.styleChainId;
     created.globalBasePrompt = refPage.globalBasePrompt;
     created.globalNegativePrompt = refPage.globalNegativePrompt;
+    if (refPage.seed !== undefined) created.seed = refPage.seed;
+    created.aiPage = {
+      ...created.aiPage,
+      castCharacterIds: [...(refPage.aiPage.castCharacterIds || [])],
+      gutterStyle: refPage.aiPage.gutterStyle || 'white',
+      layoutLockMode: refPage.aiPage.layoutLockMode || 'img2img',
+      ...(refPage.aiPage.layoutLockStrength !== undefined ? { layoutLockStrength: refPage.aiPage.layoutLockStrength } : {}),
+      ...(refPage.aiPage.sceneAtmosphere ? { sceneAtmosphere: refPage.aiPage.sceneAtmosphere } : {}),
+    };
     let updated: ComicBook | undefined;
     const nextBooks = booksRef.current.map(b => {
       if (b.id !== bookId) return b;
@@ -2574,6 +2736,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             onDeleteAiAnchor={handleDeleteAiAnchor}
             onConvertAnchorBubbleToVector={handleConvertSingleAnchorBubbleToVector}
             onUpdateGuidePanel={handleUpdateGuidePanel}
+            onUpdateBreakoutZone={handleUpdateBreakoutZone}
             onToggleBubbleCandidate={id => setBubbleCandidates(cur => cur ? cur.map(c => c.id === id ? { ...c, selected: !c.selected } : c) : cur)}
             onWheelScalePanelImage={handleWheelScalePanelImage}
             onChangeInpaintRect={rect => setInpaintDraft(cur => cur ? { ...cur, rect } : cur)}

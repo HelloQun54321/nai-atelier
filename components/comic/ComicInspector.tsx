@@ -51,6 +51,7 @@ import {
   parseDanbooruCastId,
 } from '../../services/comic/comicPromptBuilder';
 import type { ComicAiZonePlan } from '../../services/comic/comicAiPageEngine';
+import { resolveLayoutLockConfig } from '../../services/comic/comicLayoutTemplateRenderer';
 import type { ComicBubbleCandidate } from '../../services/comic/comicBubbleDetector';
 import type { ComicInpaintDraft } from '../../services/comic/comicInpaintEngine';
 import type {
@@ -801,6 +802,206 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                   )}
                 </div>
 
+                {/* V5 图生图硬锁分镜与场景氛围控制（0 Anlas 像素级锁框） */}
+                {(() => {
+                  const lockCfg = resolveLayoutLockConfig(draft);
+                  const isLocked = aiPage.layoutLockMode !== 'txt2img';
+                  const isFlashback = aiPage.gutterStyle === 'black-flashback';
+                  const breakouts = aiPage.breakoutZones || [];
+                  const addBreakoutZone = () => {
+                    const zoneId = createUuid();
+                    const anchorId = createUuid();
+                    const idx = breakouts.length + 1;
+                    const bx = 0.28 + ((idx - 1) % 3) * 0.06;
+                    const by = 0.24 + ((idx - 1) % 3) * 0.06;
+                    const bw = 0.42;
+                    const bh = 0.46;
+                    onUpdateAiPage(cur => ({
+                      ...cur,
+                      showGuideOverlay: true,
+                      breakoutZones: [
+                        ...(cur.breakoutZones || []),
+                        { id: zoneId, label: `破格前景 ${idx}`, x: bx, y: by, width: bw, height: bh, anchorId },
+                      ],
+                      anchors: [
+                        ...cur.anchors,
+                        {
+                          id: anchorId,
+                          kind: 'character',
+                          label: `破格主体 ${idx}`,
+                          prompt: 'out of frame, breaking panel border, overlapping panel borders',
+                          negativePrompt: '',
+                          x: clampAnchorCoord(bx + bw / 2),
+                          y: clampAnchorCoord(by + bh / 2),
+                          enabled: true,
+                        },
+                      ],
+                    }), true);
+                    onSelect({ kind: 'breakout-zone', id: zoneId });
+                  };
+
+                  return (
+                    <div className="space-y-2 rounded-xl border border-indigo-200/70 bg-indigo-50/25 p-2.5 dark:border-indigo-900/50 dark:bg-indigo-950/15">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] font-bold text-gray-800 dark:text-gray-100">
+                          <input
+                            type="checkbox"
+                            aria-label={t('按画布分镜框硬锁版式（图生图）')}
+                            checked={isLocked}
+                            onChange={e => onUpdateAiPage(cur => ({
+                              ...cur,
+                              layoutLockMode: e.target.checked ? 'img2img' : 'txt2img',
+                            }), true)}
+                            className="rounded accent-indigo-600"
+                          />
+                          <span>{t('按画布分镜框硬锁版式（图生图）')}</span>
+                        </label>
+                        {isLocked && (
+                          <span className="rounded bg-indigo-100/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300">
+                            {lockCfg.strength.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+
+                      {isLocked && (
+                        <>
+                          <div className="grid grid-cols-2 gap-1">
+                            <button
+                              type="button"
+                              aria-pressed={!isFlashback}
+                              onClick={() => onUpdateAiPage(cur => ({ ...cur, gutterStyle: 'white' }), true)}
+                              className={`rounded-md border px-2 py-1 text-[11px] font-medium transition ${!isFlashback ? 'border-indigo-500 bg-white text-indigo-700 shadow-xs dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200/80 bg-white/70 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-300'}`}
+                            >
+                              {t('白底常规')}
+                            </button>
+                            <button
+                              type="button"
+                              aria-pressed={isFlashback}
+                              onClick={() => onUpdateAiPage(cur => ({ ...cur, gutterStyle: 'black-flashback' }), true)}
+                              className={`rounded-md border px-2 py-1 text-[11px] font-medium transition ${isFlashback ? 'border-indigo-500 bg-gray-900 text-white shadow-xs dark:border-indigo-400' : 'border-gray-200/80 bg-white/70 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-300'}`}
+                            >
+                              {t('黑底回忆杀')}
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600 dark:text-gray-300">
+                            <label className="inline-flex cursor-pointer items-center gap-1">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(aiPage.carveBubbleHoles)}
+                                onChange={e => onUpdateAiPage(cur => ({ ...cur, carveBubbleHoles: e.target.checked }), true)}
+                                className="rounded accent-indigo-600"
+                              />
+                              <span>{t('气泡区自动留白')}</span>
+                            </label>
+                            <label className="inline-flex cursor-pointer items-center gap-1">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(aiPage.projectSketchLayer)}
+                                onChange={e => onUpdateAiPage(cur => ({ ...cur, projectSketchLayer: e.target.checked }), true)}
+                                className="rounded accent-indigo-600"
+                              />
+                              <span>{t('手绘草图引导')}</span>
+                            </label>
+                            <label className="inline-flex cursor-pointer items-center gap-1">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(aiPage.projectSfxText)}
+                                onChange={e => onUpdateAiPage(cur => ({ ...cur, projectSfxText: e.target.checked }), true)}
+                                className="rounded accent-indigo-600"
+                              />
+                              <span>{t('拟声词融画')}</span>
+                            </label>
+                          </div>
+
+                          <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
+                            <span className="flex-none">{t('锁框重绘强度')}</span>
+                            <input
+                              type="range"
+                              aria-label={t('锁框重绘强度')}
+                              min={75}
+                              max={92}
+                              step={1}
+                              value={Math.round(lockCfg.strength * 100)}
+                              onChange={e => onUpdateAiPage(cur => ({ ...cur, layoutLockStrength: Number(e.target.value) / 100 }), false)}
+                              className="min-w-0 flex-1 accent-indigo-600"
+                            />
+                            {aiPage.layoutLockStrength !== undefined && (
+                              <button
+                                type="button"
+                                onClick={() => onUpdateAiPage(cur => ({ ...cur, layoutLockStrength: undefined }), true)}
+                                className="flex-none text-indigo-600 hover:underline dark:text-indigo-400"
+                              >
+                                {t('自动')}
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
+
+                      <label className="block">
+                        <span className="mb-1 block text-[10px] font-medium text-gray-500 dark:text-gray-400">
+                          {t('全页统一环境光照词（防双区背景割裂）')}
+                        </span>
+                        <input
+                          type="text"
+                          aria-label={t('全页统一环境光照词')}
+                          value={aiPage.sceneAtmosphere || ''}
+                          onChange={e => onUpdateAiPage(cur => ({ ...cur, sceneAtmosphere: e.target.value }), false)}
+                          placeholder="e.g. warm afternoon library sunlight, soft shadows"
+                          className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                        />
+                      </label>
+
+                      {isLocked && (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                              {t('破格前景块（武器冲出框 / 跨格立绘）')}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={addBreakoutZone}
+                              className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-900/60 dark:bg-gray-900 dark:text-rose-300"
+                            >
+                              <Plus className="h-3 w-3" /> {t('破格前景块')}
+                            </button>
+                          </div>
+                          {breakouts.length > 0 && (
+                            <div className="space-y-1">
+                              {breakouts.map((bz, idx) => (
+                                <div
+                                  key={bz.id}
+                                  onClick={() => onSelect({ kind: 'breakout-zone', id: bz.id })}
+                                  className="flex items-center justify-between gap-1.5 rounded border border-rose-200/80 bg-white px-2 py-1 text-[11px] dark:border-rose-900/50 dark:bg-gray-900"
+                                >
+                                  <span className="truncate font-medium text-rose-700 dark:text-rose-300">
+                                    {bz.label || `${t('破格前景')} ${idx + 1}`}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    aria-label={t('删除破格前景块')}
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      onUpdateAiPage(cur => ({
+                                        ...cur,
+                                        breakoutZones: (cur.breakoutZones || []).filter(item => item.id !== bz.id),
+                                      }), true);
+                                    }}
+                                    className="rounded p-0.5 text-gray-400 hover:text-red-500"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* 双区独立重画与断点续拼（区 1 满意可仅重画区 2，绝不白扔另一半页） */}
                 {aiZonePlan.zones.length === 2 && (
                   <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-gray-200/80 bg-gray-50/70 p-2 text-[11px] dark:border-gray-800 dark:bg-gray-800/40">
@@ -1370,9 +1571,12 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                     />
                   </label>
+                  <p className="text-[10px] text-gray-400">
+                    {t('可用左侧「切分 (C)」工具直接在画布一刀斜切任意引导格，锁框模式下将按斜切多边形直出。')}
+                  </p>
                   <div className="space-y-1.5">
                     {aiPage.guidePanels.map((gp, idx) => (
-                      <div key={gp.id} className="space-y-1 rounded border border-gray-200/80 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-800/50">
+                      <div key={gp.id} className="space-y-1.5 rounded border border-gray-200/80 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-800/50">
                         <div className="flex items-center gap-1.5">
                           <span className="font-mono text-[10px] font-bold text-indigo-500">{String(idx + 1).padStart(2, '0')}</span>
                           <input
@@ -1396,6 +1600,67 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                           placeholder={t('英文机位/景别/光影词（将自动喂给画图模型）')}
                           className="w-full rounded border border-gray-200/80 bg-white px-1.5 py-0.5 text-[10px] text-gray-600 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
                         />
+                        <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                          <button
+                            type="button"
+                            aria-pressed={Boolean(gp.bleed)}
+                            onClick={() => onUpdateAiPage(cur => ({
+                              ...cur,
+                              guidePanels: cur.guidePanels.map(item => item.id === gp.id ? { ...item, bleed: !item.bleed } : item),
+                            }), true)}
+                            className={`rounded border px-1.5 py-0.5 font-medium transition ${gp.bleed ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400'}`}
+                          >
+                            {t('出血格')}
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={Boolean(gp.inset)}
+                            onClick={() => onUpdateAiPage(cur => ({
+                              ...cur,
+                              guidePanels: cur.guidePanels.map(item => item.id === gp.id ? { ...item, inset: !item.inset } : item),
+                            }), true)}
+                            className={`rounded border px-1.5 py-0.5 font-medium transition ${gp.inset ? 'border-purple-500 bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-200' : 'border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400'}`}
+                          >
+                            {t('画中画')}
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={Boolean(gp.speedlines)}
+                            onClick={() => onUpdateAiPage(cur => ({
+                              ...cur,
+                              guidePanels: cur.guidePanels.map(item => item.id === gp.id ? { ...item, speedlines: !item.speedlines } : item),
+                            }), true)}
+                            className={`rounded border px-1.5 py-0.5 font-medium transition ${gp.speedlines ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-200' : 'border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400'}`}
+                          >
+                            {t('预埋速度线')}
+                          </button>
+                          <label className="ml-auto inline-flex items-center gap-1 text-gray-500 dark:text-gray-400" title={t('可选格内氛围底色（默认中性灰不偏色）')}>
+                            <span>{t('氛围底色')}</span>
+                            <input
+                              type="color"
+                              aria-label={t('格内氛围底色 {0}', [gp.label || `#${idx + 1}`])}
+                              value={gp.fillColor || '#b6b9c0'}
+                              onChange={e => onUpdateAiPage(cur => ({
+                                ...cur,
+                                guidePanels: cur.guidePanels.map(item => item.id === gp.id ? { ...item, fillColor: e.target.value } : item),
+                              }), true)}
+                              className="h-4 w-5 cursor-pointer rounded border border-gray-300 bg-transparent"
+                            />
+                            {gp.fillColor && (
+                              <button
+                                type="button"
+                                onClick={() => onUpdateAiPage(cur => ({
+                                  ...cur,
+                                  guidePanels: cur.guidePanels.map(item => item.id === gp.id ? { ...item, fillColor: undefined } : item),
+                                }), true)}
+                                className="text-gray-400 hover:text-indigo-500"
+                                title={t('恢复默认中性灰')}
+                              >
+                                ×
+                              </button>
+                            )}
+                          </label>
+                        </div>
                       </div>
                     ))}
                   </div>

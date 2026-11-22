@@ -11,6 +11,7 @@ import {
   snapComicPoint,
 } from '../../services/comic/comicGeometry';
 import {
+  assembleV5TextSafePrompt,
   buildComicPanelGenerationInput,
   COMIC_ANCHOR_HARD_LIMIT,
   COMIC_ANCHOR_SOFT_LIMIT,
@@ -23,6 +24,16 @@ import {
   buildAiPageZoneRequest,
   planComicAiZones,
 } from '../../services/comic/comicAiPageEngine';
+import {
+  applyDeterministicSelectiveGrain,
+  computeSafeBubbleHoleEllipse,
+  getGuidePanelPolygon,
+  LAYOUT_LOCK_COLORS,
+  LAYOUT_LOCK_DEFAULTS,
+  mapPagePointToZonePixels,
+  renderComicZoneLayoutTemplate,
+  resolveLayoutLockConfig,
+} from '../../services/comic/comicLayoutTemplateRenderer';
 import {
   buildEmbeddedBubbleTextItems,
   commitBubbleCandidates,
@@ -46,7 +57,7 @@ import {
   buildComicInpaintRequest,
 } from '../../services/comic/comicInpaintEngine';
 import { parseComicStoryboardResponse } from '../../services/comic/comicStoryboardAgent.mjs';
-import { loadComicDraft, saveComicDraft } from '../../services/comic/comicStorage';
+import { loadComicDraft, normalizeComicDraft, saveComicDraft } from '../../services/comic/comicStorage';
 import {
   appendStrokeToDrawingLayer,
   createDrawingLayerInDraft,
@@ -663,5 +674,255 @@ describe('PS-style independent comicLayers engine', () => {
     expect(merged.merged).toBe(true);
     expect(merged.draft.drawingLayers).toHaveLength(1);
     expect(merged.draft.drawingLayers?.[0].strokes).toHaveLength(2);
+  });
+});
+
+describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () => {
+  it('applies deterministic selective grain without touching pure white gutters or pure black borders', () => {
+    // 像素 0: 纯白格缝 (255,255,255); 像素 1: 纯黑边框 (10,10,10); 像素 2: 格内中性灰 (182,185,192)
+    const bufA = new Uint8ClampedArray([
+      255, 255, 255, 255,
+      10, 10, 10, 255,
+      182, 185, 192, 255,
+      182, 185, 192, 255,
+    ]);
+    const bufB = new Uint8ClampedArray(bufA);
+
+    applyDeterministicSelectiveGrain(bufA, 2026, LAYOUT_LOCK_DEFAULTS.grainAmplitude);
+    applyDeterministicSelectiveGrain(bufB, 2026, LAYOUT_LOCK_DEFAULTS.grainAmplitude);
+
+    // 确定性复现
+    expect(Array.from(bufA)).toEqual(Array.from(bufB));
+    // 纯白格缝与纯黑边框必须纹丝不动
+    expect(Array.from(bufA.slice(0, 4))).toEqual([255, 255, 255, 255]);
+    expect(Array.from(bufA.slice(4, 8))).toEqual([10, 10, 10, 255]);
+    // 中性灰格内像素叠加 ±13 内亮度颗粒且保持 RGB 同步偏移
+    const delta2 = bufA[8] - 182;
+    expect(Math.abs(delta2)).toBeLessThanOrEqual(LAYOUT_LOCK_DEFAULTS.grainAmplitude);
+    expect(bufA[9] - 185).toBe(delta2);
+    expect(bufA[10] - 192).toBe(delta2);
+  });
+
+  it('insets bubble white-hole ellipses by >= 3% inside containing panel and maps dual-zone coordinates accurately', () => {
+    const panels = [
+      { id: 'p1', label: '第 1 格', summary: '', x: 0.04, y: 0.04, width: 0.92, height: 0.44 },
+      { id: 'p2', label: '第 2 格', summary: '', x: 0.04, y: 0.52, width: 0.92, height: 0.44, bleed: true },
+    ];
+    // 故意把气泡点贴近第 1 格左上黑边框
+    const edgeBubble: ComicAnchor = {
+      id: 'b1',
+      kind: 'bubble',
+      label: '贴边气泡',
+      prompt: '',
+      negativePrompt: '',
+      x: 0.05,
+      y: 0.05,
+      enabled: true,
+      bubbleWidth: 0.3,
+      bubbleHeight: 0.16,
+    };
+
+    const hole = computeSafeBubbleHoleEllipse(edgeBubble, panels, { x: 0, y: 0, width: 1, height: 1 }, 832, 1216);
+    expect(hole).not.toBeNull();
+    // 椭圆外沿必须严格内缩 >= 3% 远离面板边框（0.04 + 0.03 = 0.07）
+    expect(hole!.normCx - hole!.normRx).toBeGreaterThanOrEqual(0.04 + 0.03 - 1e-6);
+    expect(hole!.normCy - hole!.normRy).toBeGreaterThanOrEqual(0.04 + 0.03 - 1e-6);
+    expect(hole!.normCx + hole!.normRx).toBeLessThanOrEqual(0.96 - 0.03 + 1e-6);
+    expect(hole!.normCy + hole!.normRy).toBeLessThanOrEqual(0.48 - 0.03 + 1e-6);
+
+    // 出血格紧贴页面边（0 / 1）
+    const bleedPoly = getGuidePanelPolygon(panels[1]);
+    expect(Math.min(...bleedPoly.map(p => p.x))).toBe(0);
+    expect(Math.max(...bleedPoly.map(p => p.x))).toBe(1);
+    expect(Math.max(...bleedPoly.map(p => p.y))).toBe(1);
+
+    // 双区下半页坐标投影精确映射
+    const mapped = mapPagePointToZonePixels({ x: 0.5, y: 0.75 }, { x: 0, y: 0.5, width: 1, height: 0.5 }, 832, 640);
+    expect(mapped.x).toBeCloseTo(416, 1);
+    expect(mapped.y).toBeCloseTo(320, 1);
+  });
+
+  it('renders black-flashback, inset double-borders, bubble holes, and breakout zones in exact layer order', () => {
+    const draft = createInitialComicDraft('action-slash');
+    draft.creationMode = 'ai-page';
+    draft.aiPage.gutterStyle = 'black-flashback';
+    draft.aiPage.carveBubbleHoles = true;
+    draft.aiPage.guidePanels = [
+      {
+        id: 'g1',
+        label: '斜切格1',
+        summary: '',
+        x: 0.04,
+        y: 0.04,
+        width: 0.92,
+        height: 0.44,
+        points: [{ x: 0.04, y: 0.04 }, { x: 0.96, y: 0.04 }, { x: 0.96, y: 0.42 }, { x: 0.04, y: 0.50 }],
+        speedlines: true,
+      },
+      {
+        id: 'g2',
+        label: '画中画',
+        summary: '',
+        x: 0.55,
+        y: 0.54,
+        width: 0.36,
+        height: 0.36,
+        inset: true,
+      },
+    ];
+    draft.aiPage.anchors = [
+      { id: 'ab1', kind: 'bubble', label: '台词', prompt: '', negativePrompt: '', x: 0.25, y: 0.22, enabled: true },
+    ];
+    draft.aiPage.breakoutZones = [
+      { id: 'bz1', label: '破格主角', x: 0.3, y: 0.2, width: 0.4, height: 0.55 },
+    ];
+
+    const ops: Array<{ op: string; style?: string; width?: number }> = [];
+    const mockCtx = {
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+      lineJoin: 'miter',
+      lineCap: 'butt',
+      globalAlpha: 1,
+      font: '',
+      textAlign: 'left',
+      textBaseline: 'alphabetic',
+      save: () => {},
+      restore: () => {},
+      beginPath: () => {},
+      closePath: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      quadraticCurveTo: () => {},
+      clip: () => {},
+      translate: () => {},
+      rotate: () => {},
+      fillRect: () => ops.push({ op: 'fillRect', style: mockCtx.fillStyle }),
+      fill: () => ops.push({ op: 'fill', style: mockCtx.fillStyle }),
+      stroke: () => ops.push({ op: 'stroke', style: mockCtx.strokeStyle, width: mockCtx.lineWidth }),
+      ellipse: () => ops.push({ op: 'ellipse' }),
+      strokeText: () => {},
+      fillText: () => {},
+      getImageData: (_x: number, _y: number, w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+      putImageData: () => {},
+    };
+    const mockCanvas = {
+      width: 0,
+      height: 0,
+      getContext: () => mockCtx,
+      toDataURL: () => 'data:image/png;base64,MOCK',
+    } as unknown as HTMLCanvasElement;
+
+    const plan = planComicAiZones(draft);
+    const rendered = renderComicZoneLayoutTemplate(draft, plan.zones[0], { canvas: mockCanvas, seed: 42 });
+
+    expect(rendered.dataUrl).toBe('data:image/png;base64,MOCK');
+    expect(rendered.panelCount).toBe(1);
+    expect(rendered.insetCount).toBe(1);
+    expect(rendered.bubbleHoleCount).toBe(1);
+    expect(rendered.breakoutCount).toBe(1);
+    // 1. 黑底回忆杀底色
+    expect(ops[0]).toEqual({ op: 'fillRect', style: LAYOUT_LOCK_COLORS.gutterFlashback });
+    // 2. 画中画叠框先描 14px*2 白外边再描 5px 黑内框
+    expect(ops.some(o => o.op === 'stroke' && o.style === LAYOUT_LOCK_COLORS.insetOuterBorderColor && o.width === LAYOUT_LOCK_DEFAULTS.insetOuterBorderWidth * 2)).toBe(true);
+    expect(ops.some(o => o.op === 'stroke' && o.style === LAYOUT_LOCK_COLORS.insetInnerBorderColor && o.width === LAYOUT_LOCK_DEFAULTS.insetInnerBorderWidth)).toBe(true);
+    // 3. 破格前景块 11px*2 白外边在最上层
+    expect(ops.some(o => o.op === 'stroke' && o.style === LAYOUT_LOCK_COLORS.breakoutBorderColor && o.width === LAYOUT_LOCK_DEFAULTS.breakoutBorderWidth * 2)).toBe(true);
+  });
+
+  it('enforces V5 Text: tail-only syntax, dual-zone shared sceneAtmosphere/seed, breakout tags, and img2img sweet-spot defaults', () => {
+    // V5 Text: 永远在末尾，黑白模式绝不出现 `Text: BAM!, monochrome`
+    const sfxCompiled = assembleV5TextSafePrompt(
+      ['dynamic impact, red sparks, Text: BAM!', 'monochrome, greyscale'],
+      { monochrome: true },
+    );
+    expect(sfxCompiled.endsWith('Text: BAM!')).toBe(true);
+    expect(sfxCompiled).not.toMatch(/Text:.*monochrome/i);
+    expect(sfxCompiled).toContain('monochrome');
+
+    const draft = createInitialComicDraft('classic-4-121');
+    draft.creationMode = 'ai-page';
+    draft.colorMode = 'monochrome';
+    draft.dialogueMode = 'ai-text';
+    draft.aiPage.splitMode = 'dual-vertical';
+    draft.aiPage.sceneAtmosphere = 'warm afternoon library sunlight';
+    draft.aiPage.breakoutZones = [
+      { id: 'bz-hero', label: '破格剑士', x: 0.2, y: 0.52, width: 0.5, height: 0.42, anchorId: 'c-bottom' },
+    ];
+    draft.aiPage.anchors = [
+      { id: 'c-top', kind: 'character', label: '女主-上', prompt: '1girl, surprised, blue hair', negativePrompt: '', x: 0.35, y: 0.16, enabled: true },
+      { id: 'b-top', kind: 'bubble', label: '音效-上', prompt: 'dramatic action, red flash', negativePrompt: '', x: 0.72, y: 0.18, enabled: true, bubbleShape: 'shout', bubbleText: 'BAM!' },
+      { id: 'c-bottom', kind: 'character', label: '男主-下', prompt: '1boy, swinging katana', negativePrompt: '', x: 0.45, y: 0.78, enabled: true },
+    ];
+
+    const plan = planComicAiZones(draft);
+    expect(plan.zones).toHaveLength(2);
+
+    const req0 = buildAiPageZoneRequest(draft, plan.zones[0], 2, { sharedSeed: 987654 });
+    const req1 = buildAiPageZoneRequest(draft, plan.zones[1], 2, { sharedSeed: 987654 });
+
+    // 双区共享同一 Seed 与硬锁 img2img 参数（含破格块默认 0.86，黑白 noise 0.04）
+    expect(req0.params.seed).toBe(987654);
+    expect(req1.params.seed).toBe(987654);
+    expect(req0.layoutLock).toEqual({
+      enabled: true,
+      strength: 0.86,
+      noise: 0.04,
+      colorCorrect: false,
+      addOriginalImage: true,
+      gutterStyle: 'white',
+    });
+    // V5 能力边界：不强行拼接 vibes 或 characterReferences
+    expect(req0.params.vibes).toBeUndefined();
+    expect(req0.params.characterReferences).toBeUndefined();
+
+    // 双区光照一致性：上下两区未写背景的主锚点均自动注入 sceneAtmosphere
+    expect(req0.params.characters?.find(c => c.id === 'c-top')?.prompt).toContain('library sunlight');
+    expect(req1.params.characters?.find(c => c.id === 'c-bottom')?.prompt).toContain('library sunlight');
+    // 破格前景块锚点自动附带 out of frame / breaking panel border
+    expect(req1.params.characters?.find(c => c.id === 'c-bottom')?.prompt).toContain('out of frame, breaking panel border, overlapping panel borders');
+    // 气泡直出字永远位于整段 caption 绝对末尾
+    const bubbleCaption = req0.params.characters?.find(c => c.id === 'b-top')?.prompt || '';
+    expect(bubbleCaption.endsWith('Text: BAM!')).toBe(true);
+    expect(bubbleCaption).not.toMatch(/Text:.*,/);
+
+    // 验证全彩与黑白默认甜点值（无破格块时）
+    const colorDraft = createInitialComicDraft('classic-4-121');
+    expect(resolveLayoutLockConfig(colorDraft)).toMatchObject({ enabled: true, strength: 0.85, noise: 0.05, colorCorrect: false, addOriginalImage: true });
+    colorDraft.colorMode = 'monochrome';
+    expect(resolveLayoutLockConfig(colorDraft)).toMatchObject({ enabled: true, strength: 0.82, noise: 0.04 });
+  });
+
+  it('migrates legacy drafts without points or layoutLockMode backward-compatibly in comicStorage', () => {
+    const legacyRaw = {
+      version: 1,
+      id: 'legacy-page-1',
+      title: '旧版AI页',
+      width: 832,
+      height: 1216,
+      creationMode: 'ai-page',
+      aiPage: {
+        storyPrompt: '旧版剧情',
+        targetPanelCount: 2,
+        castCharacterIds: ['c1'],
+        splitMode: 'single',
+        layoutHint: '2-panel manga page',
+        guidePanels: [
+          { id: 'gp-1', label: '第 1 格', summary: '上格', x: 0.04, y: 0.04, width: 0.92, height: 0.44 },
+          { id: 'gp-2', label: '第 2 格', summary: '下格', x: 0.04, y: 0.52, width: 0.92, height: 0.44 },
+        ],
+        anchors: [],
+        showGuideOverlay: true,
+      },
+    };
+    const migrated = normalizeComicDraft(legacyRaw);
+    expect(migrated.aiPage.layoutLockMode).toBe('img2img');
+    expect(migrated.aiPage.gutterStyle).toBe('white');
+    expect(migrated.aiPage.breakoutZones).toEqual([]);
+    expect(migrated.aiPage.guidePanels).toHaveLength(2);
+    expect(migrated.aiPage.guidePanels[0].points).toBeUndefined();
+    // 即使旧矩形无 points，底图渲染器也能无缝转成 4 点多边形
+    expect(getGuidePanelPolygon(migrated.aiPage.guidePanels[0])).toHaveLength(4);
   });
 });

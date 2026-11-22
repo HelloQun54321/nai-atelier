@@ -200,6 +200,10 @@ export const createGuidePanelsFromTemplate = (
   const template = COMIC_LAYOUT_TEMPLATES.find(item => item.id === templateId) || COMIC_LAYOUT_TEMPLATES[0];
   return template.buildPanels(gx, gy).map((panel, idx) => {
     const b = getPanelBoundingBox(panel.points, 1, 1);
+    const roundedPoints = panel.points.map(pt => ({
+      x: Math.round(pt.x * 1000) / 1000,
+      y: Math.round(pt.y * 1000) / 1000,
+    }));
     return {
       id: createUuid(),
       label: panel.name || `第 ${idx + 1} 格`,
@@ -208,6 +212,7 @@ export const createGuidePanelsFromTemplate = (
       y: Math.round(b.minY * 1000) / 1000,
       width: Math.round(b.width * 1000) / 1000,
       height: Math.round(b.height * 1000) / 1000,
+      points: roundedPoints,
     };
   });
 };
@@ -225,6 +230,13 @@ export const createInitialAiPagePlan = (
   guidePanels: createGuidePanelsFromTemplate('classic-4-121', pageWidth, pageHeight, gutterPx),
   anchors: [],
   showGuideOverlay: true,
+  layoutLockMode: 'img2img',
+  gutterStyle: 'white',
+  carveBubbleHoles: false,
+  projectSketchLayer: false,
+  projectSfxText: false,
+  sceneAtmosphere: '',
+  breakoutZones: [],
 });
 
 export const createInitialComicDraft = (templateId = 'classic-4-121'): ComicPageDraft => {
