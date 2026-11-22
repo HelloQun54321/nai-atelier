@@ -278,6 +278,70 @@ test('拼车成员网关探测 /api/me/quota 剥离 /v1 前缀，透传个人额
   }
 });
 
+test('拼车成员网关 /api/me/quota 偶发失败时保留已有钱包与车位上限缓存，并发请求自动合并去重', async () => {
+  const originalDispatcher = getGlobalDispatcher(), mock = new MockAgent();
+  mock.disableNetConnect(); mock.enableNetConnect(host => host.startsWith('127.0.0.1:'));
+  setGlobalDispatcher(mock);
+  const raw = { active: true, tier: 3, usage: { percent: 25, isNegative: false, timeUntilNextPercent: 0 }, trainingStepsLeft: { fixedTrainingStepsLeft: 2504, purchasedTrainingSteps: 0 } };
+  let quotaCalls = 0;
+  let quotaMode = 'ok';
+  const member = mock.get('https://gateway.example');
+  member.intercept({ path: '/v1/user/subscription', method: 'GET' }).reply(200, () => JSON.stringify(raw), { headers: { 'content-type': 'application/json' } }).persist();
+  member.intercept({ path: '/api/me/quota', method: 'GET' }).reply(() => {
+    quotaCalls += 1;
+    if (quotaMode === 'error') return { statusCode: 502, data: 'Bad Gateway' };
+    if (quotaMode === 'unsupported') return { statusCode: 404, data: 'Not Found' };
+    return {
+      statusCode: 200,
+      data: JSON.stringify({ fairQuota: { enabled: true, member: true, v5Capacity: 25, v5RefillPerDay: 5.5, v5FullRefillSeconds: 0, v5RefillLimited: false } }),
+      responseOptions: { headers: { 'content-type': 'application/json' } },
+    };
+  }).delay(40).persist();
+  const worker = createServer((req, res) => {
+    if (req.url === '/api/nai-key-vault/connection') return res.end('{"gatewayUrl":"https://gateway.example/v1"}');
+    res.writeHead(404); res.end();
+  });
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  let server;
+  try {
+    server = await createMediaGateway({ port: 0, workerPort: worker.address().port });
+    const url = `http://127.0.0.1:${server.address().port}/api/novelai-subscription`;
+    const headers = { Authorization: 'Bearer STA1N-flaky' };
+
+    // 1) 并发两次查询合并为一次上游 /api/me/quota 请求，且都返回完整托管钱包与车位上限。
+    const [r1, r2] = await Promise.all([fetch(url, { headers }), fetch(url, { headers })]);
+    const [b1, b2] = await Promise.all([r1.json(), r2.json()]);
+    assert.equal(b1.gatewayManagedWallet, true);
+    assert.equal(b1.usage.capacity, 25);
+    assert.equal(b2.gatewayManagedWallet, true);
+    assert.equal(b2.usage.capacity, 25);
+    assert.equal(quotaCalls, 1);
+
+    // 2) 后续 /api/me/quota 偶发 502 时，沿用已缓存的托管钱包与 25% 车位上限，绝不退回「本地预算 / 余额」和 1/4 圆环。
+    quotaMode = 'error';
+    const r3 = await fetch(url, { headers });
+    const b3 = await r3.json();
+    assert.equal(r3.status, 200);
+    assert.equal(b3.source, 'gateway');
+    assert.equal(b3.gatewayManagedWallet, true);
+    assert.equal(b3.usage.capacity, 25);
+
+    // 3) 网关明确返回 404 不支持 /api/me/quota 时，正常清除托管钱包与车位上限标记。
+    quotaMode = 'unsupported';
+    const r4 = await fetch(url, { headers });
+    const b4 = await r4.json();
+    assert.equal(r4.status, 200);
+    assert.equal(b4.source, 'gateway');
+    assert.equal(b4.gatewayManagedWallet, undefined);
+    assert.equal(b4.usage.capacity, undefined);
+  } finally {
+    server?.closeAllConnections(); worker.closeAllConnections();
+    await Promise.all([server && new Promise(resolve => server.close(resolve)), new Promise(resolve => worker.close(resolve))]);
+    setGlobalDispatcher(originalDispatcher); await mock.close();
+    cacheNovelAiSubscription('Bearer STA1N-flaky', null);
+  }
+});
+
 test('批量生图（如 Roll 串多张）在开启 Key 池时逐张按满圈率轮询切 Key，全池耗尽立即停止', async () => {
   // 纯函数验证：满圈率优先 + 同分避开刚用过的 Key
   const e1 = { id: 'p1', name: '车位1', key: 'STA1N-batch-1', gatewayUrl: 'https://g1.example/v1' };

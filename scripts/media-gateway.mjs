@@ -1276,9 +1276,9 @@ export const readNaiGatewayUrl = async (req, workerPort) => {
   return connection.gatewayUrl || '';
 };
 
-export const fetchGatewayMemberQuota = async (authorization, signal = AbortSignal.timeout(5_000), requestRemote = fetch, gatewayUrl = '') => {
+const requestGatewayMemberQuota = async (authorization, signal = AbortSignal.timeout(10_000), requestRemote = fetch, gatewayUrl = '') => {
   const base = String(gatewayUrl || '').trim().replace(/\/+$/, '').replace(/\/v1$/i, '');
-  if (!base) return null;
+  if (!base) return { ok: true, unsupported: true, quota: null };
   try {
     const response = await requestRemote(`${base}/api/me/quota`, {
       method: 'GET',
@@ -1286,10 +1286,14 @@ export const fetchGatewayMemberQuota = async (authorization, signal = AbortSigna
       signal,
       redirect: 'error',
     });
-    if (!response?.ok) return null;
+    if (!response) return { ok: false, unsupported: false, quota: null };
+    if (response.status === 404 || response.status === 405 || response.status === 501) {
+      return { ok: true, unsupported: true, quota: null };
+    }
+    if (!response.ok) return { ok: false, unsupported: false, quota: null };
     const data = await response.json();
     const fairQuota = data?.fairQuota;
-    if (!fairQuota || typeof fairQuota !== 'object') return null;
+    if (!fairQuota || typeof fairQuota !== 'object') return { ok: true, unsupported: true, quota: null };
     const rawCapacity = Number(fairQuota.v5Capacity);
     const capacity = Number.isFinite(rawCapacity) && rawCapacity > 0 && rawCapacity <= 100 ? rawCapacity : undefined;
     const managedWallet = fairQuota.enabled === true && fairQuota.member === true;
@@ -1298,18 +1302,27 @@ export const fetchGatewayMemberQuota = async (authorization, signal = AbortSigna
     const rawFullRefillSeconds = fairQuota.v5FullRefillSeconds !== null && fairQuota.v5FullRefillSeconds !== undefined ? Number(fairQuota.v5FullRefillSeconds) : NaN;
     const fullRefillSeconds = Number.isFinite(rawFullRefillSeconds) && rawFullRefillSeconds >= 0 ? rawFullRefillSeconds : undefined;
     const refillLimited = fairQuota.v5RefillLimited === true;
-    if (capacity === undefined && !managedWallet && refillPerDay === undefined && fullRefillSeconds === undefined && !refillLimited) return null;
+    if (capacity === undefined && !managedWallet && refillPerDay === undefined && fullRefillSeconds === undefined && !refillLimited) {
+      return { ok: true, unsupported: true, quota: null };
+    }
     return {
-      ...(capacity !== undefined ? { capacity } : {}),
-      ...(managedWallet ? { managedWallet: true } : {}),
-      ...(refillPerDay !== undefined ? { refillPerDay } : {}),
-      ...(fullRefillSeconds !== undefined ? { fullRefillSeconds } : {}),
-      ...(refillLimited ? { refillLimited: true } : {}),
+      ok: true,
+      unsupported: false,
+      quota: {
+        ...(capacity !== undefined ? { capacity } : {}),
+        ...(managedWallet ? { managedWallet: true } : {}),
+        ...(refillPerDay !== undefined ? { refillPerDay } : {}),
+        ...(fullRefillSeconds !== undefined ? { fullRefillSeconds } : {}),
+        ...(refillLimited ? { refillLimited: true } : {}),
+      },
     };
   } catch {
-    return null;
+    return { ok: false, unsupported: false, quota: null };
   }
 };
+
+export const fetchGatewayMemberQuota = async (authorization, signal = AbortSignal.timeout(10_000), requestRemote = fetch, gatewayUrl = '') =>
+  (await requestGatewayMemberQuota(authorization, signal, requestRemote, gatewayUrl)).quota;
 
 /**
  * 只保留前端需要的订阅字段，剥离 paymentProcessorData 等敏感/冗余数据，
@@ -1365,6 +1378,7 @@ const novelAiSubscriptions = new Map();
 const novelAiSubscriptionFetchedAt = new Map();
 const novelAiSubscriptionDirty = new Set();
 const novelAiGatewayQuotaCache = new Map();
+const novelAiGatewayQuotaInFlight = new Map();
 const novelAiSubscriptionFailedAt = new Map();
 const novelAiSubscriptionInFlight = new Map();
 export const cacheNovelAiSubscription = (authorization, subscription) => {
@@ -1382,12 +1396,15 @@ export const cacheNovelAiSubscription = (authorization, subscription) => {
     for (const key of novelAiSubscriptionInFlight.keys()) {
       if (key.startsWith(`${authorization}\n`)) novelAiSubscriptionInFlight.delete(key);
     }
+    for (const key of novelAiGatewayQuotaInFlight.keys()) {
+      if (key.startsWith(`${authorization}\n`)) novelAiGatewayQuotaInFlight.delete(key);
+    }
   }
 };
 
-const cachedGatewayQuotaFallback = authorization => {
+const cachedGatewayQuotaFallback = (authorization, gatewayUrl = '') => {
   const cached = novelAiGatewayQuotaCache.get(authorization);
-  if (cached) return cached.quota;
+  if (cached && (!gatewayUrl || !cached.gatewayUrl || cached.gatewayUrl === gatewayUrl)) return cached.quota;
   const sub = novelAiSubscriptions.get(authorization);
   if (!sub || sub.source !== 'gateway') return null;
   const usage = sub.usage;
@@ -1408,7 +1425,7 @@ const probeNovelAiSubscription = async (authorization, {
   includeGatewayQuota = false,
   forceGatewayQuota = false,
   subTimeoutMs = 30_000,
-  quotaTimeoutMs = 5_000,
+  quotaTimeoutMs = 10_000,
 } = {}) => {
   const inflightKey = `${authorization}\n${gatewayUrl}`;
   let subPromise = novelAiSubscriptionInFlight.get(inflightKey);
@@ -1437,14 +1454,32 @@ const probeNovelAiSubscription = async (authorization, {
 
   const resolveQuota = async () => {
     if (!gatewayUrl) return null;
-    if (!includeGatewayQuota && !forceGatewayQuota) return cachedGatewayQuotaFallback(authorization);
+    if (!includeGatewayQuota && !forceGatewayQuota) return cachedGatewayQuotaFallback(authorization, gatewayUrl);
     const cached = novelAiGatewayQuotaCache.get(authorization);
-    if (!forceGatewayQuota && cached && Date.now() - cached.fetchedAt < GATEWAY_QUOTA_CACHE_TTL) {
+    const cacheMatchesGateway = cached && (!cached.gatewayUrl || cached.gatewayUrl === gatewayUrl);
+    if (!forceGatewayQuota && cacheMatchesGateway && Date.now() - cached.fetchedAt < GATEWAY_QUOTA_CACHE_TTL) {
       return cached.quota;
     }
-    const quota = await fetchGatewayMemberQuota(authorization, AbortSignal.timeout(quotaTimeoutMs), requestRemote, gatewayUrl);
-    novelAiGatewayQuotaCache.set(authorization, { quota, fetchedAt: Date.now() });
-    return quota;
+    let quotaPromise = novelAiGatewayQuotaInFlight.get(inflightKey);
+    if (!quotaPromise) {
+      quotaPromise = (async () => {
+        try {
+          return await requestGatewayMemberQuota(authorization, AbortSignal.timeout(quotaTimeoutMs), requestRemote, gatewayUrl);
+        } finally {
+          if (novelAiGatewayQuotaInFlight.get(inflightKey) === quotaPromise) {
+            novelAiGatewayQuotaInFlight.delete(inflightKey);
+          }
+        }
+      })();
+      novelAiGatewayQuotaInFlight.set(inflightKey, quotaPromise);
+    }
+    const result = await quotaPromise;
+    if (result.ok) {
+      novelAiGatewayQuotaCache.set(authorization, { quota: result.quota, gatewayUrl, fetchedAt: Date.now() });
+      return result.quota;
+    }
+    // /api/me/quota 偶发超时、限流或 5xx 时不覆盖已有车位/钱包缓存，避免界面闪回「本地预算 / 余额」和 1/4 圆环。
+    return cachedGatewayQuotaFallback(authorization, gatewayUrl);
   };
 
   const [subResult, gatewayQuota] = await Promise.all([subPromise, resolveQuota()]);
@@ -1498,13 +1533,14 @@ export const readNaiBalanceForRequest = async (req, workerPort, { requestRemote 
   if (!authorization.startsWith('Bearer ')) return { available: false, reason: '当前请求没有携带 NovelAI Key；请先在全局设置配置 Key 再读取官方点数' };
   try {
     const gatewayUrl = await readNaiGatewayUrl(req, workerPort);
-    const [upstream, gatewayQuota] = await Promise.all([
-      fetchNovelAiSubscription(authorization, undefined, requestRemote, gatewayUrl),
-      fetchGatewayMemberQuota(authorization, undefined, requestRemote, gatewayUrl),
-    ]);
-    if (!upstream.ok) return { available: false, reason: gatewayUrl ? '网关点数查询失败' : 'NovelAI 订阅信息获取失败', status: upstream.status };
-    const payload = sanitizeNovelAiSubscription(await upstream.json(), gatewayUrl, gatewayQuota);
-    cacheNovelAiSubscription(authorization, payload);
+    const result = await probeNovelAiSubscription(authorization, {
+      gatewayUrl,
+      requestRemote,
+      includeGatewayQuota: true,
+      forceGatewayQuota: true,
+    });
+    if (!result.ok) return { available: false, reason: gatewayUrl ? '网关点数查询失败' : 'NovelAI 订阅信息获取失败', status: result.status };
+    const payload = result.sanitized;
     const balance = payload?.trainingStepsLeft;
     const usage = payload?.usage;
     return {
