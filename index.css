@@ -201,7 +201,7 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
     /* 跟随卡片圆角，避免直角压在圆角图片上留下硬边。 */
     border-radius: inherit;
   }
-  html[data-gallery-frosted-caption='true'] .gallery-card-caption :where(p, h2, h3, div, span, button):not([data-safe-mode-title='true']) {
+  html[data-gallery-frosted-caption='true'] .gallery-card-caption :where(p, h2, h3, div, span, button) {
     color: inherit !important;
   }
   html[data-gallery-frosted-caption='true'] .gallery-card-caption .gallery-card-meta {
@@ -305,11 +305,11 @@ html[data-design-theme='nai-atelier'] {
   --color-indigo-300: color-mix(in srgb, var(--nai-accent) 50%, white);
   --color-indigo-400: color-mix(in srgb, var(--nai-accent) 76%, white);
   --color-indigo-500: var(--nai-accent);
-  --color-indigo-600: color-mix(in srgb, var(--nai-accent) 68%, black);
-  --color-indigo-700: color-mix(in srgb, var(--nai-accent) 68%, black);
-  --color-indigo-800: color-mix(in srgb, var(--nai-accent) 52%, black);
-  --color-indigo-900: color-mix(in srgb, var(--nai-accent) 38%, black);
-  --color-indigo-950: color-mix(in srgb, var(--nai-accent) 22%, black);
+  --color-indigo-600: color-mix(in srgb, var(--nai-accent) 92%, black);
+  --color-indigo-700: color-mix(in srgb, var(--nai-accent) 84%, black);
+  --color-indigo-800: color-mix(in srgb, var(--nai-accent) 66%, black);
+  --color-indigo-900: color-mix(in srgb, var(--nai-accent) 48%, black);
+  --color-indigo-950: color-mix(in srgb, var(--nai-accent) 28%, black);
   --color-violet-50: var(--color-indigo-50);
   --color-violet-100: var(--color-indigo-100);
   --color-violet-200: var(--color-indigo-200);
@@ -323,7 +323,7 @@ html[data-design-theme='nai-atelier'] {
   --color-violet-950: var(--color-indigo-950);
 
   /* 主要生成操作的同色系渐变与光斑，全部跟随当前强调色。 */
-  --nai-action-deep: color-mix(in srgb, var(--nai-accent) 68%, black);
+  --nai-action-deep: color-mix(in srgb, var(--nai-accent) 84%, black);
   --nai-action-mid: var(--nai-accent);
   --nai-action-light: color-mix(in srgb, var(--nai-accent) 68%, white);
   --nai-action-glow: color-mix(in srgb, var(--nai-accent) 30%, white);
@@ -359,11 +359,11 @@ html[data-design-theme='nai-atelier'].dark {
   --color-indigo-300: color-mix(in srgb, var(--nai-accent) 60%, white);
   --color-indigo-400: color-mix(in srgb, var(--nai-accent) 80%, white);
   --color-indigo-500: var(--nai-accent);
-  --color-indigo-600: color-mix(in srgb, var(--nai-accent) 64%, #11141b);
-  --color-indigo-700: color-mix(in srgb, var(--nai-accent) 58%, #0d0f14);
-  --color-indigo-800: color-mix(in srgb, var(--nai-accent) 42%, #0d0f14);
-  --color-indigo-900: color-mix(in srgb, var(--nai-accent) 28%, #0d0f14);
-  --color-indigo-950: color-mix(in srgb, var(--nai-accent) 16%, #0d0f14);
+  --color-indigo-600: color-mix(in srgb, var(--nai-accent) 76%, #11141b);
+  --color-indigo-700: color-mix(in srgb, var(--nai-accent) 64%, #0d0f14);
+  --color-indigo-800: color-mix(in srgb, var(--nai-accent) 48%, #0d0f14);
+  --color-indigo-900: color-mix(in srgb, var(--nai-accent) 32%, #0d0f14);
+  --color-indigo-950: color-mix(in srgb, var(--nai-accent) 18%, #0d0f14);
   --color-violet-50: var(--color-indigo-50);
   --color-violet-100: var(--color-indigo-100);
   --color-violet-200: var(--color-indigo-200);
@@ -484,9 +484,9 @@ html[data-design-theme='nai-atelier'] ::selection {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--nai-accent, #0ea5e9) 28%, transparent);
+  border: 1px solid color-mix(in srgb, var(--nai-accent, #0d8bf2) 28%, transparent);
   color: var(--nai-accent-text-800);
-  background-color: color-mix(in srgb, var(--nai-accent, #0ea5e9) 9%, transparent);
+  background-color: color-mix(in srgb, var(--nai-accent, #0d8bf2) 9%, transparent);
   background-image: none;
   box-shadow: 0 1px 2px rgb(15 23 42 / .06);
   transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease, filter 180ms ease, box-shadow 180ms ease, transform 180ms ease;
@@ -516,9 +516,9 @@ html[data-design-theme='nai-atelier'] ::selection {
 .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) {
   color: var(--nai-on-action, white);
   border-color: transparent;
-  background-color: var(--nai-action-deep, #0284c7);
+  background-color: var(--nai-action-deep, #0b75cb);
   filter: saturate(1.05) brightness(1.04);
-  box-shadow: 0 8px 18px var(--nai-action-shadow, rgb(14 165 233 / .28));
+  box-shadow: 0 8px 18px var(--nai-action-shadow, rgb(13 139 242 / .28));
   transform: translateY(-1px);
 }
 
@@ -555,14 +555,14 @@ html[data-design-theme='nai-atelier'] ::selection {
   color: var(--nai-on-action, white);
   border-color: transparent;
   filter: saturate(1.05);
-  box-shadow: 0 8px 18px var(--nai-action-shadow, rgb(14 165 233 / .28));
+  box-shadow: 0 8px 18px var(--nai-action-shadow, rgb(13 139 242 / .28));
   background-image: linear-gradient(
     108deg,
-    var(--nai-action-deep, #0284c7) 0%,
-    var(--nai-action-mid, #0ea5e9) 24%,
-    var(--nai-action-light, #7dd3fc) 48%,
-    var(--nai-action-mid, #0ea5e9) 72%,
-    var(--nai-action-deep, #0284c7) 100%
+    var(--nai-action-deep, #0b75cb) 0%,
+    var(--nai-action-mid, #0d8bf2) 24%,
+    var(--nai-action-light, #5cb4f6) 48%,
+    var(--nai-action-mid, #0d8bf2) 72%,
+    var(--nai-action-deep, #0b75cb) 100%
   );
   background-position: 0% 50%;
   background-size: 220% 100%;
@@ -1459,11 +1459,11 @@ html[data-motion='full'] .vip-badge {
 
 /* 公共队列状态：活动状态跟随生成按钮主题，结果状态保留语义色。 */
 .queue-status-surface {
-  --queue-status-deep: var(--nai-action-deep, #0284c7);
-  --queue-status-mid: var(--nai-action-mid, #0ea5e9);
-  --queue-status-light: var(--nai-action-light, #7dd3fc);
+  --queue-status-deep: var(--nai-action-deep, #0b75cb);
+  --queue-status-mid: var(--nai-action-mid, #0d8bf2);
+  --queue-status-light: var(--nai-action-light, #5cb4f6);
   --queue-status-glow: var(--nai-action-glow, rgb(255 255 255 / .48));
-  --queue-status-shadow: var(--nai-action-shadow, rgb(14 165 233 / .28));
+  --queue-status-shadow: var(--nai-action-shadow, rgb(13 139 242 / .28));
   isolation: isolate;
   overflow: hidden;
   background-size: 100% 100%;
@@ -1623,24 +1623,27 @@ html[data-motion='full'] .queue-status-spinner {
   filter: blur(22px) brightness(0.68) saturate(0.5) contrast(0.92) !important;
 }
 
-/* 作品名称默认遮挡；可单独点击名称，或随所属作品图片一起临时显示。 */
-.safe-mode.safe-mode-hide-titles [data-safe-mode-title="true"]:not(input) {
-  color: transparent !important;
-  -webkit-text-fill-color: transparent !important;
-  background-image: linear-gradient(90deg, rgb(156 163 175 / .34), rgb(156 163 175 / .18));
-  background-position: left center;
-  background-repeat: no-repeat;
-  background-size: min(9rem, 78%) .72em;
-  border-radius: var(--radius-sm);
-  user-select: none;
-}
+/* 作品名称默认遮挡；放入 components 层，使其 !important 优先于 utilities 层的磨砂白字，
+   点击临时揭示后 revert-layer 精准回退到磨砂卡片白字或常规主题正文色。 */
+@layer components {
+  .safe-mode.safe-mode-hide-titles [data-safe-mode-title="true"]:not(input) {
+    color: transparent !important;
+    -webkit-text-fill-color: transparent !important;
+    background-image: linear-gradient(90deg, rgb(156 163 175 / .34), rgb(156 163 175 / .18));
+    background-position: left center;
+    background-repeat: no-repeat;
+    background-size: min(9rem, 78%) .72em;
+    border-radius: var(--radius-sm);
+    user-select: none;
+  }
 
-.safe-mode.safe-mode-hide-titles [data-safe-mode-title="true"][data-safe-title-revealed="true"]:not(input),
-.safe-mode.safe-mode-hide-titles [data-safe-mode-work="true"][data-safe-work-revealed="true"] [data-safe-mode-title="true"]:not(input) {
-  color: revert-layer !important;
-  -webkit-text-fill-color: revert-layer !important;
-  background-image: none;
-  user-select: auto;
+  .safe-mode.safe-mode-hide-titles [data-safe-mode-title="true"][data-safe-title-revealed="true"]:not(input),
+  .safe-mode.safe-mode-hide-titles [data-safe-mode-work="true"][data-safe-work-revealed="true"] [data-safe-mode-title="true"]:not(input) {
+    color: revert-layer !important;
+    -webkit-text-fill-color: revert-layer !important;
+    background-image: none;
+    user-select: auto;
+  }
 }
 
 .safe-mode.safe-mode-hide-titles input[data-safe-mode-title="true"] {

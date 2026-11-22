@@ -195,7 +195,7 @@ const AppearanceOptionGroup: React.FC<{
 );
 
 const ACCENT_PRESETS = [
-  { color: '#0ea5e9', label: '晴空' },
+  { color: '#0d8bf2', label: '晴空' },
   { color: '#6366f1', label: '靛蓝' },
   { color: '#8b5cf6', label: '紫罗兰' },
   { color: '#14b8a6', label: '青绿' },

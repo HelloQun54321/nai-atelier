@@ -50,10 +50,10 @@ export const themeContrast = (first: string, second: string): number => {
   const a = luminance(first), b = luminance(second);
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 };
-// 白字优先：只要白字达到 AA(4.5)，就用白字。饱和主色上黑字的数值对比度会略高于白字，
-// 单纯比大小会把蓝底按钮算成黑字；白字不达标时才退回对比度更高的那个。
+// 白字优先：只要白字达到大字与界面控件 AA(3.0)，就用白字。饱和蓝、紫、橙等主色上黑字的 WCAG 数值对比度会虚高，
+// 按 4.5 门槛会把明亮蓝底按钮与悬停态算成黑字；仅在白字不足 3.0 的浅亮底色上退回高对比黑字。
 export const themeForeground = (background: string): string => {
-  if (themeContrast('#ffffff', background) >= 4.5) return '#ffffff';
+  if (themeContrast('#ffffff', background) >= 3) return '#ffffff';
   return themeContrast('#000000', background) > themeContrast('#ffffff', background) ? '#000000' : '#ffffff';
 };
 
@@ -69,8 +69,8 @@ const readableText = (accent: string, panel: string) => {
 
 export const themeAccentColors = (accent: string, isDark: boolean): Record<number, string> => {
   const shades = isDark
-    ? [[50, .12], [100, .24], [200, .4], [300, .6], [400, .8], [500, 1], [600, .64], [700, .54], [800, .42], [900, .28], [950, .16]]
-    : [[50, .08], [100, .16], [200, .3], [300, .5], [400, .76], [500, 1], [600, .68], [700, .6], [800, .52], [900, .38], [950, .22]];
+    ? [[50, .12], [100, .24], [200, .4], [300, .6], [400, .8], [500, 1], [600, .76], [700, .64], [800, .48], [900, .32], [950, .18]]
+    : [[50, .08], [100, .16], [200, .3], [300, .5], [400, .76], [500, 1], [600, .92], [700, .84], [800, .66], [900, .48], [950, .28]];
   return Object.fromEntries(shades.map(([shade, weight]) => [shade, mixThemeColor(accent, shade < 500 ? '#ffffff' : isDark ? (shade === 600 ? '#11141b' : '#0d0f14') : '#000000', weight)]));
 };
 
@@ -106,7 +106,7 @@ export const applyThemeColors = (root: HTMLElement, palettes: ThemePalettes | un
   for (const [key, value] of Object.entries(variables)) root.style.setProperty(key, value);
   root.dataset.customPalette = String(Object.keys(variables).length > 0);
   root.style.setProperty('--nai-on-accent', themeForeground(accent));
-  root.style.setProperty('--nai-on-action', themeForeground(mixThemeColor(accent, isDark ? '#0d0f14' : '#000000', isDark ? .55 : .68)));
+  root.style.setProperty('--nai-on-action', themeForeground(mixThemeColor(accent, isDark ? '#0d0f14' : '#000000', isDark ? .55 : .84)));
   const panel = resolveThemePalette(palettes, isDark).panel;
   for (const [shade, color] of Object.entries(themeAccentColors(accent, isDark))) {
     root.style.setProperty(`--nai-on-accent-${shade}`, themeForeground(color));

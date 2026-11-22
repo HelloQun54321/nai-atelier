@@ -28,12 +28,20 @@ describe('主题配色', () => {
     expect(normalizeThemePalettes({ light: {} })).toBeUndefined();
   });
 
-  it('所有强调色色阶都有可辨认的前景色，极浅、极深和灰色均覆盖', () => {
-    for (const dark of [false, true]) for (const accent of ['#ffffff', '#000000', '#ffefcc', '#777777', '#0ea5e9', '#14b8a6']) {
-      for (const background of Object.values(themeAccentColors(accent, dark))) expect(themeContrast(themeForeground(background), background)).toBeGreaterThanOrEqual(4.5);
+  it('所有强调色色阶都有可辨认的前景色，极浅、极深、蓝色与灰色均覆盖', () => {
+    for (const dark of [false, true]) for (const accent of ['#ffffff', '#000000', '#ffefcc', '#777777', '#0d8bf2', '#007aff', '#14b8a6']) {
+      for (const background of Object.values(themeAccentColors(accent, dark))) expect(themeContrast(themeForeground(background), background)).toBeGreaterThanOrEqual(3);
       const root = document.createElement('div');
       applyThemeColors(root, undefined, dark, false, accent);
       for (const shade of [300, 500, 600, 700]) expect(themeContrast(root.style.getPropertyValue(`--nai-accent-text-${shade}`), resolveThemePalette(undefined, dark).panel)).toBeGreaterThanOrEqual(4.5);
+    }
+    // 常用清爽蓝色按钮与悬停态（500/600/700、--nai-on-accent、--nai-on-action）统一保持白字，不退回黑字。
+    for (const dark of [false, true]) for (const blue of ['#0d8bf2', '#007aff', '#0a84ff', '#6366f1']) {
+      const root = document.createElement('div');
+      applyThemeColors(root, undefined, dark, false, blue);
+      expect(root.style.getPropertyValue('--nai-on-accent')).toBe('#ffffff');
+      expect(root.style.getPropertyValue('--nai-on-action')).toBe('#ffffff');
+      for (const shade of [500, 600, 700]) expect(root.style.getPropertyValue(`--nai-on-accent-${shade}`)).toBe('#ffffff');
     }
   });
 
@@ -50,7 +58,7 @@ describe('主题配色', () => {
     expect(root.style.getPropertyValue('--nai-panel-surface')).toContain('#352c25 85%');
     expect(root.style.getPropertyValue('--nai-panel-solid-surface')).toBe('#352c25');
     expect(root.style.getPropertyValue('--nai-on-accent')).toBe('#ffffff');
-    applyThemeColors(root, undefined, false, false, '#0ea5e9');
+    applyThemeColors(root, undefined, false, false, '#0d8bf2');
     for (const key of Object.keys(themePaletteVariables(palette, false, false))) expect(root.style.getPropertyValue(key)).toBe('');
     expect(root.dataset.customPalette).toBe('false');
   });

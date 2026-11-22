@@ -40,7 +40,7 @@ describe('悬浮窗外观同步', () => {
     const view = renderHook(({ preferences, isDark }) => useCollectorAppearance(preferences, isDark), { initialProps: initial });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0][0]).toBe('/api/style-collector/appearance');
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ themeMode: 'system', isDark: false, accentColor: '#0ea5e9', motion: 'full', language: 'zh-CN', surfaces: 'solid', corners: 'standard', accents: { light: '#0ea5e9', dark: '#0ea5e9' } });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ themeMode: 'system', isDark: false, accentColor: '#0d8bf2', motion: 'full', language: 'zh-CN', surfaces: 'solid', corners: 'standard', accents: { light: '#0d8bf2', dark: '#0d8bf2' } });
     view.rerender({ ...initial, preferences: { ...initial.preferences, forceEmptySeed: true } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     view.rerender({ preferences: { ...initial.preferences, accentColor: '#8b5cf6', motion: 'off' }, isDark: true });
@@ -74,7 +74,7 @@ describe('悬浮窗外观同步', () => {
     expect(JSON.parse(fetchMock.mock.lastCall![1].body)).toMatchObject({ surfaces: 'translucent', corners: 'soft', palette: cupertino.palette, accents: { light: '#007aff', dark: '#0a84ff' } });
     view.rerender({ preferences: solidDefaults });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    expect(JSON.parse(fetchMock.mock.lastCall![1].body)).toMatchObject({ surfaces: 'solid', corners: 'standard', accents: { light: '#0ea5e9', dark: '#0ea5e9' } });
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body)).toMatchObject({ surfaces: 'solid', corners: 'standard', accents: { light: '#0d8bf2', dark: '#0d8bf2' } });
     expect(JSON.parse(fetchMock.mock.lastCall![1].body)).not.toHaveProperty('palette');
     expect(JSON.parse(fetchMock.mock.lastCall![1].body)).not.toHaveProperty('backgrounds');
   });

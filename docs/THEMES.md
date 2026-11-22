@@ -29,7 +29,7 @@
 
 | 字段 | 允许值 | 默认值 |
 | --- | --- | --- |
-| `accentColor` | 六位十六进制颜色 | `#0ea5e9` |
+| `accentColor` | 六位十六进制颜色 | `#0d8bf2` |
 | `themeMode` | `light`、`dark`、`system` | `system` |
 | `density` | `comfortable`、`standard`、`compact` | `standard` |
 | `corners` | `soft`、`standard`、`sharp` | `standard` |

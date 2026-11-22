@@ -102,13 +102,13 @@ export interface AppearancePreset {
   background?: ThemeBackground;
 }
 
-/** 经典实色内置主题（石墨炭黑／晴空蓝）；出厂默认已改为液态玻璃深色，本项仍可选。 */
+/** 经典实色内置主题（石墨炭黑／清风海蓝）；出厂默认已改为液态玻璃深色，本项仍可选。 */
 export const BUILTIN_APPEARANCE_PRESET: AppearancePreset = {
   id: 'builtin-default',
   name: 'NAI Atelier 默认',
   createdAt: 0,
   isBuiltin: true,
-  accentColor: '#0ea5e9',
+  accentColor: '#0d8bf2',
   themeMode: 'system',
   density: 'standard',
   corners: 'standard',
@@ -235,11 +235,27 @@ const normalizeLabPageLayout = (value: unknown, defaults: LabPageLayout): LabPag
   return { collapsed };
 };
 
+const LEGACY_BUILTIN_ACCENT_COLOR = '#0ea5e9';
+
 export const normalizeAppearancePreferences = (value: unknown): AppearancePreferences => {
   const input = value && typeof value === 'object' ? value as Partial<AppearancePreferences> & { labModuleCollapsed?: unknown } : {};
   const workspaceBackgrounds = normalizeWorkspaceBackgrounds(input.workspaceBackgrounds);
   const legacyBackground = normalizeThemeBackground(input.background);
-  const backgroundPresetId = typeof input.activePresetId === 'string' && input.activePresetId.trim() || DEFAULT_ACTIVE_APPEARANCE_PRESET_ID;
+  const activePresetId = typeof input.activePresetId === 'string' && input.activePresetId.trim()
+    ? input.activePresetId.trim()
+    : DEFAULT_ACTIVE_APPEARANCE_PRESET_ID;
+  const details = normalizeThemeDetails(input.details);
+  const rawAccentColor = typeof input.accentColor === 'string' && HEX_COLOR_PATTERN.test(input.accentColor)
+    ? input.accentColor.toLowerCase()
+    : DEFAULT_APPEARANCE_PREFERENCES.accentColor;
+  // 已选用「NAI Atelier 默认」且仍停留在旧默认 #0ea5e9 时平滑同步到新版清风海蓝，不覆盖其他预设或用户自选色。
+  const accentColor = activePresetId === BUILTIN_APPEARANCE_PRESET.id
+    && rawAccentColor === LEGACY_BUILTIN_ACCENT_COLOR
+    && !details?.light?.accentColor
+    && !details?.dark?.accentColor
+    ? BUILTIN_APPEARANCE_PRESET.accentColor
+    : rawAccentColor;
+  const backgroundPresetId = activePresetId;
   if (legacyBackground && !Object.hasOwn(workspaceBackgrounds, backgroundPresetId)) workspaceBackgrounds[backgroundPresetId] = { light: legacyBackground, dark: legacyBackground };
   const persistedPageLayouts = input.labPageLayouts && typeof input.labPageLayouts === 'object'
     ? input.labPageLayouts as Partial<Record<LabPageId, unknown>>
@@ -268,11 +284,9 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
   return {
     designTheme: input.designTheme === 'nai-atelier' ? input.designTheme : DEFAULT_APPEARANCE_PREFERENCES.designTheme,
     themeMode: isOneOf(input.themeMode, ['light', 'dark', 'system']) ? input.themeMode : DEFAULT_APPEARANCE_PREFERENCES.themeMode,
-    accentColor: typeof input.accentColor === 'string' && HEX_COLOR_PATTERN.test(input.accentColor)
-      ? input.accentColor.toLowerCase()
-      : DEFAULT_APPEARANCE_PREFERENCES.accentColor,
+    accentColor,
     ...(normalizeThemePalettes(input.palette) ? { palette: normalizeThemePalettes(input.palette) } : {}),
-    ...(normalizeThemeDetails(input.details) ? { details: normalizeThemeDetails(input.details) } : {}),
+    ...(details ? { details } : {}),
     ...(normalizeThemeBackground(input.background) ? { background: normalizeThemeBackground(input.background) } : {}),
     ...(Object.keys(workspaceBackgrounds).length ? { workspaceBackgrounds } : {}),
     density: isOneOf(input.density, ['comfortable', 'standard', 'compact']) ? input.density : DEFAULT_APPEARANCE_PREFERENCES.density,

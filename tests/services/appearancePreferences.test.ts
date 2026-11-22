@@ -378,7 +378,7 @@ describe('appearance preferences', () => {
   });
 
   it('旧格式兼容；未知版本、无效选项和未支持的美化字段明确拒绝', () => {
-    expect(readAppearancePresetImport('{"version":1,"presets":[{"name":"旧主题"}]}')[0].accentColor).toBe('#0ea5e9');
+    expect(readAppearancePresetImport('{"version":1,"presets":[{"name":"旧主题"}]}')[0].accentColor).toBe('#0d8bf2');
     for (const input of [
       { version: 999, presets: [{ name: '未来主题' }] },
       { version: 2, customCss: 'body{}', presets: [{ name: '不支持的样式' }] },
@@ -403,5 +403,29 @@ describe('appearance preferences', () => {
     expect(normalizeAppearancePreferences({ galleryPointerTiltAngle: 'nope', galleryPointerTiltWeight: null })).toMatchObject({ galleryPointerTiltAngle: 7, galleryPointerTiltWeight: 50 });
     saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, galleryPointerTiltAngle: 3, galleryPointerTiltWeight: 90 });
     expect(loadAppearancePreferences()).toMatchObject({ galleryPointerTiltAngle: 3, galleryPointerTiltWeight: 90 });
+  });
+
+  it('已选用默认预设且停留在旧晴空蓝时平滑升级为新版清风海蓝，不改动自定义色或其他预设', () => {
+    const migrated = normalizeAppearancePreferences({
+      ...BUILTIN_APPEARANCE_PRESET,
+      activePresetId: BUILTIN_APPEARANCE_PRESET.id,
+      accentColor: '#0ea5e9',
+    });
+    expect(migrated.accentColor).toBe('#0d8bf2');
+    expect(appearanceMatchesPreset(migrated, BUILTIN_APPEARANCE_PRESET)).toBe(true);
+
+    const customAccent = normalizeAppearancePreferences({
+      ...BUILTIN_APPEARANCE_PRESET,
+      activePresetId: BUILTIN_APPEARANCE_PRESET.id,
+      accentColor: '#e11d48',
+    });
+    expect(customAccent.accentColor).toBe('#e11d48');
+
+    const customPreset = normalizeAppearancePreferences({
+      ...BUILTIN_APPEARANCE_PRESET,
+      activePresetId: 'custom-sky',
+      accentColor: '#0ea5e9',
+    });
+    expect(customPreset.accentColor).toBe('#0ea5e9');
   });
 });

@@ -31,7 +31,7 @@ export const validateAppearancePreset = (input: unknown): AppearancePreset | nul
   const name = obj.name.trim().slice(0, 30);
   const createdAt = typeof obj.createdAt === 'number' && Number.isFinite(obj.createdAt) ? obj.createdAt : Date.now();
   const isBuiltin = obj.isBuiltin === true;
-  const accentColor = typeof obj.accentColor === 'string' && HEX_COLOR_PATTERN.test(obj.accentColor) ? obj.accentColor.toLowerCase() : '#0ea5e9';
+  const accentColor = typeof obj.accentColor === 'string' && HEX_COLOR_PATTERN.test(obj.accentColor) ? obj.accentColor.toLowerCase() : '#0d8bf2';
   const themeMode = isOneOf(obj.themeMode, ['light', 'dark', 'system']) ? obj.themeMode : 'system';
   const density = isOneOf(obj.density, ['comfortable', 'standard', 'compact']) ? obj.density : 'standard';
   const corners = isOneOf(obj.corners, ['soft', 'standard', 'sharp']) ? obj.corners : 'standard';
