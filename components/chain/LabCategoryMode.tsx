@@ -167,9 +167,9 @@ function FacetField({ facet, disabled, tagAssist, negativeLocked, roleId, focuse
         {onRemove && <button type="button" className="mobile-touch rounded px-1.5 py-0.5 text-xs hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200" onClick={onRemove}>{t('移除')}</button>}
       </div>
     </div>
-    <TagAutocompleteTextarea aria-label={t(facet.label)} clearActionSlotRef={slot} promptLibraryActions={false} libraryField={libraryField} tagAssistEnabled={tagAssist} showTranslations={Boolean(facet.text.trim())} disabled={disabled} value={facet.text} onValueChange={onText} onFocus={onFocus} placeholder={t(facetHint(facet))} className={`${fieldClass} min-h-16`} />
+    <TagAutocompleteTextarea aria-label={t(facet.label)} clearActionSlotRef={slot} promptLibraryActions={false} libraryField={libraryField} tagAssistEnabled={tagAssist} disabled={disabled} value={facet.text} onValueChange={onText} onFocus={onFocus} placeholder={t(facetHint(facet))} className={`${fieldClass} min-h-16`} />
     {purposes && focused && <PromptLibraryRandomButton purposes={purposes} roleId={roleId} variant="menu" disabled={disabled} />}
-    {negativeOpen && <TagAutocompleteTextarea aria-label={t('{0} 的负面', [t(facet.label)])} libraryField={{ ...libraryField, negative: true }} tagAssistEnabled={tagAssist && !negativeLocked} showTranslations={Boolean(facet.negative.trim())} disabled={disabled || negativeLocked} value={facet.negative} onValueChange={onNegative} onFocus={onFocus} placeholder={t('这一栏不想要的内容，可选')} className={`${fieldClass} min-h-14 text-xs`} />}
+    {negativeOpen && <TagAutocompleteTextarea aria-label={t('{0} 的负面', [t(facet.label)])} libraryField={{ ...libraryField, negative: true }} tagAssistEnabled={tagAssist && !negativeLocked} disabled={disabled || negativeLocked} value={facet.negative} onValueChange={onNegative} onFocus={onFocus} placeholder={t('这一栏不想要的内容，可选')} className={`${fieldClass} min-h-14 text-xs`} />}
   </div>;
 }
 
@@ -288,10 +288,10 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
         <h2 className="text-xs font-bold text-gray-700 dark:text-gray-300">{t('画风')}</h2>
         <PromptCopyButton onClick={() => onCopy(base, '画风')} title={t('复制画风')} />
       </header>
-      <TagAutocompleteTextarea aria-label={t('画风')} libraryField={{ purposeId: 'style' }} tagAssistEnabled={tagAssist} showTranslations={Boolean(base.trim())} disabled={disabled} value={base} onValueChange={onBase} placeholder={t('画师、媒介、光影，整段填写')} className={`${fieldClass} min-h-32`} />
+      <TagAutocompleteTextarea aria-label={t('画风')} libraryField={{ purposeId: 'style' }} tagAssistEnabled={tagAssist} disabled={disabled} value={base} onValueChange={onBase} placeholder={t('画师、媒介、光影，整段填写')} className={`${fieldClass} min-h-32`} />
       <div className={negativeLocked ? 'nai-model-locked' : undefined}>
         <div className="mb-1.5 flex items-center justify-between"><span className="text-xs text-gray-500">{t('画风负面（可选）')}</span><PromptCopyButton onClick={() => onCopy(negative, '画风负面')} title={t('复制画风负面')} /></div>
-        <TagAutocompleteTextarea aria-label={t('画风负面（可选）')} libraryField={{ purposeId: 'style', negative: true }} tagAssistEnabled={tagAssist && !negativeLocked} showTranslations={Boolean(negative.trim())} disabled={disabled || negativeLocked} value={negative} onValueChange={onNegative} placeholder={t('不想要的画风，可以留空')} className={`${fieldClass} min-h-20`} />
+        <TagAutocompleteTextarea aria-label={t('画风负面（可选）')} libraryField={{ purposeId: 'style', negative: true }} tagAssistEnabled={tagAssist && !negativeLocked} disabled={disabled || negativeLocked} value={negative} onValueChange={onNegative} placeholder={t('不想要的画风，可以留空')} className={`${fieldClass} min-h-20`} />
       </div>
     </article>}
     {tab === 'character' && <section aria-label={t('角色')} className="flex flex-col gap-3">

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { ComicStudio } from '../../components/comic/ComicStudio';
 import { promptAgentService } from '../../services/promptAgent';
@@ -93,7 +93,7 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect((screen.getByRole('textbox', { name: '分镜格名称' }) as HTMLInputElement).value).toBe('第 2 格');
     fireEvent.keyDown(window, { key: 'Delete' });
     expect(screen.queryByRole('button', { name: '4' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '撤销' }));
+    fireEvent.click(within(screen.getByRole('banner')).getByRole('button', { name: '撤销' }));
     expect(screen.getByRole('button', { name: '4' })).toBeTruthy();
   });
 

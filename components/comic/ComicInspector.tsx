@@ -1784,7 +1784,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       <TagAutocompleteTextarea
                         rows={3}
                         libraryField={POSITIVE_LIBRARY_FIELD}
-                        showTranslations={Boolean(activePanel.prompt.trim())}
                         promptLibraryActions="save"
                         value={activePanel.prompt}
                         onValueChange={val => onUpdatePanel(activePanel.id, p => ({ ...p, prompt: val }), false)}
@@ -1797,7 +1796,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       <TagAutocompleteTextarea
                         rows={2}
                         libraryField={NEGATIVE_LIBRARY_FIELD}
-                        showTranslations={Boolean(activePanel.negativePrompt.trim())}
                         promptLibraryActions={false}
                         value={activePanel.negativePrompt}
                         onValueChange={val => onUpdatePanel(activePanel.id, p => ({ ...p, negativePrompt: val }), false)}
@@ -2338,7 +2336,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
             <TagAutocompleteTextarea
               rows={3}
               libraryField={POSITIVE_LIBRARY_FIELD}
-              showTranslations={Boolean(draft.globalBasePrompt.trim())}
               promptLibraryActions="save"
               value={draft.globalBasePrompt}
               onValueChange={val => onUpdateDraft(cur => ({ ...cur, globalBasePrompt: val }), false)}
@@ -2351,7 +2348,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
             <TagAutocompleteTextarea
               rows={2}
               libraryField={NEGATIVE_LIBRARY_FIELD}
-              showTranslations={Boolean(draft.globalNegativePrompt.trim())}
               promptLibraryActions={false}
               value={draft.globalNegativePrompt}
               onValueChange={val => onUpdateDraft(cur => ({ ...cur, globalNegativePrompt: val }), false)}

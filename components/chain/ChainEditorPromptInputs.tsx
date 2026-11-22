@@ -41,7 +41,7 @@ export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placehol
     const negativeContent = onNegativeChange && <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
         <label htmlFor={`${id}-negative`} className="mb-1 block text-micro font-semibold text-gray-500">{t('内容负面')}</label>
         <TagAutocompleteTextarea id={`${id}-negative`} aria-label={negativeLabel || `${t(label)} · ${t('内容负面')}`} libraryField={{ kind: library, directoryId, purposeId, roleId, negative: true }}
-            tagAssistEnabled={tagAssistEnabled && !negativeLocked} showTranslations={!!negative?.trim()} disabled={disabled || negativeLocked} value={negative || ''} onValueChange={onNegativeChange}
+            tagAssistEnabled={tagAssistEnabled && !negativeLocked} disabled={disabled || negativeLocked} value={negative || ''} onValueChange={onNegativeChange}
             className="min-h-10 w-full rounded border border-gray-200 bg-gray-50 p-2 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
     </div>;
     return <div role="group" aria-label={t(label)} className="flex min-w-0 flex-col gap-2">
@@ -59,7 +59,7 @@ export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placehol
             promptTidy={tidy}
             reverseTag={onReverseTag ? { onReverse: onReverseTag } : undefined}
             libraryField={{ kind: library, directoryId, purposeId, roleId }}
-            tagAssistEnabled={tagAssistEnabled} showTranslations={!!value.trim()} disabled={disabled} value={value} onValueChange={onChange}
+            tagAssistEnabled={tagAssistEnabled} disabled={disabled} value={value} onValueChange={onChange}
             placeholder={t(placeholder)}
             className={`min-h-20 w-full rounded-lg border p-3 font-mono text-sm font-normal leading-relaxed outline-none ${disabled
                 ? 'cursor-not-allowed bg-gray-100 text-gray-500 dark:bg-gray-800'
