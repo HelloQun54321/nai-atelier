@@ -68,6 +68,10 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   reverseTag?: { onReverse: () => void; disabled?: boolean };
   /** 需要标红警示的 Tag 集合（key 为 lookupTag，value 为悬停提示原因），例如画风框混入的角色词。 */
   warningTags?: ReadonlyMap<string, string>;
+  /** 窄侧栏下限制原文框与翻译区的自动增高上限（如 '132px'），避免长串撑满整屏。 */
+  autoHeightMax?: string;
+  /** 窄侧栏紧凑双行权重与操作栏排版，避免折成松散三行。 */
+  compactToolbar?: boolean;
 }
 type PromptSuggestion = TagSuggestion & { libraryEntry?: PromptChain };
 const PromptTagLibraryInfo = React.lazy(() => import('./PromptTagLibraryInfo').then(module => ({ default: module.PromptTagLibraryInfo })));
@@ -128,6 +132,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   promptTidy,
   reverseTag,
   warningTags,
+  autoHeightMax,
+  compactToolbar = false,
   disabled,
   readOnly,
   onFocus,
@@ -397,29 +403,30 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     return () => { resize?.disconnect(); theme.disconnect(); textarea.removeEventListener('scroll', syncHighlight); window.removeEventListener('resize', syncHighlight); };
   }, [hasHighlight, syncHighlight]);
 
+  const resolvedAutoHeightMax = autoHeightMax || PROMPT_AUTO_HEIGHT_MAX;
   const fitInputHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el || !inputAutoHeight) return;
     fittingInputRef.current = true;
-    el.style.maxHeight = PROMPT_AUTO_HEIGHT_MAX;
+    el.style.maxHeight = resolvedAutoHeightMax;
     el.style.height = 'auto';
     const min = parseFloat(getComputedStyle(el).minHeight) || 40;
     const max = parseFloat(getComputedStyle(el).maxHeight) || Infinity;
     el.style.height = `${Math.min(max, Math.max(min, el.scrollHeight))}px`;
     requestAnimationFrame(() => { fittingInputRef.current = false; });
-  }, [inputAutoHeight]);
+  }, [inputAutoHeight, resolvedAutoHeightMax]);
 
   const fitTranslationHeight = useCallback(() => {
     const el = tagListRef.current;
     if (!el || !translationAutoHeight) return;
     fittingTranslationRef.current = true;
-    el.style.maxHeight = PROMPT_AUTO_HEIGHT_MAX;
+    el.style.maxHeight = resolvedAutoHeightMax;
     el.style.height = 'auto';
     const min = parseFloat(getComputedStyle(el).minHeight) || 40;
     const max = parseFloat(getComputedStyle(el).maxHeight) || Infinity;
     el.style.height = `${Math.min(max, Math.max(min, el.scrollHeight))}px`;
     requestAnimationFrame(() => { fittingTranslationRef.current = false; });
-  }, [translationAutoHeight]);
+  }, [translationAutoHeight, resolvedAutoHeightMax]);
 
   useLayoutEffect(() => {
     if (!inputAutoHeight) {
@@ -985,7 +992,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         readOnly={readOnly}
         value={value}
         className={`${(className || '').replace(/\b(?:resize-(?:none|y|x)|overflow-y-auto)\b/g, '').replace(/\s+/g, ' ').trim()} ${inputAutoHeight ? 'resize-none overflow-y-auto' : 'resize-y'}`}
-        style={{ ...textareaProps.style, ...(inputAutoHeight ? { maxHeight: PROMPT_AUTO_HEIGHT_MAX } : {}), ...(hasHighlight ? { WebkitTextFillColor: 'transparent', caretColor: 'var(--nai-accent)' } : {}) }}
+        style={{ ...textareaProps.style, ...(inputAutoHeight || autoHeightMax ? { maxHeight: resolvedAutoHeightMax } : {}), ...(hasHighlight ? { WebkitTextFillColor: 'transparent', caretColor: 'var(--nai-accent)' } : {}) }}
         role={completionEnabled ? 'combobox' : undefined}
         aria-autocomplete={completionEnabled ? 'list' : undefined}
         aria-expanded={completionEnabled ? isOpen && completionSource === 'prompt' : undefined}
@@ -1060,7 +1067,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             if (text.trim()) { event.preventDefault(); insertTags(text); }
           }}>
           {/* 触屏通过框外把手调高，内容区仍允许滚动传递，鼠标保留原生右下角拖拽。 */}
-          <div ref={tagListRef} data-empty={currentTranslations.length === 0 ? 'true' : 'false'} className={`flex flex-wrap content-start items-start gap-1.5 overflow-y-auto pr-1.5 ${currentTranslations.length ? 'min-h-10 pb-1.5' : 'min-h-7 pb-0.5'} ${translationAutoHeight ? 'h-auto' : currentTranslations.length ? 'h-36' : 'h-7'} ${translationAutoHeight ? 'overscroll-contain' : 'pointer-fine:resize-y pointer-fine:overscroll-contain'}`} style={translationAutoHeight ? { maxHeight: PROMPT_AUTO_HEIGHT_MAX } : undefined}>
+          <div ref={tagListRef} data-empty={currentTranslations.length === 0 ? 'true' : 'false'} className={`flex flex-wrap content-start items-start gap-1.5 overflow-y-auto pr-1.5 ${currentTranslations.length ? 'min-h-10 pb-1.5' : 'min-h-7 pb-0.5'} ${translationAutoHeight ? 'h-auto' : currentTranslations.length ? (autoHeightMax ? 'h-auto' : 'h-36') : 'h-7'} ${translationAutoHeight ? 'overscroll-contain' : 'pointer-fine:resize-y pointer-fine:overscroll-contain'}`} style={translationAutoHeight || autoHeightMax ? { maxHeight: resolvedAutoHeightMax } : undefined}>
             {(() => {
               // 权重组按连续区间渲染为单个胶囊：中间无间隔、强调色贯穿，选择粒度也是整组。
               const nodes: React.ReactNode[] = [];
@@ -1227,14 +1234,139 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             })()}
             {insertionAt(currentTranslations.length)}
           </div>
-          <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
-            <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
+          <div className={`mt-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70 ${compactToolbar && !deleteMode && !muteMode ? 'flex flex-col gap-1.5' : 'flex min-h-7 flex-wrap items-center gap-1'}`}>
+            {(!compactToolbar || deleteMode || muteMode) && (
+              <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
+            )}
             {deleteMode || muteMode ? <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <button type="button" onClick={() => { setDeleteMode(false); setMuteMode(false); clearSelection(); }} className="mobile-touch h-8 rounded-md px-2 py-1 text-meta font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">{t("取消")}</button>
               {deleteMode
                 ? <button type="button" disabled={!editable || !selectedTokens.length} onClick={deleteSelected} className="mobile-touch inline-flex h-8 items-center gap-1 rounded-md bg-red-600 px-2.5 py-1 text-meta font-bold text-white hover:bg-red-500 disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" />{t("删除 {0} 个 Tag", [selectedTokens.length])}</button>
                 : <button type="button" disabled={!editable || !selectedTokens.length} onClick={muteSelected} className="mobile-touch inline-flex h-8 items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 text-meta font-bold text-white hover:bg-amber-400 disabled:opacity-40"><EyeOff className="h-3.5 w-3.5" />{t("屏蔽 {0} 个 Tag", [selectedTokens.length])}</button>}
-            </div> : <>
+            </div> : compactToolbar ? (
+              <>
+                {/* 窄栏第 1 行：权重类型 + 添加 + 增减 + 移除，紧凑单行排布 */}
+                <div className="flex flex-wrap items-center gap-1">
+                  <div role="group" aria-label={t("权重类型")} className="appearance-group appearance-segmented flex h-7 shrink-0 items-stretch gap-0.5 overflow-hidden rounded-md bg-gray-100/90 p-0.5 ring-1 ring-inset ring-gray-200 dark:bg-gray-800/90 dark:ring-gray-700">
+                    <button
+                      type="button"
+                      data-appearance="control"
+                      onClick={() => setWeightKind('brace')}
+                      aria-pressed={weightKind === 'brace'}
+                      className={`mobile-touch inline-flex h-full shrink-0 items-center justify-center rounded-sm px-2 text-meta font-bold leading-none transition-colors ${weightKind === 'brace' ? 'bg-white text-[var(--nai-accent)] shadow-xs dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+                    >{t("括号")}</button>
+                    <button
+                      type="button"
+                      data-appearance="control"
+                      onClick={() => setWeightKind('numeric')}
+                      aria-pressed={weightKind === 'numeric'}
+                      className={`mobile-touch inline-flex h-full shrink-0 items-center justify-center rounded-sm px-2 text-meta font-bold leading-none transition-colors ${weightKind === 'numeric' ? 'bg-white text-[var(--nai-accent)] shadow-xs dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+                    >{t("数值")}</button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const parsed = Number(weightInput);
+                      const numericWeight = weightInputEdited && weightInput.trim() && Number.isFinite(parsed) ? parsed
+                        : hasSelectedWeight && !differentWeights && Number.isFinite(selectedWeightValue) ? selectedWeightValue : undefined;
+                      applyWeightWrap(weightKind, weightKind === 'numeric' ? numericWeight : undefined);
+                      setWeightInputEdited(false);
+                    }}
+                    disabled={!editable || !selectedTokens.length}
+                    className={`mobile-touch h-7 rounded-md border px-1.5 text-meta font-semibold transition-colors disabled:pointer-events-none disabled:opacity-45 ${selectedTokens.length ? 'border-[color-mix(in_srgb,var(--nai-accent)_45%,transparent)] text-[var(--nai-accent)] hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)]' : 'border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'}`}
+                    title={t("把选中的 Tag 按当前选择的类型添加/转换权重")}
+                  >{t("添加权重")}</button>
+                  <div className={`flex h-7 shrink-0 items-stretch overflow-hidden whitespace-nowrap rounded-md ring-1 ring-inset transition-colors [&>button]:shrink-0 ${selectedTokens.length ? 'ring-[color-mix(in_srgb,var(--nai-accent)_45%,transparent)]' : 'ring-gray-200 opacity-50 dark:ring-gray-700'}`}>
+                    <button
+                      type="button"
+                      onClick={event => applyWeight('down', undefined, event.shiftKey ? 0.01 : 0.1)}
+                      disabled={!editable || !selectedTokens.length}
+                      className={`mobile-touch h-full px-1.5 text-meta font-bold transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none ${selectedTokens.length ? 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`}
+                      title={t("减弱权重：括号减一层，数值减 0.1（Shift 为 0.01）")}
+                    >−</button>
+                    {weightKind === 'numeric' ? <input
+                      value={weightInput}
+                      onChange={event => {
+                        const raw = event.target.value.replace(/[^\d.-]/g, '');
+                        setWeightInput(raw.startsWith('-') ? `-${raw.slice(1).replace(/-/g, '')}` : raw.replace(/-/g, ''));
+                        setWeightInputEdited(true);
+                      }}
+                      onBlur={commitWeightInput}
+                      onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commitWeightInput(); } }}
+                      disabled={!editable || !selectedTokens.length}
+                      inputMode="decimal"
+                      aria-label={t("数值权重")}
+                      placeholder={t(differentWeights ? "不同" : "权重")}
+                      title={t("输入数值权重后回车，作用于选中的整组")}
+                      className="mobile-touch h-full w-12 shrink-0 border-x border-gray-200 bg-transparent px-1 text-center font-mono text-meta text-gray-600 placeholder:text-gray-400 focus:outline-none dark:border-gray-700 dark:text-gray-300 dark:placeholder:text-gray-500"
+                    /> : <output aria-label={t("权重倍率")} className="mobile-touch flex h-full min-w-11 shrink-0 items-center justify-center border-x border-gray-200 px-1.5 font-mono text-meta text-gray-600 dark:border-gray-700 dark:text-gray-300">
+                      {differentWeights ? t("不同") : displayedWeight || '—'}
+                    </output>}
+                    <button
+                      type="button"
+                      onClick={event => applyWeight('up', undefined, event.shiftKey ? 0.01 : 0.1)}
+                      disabled={!editable || !selectedTokens.length}
+                      className={`mobile-touch h-full px-1.5 text-meta font-bold transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none ${selectedTokens.length ? 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`}
+                      title={t("增强权重：括号加一层，数值加 0.1（Shift 为 0.01）")}
+                    >+</button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => applyWeight('remove')}
+                    disabled={!editable || !selectedTokens.length}
+                    className={`mobile-touch ml-auto h-7 shrink-0 whitespace-nowrap rounded-md border px-1.5 text-meta font-semibold transition-colors disabled:pointer-events-none disabled:opacity-45 ${selectedTokens.length ? 'border-[color-mix(in_srgb,var(--nai-accent)_45%,transparent)] text-[var(--nai-accent)] hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)]' : 'border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'}`}
+                  >{t("移除权重")}</button>
+                </div>
+                {/* 窄栏第 2 行：撤销 + 翻译缺失项 + 右对齐屏蔽/删除（不再出现孤立第 3 行） */}
+                <div className="flex items-center gap-1">
+                  <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800"><RotateCcw className="h-3.5 w-3.5" /></button>
+                  {translationError && <InfoPopover label={t("翻译失败详情")} preserveSelection content={translationError} className="mobile-touch h-7 min-w-0 flex-1 truncate text-left text-micro text-red-500 underline decoration-dotted underline-offset-2">{translationError}</InfoPopover>}
+                  {allowAiTranslation && editable && missingTags.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => void translateMissing()}
+                      disabled={translationLoading}
+                      className="mobile-touch inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
+                      title={t("使用当前助手模型翻译 {0} 个词库缺失项", [missingTags.length])}
+                    >
+                      {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
+                      {translationLoading ? t("翻译中") : t("翻译缺失项 {0}", [missingTags.length])}
+                    </button>
+                  )}
+                  <div className="ml-auto flex shrink-0 items-center gap-1">
+                    <button type="button" aria-label={t("屏蔽模式")} title={t("进入屏蔽模式：选择 Tag 后暂时移出提示词")}
+                      disabled={!editable || !promptTokens.length} onClick={() => { clearSelection(); setDeleteMode(false); setMuteMode(true); }}
+                      className="mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-40 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50">
+                      <EyeOff aria-hidden="true" className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={t("删除模式")}
+                      title={warningTokens.length ? t("检测到 {0} 处疑似待删词：点击进入删除模式查看并清理", [warningTokens.length]) : t("删除模式")}
+                      disabled={!editable || !promptTokens.length}
+                      onClick={() => {
+                        setMuteMode(false);
+                        setDeleteMode(true);
+                        if (warningTokens.length) setSelectedTagIds(new Set(warningTokens.map(token => token.id)));
+                        else clearSelection();
+                      }}
+                      className="relative mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-40 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      {warningTokens.length > 0 && (
+                        <span
+                          data-warning-indicator="true"
+                          aria-hidden="true"
+                          className="pointer-events-none absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 font-mono text-[10px] font-bold leading-none text-white ring-2 ring-white dark:ring-gray-900"
+                        >
+                          {warningTokens.length}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : <>
             <div className="flex shrink-0 items-center gap-1 whitespace-nowrap">
               <span className="text-meta text-gray-500 dark:text-gray-400">{t("权重类型")}</span>
               <div role="group" aria-label={t("权重类型")} className="appearance-group appearance-segmented flex h-8 shrink-0 items-stretch gap-0.5 overflow-hidden rounded-md bg-gray-100/90 p-0.5 ring-1 ring-inset ring-gray-200 max-md:h-11 dark:bg-gray-800/90 dark:ring-gray-700">

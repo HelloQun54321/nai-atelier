@@ -253,7 +253,11 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
   it('exposes batch panel generation, full V5 parameter tuning, rich bubble styling, and custom layout templates', () => {
     renderStudio();
 
-    // 先在步骤 1「画风设定」确认完整的 Seed / Steps / CFG / Sampler / Noise Schedule 参数微调
+    // 步骤 1「画风设定」中低频「生图参数微调」默认折叠，展开后提供完整的 Seed / Steps / CFG / Sampler / Noise Schedule 微调
+    const tuningSummary = screen.getByText('生图参数微调');
+    const tuningDetails = tuningSummary.closest('details') as HTMLDetailsElement;
+    expect(tuningDetails.open).toBe(false);
+    fireEvent.click(tuningSummary);
     const seedInput = screen.getByRole('spinbutton', { name: '随机种子' }) as HTMLInputElement;
     fireEvent.change(seedInput, { target: { value: '123456' } });
     expect(seedInput.value).toBe('123456');

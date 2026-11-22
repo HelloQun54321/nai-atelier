@@ -215,6 +215,8 @@ const ComicPromptField: React.FC<{
         promptLibraryActions={promptLibraryActions}
         promptTidy={promptTidy}
         warningTags={warningTags}
+        autoHeightMax={compact ? '96px' : '128px'}
+        compactToolbar
         tagAssistEnabled
         value={value}
         onValueChange={onChange}
@@ -2405,95 +2407,103 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
       {/* ==================== 步骤 1：画风设定 ==================== */}
       {activeTab === 'style' && (
         <>
-        <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-3.5 pb-6 text-xs">
-          {/* 优先放最高频的风格串载入与公共画风词 */}
-          <div className="space-y-1.5">
-            <span className="block font-semibold text-gray-700 dark:text-gray-200">{t('载入风格串画风')}</span>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                aria-label={t('选择风格串')}
-                aria-expanded={stylePickerOpen}
-                onClick={() => setStylePickerOpen(open => !open)}
-                className="flex min-w-0 flex-1 items-center justify-between rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-left text-xs text-gray-800 transition hover:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              >
-                <span className="truncate">{boundStyleChain ? boundStyleChain.name : t('点击搜索并载入风格串…')}</span>
-                <Search className="ml-2 h-3.5 w-3.5 flex-none text-gray-400" />
-              </button>
-              {boundStyleChain && (
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#eef1f7] p-3 pb-6 text-xs dark:bg-gray-950/60">
+          {/* 卡片 1：载入风格串 + 全页公共正负画风词 */}
+          <div className="space-y-3 rounded-xl border border-gray-200/90 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-800 dark:bg-gray-900">
+            <div className="space-y-1.5">
+              <span className="block font-semibold text-gray-700 dark:text-gray-200">{t('载入风格串画风')}</span>
+              <div className="flex min-w-0 items-center rounded-lg border border-gray-200 bg-gray-50/70 transition focus-within:border-indigo-400 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800/80 dark:hover:border-indigo-500">
                 <button
                   type="button"
-                  aria-label={t('解除风格串绑定')}
-                  onClick={() => onUpdateDraft(cur => ({ ...cur, styleChainId: undefined }), true)}
-                  className="flex h-8 w-8 flex-none items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+                  aria-label={t('选择风格串')}
+                  aria-expanded={stylePickerOpen}
+                  onClick={() => setStylePickerOpen(open => !open)}
+                  className="flex min-w-0 flex-1 items-center justify-between gap-2 px-2.5 py-1.5 text-left text-xs text-gray-800 dark:text-gray-100"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <span className={`truncate ${boundStyleChain ? 'font-medium' : 'text-gray-400'}`}>
+                    {boundStyleChain ? boundStyleChain.name : t('从风格串选择画风…')}
+                  </span>
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 flex-none text-gray-400 transition-transform ${stylePickerOpen ? 'rotate-180 text-indigo-500' : ''}`}
+                    aria-hidden="true"
+                  />
                 </button>
+                {boundStyleChain && (
+                  <button
+                    type="button"
+                    aria-label={t('解除风格串绑定')}
+                    title={t('解除风格串绑定')}
+                    onClick={() => onUpdateDraft(cur => ({ ...cur, styleChainId: undefined }), true)}
+                    className="mr-1 flex h-6 w-6 flex-none items-center justify-center rounded-md text-gray-400 transition hover:bg-gray-200/70 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+              {stylePickerOpen && (
+                <div className="space-y-1.5 rounded-xl border border-indigo-200 bg-white p-2 shadow-sm dark:border-indigo-800 dark:bg-gray-900">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      autoFocus
+                      aria-label={t('搜索风格串')}
+                      value={styleQuery}
+                      onChange={e => setStyleQuery(e.target.value)}
+                      placeholder={t('按名称、画师或标签筛选风格串…')}
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-7 pr-2 text-xs text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                    />
+                  </div>
+                  <div className="max-h-44 space-y-1 overflow-y-auto">
+                    {styleChains.map(chain => (
+                      <button
+                        key={chain.id}
+                        type="button"
+                        onClick={() => {
+                          onApplyStyleChain(chain);
+                          setStylePickerOpen(false);
+                          setStyleQuery('');
+                        }}
+                        className={`flex w-full flex-col rounded-lg px-2 py-1.5 text-left transition ${draft.styleChainId === chain.id ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+                      >
+                        <span className="truncate font-semibold text-gray-800 dark:text-gray-100">{chain.name}</span>
+                        {chain.basePrompt && <span className="truncate text-[10px] text-gray-400">{chain.basePrompt}</span>}
+                      </button>
+                    ))}
+                    {!styleChains.length && (
+                      <div className="py-3 text-center text-[11px] text-gray-400">{t('没有找到匹配的风格串')}</div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
-            {stylePickerOpen && (
-              <div className="space-y-1.5 rounded-xl border border-indigo-200 bg-white p-2 shadow-sm dark:border-indigo-800 dark:bg-gray-900">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
-                    autoFocus
-                    aria-label={t('搜索风格串')}
-                    value={styleQuery}
-                    onChange={e => setStyleQuery(e.target.value)}
-                    placeholder={t('按名称、画师或标签筛选风格串…')}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-7 pr-2 text-xs text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                  />
-                </div>
-                <div className="max-h-44 space-y-1 overflow-y-auto">
-                  {styleChains.map(chain => (
-                    <button
-                      key={chain.id}
-                      type="button"
-                      onClick={() => {
-                        onApplyStyleChain(chain);
-                        setStylePickerOpen(false);
-                        setStyleQuery('');
-                      }}
-                      className={`flex w-full flex-col rounded-lg px-2 py-1.5 text-left transition ${draft.styleChainId === chain.id ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
-                    >
-                      <span className="truncate font-semibold text-gray-800 dark:text-gray-100">{chain.name}</span>
-                      {chain.basePrompt && <span className="truncate text-[10px] text-gray-400">{chain.basePrompt}</span>}
-                    </button>
-                  ))}
-                  {!styleChains.length && (
-                    <div className="py-3 text-center text-[11px] text-gray-400">{t('没有找到匹配的风格串')}</div>
-                  )}
-                </div>
-              </div>
-            )}
+
+            <ComicPromptField
+              label={t('全页公共画风提示词')}
+              rows={3}
+              libraryField={POSITIVE_LIBRARY_FIELD}
+              promptTidy={promptTidyOption}
+              warningTags={styleWarningMap}
+              value={draft.globalBasePrompt}
+              onChange={val => onUpdateDraft(cur => ({ ...cur, globalBasePrompt: val }), false)}
+              onCopy={copyPrompt}
+              placeholder={t('输入画师串与全页统一画风，每格生图自动带上')}
+            />
+            <ComicPromptField
+              label={t('全页公共负面词')}
+              rows={2}
+              libraryField={NEGATIVE_LIBRARY_FIELD}
+              value={draft.globalNegativePrompt}
+              onChange={val => onUpdateDraft(cur => ({ ...cur, globalNegativePrompt: val }), false)}
+              onCopy={copyPrompt}
+              placeholder={t('全页公共排除词（自动过滤压制网点的冲突词）')}
+            />
           </div>
 
-          <ComicPromptField
-            label={t('全页公共画风提示词')}
-            rows={3}
-            libraryField={POSITIVE_LIBRARY_FIELD}
-            promptTidy={promptTidyOption}
-            warningTags={styleWarningMap}
-            value={draft.globalBasePrompt}
-            onChange={val => onUpdateDraft(cur => ({ ...cur, globalBasePrompt: val }), false)}
-            onCopy={copyPrompt}
-            placeholder={t('输入画师串与全页统一画风，每格生图自动带上')}
-          />
-          <ComicPromptField
-            label={t('全页公共负面词')}
-            rows={2}
-            libraryField={NEGATIVE_LIBRARY_FIELD}
-            value={draft.globalNegativePrompt}
-            onChange={val => onUpdateDraft(cur => ({ ...cur, globalNegativePrompt: val }), false)}
-            onCopy={copyPrompt}
-            placeholder={t('全页公共排除词（自动过滤压制网点的冲突词）')}
-          />
-
-          {/* 紧凑版 V5 模型 / 色彩 / 对白策略（不再占半屏） */}
-          <div className="space-y-2.5 rounded-xl border border-gray-200/80 bg-gray-50/60 p-2.5 dark:border-gray-800 dark:bg-gray-800/40">
+          {/* 卡片 2：模型档位 / 色彩模式 / 对白策略 */}
+          <div className="space-y-2.5 rounded-xl border border-gray-200/90 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-800 dark:bg-gray-900">
             <div>
-              <span className="mb-1 block text-[11px] font-semibold text-gray-500 dark:text-gray-400">{t('V5 模型档位（独立于实验室）')}</span>
+              <span className="mb-1.5 block text-[11px] font-semibold text-gray-600 dark:text-gray-300">{t('V5 模型档位')}</span>
               <div className="grid grid-cols-3 gap-1">
                 {COMIC_V5_MODELS.map(model => {
                   const active = draft.v5Model === model.id;
@@ -2516,7 +2526,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
             </div>
 
             <div>
-              <span className="mb-1 block text-[11px] font-semibold text-gray-500 dark:text-gray-400">{t('色彩模式')}</span>
+              <span className="mb-1.5 block text-[11px] font-semibold text-gray-600 dark:text-gray-300">{t('色彩模式')}</span>
               <div className="grid grid-cols-2 gap-1.5">
                 {([
                   { id: 'color', label: '全彩漫画' },
@@ -2540,11 +2550,11 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
             </div>
 
             <label className="block">
-              <span className="mb-1 block text-[11px] font-semibold text-gray-500 dark:text-gray-400">{t('对白与气泡策略')}</span>
+              <span className="mb-1.5 block text-[11px] font-semibold text-gray-600 dark:text-gray-300">{t('对白与气泡策略')}</span>
               <select
                 value={draft.dialogueMode}
                 onChange={e => onUpdateDraft(cur => ({ ...cur, dialogueMode: e.target.value as ComicDialogueMode }), true)}
-                className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                className="w-full rounded-lg border border-gray-200 bg-gray-50/70 px-2.5 py-1.5 text-xs text-gray-800 outline-none focus:border-indigo-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
               >
                 <option value="clean-vector">{t('无气泡纯画面 + 画布矢量气泡')}</option>
                 <option value="empty-bubble">{t('空白气泡直出 + 后期嵌字')}</option>
@@ -2553,59 +2563,67 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
             </label>
           </div>
 
-          {/* 常用 V5 生图参数微调（Seed / 步数 / 引导强度 / 采样器 / 噪声调度） */}
-          <div className="space-y-2.5 rounded-xl border border-gray-200/80 bg-gray-50/60 p-2.5 dark:border-gray-800 dark:bg-gray-800/40">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-bold text-gray-700 dark:text-gray-200">{t('生图参数微调')}</span>
-              {lastGeneratedSeed !== undefined && (
-                <button
-                  type="button"
-                  onClick={() => onUpdateDraft(cur => ({ ...cur, seed: lastGeneratedSeed }), true)}
-                  className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200"
-                >
-                  <Lock className="h-2.5 w-2.5" />
-                  <span>{t('锁上次 Seed')} ({lastGeneratedSeed})</span>
-                </button>
-              )}
-            </div>
+          {/* 卡片 3：低频生图参数微调（默认折叠，摘要直接显示当前步数/CFG/种子） */}
+          <details className="group rounded-xl border border-gray-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-800 dark:bg-gray-900">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-xs font-semibold text-gray-700 select-none hover:text-indigo-600 dark:text-gray-200 dark:hover:text-indigo-300">
+              <span className="inline-flex items-center gap-1.5">
+                <ChevronDown className="h-3.5 w-3.5 text-gray-400 transition group-open:rotate-180" aria-hidden="true" />
+                <span>{t('生图参数微调')}</span>
+              </span>
+              <span className="truncate font-mono text-[11px] font-normal text-gray-400">
+                {draft.v5Model === 'nai-diffusion-5-full-medium' ? 14 : draft.steps}{t('步')} · CFG {draft.scale.toFixed(1)}{draft.seed !== undefined ? ` · #${draft.seed}` : ''}
+              </span>
+            </summary>
 
-            <div>
-              <span className="mb-1 block text-[11px] font-semibold text-gray-500 dark:text-gray-400">{t('随机种子 (Seed)')}</span>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  min={0}
-                  max={4294967295}
-                  aria-label={t('随机种子')}
-                  value={draft.seed ?? ''}
-                  onChange={e => {
-                    const raw = e.target.value.trim();
-                    onUpdateDraft(cur => ({
-                      ...cur,
-                      seed: raw === '' ? undefined : Math.max(0, Math.min(4294967295, Math.floor(Number(raw) || 0))),
-                    }), false);
-                  }}
-                  onBlur={() => onUpdateDraft(cur => cur, true)}
-                  placeholder={t('留空每次随机')}
-                  className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-mono text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                />
-                <button
-                  type="button"
-                  title={t('清空 Seed，恢复随机')}
-                  aria-label={t('随机 Seed')}
-                  onClick={() => onUpdateDraft(cur => ({ ...cur, seed: undefined }), true)}
-                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-600 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                >
-                  <Dices className="h-3.5 w-3.5" /> {t('随机')}
-                </button>
+            <div className="space-y-3 border-t border-gray-100 px-3 pt-2.5 pb-3 dark:border-gray-800">
+              <div>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">{t('随机种子 (Seed)')}</span>
+                  {lastGeneratedSeed !== undefined && (
+                    <button
+                      type="button"
+                      onClick={() => onUpdateDraft(cur => ({ ...cur, seed: lastGeneratedSeed }), true)}
+                      className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200"
+                    >
+                      <Lock className="h-2.5 w-2.5" />
+                      <span>{t('锁上次 Seed')} ({lastGeneratedSeed})</span>
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={0}
+                    max={4294967295}
+                    aria-label={t('随机种子')}
+                    value={draft.seed ?? ''}
+                    onChange={e => {
+                      const raw = e.target.value.trim();
+                      onUpdateDraft(cur => ({
+                        ...cur,
+                        seed: raw === '' ? undefined : Math.max(0, Math.min(4294967295, Math.floor(Number(raw) || 0))),
+                      }), false);
+                    }}
+                    onBlur={() => onUpdateDraft(cur => cur, true)}
+                    placeholder={t('留空每次随机')}
+                    className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-gray-50/70 px-2.5 py-1 text-xs font-mono text-gray-800 outline-none focus:border-indigo-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                  />
+                  <button
+                    type="button"
+                    title={t('清空 Seed，恢复随机')}
+                    aria-label={t('随机 Seed')}
+                    onClick={() => onUpdateDraft(cur => ({ ...cur, seed: undefined }), true)}
+                    className="inline-flex h-7 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-600 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                  >
+                    <Dices className="h-3.5 w-3.5" /> {t('随机')}
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {(() => {
-              const isMedium = draft.v5Model === 'nai-diffusion-5-full-medium';
-              return (
-                <>
-                  <div className="grid grid-cols-2 gap-2.5">
+              {(() => {
+                const isMedium = draft.v5Model === 'nai-diffusion-5-full-medium';
+                return (
+                  <>
                     <label className="block">
                       <span className="mb-1 flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
                         <span>{t('步数 (Steps)')}</span>
@@ -2638,67 +2656,67 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                         className="w-full accent-indigo-600"
                       />
                     </label>
-                  </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="block">
+                        <span className="mb-1 block text-[11px] text-gray-500 dark:text-gray-400">{t('采样器')}</span>
+                        <select
+                          aria-label={t('采样器')}
+                          disabled={isMedium}
+                          value={isMedium ? 'k_euler_ancestral' : draft.sampler}
+                          onChange={e => onUpdateDraft(cur => ({ ...cur, sampler: e.target.value }), true)}
+                          className="w-full rounded-lg border border-gray-200 bg-gray-50/70 px-2 py-1 text-[11px] text-gray-800 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                        >
+                          <option value="k_euler_ancestral">Euler Ancestral</option>
+                          <option value="k_euler">Euler</option>
+                          <option value="k_dpmpp_2s_ancestral">DPM++ 2S Ancestral</option>
+                          <option value="k_dpmpp_2m_sde">DPM++ 2M SDE</option>
+                          <option value="k_dpmpp_sde">DPM++ SDE</option>
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-[11px] text-gray-500 dark:text-gray-400">{t('噪声调度')}</span>
+                        <select
+                          aria-label={t('噪声调度')}
+                          value={draft.noiseSchedule}
+                          onChange={e => onUpdateDraft(cur => ({ ...cur, noiseSchedule: e.target.value as ComicPageDraft['noiseSchedule'] }), true)}
+                          className="w-full rounded-lg border border-gray-200 bg-gray-50/70 px-2 py-1 text-[11px] text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                        >
+                          <option value="karras">Karras</option>
+                          <option value="exponential">Exponential</option>
+                          <option value="polyexponential">Polyexponential</option>
+                          <option value="native">Native</option>
+                        </select>
+                      </label>
+                    </div>
+
                     <label className="block">
-                      <span className="mb-1 block text-[11px] text-gray-500 dark:text-gray-400">{t('采样器')}</span>
-                      <select
-                        aria-label={t('采样器')}
+                      <span className="mb-1 flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
+                        <span>{t('提示词引导重缩放 (CFG Rescale)')}</span>
+                        <span className="font-mono">{(isMedium ? 0 : draft.cfgRescale).toFixed(2)}</span>
+                      </span>
+                      <input
+                        type="range"
+                        aria-label={t('CFG 重缩放')}
+                        min={0}
+                        max={1}
+                        step={0.05}
                         disabled={isMedium}
-                        value={isMedium ? 'k_euler_ancestral' : draft.sampler}
-                        onChange={e => onUpdateDraft(cur => ({ ...cur, sampler: e.target.value }), true)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-800 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                      >
-                        <option value="k_euler_ancestral">Euler Ancestral</option>
-                        <option value="k_euler">Euler</option>
-                        <option value="k_dpmpp_2s_ancestral">DPM++ 2S Ancestral</option>
-                        <option value="k_dpmpp_2m_sde">DPM++ 2M SDE</option>
-                        <option value="k_dpmpp_sde">DPM++ SDE</option>
-                      </select>
+                        value={isMedium ? 0 : draft.cfgRescale}
+                        onChange={e => onUpdateDraft(cur => ({ ...cur, cfgRescale: Number(e.target.value) }), false)}
+                        className="w-full accent-indigo-600 disabled:opacity-40"
+                      />
                     </label>
-                    <label className="block">
-                      <span className="mb-1 block text-[11px] text-gray-500 dark:text-gray-400">{t('噪声调度')}</span>
-                      <select
-                        aria-label={t('噪声调度')}
-                        value={draft.noiseSchedule}
-                        onChange={e => onUpdateDraft(cur => ({ ...cur, noiseSchedule: e.target.value as ComicPageDraft['noiseSchedule'] }), true)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                      >
-                        <option value="karras">Karras</option>
-                        <option value="exponential">Exponential</option>
-                        <option value="polyexponential">Polyexponential</option>
-                        <option value="native">Native</option>
-                      </select>
-                    </label>
-                  </div>
-
-                  <label className="block">
-                    <span className="mb-1 flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
-                      <span>{t('提示词引导重缩放 (CFG Rescale)')}</span>
-                      <span className="font-mono">{(isMedium ? 0 : draft.cfgRescale).toFixed(2)}</span>
-                    </span>
-                    <input
-                      type="range"
-                      aria-label={t('CFG 重缩放')}
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      disabled={isMedium}
-                      value={isMedium ? 0 : draft.cfgRescale}
-                      onChange={e => onUpdateDraft(cur => ({ ...cur, cfgRescale: Number(e.target.value) }), false)}
-                      className="w-full accent-indigo-600 disabled:opacity-40"
-                    />
-                  </label>
-                  {isMedium && (
-                    <p className="text-[10px] text-gray-400">
-                      {t('V5 Medium 档位由官方固定为 14 步与 Euler Ancestral 采样器；切至 High / Curated 可自由调节全部参数。')}
-                    </p>
-                  )}
-                </>
-              );
-            })()}
-          </div>
+                    {isMedium && (
+                      <p className="text-[10px] text-gray-400">
+                        {t('V5 Medium 档位由官方固定为 14 步与 Euler Ancestral 采样器；切至 High / Curated 可自由调节全部参数。')}
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </details>
         </div>
         <div className="flex-none border-t border-gray-200/80 bg-white/95 p-3 dark:border-gray-800 dark:bg-gray-900/95">
           <button

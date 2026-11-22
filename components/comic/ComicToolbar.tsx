@@ -428,13 +428,13 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
         </IconButton>
 
         <ToolbarButton
-          tone="primary"
+          tone="neutral"
           disabled={exporting}
           onClick={onExport}
           aria-label={t('导出 PNG')}
           className="h-8! px-2.5! text-xs"
         >
-          {exporting ? <InlineSpinner className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />}
+          {exporting ? <InlineSpinner className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />}
           <span className="hidden sm:inline">{exporting ? t('导出中…') : t('导出 PNG')}</span>
         </ToolbarButton>
 
