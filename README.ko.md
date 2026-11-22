@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [소스 버전](./package.json) · [설치판 다운로드](https://github.com/HelloQun54321/nai-atelier/releases) · [변경 기록](./CHANGELOG.md) · [MIT 라이선스](./LICENSE)
+  [소스 버전](./package.json) · [설치판 다운로드](https://github.com/HelloQun54321/nai-atelier/releases) · [변경 기록](./CHANGELOG.md) · [AGPL-3.0 라이선스](./LICENSE)
 </div>
 
 ---

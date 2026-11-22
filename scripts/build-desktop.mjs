@@ -15,7 +15,7 @@ export const RUNTIME_FILES = [
   'public/themes/wallpapers/cupertino-day.webp', 'public/themes/wallpapers/cupertino-night.webp',
   ...['agentOperation', 'agentLabSync', 'agentPromptChanges', 'agentConnection', 'danbooruErrors', 'httpErrors', 'agentThinking', 'imageTaggerModels', 'transparentBackground', 'themeBackgroundData', 'pngMetadata', 'vibeProtocol', 'promptClassification', 'promptSegments', 'promptTags', 'promptExtraction', 'promptTidyAgent', 'promptLibraryTree', 'directoryTree', 'promptPurposes', 'naiNoiseSchedule'].map(name => `services/${name}.mjs`),
   ...['stChatu8Policy', 'sharedWhitelist', 'imageDimensions', 'cloudQueueNumbers', 'cloudQueueTarget', 'naiBilling', 'generationTasks', 'generationJobs', 'codexRemote'].map(name => `worker/${name}.mjs`),
-  'LICENSE', 'PROJECT_AGENT.md', 'wrangler.toml', 'data/novelai-v45-tags.json',
+  'LICENSE', 'NOTICE', 'PROJECT_AGENT.md', 'wrangler.toml', 'data/novelai-v45-tags.json',
   'locales/index.mjs', 'locales/messages.json',
   ...['index.js', 'style.css', 'manifest.json', 'README.md'].map(name => `sillytavern-extension/npm-bridge/${name}`),
   ...PUBLIC_ICONS.map(name => `public/${name}`),
@@ -209,7 +209,7 @@ export async function buildDesktop({ unpacked = false, skipInstall = false } = {
   await mkdir(join(appRoot, 'locales'), { recursive: true });
   for (const file of ['index.mjs', 'messages.json']) await copyFile(join(root, 'locales', file), join(appRoot, 'locales', file));
   await bundleDesktopUpdater(appRoot);
-  await writeFile(join(appRoot, 'package.json'), JSON.stringify({ name: 'nai-atelier-desktop', productName: 'NAI Atelier', version: pkg.version, description: 'NovelAI 个人本地创作工坊', author: 'NAI Atelier contributors', license: 'MIT', main: 'desktop/main.mjs', type: 'module', private: true }, null, 2) + '\n');
+  await writeFile(join(appRoot, 'package.json'), JSON.stringify({ name: 'nai-atelier-desktop', productName: 'NAI Atelier', version: pkg.version, description: 'NovelAI 个人本地创作工坊', author: 'NAI Atelier contributors', license: 'AGPL-3.0-only', main: 'desktop/main.mjs', type: 'module', private: true }, null, 2) + '\n');
   const files = await inventory(runtime);
   const ownFiles = files.filter(file => !file.startsWith('node_modules/'));
   if (ownFiles.some(isPrivateDistributionPath)) throw new Error('分发资源包含禁止打包的目录或配置');

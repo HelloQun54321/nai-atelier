@@ -1,4 +1,7 @@
 ## 2026-11-22
+- 开源协议自 `v1.227.13` 起由 MIT 切换为 **GNU AGPL-3.0（AGPL-3.0-only）**：
+  - 根目录 `LICENSE` 更新为标准 GNU AGPL-3.0 全文，新增 `NOTICE` 完整保留上游 `kirafishy/NaiPromptManager` 与早期贡献者的原 MIT 版权及许可声明；
+  - 同步更新 `package.json`、桌面端打包清单（`scripts/build-desktop.mjs` 一并打包 `NOTICE`）以及五语 README 协议徽章与说明。
 - 修复拼车成员网关侧栏 Anlas 与 Opus 额度偶发退回「本地预算 / 余额」双数字与 1/4 满圈的问题：
   - `media-gateway` 在 `/api/me/quota` 偶发超时、限流或 5xx 时不再用 `null` 覆盖已有的托管钱包与个人车位上限缓存，改为安全沿用上次有效配额快照；
   - 为 `/api/me/quota` 补齐同 Key 并发去重、放宽超时至 10 秒，并让内置助手余额工具共用同一探测缓存。

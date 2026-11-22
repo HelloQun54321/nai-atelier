@@ -7,11 +7,11 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.227.12-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.227.13-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
-  [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](./LICENSE)
+  [![License](https://img.shields.io/badge/license-AGPL--3.0-f59e0b?style=flat-square)](./LICENSE)
 
   [项目定位](#-项目定位) · [界面预览](#-界面预览) · [快速上手](#-快速上手) · [语言](#-界面与助手语言) · [手机创作](#-手机局域网创作体验) · [核心工作流](#-核心创作工作流) · [资源资料库](#-tag-与资源资料库) · [费用与隐私](#-费用密钥与安全守卫) · [数据主权](#-本地数据主权与备份) · [生态互通](#-生态互通与扩展st-chatu8-联动) · [技术架构](#-技术架构) · [更新日志](./CHANGELOG.md)
 
@@ -347,7 +347,7 @@ flowchart TD
 
 ## 📄 来源与致谢
 
-- 源自 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 二次开发并独立维护，遵循 [MIT 许可证](./LICENSE)；
+- 源自 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager)（MIT）二次开发并独立维护，现整体采用 [GNU AGPL-3.0 许可证](./LICENSE)（原 MIT 版权与上游声明完整保留于 [NOTICE](./NOTICE)）；
 - 感谢 [@ffdkj](https://github.com/ffdkj) 维护的 [Danbooru 中英对照翻译数据库](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)；
 - 感谢 [@damoshen123](https://github.com/damoshen123) 的 [st-chatu8](https://github.com/damoshen123/st-chatu8)：智慧姬资产互通与拼车公共排队协议深度参考了该项目；
 - 感谢 [@baibai-git](https://github.com/baibai-git) 的 [ST-BaiBai-Image（柏宝绘）](https://github.com/baibai-git/ST-BaiBai-Image)：柏宝绘的画师串、Vibe 与生图历史零拷贝联动适配参考了该项目的存储与侧写元数据约定；
