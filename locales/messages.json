@@ -46594,5 +46594,11 @@
     "Drag panels · Double-click bubble/text to edit · Delete",
     "コマ移動 · ダブルクリックで文字編集 · Delete削除",
     "패널 드래그 · 말풍선/텍스트 더블클릭 편집 · Delete 삭제"
+  ],
+  "嵌字": [
+    "嵌字",
+    "Lettering",
+    "セリフ",
+    "식자"
   ]
 }

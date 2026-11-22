@@ -43,7 +43,7 @@ interface ComicLayersPanelProps {
   draft: ComicPageDraft;
   selection: ComicSelection;
   collapsed: boolean;
-  dockMode?: 'column' | 'bottom';
+  dockMode?: 'tab' | 'column' | 'bottom';
   onToggleCollapsed: () => void;
   onSelectLayer: (node: ComicLayerNode) => void;
   onUpdateLayerNode: (layerId: string, updater: (node: ComicLayerNode) => ComicLayerNode, commit?: boolean) => void;
@@ -71,7 +71,7 @@ export const ComicLayersPanel: React.FC<ComicLayersPanelProps> = ({
   draft,
   selection,
   collapsed,
-  dockMode = 'column',
+  dockMode = 'tab',
   onToggleCollapsed,
   onSelectLayer,
   onUpdateLayerNode,
@@ -249,95 +249,139 @@ export const ComicLayersPanel: React.FC<ComicLayersPanelProps> = ({
   return (
     <section
       aria-label={t('PS 图层面板')}
-      className={`flex h-full min-h-0 flex-col ${dockMode === 'column' ? 'appearance-panel border-l border-gray-200/90 bg-white/90 dark:border-gray-800/90 dark:bg-gray-900/90' : 'appearance-surface border-t border-gray-200/90 dark:border-gray-800/90'}`}
+      className={`flex h-full min-h-0 flex-1 flex-col ${dockMode === 'tab' ? 'bg-transparent' : dockMode === 'column' ? 'appearance-panel border-l border-gray-200/90 bg-white/90 dark:border-gray-800/90 dark:bg-gray-900/90' : 'appearance-surface border-t border-gray-200/90 dark:border-gray-800/90'}`}
     >
-      {/* 标题栏（一键折叠 / 展开） */}
-      <div className="flex h-10 flex-none items-center justify-between gap-2 border-b border-gray-200/80 px-2.5 dark:border-gray-800/80">
-        {dockMode === 'column' ? (
-          <>
-            <div className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-100">
-              <Layers className="h-3.5 w-3.5 flex-none text-indigo-500" aria-hidden="true" />
-              <span>{t('图层')}</span>
-              <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                {stack.length}
-              </span>
-            </div>
-            <button
-              type="button"
-              aria-expanded={true}
-              aria-label={t('收起图层面板')}
-              title={t('收起为窄条')}
-              onClick={onToggleCollapsed}
-              className="flex h-6 w-6 flex-none items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-            >
-              <PanelRightClose className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              aria-expanded={!collapsed}
-              onClick={onToggleCollapsed}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-800 hover:text-indigo-600 dark:text-gray-100 dark:hover:text-indigo-300"
-            >
-              {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              <span>{t('图层')}</span>
-              <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                {stack.length}
-              </span>
-            </button>
-            {activeNode && !collapsed && (
-              <span className="max-w-36 truncate text-[10px] text-gray-400">
-                {activeNode.name}
-              </span>
-            )}
-          </>
-        )}
-      </div>
-
-      {!collapsed && (
-        <>
-          {/* PS 顶部混合模式 + 锁定 + 不透明度（双行紧凑布局，窄列也不挤滑块） */}
-          {activeNode && (
-            <div className="flex flex-none flex-col gap-1.5 border-b border-gray-200/70 px-2.5 py-2 text-[11px] dark:border-gray-800/70">
-              <div className="flex items-center gap-1.5">
-                <select
-                  aria-label={t('图层混合模式')}
-                  value={activeNode.blendMode}
-                  onChange={e => onUpdateLayerNode(activeNode.id, cur => ({ ...cur, blendMode: e.target.value as ComicBlendMode }), true)}
-                  className="min-w-0 flex-1 rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                >
-                  {COMIC_BLEND_MODES.map(mode => (
-                    <option key={mode.id} value={mode.id}>{t(mode.label)}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  aria-label={activeNode.locked ? t('解锁当前图层') : t('锁定当前图层')}
-                  title={activeNode.locked ? t('解锁当前图层') : t('锁定当前图层')}
-                  onClick={() => onUpdateLayerNode(activeNode.id, cur => ({ ...cur, locked: !cur.locked }), true)}
-                  className={`flex h-6 w-6 flex-none items-center justify-center rounded transition ${activeNode.locked ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200'}`}
-                >
-                  {activeNode.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
-                </button>
-              </div>
-              <label className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
-                <span className="flex-none text-[10px]">{t('不透明度')}</span>
-                <input
-                  type="range"
-                  aria-label={t('图层不透明度')}
-                  min={0}
-                  max={100}
-                  value={Math.round(activeNode.opacity * 100)}
-                  onChange={e => onUpdateLayerNode(activeNode.id, cur => ({ ...cur, opacity: Number(e.target.value) / 100 }), false)}
-                  onMouseUp={() => onUpdateLayerNode(activeNode.id, cur => cur, true)}
-                  className="min-w-0 flex-1 accent-indigo-600"
-                />
-                <span className="w-8 flex-none text-right font-mono text-[10px] font-semibold text-gray-700 dark:text-gray-200">
-                  {Math.round(activeNode.opacity * 100)}%
+      {/* 标题栏（独立列或底部停靠态显示折叠按钮；标签页态直接把满高留给图层内容） */}
+      {dockMode !== 'tab' && (
+        <div className="flex h-10 flex-none items-center justify-between gap-2 border-b border-gray-200/80 px-2.5 dark:border-gray-800/80">
+          {dockMode === 'column' ? (
+            <>
+              <div className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-100">
+                <Layers className="h-3.5 w-3.5 flex-none text-indigo-500" aria-hidden="true" />
+                <span>{t('图层')}</span>
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                  {stack.length}
                 </span>
-              </label>
+              </div>
+              <button
+                type="button"
+                aria-expanded={true}
+                aria-label={t('收起图层面板')}
+                title={t('收起为窄条')}
+                onClick={onToggleCollapsed}
+                className="flex h-6 w-6 flex-none items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+              >
+                <PanelRightClose className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                aria-expanded={!collapsed}
+                onClick={onToggleCollapsed}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-800 hover:text-indigo-600 dark:text-gray-100 dark:hover:text-indigo-300"
+              >
+                {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                <span>{t('图层')}</span>
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                  {stack.length}
+                </span>
+              </button>
+              {activeNode && !collapsed && (
+                <span className="max-w-36 truncate text-[10px] text-gray-400">
+                  {activeNode.name}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {(!collapsed || dockMode === 'tab') && (
+        <>
+          {/* PS 顶部混合模式 + 不透明度 + 锁定条 */}
+          {activeNode && (
+            <div className={`flex flex-none border-b border-gray-200/70 px-3 py-2 text-[11px] dark:border-gray-800/70 ${dockMode === 'tab' ? 'items-center gap-2' : 'flex-col gap-1.5 px-2.5'}`}>
+              {dockMode === 'tab' ? (
+                <>
+                  <select
+                    aria-label={t('图层混合模式')}
+                    value={activeNode.blendMode}
+                    onChange={e => onUpdateLayerNode(activeNode.id, cur => ({ ...cur, blendMode: e.target.value as ComicBlendMode }), true)}
+                    className="w-24 flex-none rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] font-medium text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                  >
+                    {COMIC_BLEND_MODES.map(mode => (
+                      <option key={mode.id} value={mode.id}>{t(mode.label)}</option>
+                    ))}
+                  </select>
+                  <label className="flex min-w-0 flex-1 items-center gap-1.5 text-gray-500 dark:text-gray-400">
+                    <span className="flex-none text-[10px]">{t('不透明度')}</span>
+                    <input
+                      type="range"
+                      aria-label={t('图层不透明度')}
+                      min={0}
+                      max={100}
+                      value={Math.round(activeNode.opacity * 100)}
+                      onChange={e => onUpdateLayerNode(activeNode.id, cur => ({ ...cur, opacity: Number(e.target.value) / 100 }), false)}
+                      onMouseUp={() => onUpdateLayerNode(activeNode.id, cur => cur, true)}
+                      className="min-w-0 flex-1 accent-indigo-600"
+                    />
+                    <span className="w-8 flex-none text-right font-mono text-[10px] font-semibold text-gray-700 dark:text-gray-200">
+                      {Math.round(activeNode.opacity * 100)}%
+                    </span>
+                  </label>
+                  <button
+                    type="button"
+                    aria-label={activeNode.locked ? t('解锁当前图层') : t('锁定当前图层')}
+                    title={activeNode.locked ? t('解锁当前图层') : t('锁定当前图层')}
+                    onClick={() => onUpdateLayerNode(activeNode.id, cur => ({ ...cur, locked: !cur.locked }), true)}
+                    className={`flex h-6 w-6 flex-none items-center justify-center rounded transition ${activeNode.locked ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200'}`}
+                  >
+                    {activeNode.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      aria-label={t('图层混合模式')}
+                      value={activeNode.blendMode}
+                      onChange={e => onUpdateLayerNode(activeNode.id, cur => ({ ...cur, blendMode: e.target.value as ComicBlendMode }), true)}
+                      className="min-w-0 flex-1 rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                    >
+                      {COMIC_BLEND_MODES.map(mode => (
+                        <option key={mode.id} value={mode.id}>{t(mode.label)}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      aria-label={activeNode.locked ? t('解锁当前图层') : t('锁定当前图层')}
+                      title={activeNode.locked ? t('解锁当前图层') : t('锁定当前图层')}
+                      onClick={() => onUpdateLayerNode(activeNode.id, cur => ({ ...cur, locked: !cur.locked }), true)}
+                      className={`flex h-6 w-6 flex-none items-center justify-center rounded transition ${activeNode.locked ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200'}`}
+                    >
+                      {activeNode.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                  <label className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+                    <span className="flex-none text-[10px]">{t('不透明度')}</span>
+                    <input
+                      type="range"
+                      aria-label={t('图层不透明度')}
+                      min={0}
+                      max={100}
+                      value={Math.round(activeNode.opacity * 100)}
+                      onChange={e => onUpdateLayerNode(activeNode.id, cur => ({ ...cur, opacity: Number(e.target.value) / 100 }), false)}
+                      onMouseUp={() => onUpdateLayerNode(activeNode.id, cur => cur, true)}
+                      className="min-w-0 flex-1 accent-indigo-600"
+                    />
+                    <span className="w-8 flex-none text-right font-mono text-[10px] font-semibold text-gray-700 dark:text-gray-200">
+                      {Math.round(activeNode.opacity * 100)}%
+                    </span>
+                  </label>
+                </>
+              )}
             </div>
           )}
 

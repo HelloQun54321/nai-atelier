@@ -121,8 +121,11 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     fireEvent.keyDown(window, { key: 'm' });
     expect(screen.getByRole('button', { name: '格内移图' }).getAttribute('aria-pressed')).toBe('true');
 
-    // 切到「嵌字·字体」标签，同时右侧下半区常驻 Photoshop 风格图层面板（支持多手绘图层、图层组、混合模式与不透明度）
-    fireEvent.click(screen.getByRole('tab', { name: /嵌字·字体/ }));
+    // 切到「嵌字」与「图层」标签，右侧满高展示 Photoshop 风格图层面板（支持多手绘图层、图层组、混合模式与不透明度）
+    fireEvent.click(screen.getByRole('tab', { name: /嵌字/ }));
+    expect(screen.getByRole('tab', { name: /嵌字/ }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(screen.getByRole('tab', { name: /图层/ }));
+    expect(screen.getByRole('tab', { name: /图层/ }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('region', { name: 'PS 图层面板' })).toBeTruthy();
     expect(screen.getAllByText('分镜画格底图').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('手绘图层 1').length).toBeGreaterThanOrEqual(1);
@@ -299,12 +302,10 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: '转为正式矢量气泡' }));
     expect(screen.getByText('当前对白气泡')).toBeTruthy();
 
-    // PS 独立停靠图层栏支持一键收起为窄条与展开，以及混合模式/不透明度/新建/删除图层
-    fireEvent.click(screen.getByRole('button', { name: '收起图层面板' }));
-    expect(screen.getByRole('button', { name: '展开图层面板' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '展开图层面板' }));
+    // 切到右侧「图层」标签页：满高展示完整 PS 图层操作（混合模式、不透明度、新建手绘层/图层组、点选图层停留当前标签、删除图层）
+    fireEvent.click(screen.getByRole('tab', { name: /图层/ }));
+    expect(screen.getByRole('tab', { name: /图层/ }).getAttribute('aria-selected')).toBe('true');
 
-    // 常驻 PS 图层面板操作：新建手绘层、新建图层组、调混合模式与不透明度、复制与删除图层
     const blendSelect = screen.getByRole('combobox', { name: '图层混合模式' }) as HTMLSelectElement;
     fireEvent.change(blendSelect, { target: { value: 'multiply' } });
     expect(blendSelect.value).toBe('multiply');
@@ -315,6 +316,7 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '新建手绘图层' }));
     expect(screen.getAllByText('手绘图层 2').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('tab', { name: /图层/ }).getAttribute('aria-selected')).toBe('true');
 
     fireEvent.click(screen.getByRole('button', { name: '新建图层组' }));
     expect(screen.getAllByText('图层组 1').length).toBeGreaterThanOrEqual(1);

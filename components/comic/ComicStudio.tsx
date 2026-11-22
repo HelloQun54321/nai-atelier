@@ -127,7 +127,6 @@ import { useConfirmDialog } from '../ConfirmDialog';
 import { ComicBookshelfModal } from './ComicBookshelfModal';
 import { ComicCanvas } from './ComicCanvas';
 import { ComicInspector, type ComicInspectorTab } from './ComicInspector';
-import { ComicLayersPanel } from './ComicLayersPanel';
 import { ComicToolRail } from './ComicToolRail';
 import { ComicToolbar } from './ComicToolbar';
 
@@ -253,19 +252,6 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const [inspectorOpen, setInspectorOpen] = useState(() => (
     typeof window !== 'undefined' ? window.innerWidth >= 768 : true
   ));
-  const [isDesktopWide, setIsDesktopWide] = useState(() => (
-    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
-  ));
-  const [layersDockCollapsed, setLayersDockCollapsed] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia('(min-width: 1024px)');
-    const sync = () => setIsDesktopWide(mq.matches);
-    sync();
-    mq.addEventListener?.('change', sync);
-    return () => mq.removeEventListener?.('change', sync);
-  }, []);
   const [zoom, setZoom] = useState(0.62);
   const [exporting, setExporting] = useState(false);
   const [customTemplates, setCustomTemplates] = useState<ComicCustomTemplate[]>(() => loadCustomComicTemplates());
@@ -296,7 +282,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     setSelection(next);
     if (!next) return;
     if (next.kind === 'panel' || next.kind === 'ai-anchor' || next.kind === 'panel-anchor' || next.kind === 'breakout-zone') {
-      setInspectorTab(cur => (cur === 'layers' ? 'panel' : cur));
+      setInspectorTab(cur => (cur === 'layers' || cur === 'ps-layers' ? 'panel' : cur));
     } else if (next.kind === 'bubble' || next.kind === 'text' || next.kind === 'sticker' || next.kind === 'image') {
       setInspectorTab('layers');
     }
@@ -388,7 +374,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => fitCanvasToViewport());
     return () => window.cancelAnimationFrame(frame);
-  }, [fitCanvasToViewport, layersDockCollapsed, inspectorOpen]);
+  }, [fitCanvasToViewport, inspectorOpen]);
 
   const applyDraftChange = useCallback((updater: (current: ComicPageDraft) => ComicPageDraft, commit = true) => {
     dirtyBeforeServerLoadRef.current = true;
@@ -836,23 +822,24 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   }, [applyDraftChange, notify]);
 
   // ==================== 仿 Photoshop 独立图层栈操作 ====================
+  // 在「图层」标签内点选图层时仅同步画布选中态，停留在当前图层标签方便连续调混合模式/不透明度/排序
   const handleSelectLayer = useCallback((node: ComicLayerNode) => {
     if (node.kind === 'panels') {
-      handleSelectWithTab(draft.panels[0] ? { kind: 'panel', id: draft.panels[0].id } : null);
+      setSelection(draft.panels[0] ? { kind: 'panel', id: draft.panels[0].id } : null);
     } else if (node.kind === 'drawing' && node.refId) {
-      handleSelectWithTab({ kind: 'drawing', id: node.refId });
+      setSelection({ kind: 'drawing', id: node.refId });
     } else if (node.kind === 'bubble' && node.refId) {
-      handleSelectWithTab({ kind: 'bubble', id: node.refId });
+      setSelection({ kind: 'bubble', id: node.refId });
     } else if (node.kind === 'text' && node.refId) {
-      handleSelectWithTab({ kind: 'text', id: node.refId });
+      setSelection({ kind: 'text', id: node.refId });
     } else if (node.kind === 'sticker' && node.refId) {
-      handleSelectWithTab({ kind: 'sticker', id: node.refId });
+      setSelection({ kind: 'sticker', id: node.refId });
     } else if (node.kind === 'image' && node.refId) {
-      handleSelectWithTab({ kind: 'image', id: node.refId });
+      setSelection({ kind: 'image', id: node.refId });
     } else if (node.kind === 'group') {
-      handleSelectWithTab({ kind: 'group', id: node.id });
+      setSelection({ kind: 'group', id: node.id });
     }
-  }, [draft.panels, handleSelectWithTab]);
+  }, [draft.panels]);
 
   const handleUpdateLayerNode = useCallback((layerId: string, updater: (node: ComicLayerNode) => ComicLayerNode, commit = true) => {
     applyDraftChange(current => {
@@ -918,12 +905,12 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         height,
       });
       applyDraftChange(() => res.draft, true);
-      handleSelectWithTab({ kind: 'image', id: res.imageItem.id });
+      setSelection({ kind: 'image', id: res.imageItem.id });
       notify(t('已导入图片图层「{0}」', [cleanName]));
     } catch (error) {
       notify(error instanceof Error ? error.message : t('导入图片图层失败'), 'error');
     }
-  }, [applyDraftChange, draft, handleSelectWithTab, notify]);
+  }, [applyDraftChange, draft, notify]);
 
   const handleCreateGroupLayer = useCallback((wrapLayerId?: string) => {
     const res = createGroupLayerInDraft(draft, wrapLayerId);
@@ -2817,28 +2804,6 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
           />
         </div>
 
-        {/* 桌面端 PS 经典独立满高图层停靠列（与右侧属性栏并列，上下互不打架，可一键折叠成 36px 窄条） */}
-        {isDesktopWide && (
-          <div className={`hidden h-full flex-none overflow-hidden lg:flex ${layersDockCollapsed ? 'w-9' : 'w-[224px] xl:w-[236px]'}`}>
-            <ComicLayersPanel
-              draft={draft}
-              selection={selection}
-              collapsed={layersDockCollapsed}
-              dockMode="column"
-              onToggleCollapsed={() => setLayersDockCollapsed(c => !c)}
-              onSelectLayer={handleSelectLayer}
-              onUpdateLayerNode={handleUpdateLayerNode}
-              onReorderLayer={handleReorderLayer}
-              onCreateDrawingLayer={handleCreateDrawingLayer}
-              onImportImageLayer={file => void handleImportImageLayer(file)}
-              onCreateGroupLayer={handleCreateGroupLayer}
-              onDuplicateLayer={handleDuplicateLayer}
-              onMergeLayerDown={handleMergeLayerDown}
-              onDeleteLayer={handleDeleteLayer}
-            />
-          </div>
-        )}
-
         {!inspectorOpen && (
           <button
             type="button"
@@ -2857,7 +2822,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
               onClick={() => setInspectorOpen(false)}
               className="fixed inset-0 z-30 bg-black/35 backdrop-blur-[1px] md:hidden"
             />
-            <div className="fixed inset-x-0 bottom-0 z-40 flex h-[74dvh] flex-col overflow-hidden rounded-t-2xl border-t border-gray-200 shadow-2xl dark:border-gray-800 md:static md:z-auto md:h-full md:w-[356px] md:flex-none md:rounded-none md:border-t-0 md:shadow-none lg:w-[344px] xl:w-[368px] 2xl:w-[404px]">
+            <div className="fixed inset-x-0 bottom-0 z-40 flex h-[74dvh] flex-col overflow-hidden rounded-t-2xl border-t border-gray-200 shadow-2xl dark:border-gray-800 md:static md:z-auto md:h-full md:w-[376px] md:flex-none md:rounded-none md:border-t-0 md:shadow-none lg:w-[416px] xl:w-[436px]">
               <div className="appearance-panel flex flex-none items-center justify-between border-b border-gray-200/80 px-3.5 py-2 md:hidden dark:border-gray-800/80">
                 <span className="text-xs font-bold text-gray-800 dark:text-gray-100">{t('漫画属性与生图')}</span>
                 <button
@@ -2976,7 +2941,6 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
                   onDownloadFont={id => void handleDownloadFont(id)}
                   onUploadCustomFont={file => void handleUploadCustomFont(file)}
                   onDeleteFont={id => void handleDeleteFont(id)}
-                  hideDockedLayers={isDesktopWide}
                 />
               </div>
             </div>

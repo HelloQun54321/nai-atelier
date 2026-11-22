@@ -80,7 +80,7 @@ import { InlineSpinner } from '../DesignSystem';
 import { HistoryImagePicker } from '../HistoryImagePicker';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 
-export type ComicInspectorTab = 'panel' | 'style' | 'layers';
+export type ComicInspectorTab = 'panel' | 'style' | 'layers' | 'ps-layers';
 
 interface ComicInspectorProps {
   draft: ComicPageDraft;
@@ -159,8 +159,6 @@ interface ComicInspectorProps {
   onDownloadFont: (id: string) => void;
   onUploadCustomFont: (file: File) => void;
   onDeleteFont: (id: string) => void;
-  /** 桌面端 PS 双列停靠模式下由外层单独停靠满高图层栏，此处不再在下方二次分栏。 */
-  hideDockedLayers?: boolean;
 }
 
 const ANCHOR_META: Record<ComicAnchorKind, { label: string; dotClass: string; badgeClass: string }> = {
@@ -274,7 +272,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   onDownloadFont,
   onUploadCustomFont,
   onDeleteFont,
-  hideDockedLayers = false,
 }) => {
   useLanguage();
   const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
@@ -293,27 +290,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   const [selectedAnchorId, setSelectedAnchorId] = useState<string>('');
   const anchorStageRef = useRef<HTMLDivElement>(null);
   const draggingAnchorRef = useRef<string | null>(null);
-  const [layersCollapsed, setLayersCollapsed] = useState(false);
-  const [layersHeight, setLayersHeight] = useState(250);
-  const asideRef = useRef<HTMLElement>(null);
-
-  const handleSplitterPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (layersCollapsed) return;
-    event.preventDefault();
-    const startY = event.clientY;
-    const startHeight = layersHeight;
-    const maxHeight = Math.max(220, Math.round((asideRef.current?.clientHeight || 720) * 0.65));
-    const onMove = (ev: PointerEvent) => {
-      const next = Math.max(140, Math.min(maxHeight, startHeight + (startY - ev.clientY)));
-      setLayersHeight(next);
-    };
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  };
 
   // 搜索 Danbooru 角色词库（AI 整页出场角色）
   useEffect(() => {
@@ -479,22 +455,22 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   };
 
   const overlayCount = draft.bubbles.length + draft.texts.length + draft.stickers.length;
+  const layerCount = draft.layerStack?.length ?? 2;
 
   return (
-    <aside ref={asideRef} className="appearance-panel flex h-full w-full flex-col border-l border-gray-200 bg-white/90 dark:border-gray-800 dark:bg-gray-900/90">
-      {/* 上半区：属性 / 生图 / 气泡与字体面板（PS 上下分栏结构） */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* 顶部平铺式三标签导航（去外层套娃胶囊，底边强调线，绝不裁切下方行） */}
+    <aside className="appearance-panel flex h-full w-full flex-col border-l border-gray-200 bg-white/90 dark:border-gray-800 dark:bg-gray-900/90">
+      {/* 顶部平铺式四标签导航（各标签共享 100% 满高空间，不再额外挤占画布横向或纵向空间） */}
       <div
         role="tablist"
         aria-label={t('漫画工作台分区')}
-        className="grid flex-none grid-cols-3 border-b border-gray-200/80 bg-transparent dark:border-gray-800/80"
+        className="flex flex-none items-stretch border-b border-gray-200/80 bg-transparent dark:border-gray-800/80"
       >
         {([
           { id: 'panel', label: draft.creationMode === 'ai-page' ? t('AI 整页编排') : t('分镜生图'), icon: draft.creationMode === 'ai-page' ? Sparkles : Wand2 },
           { id: 'style', label: t('画风设定'), icon: Palette },
-          { id: 'layers', label: overlayCount > 0 ? t('嵌字·字体 ({0})', [overlayCount]) : t('嵌字·字体'), icon: Layers },
-        ] as Array<{ id: ComicInspectorTab; label: string; icon: React.ElementType }>).map(tab => {
+          { id: 'layers', label: t('嵌字'), badge: overlayCount > 0 ? overlayCount : undefined, icon: MessageCircle },
+          { id: 'ps-layers', label: t('图层'), badge: layerCount, icon: Layers },
+        ] as Array<{ id: ComicInspectorTab; label: string; badge?: number; icon: React.ElementType }>).map(tab => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
           return (
@@ -504,15 +480,22 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
               role="tab"
               aria-selected={active}
               onClick={() => onSelectTab(tab.id)}
-              className={`relative inline-flex h-10 items-center justify-center gap-1.5 px-2 text-xs font-semibold transition ${active ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/50 dark:hover:text-gray-200'}`}
+              className={`relative inline-flex h-10 flex-auto items-center justify-center gap-1 whitespace-nowrap px-2 text-xs font-semibold transition ${active ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/50 dark:hover:text-gray-200'}`}
             >
               <Icon className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
-              <span className="truncate">{tab.label}</span>
-              {active && <span aria-hidden="true" className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
+              <span>{tab.label}</span>
+              {tab.badge !== undefined && (
+                <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold leading-4 ${active ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-200' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
+                  {tab.badge}
+                </span>
+              )}
+              {active && <span aria-hidden="true" className="absolute inset-x-2.5 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
             </button>
           );
         })}
       </div>
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
 
       {/* ==================== 标签 1A：AI 整页锚点编排工作台 ==================== */}
       {activeTab === 'panel' && draft.creationMode === 'ai-page' && (() => {
@@ -3065,47 +3048,28 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
           </div>
         </div>
       )}
-      </div>
-
-      {/* 窄屏/移动抽屉回退：保留底部可折叠图层栏；桌面端由外层 PS 独立窄列满高停靠 */}
-      {!hideDockedLayers && (
-        <>
-          {!layersCollapsed && (
-            <div
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label={t('调整图层面板高度')}
-              title={t('上下拖拽调整图层面板高度')}
-              onPointerDown={handleSplitterPointerDown}
-              className="group flex h-2 flex-none cursor-row-resize items-center justify-center border-t border-gray-200/90 bg-gray-50/70 transition hover:bg-indigo-100/80 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:bg-indigo-950/60"
-            >
-              <span className="h-0.5 w-8 rounded-full bg-gray-300 transition group-hover:bg-indigo-500 dark:bg-gray-700" />
-            </div>
-          )}
-
-          <div
-            className="flex flex-none flex-col overflow-hidden"
-            style={{ height: layersCollapsed ? 36 : layersHeight }}
-          >
-            <ComicLayersPanel
-              draft={draft}
-              selection={selection}
-              collapsed={layersCollapsed}
-              dockMode="bottom"
-              onToggleCollapsed={() => setLayersCollapsed(c => !c)}
-              onSelectLayer={onSelectLayer}
-              onUpdateLayerNode={onUpdateLayerNode}
-              onReorderLayer={onReorderLayer}
-              onCreateDrawingLayer={onCreateDrawingLayer}
-              onImportImageLayer={onImportImageLayer}
-              onCreateGroupLayer={onCreateGroupLayer}
-              onDuplicateLayer={onDuplicateLayer}
-              onMergeLayerDown={onMergeLayerDown}
-              onDeleteLayer={onDeleteLayer}
-            />
-          </div>
-        </>
+      {/* ==================== 标签 4：仿 Photoshop 独立图层栈 ==================== */}
+      {activeTab === 'ps-layers' && (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <ComicLayersPanel
+            draft={draft}
+            selection={selection}
+            collapsed={false}
+            dockMode="tab"
+            onToggleCollapsed={() => {}}
+            onSelectLayer={onSelectLayer}
+            onUpdateLayerNode={onUpdateLayerNode}
+            onReorderLayer={onReorderLayer}
+            onCreateDrawingLayer={onCreateDrawingLayer}
+            onImportImageLayer={onImportImageLayer}
+            onCreateGroupLayer={onCreateGroupLayer}
+            onDuplicateLayer={onDuplicateLayer}
+            onMergeLayerDown={onMergeLayerDown}
+            onDeleteLayer={onDeleteLayer}
+          />
+        </div>
       )}
+      </div>
 
       <HistoryImagePicker
         open={historyPickerOpen}
