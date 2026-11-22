@@ -52,8 +52,15 @@
   --workspace-toolbar-height: 56px;
   --workspace-control-radius: 0.75rem;
   --workspace-card-radius: 1rem;
-  --nai-scrollbar-size: 12px;
-  --nai-scrollbar-track: var(--nai-canvas);
+  --nai-scrollbar-size: 10px;
+  --nai-scrollbar-track: transparent;
+  --nai-scrollbar-thumb: color-mix(in srgb, var(--color-gray-900, #171e2d) 18%, transparent);
+  --nai-scrollbar-thumb-hover: color-mix(in srgb, var(--color-gray-900, #171e2d) 34%, transparent);
+}
+
+html.dark {
+  --nai-scrollbar-thumb: color-mix(in srgb, var(--color-gray-100, #f0f2f8) 18%, transparent);
+  --nai-scrollbar-thumb-hover: color-mix(in srgb, var(--color-gray-100, #f0f2f8) 34%, transparent);
 }
 
 .workspace-command-bar {
@@ -395,9 +402,12 @@ html[data-design-theme='nai-atelier'].dark body {
   color: var(--color-gray-100);
 }
 
-/* 系统弹出的原生选项不能沿用玻璃控件的透明底，否则夜间会出现浅底白字。 */
-html:root select { color-scheme: light; }
-html:root.dark select { color-scheme: dark; }
+/* 系统弹出的原生选项与范围滑条显式跟随当前主题明暗，避免深色系统下白天页面画出黑轨道或浅底白字。 */
+html:root :is(select, input[type='range']:not(.agent-thinking-range)) { color-scheme: light; }
+html:root.dark :is(select, input[type='range']:not(.agent-thinking-range)) { color-scheme: dark; }
+html:root input[type='range']:not(.agent-thinking-range):is(.accent-indigo-500, .accent-indigo-600) {
+  accent-color: var(--nai-accent, #0d8bf2);
+}
 html:root select.appearance-none::picker-icon { display: none; }
 html:root select :is(option, optgroup) {
   background-color: var(--nai-panel-solid-surface, Canvas);
@@ -1448,9 +1458,10 @@ html[data-motion='full'] .vip-username {
   100% { background-position: 200% center; }
 }
 
+/* 滚动条基于当前主题明暗正文色低透明混出，透明轨道退隐于背景，避免白天出现刺眼黑条。 */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-gray-400) var(--nai-scrollbar-track);
+  scrollbar-color: var(--nai-scrollbar-thumb) var(--nai-scrollbar-track);
 }
 
 *::-webkit-scrollbar {
@@ -1463,30 +1474,15 @@ html[data-motion='full'] .vip-username {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: var(--color-gray-400);
-  border: var(--nai-scrollbar-border, 3px) solid var(--nai-scrollbar-track);
+  background: var(--nai-scrollbar-thumb);
+  background-clip: padding-box;
+  border: var(--nai-scrollbar-border, 2px) solid transparent;
   border-radius: 999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: var(--color-gray-500);
-}
-
-.dark * {
-  scrollbar-color: var(--color-gray-600) var(--nai-scrollbar-track);
-}
-
-.dark *::-webkit-scrollbar-track {
-  background: var(--nai-scrollbar-track);
-}
-
-.dark *::-webkit-scrollbar-thumb {
-  background: var(--color-gray-600);
-  border-color: var(--nai-scrollbar-track);
-}
-
-.dark *::-webkit-scrollbar-thumb:hover {
-  background: var(--color-gray-400);
+  background: var(--nai-scrollbar-thumb-hover);
+  background-clip: padding-box;
 }
 
 .vip-badge {
