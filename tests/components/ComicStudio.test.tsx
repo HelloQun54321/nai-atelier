@@ -347,4 +347,43 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: '删除当前图层' }));
     expect(screen.queryByText('图层组 1')).toBeNull();
   });
+
+  it('flags mixed-in character tags in imported style chains locally without AI and supports one-click removal with undo', () => {
+    const notify = vi.fn();
+    const mixedChain: PromptChain = {
+      ...mockChains[0],
+      id: 'style-mixed',
+      name: '带人物混写画风',
+      basePrompt: 'artist:example, anime coloring, 1girl, silver hair, sailor uniform',
+      params: {
+        ...mockChains[0].params,
+        characters: [{ id: 'c1', enabled: true, prompt: '1boy, black hair', negativePrompt: '', x: 0.5, y: 0.5 }],
+      },
+    };
+    render(
+      <ConfirmDialogProvider>
+        <ComicStudio chains={[mixedChain, mockChains[1]]} notify={notify} />
+      </ConfirmDialogProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '选择风格串' }));
+    fireEvent.click(screen.getByRole('button', { name: /带人物混写画风/ }));
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('已自动剔除 1 个独立角色槽'));
+
+    // 翻译区直接标红 3 个角色/外貌/服饰词，并展示标红提醒条
+    const alert = screen.getByRole('status', { name: '画风角色词提醒' });
+    expect(alert.textContent).toContain('检测到 3 处疑似角色/主体词');
+    const flaggedCapsules = document.querySelectorAll('[data-warning-tag="true"]');
+    expect(flaggedCapsules.length).toBe(3);
+
+    // 一键移除仅剔除角色词并保留画风词，且支持原位撤销恢复
+    fireEvent.click(within(alert).getByRole('button', { name: '一键移除' }));
+    const styleInput = screen.getByRole('combobox', { name: '全页公共画风提示词' }) as HTMLTextAreaElement;
+    expect(styleInput.value).toBe('artist:example, anime coloring');
+    expect(screen.queryByRole('status', { name: '画风角色词提醒' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '撤销移除' }));
+    expect(styleInput.value).toBe('artist:example, anime coloring, 1girl, silver hair, sailor uniform');
+    expect(screen.getByRole('status', { name: '画风角色词提醒' })).toBeTruthy();
+  });
 });

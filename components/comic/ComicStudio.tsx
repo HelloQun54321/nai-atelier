@@ -820,13 +820,18 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   }, [notify]);
 
   const handleApplyStyleChain = useCallback((chain: PromptChain) => {
+    const skippedCharacters = (chain.params?.characters || []).filter(c => c.enabled !== false && c.prompt.trim()).length;
     applyDraftChange(current => ({
       ...current,
       styleChainId: chain.id,
       globalBasePrompt: chain.basePrompt || '',
       globalNegativePrompt: chain.negativePrompt || '',
     }), true);
-    notify(t('已载入风格串「{0}」', [chain.name]));
+    notify(
+      skippedCharacters > 0
+        ? t('已载入风格串「{0}」（已自动剔除 {1} 个独立角色槽）', [chain.name, skippedCharacters])
+        : t('已载入风格串「{0}」', [chain.name]),
+    );
   }, [applyDraftChange, notify]);
 
   // ==================== 仿 Photoshop 独立图层栈操作 ====================

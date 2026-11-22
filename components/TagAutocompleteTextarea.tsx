@@ -66,6 +66,8 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   promptTidy?: PromptTidyOptions;
   /** 提供时工具栏显示「从图片反推」，把识别结果追加到这一栏。 */
   reverseTag?: { onReverse: () => void; disabled?: boolean };
+  /** 需要标红警示的 Tag 集合（key 为 lookupTag，value 为悬停提示原因），例如画风框混入的角色词。 */
+  warningTags?: ReadonlyMap<string, string>;
 }
 type PromptSuggestion = TagSuggestion & { libraryEntry?: PromptChain };
 const PromptTagLibraryInfo = React.lazy(() => import('./PromptTagLibraryInfo').then(module => ({ default: module.PromptTagLibraryInfo })));
@@ -125,6 +127,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   promptLibraryActions = true,
   promptTidy,
   reverseTag,
+  warningTags,
   disabled,
   readOnly,
   onFocus,
@@ -1108,9 +1111,12 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 if (mutedHere) nodes.push(...mutedHere.map(mutedUnit));
                 if (!item.groupId) {
                   const selected = selectedTagIds.has(item.id);
+                  const warningReason = warningTags?.get(item.lookupTag);
                   nodes.push(
                     <div
                       role="button" tabIndex={0} data-agent-interaction="double_click" onKeyDown={selectUnitWithKeyboard}
+                      data-warning-tag={warningReason ? 'true' : undefined}
+                      title={warningReason}
                       onDoubleClick={() => editTag(item)}
                       onClick={() => setSelectedTagIds(current => {
                         const next = new Set(current);
@@ -1118,17 +1124,19 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                         return next;
                       })}
                       key={item.id}
-                      className={`relative inline-flex min-w-0 max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors ${catalogEntries.has(item.lookupTag) ? 'pr-7' : ''} ${deleteMode ? 'hover:border-red-400' : muteMode ? 'hover:border-amber-400' : 'hover:border-[var(--nai-accent)]'} ${selected
+                      className={`relative inline-flex min-w-0 max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors ${catalogEntries.has(item.lookupTag) ? 'pr-7' : ''} ${deleteMode ? 'hover:border-red-400' : muteMode ? 'hover:border-amber-400' : warningReason ? 'hover:border-red-500' : 'hover:border-[var(--nai-accent)]'} ${selected
                         ? deleteMode ? 'border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
                           : muteMode ? 'border-amber-400 bg-amber-50 dark:border-amber-500 dark:bg-amber-950/40'
                             : 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
-                        : 'appearance-group border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
+                        : warningReason
+                          ? 'border-red-300 bg-red-50/90 dark:border-red-500/70 dark:bg-red-950/35'
+                          : 'appearance-group border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
                       aria-pressed={selected}
                     >
-                      <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.displayTag}>
+                      <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]' : warningReason ? 'font-semibold text-red-700 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`} title={warningReason ? `${item.displayTag} — ${warningReason}` : item.displayTag}>
                         {editingTag?.id === item.id ? tagInputField : item.displayTag}
                       </span>
-                      <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={editingTag?.id === item.id ? draftChinese : item.chinese || t("词库暂无翻译")}>{editingTag?.id === item.id ? draftChinese : item.chinese || t("待翻译")}</span>
+                      <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]' : warningReason ? 'text-red-600 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`} title={editingTag?.id === item.id ? draftChinese : item.chinese || t("词库暂无翻译")}>{editingTag?.id === item.id ? draftChinese : item.chinese || t("待翻译")}</span>
                       {infoButton(item)}
                     </div>,
                   );
@@ -1179,11 +1187,17 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                     {openSyntax && <span title={openWeight ? t("原文缺少结尾 ::，补全后权重才会生效") : undefined} className={`shrink-0 py-1 pl-2 font-mono text-micro font-bold ${syntaxTone}`}>{openSyntax}</span>}
                     {members.map((member, memberIndex) => {
                       const memberSelected = memberMode ? (muteMode ? groupSelected : selectedTagIds.has(member.id)) : groupSelected;
+                      const memberWarning = warningTags?.get(member.lookupTag);
+                      const memberTextTone = memberSelected
+                        ? selectedTone(true)
+                        : memberWarning ? 'text-red-700 dark:text-red-300' : selectedTone(false);
                       return <React.Fragment key={member.id}>
                         {memberIndex > 0 && insertionAt(groupIndex + memberIndex)}
                         <span
                           role={memberMode ? 'button' : undefined} tabIndex={memberMode ? 0 : undefined}
                           aria-pressed={memberMode ? memberSelected : undefined}
+                          data-warning-tag={memberWarning ? 'true' : undefined}
+                          title={memberWarning}
                           onKeyDown={memberMode ? selectUnitWithKeyboard : undefined}
                           onClick={memberMode ? event => {
                             event.stopPropagation();
@@ -1195,11 +1209,11 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                             });
                           } : undefined}
                           data-agent-interaction="double_click" aria-label={member.displayTag} onDoubleClick={event => { event.stopPropagation(); editTag(member); }}
-                          className={`relative flex min-w-0 max-w-full flex-col px-2 py-1 ${catalogEntries.has(member.lookupTag) ? 'pr-7' : ''} ${memberIndex > 0 ? 'border-l border-gray-200 dark:border-gray-700' : ''} ${memberMode && memberSelected ? (deleteMode ? 'bg-red-50 dark:bg-red-950/40' : 'bg-amber-50 dark:bg-amber-950/40') : ''}`}>
-                          <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${selectedTone(memberSelected)}`} title={member.displayTag}>
+                          className={`relative flex min-w-0 max-w-full flex-col px-2 py-1 ${catalogEntries.has(member.lookupTag) ? 'pr-7' : ''} ${memberIndex > 0 ? 'border-l border-gray-200 dark:border-gray-700' : ''} ${memberMode && memberSelected ? (deleteMode ? 'bg-red-50 dark:bg-red-950/40' : 'bg-amber-50 dark:bg-amber-950/40') : memberWarning && !memberSelected ? 'bg-red-50/90 dark:bg-red-950/35' : ''}`}>
+                          <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${memberTextTone} ${memberWarning && !memberSelected ? 'font-semibold' : ''}`} title={memberWarning ? `${member.displayTag} — ${memberWarning}` : member.displayTag}>
                             {editingTag?.id === member.id ? tagInputField : member.displayTag}
                           </span>
-                          <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${selectedTone(memberSelected)}`} title={editingTag?.id === member.id ? draftChinese : member.chinese || t("词库暂无翻译")}>{editingTag?.id === member.id ? draftChinese : member.chinese || t("待翻译")}</span>
+                          <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${memberTextTone}`} title={editingTag?.id === member.id ? draftChinese : member.chinese || t("词库暂无翻译")}>{editingTag?.id === member.id ? draftChinese : member.chinese || t("待翻译")}</span>
                           {infoButton(member)}
                         </span>
                       </React.Fragment>;
