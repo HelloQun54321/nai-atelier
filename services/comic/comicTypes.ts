@@ -33,9 +33,29 @@ export interface ComicPoint {
 
 export type ComicAnchorKind = 'character' | 'scene' | 'bubble' | 'inset';
 
-export type ComicBubbleShape = 'oval' | 'shout' | 'thought' | 'caption';
+/**
+ * 漫画气泡形状（基于开源项目 jonigata/FramePlanner2 [MIT] 的专业日漫气泡引擎）。
+ * 保留 oval / thought / caption 键名以兼容已保存的旧草稿。
+ */
+export type ComicBubbleShape =
+  | 'soft'
+  | 'oval'
+  | 'rounded'
+  | 'caption'
+  | 'shout'
+  | 'harsh'
+  | 'thought'
+  | 'ellipse-mind'
+  | 'polygon'
+  | 'concentration'
+  | 'strokes'
+  | 'double-strokes';
 
-export type ComicFontFamily = 'comic-sans' | 'round' | 'hand' | 'bold' | 'impact';
+/**
+ * 漫画嵌字字体 ID：支持内置 5 款 SIL OFL 1.1 开源漫画字体、本机导入的 custom-* 字体，
+ * 以及旧草稿系统回退 ID。
+ */
+export type ComicFontFamily = string;
 
 export interface ComicAnchor {
   id: string;

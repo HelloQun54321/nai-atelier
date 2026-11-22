@@ -7,6 +7,7 @@ import {
   Check,
   Copy,
   Dices,
+  Download,
   Eye,
   EyeOff,
   Image as ImageIcon,
@@ -23,6 +24,7 @@ import {
   Trash2,
   Type,
   Unlock,
+  Upload,
   UserPlus,
   Wand2,
   X,
@@ -31,7 +33,9 @@ import type { LocalGenItem, PromptChain } from '../../types';
 import { t, useLanguage } from '../../services/i18n';
 import { formatGenerationCostLabel } from '../../services/anlasBudget';
 import { searchCharacterDictionary, type CharacterDictionaryEntry } from '../../services/tagDictionary';
-import { COMIC_FONT_PRESETS } from '../../services/comic/comicArtwork';
+import { COMIC_BUBBLE_SHAPES, COMIC_FONT_PRESETS } from '../../services/comic/comicArtwork';
+import type { ComicFontCatalogState } from '../../services/comic/comicFonts';
+import { ComicBubbleShapeIcon } from './ComicBubbleShapeIcon';
 import {
   clampAnchorCoord,
   getPanelBoundingBox,
@@ -138,6 +142,11 @@ interface ComicInspectorProps {
   onToggleLayerVisible: (layerId: ComicLayerId) => void;
   onToggleLayerLocked: (layerId: ComicLayerId) => void;
   onMoveLayerOrder: (layerId: ComicLayerId, direction: 'up' | 'down') => void;
+  fontCatalog: ComicFontCatalogState;
+  downloadingFontId: string | null;
+  onDownloadFont: (id: string) => void;
+  onUploadCustomFont: (file: File) => void;
+  onDeleteFont: (id: string) => void;
 }
 
 const ANCHOR_META: Record<ComicAnchorKind, { label: string; dotClass: string; badgeClass: string }> = {
@@ -146,13 +155,6 @@ const ANCHOR_META: Record<ComicAnchorKind, { label: string; dotClass: string; ba
   bubble: { label: '气泡点', dotClass: 'bg-amber-600', badgeClass: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300' },
   inset: { label: '特写叠框', dotClass: 'bg-purple-600', badgeClass: 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300' },
 };
-
-const BUBBLE_SHAPES: Array<{ id: ComicBubbleShape; label: string }> = [
-  { id: 'oval', label: '椭圆对白' },
-  { id: 'shout', label: '锯齿吼叫' },
-  { id: 'thought', label: '云朵思考' },
-  { id: 'caption', label: '旁白方框' },
-];
 
 const STICKER_KINDS: Array<{ id: ComicStickerKind; label: string }> = [
   { id: 'speedlines', label: '集中线' },
@@ -251,6 +253,11 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   onToggleLayerVisible,
   onToggleLayerLocked,
   onMoveLayerOrder,
+  fontCatalog,
+  downloadingFontId,
+  onDownloadFont,
+  onUploadCustomFont,
+  onDeleteFont,
 }) => {
   useLanguage();
   const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
@@ -264,6 +271,8 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   const [charQuery, setCharQuery] = useState('');
   const [charDictResults, setCharDictResults] = useState<CharacterDictionaryEntry[]>([]);
   const [charDictLoading, setCharDictLoading] = useState(false);
+  const [fontManagerOpen, setFontManagerOpen] = useState(false);
+  const fontFileInputRef = useRef<HTMLInputElement>(null);
   const [selectedAnchorId, setSelectedAnchorId] = useState<string>('');
   const anchorStageRef = useRef<HTMLDivElement>(null);
   const draggingAnchorRef = useRef<string | null>(null);
@@ -1254,7 +1263,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                                     }), true)}
                                     className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                                   >
-                                    {BUBBLE_SHAPES.map(shape => <option key={shape.id} value={shape.id}>{t(shape.label)}</option>)}
+                                    {COMIC_BUBBLE_SHAPES.map(shape => <option key={shape.id} value={shape.id}>{t(shape.label)}</option>)}
                                   </select>
                                   <input
                                     type="text"
@@ -1731,7 +1740,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                                     }), true)}
                                     className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                                   >
-                                    {BUBBLE_SHAPES.map(shape => <option key={shape.id} value={shape.id}>{t(shape.label)}</option>)}
+                                    {COMIC_BUBBLE_SHAPES.map(shape => <option key={shape.id} value={shape.id}>{t(shape.label)}</option>)}
                                   </select>
                                   {draft.dialogueMode === 'ai-text' && (
                                     <input
@@ -2234,15 +2243,22 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                 onBlur={() => onUpdateBubble(selectedBubble.id, i => i, true)}
                 className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
               />
-              <div className="grid grid-cols-2 gap-1.5">
-                {BUBBLE_SHAPES.map(shape => (
+              {/* 12 款 FramePlanner2 日漫专业气泡微缩图选择器 */}
+              <div className="grid grid-cols-3 gap-1">
+                {COMIC_BUBBLE_SHAPES.map(shape => (
                   <button
                     key={shape.id}
                     type="button"
-                    onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, shape: shape.id }), true)}
-                    className={`rounded-lg border px-2 py-1 font-medium ${selectedBubble.shape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                    aria-pressed={selectedBubble.shape === shape.id}
+                    onClick={() => onUpdateBubble(selectedBubble.id, i => ({
+                      ...i,
+                      shape: shape.id,
+                      hasTail: shape.supportsTail ? i.hasTail : false,
+                    }), true)}
+                    className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border px-1.5 py-1 text-[10px] font-medium transition ${selectedBubble.shape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
                   >
-                    {t(shape.label)}
+                    <ComicBubbleShapeIcon shape={shape.id} className="h-6 w-9" />
+                    <span className="truncate">{t(shape.label)}</span>
                   </button>
                 ))}
               </div>
@@ -2263,19 +2279,40 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                 </button>
               </div>
 
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-gray-500">{t('漫画字体')}</span>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-gray-500">{t('漫画字体')}</span>
+                  <button
+                    type="button"
+                    onClick={() => setFontManagerOpen(open => !open)}
+                    className="text-[10px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                  >
+                    {fontManagerOpen ? t('收起字体库') : t('下载开源字体 / 导入本机字体')}
+                  </button>
+                </div>
                 <select
                   aria-label={t('气泡字体')}
                   value={selectedBubble.fontFamily || 'comic-sans'}
                   onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, fontFamily: e.target.value as ComicFontFamily }), true)}
                   className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                 >
-                  {COMIC_FONT_PRESETS.map(preset => (
-                    <option key={preset.id} value={preset.id}>{t(preset.label)}</option>
-                  ))}
+                  {(fontCatalog.fonts.some(f => f.installed) || fontCatalog.customFonts.length > 0) && (
+                    <optgroup label={t('已安装开源 / 本机漫画字体')}>
+                      {fontCatalog.fonts.filter(f => f.installed).map(f => (
+                        <option key={f.id} value={f.id}>{`${f.name} (${f.styleTag})`}</option>
+                      ))}
+                      {fontCatalog.customFonts.map(f => (
+                        <option key={f.id} value={f.id}>{`${f.name} (${t('本机导入')})`}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label={t('系统默认字体（回退）')}>
+                    {COMIC_FONT_PRESETS.map(preset => (
+                      <option key={preset.id} value={preset.id}>{t(preset.label)}</option>
+                    ))}
+                  </optgroup>
                 </select>
-              </label>
+              </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
@@ -2362,19 +2399,40 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                   {selectedText.bold ? t('粗体：开') : t('粗体：关')}
                 </button>
               </div>
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-gray-500">{t('漫画字体')}</span>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-gray-500">{t('漫画字体')}</span>
+                  <button
+                    type="button"
+                    onClick={() => setFontManagerOpen(open => !open)}
+                    className="text-[10px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                  >
+                    {fontManagerOpen ? t('收起字体库') : t('下载开源字体 / 导入本机字体')}
+                  </button>
+                </div>
                 <select
                   aria-label={t('文字字体')}
                   value={selectedText.fontFamily || 'impact'}
                   onChange={e => onUpdateText(selectedText.id, i => ({ ...i, fontFamily: e.target.value as ComicFontFamily }), true)}
                   className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                 >
-                  {COMIC_FONT_PRESETS.map(preset => (
-                    <option key={preset.id} value={preset.id}>{t(preset.label)}</option>
-                  ))}
+                  {(fontCatalog.fonts.some(f => f.installed) || fontCatalog.customFonts.length > 0) && (
+                    <optgroup label={t('已安装开源 / 本机漫画字体')}>
+                      {fontCatalog.fonts.filter(f => f.installed).map(f => (
+                        <option key={f.id} value={f.id}>{`${f.name} (${f.styleTag})`}</option>
+                      ))}
+                      {fontCatalog.customFonts.map(f => (
+                        <option key={f.id} value={f.id}>{`${f.name} (${t('本机导入')})`}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label={t('系统默认字体（回退）')}>
+                    {COMIC_FONT_PRESETS.map(preset => (
+                      <option key={preset.id} value={preset.id}>{t(preset.label)}</option>
+                    ))}
+                  </optgroup>
                 </select>
-              </label>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
                   <span className="mb-1 block text-gray-500">{t('字号')} {selectedText.fontSize}px</span>
@@ -2473,6 +2531,145 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     </span>
                   </button>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* 开源免费商用漫画字体库（按需缓存至 local-cache/comic-fonts/）+ 本机字体导入 */}
+          <div className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                aria-expanded={fontManagerOpen}
+                onClick={() => setFontManagerOpen(open => !open)}
+                className="flex items-center gap-1.5 font-bold text-gray-700 hover:text-indigo-600 dark:text-gray-200 dark:hover:text-indigo-300"
+              >
+                <Type className="h-3.5 w-3.5 text-indigo-500" />
+                <span>{t('开源漫画字体库')}</span>
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                  {fontCatalog.fonts.filter(f => f.installed).length + fontCatalog.customFonts.length}/{fontCatalog.fonts.length}
+                </span>
+              </button>
+              <div>
+                <input
+                  ref={fontFileInputRef}
+                  type="file"
+                  accept=".ttf,.otf,.woff2,.woff"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) onUploadCustomFont(file);
+                    e.target.value = '';
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fontFileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200"
+                >
+                  <Upload className="h-3 w-3" /> {t('导入本机字体')}
+                </button>
+              </div>
+            </div>
+
+            {fontManagerOpen && (
+              <div className="space-y-1.5 rounded-xl border border-gray-200/80 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-800/40">
+                <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                  {t('全部为 SIL OFL 1.1 开源免费商用字体，下载后缓存在 local-cache/comic-fonts/ 永久离线生效，画布与导出 PNG 同步应用。')}
+                </p>
+                {fontCatalog.fonts.map(font => {
+                  const isBusy = downloadingFontId === font.id || font.downloading;
+                  return (
+                    <div
+                      key={font.id}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-gray-200/80 bg-white px-2 py-1.5 dark:border-gray-700 dark:bg-gray-900"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1">
+                          <span className="truncate font-semibold text-gray-800 dark:text-gray-100">{font.name}</span>
+                          {font.installed && (
+                            <span className="rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                              {t('已缓存')}
+                            </span>
+                          )}
+                        </div>
+                        <div className="truncate text-[10px] text-gray-400">
+                          {font.styleTag} · ~{font.approxSizeMB}MB
+                        </div>
+                      </div>
+                      {font.installed ? (
+                        <div className="flex flex-none items-center gap-1">
+                          {(selectedBubble || selectedText) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (selectedBubble) onUpdateBubble(selectedBubble.id, i => ({ ...i, fontFamily: font.id }), true);
+                                else if (selectedText) onUpdateText(selectedText.id, i => ({ ...i, fontFamily: font.id }), true);
+                              }}
+                              className="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200"
+                            >
+                              {t('应用')}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            aria-label={t('移除缓存字体 {0}', [font.name])}
+                            onClick={() => onDeleteFont(font.id)}
+                            className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={Boolean(downloadingFontId) || isBusy}
+                          onClick={() => onDownloadFont(font.id)}
+                          className="inline-flex flex-none items-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
+                        >
+                          {isBusy ? <InlineSpinner className="h-3 w-3 text-white" /> : <Download className="h-3 w-3" />}
+                          <span>{isBusy ? t('下载中…') : t('下载')}</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {fontCatalog.customFonts.length > 0 && (
+                  <div className="space-y-1 border-t border-gray-200/80 pt-1.5 dark:border-gray-700">
+                    <div className="text-[10px] font-semibold text-gray-500 dark:text-gray-400">{t('我导入的本机字体')}</div>
+                    {fontCatalog.customFonts.map(font => (
+                      <div
+                        key={font.id}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-indigo-200/70 bg-white px-2 py-1 dark:border-indigo-900/60 dark:bg-gray-900"
+                      >
+                        <span className="min-w-0 flex-1 truncate font-medium text-gray-800 dark:text-gray-100">{font.name}</span>
+                        <div className="flex flex-none items-center gap-1">
+                          {(selectedBubble || selectedText) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (selectedBubble) onUpdateBubble(selectedBubble.id, i => ({ ...i, fontFamily: font.id }), true);
+                                else if (selectedText) onUpdateText(selectedText.id, i => ({ ...i, fontFamily: font.id }), true);
+                              }}
+                              className="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200"
+                            >
+                              {t('应用')}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            aria-label={t('删除导入字体 {0}', [font.name])}
+                            onClick={() => onDeleteFont(font.id)}
+                            className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

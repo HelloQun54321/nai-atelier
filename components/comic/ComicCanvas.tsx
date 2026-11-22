@@ -11,8 +11,7 @@ import {
   snapComicPoint,
 } from '../../services/comic/comicGeometry';
 import {
-  buildCurvedTailPath,
-  buildOrganicBubbleSvgPath,
+  buildComicBubbleRenderModel,
   computeAutoFitFontSize,
   resolveComicFont,
   seededUnit,
@@ -1254,10 +1253,22 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                         const isTransparentFill = !bubble.fillColor || bubble.fillColor === 'transparent';
                         const strokeColor = selected ? '#4f46e5' : (bubble.strokeWidth > 0 ? bubble.strokeColor : 'none');
                         const strokeW = selected ? Math.max(bubble.strokeWidth, 2) : bubble.strokeWidth;
-                        const bodyPath = buildOrganicBubbleSvgPath(cx, cy, rx, ry, bubble.shape, bubble.id);
-                        const tailPath = bubble.hasTail && bubble.shape !== 'caption' && bubble.shape !== 'thought' && !isTransparentFill
-                          ? buildCurvedTailPath(cx, cy, rx, ry, tx, ty)
-                          : '';
+
+                        let localTx = tx;
+                        let localTy = ty;
+                        if (bubble.rotation) {
+                          const rad = (-bubble.rotation * Math.PI) / 180;
+                          const dx = tx - cx;
+                          const dy = ty - cy;
+                          localTx = cx + dx * Math.cos(rad) - dy * Math.sin(rad);
+                          localTy = cy + dx * Math.sin(rad) + dy * Math.cos(rad);
+                        }
+
+                        const model = buildComicBubbleRenderModel(cx, cy, rx, ry, bubble.shape, bubble.id, {
+                          enabled: bubble.hasTail && !isTransparentFill,
+                          tx: localTx,
+                          ty: localTy,
+                        });
                         const fontMeta = resolveComicFont(bubble.fontFamily);
                         const fittedSize = computeAutoFitFontSize(
                           bubble.text,
@@ -1285,46 +1296,91 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                               setDrag({ kind: 'move-bubble', id: bubble.id, dx: pt.x - bubble.x, dy: pt.y - bubble.y });
                             }}
                           >
-                            {bubble.hasTail && bubble.shape === 'thought' && !isTransparentFill && [0.56, 0.74, 0.90].map((ratio, idx) => (
-                              <circle
-                                key={idx}
-                                cx={cx + (tx - cx) * ratio}
-                                cy={cy + (ty - cy) * ratio}
-                                r={Math.min(rx, ry) * (idx === 0 ? 0.16 : idx === 1 ? 0.11 : 0.065)}
-                                fill={bubble.fillColor}
-                                stroke={strokeColor}
-                                strokeWidth={strokeW}
-                              />
-                            ))}
-                            {/* 先统一画外描边，再用内部填充无缝融合尾巴与气泡本体（彻底消除三角形接缝穿帮） */}
-                            {tailPath && strokeW > 0 && (
-                              <path
-                                d={tailPath}
-                                fill="none"
-                                stroke={strokeColor}
-                                strokeWidth={strokeW * 2}
-                                strokeLinejoin="round"
-                              />
-                            )}
                             <g transform={bubble.rotation ? `rotate(${bubble.rotation} ${cx} ${cy})` : undefined}>
-                              {strokeW > 0 && (
+                              {/* FramePlanner2 意识放射细线 */}
+                              {model.radialLines && strokeW > 0 && (
+                                <g opacity={0.72}>
+                                  {model.radialLines.map((seg, idx) => (
+                                    <line
+                                      key={idx}
+                                      x1={seg.x1}
+                                      y1={seg.y1}
+                                      x2={seg.x2}
+                                      y2={seg.y2}
+                                      stroke={strokeColor}
+                                      strokeWidth={Math.max(1, strokeW * 0.42)}
+                                      strokeLinecap="round"
+                                    />
+                                  ))}
+                                </g>
+                              )}
+
+                              {/* 先双倍描边（尾巴 + 主体）再内部填充覆盖，实现 FramePlanner2 级无缝尾巴融合 */}
+                              {model.tailPath && strokeW > 0 && model.strokeBody && (
                                 <path
-                                  d={bodyPath}
+                                  d={model.tailPath}
                                   fill="none"
                                   stroke={strokeColor}
-                                  strokeWidth={isTransparentFill ? strokeW : strokeW * 2}
+                                  strokeWidth={strokeW * 2}
                                   strokeLinejoin="round"
-                                  strokeDasharray={selected && bubble.strokeWidth <= 0 ? '6 4' : undefined}
+                                  strokeLinecap="round"
                                 />
                               )}
-                            </g>
-                            {tailPath && (
-                              <path d={tailPath} fill={bubble.fillColor} stroke="none" />
-                            )}
-                            <g transform={bubble.rotation ? `rotate(${bubble.rotation} ${cx} ${cy})` : undefined}>
-                              {!isTransparentFill && (
-                                <path d={bodyPath} fill={bubble.fillColor} stroke="none" />
+                              {strokeW > 0 && (model.strokeBody || selected) && (
+                                <path
+                                  d={model.bodyPath}
+                                  fill="none"
+                                  stroke={strokeColor}
+                                  strokeWidth={model.strokeBody ? (isTransparentFill ? strokeW : strokeW * 2) : 1.5}
+                                  strokeLinejoin="round"
+                                  strokeLinecap="round"
+                                  strokeDasharray={(!model.strokeBody || (selected && bubble.strokeWidth <= 0)) ? '6 4' : undefined}
+                                />
                               )}
+                              {model.tailPath && !isTransparentFill && (
+                                <path d={model.tailPath} fill={bubble.fillColor} stroke="none" />
+                              )}
+                              {!isTransparentFill && (
+                                <path d={model.bodyPath} fill={bubble.fillColor} stroke="none" />
+                              )}
+
+                              {/* FramePlanner2 思考云朵 4 颗渐变尾泡 */}
+                              {model.trailPaths && model.trailPaths.map((tp, idx) => (
+                                <g key={idx}>
+                                  {strokeW > 0 && (
+                                    <path
+                                      d={tp}
+                                      fill="none"
+                                      stroke={strokeColor}
+                                      strokeWidth={strokeW * 1.6}
+                                      strokeLinejoin="round"
+                                    />
+                                  )}
+                                  {!isTransparentFill && (
+                                    <path d={tp} fill={bubble.fillColor} stroke="none" />
+                                  )}
+                                </g>
+                              ))}
+
+                              {/* FramePlanner2 手绘延伸单线 / 心理双线 */}
+                              {model.overrunLines && strokeW > 0 && (
+                                <g>
+                                  {model.overrunLines.map((seg, idx) => (
+                                    <line
+                                      key={idx}
+                                      x1={seg.x1}
+                                      y1={seg.y1}
+                                      x2={seg.x2}
+                                      y2={seg.y2}
+                                      stroke={strokeColor}
+                                      strokeWidth={Math.max(1.2, strokeW * 0.85)}
+                                      strokeLinecap="round"
+                                      opacity={0.92}
+                                    />
+                                  ))}
+                                </g>
+                              )}
+
                               {!isInlineEditing && (
                                 <foreignObject x={cx - rx * 0.78} y={cy - ry * 0.78} width={rx * 1.56} height={ry * 1.56}>
                                   <div
@@ -1351,7 +1407,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                 </foreignObject>
                               )}
                             </g>
-                            {selected && bubble.hasTail && bubble.shape !== 'caption' && (
+                            {selected && bubble.hasTail && model.supportsTail && (
                               <circle
                                 cx={tx}
                                 cy={ty}

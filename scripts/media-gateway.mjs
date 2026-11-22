@@ -36,6 +36,7 @@ import { createDanbooruResponseFailure, createDanbooruNetworkFailure } from '../
 import { getLanUrls } from './local-server-runtime.mjs';
 import { storageLocationStatus, getStoragePreferences, updateStoragePreferences, getDefaultExportDirectory, pickStorageDirectory, validateStorageSwitch } from './storage-locations.mjs';
 import { createArtistSamples, validateArtistSampleSource, pickArtistSampleFile } from './artist-samples.mjs';
+import { createComicFontManager, COMIC_FONT_UPLOAD_LIMIT } from './comic-fonts.mjs';
 import { handleExportLocationRequest } from './export-locations.mjs';
 
 const CACHE_VERSION = 'v1';
@@ -4323,6 +4324,10 @@ const serveDistFile = async (req, res, url) => {
     fetch: pixivFetch || remoteFetch,
     tokenDir: pixivTokenDir || join(process.cwd(), 'local-data'),
   });
+  const comicFontManager = createComicFontManager({
+    cacheRoot: process.env.NAI_RESOURCE_ROOT || join(process.cwd(), 'local-cache'),
+    fetchImpl: remoteFetch,
+  });
   // 网页登录编排器：成功令牌经 generation 防竞态写入并清 feed 缓存；gateway 退出也清理。
   const webLoginOrchestrator = pixivWebLogin || new PixivWebLoginOrchestrator({
     fetch: pixivFetch || remoteFetch,
@@ -5111,6 +5116,47 @@ const serveDistFile = async (req, res, url) => {
         'Cache-Control': 'no-store',
       });
       return res.end(content);
+    }
+    if (url.pathname.startsWith('/api/comic-fonts/')) {
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        if (url.pathname === '/api/comic-fonts/status') {
+          if (req.method !== 'GET') return sendJson(res, 405, { error: '仅支持 GET 请求' });
+          return sendJson(res, 200, await comicFontManager.status());
+        }
+        if (url.pathname === '/api/comic-fonts/download') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: '仅支持 POST 请求' });
+          const body = JSON.parse((await readRequestBody(req, 64 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, await comicFontManager.downloadBuiltin(String(body.id || '').trim()));
+        }
+        if (url.pathname === '/api/comic-fonts/upload') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: '仅支持 POST 请求' });
+          const rawBody = await readRequestBody(req, COMIC_FONT_UPLOAD_LIMIT);
+          const filenameHeader = req.headers['x-font-filename'];
+          const rawName = Array.isArray(filenameHeader) ? filenameHeader[0] : (filenameHeader || 'custom.ttf');
+          const filename = decodeURIComponent(String(rawName));
+          return sendJson(res, 200, await comicFontManager.uploadCustomFont({ filename, buffer: rawBody }));
+        }
+        if (url.pathname.startsWith('/api/comic-fonts/file/')) {
+          if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { error: '仅支持 GET 请求' });
+          const id = decodeURIComponent(url.pathname.slice('/api/comic-fonts/file/'.length));
+          const file = await comicFontManager.readFontFile(id);
+          if (!file) return sendJson(res, 404, { error: '字体尚未下载或不存在' });
+          res.writeHead(200, {
+            'Content-Type': file.contentType,
+            'Content-Length': file.buffer.length,
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          });
+          return req.method === 'HEAD' ? res.end() : res.end(file.buffer);
+        }
+        if (req.method === 'DELETE') {
+          const id = decodeURIComponent(url.pathname.slice('/api/comic-fonts/'.length));
+          return sendJson(res, 200, await comicFontManager.deleteFont(id));
+        }
+        return sendJson(res, 404, { error: '未知漫画字体接口' });
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 400, { error: error.message || '漫画字体操作失败' });
+      }
     }
     if (url.pathname === '/api/tag-dictionary') {
       if (req.method !== 'GET' && req.method !== 'POST') return sendJson(res, 405, { error: '仅支持 GET 或 POST 请求' });

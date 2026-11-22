@@ -58,6 +58,15 @@ import {
   saveCustomComicTemplate,
   type ComicCustomTemplate,
 } from '../../services/comic/comicCustomTemplates';
+import {
+  deleteComicFont,
+  downloadBuiltinComicFont,
+  FALLBACK_BUILTIN_FONTS,
+  fetchComicFontsStatus,
+  uploadCustomComicFont,
+  type ComicFontCatalogState,
+} from '../../services/comic/comicFonts';
+import { getBubbleShapeMeta } from '../../services/comic/comicArtwork';
 import { buildComicPanelGenerationInput, parseDanbooruCastId } from '../../services/comic/comicPromptBuilder';
 import {
   exportComicBookAsZip,
@@ -232,8 +241,22 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const [brushSize, setBrushSize] = useState(6);
   const [brushOpacity, setBrushOpacity] = useState(1);
   const [defaultStickerKind, setDefaultStickerKind] = useState<ComicStickerKind>('speedlines');
-  const [defaultBubbleShape, setDefaultBubbleShape] = useState<ComicBubbleShape>('oval');
+  const [defaultBubbleShape, setDefaultBubbleShape] = useState<ComicBubbleShape>('soft');
   const [defaultBubbleWritingMode, setDefaultBubbleWritingMode] = useState<'horizontal' | 'vertical'>('vertical');
+  const [fontCatalog, setFontCatalog] = useState<ComicFontCatalogState>({
+    fonts: FALLBACK_BUILTIN_FONTS,
+    customFonts: [],
+    serverReachable: false,
+  });
+  const [downloadingFontId, setDownloadingFontId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchComicFontsStatus().then(state => {
+      if (!cancelled) setFontCatalog(state);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSelectWithTab = useCallback((next: ComicSelection) => {
     setSelection(next);
@@ -736,19 +759,76 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     }, true);
   }, [applyDraftChange]);
 
+  const preferredMangaFontId = useMemo(() => {
+    const installed = fontCatalog.fonts.find(f => f.installed);
+    if (installed) return installed.id;
+    if (fontCatalog.customFonts[0]) return fontCatalog.customFonts[0].id;
+    return 'comic-sans';
+  }, [fontCatalog]);
+
+  const handleDownloadFont = useCallback(async (id: string) => {
+    setDownloadingFontId(id);
+    try {
+      const next = await downloadBuiltinComicFont(id);
+      setFontCatalog(next);
+      const found = next.fonts.find(f => f.id === id);
+      notify(t('开源字体「{0}」已缓存至本地，现已立即可用', [found?.name || id]));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('下载开源字体失败（请确认本地后端已重启且网络可达）'), 'error');
+    } finally {
+      setDownloadingFontId(null);
+    }
+  }, [notify]);
+
+  const handleUploadCustomFont = useCallback(async (file: File) => {
+    try {
+      const { imported, state } = await uploadCustomComicFont(file);
+      setFontCatalog(state);
+      // 若当前正选中气泡或文字，直接一键应用新导入字体
+      if (selection?.kind === 'bubble') {
+        applyDraftChange(cur => ({
+          ...cur,
+          bubbles: cur.bubbles.map(b => b.id === selection.id ? { ...b, fontFamily: imported.id } : b),
+        }), true);
+      } else if (selection?.kind === 'text') {
+        applyDraftChange(cur => ({
+          ...cur,
+          texts: cur.texts.map(item => item.id === selection.id ? { ...item, fontFamily: imported.id } : item),
+        }), true);
+      }
+      notify(imported.localOnly
+        ? t('已在本次会话载入本机字体「{0}」（重启本地后端后可永久缓存）', [imported.name])
+        : t('已导入并缓存本机字体「{0}」', [imported.name]));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('导入本机字体失败'), 'error');
+    }
+  }, [applyDraftChange, notify, selection]);
+
+  const handleDeleteFont = useCallback(async (id: string) => {
+    try {
+      const next = await deleteComicFont(id);
+      setFontCatalog(next);
+      notify(t('已移除缓存字体'));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('移除字体失败'), 'error');
+    }
+  }, [notify]);
+
   const handleAddBubbleAt = useCallback((pt: ComicPoint) => {
+    const shapeMeta = getBubbleShapeMeta(defaultBubbleShape);
     const created: ComicBubbleItem = {
       id: createUuid(),
       shape: defaultBubbleShape,
       x: pt.x,
       y: pt.y,
       width: 0.28,
-      height: 0.14,
-      hasTail: defaultBubbleShape !== 'caption',
+      height: 0.15,
+      hasTail: shapeMeta.supportsTail,
       tailX: Math.min(0.95, pt.x + 0.08),
-      tailY: Math.min(0.95, pt.y + 0.11),
+      tailY: Math.min(0.95, pt.y + 0.12),
       text: '输入台词…',
       writingMode: defaultBubbleWritingMode,
+      fontFamily: preferredMangaFontId,
       fontSize: 22,
       textColor: '#111827',
       fillColor: '#ffffff',
@@ -759,7 +839,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     applyDraftChange(cur => ({ ...cur, bubbles: [...cur.bubbles, created] }), true);
     handleSelectWithTab({ kind: 'bubble', id: created.id });
     setActiveTool('select');
-  }, [applyDraftChange, defaultBubbleShape, defaultBubbleWritingMode, handleSelectWithTab]);
+  }, [applyDraftChange, defaultBubbleShape, defaultBubbleWritingMode, handleSelectWithTab, preferredMangaFontId]);
 
   const handleAddTextAt = useCallback((pt: ComicPoint) => {
     const created: ComicTextItem = {
@@ -768,6 +848,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       y: pt.y,
       text: '砰！',
       writingMode: 'horizontal',
+      fontFamily: fontCatalog.fonts.find(f => f.id === 'smiley-sans' && f.installed)?.id || preferredMangaFontId,
       fontSize: 38,
       color: '#111827',
       strokeColor: '#ffffff',
@@ -777,7 +858,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     applyDraftChange(cur => ({ ...cur, texts: [...cur.texts, created] }), true);
     handleSelectWithTab({ kind: 'text', id: created.id });
     setActiveTool('select');
-  }, [applyDraftChange, handleSelectWithTab]);
+  }, [applyDraftChange, fontCatalog.fonts, handleSelectWithTab, preferredMangaFontId]);
 
   const handleAddStickerAt = useCallback((pt: ComicPoint) => {
     const created: ComicStickerItem = {
@@ -980,11 +1061,12 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         y: anchor.y,
         width: 0.24,
         height: 0.12,
-        hasTail: shape !== 'caption',
+        hasTail: getBubbleShapeMeta(shape).supportsTail,
         tailX: Math.min(0.95, anchor.x + 0.06),
         tailY: Math.min(0.95, anchor.y + 0.09),
         text: anchor.bubbleText?.trim() || '输入台词…',
         writingMode: defaultBubbleWritingMode,
+        fontFamily: preferredMangaFontId,
         fontSize: 20,
         textColor: '#111827',
         fillColor: '#ffffff',
@@ -1003,7 +1085,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     }), true);
     handleSelectWithTab({ kind: 'bubble', id: created[0].id });
     notify(t('已将 {0} 个气泡锚点转为可编辑矢量气泡', [created.length]));
-  }, [applyDraftChange, defaultBubbleShape, defaultBubbleWritingMode, draft.aiPage.anchors, draft.bubbles, handleSelectWithTab, notify]);
+  }, [applyDraftChange, defaultBubbleShape, defaultBubbleWritingMode, draft.aiPage.anchors, draft.bubbles, handleSelectWithTab, notify, preferredMangaFontId]);
 
   // 抽离双区无缝拼合与归档逻辑（供全页生成、单区重画与手动重拼共用）
   const stitchAndCommitZones = useCallback(async (
@@ -1346,7 +1428,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     const items = commitBubbleCandidates(bubbleCandidates, {
       writingMode: defaultBubbleWritingMode,
       pageHeight: draft.height,
-    });
+    }).map(item => ({ ...item, fontFamily: preferredMangaFontId }));
     setBubbleCandidates(null);
     if (!items.length) return;
     applyDraftChange(cur => ({
@@ -1355,7 +1437,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     }), true);
     handleSelectWithTab({ kind: 'bubble', id: items[0].id });
     notify(t('已按校对结果嵌字 {0} 处（双击画布文字可随时修改）', [items.length]));
-  }, [applyDraftChange, bubbleCandidates, defaultBubbleWritingMode, draft.height, handleSelectWithTab, notify]);
+  }, [applyDraftChange, bubbleCandidates, defaultBubbleWritingMode, draft.height, handleSelectWithTab, notify, preferredMangaFontId]);
 
   // 第三期核心 2：开启单格局部重绘（可一键对齐某引导格，并自动带入该格内的已有锚点）
   const handleOpenInpaint = useCallback((guidePanel?: ComicAiGuidePanel) => {
@@ -2405,6 +2487,11 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
                   onToggleLayerVisible={handleToggleLayerVisible}
                   onToggleLayerLocked={handleToggleLayerLocked}
                   onMoveLayerOrder={handleMoveLayerOrder}
+                  fontCatalog={fontCatalog}
+                  downloadingFontId={downloadingFontId}
+                  onDownloadFont={id => void handleDownloadFont(id)}
+                  onUploadCustomFont={file => void handleUploadCustomFont(file)}
+                  onDeleteFont={id => void handleDeleteFont(id)}
                 />
               </div>
             </div>

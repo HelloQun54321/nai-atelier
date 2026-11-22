@@ -1,11 +1,11 @@
 import { downloadFile } from '../fileDownload';
 import { localHistory } from '../localHistory';
 import {
+  buildComicBubbleRenderModel,
   computeAutoFitFontSize,
+  drawComicBubbleOnCanvas,
   resolveComicFont,
   seededUnit,
-  traceCurvedTailCanvas,
-  traceOrganicBubbleCanvas,
 } from './comicArtwork';
 import type { ComicBook } from './comicBookshelf';
 import { getPanelBoundingBox } from './comicGeometry';
@@ -402,64 +402,33 @@ export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob>
 
         const isTransparentFill = !bubble.fillColor || bubble.fillColor === 'transparent';
         ctx.save();
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-
-        if (bubble.hasTail && bubble.shape === 'thought' && !isTransparentFill) {
-          const steps = [0.56, 0.74, 0.90];
-          steps.forEach((ratio, idx) => {
-            const bx = cx + (tx - cx) * ratio;
-            const by = cy + (ty - cy) * ratio;
-            const rad = Math.min(rx, ry) * (idx === 0 ? 0.16 : idx === 1 ? 0.11 : 0.065);
-            ctx.beginPath();
-            ctx.arc(bx, by, rad, 0, Math.PI * 2);
-            ctx.fillStyle = bubble.fillColor;
-            ctx.fill();
-            if (bubble.strokeWidth > 0) {
-              ctx.lineWidth = bubble.strokeWidth;
-              ctx.strokeStyle = bubble.strokeColor;
-              ctx.stroke();
-            }
-          });
-        }
-
-        // 无缝融合：先画尾巴与气泡本体双倍宽外描边，再填充内部白色覆盖接缝
-        const hasCurvedTail = bubble.hasTail && bubble.shape !== 'caption' && bubble.shape !== 'thought' && !isTransparentFill;
-        if (hasCurvedTail && bubble.strokeWidth > 0) {
-          traceCurvedTailCanvas(ctx, cx, cy, rx, ry, tx, ty);
-          ctx.lineWidth = bubble.strokeWidth * 2;
-          ctx.strokeStyle = bubble.strokeColor;
-          ctx.stroke();
-        }
-        if (bubble.strokeWidth > 0) {
-          ctx.save();
-          if (bubble.rotation) {
-            ctx.translate(cx, cy);
-            ctx.rotate((bubble.rotation * Math.PI) / 180);
-            ctx.translate(-cx, -cy);
-          }
-          traceOrganicBubbleCanvas(ctx, cx, cy, rx, ry, bubble.shape, bubble.id);
-          ctx.lineWidth = isTransparentFill ? bubble.strokeWidth : bubble.strokeWidth * 2;
-          ctx.strokeStyle = bubble.strokeColor;
-          ctx.stroke();
-          ctx.restore();
-        }
-        if (hasCurvedTail) {
-          traceCurvedTailCanvas(ctx, cx, cy, rx, ry, tx, ty);
-          ctx.fillStyle = bubble.fillColor;
-          ctx.fill();
-        }
-
+        let localTx = tx;
+        let localTy = ty;
         if (bubble.rotation) {
+          const rad = (-bubble.rotation * Math.PI) / 180;
+          const dx = tx - cx;
+          const dy = ty - cy;
+          localTx = cx + dx * Math.cos(rad) - dy * Math.sin(rad);
+          localTy = cy + dx * Math.sin(rad) + dy * Math.cos(rad);
           ctx.translate(cx, cy);
           ctx.rotate((bubble.rotation * Math.PI) / 180);
           ctx.translate(-cx, -cy);
         }
-        if (!isTransparentFill) {
-          traceOrganicBubbleCanvas(ctx, cx, cy, rx, ry, bubble.shape, bubble.id);
-          ctx.fillStyle = bubble.fillColor;
-          ctx.fill();
-        }
+
+        const model = buildComicBubbleRenderModel(cx, cy, rx, ry, bubble.shape, bubble.id, {
+          enabled: bubble.hasTail && !isTransparentFill,
+          tx: localTx,
+          ty: localTy,
+        });
+        drawComicBubbleOnCanvas(ctx, model, {
+          fillColor: bubble.fillColor,
+          strokeColor: bubble.strokeColor,
+          strokeWidth: bubble.strokeWidth,
+          cx,
+          cy,
+          rx,
+          ry,
+        });
 
         const fittedSize = computeAutoFitFontSize(
           bubble.text,

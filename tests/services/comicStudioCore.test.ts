@@ -30,8 +30,10 @@ import {
   prepareBubbleCandidates,
 } from '../../services/comic/comicBubbleDetector';
 import {
+  buildComicBubbleRenderModel,
   buildCurvedTailPath,
   buildOrganicBubbleSvgPath,
+  COMIC_BUBBLE_SHAPES,
   computeAutoFitFontSize,
 } from '../../services/comic/comicArtwork';
 import {
@@ -540,9 +542,19 @@ describe('Comic Studio polish upgrades (layout preservation, visualNote, smart b
     expect(longSize).toBeLessThan(shortSize);
     expect(longSize).toBeGreaterThanOrEqual(10);
 
-    for (const shape of ['oval', 'shout', 'thought', 'caption'] as const) {
-      const d = buildOrganicBubbleSvgPath(100, 60, 90, 50, shape, 'seed-1');
-      expect(d.startsWith('M ')).toBe(true);
+    expect(COMIC_BUBBLE_SHAPES).toHaveLength(12);
+    for (const shapeMeta of COMIC_BUBBLE_SHAPES) {
+      const model = buildComicBubbleRenderModel(100, 60, 90, 50, shapeMeta.id, 'seed-1', {
+        enabled: true,
+        tx: 165,
+        ty: 145,
+      });
+      expect(model.bodyPath.startsWith('M ')).toBe(true);
+      expect(buildOrganicBubbleSvgPath(100, 60, 90, 50, shapeMeta.id, 'seed-1')).toBe(model.bodyPath);
+      if (shapeMeta.id === 'concentration') expect(model.radialLines?.length).toBeGreaterThan(50);
+      if (shapeMeta.id === 'strokes' || shapeMeta.id === 'double-strokes') expect(model.overrunLines?.length).toBeGreaterThan(4);
+      if (shapeMeta.isMindTrail) expect(model.trailPaths).toHaveLength(4);
+      else if (shapeMeta.supportsTail) expect(model.tailPath).toContain('Q ');
     }
     const tail = buildCurvedTailPath(100, 60, 90, 50, 150, 140);
     expect(tail).toContain('Q ');

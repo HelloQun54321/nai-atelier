@@ -247,6 +247,11 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
       clientY: 120,
     }));
     expect(screen.getByRole('combobox', { name: '气泡字体' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '爆裂吼叫' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '意识放射' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '心理双线' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /开源漫画字体库/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '导入本机字体' })).toBeTruthy();
     expect(screen.getByRole('slider', { name: '气泡旋转角度' })).toBeTruthy();
     expect(screen.getByRole('slider', { name: '气泡边框粗细' })).toBeTruthy();
     expect(screen.getByLabelText('气泡底色')).toBeTruthy();

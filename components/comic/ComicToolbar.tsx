@@ -17,9 +17,11 @@ import {
   Undo2,
 } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
+import { COMIC_BUBBLE_SHAPES } from '../../services/comic/comicArtwork';
 import { COMIC_LAYOUT_TEMPLATES, COMIC_PAPER_PRESETS } from '../../services/comic/comicGeometry';
 import type { ComicCustomTemplate } from '../../services/comic/comicCustomTemplates';
 import { COMIC_V5_MODELS } from '../../services/comic/comicPromptBuilder';
+import { ComicBubbleShapeIcon } from './ComicBubbleShapeIcon';
 import type {
   ComicBubbleShape,
   ComicColorMode,
@@ -80,13 +82,6 @@ const shortModelLabel = (model: ComicV5ModelId): string => {
   if (model === 'nai-diffusion-5-curated') return 'V5 Curated';
   return 'V5 High';
 };
-
-const BUBBLE_SHAPES: Array<{ id: ComicBubbleShape; label: string }> = [
-  { id: 'oval', label: '椭圆' },
-  { id: 'shout', label: '吼叫' },
-  { id: 'thought', label: '思考' },
-  { id: 'caption', label: '旁白' },
-];
 
 const STICKER_KINDS: Array<{ id: ComicStickerKind; label: string }> = [
   { id: 'speedlines', label: '集中线' },
@@ -297,23 +292,25 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
 
         {activeTool === 'bubble' && (
           <>
-            <span className="font-semibold text-gray-600 dark:text-gray-300">{t('气泡框形')}</span>
-            <div className="flex items-center gap-1">
-              {BUBBLE_SHAPES.map(shape => (
+            <span className="flex-none font-semibold text-gray-600 dark:text-gray-300">{t('气泡框形')}</span>
+            <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+              {COMIC_BUBBLE_SHAPES.map(shape => (
                 <button
                   key={shape.id}
                   type="button"
+                  title={t(shape.label)}
                   onClick={() => onChangeDefaultBubbleStyle({ shape: shape.id })}
-                  className={`rounded-md border px-2 py-0.5 text-[11px] font-medium transition ${defaultBubbleShape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                  className={`inline-flex flex-none items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium transition ${defaultBubbleShape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
                 >
-                  {t(shape.label)}
+                  <ComicBubbleShapeIcon shape={shape.id} className="h-4 w-5 flex-none" />
+                  <span>{t(shape.label)}</span>
                 </button>
               ))}
             </div>
             <button
               type="button"
               onClick={() => onChangeDefaultBubbleStyle({ writingMode: defaultBubbleWritingMode === 'vertical' ? 'horizontal' : 'vertical' })}
-              className="rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+              className="flex-none rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
             >
               {defaultBubbleWritingMode === 'vertical' ? t('默认竖排') : t('默认横排')}
             </button>
