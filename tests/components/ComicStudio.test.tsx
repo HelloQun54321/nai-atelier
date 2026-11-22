@@ -379,9 +379,17 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     const badge = deleteModeBtn.querySelector('[data-warning-indicator="true"]');
     expect(badge?.textContent).toBe('3');
 
-    // 点击垃圾桶进入删除模式后，才标红并自动预选全部检测到的角色词
+    // 点击垃圾桶进入删除模式后，自动预选全部检测到的角色词；点其中一个可取消勾选（恢复灰白态不再红）
     fireEvent.click(deleteModeBtn);
-    expect(promptContainer.querySelectorAll('[data-warning-tag="true"]').length).toBe(3);
+    const flaggedInDelete = promptContainer.querySelectorAll('[data-warning-tag="true"]');
+    expect(flaggedInDelete.length).toBe(3);
+    expect(flaggedInDelete[0].getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(flaggedInDelete[0]);
+    expect(flaggedInDelete[0].getAttribute('aria-pressed')).toBe('false');
+    expect(within(promptContainer).getByRole('button', { name: '删除 2 个 Tag' })).toBeTruthy();
+
+    // 再点回来重新选中，一键删掉全部 3 个角色词
+    fireEvent.click(flaggedInDelete[0]);
     fireEvent.click(within(promptContainer).getByRole('button', { name: '删除 3 个 Tag' }));
     expect(styleInput.value).toBe('artist:example, anime coloring');
     expect(within(promptContainer).getByRole('button', { name: '删除模式' }).querySelector('[data-warning-indicator="true"]')).toBeNull();

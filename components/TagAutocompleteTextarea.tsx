@@ -1132,15 +1132,13 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                         ? deleteMode ? 'border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
                           : muteMode ? 'border-amber-400 bg-amber-50 dark:border-amber-500 dark:bg-amber-950/40'
                             : 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
-                        : warningReason
-                          ? 'border-red-300/80 bg-red-50/50 dark:border-red-500/60 dark:bg-red-950/25'
-                          : 'appearance-group border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
+                        : 'appearance-group border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
                       aria-pressed={selected}
                     >
-                      <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]' : warningReason ? 'text-red-600 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`} title={warningReason ? `${item.displayTag} — ${warningReason}` : item.displayTag}>
+                      <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={warningReason ? `${item.displayTag} — ${warningReason}` : item.displayTag}>
                         {editingTag?.id === item.id ? tagInputField : item.displayTag}
                       </span>
-                      <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]' : warningReason ? 'text-red-600 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`} title={editingTag?.id === item.id ? draftChinese : item.chinese || t("词库暂无翻译")}>{editingTag?.id === item.id ? draftChinese : item.chinese || t("待翻译")}</span>
+                      <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={editingTag?.id === item.id ? draftChinese : item.chinese || t("词库暂无翻译")}>{editingTag?.id === item.id ? draftChinese : item.chinese || t("待翻译")}</span>
                       {infoButton(item)}
                     </div>,
                   );
@@ -1192,9 +1190,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                     {members.map((member, memberIndex) => {
                       const memberSelected = memberMode ? (muteMode ? groupSelected : selectedTagIds.has(member.id)) : groupSelected;
                       const memberWarning = deleteMode ? warningTags?.get(member.lookupTag) : undefined;
-                      const memberTextTone = memberSelected
-                        ? selectedTone(true)
-                        : memberWarning ? 'text-red-600 dark:text-red-300' : selectedTone(false);
+                      const memberTextTone = selectedTone(memberSelected);
                       return <React.Fragment key={member.id}>
                         {memberIndex > 0 && insertionAt(groupIndex + memberIndex)}
                         <span
@@ -1213,8 +1209,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                             });
                           } : undefined}
                           data-agent-interaction="double_click" aria-label={member.displayTag} onDoubleClick={event => { event.stopPropagation(); editTag(member); }}
-                          className={`relative flex min-w-0 max-w-full flex-col px-2 py-1 ${catalogEntries.has(member.lookupTag) ? 'pr-7' : ''} ${memberIndex > 0 ? 'border-l border-gray-200 dark:border-gray-700' : ''} ${memberMode && memberSelected ? (deleteMode ? 'bg-red-50 dark:bg-red-950/40' : 'bg-amber-50 dark:bg-amber-950/40') : memberWarning && !memberSelected ? 'bg-red-50/90 dark:bg-red-950/35' : ''}`}>
-                          <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${memberTextTone} ${memberWarning && !memberSelected ? 'font-semibold' : ''}`} title={memberWarning ? `${member.displayTag} — ${memberWarning}` : member.displayTag}>
+                          className={`relative flex min-w-0 max-w-full flex-col px-2 py-1 ${catalogEntries.has(member.lookupTag) ? 'pr-7' : ''} ${memberIndex > 0 ? 'border-l border-gray-200 dark:border-gray-700' : ''} ${memberMode && memberSelected ? (deleteMode ? 'bg-red-50 dark:bg-red-950/40' : 'bg-amber-50 dark:bg-amber-950/40') : ''}`}>
+                          <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${memberTextTone}`} title={memberWarning ? `${member.displayTag} — ${memberWarning}` : member.displayTag}>
                             {editingTag?.id === member.id ? tagInputField : member.displayTag}
                           </span>
                           <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${memberTextTone}`} title={editingTag?.id === member.id ? draftChinese : member.chinese || t("词库暂无翻译")}>{editingTag?.id === member.id ? draftChinese : member.chinese || t("待翻译")}</span>
