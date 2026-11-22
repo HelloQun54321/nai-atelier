@@ -7,12 +7,12 @@ import {
   Download,
   Grid,
   LayoutTemplate,
+  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Redo2,
   RotateCcw,
   SlidersHorizontal,
-  Sparkles,
   Trash2,
   Undo2,
 } from 'lucide-react';
@@ -25,7 +25,6 @@ import { ComicBubbleShapeIcon } from './ComicBubbleShapeIcon';
 import type {
   ComicBubbleShape,
   ComicColorMode,
-  ComicCreationMode,
   ComicDialogueMode,
   ComicPageDraft,
   ComicPanel,
@@ -53,10 +52,11 @@ interface ComicToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   exporting: boolean;
+  pageStripOpen?: boolean;
   inspectorOpen: boolean;
+  onTogglePageStrip?: () => void;
   onOpenBookshelf?: () => void;
   onChangeTitle: (title: string) => void;
-  onChangeMode: (mode: ComicCreationMode) => void;
   onSelectPaperPreset: (presetId: string) => void;
   onSetCustomPaperSize: (width: number, height: number) => void;
   onApplyTemplate: (templateId: string) => void;
@@ -110,10 +110,11 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
   canUndo,
   canRedo,
   exporting,
+  pageStripOpen = true,
   inspectorOpen,
+  onTogglePageStrip,
   onOpenBookshelf,
   onChangeTitle,
-  onChangeMode,
   onSelectPaperPreset,
   onSetCustomPaperSize,
   onApplyTemplate,
@@ -159,7 +160,7 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
 
   return (
     <header className="appearance-panel relative z-30 flex flex-none flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-gray-200/80 bg-white/90 px-3 py-1.5 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/90">
-      {/* 左区：页面标题 + 模式切换 + 规格/模板入口 */}
+      {/* 左区：作品条开关 + 书架 + 页面标题 + 规格/模板入口 */}
       <div className="flex min-w-0 items-center gap-2">
         {onBack && (
           <IconButton
@@ -168,6 +169,15 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
             className="flex-none md:hidden"
           >
             <ArrowLeft className="h-4 w-4" />
+          </IconButton>
+        )}
+        {onTogglePageStrip && !pageStripOpen && (
+          <IconButton
+            label={t('展开漫画页条')}
+            onClick={onTogglePageStrip}
+            className="hidden flex-none md:inline-flex"
+          >
+            <PanelLeftOpen className="h-4 w-4" />
           </IconButton>
         )}
         {onOpenBookshelf && (
@@ -189,33 +199,8 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
           value={draft.title}
           onChange={event => onChangeTitle(event.target.value)}
           placeholder={t('未命名漫画页')}
-          className="h-8 w-28 min-w-0 rounded-lg border border-transparent bg-transparent px-1.5 text-sm font-bold text-gray-800 outline-none transition hover:border-gray-200 focus:border-indigo-400 focus:bg-white dark:text-gray-100 dark:hover:border-gray-700 dark:focus:bg-gray-800 sm:w-32"
+          className="h-8 w-28 min-w-0 rounded-lg border border-transparent bg-transparent px-1.5 text-sm font-bold text-gray-800 outline-none transition hover:border-gray-200 focus:border-indigo-400 focus:bg-white dark:text-gray-100 dark:hover:border-gray-700 dark:focus:bg-gray-800 sm:w-36"
         />
-
-        <div
-          className="inline-flex flex-none rounded-lg border border-gray-200/80 bg-gray-100/90 p-0.5 dark:border-gray-700/80 dark:bg-gray-800/90"
-          role="group"
-          aria-label={t('创作模式')}
-        >
-          <button
-            type="button"
-            aria-pressed={draft.creationMode === 'manual'}
-            onClick={() => onChangeMode('manual')}
-            className={`rounded-md px-2 py-1 text-xs font-semibold transition ${draft.creationMode === 'manual' ? 'bg-white text-indigo-600 shadow-xs dark:bg-gray-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
-          >
-            {t('手动逐格')}
-          </button>
-          <button
-            type="button"
-            aria-pressed={draft.creationMode === 'ai-page'}
-            onClick={() => onChangeMode('ai-page')}
-            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition ${draft.creationMode === 'ai-page' ? 'bg-white text-indigo-600 shadow-xs dark:bg-gray-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
-            title={t('AI 整页锚点一图成型（含自动双区拼合）')}
-          >
-            <Sparkles className="h-3 w-3" aria-hidden="true" />
-            <span>{t('AI 整页')}</span>
-          </button>
-        </div>
 
         <button
           ref={pageMenuBtnRef}
@@ -236,7 +221,8 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
         </button>
       </div>
 
-      {/* 中区：仿 PS 动态工具属性栏（随左侧竖工具栏实时切换，彻底填实顶栏中间空洞） */}
+      {/* 中区：仅在启用具体画布工具（画笔/气泡/贴纸/切格/移图等）时按需展示对应选项，默认态留白清爽 */}
+      {activeTool !== 'select' && (
       <div className="hidden min-w-0 flex-1 items-center gap-2 border-l border-gray-200/90 pl-3 text-xs dark:border-gray-800 lg:flex">
         {(activeTool === 'brush' || activeTool === 'eraser') && (
           <>
@@ -417,13 +403,6 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
           )
         )}
 
-        {activeTool === 'select' && (
-          <span className="truncate text-[11px] text-gray-400">
-            {draft.creationMode === 'ai-page'
-              ? t('拖拽调框与锚点 · 双击气泡改字 · Delete 删除')
-              : t('拖拽调格 · 双击气泡/文字改字 · Delete 删除')}
-          </span>
-        )}
         {activeTool === 'hand' && (
           <span className="truncate text-[11px] text-gray-400">{t('抓手 (H)：左键拖拽直接平移画布，Ctrl+滚轮缩放')}</span>
         )}
@@ -437,6 +416,7 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
           <span className="truncate text-[11px] text-gray-400">{t('自由文字 (T)：点击画布放置拟声词或效果字，双击修改内容')}</span>
         )}
       </div>
+      )}
 
       {/* 右区：撤销重做 + 导出 PNG + 工作台收起 */}
       <div className="ml-auto flex flex-none items-center gap-1">

@@ -2,16 +2,17 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowDownToLine,
+  ArrowRight,
   ArrowUp,
   ArrowUpToLine,
   Check,
+  ChevronDown,
   Copy,
   Dices,
   Download,
   Eye,
   EyeOff,
   Image as ImageIcon,
-  Layers,
   Lock,
   MessageCircle,
   Palette,
@@ -36,7 +37,6 @@ import { searchCharacterDictionary, type CharacterDictionaryEntry } from '../../
 import { COMIC_BUBBLE_SHAPES, COMIC_FONT_PRESETS } from '../../services/comic/comicArtwork';
 import type { ComicFontCatalogState } from '../../services/comic/comicFonts';
 import { ComicBubbleShapeIcon } from './ComicBubbleShapeIcon';
-import { ComicLayersPanel } from './ComicLayersPanel';
 import {
   clampAnchorCoord,
   getPanelBoundingBox,
@@ -63,10 +63,10 @@ import type {
   ComicBubbleItem,
   ComicBubbleShape,
   ComicColorMode,
+  ComicCreationMode,
   ComicDialogueMode,
   ComicFontFamily,
   ComicImageLayerItem,
-  ComicLayerNode,
   ComicPageDraft,
   ComicPanel,
   ComicSelection,
@@ -79,8 +79,10 @@ import { createUuid } from '../../services/id';
 import { InlineSpinner } from '../DesignSystem';
 import { HistoryImagePicker } from '../HistoryImagePicker';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
+import { PromptCopyButton } from '../chain/PresetSourceBadges';
+import type { PromptTidyOptions } from '../PromptTidyActions';
 
-export type ComicInspectorTab = 'panel' | 'style' | 'layers' | 'ps-layers';
+export type ComicInspectorTab = 'style' | 'panel' | 'layers';
 
 interface ComicInspectorProps {
   draft: ComicPageDraft;
@@ -104,7 +106,9 @@ interface ComicInspectorProps {
   generationStageText: string;
   estimatedCost: number;
   aiEstimatedCost: number;
+  notify?: (message: string, type?: 'success' | 'error') => void;
   onSelectTab: (tab: ComicInspectorTab) => void;
+  onChangeMode: (mode: ComicCreationMode) => void;
   onSelect: (selection: ComicSelection) => void;
   onQuickAddPanel: () => void;
   onUpdateDraft: (updater: (current: ComicPageDraft) => ComicPageDraft, commit?: boolean) => void;
@@ -144,15 +148,6 @@ interface ComicInspectorProps {
   onDeleteSticker: (id: string) => void;
   onUpdateImageLayer: (id: string, updater: (item: ComicImageLayerItem) => ComicImageLayerItem, commit?: boolean) => void;
   onDeleteImageLayer: (id: string) => void;
-  onSelectLayer: (node: ComicLayerNode) => void;
-  onUpdateLayerNode: (layerId: string, updater: (node: ComicLayerNode) => ComicLayerNode, commit?: boolean) => void;
-  onReorderLayer: (sourceId: string, targetId: string, position: 'above' | 'below' | 'inside') => void;
-  onCreateDrawingLayer: () => void;
-  onImportImageLayer: (file: File) => void;
-  onCreateGroupLayer: (wrapLayerId?: string) => void;
-  onDuplicateLayer: (layerId: string) => void;
-  onMergeLayerDown: (layerId: string) => void;
-  onDeleteLayer: (layerId: string) => void;
   onConvertSingleAnchorBubbleToVector: (target: { kind: 'ai-anchor'; anchorId: string } | { kind: 'panel-anchor'; panelId: string; anchorId: string }) => void;
   fontCatalog: ComicFontCatalogState;
   downloadingFontId: string | null;
@@ -160,6 +155,66 @@ interface ComicInspectorProps {
   onUploadCustomFont: (file: File) => void;
   onDeleteFont: (id: string) => void;
 }
+
+/** 复用 Atelier 实验室同款提示词框：自带提示词库取用/保存、整理校对、橡皮擦清空/撤销、复制与常驻 Tag 翻译权重栏。 */
+const ComicPromptField: React.FC<{
+  label: string;
+  ariaLabel?: string;
+  value: string;
+  placeholder: string;
+  rows?: number;
+  compact?: boolean;
+  libraryField?: React.ComponentProps<typeof TagAutocompleteTextarea>['libraryField'];
+  promptLibraryActions?: boolean | 'save';
+  promptTidy?: PromptTidyOptions;
+  onChange: (next: string) => void;
+  onCopy?: (value: string, label: string) => void;
+}> = ({
+  label,
+  ariaLabel,
+  value,
+  placeholder,
+  rows = 3,
+  compact = false,
+  libraryField,
+  promptLibraryActions = true,
+  promptTidy,
+  onChange,
+  onCopy,
+}) => {
+  const clearSlot = useRef<HTMLSpanElement>(null);
+  return (
+    <div className="space-y-1">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <span className={`min-w-0 truncate font-semibold ${compact ? 'text-[11px] text-gray-600 dark:text-gray-300' : 'text-xs text-gray-700 dark:text-gray-200'}`}>
+          {label}
+        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          <span ref={clearSlot} className="inline-flex items-center gap-0.5" />
+          {onCopy && (
+            <PromptCopyButton
+              onClick={() => onCopy(value, label)}
+              title={t('复制{0}', [label])}
+            />
+          )}
+        </div>
+      </div>
+      <TagAutocompleteTextarea
+        rows={rows}
+        aria-label={ariaLabel || label}
+        clearActionSlotRef={clearSlot}
+        libraryField={libraryField}
+        promptLibraryActions={promptLibraryActions}
+        promptTidy={promptTidy}
+        tagAssistEnabled
+        value={value}
+        onValueChange={onChange}
+        placeholder={placeholder}
+        className={`w-full rounded-lg border border-gray-200 bg-gray-50/70 font-mono text-gray-900 outline-none focus:border-indigo-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 ${compact ? 'p-1.5 text-[11px]' : 'p-2 text-xs'}`}
+      />
+    </div>
+  );
+};
 
 const ANCHOR_META: Record<ComicAnchorKind, { label: string; dotClass: string; badgeClass: string }> = {
   character: { label: '角色', dotClass: 'bg-blue-600', badgeClass: 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300' },
@@ -217,7 +272,9 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   generationStageText,
   estimatedCost,
   aiEstimatedCost,
+  notify,
   onSelectTab,
+  onChangeMode,
   onSelect,
   onQuickAddPanel,
   onUpdateDraft,
@@ -257,15 +314,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   onDeleteSticker,
   onUpdateImageLayer,
   onDeleteImageLayer,
-  onSelectLayer,
-  onUpdateLayerNode,
-  onReorderLayer,
-  onCreateDrawingLayer,
-  onImportImageLayer,
-  onCreateGroupLayer,
-  onDuplicateLayer,
-  onMergeLayerDown,
-  onDeleteLayer,
   onConvertSingleAnchorBubbleToVector,
   fontCatalog,
   downloadingFontId,
@@ -274,6 +322,18 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   onDeleteFont,
 }) => {
   useLanguage();
+  const copyPrompt = (value: string, label: string) => {
+    if (!value.trim()) {
+      notify?.(t('{0}为空，无可复制内容', [label]), 'error');
+      return;
+    }
+    void navigator.clipboard?.writeText(value);
+    notify?.(t('已复制{0}', [label]), 'success');
+  };
+  const promptTidyOption = useMemo<PromptTidyOptions | undefined>(
+    () => (notify ? { notify } : undefined),
+    [notify],
+  );
   const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
   const [castPickerOpen, setCastPickerOpen] = useState(false);
@@ -455,23 +515,20 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   };
 
   const overlayCount = draft.bubbles.length + draft.texts.length + draft.stickers.length;
-  const layerCount = draft.layerStack?.length ?? 2;
 
   return (
     <aside className="appearance-panel flex h-full w-full flex-col border-l border-gray-200 bg-white/90 dark:border-gray-800 dark:bg-gray-900/90">
-      {/* 顶部平铺式四标签导航（各标签共享 100% 满高空间，不再额外挤占画布横向或纵向空间） */}
+      {/* 顶部顺次三步导航：1 画风 → 2 分镜 → 3 嵌字（贴合真实创作顺序，取消独立 PS 图层主标签） */}
       <div
         role="tablist"
-        aria-label={t('漫画工作台分区')}
-        className="flex flex-none items-stretch border-b border-gray-200/80 bg-transparent dark:border-gray-800/80"
+        aria-label={t('漫画创作步骤')}
+        className="grid flex-none grid-cols-3 border-b border-gray-200/80 bg-transparent dark:border-gray-800/80"
       >
         {([
-          { id: 'panel', label: draft.creationMode === 'ai-page' ? t('AI 整页编排') : t('分镜生图'), icon: draft.creationMode === 'ai-page' ? Sparkles : Wand2 },
-          { id: 'style', label: t('画风设定'), icon: Palette },
-          { id: 'layers', label: t('嵌字'), badge: overlayCount > 0 ? overlayCount : undefined, icon: MessageCircle },
-          { id: 'ps-layers', label: t('图层'), badge: layerCount, icon: Layers },
-        ] as Array<{ id: ComicInspectorTab; label: string; badge?: number; icon: React.ElementType }>).map(tab => {
-          const Icon = tab.icon;
+          { id: 'style', step: 1, label: t('画风设定'), icon: Palette },
+          { id: 'panel', step: 2, label: t('分镜生图'), icon: draft.creationMode === 'ai-page' ? Sparkles : Wand2 },
+          { id: 'layers', step: 3, label: t('气泡嵌字'), badge: overlayCount > 0 ? overlayCount : undefined, icon: MessageCircle },
+        ] as Array<{ id: ComicInspectorTab; step: number; label: string; badge?: number; icon: React.ElementType }>).map(tab => {
           const active = activeTab === tab.id;
           return (
             <button
@@ -480,22 +537,58 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
               role="tab"
               aria-selected={active}
               onClick={() => onSelectTab(tab.id)}
-              className={`relative inline-flex h-10 flex-auto items-center justify-center gap-1 whitespace-nowrap px-2 text-xs font-semibold transition ${active ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/50 dark:hover:text-gray-200'}`}
+              className={`relative inline-flex h-10 items-center justify-center gap-1.5 whitespace-nowrap px-2 text-xs font-semibold transition ${active ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/50 dark:hover:text-gray-200'}`}
             >
-              <Icon className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
+              <span
+                aria-hidden="true"
+                className={`inline-flex h-4 w-4 flex-none items-center justify-center rounded-full text-[10px] font-bold leading-none ${active ? 'bg-indigo-600 text-white' : 'bg-gray-200/90 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}
+              >
+                {tab.step}
+              </span>
               <span>{tab.label}</span>
               {tab.badge !== undefined && (
                 <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold leading-4 ${active ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-200' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
                   {tab.badge}
                 </span>
               )}
-              {active && <span aria-hidden="true" className="absolute inset-x-2.5 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
+              {active && <span aria-hidden="true" className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
             </button>
           );
         })}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+
+      {/* 步骤 2 顶部的生成方式轻切换（同时保留手动逐格与 AI 整页） */}
+      {activeTab === 'panel' && (
+        <div className="flex flex-none items-center justify-between gap-2 border-b border-gray-200/80 bg-gray-50/50 px-3.5 py-2 dark:border-gray-800/80 dark:bg-gray-950/30">
+          <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">{t('生图方式')}</span>
+          <div
+            className="inline-flex flex-none rounded-lg border border-gray-200/80 bg-gray-100/90 p-0.5 dark:border-gray-700/80 dark:bg-gray-800/90"
+            role="group"
+            aria-label={t('创作模式')}
+          >
+            <button
+              type="button"
+              aria-pressed={draft.creationMode === 'manual'}
+              onClick={() => onChangeMode('manual')}
+              className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${draft.creationMode === 'manual' ? 'bg-white text-indigo-600 shadow-xs dark:bg-gray-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+            >
+              {t('手动逐格')}
+            </button>
+            <button
+              type="button"
+              aria-pressed={draft.creationMode === 'ai-page'}
+              onClick={() => onChangeMode('ai-page')}
+              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition ${draft.creationMode === 'ai-page' ? 'bg-white text-indigo-600 shadow-xs dark:bg-gray-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+              title={t('AI 整页锚点一图成型（含自动双区拼合）')}
+            >
+              <Sparkles className="h-3 w-3" aria-hidden="true" />
+              <span>{t('AI 整页')}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ==================== 标签 1A：AI 整页锚点编排工作台 ==================== */}
       {activeTab === 'panel' && draft.creationMode === 'ai-page' && (() => {
@@ -708,50 +801,8 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                 </div>
               </div>
 
-              {/* 分区策略、槽位护栏与引导层控制 */}
-              <div className="space-y-2 border-t border-gray-200/80 pt-3.5 dark:border-gray-800">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-bold text-gray-800 dark:text-gray-100">{t('分区策略与槽位护栏')}</span>
-                  <span className={`text-[11px] font-semibold ${aiZonePlan.overallLevel === 'hard-exceeded' ? 'text-red-500' : aiZonePlan.overallLevel === 'soft-warning' ? 'text-amber-500' : 'text-gray-500 dark:text-gray-400'}`}>
-                    {aiZonePlan.totalPanels}{t('格')} · {aiZonePlan.totalActiveAnchors}{t('槽')} · {aiZonePlan.zones.length}{t('区')}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-4 gap-1" role="group" aria-label={t('AI 整页分区方式')}>
-                  {SPLIT_MODE_OPTIONS.map(opt => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      aria-pressed={aiPage.splitMode === opt.id}
-                      onClick={() => onUpdateAiPage(cur => ({ ...cur, splitMode: opt.id }), true)}
-                      className={`rounded-md border px-1.5 py-1 text-[11px] font-semibold transition ${aiPage.splitMode === opt.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
-                    >
-                      {t(opt.label)}
-                    </button>
-                  ))}
-                </div>
-
-                {aiZonePlan.autoSplitTriggered && (
-                  <p className="rounded-lg bg-indigo-50/90 px-2.5 py-1.5 text-[11px] text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">
-                    {t('格数或槽位超过单区甜点区，已自动拆为 2 张免费 Opus 区依次生成并无缝拼合。')}
-                  </p>
-                )}
-                {aiZonePlan.recommendDualSplit && (
-                  <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                    {t('当前强制单区已超过甜点密度，建议切换「自动」或双区以保持人物清晰度。')}
-                  </p>
-                )}
-                {aiZonePlan.overallLevel === 'soft-warning' && (
-                  <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                    {t('存在单个分区超过 12 个锚点，人物可能缩为 Q 版；可切双区或精简次要锚点。')}
-                  </p>
-                )}
-                {aiZonePlan.overallLevel === 'hard-exceeded' && (
-                  <p className="rounded-lg bg-red-50 px-2.5 py-1.5 text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                    {t('单个分区超过 24 槽硬上限，请切换双区或停用部分锚点后再生成。')}
-                  </p>
-                )}
-
+              {/* 引导显示、气泡转嵌字 + 默认折叠的高级版式与锁框选项（不再用底层工程参数淹没首屏） */}
+              <div className="space-y-2 border-t border-gray-200/80 pt-3 dark:border-gray-800">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
@@ -787,6 +838,60 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     </button>
                   )}
                 </div>
+
+                {aiZonePlan.overallLevel === 'hard-exceeded' && (
+                  <p className="rounded-lg bg-red-50 px-2.5 py-1.5 text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                    {t('单个分区超过 24 槽硬上限，请展开下方高级选项切换双区或停用部分锚点后再生成。')}
+                  </p>
+                )}
+
+                <details className="group rounded-xl border border-gray-200/80 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-800/30">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2 text-[11px] font-semibold text-gray-700 select-none hover:text-indigo-600 dark:text-gray-200 dark:hover:text-indigo-300">
+                    <span className="inline-flex items-center gap-1.5">
+                      <ChevronDown className="h-3.5 w-3.5 text-gray-400 transition group-open:rotate-180" aria-hidden="true" />
+                      <span>{t('高级版式与锁框选项')}</span>
+                    </span>
+                    <span className={`font-normal ${aiZonePlan.overallLevel === 'hard-exceeded' ? 'text-red-500' : aiZonePlan.overallLevel === 'soft-warning' ? 'text-amber-500' : 'text-gray-400'}`}>
+                      {aiZonePlan.totalPanels}{t('格')} · {aiZonePlan.zones.length}{t('区')} · {aiPage.layoutLockMode !== 'txt2img' ? t('硬锁版式') : t('自由文生图')}
+                    </span>
+                  </summary>
+                  <div className="space-y-2.5 border-t border-gray-200/70 px-2.5 pt-2.5 pb-2.5 dark:border-gray-800">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-gray-800 dark:text-gray-100">{t('分区策略与槽位护栏')}</span>
+                      <span className={`text-[11px] font-semibold ${aiZonePlan.overallLevel === 'hard-exceeded' ? 'text-red-500' : aiZonePlan.overallLevel === 'soft-warning' ? 'text-amber-500' : 'text-gray-500 dark:text-gray-400'}`}>
+                        {aiZonePlan.totalPanels}{t('格')} · {aiZonePlan.totalActiveAnchors}{t('槽')} · {aiZonePlan.zones.length}{t('区')}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-1" role="group" aria-label={t('AI 整页分区方式')}>
+                      {SPLIT_MODE_OPTIONS.map(opt => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          aria-pressed={aiPage.splitMode === opt.id}
+                          onClick={() => onUpdateAiPage(cur => ({ ...cur, splitMode: opt.id }), true)}
+                          className={`rounded-md border px-1.5 py-1 text-[11px] font-semibold transition ${aiPage.splitMode === opt.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                        >
+                          {t(opt.label)}
+                        </button>
+                      ))}
+                    </div>
+
+                    {aiZonePlan.autoSplitTriggered && (
+                      <p className="rounded-lg bg-indigo-50/90 px-2.5 py-1.5 text-[11px] text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">
+                        {t('格数或槽位超过单区甜点区，已自动拆为 2 张免费 Opus 区依次生成并无缝拼合。')}
+                      </p>
+                    )}
+                    {aiZonePlan.recommendDualSplit && (
+                      <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                        {t('当前强制单区已超过甜点密度，建议切换「自动」或双区以保持人物清晰度。')}
+                      </p>
+                    )}
+                    {aiZonePlan.overallLevel === 'soft-warning' && (
+                      <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                        {t('存在单个分区超过 12 个锚点，人物可能缩为 Q 版；可切双区或精简次要锚点。')}
+                      </p>
+                    )}
 
                 {/* V5 图生图硬锁分镜与场景氛围控制（0 Anlas 像素级锁框） */}
                 {(() => {
@@ -1021,6 +1126,8 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     )}
                   </div>
                 )}
+                  </div>
+                </details>
 
                 {/* 成图精修区：可视化白泡候选校对 + 框选单格局部重绘 + 原图留底对照 */}
                 {aiPage.generatedPageImage?.url && (
@@ -1154,17 +1261,17 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                           </div>
                         </div>
 
-                        <label className="block">
-                          <span className="mb-1 block text-[11px] font-semibold text-gray-700 dark:text-gray-200">{t('重绘区域画面描述')}</span>
-                          <textarea
-                            rows={2}
-                            aria-label={t('局部重绘描述')}
-                            value={inpaintDraft.prompt}
-                            onChange={e => onUpdateInpaintDraft(cur => ({ ...cur, prompt: e.target.value }))}
-                            placeholder={t('例如：1girl, smiling softly, fixing hand holding umbrella...')}
-                            className="w-full rounded-lg border border-gray-200 bg-white p-1.5 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                          />
-                        </label>
+                        <ComicPromptField
+                          label={t('重绘区域画面描述')}
+                          ariaLabel={t('局部重绘描述')}
+                          rows={2}
+                          compact
+                          libraryField={POSITIVE_LIBRARY_FIELD}
+                          value={inpaintDraft.prompt}
+                          onChange={val => onUpdateInpaintDraft(cur => ({ ...cur, prompt: val }))}
+                          onCopy={copyPrompt}
+                          placeholder={t('例如：1girl, smiling softly, fixing hand holding umbrella...')}
+                        />
 
                         <div className="flex items-center justify-between gap-2 text-[11px]">
                           <label className="flex flex-1 items-center gap-1.5 text-gray-600 dark:text-gray-300">
@@ -1470,15 +1577,19 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
                           {isExpanded && (
                             <div className="mt-2 space-y-1.5">
-                              <textarea
+                              <ComicPromptField
+                                label={t('锚点提示词')}
+                                ariaLabel={`${anchor.label || t('整页锚点')} · ${t('提示词')}`}
                                 rows={2}
+                                compact
+                                libraryField={POSITIVE_LIBRARY_FIELD}
                                 value={anchor.prompt}
-                                onChange={e => onUpdateAiPage(cur => ({
+                                onChange={val => onUpdateAiPage(cur => ({
                                   ...cur,
-                                  anchors: cur.anchors.map(a => a.id === anchor.id ? { ...a, prompt: e.target.value } : a),
+                                  anchors: cur.anchors.map(a => a.id === anchor.id ? { ...a, prompt: val } : a),
                                 }), false)}
+                                onCopy={copyPrompt}
                                 placeholder={anchor.kind === 'bubble' ? t('气泡补充说明（如 tail pointing left）') : t('输入该锚点的英文外观、动作、表情或物件提示词')}
-                                className="w-full rounded border border-gray-200 bg-gray-50/70 p-1.5 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                               />
                               {anchor.kind === 'bubble' && (
                                 <div className="space-y-1.5 rounded-lg border border-amber-200/80 bg-amber-50/40 p-2 dark:border-amber-900/50 dark:bg-amber-950/20">
@@ -1777,32 +1888,27 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     </div>
                   </div>
 
-                  {/* 单格画面提示词（去掉多余外框，整洁直写） */}
-                  <div className="space-y-2.5">
-                    <label className="block">
-                      <span className="mb-1 block font-semibold text-gray-700 dark:text-gray-200">{t('本格画面描述（输入 @ 可搜个人提示词库）')}</span>
-                      <TagAutocompleteTextarea
-                        rows={3}
-                        libraryField={POSITIVE_LIBRARY_FIELD}
-                        promptLibraryActions="save"
-                        value={activePanel.prompt}
-                        onValueChange={val => onUpdatePanel(activePanel.id, p => ({ ...p, prompt: val }), false)}
-                        placeholder={t('例如：close-up, rain outside classroom window, looking surprised...')}
-                        className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="mb-1 block font-semibold text-gray-600 dark:text-gray-300">{t('本格补充负面词（可选）')}</span>
-                      <TagAutocompleteTextarea
-                        rows={2}
-                        libraryField={NEGATIVE_LIBRARY_FIELD}
-                        promptLibraryActions={false}
-                        value={activePanel.negativePrompt}
-                        onValueChange={val => onUpdatePanel(activePanel.id, p => ({ ...p, negativePrompt: val }), false)}
-                        placeholder={t('仅对当前格生效的额外排除项')}
-                        className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                      />
-                    </label>
+                  {/* 单格画面提示词：复用 Atelier 提示词框外菜单（词库取用/保存、整理校对、橡皮擦清空、复制与常驻翻译权重栏） */}
+                  <div className="space-y-3">
+                    <ComicPromptField
+                      label={t('本格画面描述')}
+                      rows={3}
+                      libraryField={POSITIVE_LIBRARY_FIELD}
+                      promptTidy={promptTidyOption}
+                      value={activePanel.prompt}
+                      onChange={val => onUpdatePanel(activePanel.id, p => ({ ...p, prompt: val }), false)}
+                      onCopy={copyPrompt}
+                      placeholder={t('例如：close-up, rain outside classroom window, looking surprised...')}
+                    />
+                    <ComicPromptField
+                      label={t('本格补充负面词（可选）')}
+                      rows={2}
+                      libraryField={NEGATIVE_LIBRARY_FIELD}
+                      value={activePanel.negativePrompt}
+                      onChange={val => onUpdatePanel(activePanel.id, p => ({ ...p, negativePrompt: val }), false)}
+                      onCopy={copyPrompt}
+                      placeholder={t('仅对当前格生效的额外排除项')}
+                    />
                   </div>
 
                   {/* 单格四类空间锚点（扁平分割线 + 克制同色中性按钮配微色点，彻底告别 5 色彩虹药丸和盒套盒） */}
@@ -2041,15 +2147,19 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                                   <Trash2 className="h-3 w-3" />
                                 </button>
                               </div>
-                              <textarea
+                              <ComicPromptField
+                                label={t('锚点提示词')}
+                                ariaLabel={`${anchor.label || t('本格锚点')} · ${t('提示词')}`}
                                 rows={2}
+                                compact
+                                libraryField={POSITIVE_LIBRARY_FIELD}
                                 value={anchor.prompt}
-                                onChange={e => onUpdatePanel(activePanel.id, p => ({
+                                onChange={val => onUpdatePanel(activePanel.id, p => ({
                                   ...p,
-                                  anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, prompt: e.target.value } : a),
+                                  anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, prompt: val } : a),
                                 }), false)}
+                                onCopy={copyPrompt}
                                 placeholder={anchor.kind === 'bubble' ? t('气泡补充说明（如 tail pointing right）') : t('输入该锚点的外观、动作、物件或景别提示词')}
-                                className="w-full rounded border border-gray-200 bg-gray-50/70 p-1.5 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                               />
                               {anchor.kind === 'bubble' && (
                                 <div className="mt-1.5 space-y-1.5 rounded-lg border border-amber-200/80 bg-amber-50/40 p-2 dark:border-amber-900/50 dark:bg-amber-950/20">
@@ -2265,8 +2375,9 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
         </>
       )}
 
-      {/* ==================== 标签 2：画风设定 ==================== */}
+      {/* ==================== 步骤 1：画风设定 ==================== */}
       {activeTab === 'style' && (
+        <>
         <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-3.5 pb-6 text-xs">
           {/* 优先放最高频的风格串载入与公共画风词 */}
           <div className="space-y-1.5">
@@ -2331,30 +2442,25 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
             )}
           </div>
 
-          <label className="block">
-            <span className="mb-1 block font-semibold text-gray-700 dark:text-gray-200">{t('全页公共画风提示词')}</span>
-            <TagAutocompleteTextarea
-              rows={3}
-              libraryField={POSITIVE_LIBRARY_FIELD}
-              promptLibraryActions="save"
-              value={draft.globalBasePrompt}
-              onValueChange={val => onUpdateDraft(cur => ({ ...cur, globalBasePrompt: val }), false)}
-              placeholder={t('输入画师串与全页统一画风，每格生图自动带上')}
-              className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block font-semibold text-gray-600 dark:text-gray-300">{t('全页公共负面词')}</span>
-            <TagAutocompleteTextarea
-              rows={2}
-              libraryField={NEGATIVE_LIBRARY_FIELD}
-              promptLibraryActions={false}
-              value={draft.globalNegativePrompt}
-              onValueChange={val => onUpdateDraft(cur => ({ ...cur, globalNegativePrompt: val }), false)}
-              placeholder={t('全页公共排除词（自动过滤压制网点的冲突词）')}
-              className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-            />
-          </label>
+          <ComicPromptField
+            label={t('全页公共画风提示词')}
+            rows={3}
+            libraryField={POSITIVE_LIBRARY_FIELD}
+            promptTidy={promptTidyOption}
+            value={draft.globalBasePrompt}
+            onChange={val => onUpdateDraft(cur => ({ ...cur, globalBasePrompt: val }), false)}
+            onCopy={copyPrompt}
+            placeholder={t('输入画师串与全页统一画风，每格生图自动带上')}
+          />
+          <ComicPromptField
+            label={t('全页公共负面词')}
+            rows={2}
+            libraryField={NEGATIVE_LIBRARY_FIELD}
+            value={draft.globalNegativePrompt}
+            onChange={val => onUpdateDraft(cur => ({ ...cur, globalNegativePrompt: val }), false)}
+            onCopy={copyPrompt}
+            placeholder={t('全页公共排除词（自动过滤压制网点的冲突词）')}
+          />
 
           {/* 紧凑版 V5 模型 / 色彩 / 对白策略（不再占半屏） */}
           <div className="space-y-2.5 rounded-xl border border-gray-200/80 bg-gray-50/60 p-2.5 dark:border-gray-800 dark:bg-gray-800/40">
@@ -2566,6 +2672,17 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
             })()}
           </div>
         </div>
+        <div className="flex-none border-t border-gray-200/80 bg-white/95 p-3 dark:border-gray-800 dark:bg-gray-900/95">
+          <button
+            type="button"
+            onClick={() => onSelectTab('panel')}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow-xs transition hover:bg-indigo-500"
+          >
+            <span>{t('下一步：分镜与生图')}</span>
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+        </>
       )}
 
       {/* ==================== 标签 3：嵌字与图层 ==================== */}
@@ -3042,27 +3159,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
               </div>
             )}
           </div>
-        </div>
-      )}
-      {/* ==================== 标签 4：仿 Photoshop 独立图层栈 ==================== */}
-      {activeTab === 'ps-layers' && (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <ComicLayersPanel
-            draft={draft}
-            selection={selection}
-            collapsed={false}
-            dockMode="tab"
-            onToggleCollapsed={() => {}}
-            onSelectLayer={onSelectLayer}
-            onUpdateLayerNode={onUpdateLayerNode}
-            onReorderLayer={onReorderLayer}
-            onCreateDrawingLayer={onCreateDrawingLayer}
-            onImportImageLayer={onImportImageLayer}
-            onCreateGroupLayer={onCreateGroupLayer}
-            onDuplicateLayer={onDuplicateLayer}
-            onMergeLayerDown={onMergeLayerDown}
-            onDeleteLayer={onDeleteLayer}
-          />
         </div>
       )}
       </div>

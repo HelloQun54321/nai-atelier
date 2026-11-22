@@ -127,6 +127,8 @@ import { useConfirmDialog } from '../ConfirmDialog';
 import { ComicBookshelfModal } from './ComicBookshelfModal';
 import { ComicCanvas } from './ComicCanvas';
 import { ComicInspector, type ComicInspectorTab } from './ComicInspector';
+import { ComicLayersPanel } from './ComicLayersPanel';
+import { ComicPageStrip } from './ComicPageStrip';
 import { ComicToolRail } from './ComicToolRail';
 import { ComicToolbar } from './ComicToolbar';
 
@@ -248,7 +250,13 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const [selection, setSelection] = useState<ComicSelection>(() => (
     draft.panels[0] ? { kind: 'panel', id: draft.panels[0].id } : null
   ));
-  const [inspectorTab, setInspectorTab] = useState<ComicInspectorTab>('panel');
+  const [inspectorTab, setInspectorTab] = useState<ComicInspectorTab>(() => (
+    draft.globalBasePrompt.trim() ? 'panel' : 'style'
+  ));
+  const [pageStripOpen, setPageStripOpen] = useState(() => (
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+  ));
+  const [layersDrawerOpen, setLayersDrawerOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(() => (
     typeof window !== 'undefined' ? window.innerWidth >= 768 : true
   ));
@@ -282,7 +290,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     setSelection(next);
     if (!next) return;
     if (next.kind === 'panel' || next.kind === 'ai-anchor' || next.kind === 'panel-anchor' || next.kind === 'breakout-zone') {
-      setInspectorTab(cur => (cur === 'layers' || cur === 'ps-layers' ? 'panel' : cur));
+      setInspectorTab('panel');
     } else if (next.kind === 'bubble' || next.kind === 'text' || next.kind === 'sticker' || next.kind === 'image') {
       setInspectorTab('layers');
     }
@@ -2639,6 +2647,13 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const activeBook = books.find(b => b.id === activeBookId) || books[0];
   const activePageIndex = Math.max(0, activeBook?.pages.findIndex(p => p.id === draft.id) ?? 0);
 
+  const handleChangeCreationMode = useCallback((creationMode: ComicPageDraft['creationMode']) => {
+    applyDraftChange(cur => ({ ...cur, creationMode }), true);
+    setInspectorTab('panel');
+    setInpaintDraft(null);
+    setSelection(creationMode === 'manual' && draft.panels[0] ? { kind: 'panel', id: draft.panels[0].id } : null);
+  }, [applyDraftChange, draft.panels]);
+
   const activeSession = activeSessionRef.current;
 
   return (
@@ -2659,15 +2674,11 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         canUndo={undoStack.length > 0}
         canRedo={redoStack.length > 0}
         exporting={exporting}
+        pageStripOpen={pageStripOpen}
         inspectorOpen={inspectorOpen}
+        onTogglePageStrip={() => setPageStripOpen(open => !open)}
         onOpenBookshelf={() => setBookshelfOpen(true)}
         onChangeTitle={title => applyDraftChange(cur => ({ ...cur, title }), false)}
-        onChangeMode={creationMode => {
-          applyDraftChange(cur => ({ ...cur, creationMode }), true);
-          setInspectorTab('panel');
-          setInpaintDraft(null);
-          setSelection(creationMode === 'manual' && draft.panels[0] ? { kind: 'panel', id: draft.panels[0].id } : null);
-        }}
         onSelectPaperPreset={handleSelectPaperPreset}
         onSetCustomPaperSize={handleSetCustomPaperSize}
         onApplyTemplate={tplId => void handleApplyTemplate(tplId)}
@@ -2702,16 +2713,23 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         onBack={onBack}
       />
 
-      {/* 经典 PS 4 列工作区：[全局导航] | [满高竖工具栏] | [点阵绘图桌漫画区] | [右侧宽敞操作区] */}
+      {/* 轻量化三栏布局：[左侧作品组漫画缩略图条] | [宽敞画布 + 底部悬浮轻工具条] | [右侧三步顺序操作栏] */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
-        <ComicToolRail
-          activeTool={activeTool}
-          foregroundColor={brushColor}
-          onSelectTool={setActiveTool}
-          onChangeForegroundColor={setBrushColor}
-        />
+        {pageStripOpen && (
+          <ComicPageStrip
+            book={activeBook}
+            activePageId={draft.id}
+            notify={notify}
+            onSelectPage={handleSelectPage}
+            onAddPage={handleAddPageToBook}
+            onDuplicatePage={handleDuplicatePageInBook}
+            onDeletePage={(bookId, pageId) => void handleDeletePageInBook(bookId, pageId)}
+            onOpenBookshelf={() => setBookshelfOpen(true)}
+            onCollapse={() => setPageStripOpen(false)}
+          />
+        )}
 
-        <div ref={canvasWrapRef} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div ref={canvasWrapRef} className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <ComicCanvas
             draft={draft}
             aiZonePlan={aiZonePlan}
@@ -2802,6 +2820,54 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             }), commit)}
             onUpdateImageLayer={handleUpdateImageLayer}
           />
+
+          {/* 底部悬浮轻工具胶囊（仅常驻 5 个高频工具，低频工具与图层叠加收入「···」菜单；中屏靠左避让右下角缩放条，宽屏居中） */}
+          <div className="pointer-events-none absolute bottom-3 left-3 z-20 flex xl:inset-x-0 xl:left-auto xl:justify-center xl:px-3">
+            <ComicToolRail
+              activeTool={activeTool}
+              foregroundColor={brushColor}
+              layerCount={draft.layerStack?.length ?? 2}
+              layersDrawerOpen={layersDrawerOpen}
+              onSelectTool={setActiveTool}
+              onChangeForegroundColor={setBrushColor}
+              onToggleLayersDrawer={() => setLayersDrawerOpen(open => !open)}
+            />
+          </div>
+
+          {/* 低频「图层与叠加图片」按需浮层：不再占用右侧主标签 */}
+          {layersDrawerOpen && (
+            <div className="appearance-panel absolute top-3 right-3 bottom-16 z-30 flex w-72 max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-2xl border border-gray-200/90 bg-white/95 shadow-2xl backdrop-blur-md dark:border-gray-700/90 dark:bg-gray-900/95">
+              <div className="flex flex-none items-center justify-between border-b border-gray-200/80 px-3 py-2 dark:border-gray-800/80">
+                <span className="text-xs font-bold text-gray-800 dark:text-gray-100">{t('图层与叠加图片')}</span>
+                <button
+                  type="button"
+                  aria-label={t('关闭图层浮层')}
+                  onClick={() => setLayersDrawerOpen(false)}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <ComicLayersPanel
+                  draft={draft}
+                  selection={selection}
+                  collapsed={false}
+                  dockMode="tab"
+                  onToggleCollapsed={() => setLayersDrawerOpen(false)}
+                  onSelectLayer={handleSelectLayer}
+                  onUpdateLayerNode={handleUpdateLayerNode}
+                  onReorderLayer={handleReorderLayer}
+                  onCreateDrawingLayer={handleCreateDrawingLayer}
+                  onImportImageLayer={file => void handleImportImageLayer(file)}
+                  onCreateGroupLayer={handleCreateGroupLayer}
+                  onDuplicateLayer={handleDuplicateLayer}
+                  onMergeLayerDown={handleMergeLayerDown}
+                  onDeleteLayer={handleDeleteLayer}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {!inspectorOpen && (
@@ -2822,7 +2888,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
               onClick={() => setInspectorOpen(false)}
               className="fixed inset-0 z-30 bg-black/35 backdrop-blur-[1px] md:hidden"
             />
-            <div className="fixed inset-x-0 bottom-0 z-40 flex h-[74dvh] flex-col overflow-hidden rounded-t-2xl border-t border-gray-200 shadow-2xl dark:border-gray-800 md:static md:z-auto md:h-full md:w-[376px] md:flex-none md:rounded-none md:border-t-0 md:shadow-none lg:w-[416px] xl:w-[436px]">
+            <div className="fixed inset-x-0 bottom-0 z-40 flex h-[74dvh] flex-col overflow-hidden rounded-t-2xl border-t border-gray-200 shadow-2xl dark:border-gray-800 md:static md:z-auto md:h-full md:w-[356px] md:flex-none md:rounded-none md:border-t-0 md:shadow-none lg:w-[388px] xl:w-[404px]">
               <div className="appearance-panel flex flex-none items-center justify-between border-b border-gray-200/80 px-3.5 py-2 md:hidden dark:border-gray-800/80">
                 <span className="text-xs font-bold text-gray-800 dark:text-gray-100">{t('漫画属性与生图')}</span>
                 <button
@@ -2857,7 +2923,9 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
                   generationStageText={describeStage(activeSession)}
                   estimatedCost={estimatedCost}
                   aiEstimatedCost={aiEstimatedCost}
+                  notify={notify}
                   onSelectTab={setInspectorTab}
+                  onChangeMode={handleChangeCreationMode}
                   onSelect={handleSelectWithTab}
                   onQuickAddPanel={() => handleAddPanel(rectToPolygon(0.18, 0.22, 0.64, 0.32))}
                   onUpdateDraft={applyDraftChange}
@@ -2926,15 +2994,6 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
                   }}
                   onUpdateImageLayer={handleUpdateImageLayer}
                   onDeleteImageLayer={handleDeleteImageLayer}
-                  onSelectLayer={handleSelectLayer}
-                  onUpdateLayerNode={handleUpdateLayerNode}
-                  onReorderLayer={handleReorderLayer}
-                  onCreateDrawingLayer={handleCreateDrawingLayer}
-                  onImportImageLayer={file => void handleImportImageLayer(file)}
-                  onCreateGroupLayer={handleCreateGroupLayer}
-                  onDuplicateLayer={handleDuplicateLayer}
-                  onMergeLayerDown={handleMergeLayerDown}
-                  onDeleteLayer={handleDeleteLayer}
                   onConvertSingleAnchorBubbleToVector={handleConvertSingleAnchorBubbleToVector}
                   fontCatalog={fontCatalog}
                   downloadingFontId={downloadingFontId}

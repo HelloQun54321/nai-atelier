@@ -67,13 +67,26 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     return { notify };
   };
 
-  it('opens straight into panel generation tab with panel strip, anchors, and Delete/Undo support', () => {
+  it('starts at Step 1 style tab for blank pages, steps into panel generation with anchors, and supports left page strip & Delete/Undo', () => {
     renderStudio();
-    // 顶部极简栏 + 默认停在「分镜生图」标签，直接能看到第 1 格和「生成当前格」按钮
+    // 空白新页先停在步骤 1「画风设定」，按「1 画风 → 2 分镜 → 3 嵌字」三步推进（无独立图层主标签）
+    expect(screen.getByRole('tab', { name: /画风设定/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.queryByRole('tab', { name: /图层/ })).toBeNull();
+    // 左侧作品组漫画页竖向滚动条默认可见，且支持直接新增一页
+    const pageStrip = screen.getByLabelText('作品组漫画列表');
+    expect(within(pageStrip).getByText('P01')).toBeTruthy();
+    fireEvent.click(within(pageStrip).getByRole('button', { name: /新建一页/ }));
+    expect(within(pageStrip).getByText('P02')).toBeTruthy();
+
+    // 点「下一步：分镜与生图」进入步骤 2「分镜生图」
+    fireEvent.click(screen.getByRole('button', { name: /下一步：分镜与生图/ }));
+    expect(screen.getByRole('tab', { name: /分镜生图/ }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('button', { name: /手动逐格/ }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('tab', { name: '分镜生图' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('button', { name: /生成当前格/ })).toBeTruthy();
     expect(screen.getByText(/0\/12（上限 24）/)).toBeTruthy();
+    // 复用 Atelier 提示词框外操作与常驻翻译权重栏
+    expect(screen.getAllByLabelText('提示词中文翻译').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByTitle('复制本格画面描述')).toBeTruthy();
 
     // 从角色库直接加入角色锚点并追加空镜/道具点，且画布锚点必须落在第 1 格高度内（绝不能飘到第 2 格）
     fireEvent.click(screen.getByRole('button', { name: /角色库/ }));
@@ -97,11 +110,12 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getByRole('button', { name: '4' })).toBeTruthy();
   });
 
-  it('supports style tab searchable chain picker, monochrome protection, floating dock brush card, and layers tab', () => {
+  it('supports style tab searchable chain picker, monochrome protection, floating more tools menu, and on-demand layers drawer', () => {
     const { notify } = renderStudio();
 
-    // 切到「画风设定」标签：搜索载入风格串 + 黑白网点漫净色提示
-    fireEvent.click(screen.getByRole('tab', { name: '画风设定' }));
+    // 步骤 1「画风设定」：搜索载入风格串 + 黑白网点漫净色提示 + 复用 Atelier 复制按钮
+    expect(screen.getByRole('tab', { name: /画风设定/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTitle('复制全页公共画风提示词')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '选择风格串' }));
     fireEvent.change(screen.getByRole('textbox', { name: '搜索风格串' }), { target: { value: '清透' } });
     fireEvent.click(screen.getByRole('button', { name: /清透日漫风/ }));
@@ -110,22 +124,23 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: '黑白网点漫' }));
     expect(screen.getByText(/自动剥离发送副本中的彩色词/)).toBeTruthy();
 
-    // 点击满高竖工具栏的「画笔」或按快捷键，顶栏动态属性条实时显示粗细且不切换右侧标签
-    fireEvent.click(screen.getByRole('button', { name: '画笔' }));
+    // 从画布底部悬浮胶囊的「··· 更多画布工具」里打开画笔，顶栏动态属性条实时显示粗细且不切换右侧标签
+    fireEvent.click(screen.getByRole('button', { name: '更多画布工具' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '画笔' }));
     expect(screen.getByText('粗细')).toBeTruthy();
-    expect(screen.getByRole('tab', { name: '画风设定' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: /画风设定/ }).getAttribute('aria-selected')).toBe('true');
 
-    // PS 单键快捷键切换抓手平移与格内移图工具
+    // 单键快捷键依然支持抓手平移与格内移图工具，并在顶栏展示对应提示
     fireEvent.keyDown(window, { key: 'h' });
-    expect(screen.getByRole('button', { name: '抓手平移' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText(/抓手 \(H\)/)).toBeTruthy();
     fireEvent.keyDown(window, { key: 'm' });
-    expect(screen.getByRole('button', { name: '格内移图' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText(/格内移图/)).toBeTruthy();
 
-    // 切到「嵌字」与「图层」标签，右侧满高展示 Photoshop 风格图层面板（支持多手绘图层、图层组、混合模式与不透明度）
-    fireEvent.click(screen.getByRole('tab', { name: /嵌字/ }));
-    expect(screen.getByRole('tab', { name: /嵌字/ }).getAttribute('aria-selected')).toBe('true');
-    fireEvent.click(screen.getByRole('tab', { name: /图层/ }));
-    expect(screen.getByRole('tab', { name: /图层/ }).getAttribute('aria-selected')).toBe('true');
+    // 切到步骤 3「气泡嵌字」；并通过底部「··· -> 图层与叠图」按需呼出图层浮层（不再占用主标签）
+    fireEvent.click(screen.getByRole('tab', { name: /气泡嵌字/ }));
+    expect(screen.getByRole('tab', { name: /气泡嵌字/ }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: '更多画布工具' }));
+    fireEvent.click(screen.getByRole('button', { name: /图层与叠图/ }));
     expect(screen.getByRole('region', { name: 'PS 图层面板' })).toBeTruthy();
     expect(screen.getAllByText('分镜画格底图').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('手绘图层 1').length).toBeGreaterThanOrEqual(1);
@@ -133,7 +148,7 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getByRole('slider', { name: '图层不透明度' })).toBeTruthy();
   });
 
-  it('supports Phase 2 AI whole-page storyboard orchestration, dual-zone preview, and bubble-to-vector conversion', async () => {
+  it('supports Phase 2 AI whole-page storyboard orchestration, collapsible advanced lock controls, and bubble-to-vector conversion', async () => {
     const planSpy = vi.spyOn(promptAgentService, 'planComicStoryboard').mockResolvedValue({
       title: '雨中递伞',
       layoutHint: '4-panel manga page, clean white gutters',
@@ -150,10 +165,11 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
 
     const { notify } = renderStudio();
 
-    // 切换到 AI 整页模式
+    // 进入步骤 2「分镜生图」并切换到 AI 整页模式
+    fireEvent.click(screen.getByRole('tab', { name: /分镜生图/ }));
     fireEvent.click(screen.getByRole('button', { name: 'AI 整页' }));
     expect(screen.getByRole('button', { name: 'AI 整页' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('tab', { name: 'AI 整页编排' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: /分镜生图/ }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('button', { name: /生成 AI 整页/ })).toBeTruthy();
 
     // 勾选出场角色并输入剧情，点击 AI 编排分镜与锚点
@@ -177,6 +193,12 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
       expect(screen.getByText('一起走吧')).toBeTruthy();
       expect(screen.getByText('AI 气泡')).toBeTruthy();
     });
+
+    // 高级版式与锁框选项默认收起，展开后仍完整支持双区、黑底回忆杀、统一光照词与破格前景块
+    const advancedSummary = screen.getByText('高级版式与锁框选项');
+    const advancedDetails = advancedSummary.closest('details') as HTMLDetailsElement;
+    expect(advancedDetails.open).toBe(false);
+    fireEvent.click(advancedSummary);
 
     // 切换上下双区，按钮展示「2 区拼合」且提供单区独立精修入口
     fireEvent.click(screen.getByRole('button', { name: '上下双区' }));
@@ -216,7 +238,8 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getAllByText('第 1 话 雨夜车站').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: /新增一页/ }));
-    expect(screen.getByText('P02')).toBeTruthy();
+    expect(within(screen.getByRole('dialog', { name: '漫画书架与整话阅读' })).getByText('P02')).toBeTruthy();
+    expect(within(screen.getByLabelText('作品组漫画列表')).getByText('P02')).toBeTruthy();
 
     // 切换进入整话连续阅读视图并切回书架，同时验证可编辑工程导入/导出入口存在
     expect(screen.getByRole('button', { name: /导出工程/ })).toBeTruthy();
@@ -230,11 +253,7 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
   it('exposes batch panel generation, full V5 parameter tuning, rich bubble styling, and custom layout templates', () => {
     renderStudio();
 
-    // 手动逐格模式提供「整页生成」一键顺序生图入口
-    expect(screen.getByRole('button', { name: /整页生成/ })).toBeTruthy();
-
-    // 画风设定标签提供完整的 Seed / Steps / CFG / Sampler / Noise Schedule 参数微调
-    fireEvent.click(screen.getByRole('tab', { name: '画风设定' }));
+    // 先在步骤 1「画风设定」确认完整的 Seed / Steps / CFG / Sampler / Noise Schedule 参数微调
     const seedInput = screen.getByRole('spinbutton', { name: '随机种子' }) as HTMLInputElement;
     fireEvent.change(seedInput, { target: { value: '123456' } });
     expect(seedInput.value).toBe('123456');
@@ -242,6 +261,10 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getByRole('slider', { name: '引导强度' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '采样器' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '噪声调度' })).toBeTruthy();
+
+    // 进入步骤 2「分镜生图」确认手动逐格提供「整页生成」一键顺序生图入口
+    fireEvent.click(screen.getByRole('tab', { name: /分镜生图/ }));
+    expect(screen.getByRole('button', { name: /整页生成/ })).toBeTruthy();
 
     // 顶栏「画幅与模板」支持将当前分镜保存为自定义模板并删除
     fireEvent.click(screen.getByRole('button', { name: '画幅与模板' }));
@@ -275,10 +298,11 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getByLabelText('气泡底色')).toBeTruthy();
   });
 
-  it('renders live WYSIWYG bubble anchor with PS floating toolbar and supports full PS Layers panel operations', () => {
+  it('renders live WYSIWYG bubble anchor with floating toolbar and supports on-demand layers drawer operations', () => {
     renderStudio();
 
-    // 在手动模式下添加「气泡点」：不再只有盲猜圆点，直接在画布渲染可视化漫画气泡并弹出快捷编辑条
+    // 进入步骤 2「分镜生图」，在手动模式下添加「气泡点」：直接在画布渲染可视化漫画气泡并弹出快捷编辑条
+    fireEvent.click(screen.getByRole('tab', { name: /分镜生图/ }));
     fireEvent.click(screen.getByRole('button', { name: '气泡点' }));
     expect(screen.getByText('气泡预演')).toBeTruthy();
     expect(screen.getByRole('toolbar', { name: '气泡快捷编辑条' })).toBeTruthy();
@@ -298,13 +322,13 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     fireEvent.pointerDown(bubbleTextEl, { button: 0, clientX: 200, clientY: 200 });
     fireEvent.pointerUp(bubbleTextEl);
 
-    // 一键转为正式矢量漫画气泡，立刻进入 PS 图层栈
+    // 一键转为正式矢量漫画气泡，右侧自动切到步骤 3「气泡嵌字」
     fireEvent.click(screen.getByRole('button', { name: '转为正式矢量气泡' }));
     expect(screen.getByText('当前对白气泡')).toBeTruthy();
 
-    // 切到右侧「图层」标签页：满高展示完整 PS 图层操作（混合模式、不透明度、新建手绘层/图层组、点选图层停留当前标签、删除图层）
-    fireEvent.click(screen.getByRole('tab', { name: /图层/ }));
-    expect(screen.getByRole('tab', { name: /图层/ }).getAttribute('aria-selected')).toBe('true');
+    // 通过底部悬浮胶囊「··· -> 图层与叠图」按需打开图层浮层，完整保留混合模式、不透明度、新建/删除图层能力
+    fireEvent.click(screen.getByRole('button', { name: '更多画布工具' }));
+    fireEvent.click(screen.getByRole('button', { name: /图层与叠图/ }));
 
     const blendSelect = screen.getByRole('combobox', { name: '图层混合模式' }) as HTMLSelectElement;
     fireEvent.change(blendSelect, { target: { value: 'multiply' } });
@@ -316,7 +340,6 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '新建手绘图层' }));
     expect(screen.getAllByText('手绘图层 2').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole('tab', { name: /图层/ }).getAttribute('aria-selected')).toBe('true');
 
     fireEvent.click(screen.getByRole('button', { name: '新建图层组' }));
     expect(screen.getAllByText('图层组 1').length).toBeGreaterThanOrEqual(1);
