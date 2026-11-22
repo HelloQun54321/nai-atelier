@@ -104,11 +104,11 @@ export const ComicToolRail: React.FC<ComicToolRailProps> = ({
         </React.Fragment>
       ))}
 
-      {/* PS 经典左下角前景色块：一键切换画笔/文字/贴纸主色 */}
-      <div className="ml-auto flex flex-none items-center pl-2 md:mt-auto md:ml-0 md:flex-col md:border-t md:border-gray-200 md:pt-2.5 md:pl-0 dark:md:border-gray-800">
+      {/* PS 经典左下角前景色块：高对比双环外框，深色主题下深黑主色同样清晰可见 */}
+      <div className="ml-auto flex flex-none items-center pl-2 md:mt-auto md:ml-0 md:flex-col md:border-t md:border-gray-200 md:pt-2.5 md:pl-0 dark:md:border-gray-700/80">
         <label
           title={t('前景色（画笔 / 文字 / 贴纸主色）')}
-          className="relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border-2 border-white shadow-sm ring-1 ring-gray-300 transition hover:scale-105 dark:border-gray-800 dark:ring-gray-600"
+          className="relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border-2 border-white/95 shadow-md ring-1 ring-gray-400/80 transition hover:scale-105 dark:border-slate-200/85 dark:ring-slate-500"
           style={{ backgroundColor: foregroundColor }}
         >
           <input

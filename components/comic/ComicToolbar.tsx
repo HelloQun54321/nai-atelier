@@ -135,10 +135,15 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
 }) => {
   useLanguage();
   const [pageMenuOpen, setPageMenuOpen] = useState(false);
+  const [bubbleShapeMenuOpen, setBubbleShapeMenuOpen] = useState(false);
   const [customW, setCustomW] = useState(String(draft.width));
   const [customH, setCustomH] = useState(String(draft.height));
   const [newTemplateName, setNewTemplateName] = useState('');
   const pageMenuBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (activeTool !== 'bubble') setBubbleShapeMenuOpen(false);
+  }, [activeTool]);
 
   useEffect(() => {
     setCustomW(String(draft.width));
@@ -290,32 +295,61 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
           </>
         )}
 
-        {activeTool === 'bubble' && (
-          <>
-            <span className="flex-none font-semibold text-gray-600 dark:text-gray-300">{t('气泡框形')}</span>
-            <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
-              {COMIC_BUBBLE_SHAPES.map(shape => (
+        {activeTool === 'bubble' && (() => {
+          const currentShape = COMIC_BUBBLE_SHAPES.find(s => s.id === defaultBubbleShape) || COMIC_BUBBLE_SHAPES[0];
+          return (
+            <>
+              <span className="flex-none font-semibold text-gray-600 dark:text-gray-300">{t('气泡框形')}</span>
+              <div className="relative flex-none">
                 <button
-                  key={shape.id}
                   type="button"
-                  title={t(shape.label)}
-                  onClick={() => onChangeDefaultBubbleStyle({ shape: shape.id })}
-                  className={`inline-flex flex-none items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium transition ${defaultBubbleShape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                  aria-expanded={bubbleShapeMenuOpen}
+                  aria-haspopup="listbox"
+                  onClick={() => setBubbleShapeMenuOpen(v => !v)}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-indigo-400/80 bg-indigo-50/70 px-2 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-100/70 dark:border-indigo-500/70 dark:bg-indigo-950/60 dark:text-indigo-200"
                 >
-                  <ComicBubbleShapeIcon shape={shape.id} className="h-4 w-5 flex-none" />
-                  <span>{t(shape.label)}</span>
+                  <ComicBubbleShapeIcon shape={currentShape.id} className="h-4 w-5 flex-none" />
+                  <span className="whitespace-nowrap">{t(currentShape.label)}</span>
+                  <ChevronDown className="h-3 w-3 flex-none opacity-75" aria-hidden="true" />
                 </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => onChangeDefaultBubbleStyle({ writingMode: defaultBubbleWritingMode === 'vertical' ? 'horizontal' : 'vertical' })}
-              className="flex-none rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-            >
-              {defaultBubbleWritingMode === 'vertical' ? t('默认竖排') : t('默认横排')}
-            </button>
-          </>
-        )}
+                {bubbleShapeMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setBubbleShapeMenuOpen(false)} />
+                    <div
+                      role="listbox"
+                      aria-label={t('选择默认气泡框形')}
+                      className="absolute left-0 top-full z-50 mt-1.5 grid w-72 grid-cols-4 gap-1 rounded-xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+                    >
+                      {COMIC_BUBBLE_SHAPES.map(shape => (
+                        <button
+                          key={shape.id}
+                          type="button"
+                          role="option"
+                          aria-selected={defaultBubbleShape === shape.id}
+                          onClick={() => {
+                            onChangeDefaultBubbleStyle({ shape: shape.id });
+                            setBubbleShapeMenuOpen(false);
+                          }}
+                          className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border px-1 py-1 text-[10px] font-medium transition ${defaultBubbleShape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/70 dark:text-indigo-200' : 'border-transparent text-gray-700 hover:border-gray-200 hover:bg-gray-50 dark:text-slate-200 dark:hover:border-gray-700 dark:hover:bg-gray-800'}`}
+                        >
+                          <ComicBubbleShapeIcon shape={shape.id} className="h-5 w-7" />
+                          <span className="w-full truncate text-center">{t(shape.label)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => onChangeDefaultBubbleStyle({ writingMode: defaultBubbleWritingMode === 'vertical' ? 'horizontal' : 'vertical' })}
+                className="flex-none whitespace-nowrap rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+              >
+                {defaultBubbleWritingMode === 'vertical' ? t('默认竖排') : t('默认横排')}
+              </button>
+            </>
+          );
+        })()}
 
         {activeTool === 'sticker' && (
           <>
@@ -385,7 +419,9 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
 
         {activeTool === 'select' && (
           <span className="truncate text-[11px] text-gray-400">
-            {t('选择 (V)：拖拽移动与调斜角 · 双击气泡/文字原地改字 · Delete 删除')}
+            {draft.creationMode === 'ai-page'
+              ? t('拖拽调框与锚点 · 双击气泡改字 · Delete 删除')
+              : t('拖拽调格 · 双击气泡/文字改字 · Delete 删除')}
           </span>
         )}
         {activeTool === 'hand' && (

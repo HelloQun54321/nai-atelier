@@ -46558,5 +46558,41 @@
     "Generating hard-locked comic page…",
     "コマ枠固定で全ページ生成中…",
     "패널 구도 고정으로 전체 페이지 생성 중…"
+  ],
+  "展开图层面板": [
+    "展開圖層面板",
+    "Expand layers panel",
+    "レイヤーパネルを展開",
+    "레이어 패널 펼치기"
+  ],
+  "收起图层面板": [
+    "收起圖層面板",
+    "Collapse layers panel",
+    "レイヤーパネルを折りたたむ",
+    "레이어 패널 접기"
+  ],
+  "收起为窄条": [
+    "收起為窄條",
+    "Collapse to narrow strip",
+    "スリムバーに折りたたむ",
+    "좁은 바로 접기"
+  ],
+  "选择默认气泡框形": [
+    "選擇預設氣泡框形",
+    "Select default bubble shape",
+    "デフォルトのフキダシ形状を選択",
+    "기본 말풍선 모양 선택"
+  ],
+  "拖拽调框与锚点 · 双击气泡改字 · Delete 删除": [
+    "拖曳調框與錨點 · 雙擊氣泡改字 · Delete 刪除",
+    "Drag frames & anchors · Double-click bubble to edit · Delete",
+    "枠・アンカー移動 · ダブルクリックでセリフ編集 · Delete削除",
+    "프레임/앵커 드래그 · 말풍선 더블클릭 편집 · Delete 삭제"
+  ],
+  "拖拽调格 · 双击气泡/文字改字 · Delete 删除": [
+    "拖曳調格 · 雙擊氣泡/文字改字 · Delete 刪除",
+    "Drag panels · Double-click bubble/text to edit · Delete",
+    "コマ移動 · ダブルクリックで文字編集 · Delete削除",
+    "패널 드래그 · 말풍선/텍스트 더블클릭 편집 · Delete 삭제"
   ]
 }

@@ -127,6 +127,7 @@ import { useConfirmDialog } from '../ConfirmDialog';
 import { ComicBookshelfModal } from './ComicBookshelfModal';
 import { ComicCanvas } from './ComicCanvas';
 import { ComicInspector, type ComicInspectorTab } from './ComicInspector';
+import { ComicLayersPanel } from './ComicLayersPanel';
 import { ComicToolRail } from './ComicToolRail';
 import { ComicToolbar } from './ComicToolbar';
 
@@ -252,6 +253,19 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const [inspectorOpen, setInspectorOpen] = useState(() => (
     typeof window !== 'undefined' ? window.innerWidth >= 768 : true
   ));
+  const [isDesktopWide, setIsDesktopWide] = useState(() => (
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
+  ));
+  const [layersDockCollapsed, setLayersDockCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const sync = () => setIsDesktopWide(mq.matches);
+    sync();
+    mq.addEventListener?.('change', sync);
+    return () => mq.removeEventListener?.('change', sync);
+  }, []);
   const [zoom, setZoom] = useState(0.62);
   const [exporting, setExporting] = useState(false);
   const [customTemplates, setCustomTemplates] = useState<ComicCustomTemplate[]>(() => loadCustomComicTemplates());
@@ -361,12 +375,12 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     setSessionTick(tick => tick + 1);
   }), []);
 
-  // 自动计算更舒展的画布初始缩放（让漫画页饱满居中成为视觉主角）
+  // 自动计算更舒展的画布初始缩放（底部预留 88px 避开悬浮缩放胶囊，让漫画纸底边完整清爽呈现）
   const fitCanvasToViewport = useCallback((targetW = draft.width, targetH = draft.height) => {
     const host = canvasWrapRef.current;
     if (!host) return;
-    const availW = Math.max(240, host.clientWidth - 44);
-    const availH = Math.max(240, host.clientHeight - 44);
+    const availW = Math.max(240, host.clientWidth - 48);
+    const availH = Math.max(240, host.clientHeight - 88);
     const ratio = Math.min(availW / targetW, availH / targetH, 1.25);
     setZoom(Math.max(0.25, Math.round(ratio * 100) / 100));
   }, [draft.width, draft.height]);
@@ -374,7 +388,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => fitCanvasToViewport());
     return () => window.cancelAnimationFrame(frame);
-  }, [fitCanvasToViewport]);
+  }, [fitCanvasToViewport, layersDockCollapsed, inspectorOpen]);
 
   const applyDraftChange = useCallback((updater: (current: ComicPageDraft) => ComicPageDraft, commit = true) => {
     dirtyBeforeServerLoadRef.current = true;
@@ -2665,6 +2679,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
           applyDraftChange(cur => ({ ...cur, creationMode }), true);
           setInspectorTab('panel');
           setInpaintDraft(null);
+          setSelection(creationMode === 'manual' && draft.panels[0] ? { kind: 'panel', id: draft.panels[0].id } : null);
         }}
         onSelectPaperPreset={handleSelectPaperPreset}
         onSetCustomPaperSize={handleSetCustomPaperSize}
@@ -2802,6 +2817,28 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
           />
         </div>
 
+        {/* 桌面端 PS 经典独立满高图层停靠列（与右侧属性栏并列，上下互不打架，可一键折叠成 36px 窄条） */}
+        {isDesktopWide && (
+          <div className={`hidden h-full flex-none overflow-hidden lg:flex ${layersDockCollapsed ? 'w-9' : 'w-[224px] xl:w-[236px]'}`}>
+            <ComicLayersPanel
+              draft={draft}
+              selection={selection}
+              collapsed={layersDockCollapsed}
+              dockMode="column"
+              onToggleCollapsed={() => setLayersDockCollapsed(c => !c)}
+              onSelectLayer={handleSelectLayer}
+              onUpdateLayerNode={handleUpdateLayerNode}
+              onReorderLayer={handleReorderLayer}
+              onCreateDrawingLayer={handleCreateDrawingLayer}
+              onImportImageLayer={file => void handleImportImageLayer(file)}
+              onCreateGroupLayer={handleCreateGroupLayer}
+              onDuplicateLayer={handleDuplicateLayer}
+              onMergeLayerDown={handleMergeLayerDown}
+              onDeleteLayer={handleDeleteLayer}
+            />
+          </div>
+        )}
+
         {!inspectorOpen && (
           <button
             type="button"
@@ -2820,7 +2857,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
               onClick={() => setInspectorOpen(false)}
               className="fixed inset-0 z-30 bg-black/35 backdrop-blur-[1px] md:hidden"
             />
-            <div className="fixed inset-x-0 bottom-0 z-40 flex h-[74dvh] flex-col overflow-hidden rounded-t-2xl border-t border-gray-200 shadow-2xl dark:border-gray-800 md:static md:z-auto md:h-full md:w-[376px] md:flex-none md:rounded-none md:border-t-0 md:shadow-none lg:w-[416px] xl:w-[440px]">
+            <div className="fixed inset-x-0 bottom-0 z-40 flex h-[74dvh] flex-col overflow-hidden rounded-t-2xl border-t border-gray-200 shadow-2xl dark:border-gray-800 md:static md:z-auto md:h-full md:w-[356px] md:flex-none md:rounded-none md:border-t-0 md:shadow-none lg:w-[344px] xl:w-[368px] 2xl:w-[404px]">
               <div className="appearance-panel flex flex-none items-center justify-between border-b border-gray-200/80 px-3.5 py-2 md:hidden dark:border-gray-800/80">
                 <span className="text-xs font-bold text-gray-800 dark:text-gray-100">{t('漫画属性与生图')}</span>
                 <button
@@ -2939,6 +2976,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
                   onDownloadFont={id => void handleDownloadFont(id)}
                   onUploadCustomFont={file => void handleUploadCustomFont(file)}
                   onDeleteFont={id => void handleDeleteFont(id)}
+                  hideDockedLayers={isDesktopWide}
                 />
               </div>
             </div>

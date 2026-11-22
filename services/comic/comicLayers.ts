@@ -102,8 +102,21 @@ export const syncComicLayerStack = (draft: ComicPageDraft): ComicPageDraft => {
     const key = `${node.kind}:${refId}`;
     if (seenKeys.has(key)) continue;
     seenKeys.add(key);
+    let syncedName = node.name;
+    if (node.kind === 'bubble') {
+      const b = draft.bubbles.find(item => item.id === refId);
+      const liveText = b?.text.trim().slice(0, 14) || '';
+      const isDefaultName = !syncedName.trim() || syncedName === '输入台词…' || syncedName === '空白气泡' || syncedName === '漫画气泡';
+      if (isDefaultName && liveText && liveText !== '输入台词…') syncedName = liveText;
+    } else if (node.kind === 'text') {
+      const txt = draft.texts.find(item => item.id === refId);
+      const liveText = txt?.text.trim().slice(0, 14) || '';
+      const isDefaultName = !syncedName.trim() || syncedName === '效果文字';
+      if (isDefaultName && liveText) syncedName = liveText;
+    }
     kept.push({
       ...node,
+      name: syncedName,
       refId,
       opacity: Number.isFinite(node.opacity) ? Math.max(0, Math.min(1, node.opacity)) : 1,
       blendMode: node.blendMode || 'normal',

@@ -37,9 +37,9 @@ export const ComicBubbleShapeIcon: React.FC<ComicBubbleShapeIconProps> = ({ shap
       <path
         d={model.bodyPath}
         fill="currentColor"
-        fillOpacity={0.08}
+        fillOpacity={0.14}
         stroke={model.strokeBody ? 'currentColor' : 'none'}
-        strokeWidth={2}
+        strokeWidth={2.4}
         strokeLinejoin="round"
       />
       {model.trailPaths?.map((tp, idx) => (
@@ -47,9 +47,9 @@ export const ComicBubbleShapeIcon: React.FC<ComicBubbleShapeIconProps> = ({ shap
           key={idx}
           d={tp}
           fill="currentColor"
-          fillOpacity={0.08}
+          fillOpacity={0.14}
           stroke="currentColor"
-          strokeWidth={1.6}
+          strokeWidth={2}
         />
       ))}
       {model.overrunLines?.map((seg, idx) => (

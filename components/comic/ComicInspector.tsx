@@ -159,6 +159,8 @@ interface ComicInspectorProps {
   onDownloadFont: (id: string) => void;
   onUploadCustomFont: (file: File) => void;
   onDeleteFont: (id: string) => void;
+  /** 桌面端 PS 双列停靠模式下由外层单独停靠满高图层栏，此处不再在下方二次分栏。 */
+  hideDockedLayers?: boolean;
 }
 
 const ANCHOR_META: Record<ComicAnchorKind, { label: string; dotClass: string; badgeClass: string }> = {
@@ -272,6 +274,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   onDownloadFont,
   onUploadCustomFont,
   onDeleteFont,
+  hideDockedLayers = false,
 }) => {
   useLanguage();
   const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
@@ -812,10 +815,11 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     const zoneId = createUuid();
                     const anchorId = createUuid();
                     const idx = breakouts.length + 1;
-                    const bx = 0.28 + ((idx - 1) % 3) * 0.06;
-                    const by = 0.24 + ((idx - 1) % 3) * 0.06;
-                    const bw = 0.42;
-                    const bh = 0.46;
+                    // 默认略偏左上错开页面正中，避免直接压在中心默认气泡上
+                    const bx = 0.16 + ((idx - 1) % 3) * 0.08;
+                    const by = 0.14 + ((idx - 1) % 3) * 0.08;
+                    const bw = 0.36;
+                    const bh = 0.42;
                     onUpdateAiPage(cur => ({
                       ...cur,
                       showGuideOverlay: true,
@@ -856,11 +860,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                           />
                           <span>{t('按画布分镜框硬锁版式（图生图）')}</span>
                         </label>
-                        {isLocked && (
-                          <span className="rounded bg-indigo-100/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300">
-                            {lockCfg.strength.toFixed(2)}
-                          </span>
-                        )}
                       </div>
 
                       {isLocked && (
@@ -926,6 +925,9 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                               onChange={e => onUpdateAiPage(cur => ({ ...cur, layoutLockStrength: Number(e.target.value) / 100 }), false)}
                               className="min-w-0 flex-1 accent-indigo-600"
                             />
+                            <span className="flex-none rounded bg-indigo-100/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-200">
+                              {lockCfg.strength.toFixed(2)}
+                            </span>
                             {aiPage.layoutLockStrength !== undefined && (
                               <button
                                 type="button"
@@ -962,7 +964,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                             <button
                               type="button"
                               onClick={addBreakoutZone}
-                              className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-900/60 dark:bg-gray-900 dark:text-rose-300"
+                              className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2 py-0.5 text-[10px] font-semibold text-white shadow-xs transition hover:bg-rose-500"
                             >
                               <Plus className="h-3 w-3" /> {t('破格前景块')}
                             </button>
@@ -1537,7 +1539,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                                             anchors: cur.anchors.map(a => a.id === anchor.id ? { ...a, bubbleShape: shape.id } : a),
                                           }), true);
                                         }}
-                                        className={`flex flex-col items-center rounded border px-1 py-0.5 text-[9px] transition ${(anchor.bubbleShape || 'soft') === shape.id ? 'border-amber-500 bg-white font-semibold text-amber-700 shadow-xs dark:bg-amber-950/60 dark:text-amber-200' : 'border-transparent bg-white/60 text-gray-600 hover:border-amber-300 dark:bg-gray-900/50 dark:text-gray-300'}`}
+                                        className={`flex flex-col items-center rounded border px-1 py-0.5 text-[9px] outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 ${(anchor.bubbleShape || 'soft') === shape.id ? 'border-amber-500 bg-white font-semibold text-amber-700 shadow-xs dark:border-amber-400 dark:bg-amber-950/70 dark:text-amber-100' : 'border-transparent bg-white/80 text-gray-700 hover:border-amber-300 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:border-amber-500/60'}`}
                                       >
                                         <ComicBubbleShapeIcon shape={shape.id} className="h-4 w-6" />
                                         <span className="w-full truncate text-center">{t(shape.label)}</span>
@@ -1587,7 +1589,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                               guidePanels: cur.guidePanels.map(item => item.id === gp.id ? { ...item, summary: e.target.value } : item),
                             }), false)}
                             placeholder={t('中文镜头剧情摘要')}
-                            className="min-w-0 flex-1 bg-transparent text-[11px] font-medium text-gray-700 outline-none dark:text-gray-200"
+                            className="min-w-0 flex-1 rounded border border-gray-200/80 bg-white px-1.5 py-0.5 text-[11px] font-medium text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
                           />
                         </div>
                         <input
@@ -2110,7 +2112,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                                             anchors: p.anchors.map(a => a.id === anchor.id ? { ...a, bubbleShape: shape.id } : a),
                                           }), true);
                                         }}
-                                        className={`flex flex-col items-center rounded border px-1 py-0.5 text-[9px] transition ${(anchor.bubbleShape || 'soft') === shape.id ? 'border-amber-500 bg-white font-semibold text-amber-700 shadow-xs dark:bg-amber-950/60 dark:text-amber-200' : 'border-transparent bg-white/60 text-gray-600 hover:border-amber-300 dark:bg-gray-900/50 dark:text-gray-300'}`}
+                                        className={`flex flex-col items-center rounded border px-1 py-0.5 text-[9px] outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 ${(anchor.bubbleShape || 'soft') === shape.id ? 'border-amber-500 bg-white font-semibold text-amber-700 shadow-xs dark:border-amber-400 dark:bg-amber-950/70 dark:text-amber-100' : 'border-transparent bg-white/80 text-gray-700 hover:border-amber-300 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:border-amber-500/60'}`}
                                       >
                                         <ComicBubbleShapeIcon shape={shape.id} className="h-4 w-6" />
                                         <span className="w-full truncate text-center">{t(shape.label)}</span>
@@ -2618,7 +2620,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       shape: shape.id,
                       hasTail: shape.supportsTail ? i.hasTail : false,
                     }), true)}
-                    className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border px-1.5 py-1 text-[10px] font-medium transition ${selectedBubble.shape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                    className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border px-1.5 py-1 text-[10px] font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 ${selectedBubble.shape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/70 dark:text-indigo-100' : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 dark:border-slate-700 dark:bg-slate-800/85 dark:text-slate-100 dark:hover:border-indigo-400'}`}
                   >
                     <ComicBubbleShapeIcon shape={shape.id} className="h-6 w-9" />
                     <span className="truncate">{t(shape.label)}</span>
@@ -3065,41 +3067,45 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
       )}
       </div>
 
-      {/* PS 上下分栏可拖拽分隔条 */}
-      {!layersCollapsed && (
-        <div
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label={t('调整图层面板高度')}
-          title={t('上下拖拽调整图层面板高度')}
-          onPointerDown={handleSplitterPointerDown}
-          className="group flex h-2 flex-none cursor-row-resize items-center justify-center border-t border-gray-200/90 bg-gray-50/70 transition hover:bg-indigo-100/80 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:bg-indigo-950/60"
-        >
-          <span className="h-0.5 w-8 rounded-full bg-gray-300 transition group-hover:bg-indigo-500 dark:bg-gray-700" />
-        </div>
-      )}
+      {/* 窄屏/移动抽屉回退：保留底部可折叠图层栏；桌面端由外层 PS 独立窄列满高停靠 */}
+      {!hideDockedLayers && (
+        <>
+          {!layersCollapsed && (
+            <div
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label={t('调整图层面板高度')}
+              title={t('上下拖拽调整图层面板高度')}
+              onPointerDown={handleSplitterPointerDown}
+              className="group flex h-2 flex-none cursor-row-resize items-center justify-center border-t border-gray-200/90 bg-gray-50/70 transition hover:bg-indigo-100/80 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:bg-indigo-950/60"
+            >
+              <span className="h-0.5 w-8 rounded-full bg-gray-300 transition group-hover:bg-indigo-500 dark:bg-gray-700" />
+            </div>
+          )}
 
-      {/* 下半区：常驻仿 Photoshop 图层面板 */}
-      <div
-        className="flex flex-none flex-col overflow-hidden"
-        style={{ height: layersCollapsed ? 34 : layersHeight }}
-      >
-        <ComicLayersPanel
-          draft={draft}
-          selection={selection}
-          collapsed={layersCollapsed}
-          onToggleCollapsed={() => setLayersCollapsed(c => !c)}
-          onSelectLayer={onSelectLayer}
-          onUpdateLayerNode={onUpdateLayerNode}
-          onReorderLayer={onReorderLayer}
-          onCreateDrawingLayer={onCreateDrawingLayer}
-          onImportImageLayer={onImportImageLayer}
-          onCreateGroupLayer={onCreateGroupLayer}
-          onDuplicateLayer={onDuplicateLayer}
-          onMergeLayerDown={onMergeLayerDown}
-          onDeleteLayer={onDeleteLayer}
-        />
-      </div>
+          <div
+            className="flex flex-none flex-col overflow-hidden"
+            style={{ height: layersCollapsed ? 36 : layersHeight }}
+          >
+            <ComicLayersPanel
+              draft={draft}
+              selection={selection}
+              collapsed={layersCollapsed}
+              dockMode="bottom"
+              onToggleCollapsed={() => setLayersCollapsed(c => !c)}
+              onSelectLayer={onSelectLayer}
+              onUpdateLayerNode={onUpdateLayerNode}
+              onReorderLayer={onReorderLayer}
+              onCreateDrawingLayer={onCreateDrawingLayer}
+              onImportImageLayer={onImportImageLayer}
+              onCreateGroupLayer={onCreateGroupLayer}
+              onDuplicateLayer={onDuplicateLayer}
+              onMergeLayerDown={onMergeLayerDown}
+              onDeleteLayer={onDeleteLayer}
+            />
+          </div>
+        </>
+      )}
 
       <HistoryImagePicker
         open={historyPickerOpen}

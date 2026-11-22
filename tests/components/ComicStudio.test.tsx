@@ -280,9 +280,29 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getByText('气泡预演')).toBeTruthy();
     expect(screen.getByRole('toolbar', { name: '气泡快捷编辑条' })).toBeTruthy();
 
+    // 双击画布上的气泡必须立刻弹出原地编辑文本框
+    fireEvent.doubleClick(screen.getByText('双击输入台词'));
+    const inlineBox = screen.getByRole('textbox', { name: '原地编辑文字' }) as HTMLTextAreaElement;
+    fireEvent.change(inlineBox, { target: { value: '原地改词成功' } });
+    fireEvent.keyDown(inlineBox, { key: 'Enter', ctrlKey: true });
+    expect(screen.getByText('原地改词成功')).toBeTruthy();
+
+    // 切到 AI 整页时，手动模式气泡快捷条不得悬空残留
+    fireEvent.click(screen.getByRole('button', { name: 'AI 整页' }));
+    expect(screen.queryByRole('toolbar', { name: '气泡快捷编辑条' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '手动逐格' }));
+    const bubbleTextEl = screen.getByText('原地改词成功');
+    fireEvent.pointerDown(bubbleTextEl, { button: 0, clientX: 200, clientY: 200 });
+    fireEvent.pointerUp(bubbleTextEl);
+
     // 一键转为正式矢量漫画气泡，立刻进入 PS 图层栈
     fireEvent.click(screen.getByRole('button', { name: '转为正式矢量气泡' }));
     expect(screen.getByText('当前对白气泡')).toBeTruthy();
+
+    // PS 独立停靠图层栏支持一键收起为窄条与展开，以及混合模式/不透明度/新建/删除图层
+    fireEvent.click(screen.getByRole('button', { name: '收起图层面板' }));
+    expect(screen.getByRole('button', { name: '展开图层面板' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '展开图层面板' }));
 
     // 常驻 PS 图层面板操作：新建手绘层、新建图层组、调混合模式与不透明度、复制与删除图层
     const blendSelect = screen.getByRole('combobox', { name: '图层混合模式' }) as HTMLSelectElement;

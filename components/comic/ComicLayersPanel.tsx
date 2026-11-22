@@ -12,9 +12,11 @@ import {
   FolderOpen,
   FolderPlus,
   ImagePlus,
+  Layers,
   LayoutGrid,
   Lock,
   Merge,
+  PanelRightClose,
   Plus,
   Sticker,
   Trash2,
@@ -41,6 +43,7 @@ interface ComicLayersPanelProps {
   draft: ComicPageDraft;
   selection: ComicSelection;
   collapsed: boolean;
+  dockMode?: 'column' | 'bottom';
   onToggleCollapsed: () => void;
   onSelectLayer: (node: ComicLayerNode) => void;
   onUpdateLayerNode: (layerId: string, updater: (node: ComicLayerNode) => ComicLayerNode, commit?: boolean) => void;
@@ -68,6 +71,7 @@ export const ComicLayersPanel: React.FC<ComicLayersPanelProps> = ({
   draft,
   selection,
   collapsed,
+  dockMode = 'column',
   onToggleCollapsed,
   onSelectLayer,
   onUpdateLayerNode,
@@ -215,49 +219,111 @@ export const ComicLayersPanel: React.FC<ComicLayersPanelProps> = ({
     );
   };
 
-  return (
-    <section
-      aria-label={t('PS 图层面板')}
-      className="appearance-surface flex min-h-0 flex-col border-t border-gray-200/90 dark:border-gray-800/90"
-    >
-      {/* 标题栏（一键折叠 / 展开） */}
-      <div className="flex flex-none items-center justify-between gap-2 border-b border-gray-200/70 px-3 py-1.5 dark:border-gray-800/70">
+  // 桌面端独立列折叠态：仿 PS 经典 36px 竖向图标窄条，点一下即可展开
+  if (dockMode === 'column' && collapsed) {
+    return (
+      <section
+        aria-label={t('PS 图层面板')}
+        className="appearance-panel flex h-full w-9 flex-none flex-col items-center border-l border-gray-200/90 bg-white/90 py-2.5 dark:border-gray-800/90 dark:bg-gray-900/90"
+      >
         <button
           type="button"
-          aria-expanded={!collapsed}
+          aria-expanded={false}
+          aria-label={t('展开图层面板')}
+          title={t('展开图层面板')}
           onClick={onToggleCollapsed}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-800 hover:text-indigo-600 dark:text-gray-100 dark:hover:text-indigo-300"
+          className="flex flex-col items-center gap-1.5 rounded-lg px-1 py-2 text-gray-600 transition hover:bg-indigo-50 hover:text-indigo-600 dark:text-gray-300 dark:hover:bg-indigo-950/50 dark:hover:text-indigo-300"
         >
-          {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          <span>{t('图层')}</span>
-          <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+          <Layers className="h-4 w-4" aria-hidden="true" />
+          <span className="text-[11px] font-bold tracking-wider" style={{ writingMode: 'vertical-rl' }}>
+            {t('图层')}
+          </span>
+          <span className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[9px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
             {stack.length}
           </span>
         </button>
-        {activeNode && !collapsed && (
-          <span className="max-w-44 truncate text-[10px] text-gray-400">
-            {activeNode.name}
-          </span>
+      </section>
+    );
+  }
+
+  return (
+    <section
+      aria-label={t('PS 图层面板')}
+      className={`flex h-full min-h-0 flex-col ${dockMode === 'column' ? 'appearance-panel border-l border-gray-200/90 bg-white/90 dark:border-gray-800/90 dark:bg-gray-900/90' : 'appearance-surface border-t border-gray-200/90 dark:border-gray-800/90'}`}
+    >
+      {/* 标题栏（一键折叠 / 展开） */}
+      <div className="flex h-10 flex-none items-center justify-between gap-2 border-b border-gray-200/80 px-2.5 dark:border-gray-800/80">
+        {dockMode === 'column' ? (
+          <>
+            <div className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-100">
+              <Layers className="h-3.5 w-3.5 flex-none text-indigo-500" aria-hidden="true" />
+              <span>{t('图层')}</span>
+              <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                {stack.length}
+              </span>
+            </div>
+            <button
+              type="button"
+              aria-expanded={true}
+              aria-label={t('收起图层面板')}
+              title={t('收起为窄条')}
+              onClick={onToggleCollapsed}
+              className="flex h-6 w-6 flex-none items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+            >
+              <PanelRightClose className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              aria-expanded={!collapsed}
+              onClick={onToggleCollapsed}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-800 hover:text-indigo-600 dark:text-gray-100 dark:hover:text-indigo-300"
+            >
+              {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              <span>{t('图层')}</span>
+              <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                {stack.length}
+              </span>
+            </button>
+            {activeNode && !collapsed && (
+              <span className="max-w-36 truncate text-[10px] text-gray-400">
+                {activeNode.name}
+              </span>
+            )}
+          </>
         )}
       </div>
 
       {!collapsed && (
         <>
-          {/* PS 顶部混合模式 + 不透明度 + 锁定条 */}
+          {/* PS 顶部混合模式 + 锁定 + 不透明度（双行紧凑布局，窄列也不挤滑块） */}
           {activeNode && (
-            <div className="flex flex-none items-center gap-2 border-b border-gray-200/70 px-3 py-1.5 text-[11px] dark:border-gray-800/70">
-              <select
-                aria-label={t('图层混合模式')}
-                value={activeNode.blendMode}
-                onChange={e => onUpdateLayerNode(activeNode.id, cur => ({ ...cur, blendMode: e.target.value as ComicBlendMode }), true)}
-                className="w-24 flex-none rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              >
-                {COMIC_BLEND_MODES.map(mode => (
-                  <option key={mode.id} value={mode.id}>{t(mode.label)}</option>
-                ))}
-              </select>
-              <label className="flex min-w-0 flex-1 items-center gap-1.5 text-gray-500 dark:text-gray-400">
-                <span className="flex-none">{t('不透明度')}</span>
+            <div className="flex flex-none flex-col gap-1.5 border-b border-gray-200/70 px-2.5 py-2 text-[11px] dark:border-gray-800/70">
+              <div className="flex items-center gap-1.5">
+                <select
+                  aria-label={t('图层混合模式')}
+                  value={activeNode.blendMode}
+                  onChange={e => onUpdateLayerNode(activeNode.id, cur => ({ ...cur, blendMode: e.target.value as ComicBlendMode }), true)}
+                  className="min-w-0 flex-1 rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                >
+                  {COMIC_BLEND_MODES.map(mode => (
+                    <option key={mode.id} value={mode.id}>{t(mode.label)}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  aria-label={activeNode.locked ? t('解锁当前图层') : t('锁定当前图层')}
+                  title={activeNode.locked ? t('解锁当前图层') : t('锁定当前图层')}
+                  onClick={() => onUpdateLayerNode(activeNode.id, cur => ({ ...cur, locked: !cur.locked }), true)}
+                  className={`flex h-6 w-6 flex-none items-center justify-center rounded transition ${activeNode.locked ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200'}`}
+                >
+                  {activeNode.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+              <label className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+                <span className="flex-none text-[10px]">{t('不透明度')}</span>
                 <input
                   type="range"
                   aria-label={t('图层不透明度')}
@@ -272,15 +338,6 @@ export const ComicLayersPanel: React.FC<ComicLayersPanelProps> = ({
                   {Math.round(activeNode.opacity * 100)}%
                 </span>
               </label>
-              <button
-                type="button"
-                aria-label={activeNode.locked ? t('解锁当前图层') : t('锁定当前图层')}
-                title={activeNode.locked ? t('解锁当前图层') : t('锁定当前图层')}
-                onClick={() => onUpdateLayerNode(activeNode.id, cur => ({ ...cur, locked: !cur.locked }), true)}
-                className={`rounded p-1 transition ${activeNode.locked ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200'}`}
-              >
-                {activeNode.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
-              </button>
             </div>
           )}
 
@@ -445,18 +502,17 @@ export const ComicLayersPanel: React.FC<ComicLayersPanelProps> = ({
             })}
           </div>
 
-          {/* PS 经典底部图层动作工具条 */}
-          <div className="flex flex-none items-center justify-between gap-1 border-t border-gray-200/80 px-2 py-1 dark:border-gray-800/80">
+          {/* PS 经典底部图层动作工具条（6 枚统一尺寸图标按钮，左右均衡对齐） */}
+          <div className="flex flex-none items-center justify-between gap-1 border-t border-gray-200/80 px-2 py-1.5 dark:border-gray-800/80">
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
                 aria-label={t('新建手绘图层')}
                 title={t('新建手绘图层')}
                 onClick={onCreateDrawingLayer}
-                className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-gray-600 hover:bg-gray-100 hover:text-indigo-600 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-indigo-600 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
               >
                 <Plus className="h-3.5 w-3.5" />
-                <span className="hidden xl:inline">{t('手绘层')}</span>
               </button>
               <input
                 ref={imageInputRef}
@@ -474,7 +530,7 @@ export const ComicLayersPanel: React.FC<ComicLayersPanelProps> = ({
                 aria-label={t('导入图片图层')}
                 title={t('导入图片图层（支持网点/特效/叠加图）')}
                 onClick={() => imageInputRef.current?.click()}
-                className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-gray-600 hover:bg-gray-100 hover:text-indigo-600 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-indigo-600 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
               >
                 <ImagePlus className="h-3.5 w-3.5" />
               </button>
@@ -483,7 +539,7 @@ export const ComicLayersPanel: React.FC<ComicLayersPanelProps> = ({
                 aria-label={t('新建图层组')}
                 title={t('新建图层组（文件夹）')}
                 onClick={() => onCreateGroupLayer(activeNode && activeNode.kind !== 'panels' ? activeNode.id : undefined)}
-                className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-gray-600 hover:bg-gray-100 hover:text-indigo-600 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-indigo-600 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
               >
                 <FolderPlus className="h-3.5 w-3.5" />
               </button>

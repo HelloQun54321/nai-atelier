@@ -128,10 +128,10 @@ type DragAction =
   | { kind: 'stroke'; drawingLayerId: string; stroke: ComicStroke };
 
 type InlineEditState =
-  | { kind: 'bubble'; id: string; value: string }
-  | { kind: 'text'; id: string; value: string }
-  | { kind: 'ai-anchor-bubble'; anchorId: string; value: string }
-  | { kind: 'panel-anchor-bubble'; panelId: string; anchorId: string; value: string }
+  | { kind: 'bubble'; id: string; value: string; openedAt?: number }
+  | { kind: 'text'; id: string; value: string; openedAt?: number }
+  | { kind: 'ai-anchor-bubble'; anchorId: string; value: string; openedAt?: number }
+  | { kind: 'panel-anchor-bubble'; panelId: string; anchorId: string; value: string; openedAt?: number }
   | null;
 
 const blendModeToCss = (mode: ComicBlendMode): React.CSSProperties['mixBlendMode'] =>
@@ -395,11 +395,42 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   useLanguage();
   const scrollRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const inlineTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastTapRef = useRef<{ key: string; time: number; x: number; y: number } | null>(null);
   const [drag, setDrag] = useState<DragAction | null>(null);
   const [snapGuide, setSnapGuide] = useState<{ x?: number; y?: number }>({});
   const [spacePressed, setSpacePressed] = useState(false);
   const [inlineEdit, setInlineEdit] = useState<InlineEditState>(null);
   const [shapePopoverOpen, setShapePopoverOpen] = useState(false);
+
+  const openInlineEdit = (next: Exclude<InlineEditState, null>) => {
+    setDrag(null);
+    setInlineEdit({ ...next, openedAt: Date.now() });
+  };
+
+  useEffect(() => {
+    if (!inlineEdit) return;
+    const frame = window.requestAnimationFrame(() => {
+      const el = inlineTextareaRef.current;
+      if (el) {
+        el.focus();
+        el.select();
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [inlineEdit?.kind, inlineEdit && 'id' in inlineEdit ? inlineEdit.id : '', inlineEdit && 'anchorId' in inlineEdit ? inlineEdit.anchorId : '']);
+
+  // 检测画布内元素双击（避免 pointerdown 拖拽捕获吞掉原生 dblclick）
+  const checkDoubleTap = (key: string, clientX: number, clientY: number): boolean => {
+    const prev = lastTapRef.current;
+    const now = Date.now();
+    if (prev && prev.key === key && now - prev.time < 420 && Math.hypot(clientX - prev.x, clientY - prev.y) < 12) {
+      lastTapRef.current = null;
+      return true;
+    }
+    lastTapRef.current = { key, time: now, x: clientX, y: clientY };
+    return false;
+  };
 
   const syncedDraft = useMemo(() => syncComicLayerStack(draft), [draft]);
   const layerStack = useMemo(() => syncedDraft.layerStack || [], [syncedDraft.layerStack]);
@@ -1051,7 +1082,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
         };
       }
     }
-    if (selection?.kind === 'ai-anchor') {
+    if (selection?.kind === 'ai-anchor' && draft.creationMode === 'ai-page') {
       const a = draft.aiPage.anchors.find(item => item.id === selection.id && item.kind === 'bubble');
       if (a) {
         return {
@@ -1068,7 +1099,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
         };
       }
     }
-    if (selection?.kind === 'panel-anchor') {
+    if (selection?.kind === 'panel-anchor' && draft.creationMode === 'manual') {
       const p = draft.panels.find(item => item.id === selection.panelId);
       const a = p?.anchors.find(item => item.id === selection.id && item.kind === 'bubble');
       if (p && a) {
@@ -1089,7 +1120,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       }
     }
     return null;
-  }, [bubbleMap, draft.aiPage.anchors, draft.panels, selection]);
+  }, [bubbleMap, draft.aiPage.anchors, draft.creationMode, draft.panels, selection]);
 
   // 所见即所得原地编辑目标定位（支持正式矢量气泡、自由文字、AI/手动气泡锚点）
   const inlineEditTarget = useMemo(() => {
@@ -1192,7 +1223,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
         onPointerCancel={finishDrag}
         className={`relative min-h-0 flex-1 overflow-auto ${isPanningMode ? (drag?.kind === 'pan-viewport' ? 'cursor-grabbing' : 'cursor-grab') : activeTool === 'zoom' ? 'cursor-zoom-in' : ''}`}
       >
-        <div className="flex h-max min-h-full w-max min-w-full items-center justify-center p-6 pb-16 md:p-10 md:pb-16">
+        <div className="flex h-max min-h-full w-max min-w-full items-center justify-center px-6 pt-5 pb-20 md:px-8 md:pt-6 md:pb-20">
           <div
             ref={stageRef}
             role="application"
@@ -1444,8 +1475,8 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                           strokeWidth={isSel ? 3.5 : 2.5}
                                           strokeDasharray="10 5"
                                         />
-                                        <rect x={bx + 8} y={by + 8} width={82} height={20} rx={5} fill="rgba(225, 29, 72, 0.9)" />
-                                        <text x={bx + 49} y={by + 18} textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700} fill="#ffffff">
+                                        <rect x={bx + 10} y={by + 10} width={108} height={26} rx={6} fill="rgba(225, 29, 72, 0.92)" />
+                                        <text x={bx + 64} y={by + 23} textAnchor="middle" dominantBaseline="central" fontSize={14} fontWeight={700} fill="#ffffff">
                                           {t('破格前景')} {idx + 1}
                                         </text>
                                       </g>
@@ -1795,16 +1826,21 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                       className={eff.locked ? 'pointer-events-none' : 'pointer-events-auto cursor-move'}
                       onDoubleClick={event => {
                         if (eff.locked) return;
+                        event.preventDefault();
                         event.stopPropagation();
                         onSelect({ kind: 'bubble', id: bubble.id });
-                        setInlineEdit({ kind: 'bubble', id: bubble.id, value: bubble.text });
+                        openInlineEdit({ kind: 'bubble', id: bubble.id, value: bubble.text });
                       }}
                       onPointerDown={event => {
                         if (isPanningMode || activeTool !== 'select' || eff.locked) return;
                         event.stopPropagation();
-                        const pt = toNormalizedPoint(event.clientX, event.clientY);
                         onSelect({ kind: 'bubble', id: bubble.id });
-                        stageRef.current?.setPointerCapture?.(event.pointerId);
+                        if (event.detail >= 2 || checkDoubleTap(`bubble:${bubble.id}`, event.clientX, event.clientY)) {
+                          event.preventDefault();
+                          openInlineEdit({ kind: 'bubble', id: bubble.id, value: bubble.text });
+                          return;
+                        }
+                        const pt = toNormalizedPoint(event.clientX, event.clientY);
                         setDrag({ kind: 'move-bubble', id: bubble.id, dx: pt.x - bubble.x, dy: pt.y - bubble.y });
                       }}
                     >
@@ -2015,16 +2051,21 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                       className={eff.locked ? 'pointer-events-none' : 'pointer-events-auto cursor-move'}
                       onDoubleClick={event => {
                         if (eff.locked) return;
+                        event.preventDefault();
                         event.stopPropagation();
                         onSelect({ kind: 'text', id: item.id });
-                        setInlineEdit({ kind: 'text', id: item.id, value: item.text });
+                        openInlineEdit({ kind: 'text', id: item.id, value: item.text });
                       }}
                       onPointerDown={event => {
                         if (isPanningMode || activeTool !== 'select' || eff.locked) return;
                         event.stopPropagation();
-                        const pt = toNormalizedPoint(event.clientX, event.clientY);
                         onSelect({ kind: 'text', id: item.id });
-                        stageRef.current?.setPointerCapture?.(event.pointerId);
+                        if (event.detail >= 2 || checkDoubleTap(`text:${item.id}`, event.clientX, event.clientY)) {
+                          event.preventDefault();
+                          openInlineEdit({ kind: 'text', id: item.id, value: item.text });
+                          return;
+                        }
+                        const pt = toNormalizedPoint(event.clientX, event.clientY);
                         setDrag({ kind: 'move-text', id: item.id, dx: pt.x - item.x, dy: pt.y - item.y });
                       }}
                     >
@@ -2134,21 +2175,26 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                         opacity={0.88}
                         className="pointer-events-auto cursor-move"
                         onDoubleClick={event => {
+                          event.preventDefault();
                           event.stopPropagation();
                           onSelect({ kind: 'ai-anchor', id: anchor.id });
-                          setInlineEdit({ kind: 'ai-anchor-bubble', anchorId: anchor.id, value: anchor.bubbleText || '' });
+                          openInlineEdit({ kind: 'ai-anchor-bubble', anchorId: anchor.id, value: anchor.bubbleText || '' });
                         }}
                         onPointerDown={event => {
                           if (isPanningMode || activeTool !== 'select') return;
                           event.stopPropagation();
                           onSelect({ kind: 'ai-anchor', id: anchor.id });
-                          stageRef.current?.setPointerCapture?.(event.pointerId);
+                          if (event.detail >= 2 || checkDoubleTap(`ai-anchor:${anchor.id}`, event.clientX, event.clientY)) {
+                            event.preventDefault();
+                            openInlineEdit({ kind: 'ai-anchor-bubble', anchorId: anchor.id, value: anchor.bubbleText || '' });
+                            return;
+                          }
                           setDrag({ kind: 'move-ai-anchor', anchorId: anchor.id });
                         }}
                       >
                         <path
                           d={model.bodyPath}
-                          fill="rgba(255, 251, 235, 0.9)"
+                          fill="rgba(255, 251, 235, 0.94)"
                           stroke={isSelected ? '#4f46e5' : '#d97706'}
                           strokeWidth={isSelected ? 3.5 : 2.5}
                           strokeDasharray="8 5"
@@ -2164,7 +2210,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 textAlign: 'center',
-                                color: textVal ? '#111827' : '#9ca3af',
+                                color: textVal ? '#111827' : '#78350f',
                                 fontSize: `${fittedSize}px`,
                                 fontWeight: 700,
                                 lineHeight: 1.22,
@@ -2178,8 +2224,8 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                             </div>
                           </foreignObject>
                         )}
-                        <rect x={cx - rx} y={cy - ry - 20} width={56} height={18} rx={4} fill={isSelected ? '#4f46e5' : '#d97706'} />
-                        <text x={cx - rx + 28} y={cy - ry - 11} textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={700} fill="#ffffff">
+                        <rect x={cx - rx} y={cy - ry - 26} width={76} height={24} rx={5} fill={isSelected ? '#4f46e5' : '#d97706'} />
+                        <text x={cx - rx + 38} y={cy - ry - 14} textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700} fill="#ffffff">
                           {t('AI 气泡')}
                         </text>
                         {isSelected && (
@@ -2231,21 +2277,26 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                         opacity={0.88}
                         className="pointer-events-auto cursor-move"
                         onDoubleClick={event => {
+                          event.preventDefault();
                           event.stopPropagation();
                           onSelect({ kind: 'panel-anchor', panelId: selectedPanel.id, id: anchor.id });
-                          setInlineEdit({ kind: 'panel-anchor-bubble', panelId: selectedPanel.id, anchorId: anchor.id, value: anchor.bubbleText || '' });
+                          openInlineEdit({ kind: 'panel-anchor-bubble', panelId: selectedPanel.id, anchorId: anchor.id, value: anchor.bubbleText || '' });
                         }}
                         onPointerDown={event => {
                           if (isPanningMode || activeTool !== 'select') return;
                           event.stopPropagation();
                           onSelect({ kind: 'panel-anchor', panelId: selectedPanel.id, id: anchor.id });
-                          stageRef.current?.setPointerCapture?.(event.pointerId);
+                          if (event.detail >= 2 || checkDoubleTap(`panel-anchor:${selectedPanel.id}:${anchor.id}`, event.clientX, event.clientY)) {
+                            event.preventDefault();
+                            openInlineEdit({ kind: 'panel-anchor-bubble', panelId: selectedPanel.id, anchorId: anchor.id, value: anchor.bubbleText || '' });
+                            return;
+                          }
                           setDrag({ kind: 'move-anchor', panelId: selectedPanel.id, anchorId: anchor.id });
                         }}
                       >
                         <path
                           d={model.bodyPath}
-                          fill="rgba(255, 251, 235, 0.9)"
+                          fill="rgba(255, 251, 235, 0.94)"
                           stroke={isSelected ? '#4f46e5' : '#d97706'}
                           strokeWidth={isSelected ? 3.5 : 2.5}
                           strokeDasharray="8 5"
@@ -2261,7 +2312,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 textAlign: 'center',
-                                color: textVal ? '#111827' : '#9ca3af',
+                                color: textVal ? '#111827' : '#78350f',
                                 fontSize: `${fittedSize}px`,
                                 fontWeight: 700,
                                 lineHeight: 1.22,
@@ -2275,8 +2326,8 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                             </div>
                           </foreignObject>
                         )}
-                        <rect x={cx - rx} y={cy - ry - 20} width={56} height={18} rx={4} fill={isSelected ? '#4f46e5' : '#d97706'} />
-                        <text x={cx - rx + 28} y={cy - ry - 11} textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={700} fill="#ffffff">
+                        <rect x={cx - rx} y={cy - ry - 26} width={76} height={24} rx={5} fill={isSelected ? '#4f46e5' : '#d97706'} />
+                        <text x={cx - rx + 38} y={cy - ry - 14} textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700} fill="#ffffff">
                           {t('气泡预演')}
                         </text>
                         {isSelected && (
@@ -2660,9 +2711,21 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
             {activeFloatingBubble && !inlineEdit && !drag && activeTool === 'select' && (() => {
               const fb = activeFloatingBubble;
               const anchorTop = Math.max(0.03, fb.y - fb.height / 2);
-              const showBelow = anchorTop < 0.14;
+              const showBelow = anchorTop < 0.18;
               const barTopPct = showBelow ? Math.min(0.95, fb.y + fb.height / 2) * 100 : anchorTop * 100;
-              const barLeftPct = Math.min(82, Math.max(18, fb.x * 100));
+              // 靠画纸左侧时左对齐、靠右侧时右对齐，彻底防止悬浮工具条超出画布左右边界被裁切
+              const alignMode = fb.x < 0.36 ? 'left' : fb.x > 0.64 ? 'right' : 'center';
+              const translateX = alignMode === 'left' ? '0%' : alignMode === 'right' ? '0%' : '-50%';
+              const translateY = showBelow ? '16px' : 'calc(-100% - 34px)';
+              const posStyle: React.CSSProperties = {
+                top: `${barTopPct}%`,
+                ...(alignMode === 'left'
+                  ? { left: '4px' }
+                  : alignMode === 'right'
+                    ? { right: '4px' }
+                    : { left: `${fb.x * 100}%` }),
+                transform: `translate(${translateX}, ${translateY})`,
+              };
               const shapeMeta = getBubbleShapeMeta(fb.shape);
 
               const updateShape = (shape: ComicBubbleShape) => {
@@ -2725,32 +2788,28 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                 <div
                   role="toolbar"
                   aria-label={t('气泡快捷编辑条')}
-                  style={{
-                    left: `${barLeftPct}%`,
-                    top: `${barTopPct}%`,
-                    transform: showBelow ? 'translate(-50%, 10px)' : 'translate(-50%, calc(-100% - 14px))',
-                  }}
+                  style={posStyle}
                   onPointerDown={e => e.stopPropagation()}
-                  className="appearance-panel absolute z-30 flex items-center gap-1 rounded-xl border border-gray-200/95 bg-white/95 px-1.5 py-1 shadow-xl backdrop-blur dark:border-gray-700/90 dark:bg-gray-900/95"
+                  className="appearance-panel absolute z-35 flex w-max items-center gap-1 whitespace-nowrap rounded-xl border border-gray-200/95 bg-white/95 px-1.5 py-1 shadow-xl backdrop-blur dark:border-gray-700/90 dark:bg-gray-900/95"
                 >
-                  <div className="relative">
+                  <div className="relative flex-none">
                     <button
                       type="button"
                       aria-label={t('切换气泡样式')}
                       onClick={() => setShapePopoverOpen(v => !v)}
-                      className="flex h-7 items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-1.5 text-[11px] font-semibold text-gray-700 hover:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                      className="flex h-7 flex-none items-center gap-1 whitespace-nowrap rounded-lg border border-gray-200 bg-gray-50 px-1.5 text-[11px] font-semibold text-gray-700 hover:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
                     >
-                      <ComicBubbleShapeIcon shape={fb.shape} className="h-4 w-5 text-gray-800 dark:text-gray-100" />
+                      <ComicBubbleShapeIcon shape={fb.shape} className="h-4 w-5 flex-none text-gray-800 dark:text-slate-100" />
                       <span className="max-w-16 truncate">{t(shapeMeta.label)}</span>
                     </button>
                     {shapePopoverOpen && (
-                      <div className="appearance-panel absolute left-0 top-full z-40 mt-1.5 grid w-64 grid-cols-4 gap-1 rounded-xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-gray-700 dark:bg-gray-900/98">
+                      <div className="absolute left-0 top-full z-50 mt-1.5 grid w-64 grid-cols-4 gap-1 rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
                         {COMIC_BUBBLE_SHAPES.map(meta => (
                           <button
                             key={meta.id}
                             type="button"
                             onClick={() => updateShape(meta.id)}
-                            className={`flex flex-col items-center rounded-lg border p-1 transition ${fb.shape === meta.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-transparent text-gray-600 hover:border-gray-200 hover:bg-gray-50 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800'}`}
+                            className={`flex flex-col items-center rounded-lg border p-1 transition ${fb.shape === meta.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-transparent text-gray-700 hover:border-gray-200 hover:bg-gray-50 dark:text-slate-200 dark:hover:border-gray-700 dark:hover:bg-gray-800'}`}
                           >
                             <ComicBubbleShapeIcon shape={meta.id} className="h-5 w-7" />
                             <span className="mt-0.5 w-full truncate text-center text-[9px] font-medium">{t(meta.label)}</span>
@@ -2765,7 +2824,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                     aria-label={t('切换横排竖排')}
                     title={t('切换横排竖排')}
                     onClick={toggleWritingMode}
-                    className="flex h-7 items-center rounded-lg px-1.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                    className="flex h-7 flex-none items-center whitespace-nowrap rounded-lg px-2 text-[11px] font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
                   >
                     {fb.writingMode === 'vertical' ? t('竖排') : t('横排')}
                   </button>
@@ -2776,13 +2835,13 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                       aria-label={t('切换气泡尾巴')}
                       title={t('切换气泡尾巴')}
                       onClick={() => onUpdateBubble?.(fb.id, cur => ({ ...cur, hasTail: !cur.hasTail }), true)}
-                      className={`flex h-7 items-center rounded-lg px-1.5 text-[11px] font-semibold transition ${fb.hasTail ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}
+                      className={`flex h-7 flex-none items-center whitespace-nowrap rounded-lg px-2 text-[11px] font-semibold transition ${fb.hasTail ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}
                     >
                       {t('尾巴')}
                     </button>
                   )}
 
-                  <div className="flex items-center rounded-lg border border-gray-200/80 dark:border-gray-700/80">
+                  <div className="flex flex-none items-center rounded-lg border border-gray-200/80 dark:border-gray-700/80">
                     <button
                       type="button"
                       aria-label={t('缩小字号')}
@@ -2811,9 +2870,9 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                           ? { kind: 'ai-anchor', anchorId: fb.id }
                           : { kind: 'panel-anchor', panelId: fb.panelId, anchorId: fb.id },
                       )}
-                      className="flex h-7 items-center gap-1 rounded-lg bg-amber-500 px-2 text-[11px] font-semibold text-white hover:bg-amber-600"
+                      className="flex h-7 flex-none items-center gap-1 whitespace-nowrap rounded-lg bg-amber-600 px-2 text-[11px] font-semibold text-white hover:bg-amber-500"
                     >
-                      <MessageCircle className="h-3 w-3" />
+                      <MessageCircle className="h-3 w-3 flex-none" />
                       <span>{t('转正式气泡')}</span>
                     </button>
                   )}
@@ -2857,12 +2916,20 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                 className="absolute z-35 flex items-center justify-center"
               >
                 <textarea
+                  ref={inlineTextareaRef}
                   autoFocus
                   aria-label={t('原地编辑文字')}
                   value={inlineEdit.value}
                   placeholder={t('输入台词…')}
                   onChange={e => setInlineEdit({ ...inlineEdit, value: e.target.value })}
-                  onBlur={commitInlineEdit}
+                  onBlur={() => {
+                    // 忽略刚打开 180ms 内由触发双击本身产生的瞬时失焦，避免刚弹出就被立刻关掉
+                    if (inlineEdit.openedAt && Date.now() - inlineEdit.openedAt < 180) {
+                      window.requestAnimationFrame(() => inlineTextareaRef.current?.focus());
+                      return;
+                    }
+                    commitInlineEdit();
+                  }}
                   onKeyDown={e => {
                     if (e.key === 'Escape') { e.preventDefault(); setInlineEdit(null); }
                     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); commitInlineEdit(); }
