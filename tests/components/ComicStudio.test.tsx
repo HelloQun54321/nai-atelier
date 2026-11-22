@@ -78,8 +78,8 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     fireEvent.click(within(pageStrip).getByRole('button', { name: /新建一页/ }));
     expect(within(pageStrip).getByText('P02')).toBeTruthy();
 
-    // 点「下一步：分镜与生图」进入步骤 2「分镜生图」
-    fireEvent.click(screen.getByRole('button', { name: /下一步：分镜与生图/ }));
+    // 切到步骤 2「分镜生图」
+    fireEvent.click(screen.getByRole('tab', { name: /分镜生图/ }));
     expect(screen.getByRole('tab', { name: /分镜生图/ }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('button', { name: /手动逐格/ }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: /生成当前格/ })).toBeTruthy();

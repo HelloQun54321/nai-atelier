@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowDownToLine,
-  ArrowRight,
   ArrowUp,
   ArrowUpToLine,
   Check,
@@ -2406,7 +2405,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
       {/* ==================== 步骤 1：画风设定 ==================== */}
       {activeTab === 'style' && (
-        <>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#eef1f7] p-3 pb-6 text-xs dark:bg-gray-950/60">
           {/* 卡片 1：载入风格串 + 全页公共正负画风词 */}
           <div className="space-y-3 rounded-xl border border-gray-200/90 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-800 dark:bg-gray-900">
@@ -2718,17 +2716,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
             </div>
           </details>
         </div>
-        <div className="flex-none border-t border-gray-200/80 bg-white/95 p-3 dark:border-gray-800 dark:bg-gray-900/95">
-          <button
-            type="button"
-            onClick={() => onSelectTab('panel')}
-            className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow-xs transition hover:bg-indigo-500"
-          >
-            <span>{t('下一步：分镜与生图')}</span>
-            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-        </div>
-        </>
       )}
 
       {/* ==================== 标签 3：嵌字与图层 ==================== */}
