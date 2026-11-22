@@ -2405,7 +2405,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
       {/* ==================== 步骤 1：画风设定 ==================== */}
       {activeTab === 'style' && (
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#eef1f7] p-3 pb-6 text-xs dark:bg-gray-950/60">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[var(--nai-canvas,#eef1f7)] p-3 pb-6 text-xs dark:bg-[var(--nai-canvas,#0d0f14)]">
           {/* 卡片 1：载入风格串 + 全页公共正负画风词 */}
           <div className="space-y-3 rounded-xl border border-gray-200/90 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-800 dark:bg-gray-900">
             <div className="space-y-1.5">

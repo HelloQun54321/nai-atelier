@@ -636,7 +636,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               <button type="button" onClick={() => { resetFilters(); setSearchTerm(''); if (type === 'style' && !isGuest) selectFolder('*'); }} className="mobile-touch mt-2 px-3 text-xs font-semibold text-indigo-600 dark:text-indigo-400">{t("清除筛选")}</button>
             </WorkspacePageState>
           ) : (
-            <WorkspacePageState className={syncSelection.open ? "py-8 text-center text-gray-500 dark:text-gray-400" : "appearance-group text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700"}>
+            <WorkspacePageState className={syncSelection.open ? "py-8 text-center text-gray-500 dark:text-gray-400" : "appearance-group text-center py-20 bg-white/75 dark:bg-gray-850/60 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700"}>
               <p className="text-gray-500 text-sm mb-4">{syncSelection.open ? syncSelection.view === 'pending' ? t("没有符合筛选条件的待同步风格串，可在「挑选风格串」中加入。") : syncSelection.view === 'records' ? t("没有符合筛选条件的同步记录，接收确认后会显示在这里。") : t("没有符合筛选条件的风格串。") : t("暂无数据")}</p>
               {!isGuest && !selecting && !syncSelection.open && <button onClick={() => setIsModalOpen(true)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium">{t(createLabel)}</button>}
             </WorkspacePageState>

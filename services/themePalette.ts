@@ -12,7 +12,7 @@ export type ThemePalettes = Partial<Record<'light' | 'dark', Partial<ThemePalett
 export const THEME_PALETTE_KEYS = ['canvas', 'sidebar', 'toolbar', 'panel', 'text', 'mutedText', 'border'] as const;
 export const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 export const DEFAULT_THEME_PALETTES: Record<'light' | 'dark', ThemePalette> = {
-  light: { canvas: '#f3f5fa', sidebar: '#fbfcff', toolbar: '#ffffff', panel: '#ffffff', text: '#171e2d', mutedText: '#58667d', border: '#b4bccf' },
+  light: { canvas: '#eef1f7', sidebar: '#fbfcff', toolbar: '#ffffff', panel: '#ffffff', text: '#171e2d', mutedText: '#58667d', border: '#b4bccf' },
   dark: { canvas: '#0d0f14', sidebar: '#12151c', toolbar: '#12151c', panel: '#171b24', text: '#f0f2f8', mutedText: '#939db5', border: '#2f3647' },
 };
 

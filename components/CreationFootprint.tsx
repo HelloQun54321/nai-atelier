@@ -87,7 +87,7 @@ const OPERATION_LABELS: Record<string, string> = {
 };
 
 const StatCard: React.FC<{ label: string; value: React.ReactNode; detail?: React.ReactNode; icon?: React.ReactNode; title?: string }> = ({ label, value, detail, icon, title }) => (
-  <div className="appearance-card appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+  <div className="appearance-card appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-850">
     <div className="flex items-center justify-between gap-2 text-xs font-medium text-gray-500 dark:text-gray-400">
       <span className="truncate">{label}</span>
       {icon && <span className="flex h-7 w-7 flex-none items-center justify-center rounded-lg bg-indigo-50 text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-300 [&>svg]:h-3.5 [&>svg]:w-3.5">{icon}</span>}
@@ -111,7 +111,7 @@ const RankingRow: React.FC<{ name: string; images: number; lastAt: number; onCli
 );
 
 const SectionCard: React.FC<{ title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }> = ({ title, hint, action, children, className = '' }) => (
-  <section className={`appearance-card appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 ${className}`}>
+  <section className={`appearance-card appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-850 ${className}`}>
     <div className="mb-3 flex items-start justify-between gap-3">
       <div className="min-w-0">
         <h2 className="text-sm font-bold text-gray-800 dark:text-gray-100">{title}</h2>
@@ -598,9 +598,9 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
           {/* 统计与 Key 用量各自返回：统计未到时先铺同形状的首屏骨架，避免上面一块空 spinner 与下面已显示的内容割裂。 */}
           {!error && !stats && <>
             <div aria-hidden="true" className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-              {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[120px] animate-pulse rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900" />)}
+              {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[120px] animate-pulse rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-850" />)}
             </div>
-            <div className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+            <div className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-850">
               <div className="flex h-[260px] items-center justify-center"><InlineSpinner label={t('正在读取创作记录…')} /></div>
             </div>
           </>}
@@ -609,7 +609,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
             <div className="flex flex-wrap items-center gap-3"><span className="min-w-0 flex-1">{error}</span><button type="button" onClick={() => setReload(value => value + 1)} className="mobile-touch rounded-lg border border-current px-3 py-1 text-xs font-semibold">{t('重试')}</button><button type="button" onClick={() => onOpenHistory({ sort: 'newest' })} className="mobile-touch text-xs font-semibold underline">{t('打开历史')}</button></div>
           </div>}
 
-          {!error && !loading && !hasData && <div className="appearance-group rounded-2xl border border-gray-200 bg-white py-14 dark:border-gray-800 dark:bg-gray-900">
+          {!error && !loading && !hasData && <div className="appearance-group rounded-2xl border border-gray-200 bg-white py-14 dark:border-gray-800 dark:bg-gray-850">
             <EmptyState icon={<Footprints className="h-8 w-8" />} title={t('还没有创作记录')} hint={t('生成并保存作品后，这里会记录你的创作节奏、常用画师与风格串。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" onClick={onOpenLab}>{t('去实验室创作')}</ToolbarButton><ToolbarButton onClick={() => onOpenHistory({ sort: 'newest' })}>{t('打开历史')}</ToolbarButton></div>} />
           </div>}
           {!hasData && keyUsage}

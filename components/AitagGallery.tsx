@@ -618,7 +618,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             loadDetail(work);
           }
         }}
-        className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative text-left rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 flex flex-col bg-white dark:bg-gray-950 ${selectionFocusEnabled && selectedId !== null && !isSelected ? 'brightness-[.7]' : ''} ${
+        className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative text-left rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 flex flex-col bg-white dark:bg-gray-850 ${selectionFocusEnabled && selectedId !== null && !isSelected ? 'brightness-[.7]' : ''} ${
           isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/30' : 'border-gray-200 dark:border-gray-800 hover:border-indigo-400'
         }`}
       >
