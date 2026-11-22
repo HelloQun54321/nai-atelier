@@ -1,4 +1,5 @@
 ## 2026-11-22
+- 修复 Danbooru 详情预览、放大及复制／下载因跨域跳转而失败（经本机网关返回图片字节并避开旧跳转缓存）。
 - 开源协议自 `v1.227.13` 起由 MIT 切换为 **GNU AGPL-3.0（AGPL-3.0-only）**：
   - 根目录 `LICENSE` 更新为标准 GNU AGPL-3.0 全文，新增 `NOTICE` 完整保留上游 `kirafishy/NaiPromptManager` 与早期贡献者的原 MIT 版权及许可声明；
   - 同步更新 `package.json`、桌面端打包清单（`scripts/build-desktop.mjs` 一并打包 `NOTICE`）以及五语 README 协议徽章与说明。

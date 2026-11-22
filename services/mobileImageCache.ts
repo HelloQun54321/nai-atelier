@@ -439,6 +439,8 @@ export const getMobileOriginalUrl = (source: string) => {
   try {
     const url = new URL(source, getBaseOrigin());
     if (url.origin === getBaseOrigin()) return source;
+    // 更换 Danbooru 原图缓存地址，避免命中旧版跨域重定向。
+    if (url.hostname === 'cdn.donmai.us') return buildMediaUrl(source, 'original') + '&relay=1';
   } catch {
     return source;
   }
