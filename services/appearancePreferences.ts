@@ -4,7 +4,7 @@ import { applyThemeColors, HEX_COLOR_PATTERN, normalizeThemePalettes, ThemePalet
 import { applyThemeDetails, normalizeThemeDetails, resolveThemeDetails, ThemeDetails } from './themeDetails';
 import { appearanceValues, validateAppearancePreset } from './appearancePresets';
 import { applyThemeBackground, normalizeThemeBackground, normalizeWorkspaceBackgrounds, resolveWorkspaceBackground, type ThemeBackground, type WorkspaceBackgrounds } from './themeBackground';
-export { APPEARANCE_FORMAT_VERSION, appearanceValues, appearanceMatchesPreset, serializeAppearancePresets, validateAppearancePreset, readAppearancePresetImport, parseAppearancePresetsFromJson } from './appearancePresets';
+export { APPEARANCE_FORMAT_VERSION, THEME_STYLE_KEYS, appearanceValues, appearancePresetStyleValues, appearanceMatchesPreset, serializeAppearancePresets, validateAppearancePreset, readAppearancePresetImport, parseAppearancePresetsFromJson } from './appearancePresets';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type DesignTheme = 'nai-atelier';
@@ -244,7 +244,20 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
   const activePresetId = typeof input.activePresetId === 'string' && input.activePresetId.trim()
     ? input.activePresetId.trim()
     : DEFAULT_ACTIVE_APPEARANCE_PRESET_ID;
-  const details = normalizeThemeDetails(input.details);
+  const rawDetails = normalizeThemeDetails(input.details);
+  // 旧版内置 Cupertino 默认曾固化 12/22/14 圆角，升级后交还给通用「圆角语言」，避免切换或修改圆角被覆盖。
+  const details = activePresetId === DEFAULT_ACTIVE_APPEARANCE_PRESET_ID
+    && rawDetails?.controlRadius === 12
+    && rawDetails?.panelRadius === 22
+    && rawDetails?.cardRadius === 14
+    ? normalizeThemeDetails((() => {
+      const next = { ...rawDetails };
+      delete next.controlRadius;
+      delete next.panelRadius;
+      delete next.cardRadius;
+      return next;
+    })())
+    : rawDetails;
   const rawAccentColor = typeof input.accentColor === 'string' && HEX_COLOR_PATTERN.test(input.accentColor)
     ? input.accentColor.toLowerCase()
     : DEFAULT_APPEARANCE_PREFERENCES.accentColor;

@@ -29,7 +29,7 @@ export function useCollectorAppearance(preferences: AppearancePreferences, isDar
           kind: value?.material ?? 'frosted', opacity: value?.globalOpacity ?? value?.sidebarOpacity ?? value?.opacity ?? .85,
           highlight: value?.highlight ?? .3, borderOpacity: value?.borderOpacity ?? .26,
           controlShadow: value?.controlShadow ?? .25,
-          controlRadius: value?.controlRadius ?? (corners === 'soft' ? 14.4 : corners === 'sharp' ? 5.6 : 12), panelRadius: value?.panelRadius ?? 24,
+          controlRadius: value?.controlRadius ?? (corners === 'soft' ? 14.4 : corners === 'sharp' ? 5.6 : 12), panelRadius: value?.panelRadius ?? (corners === 'soft' ? 24 : corners === 'sharp' ? 8 : 16),
           blur: value?.blur ?? 22, saturation: value?.saturation ?? 130, refraction: value?.material === 'glass' ? value.refraction ?? 0 : 0,
         }];
       })) as CollectorAppearance['materials'] } : {}) };

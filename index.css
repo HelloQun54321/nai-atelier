@@ -741,9 +741,9 @@ html[data-surfaces='translucent'] .appearance-panel {
   backdrop-filter: blur(22px) saturate(130%);
 }
 
-html[data-density='comfortable'] { --spacing: 0.275rem; --workspace-toolbar-height: 60px; }
-html[data-density='standard'] { --spacing: 0.25rem; --workspace-toolbar-height: 56px; }
-html[data-density='compact'] { --spacing: 0.225rem; --workspace-toolbar-height: 52px; }
+html[data-density='comfortable'] { --spacing: 0.275rem; --workspace-toolbar-height: 60px; --nai-sidebar-item-height: 42px; --nai-sidebar-item-gap: 4px; }
+html[data-density='standard'] { --spacing: 0.25rem; --workspace-toolbar-height: 56px; --nai-sidebar-item-height: 36px; --nai-sidebar-item-gap: 3px; }
+html[data-density='compact'] { --spacing: 0.225rem; --workspace-toolbar-height: 52px; --nai-sidebar-item-height: 30px; --nai-sidebar-item-gap: 2px; }
 
 html[data-corners='soft'] {
   --radius-xs: 0.25rem;
@@ -755,6 +755,7 @@ html[data-corners='soft'] {
   --radius-3xl: 2rem;
   --workspace-control-radius: 0.9rem;
   --workspace-card-radius: 1.25rem;
+  --nai-panel-radius: 1.5rem;
 }
 
 html[data-corners='standard'] {
@@ -767,6 +768,7 @@ html[data-corners='standard'] {
   --radius-3xl: 1.5rem;
   --workspace-control-radius: 0.75rem;
   --workspace-card-radius: 1rem;
+  --nai-panel-radius: 1rem;
 }
 
 html[data-corners='sharp'] {
@@ -779,6 +781,7 @@ html[data-corners='sharp'] {
   --radius-3xl: 0.7rem;
   --workspace-control-radius: 0.35rem;
   --workspace-card-radius: 0.5rem;
+  --nai-panel-radius: 0.5rem;
 }
 
 /* Tailwind 的无后缀 rounded 默认写死 .25rem，显式绑定小圆角变量。 */

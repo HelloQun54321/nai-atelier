@@ -138,9 +138,9 @@ describe('可分享的高级主题能力', () => {
     expect(root.dataset.motion).toBe('off');
     applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, true);
     expect(parseFloat(root.style.fontSize)).toBeCloseTo(DEFAULT_APPEARANCE_PREFERENCES.details?.fontSize ?? 16);
-    // 默认主题定义了控件高度，清除自定义覆盖后回到该默认尺寸。
-  expect(parseFloat(root.style.getPropertyValue('--nai-control-height'))).toBeCloseTo(resolveThemeDetails(DEFAULT_APPEARANCE_PREFERENCES.details, true)?.controlHeight ?? 0);
-    expect(parseFloat(root.style.getPropertyValue('--workspace-control-radius'))).toBeCloseTo(resolveThemeDetails(DEFAULT_APPEARANCE_PREFERENCES.details, true)?.controlRadius ?? 0);
+    // 默认主题定义了控件高度，清除自定义覆盖后回到该默认尺寸，圆角交还给通用圆角语言。
+    expect(parseFloat(root.style.getPropertyValue('--nai-control-height'))).toBeCloseTo(resolveThemeDetails(DEFAULT_APPEARANCE_PREFERENCES.details, true)?.controlHeight ?? 0);
+    expect(root.style.getPropertyValue('--workspace-control-radius')).toBe('');
     expect(root.dataset.themeDetails).toBe(DEFAULT_APPEARANCE_PREFERENCES.details ? 'true' : undefined);
     expect(root.style.getPropertyValue('--nai-glass-refraction')).toBe(String(DEFAULT_APPEARANCE_PREFERENCES.details?.refraction ?? ''));
   });

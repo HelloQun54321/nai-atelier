@@ -49,6 +49,7 @@ import {
   InterfaceDensity,
   MotionStyle,
   appearanceMatchesPreset,
+  appearancePresetStyleValues,
   appearanceValues,
   readAppearancePresetImport,
   serializeAppearancePresets,
@@ -599,7 +600,14 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   };
 
   const resetThemeCustomization = () => {
-    applyPreset(DEFAULT_ACTIVE_APPEARANCE_PRESET);
+    updateAppearance({
+      ...appearanceValues(DEFAULT_ACTIVE_APPEARANCE_PRESET),
+      activePresetId: DEFAULT_ACTIVE_APPEARANCE_PRESET.id,
+    });
+    if (DEFAULT_ACTIVE_APPEARANCE_PRESET.themeMode !== themeMode) {
+      setThemeMode(DEFAULT_ACTIVE_APPEARANCE_PRESET.themeMode);
+    }
+    notify?.('已恢复出厂默认外观', 'success');
   };
 
   const customPresets = appearancePreferences.customPresets || [];
@@ -616,13 +624,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   };
 
   const applyPreset = (preset: AppearancePreset) => {
+    // 切换主题预设只切换配色、强调色与材质细节，保留用户通用的明暗模式、密度、圆角、字号、动效与图库开关。
     updateAppearance({
-      ...appearanceValues(preset),
+      ...appearancePresetStyleValues(preset),
       activePresetId: preset.id,
     });
-    if (preset.themeMode !== themeMode) {
-      setThemeMode(preset.themeMode);
-    }
     notify?.('已应用外观预设「' + preset.name + '」', 'success');
   };
 
@@ -651,7 +657,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       tone: 'danger',
     });
     if (confirmed) {
-      if (!await themeLibrary.change(() => sharedAppearancePresets.remove(preset.id), current => current.activePresetId === preset.id ? { ...appearanceValues(DEFAULT_ACTIVE_APPEARANCE_PRESET), activePresetId: DEFAULT_ACTIVE_APPEARANCE_PRESET.id } : {})) return;
+      if (!await themeLibrary.change(() => sharedAppearancePresets.remove(preset.id), current => current.activePresetId === preset.id ? { ...appearancePresetStyleValues(DEFAULT_ACTIVE_APPEARANCE_PRESET), activePresetId: DEFAULT_ACTIVE_APPEARANCE_PRESET.id } : {})) return;
       notify?.('已删除外观预设「' + preset.name + '」', 'success');
     }
   };
@@ -1080,14 +1086,24 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   </div>
                 </div>
 
-                <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="mt-4">
+                  <div className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">{t("表面材质")}</div>
+                  <AppearanceOptionGroup value={appearancePreferences.surfaces} onChange={value => updateAppearance({ surfaces: value as SurfaceStyle })} options={[{ value: 'solid', label: t("实色") }, { value: 'translucent', label: t("透光") }]} />
+                </div>
+
+                <div className="mt-4 border-t border-gray-200/70 pt-3 dark:border-gray-700/70">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-gray-700 dark:text-gray-200">{t("通用显示偏好")}</span>
+                    <span className="text-micro text-gray-500 dark:text-gray-400">{t("切换主题预设时保持不变")}</span>
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-2">
                   <div><div className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">{t("界面密度")}</div><AppearanceOptionGroup value={appearancePreferences.density} onChange={value => updateAppearance({ density: value as InterfaceDensity })} options={[{ value: 'comfortable', label: t("舒展") }, { value: 'standard', label: t("标准") }, { value: 'compact', label: t("紧凑") }]} /></div>
                   <div><div className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">{t("圆角语言")}</div><AppearanceOptionGroup value={appearancePreferences.corners} onChange={value => updateAppearance({ corners: value as CornerStyle })} options={[{ value: 'soft', label: t("柔和") }, { value: 'standard', label: t("标准") }, { value: 'sharp', label: t("锐利") }]} /></div>
-                  <div><div className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">{t("表面材质")}</div><AppearanceOptionGroup value={appearancePreferences.surfaces} onChange={value => updateAppearance({ surfaces: value as SurfaceStyle })} options={[{ value: 'solid', label: t("实色") }, { value: 'translucent', label: t("透光") }]} /></div>
                   <div><div className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">{t("字号")}</div><AppearanceOptionGroup value={appearancePreferences.fontScale} onChange={value => updateAppearance({ fontScale: value as FontScale })} options={[{ value: 'small', label: t("偏小") }, { value: 'standard', label: t("标准") }, { value: 'large', label: t("偏大") }]} /></div>
-                  <div className="lg:col-span-2">
+                  <div>
                     <div className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">{t("动效")}</div>
                     <AppearanceOptionGroup value={appearancePreferences.motion} onChange={value => updateAppearance({ motion: value as MotionStyle })} options={[{ value: 'full', label: t("完整") }, { value: 'reduced', label: t("减少") }, { value: 'off', label: t("关闭动效") }]} />
+                  </div>
                   </div>
                 </div>
 

@@ -135,17 +135,18 @@ const SettingsHarness: React.FC<SettingsHarnessProps> = ({ open = true, onClose 
 const waitThemeLibrary = () => waitFor(() => expect((screen.getByRole('button', { name: '导入' }) as HTMLButtonElement).disabled).toBe(false));
 
 describe('GlobalSettings', () => {
-  it('无自定义主题且共享库离线时仍可选用内置苹果主题，锁定原件并保留生图偏好', async () => {
+  it('无自定义主题且共享库离线时仍可选用内置苹果主题，锁定原件并保留通用偏好与生图偏好', async () => {
     themeFixture.fail = true;
     const changed = vi.fn<(preferences: AppearancePreferences) => void>();
-    render(React.createElement(SettingsHarness, { initialAppearancePreferences: { gallerySelectionFocus: false, galleryFrostedCaption: false, galleryHoverFloat: false, forceEmptySeed: true, continuousGenerationEnabled: false }, onAppearancePreferencesChange: changed }));
+    render(React.createElement(SettingsHarness, { initialAppearancePreferences: { corners: 'sharp', density: 'compact', gallerySelectionFocus: false, galleryFrostedCaption: false, galleryHoverFloat: false, forceEmptySeed: true, continuousGenerationEnabled: false }, onAppearancePreferencesChange: changed }));
     const glass = screen.getByRole('button', { name: '应用外观预设：Cupertino Liquid Glass' });
     expect(glass.textContent).toContain('内置锁定');
     expect(glass.textContent).not.toContain('石墨炭黑');
     expect(screen.queryByRole('button', { name: '删除「Cupertino Liquid Glass」' })).toBeNull();
     expect(screen.queryByRole('button', { name: '重命名「Cupertino Liquid Glass」' })).toBeNull();
     fireEvent.click(glass);
-    expect(changed.mock.lastCall?.[0]).toMatchObject({ activePresetId: 'builtin-cupertino-liquid-glass', gallerySelectionFocus: true, galleryFrostedCaption: true, galleryHoverFloat: true, forceEmptySeed: true, continuousGenerationEnabled: false, details: { material: 'glass' } });
+    expect(changed.mock.lastCall?.[0]).toMatchObject({ activePresetId: 'builtin-cupertino-liquid-glass', corners: 'sharp', density: 'compact', gallerySelectionFocus: false, galleryFrostedCaption: false, galleryHoverFloat: false, forceEmptySeed: true, continuousGenerationEnabled: false, details: { material: 'glass' } });
+    expect(changed.mock.lastCall?.[0].details?.panelRadius).toBeUndefined();
     expect(glass.getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: '强调色：紫罗兰' }));
     expect(screen.getByText('当前外观已修改')).toBeTruthy();
@@ -228,8 +229,11 @@ describe('GlobalSettings', () => {
     fireEvent.click(hover);
     fireEvent.click(focus);
     expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
+    // 图库三开关属于通用显示偏好：切换主题预设时保持不变，只有恢复出厂默认外观才会一起重置。
     fireEvent.click(screen.getByRole('button', { name: '应用外观预设：安静卡片' }));
-    expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: false, galleryHoverFloat: false, gallerySelectionFocus: false });
+    expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
+    fireEvent.click(caption);
+    expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: false });
     fireEvent.click(screen.getByRole('button', { name: '恢复出厂默认外观' }));
     expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
   });
@@ -938,16 +942,18 @@ describe('GlobalSettings', () => {
     expect(changed.mock.lastCall?.[0].customPresets[0].palette).toMatchObject({ light: { canvas: '#fff4dd' } });
   });
 
-  it('删除当前主题真正恢复默认外观，其余主题保留', async () => {
+  it('删除当前主题回退默认主题风格并保留通用显示偏好与其余主题', async () => {
     const changed = vi.fn<(preferences: AppearancePreferences) => void>();
     const { DEFAULT_ACTIVE_APPEARANCE_PRESET } = await import('../../services/builtinAppearancePresets');
+    const { appearancePresetStyleValues } = await import('../../services/appearancePreferences');
     const preset = { ...BUILTIN_APPEARANCE_PRESET, id: 'paper', name: '纸张', isBuiltin: false, themeMode: 'dark' as const, accentColor: '#14b8a6', palette: { dark: { canvas: '#211c19' } } };
-    render(React.createElement(SettingsHarness, { initialAppearancePreferences: { ...appearanceValues(preset), activePresetId: preset.id, customPresets: [preset, { ...preset, id: 'other', name: '保留主题' }] }, onAppearancePreferencesChange: changed }));
+    render(React.createElement(SettingsHarness, { initialAppearancePreferences: { ...appearanceValues(preset), corners: 'standard', activePresetId: preset.id, customPresets: [preset, { ...preset, id: 'other', name: '保留主题' }] }, onAppearancePreferencesChange: changed }));
     await waitThemeLibrary();
     fireEvent.click(screen.getByRole('button', { name: '删除「纸张」' }));
     fireEvent.click(await screen.findByRole('button', { name: '删除预设' }));
     await waitFor(() => expect(changed.mock.lastCall?.[0].activePresetId).toBe('builtin-cupertino-liquid-glass'));
-    expect(appearanceValues(changed.mock.lastCall![0])).toEqual(appearanceValues(DEFAULT_ACTIVE_APPEARANCE_PRESET));
+    expect(appearancePresetStyleValues(changed.mock.lastCall![0])).toEqual(appearancePresetStyleValues(DEFAULT_ACTIVE_APPEARANCE_PRESET));
+    expect(changed.mock.lastCall?.[0].corners).toBe('standard');
     expect(changed.mock.lastCall?.[0].customPresets.map(item => item.name)).toEqual(['保留主题']);
     expect(screen.getByRole('button', { name: '应用外观预设：Cupertino Liquid Glass' }).getAttribute('aria-pressed')).toBe('true');
   });
@@ -982,9 +988,13 @@ describe('GlobalSettings', () => {
     await waitFor(() => expect(changed.mock.lastCall?.[0].customPresets[0]?.details).toMatchObject({ controlHeight: 38, controlRadius: 999, material: 'glass' }));
     fireEvent.click(screen.getByRole('button', { name: '锐利' }));
     expect(changed.mock.lastCall?.[0].details?.controlRadius).toBeUndefined();
+    // 切换主题预设不覆盖通用圆角语言，也不把预设里的圆角硬覆盖强加回来。
     fireEvent.click(screen.getByRole('button', { name: '应用外观预设：能力回归' }));
-    expect(changed.mock.lastCall?.[0].details?.controlRadius).toBe(999);
+    expect(changed.mock.lastCall?.[0].corners).toBe('sharp');
+    expect(changed.mock.lastCall?.[0].details?.controlRadius).toBeUndefined();
+    expect(changed.mock.lastCall?.[0].details?.controlHeight).toBe(38);
     fireEvent.click(screen.getByRole('button', { name: '恢复出厂默认外观' }));
+    expect(changed.mock.lastCall?.[0].corners).toBe('soft');
     expect(changed.mock.lastCall?.[0].details?.material).toBe('glass');
     expect(changed.mock.lastCall?.[0].details?.controlHeight).toBe(36);
     expect(changed.mock.lastCall?.[0].customPresets).toHaveLength(1);

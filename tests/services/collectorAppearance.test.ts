@@ -93,8 +93,8 @@ describe('悬浮窗外观同步', () => {
     const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: initial } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(JSON.parse(fetchMock.mock.lastCall![1].body).materials).toEqual({
-      light: { kind: 'glass', opacity: .54, highlight: .38, borderOpacity: .28, controlRadius: 12, panelRadius: 22, blur: 22, saturation: 105, refraction: 8, controlShadow: .12 },
-      dark: { kind: 'glass', opacity: .38, highlight: .22, borderOpacity: .24, controlRadius: 12, panelRadius: 22, blur: 22, saturation: 135, refraction: 8, controlShadow: .1 },
+      light: { kind: 'glass', opacity: .54, highlight: .38, borderOpacity: .28, controlRadius: 14.4, panelRadius: 24, blur: 22, saturation: 105, refraction: 8, controlShadow: .12 },
+      dark: { kind: 'glass', opacity: .38, highlight: .22, borderOpacity: .24, controlRadius: 14.4, panelRadius: 24, blur: 22, saturation: 135, refraction: 8, controlShadow: .1 },
     });
     view.rerender({ preferences: { ...initial, details: { ...initial.details, light: { ...initial.details?.light, globalOpacity: 0, highlight: .5, blur: 0, saturation: 180, refraction: 24 } } } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));

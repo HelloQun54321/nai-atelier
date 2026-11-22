@@ -6,14 +6,47 @@ import { normalizeThemeBackground } from './themeBackground';
 export const APPEARANCE_FORMAT_VERSION = 3;
 
 const APPEARANCE_KEYS = ['accentColor', 'themeMode', 'density', 'corners', 'surfaces', 'motion', 'fontScale', 'galleryFrostedCaption', 'galleryHoverFloat', 'galleryPointerTilt', 'gallerySelectionFocus', 'palette', 'details', 'background'] as const;
+export const THEME_STYLE_KEYS = ['accentColor', 'surfaces', 'palette', 'details', 'background'] as const;
+const stripGeneralRadiusDetails = (input: ThemeDetails | undefined): ThemeDetails | undefined => {
+  const details = normalizeThemeDetails(input);
+  if (!details) return undefined;
+  const next: ThemeDetails = { ...details };
+  delete next.controlRadius;
+  delete next.panelRadius;
+  delete next.cardRadius;
+  for (const mode of ['light', 'dark'] as const) {
+    if (!next[mode]) continue;
+    const variant = { ...next[mode] };
+    delete variant.controlRadius;
+    delete variant.panelRadius;
+    delete variant.cardRadius;
+    if (Object.keys(variant).length) next[mode] = variant;
+    else delete next[mode];
+  }
+  return normalizeThemeDetails(next);
+};
 export const appearanceValues = (value: AppearancePreset | AppearancePreferences): Pick<AppearancePreset, typeof APPEARANCE_KEYS[number]> => ({
   ...Object.fromEntries(APPEARANCE_KEYS.map(key => [key, value[key]])),
   palette: normalizeThemePalettes(value.palette),
   details: normalizeThemeDetails(value.details),
   background: normalizeThemeBackground(value.background),
 }) as Pick<AppearancePreset, typeof APPEARANCE_KEYS[number]>;
+/** 主题预设专属风格字段：切换预设时仅应用配色、强调色与材质细节，保留用户通用的明暗、密度、圆角、字号、动效与图库开关。 */
+export const appearancePresetStyleValues = (value: AppearancePreset | AppearancePreferences): Pick<AppearancePreset, typeof THEME_STYLE_KEYS[number]> => ({
+  accentColor: value.accentColor,
+  surfaces: value.surfaces,
+  palette: normalizeThemePalettes(value.palette),
+  details: stripGeneralRadiusDetails(value.details),
+  background: normalizeThemeBackground(value.background),
+});
 export const appearanceMatchesPreset = (preferences: AppearancePreferences, preset: AppearancePreset): boolean =>
-  JSON.stringify(appearanceValues(preferences)) === JSON.stringify(appearanceValues(preset));
+  JSON.stringify({
+    accentColor: preferences.accentColor,
+    surfaces: preferences.surfaces,
+    palette: normalizeThemePalettes(preferences.palette),
+    details: normalizeThemeDetails(preferences.details),
+    background: normalizeThemeBackground(preferences.background),
+  }) === JSON.stringify(appearancePresetStyleValues(preset));
 
 export const serializeAppearancePresets = (presets: AppearancePreset[]): string => JSON.stringify({
   version: APPEARANCE_FORMAT_VERSION,

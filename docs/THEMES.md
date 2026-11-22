@@ -1,6 +1,6 @@
 # 制作和分享设计主题
 
-在「全局设置 → 外观与显示」可实时调整强调色、密度、圆角、材质、字号、动效、明暗双版配色、工作区背景及玻璃光学细节。「另存当前主题」新建预设，「保存修改」覆盖自定义预设；内置「Cupertino Liquid Glass」（新安装与恢复出厂默认的深色基准）与「NAI Atelier 默认」（经典实色）原件锁定，可另存副本或导出分享。给外部 AI 生成主题可直接复制 [THEME_AI_PROMPT.md](./THEME_AI_PROMPT.md)，界面交互约定见 [PRODUCT_DECISIONS.md](./PRODUCT_DECISIONS.md)。
+在「全局设置 → 外观与显示」可实时调整强调色、表面材质、明暗双版配色、工作区背景及玻璃光学细节；明暗模式、界面密度、圆角语言、字号、动效与图库展示开关为通用显示偏好，切换主题预设时保持不变（不因预设自带圆角或模式而突改）。「另存当前主题」新建预设，「保存修改」覆盖自定义预设；内置「Cupertino Liquid Glass」（新安装与恢复出厂默认的深色基准）与「NAI Atelier 默认」（经典实色）原件锁定，可另存副本或导出分享。给外部 AI 生成主题可直接复制 [THEME_AI_PROMPT.md](./THEME_AI_PROMPT.md)，界面交互约定见 [PRODUCT_DECISIONS.md](./PRODUCT_DECISIONS.md)。
 
 ## 示例与基础结构
 

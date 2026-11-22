@@ -368,12 +368,13 @@ describe('appearance preferences', () => {
     expect(readAppearancePresetImport(JSON.stringify([BUILTIN_APPEARANCE_PRESET]))[0].isBuiltin).toBeUndefined();
   });
 
-  it('修改外观才标为修改，非外观偏好不影响主题身份，配色键顺序不影响比较', () => {
+  it('修改主题风格才标为修改，通用显示偏好与非外观偏好不影响主题身份，配色键顺序不影响比较', () => {
     const factory = { ...BUILTIN_APPEARANCE_PRESET, ...appearanceValues(DEFAULT_APPEARANCE_PREFERENCES), id: 'builtin-cupertino-liquid-glass', name: 'Cupertino Liquid Glass' };
     expect(appearanceMatchesPreset(DEFAULT_APPEARANCE_PREFERENCES, factory)).toBe(true);
     expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, forceEmptySeed: true }, factory)).toBe(true);
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, themeMode: 'light', density: 'compact', corners: 'sharp', fontScale: 'small', motion: 'off', galleryFrostedCaption: false }, factory)).toBe(true);
     expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, accentColor: '#ffffff' }, factory)).toBe(false);
-    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, themeMode: 'light' }, factory)).toBe(false);
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, surfaces: 'solid' }, factory)).toBe(false);
     expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, palette: { light: { panel: '#ffffff', text: '#112233' } } }, { ...factory, palette: { light: { text: '#112233', panel: '#ffffff' } } })).toBe(true);
   });
 
