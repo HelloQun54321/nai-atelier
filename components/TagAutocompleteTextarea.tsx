@@ -1115,7 +1115,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 if (mutedHere) nodes.push(...mutedHere.map(mutedUnit));
                 if (!item.groupId) {
                   const selected = selectedTagIds.has(item.id);
-                  const warningReason = warningTags?.get(item.lookupTag);
+                  const warningReason = deleteMode ? warningTags?.get(item.lookupTag) : undefined;
                   nodes.push(
                     <div
                       role="button" tabIndex={0} data-agent-interaction="double_click" onKeyDown={selectUnitWithKeyboard}
@@ -1128,16 +1128,16 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                         return next;
                       })}
                       key={item.id}
-                      className={`relative inline-flex min-w-0 max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors ${catalogEntries.has(item.lookupTag) ? 'pr-7' : ''} ${deleteMode ? 'hover:border-red-400' : muteMode ? 'hover:border-amber-400' : warningReason ? 'hover:border-red-500' : 'hover:border-[var(--nai-accent)]'} ${selected
+                      className={`relative inline-flex min-w-0 max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors ${catalogEntries.has(item.lookupTag) ? 'pr-7' : ''} ${deleteMode ? 'hover:border-red-400' : muteMode ? 'hover:border-amber-400' : 'hover:border-[var(--nai-accent)]'} ${selected
                         ? deleteMode ? 'border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
                           : muteMode ? 'border-amber-400 bg-amber-50 dark:border-amber-500 dark:bg-amber-950/40'
                             : 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
                         : warningReason
-                          ? 'border-red-300 bg-red-50/90 dark:border-red-500/70 dark:bg-red-950/35'
+                          ? 'border-red-300/80 bg-red-50/50 dark:border-red-500/60 dark:bg-red-950/25'
                           : 'appearance-group border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
                       aria-pressed={selected}
                     >
-                      <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]' : warningReason ? 'font-semibold text-red-700 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`} title={warningReason ? `${item.displayTag} — ${warningReason}` : item.displayTag}>
+                      <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]' : warningReason ? 'text-red-600 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`} title={warningReason ? `${item.displayTag} — ${warningReason}` : item.displayTag}>
                         {editingTag?.id === item.id ? tagInputField : item.displayTag}
                       </span>
                       <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]' : warningReason ? 'text-red-600 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`} title={editingTag?.id === item.id ? draftChinese : item.chinese || t("词库暂无翻译")}>{editingTag?.id === item.id ? draftChinese : item.chinese || t("待翻译")}</span>
@@ -1191,10 +1191,10 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                     {openSyntax && <span title={openWeight ? t("原文缺少结尾 ::，补全后权重才会生效") : undefined} className={`shrink-0 py-1 pl-2 font-mono text-micro font-bold ${syntaxTone}`}>{openSyntax}</span>}
                     {members.map((member, memberIndex) => {
                       const memberSelected = memberMode ? (muteMode ? groupSelected : selectedTagIds.has(member.id)) : groupSelected;
-                      const memberWarning = warningTags?.get(member.lookupTag);
+                      const memberWarning = deleteMode ? warningTags?.get(member.lookupTag) : undefined;
                       const memberTextTone = memberSelected
                         ? selectedTone(true)
-                        : memberWarning ? 'text-red-700 dark:text-red-300' : selectedTone(false);
+                        : memberWarning ? 'text-red-600 dark:text-red-300' : selectedTone(false);
                       return <React.Fragment key={member.id}>
                         {memberIndex > 0 && insertionAt(groupIndex + memberIndex)}
                         <span
@@ -1334,7 +1334,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               <button
                 type="button"
                 aria-label={t("删除模式")}
-                title={warningTokens.length ? t("检测到 {0} 处标红词：点击进入删除模式并预选待删项", [warningTokens.length]) : t("删除模式")}
+                title={warningTokens.length ? t("检测到 {0} 处疑似待删词：点击进入删除模式查看并清理", [warningTokens.length]) : t("删除模式")}
                 disabled={!editable || !promptTokens.length}
                 onClick={() => {
                   setMuteMode(false);
@@ -1342,10 +1342,18 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                   if (warningTokens.length) setSelectedTagIds(new Set(warningTokens.map(token => token.id)));
                   else clearSelection();
                 }}
-                className={`mobile-touch flex h-8 shrink-0 items-center justify-center gap-1 rounded-md transition-colors disabled:opacity-40 ${warningTokens.length ? 'bg-red-600 px-2 text-white shadow-xs hover:bg-red-500' : 'w-8 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50'}`}
+                className="relative mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-40 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
-                {warningTokens.length > 0 && <span className="font-mono text-xs font-bold leading-none">{warningTokens.length}</span>}
+                {warningTokens.length > 0 && (
+                  <span
+                    data-warning-indicator="true"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 font-mono text-[10px] font-bold leading-none text-white ring-2 ring-white dark:ring-gray-900"
+                  >
+                    {warningTokens.length}
+                  </span>
+                )}
               </button>
             </div>
             </>}

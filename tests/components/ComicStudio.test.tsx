@@ -370,23 +370,25 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: /带人物混写画风/ }));
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('已自动剔除 1 个独立角色槽'));
 
-    // 翻译区直接标红 3 个角色/外貌/服饰词，不另起独立提醒卡
+    // 平时浏览态先不标红胶囊，仅在「删除模式」垃圾桶按钮右上角显示待删角标提示
     const styleInput = screen.getByRole('combobox', { name: '全页公共画风提示词' }) as HTMLTextAreaElement;
     const promptContainer = styleInput.closest('div')!.parentElement!;
     expect(screen.queryByRole('status', { name: '画风角色词提醒' })).toBeNull();
-    expect(promptContainer.querySelectorAll('[data-warning-tag="true"]').length).toBe(3);
-
-    // 直接通过提示词菜单自带的「删除模式」按钮（带 3 处标红计数）进入删除并自动预选全部标红词
+    expect(promptContainer.querySelectorAll('[data-warning-tag="true"]').length).toBe(0);
     const deleteModeBtn = within(promptContainer).getByRole('button', { name: '删除模式' });
-    expect(deleteModeBtn.textContent).toContain('3');
+    const badge = deleteModeBtn.querySelector('[data-warning-indicator="true"]');
+    expect(badge?.textContent).toBe('3');
+
+    // 点击垃圾桶进入删除模式后，才标红并自动预选全部检测到的角色词
     fireEvent.click(deleteModeBtn);
+    expect(promptContainer.querySelectorAll('[data-warning-tag="true"]').length).toBe(3);
     fireEvent.click(within(promptContainer).getByRole('button', { name: '删除 3 个 Tag' }));
     expect(styleInput.value).toBe('artist:example, anime coloring');
-    expect(promptContainer.querySelectorAll('[data-warning-tag="true"]').length).toBe(0);
+    expect(within(promptContainer).getByRole('button', { name: '删除模式' }).querySelector('[data-warning-indicator="true"]')).toBeNull();
 
-    // 直接复用提示词菜单自带的「撤销」按钮恢复原串
+    // 直接复用提示词菜单自带的「撤销」按钮恢复原串，垃圾桶角标同步恢复
     fireEvent.click(within(promptContainer).getByRole('button', { name: '撤销' }));
     expect(styleInput.value).toBe('artist:example, anime coloring, 1girl, silver hair, sailor uniform');
-    expect(promptContainer.querySelectorAll('[data-warning-tag="true"]').length).toBe(3);
+    expect(within(promptContainer).getByRole('button', { name: '删除模式' }).querySelector('[data-warning-indicator="true"]')?.textContent).toBe('3');
   });
 });
