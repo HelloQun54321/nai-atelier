@@ -283,9 +283,40 @@ export interface CompiledAiZoneRequest {
   warnings: string[];
 }
 
+/** 根据本区引导格的相对位置生成不含人物剧透的结构化版式描述（如 top wide panel, middle split panels）。 */
+const describeZoneLayoutGeometry = (localPanels: ComicAiGuidePanel[]): string => {
+  if (!localPanels.length) return '';
+  if (localPanels.length === 1) return 'single full-bleed comic panel';
+  const sorted = [...localPanels].sort((a, b) => (Math.abs(a.y - b.y) > 0.08 ? a.y - b.y : a.x - b.x));
+  const rowCounts: number[] = [];
+  let lastY = sorted[0].y;
+  let currentCount = 0;
+  for (const p of sorted) {
+    if (Math.abs(p.y - lastY) > 0.12 && currentCount > 0) {
+      rowCounts.push(currentCount);
+      currentCount = 0;
+      lastY = p.y;
+    }
+    currentCount += 1;
+  }
+  if (currentCount > 0) rowCounts.push(currentCount);
+  const pattern = rowCounts.length >= 2 ? `${rowCounts.join('-')} panel arrangement` : `${localPanels.length}-panel layout`;
+  return `${pattern}, crisp panel borders, clean white gutters`;
+};
+
+const extractEnglishVisualCue = (panel: ComicAiGuidePanel): string => {
+  const explicit = (panel.visualNote || '').trim();
+  if (explicit) return explicit;
+  const summary = (panel.summary || '').trim();
+  // 若用户直接在引导格里写了英文镜头/环境描述也自动喂给 V5（纯中文剧情摘要不混入英文 Tag，避免乱码）
+  if (summary && /[a-zA-Z]{3,}/.test(summary)) return summary;
+  return '';
+};
+
 /**
  * 为 AI 整页的某一个生成区（单区整页或双区之一）编译 V5 请求。
- * 严格遵循：总词不剧透单格剧情、黑白净色仅作用于发送副本、有人格合并背景防幽灵克隆、气泡锚点支持空泡或短 Text:。
+ * 严格遵循：总词只写版式几何不剧透单格剧情、各格镜头环境词馈入对应格锚点（无锚点格自动补中点槽）、
+ * 黑白净色仅作用于发送副本、有人格合并背景防幽灵克隆、气泡锚点支持空泡或短 Text:。
  */
 export const buildAiPageZoneRequest = (
   page: ComicPageDraft,
@@ -312,15 +343,28 @@ export const buildAiPageZoneRequest = (
     warnings.push(`${zone.label}已自动合并 ${mergedGhostBgCount} 个同格背景点，避免幽灵克隆`);
   }
 
+  const panelVisualCueById = new Map<string, string>();
+  for (const lp of localPanels) {
+    const cue = extractEnglishVisualCue(lp);
+    if (cue) panelVisualCueById.set(lp.id, cue);
+  }
+  const panelsCoveredByAnchors = new Set<string>();
+  for (const anchor of kept) {
+    if (anchor.kind === 'bubble') continue;
+    const pid = findContainingGuidePanelId(anchor, localPanels);
+    if (pid) panelsCoveredByAnchors.add(pid);
+  }
+
   const capped = kept.slice(0, COMIC_ANCHOR_HARD_LIMIT);
   const stylePrompt = monochrome
     ? stripColorTagsForMonochrome(page.globalBasePrompt)
     : page.globalBasePrompt.trim();
 
   const panelCountInZone = Math.max(1, zone.guidePanels.length);
+  const geometryCue = describeZoneLayoutGeometry(localPanels);
   const layoutShell = totalZoneCount === 1
-    ? (page.aiPage.layoutHint.trim() || `${panelCountInZone}-panel manga page, clean white gutters`)
-    : `${panelCountInZone}-panel comic strip section, clean white gutters, crisp panel borders`;
+    ? cleanCommaList([page.aiPage.layoutHint.trim() || `${panelCountInZone}-panel manga page`, geometryCue].filter(Boolean).join(', '))
+    : cleanCommaList([`${panelCountInZone}-panel comic strip section`, geometryCue].filter(Boolean).join(', '));
 
   const framingTags: string[] = [layoutShell];
   if (monochrome) framingTags.push('monochrome, greyscale, manga, screentone, crisp black ink lineart');
@@ -333,11 +377,17 @@ export const buildAiPageZoneRequest = (
   if (page.dialogueMode === 'clean-vector') negParts.push('speech bubble, dialogue, text, watermark, caption');
   if (page.dialogueMode === 'empty-bubble') negParts.push('text, letters, gibberish, speech text, japanese text, english text');
 
+  const panelCueInjected = new Set<string>();
   const characters: CharacterParams[] = capped
     .map(anchor => {
       const pid = findContainingGuidePanelId(anchor, localPanels);
       const mergedNote = anchor.kind === 'character' && pid ? (mergedBgNotes.get(pid) || []).join(', ') : '';
-      const rawPrompt = [anchor.prompt, mergedNote].filter(Boolean).join(', ');
+      // 将所属引导格的英文镜头/环境词注入该格首个主要锚点，让每格镜头与光影衔接生效且绝不串格
+      const panelCue = pid && (anchor.kind === 'character' || anchor.kind === 'scene') && !panelCueInjected.has(pid)
+        ? (panelVisualCueById.get(pid) || '')
+        : '';
+      if (panelCue && pid) panelCueInjected.add(pid);
+      const rawPrompt = [anchor.prompt, panelCue, mergedNote].filter(Boolean).join(', ');
       const cleanPrompt = monochrome ? stripColorTagsForMonochrome(rawPrompt) : rawPrompt.trim();
       const baseNeg = anchor.negativePrompt.trim();
 
@@ -370,6 +420,25 @@ export const buildAiPageZoneRequest = (
     })
     .filter((item): item is NonNullable<typeof item> => item !== null);
 
+  // 若某个引导格写了镜头/环境词但未放置任何非气泡锚点，自动在其格心补一个场景锚点（不超过 24 硬上限）
+  for (const lp of localPanels) {
+    if (characters.length >= COMIC_ANCHOR_HARD_LIMIT) break;
+    if (panelsCoveredByAnchors.has(lp.id)) continue;
+    const cue = panelVisualCueById.get(lp.id);
+    if (!cue) continue;
+    const cleanCue = monochrome ? stripColorTagsForMonochrome(cue) : cue;
+    if (!cleanCue) continue;
+    characters.push({
+      id: `guide-cue-${lp.id}`,
+      name: lp.label,
+      enabled: true,
+      prompt: cleanCue,
+      negativePrompt: monochrome ? MONOCHROME_NEGATIVE_TAGS : '',
+      x: clampAnchorCoord(lp.x + lp.width / 2),
+      y: clampAnchorCoord(lp.y + lp.height / 2),
+    });
+  }
+
   const isMedium = isNaiMediumModel(page.v5Model);
   const steps = isMedium ? 14 : (page.steps || getDefaultStepsForModel(page.v5Model));
 
@@ -385,6 +454,7 @@ export const buildAiPageZoneRequest = (
     variety: page.variety === true,
     qualityPresetId: page.qualityPresetId || 'standard',
     ucPresetId: isMedium ? 'heavy' : (page.ucPresetId || 'light'),
+    ...(page.seed !== undefined ? { seed: page.seed } : {}),
     useCoords: characters.length > 0,
     characters,
   };

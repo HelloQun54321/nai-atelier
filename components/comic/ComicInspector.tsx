@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowDownToLine,
@@ -6,6 +6,7 @@ import {
   ArrowUpToLine,
   Check,
   Copy,
+  Dices,
   Eye,
   EyeOff,
   Image as ImageIcon,
@@ -13,6 +14,7 @@ import {
   Lock,
   MessageCircle,
   Palette,
+  Play,
   Plus,
   RotateCcw,
   Search,
@@ -28,6 +30,8 @@ import {
 import type { LocalGenItem, PromptChain } from '../../types';
 import { t, useLanguage } from '../../services/i18n';
 import { formatGenerationCostLabel } from '../../services/anlasBudget';
+import { searchCharacterDictionary, type CharacterDictionaryEntry } from '../../services/tagDictionary';
+import { COMIC_FONT_PRESETS } from '../../services/comic/comicArtwork';
 import {
   clampAnchorCoord,
   getPanelBoundingBox,
@@ -37,9 +41,12 @@ import {
   COMIC_ANCHOR_HARD_LIMIT,
   COMIC_ANCHOR_SOFT_LIMIT,
   COMIC_V5_MODELS,
+  encodeDanbooruCastId,
   evaluateAnchorGuard,
+  parseDanbooruCastId,
 } from '../../services/comic/comicPromptBuilder';
 import type { ComicAiZonePlan } from '../../services/comic/comicAiPageEngine';
+import type { ComicBubbleCandidate } from '../../services/comic/comicBubbleDetector';
 import type { ComicInpaintDraft } from '../../services/comic/comicInpaintEngine';
 import type {
   ComicAiGuidePanel,
@@ -51,6 +58,7 @@ import type {
   ComicBubbleShape,
   ComicColorMode,
   ComicDialogueMode,
+  ComicFontFamily,
   ComicLayerId,
   ComicPageDraft,
   ComicPanel,
@@ -71,10 +79,16 @@ interface ComicInspectorProps {
   draft: ComicPageDraft;
   aiZonePlan: ComicAiZonePlan;
   inpaintDraft: ComicInpaintDraft | null;
+  bubbleCandidates: ComicBubbleCandidate[] | null;
+  preserveGuideLayout: boolean;
+  comparingOriginalAiImage: boolean;
   activeTab: ComicInspectorTab;
   selection: ComicSelection;
   chains: PromptChain[];
   generatingPanelId: string | null;
+  batchGeneratingManual: boolean;
+  batchProgressText: string;
+  lastGeneratedSeed?: number;
   planningAiStoryboard: boolean;
   generatingAiPage: boolean;
   detectingBubbles: boolean;
@@ -88,21 +102,32 @@ interface ComicInspectorProps {
   onQuickAddPanel: () => void;
   onUpdateDraft: (updater: (current: ComicPageDraft) => ComicPageDraft, commit?: boolean) => void;
   onUpdateAiPage: (updater: (aiPage: ComicAiPagePlan) => ComicAiPagePlan, commit?: boolean) => void;
+  onTogglePreserveGuideLayout: (preserve: boolean) => void;
   onPlanAiStoryboard: () => void;
   onInitAiFromTemplate: () => void;
   onConvertBubbleAnchorsToVector: () => void;
   onAutoDetectWhiteBubbles: () => void;
+  onToggleBubbleCandidate: (id: string) => void;
+  onEditBubbleCandidateText: (id: string, text: string) => void;
+  onBulkSelectBubbleCandidates: (mode: 'all' | 'with-text' | 'none') => void;
+  onConfirmBubbleCandidates: () => void;
+  onCancelBubbleCandidates: () => void;
+  onToggleCompareOriginalAiImage: () => void;
+  onRestoreOriginalAiImage: () => void;
   onOpenInpaint: (guidePanel?: ComicAiGuidePanel) => void;
   onCloseInpaint: () => void;
   onUpdateInpaintDraft: (updater: (current: ComicInpaintDraft) => ComicInpaintDraft) => void;
   onRunInpaint: () => void;
   onGenerateAiPage: () => void;
+  onGenerateAiZone: (zoneIndex: 0 | 1) => void;
+  onRestitchAiZones: () => void;
   onApplyStyleChain: (chain: PromptChain) => void;
   onUpdatePanel: (panelId: string, updater: (panel: ComicPanel) => ComicPanel, commit?: boolean) => void;
   onDuplicatePanel: (panelId: string) => void;
   onDeletePanel: (panelId: string) => void;
   onBringPanelOrder: (panelId: string, mode: 'front' | 'back') => void;
   onGeneratePanel: (panelId: string) => void;
+  onGenerateAllPanels: () => void;
   onCancelGeneration: () => void;
   onUpdateBubble: (id: string, updater: (item: ComicBubbleItem) => ComicBubbleItem, commit?: boolean) => void;
   onDeleteBubble: (id: string) => void;
@@ -167,10 +192,16 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   draft,
   aiZonePlan,
   inpaintDraft,
+  bubbleCandidates,
+  preserveGuideLayout,
+  comparingOriginalAiImage,
   activeTab,
   selection,
   chains,
   generatingPanelId,
+  batchGeneratingManual,
+  batchProgressText,
+  lastGeneratedSeed,
   planningAiStoryboard,
   generatingAiPage,
   detectingBubbles,
@@ -184,21 +215,32 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   onQuickAddPanel,
   onUpdateDraft,
   onUpdateAiPage,
+  onTogglePreserveGuideLayout,
   onPlanAiStoryboard,
   onInitAiFromTemplate,
   onConvertBubbleAnchorsToVector,
   onAutoDetectWhiteBubbles,
+  onToggleBubbleCandidate,
+  onEditBubbleCandidateText,
+  onBulkSelectBubbleCandidates,
+  onConfirmBubbleCandidates,
+  onCancelBubbleCandidates,
+  onToggleCompareOriginalAiImage,
+  onRestoreOriginalAiImage,
   onOpenInpaint,
   onCloseInpaint,
   onUpdateInpaintDraft,
   onRunInpaint,
   onGenerateAiPage,
+  onGenerateAiZone,
+  onRestitchAiZones,
   onApplyStyleChain,
   onUpdatePanel,
   onDuplicatePanel,
   onDeletePanel,
   onBringPanelOrder,
   onGeneratePanel,
+  onGenerateAllPanels,
   onCancelGeneration,
   onUpdateBubble,
   onDeleteBubble,
@@ -215,12 +257,60 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
   const [castPickerOpen, setCastPickerOpen] = useState(false);
   const [castQuery, setCastQuery] = useState('');
+  const [castDictResults, setCastDictResults] = useState<CharacterDictionaryEntry[]>([]);
+  const [castDictLoading, setCastDictLoading] = useState(false);
   const [stylePickerOpen, setStylePickerOpen] = useState(false);
   const [styleQuery, setStyleQuery] = useState('');
   const [charQuery, setCharQuery] = useState('');
+  const [charDictResults, setCharDictResults] = useState<CharacterDictionaryEntry[]>([]);
+  const [charDictLoading, setCharDictLoading] = useState(false);
   const [selectedAnchorId, setSelectedAnchorId] = useState<string>('');
   const anchorStageRef = useRef<HTMLDivElement>(null);
   const draggingAnchorRef = useRef<string | null>(null);
+
+  // 搜索 Danbooru 角色词库（AI 整页出场角色）
+  useEffect(() => {
+    const q = castQuery.trim();
+    if (!castPickerOpen || !q) {
+      setCastDictResults([]);
+      setCastDictLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCastDictLoading(true);
+    const timer = window.setTimeout(() => {
+      void searchCharacterDictionary(q, 24)
+        .then(items => { if (!cancelled) setCastDictResults(items); })
+        .catch(() => { if (!cancelled) setCastDictResults([]); })
+        .finally(() => { if (!cancelled) setCastDictLoading(false); });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [castPickerOpen, castQuery]);
+
+  // 搜索 Danbooru 角色词库（单格 / 整页锚点角色选择）
+  useEffect(() => {
+    const q = charQuery.trim();
+    if (!characterPickerOpen || !q) {
+      setCharDictResults([]);
+      setCharDictLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCharDictLoading(true);
+    const timer = window.setTimeout(() => {
+      void searchCharacterDictionary(q, 24)
+        .then(items => { if (!cancelled) setCharDictResults(items); })
+        .catch(() => { if (!cancelled) setCharDictResults([]); })
+        .finally(() => { if (!cancelled) setCharDictLoading(false); });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [characterPickerOpen, charQuery]);
 
   const styleChains = useMemo(() => {
     const named = chains.filter(item =>
@@ -252,11 +342,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
       || item.basePrompt?.toLowerCase().includes(q),
     ).slice(0, 60);
   }, [chains, charQuery]);
-
-  const hasAnyCharacterChains = useMemo(
-    () => chains.some(item => item.type === 'character'),
-    [chains],
-  );
 
   // 分镜生图标签默认锚定当前选中的格，若当前未选格则自动显示第 1 格
   const activePanel = (selection?.kind === 'panel'
@@ -344,12 +429,12 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   const overlayCount = draft.bubbles.length + draft.texts.length + draft.stickers.length;
 
   return (
-    <aside className="flex h-full w-full flex-col border-l border-gray-200 bg-white/95 dark:border-gray-800 dark:bg-gray-900/95">
+    <aside className="appearance-panel flex h-full w-full flex-col border-l border-gray-200 bg-white/90 dark:border-gray-800 dark:bg-gray-900/90">
       {/* 顶部平铺式三标签导航（去外层套娃胶囊，底边强调线，绝不裁切下方行） */}
       <div
         role="tablist"
         aria-label={t('漫画工作台分区')}
-        className="grid flex-none grid-cols-3 border-b border-gray-200/90 bg-white/95 dark:border-gray-800/90 dark:bg-gray-900/95"
+        className="grid flex-none grid-cols-3 border-b border-gray-200/80 bg-transparent dark:border-gray-800/80"
       >
         {([
           { id: 'panel', label: draft.creationMode === 'ai-page' ? 'AI 整页编排' : '分镜生图', icon: draft.creationMode === 'ai-page' ? Sparkles : Wand2 },
@@ -375,7 +460,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
         })}
       </div>
 
-      {/* ==================== 标签 1A：AI 整页锚点编排工作台（第二期核心） ==================== */}
+      {/* ==================== 标签 1A：AI 整页锚点编排工作台 ==================== */}
       {activeTab === 'panel' && draft.creationMode === 'ai-page' && (() => {
         const aiPage = draft.aiPage;
         const selectedAiAnchor = selection?.kind === 'ai-anchor'
@@ -420,31 +505,37 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                   </div>
                 </div>
 
-                {/* 本页出场角色：紧凑可搜选择器（只展示已选角色，不堆满一屏角色卡片） */}
-                {allCharacterChains.length > 0 && (() => {
-                  const selectedCast = aiPage.castCharacterIds
-                    .map(id => allCharacterChains.find(c => c.id === id))
-                    .filter((c): c is PromptChain => Boolean(c));
+                {/* 本页出场角色：同时支持自建角色库与全量 Danbooru 词库角色 */}
+                {(() => {
+                  const selectedCastBadges = aiPage.castCharacterIds
+                    .map(id => {
+                      const custom = allCharacterChains.find(c => c.id === id);
+                      if (custom) return { id: custom.id, label: custom.name, isDanbooru: false };
+                      const db = parseDanbooruCastId(id);
+                      if (db) return { id, label: db.label, isDanbooru: true };
+                      return null;
+                    })
+                    .filter((item): item is { id: string; label: string; isDanbooru: boolean } => Boolean(item));
                   const q = castQuery.trim().toLowerCase();
                   const filteredCast = q
-                    ? allCharacterChains.filter(c => c.name.toLowerCase().includes(q) || c.basePrompt?.toLowerCase().includes(q)).slice(0, 40)
-                    : allCharacterChains.slice(0, 40);
+                    ? allCharacterChains.filter(c => c.name.toLowerCase().includes(q) || c.basePrompt?.toLowerCase().includes(q)).slice(0, 30)
+                    : allCharacterChains.slice(0, 30);
                   return (
                     <div className="space-y-1.5">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">{t('出场角色')}</span>
-                        {selectedCast.map(char => (
+                        {selectedCastBadges.map(badge => (
                           <span
-                            key={char.id}
+                            key={badge.id}
                             className="inline-flex items-center gap-1 rounded-md border border-indigo-400/70 bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-700 dark:border-indigo-500/70 dark:bg-indigo-950/60 dark:text-indigo-200"
                           >
-                            <span className="max-w-24 truncate">{char.name}</span>
+                            <span className="max-w-28 truncate">{badge.label}</span>
                             <button
                               type="button"
-                              aria-label={t('移除角色 {0}', [char.name])}
+                              aria-label={t('移除角色 {0}', [badge.label])}
                               onClick={() => onUpdateAiPage(cur => ({
                                 ...cur,
-                                castCharacterIds: cur.castCharacterIds.filter(id => id !== char.id),
+                                castCharacterIds: cur.castCharacterIds.filter(id => id !== badge.id),
                               }), true)}
                               className="rounded hover:text-red-500"
                             >
@@ -470,40 +561,93 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                               type="text"
                               value={castQuery}
                               onChange={e => setCastQuery(e.target.value)}
-                              placeholder={t('搜索角色库…')}
+                              placeholder={t('搜自定义角色库或输入中/英文搜 Danbooru 角色…')}
                               className="w-full rounded border border-gray-200 bg-gray-50 py-1 pl-6 pr-2 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                             />
                           </div>
-                          <div className="max-h-36 space-y-0.5 overflow-y-auto">
-                            {filteredCast.map(char => {
-                              const checked = aiPage.castCharacterIds.includes(char.id);
-                              return (
-                                <button
-                                  key={char.id}
-                                  type="button"
-                                  aria-pressed={checked}
-                                  onClick={() => onUpdateAiPage(cur => ({
-                                    ...cur,
-                                    castCharacterIds: checked
-                                      ? cur.castCharacterIds.filter(id => id !== char.id)
-                                      : [...cur.castCharacterIds, char.id],
-                                  }), true)}
-                                  className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-[11px] transition ${checked ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800'}`}
-                                >
-                                  <span className="min-w-0 flex-1 truncate font-medium">{char.name}</span>
-                                  {char.basePrompt && (
-                                    <span className="max-w-28 truncate text-[10px] text-gray-400">{char.basePrompt}</span>
-                                  )}
-                                  {checked && <Check className="h-3 w-3 flex-none text-indigo-500" />}
-                                </button>
-                              );
-                            })}
+                          <div className="max-h-48 space-y-1 overflow-y-auto">
+                            {filteredCast.length > 0 && (
+                              <div className="space-y-0.5">
+                                <div className="px-1.5 text-[10px] font-semibold text-gray-400">{t('我的角色库')}</div>
+                                {filteredCast.map(char => {
+                                  const checked = aiPage.castCharacterIds.includes(char.id);
+                                  return (
+                                    <button
+                                      key={char.id}
+                                      type="button"
+                                      aria-pressed={checked}
+                                      onClick={() => onUpdateAiPage(cur => ({
+                                        ...cur,
+                                        castCharacterIds: checked
+                                          ? cur.castCharacterIds.filter(id => id !== char.id)
+                                          : [...cur.castCharacterIds, char.id],
+                                      }), true)}
+                                      className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-[11px] transition ${checked ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800'}`}
+                                    >
+                                      <span className="min-w-0 flex-1 truncate font-medium">{char.name}</span>
+                                      {char.basePrompt && (
+                                        <span className="max-w-28 truncate text-[10px] text-gray-400">{char.basePrompt}</span>
+                                      )}
+                                      {checked && <Check className="h-3 w-3 flex-none text-indigo-500" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            <div className="space-y-0.5">
+                              <div className="flex items-center justify-between px-1.5 text-[10px] font-semibold text-gray-400">
+                                <span>{t('Danbooru 词库角色')}</span>
+                                {castDictLoading && <InlineSpinner className="h-2.5 w-2.5" />}
+                              </div>
+                              {!castQuery.trim() ? (
+                                <p className="px-2 py-1 text-[10px] text-gray-400">{t('输入角色中文名或英文 Tag 即可检索全量词库角色')}</p>
+                              ) : castDictResults.length > 0 ? (
+                                castDictResults.map(entry => {
+                                  const encodedId = encodeDanbooruCastId(entry.name, entry.chinese);
+                                  const checked = aiPage.castCharacterIds.includes(encodedId);
+                                  const displayLabel = entry.chinese || entry.name;
+                                  return (
+                                    <button
+                                      key={entry.name}
+                                      type="button"
+                                      aria-pressed={checked}
+                                      onClick={() => onUpdateAiPage(cur => ({
+                                        ...cur,
+                                        castCharacterIds: checked
+                                          ? cur.castCharacterIds.filter(id => id !== encodedId)
+                                          : [...cur.castCharacterIds, encodedId],
+                                      }), true)}
+                                      className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-[11px] transition ${checked ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800'}`}
+                                    >
+                                      <span className="min-w-0 flex-1 truncate font-medium">{displayLabel}</span>
+                                      <span className="max-w-28 truncate font-mono text-[10px] text-gray-400">{entry.name}</span>
+                                      {checked && <Check className="h-3 w-3 flex-none text-indigo-500" />}
+                                    </button>
+                                  );
+                                })
+                              ) : !castDictLoading ? (
+                                <p className="px-2 py-1 text-[10px] text-gray-400">{t('词库中未找到匹配角色')}</p>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
                       )}
                     </div>
                   );
                 })()}
+
+                <div className="flex items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+                  <label className="inline-flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={preserveGuideLayout}
+                      onChange={e => onTogglePreserveGuideLayout(e.target.checked)}
+                      className="rounded accent-indigo-600"
+                    />
+                    <span>{t('沿用当前画布参考格布局（可直接在画布拖移与缩放）')}</span>
+                  </label>
+                </div>
 
                 <div className="flex items-center gap-1.5">
                   <button
@@ -593,7 +737,13 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                   {aiPage.generatedPageImage?.url && (
                     <button
                       type="button"
-                      onClick={() => onUpdateAiPage(cur => ({ ...cur, generatedPageImage: undefined, showGuideOverlay: true }), true)}
+                      onClick={() => onUpdateAiPage(cur => ({
+                        ...cur,
+                        generatedPageImage: undefined,
+                        originalGeneratedPageImage: undefined,
+                        zoneImages: undefined,
+                        showGuideOverlay: true,
+                      }), true)}
                       className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"
                     >
                       <Trash2 className="h-3 w-3" /> {t('清成图')}
@@ -601,20 +751,78 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                   )}
                 </div>
 
-                {/* 第三期成图精修区：纯白气泡自动识别嵌字 + 框选单格局部重绘 */}
+                {/* 双区独立重画与断点续拼（区 1 满意可仅重画区 2，绝不白扔另一半页） */}
+                {aiZonePlan.zones.length === 2 && (
+                  <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-gray-200/80 bg-gray-50/70 p-2 text-[11px] dark:border-gray-800 dark:bg-gray-800/40">
+                    <span className="font-semibold text-gray-600 dark:text-gray-300">{t('单区精修')}</span>
+                    <button
+                      type="button"
+                      disabled={anyGenerating || aiZonePlan.zones[0].guardLevel === 'hard-exceeded'}
+                      onClick={() => onGenerateAiZone(0)}
+                      className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 font-medium text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                    >
+                      {aiPage.zoneImages?.['0']?.url && <Check className="h-3 w-3 text-emerald-500" />}
+                      <span>{aiPage.zoneImages?.['0']?.url ? t('重画区 1') : t('仅画区 1')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={anyGenerating || aiZonePlan.zones[1].guardLevel === 'hard-exceeded'}
+                      onClick={() => onGenerateAiZone(1)}
+                      className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 font-medium text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                    >
+                      {aiPage.zoneImages?.['1']?.url && <Check className="h-3 w-3 text-emerald-500" />}
+                      <span>{aiPage.zoneImages?.['1']?.url ? t('重画区 2') : t('仅画区 2')}</span>
+                    </button>
+                    {aiPage.zoneImages?.['0']?.url && aiPage.zoneImages?.['1']?.url && (
+                      <button
+                        type="button"
+                        disabled={anyGenerating}
+                        onClick={onRestitchAiZones}
+                        className="ml-auto rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-40 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200"
+                      >
+                        {t('重新拼合')}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* 成图精修区：可视化白泡候选校对 + 框选单格局部重绘 + 原图留底对照 */}
                 {aiPage.generatedPageImage?.url && (
                   <div className="space-y-2 border-t border-gray-200/80 pt-2.5 dark:border-gray-800">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-gray-800 dark:text-gray-100">{t('成图精修（三期闭环）')}</span>
-                      {inpaintDraft && (
-                        <button
-                          type="button"
-                          onClick={onCloseInpaint}
-                          className="text-[11px] font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
-                        >
-                          {t('退出重绘')}
-                        </button>
-                      )}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-gray-800 dark:text-gray-100">{t('成图精修')}</span>
+                      <div className="flex items-center gap-1.5">
+                        {aiPage.originalGeneratedPageImage?.url
+                          && aiPage.originalGeneratedPageImage.url !== aiPage.generatedPageImage.url && (
+                          <>
+                            <button
+                              type="button"
+                              aria-pressed={comparingOriginalAiImage}
+                              onClick={onToggleCompareOriginalAiImage}
+                              className={`rounded px-1.5 py-0.5 text-[11px] font-medium transition ${comparingOriginalAiImage ? 'bg-indigo-600 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                            >
+                              {comparingOriginalAiImage ? t('正看原图') : t('对比原图')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={onRestoreOriginalAiImage}
+                              title={t('恢复局部重绘前的初始 AI 整页原图')}
+                              className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-medium text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                            >
+                              <RotateCcw className="h-3 w-3" /> {t('恢复原图')}
+                            </button>
+                          </>
+                        )}
+                        {inpaintDraft && (
+                          <button
+                            type="button"
+                            onClick={onCloseInpaint}
+                            className="text-[11px] font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                          >
+                            {t('退出重绘')}
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-1.5">
                       <button
@@ -624,7 +832,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                         className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
                       >
                         {detectingBubbles ? <InlineSpinner className="h-3 w-3" /> : <MessageCircle className="h-3.5 w-3.5 text-amber-500" />}
-                        <span>{detectingBubbles ? t('识别中…') : t('自动识别白泡嵌字')}</span>
+                        <span>{detectingBubbles ? t('识别中…') : t('识别气泡并校对')}</span>
                       </button>
                       <button
                         type="button"
@@ -637,6 +845,60 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                         <span>{inpaintDraft ? t('重绘模式中') : t('单格局部重绘')}</span>
                       </button>
                     </div>
+
+                    {/* 可视化气泡候选校对列表：勾选要嵌字的气泡并修改台词，点确认后才写入画布 */}
+                    {bubbleCandidates && bubbleCandidates.length > 0 && (
+                      <div className="space-y-2 rounded-xl border border-emerald-200/80 bg-emerald-50/30 p-2.5 dark:border-emerald-900/60 dark:bg-emerald-950/20">
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="font-bold text-emerald-800 dark:text-emerald-200">
+                            {t('气泡候选校对')} ({bubbleCandidates.filter(c => c.selected).length}/{bubbleCandidates.length})
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button type="button" onClick={() => onBulkSelectBubbleCandidates('all')} className="rounded px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100 dark:text-emerald-300 dark:hover:bg-emerald-900/40">{t('全选')}</button>
+                            <button type="button" onClick={() => onBulkSelectBubbleCandidates('with-text')} className="rounded px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100 dark:text-emerald-300 dark:hover:bg-emerald-900/40">{t('仅选有词')}</button>
+                            <button type="button" onClick={() => onBulkSelectBubbleCandidates('none')} className="rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-500 hover:bg-gray-200/60 dark:text-gray-400">{t('全不选')}</button>
+                          </div>
+                        </div>
+                        <div className="max-h-44 space-y-1.5 overflow-y-auto">
+                          {bubbleCandidates.map((cand, idx) => (
+                            <div key={cand.id} className="flex items-center gap-1.5 rounded-lg border border-gray-200/80 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-900">
+                              <input
+                                type="checkbox"
+                                checked={cand.selected}
+                                onChange={() => onToggleBubbleCandidate(cand.id)}
+                                className="rounded accent-emerald-600"
+                              />
+                              <span className="w-5 flex-none font-mono text-[10px] font-bold text-emerald-600">#{idx + 1}</span>
+                              <input
+                                type="text"
+                                value={cand.text}
+                                onChange={e => onEditBubbleCandidateText(cand.id, e.target.value)}
+                                placeholder={t('输入台词（留空将填占位字）')}
+                                className="min-w-0 flex-1 bg-transparent text-[11px] text-gray-800 outline-none dark:text-gray-100"
+                              />
+                              <span className="flex-none font-mono text-[10px] text-gray-400">{Math.round(cand.confidence * 100)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={!bubbleCandidates.some(c => c.selected)}
+                            onClick={onConfirmBubbleCandidates}
+                            className="flex-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-40"
+                          >
+                            {t('确认嵌字 ({0} 处)', [bubbleCandidates.filter(c => c.selected).length])}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={onCancelBubbleCandidates}
+                            className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                          >
+                            {t('取消')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {inpaintDraft && (
                       <div className="space-y-2.5 rounded-xl border border-rose-200/80 bg-rose-50/30 p-2.5 dark:border-rose-900/60 dark:bg-rose-950/20">
@@ -808,15 +1070,13 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     <span className="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
                     {t('角色')}
                   </button>
-                  {hasAnyCharacterChains && (
-                    <button
-                      type="button"
-                      onClick={() => setCharacterPickerOpen(open => !open)}
-                      className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${characterPickerOpen ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/50 dark:text-indigo-200' : 'border-gray-200/90 bg-white text-gray-700 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200'}`}
-                    >
-                      <UserPlus className="h-3 w-3 text-blue-500" /> {t('角色库')}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setCharacterPickerOpen(open => !open)}
+                    className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${characterPickerOpen ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/50 dark:text-indigo-200' : 'border-gray-200/90 bg-white text-gray-700 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200'}`}
+                  >
+                    <UserPlus className="h-3 w-3 text-blue-500" /> {t('角色库')}
+                  </button>
                   <button
                     type="button"
                     onClick={() => addAnchorToAiPage('scene')}
@@ -843,7 +1103,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                   </button>
                 </div>
 
-                {characterPickerOpen && hasAnyCharacterChains && (
+                {characterPickerOpen && (
                   <div className="space-y-1.5 rounded-lg border border-blue-200 bg-white p-1.5 dark:border-blue-800 dark:bg-gray-900">
                     <div className="relative">
                       <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
@@ -851,31 +1111,67 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                         type="text"
                         value={charQuery}
                         onChange={e => setCharQuery(e.target.value)}
-                        placeholder={t('搜索角色库加入整页锚点…')}
+                        placeholder={t('搜自定义角色库或输入中/英文搜 Danbooru 角色…')}
                         className="w-full rounded border border-gray-200 bg-gray-50 py-1 pl-6 pr-2 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                       />
                     </div>
-                    <div className="max-h-36 space-y-1 overflow-y-auto">
-                      {characterChains.map(char => (
-                        <button
-                          key={char.id}
-                          type="button"
-                          onClick={() => {
-                            addAnchorToAiPage('character', {
-                              label: char.name,
-                              prompt: [char.basePrompt, char.variableValues?.subject].filter(Boolean).join(', '),
-                              negativePrompt: char.negativePrompt || '',
-                              sourceCharacterId: char.id,
-                            });
-                            setCharacterPickerOpen(false);
-                            setCharQuery('');
-                          }}
-                          className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-[11px] hover:bg-blue-50 dark:hover:bg-blue-950/50"
-                        >
-                          <span className="truncate font-medium text-gray-800 dark:text-gray-100">{char.name}</span>
-                          <span className="ml-2 flex-none text-blue-600 dark:text-blue-400">+ {t('加入')}</span>
-                        </button>
-                      ))}
+                    <div className="max-h-44 space-y-1 overflow-y-auto">
+                      {characterChains.length > 0 && (
+                        <div className="space-y-0.5">
+                          <div className="px-1.5 text-[10px] font-semibold text-gray-400">{t('我的角色库')}</div>
+                          {characterChains.map(char => (
+                            <button
+                              key={char.id}
+                              type="button"
+                              onClick={() => {
+                                addAnchorToAiPage('character', {
+                                  label: char.name,
+                                  prompt: [char.basePrompt, char.variableValues?.subject].filter(Boolean).join(', '),
+                                  negativePrompt: char.negativePrompt || '',
+                                  sourceCharacterId: char.id,
+                                });
+                                setCharacterPickerOpen(false);
+                                setCharQuery('');
+                              }}
+                              className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-[11px] hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                            >
+                              <span className="truncate font-medium text-gray-800 dark:text-gray-100">{char.name}</span>
+                              <span className="ml-2 flex-none text-blue-600 dark:text-blue-400">+ {t('加入')}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="space-y-0.5">
+                        <div className="flex items-center justify-between px-1.5 text-[10px] font-semibold text-gray-400">
+                          <span>{t('Danbooru 词库角色')}</span>
+                          {charDictLoading && <InlineSpinner className="h-2.5 w-2.5" />}
+                        </div>
+                        {!charQuery.trim() ? (
+                          <p className="px-2 py-1 text-[10px] text-gray-400">{t('输入角色中文名或英文 Tag 即可检索全量词库角色')}</p>
+                        ) : charDictResults.length > 0 ? (
+                          charDictResults.map(entry => (
+                            <button
+                              key={entry.name}
+                              type="button"
+                              onClick={() => {
+                                addAnchorToAiPage('character', {
+                                  label: entry.chinese || entry.name,
+                                  prompt: entry.name.replace(/_/g, ' '),
+                                });
+                                setCharacterPickerOpen(false);
+                                setCharQuery('');
+                              }}
+                              className="flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-[11px] hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                            >
+                              <span className="min-w-0 flex-1 truncate font-medium text-gray-800 dark:text-gray-100">{entry.chinese || entry.name}</span>
+                              <span className="max-w-28 truncate font-mono text-[10px] text-gray-400">{entry.name}</span>
+                              <span className="flex-none text-blue-600 dark:text-blue-400">+ {t('加入')}</span>
+                            </button>
+                          ))
+                        ) : !charDictLoading ? (
+                          <p className="px-2 py-1 text-[10px] text-gray-400">{t('词库中未找到匹配角色')}</p>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -997,19 +1293,31 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                     />
                   </label>
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     {aiPage.guidePanels.map((gp, idx) => (
-                      <div key={gp.id} className="flex items-center gap-1.5 rounded border border-gray-200/80 bg-gray-50/70 px-2 py-1 dark:border-gray-800 dark:bg-gray-800/50">
-                        <span className="font-mono text-[10px] font-bold text-indigo-500">{String(idx + 1).padStart(2, '0')}</span>
+                      <div key={gp.id} className="space-y-1 rounded border border-gray-200/80 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-800/50">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[10px] font-bold text-indigo-500">{String(idx + 1).padStart(2, '0')}</span>
+                          <input
+                            type="text"
+                            value={gp.summary}
+                            onChange={e => onUpdateAiPage(cur => ({
+                              ...cur,
+                              guidePanels: cur.guidePanels.map(item => item.id === gp.id ? { ...item, summary: e.target.value } : item),
+                            }), false)}
+                            placeholder={t('中文镜头剧情摘要')}
+                            className="min-w-0 flex-1 bg-transparent text-[11px] font-medium text-gray-700 outline-none dark:text-gray-200"
+                          />
+                        </div>
                         <input
                           type="text"
-                          value={gp.summary}
+                          value={gp.visualNote || ''}
                           onChange={e => onUpdateAiPage(cur => ({
                             ...cur,
-                            guidePanels: cur.guidePanels.map(item => item.id === gp.id ? { ...item, summary: e.target.value } : item),
+                            guidePanels: cur.guidePanels.map(item => item.id === gp.id ? { ...item, visualNote: e.target.value } : item),
                           }), false)}
-                          placeholder={gp.label}
-                          className="min-w-0 flex-1 bg-transparent text-[11px] text-gray-700 outline-none dark:text-gray-200"
+                          placeholder={t('英文机位/景别/光影词（将自动喂给画图模型）')}
+                          className="w-full rounded border border-gray-200/80 bg-white px-1.5 py-0.5 text-[10px] text-gray-600 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
                         />
                       </div>
                     ))}
@@ -1019,7 +1327,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
             </div>
 
             {/* 底部常驻「生成 AI 整页」主操作栏 */}
-            <div className="flex-none border-t border-gray-200 bg-white/95 p-3 dark:border-gray-800 dark:bg-gray-900/95">
+            <div className="appearance-surface flex-none border-t border-gray-200/80 p-3 dark:border-gray-800/80">
               <div className="mb-1.5 flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
                 <span>
                   {aiZonePlan.zones.length === 1
@@ -1202,16 +1510,14 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                         <span className="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
                         {t('角色')}
                       </button>
-                      {hasAnyCharacterChains && (
-                        <button
-                          type="button"
-                          disabled={activePanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
-                          onClick={() => setCharacterPickerOpen(open => !open)}
-                          className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-40 ${characterPickerOpen ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/50 dark:text-indigo-200' : 'border-gray-200/90 bg-white text-gray-700 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200 dark:hover:border-indigo-400 dark:hover:text-indigo-300'}`}
-                        >
-                          <UserPlus className="h-3 w-3 text-blue-500" /> {t('角色库')}
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        disabled={activePanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
+                        onClick={() => setCharacterPickerOpen(open => !open)}
+                        className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-40 ${characterPickerOpen ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/50 dark:text-indigo-200' : 'border-gray-200/90 bg-white text-gray-700 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-200 dark:hover:border-indigo-400 dark:hover:text-indigo-300'}`}
+                      >
+                        <UserPlus className="h-3 w-3 text-blue-500" /> {t('角色库')}
+                      </button>
                       <button
                         type="button"
                         disabled={activePanel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT}
@@ -1241,7 +1547,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       </button>
                     </div>
 
-                    {characterPickerOpen && hasAnyCharacterChains && (
+                    {characterPickerOpen && (
                       <div className="space-y-1.5 rounded-lg border border-blue-200 bg-white p-1.5 dark:border-blue-800 dark:bg-gray-900">
                         <div className="relative">
                           <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
@@ -1249,34 +1555,67 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                             type="text"
                             value={charQuery}
                             onChange={e => setCharQuery(e.target.value)}
-                            placeholder={t('搜索角色库…')}
+                            placeholder={t('搜自定义角色库或输入中/英文搜 Danbooru 角色…')}
                             className="w-full rounded border border-gray-200 bg-gray-50 py-1 pl-6 pr-2 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                           />
                         </div>
-                        <div className="max-h-36 space-y-1 overflow-y-auto">
-                          {characterChains.map(char => (
-                            <button
-                              key={char.id}
-                              type="button"
-                              onClick={() => {
-                                addAnchorToPanel(activePanel, 'character', {
-                                  label: char.name,
-                                  prompt: [char.basePrompt, char.variableValues?.subject].filter(Boolean).join(', '),
-                                  negativePrompt: char.negativePrompt || '',
-                                  sourceCharacterId: char.id,
-                                });
-                                setCharacterPickerOpen(false);
-                                setCharQuery('');
-                              }}
-                              className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-[11px] hover:bg-blue-50 dark:hover:bg-blue-950/50"
-                            >
-                              <span className="truncate font-medium text-gray-800 dark:text-gray-100">{char.name}</span>
-                              <span className="ml-2 flex-none text-blue-600 dark:text-blue-400">+ {t('加入')}</span>
-                            </button>
-                          ))}
-                          {!characterChains.length && (
-                            <div className="py-2 text-center text-[11px] text-gray-400">{t('没有匹配的角色')}</div>
+                        <div className="max-h-44 space-y-1 overflow-y-auto">
+                          {characterChains.length > 0 && (
+                            <div className="space-y-0.5">
+                              <div className="px-1.5 text-[10px] font-semibold text-gray-400">{t('我的角色库')}</div>
+                              {characterChains.map(char => (
+                                <button
+                                  key={char.id}
+                                  type="button"
+                                  onClick={() => {
+                                    addAnchorToPanel(activePanel, 'character', {
+                                      label: char.name,
+                                      prompt: [char.basePrompt, char.variableValues?.subject].filter(Boolean).join(', '),
+                                      negativePrompt: char.negativePrompt || '',
+                                      sourceCharacterId: char.id,
+                                    });
+                                    setCharacterPickerOpen(false);
+                                    setCharQuery('');
+                                  }}
+                                  className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-[11px] hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                                >
+                                  <span className="truncate font-medium text-gray-800 dark:text-gray-100">{char.name}</span>
+                                  <span className="ml-2 flex-none text-blue-600 dark:text-blue-400">+ {t('加入')}</span>
+                                </button>
+                              ))}
+                            </div>
                           )}
+                          <div className="space-y-0.5">
+                            <div className="flex items-center justify-between px-1.5 text-[10px] font-semibold text-gray-400">
+                              <span>{t('Danbooru 词库角色')}</span>
+                              {charDictLoading && <InlineSpinner className="h-2.5 w-2.5" />}
+                            </div>
+                            {!charQuery.trim() ? (
+                              <p className="px-2 py-1 text-[10px] text-gray-400">{t('输入角色中文名或英文 Tag 即可检索全量词库角色')}</p>
+                            ) : charDictResults.length > 0 ? (
+                              charDictResults.map(entry => (
+                                <button
+                                  key={entry.name}
+                                  type="button"
+                                  onClick={() => {
+                                    addAnchorToPanel(activePanel, 'character', {
+                                      label: entry.chinese || entry.name,
+                                      prompt: entry.name.replace(/_/g, ' '),
+                                    });
+                                    setCharacterPickerOpen(false);
+                                    setCharQuery('');
+                                  }}
+                                  className="flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-[11px] hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                                >
+                                  <span className="min-w-0 flex-1 truncate font-medium text-gray-800 dark:text-gray-100">{entry.chinese || entry.name}</span>
+                                  <span className="max-w-28 truncate font-mono text-[10px] text-gray-400">{entry.name}</span>
+                                  <span className="flex-none text-blue-600 dark:text-blue-400">+ {t('加入')}</span>
+                                </button>
+                              ))
+                            ) : !charDictLoading ? (
+                              <p className="px-2 py-1 text-[10px] text-gray-400">{t('词库中未找到匹配角色')}</p>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1502,17 +1841,17 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                   </details>
                 </div>
 
-                {/* 底部常驻「生成当前格」主操作栏 */}
-                <div className="flex-none border-t border-gray-200 bg-white/95 p-3 dark:border-gray-800 dark:bg-gray-900/95">
+                {/* 底部常驻「生成当前格」与「一键整页生成」主操作栏 */}
+                <div className="appearance-surface flex-none border-t border-gray-200/80 p-3 dark:border-gray-800/80">
                   <div className="mb-1.5 flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
                     <span>{t('自动免费尺寸')}：{resolution.width} × {resolution.height}</span>
                     <span>{formatGenerationCostLabel(estimatedCost, draft.v5Model)}</span>
                   </div>
-                  {isGeneratingThis ? (
+                  {(isGeneratingThis || batchGeneratingManual) ? (
                     <div className="flex items-center gap-2">
                       <div className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-bold text-white">
                         <InlineSpinner className="h-3.5 w-3.5 text-white" />
-                        <span className="truncate">{generationStageText || t('生成中…')}</span>
+                        <span className="truncate">{batchProgressText || generationStageText || t('生成中…')}</span>
                       </div>
                       <button
                         type="button"
@@ -1523,18 +1862,35 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       </button>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      disabled={anyGenerating || guard.level === 'hard-exceeded'}
-                      onClick={() => onGeneratePanel(activePanel.id)}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Wand2 className="h-4 w-4" />
-                      <span>{t('生成当前格')}</span>
-                      <span className="rounded-md bg-white/15 px-1.5 py-0.5 text-[11px] font-medium">
-                        {activePanel.name}
-                      </span>
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={anyGenerating || guard.level === 'hard-exceeded'}
+                        onClick={() => onGeneratePanel(activePanel.id)}
+                        className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Wand2 className="h-4 w-4 flex-none" />
+                        <span className="truncate">{t('生成当前格')}</span>
+                        <span className="hidden rounded-md bg-white/15 px-1.5 py-0.5 text-[11px] font-medium sm:inline">
+                          {activePanel.name}
+                        </span>
+                      </button>
+                      {draft.panels.length > 1 && (() => {
+                        const emptyCount = draft.panels.filter(p => !p.image?.url).length;
+                        return (
+                          <button
+                            type="button"
+                            disabled={anyGenerating}
+                            onClick={onGenerateAllPanels}
+                            title={emptyCount > 0 ? t('依次生成本页尚未出图的 {0} 个分镜格', [emptyCount]) : t('依次重新生成本页全部 {0} 个分镜格', [draft.panels.length])}
+                            className="inline-flex flex-none items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200 dark:hover:bg-indigo-950"
+                          >
+                            <Play className="h-3.5 w-3.5 fill-current" />
+                            <span>{emptyCount > 0 && emptyCount < draft.panels.length ? t('余下 {0} 格', [emptyCount]) : t('整页生成')}</span>
+                          </button>
+                        );
+                      })()}
+                    </div>
                   )}
                 </div>
               </>
@@ -1709,6 +2065,153 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
               </select>
             </label>
           </div>
+
+          {/* 常用 V5 生图参数微调（Seed / 步数 / 引导强度 / 采样器 / 噪声调度） */}
+          <div className="space-y-2.5 rounded-xl border border-gray-200/80 bg-gray-50/60 p-2.5 dark:border-gray-800 dark:bg-gray-800/40">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-bold text-gray-700 dark:text-gray-200">{t('生图参数微调')}</span>
+              {lastGeneratedSeed !== undefined && (
+                <button
+                  type="button"
+                  onClick={() => onUpdateDraft(cur => ({ ...cur, seed: lastGeneratedSeed }), true)}
+                  className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200"
+                >
+                  <Lock className="h-2.5 w-2.5" />
+                  <span>{t('锁上次 Seed')} ({lastGeneratedSeed})</span>
+                </button>
+              )}
+            </div>
+
+            <div>
+              <span className="mb-1 block text-[11px] font-semibold text-gray-500 dark:text-gray-400">{t('随机种子 (Seed)')}</span>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min={0}
+                  max={4294967295}
+                  aria-label={t('随机种子')}
+                  value={draft.seed ?? ''}
+                  onChange={e => {
+                    const raw = e.target.value.trim();
+                    onUpdateDraft(cur => ({
+                      ...cur,
+                      seed: raw === '' ? undefined : Math.max(0, Math.min(4294967295, Math.floor(Number(raw) || 0))),
+                    }), false);
+                  }}
+                  onBlur={() => onUpdateDraft(cur => cur, true)}
+                  placeholder={t('留空每次随机')}
+                  className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-mono text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                />
+                <button
+                  type="button"
+                  title={t('清空 Seed，恢复随机')}
+                  aria-label={t('随机 Seed')}
+                  onClick={() => onUpdateDraft(cur => ({ ...cur, seed: undefined }), true)}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-600 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                >
+                  <Dices className="h-3.5 w-3.5" /> {t('随机')}
+                </button>
+              </div>
+            </div>
+
+            {(() => {
+              const isMedium = draft.v5Model === 'nai-diffusion-5-full-medium';
+              return (
+                <>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <label className="block">
+                      <span className="mb-1 flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
+                        <span>{t('步数 (Steps)')}</span>
+                        <span className="font-mono">{isMedium ? '14' : draft.steps}</span>
+                      </span>
+                      <input
+                        type="range"
+                        aria-label={t('生图步数')}
+                        min={10}
+                        max={28}
+                        disabled={isMedium}
+                        value={isMedium ? 14 : draft.steps}
+                        onChange={e => onUpdateDraft(cur => ({ ...cur, steps: Number(e.target.value) }), false)}
+                        className="w-full accent-indigo-600 disabled:opacity-40"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
+                        <span>{t('引导强度 (CFG)')}</span>
+                        <span className="font-mono">{draft.scale.toFixed(1)}</span>
+                      </span>
+                      <input
+                        type="range"
+                        aria-label={t('引导强度')}
+                        min={1}
+                        max={12}
+                        step={0.5}
+                        value={draft.scale}
+                        onChange={e => onUpdateDraft(cur => ({ ...cur, scale: Number(e.target.value) }), false)}
+                        className="w-full accent-indigo-600"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] text-gray-500 dark:text-gray-400">{t('采样器')}</span>
+                      <select
+                        aria-label={t('采样器')}
+                        disabled={isMedium}
+                        value={isMedium ? 'k_euler_ancestral' : draft.sampler}
+                        onChange={e => onUpdateDraft(cur => ({ ...cur, sampler: e.target.value }), true)}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-800 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                      >
+                        <option value="k_euler_ancestral">Euler Ancestral</option>
+                        <option value="k_euler">Euler</option>
+                        <option value="k_dpmpp_2s_ancestral">DPM++ 2S Ancestral</option>
+                        <option value="k_dpmpp_2m_sde">DPM++ 2M SDE</option>
+                        <option value="k_dpmpp_sde">DPM++ SDE</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] text-gray-500 dark:text-gray-400">{t('噪声调度')}</span>
+                      <select
+                        aria-label={t('噪声调度')}
+                        value={draft.noiseSchedule}
+                        onChange={e => onUpdateDraft(cur => ({ ...cur, noiseSchedule: e.target.value as ComicPageDraft['noiseSchedule'] }), true)}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                      >
+                        <option value="karras">Karras</option>
+                        <option value="exponential">Exponential</option>
+                        <option value="polyexponential">Polyexponential</option>
+                        <option value="native">Native</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="block">
+                    <span className="mb-1 flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
+                      <span>{t('提示词引导重缩放 (CFG Rescale)')}</span>
+                      <span className="font-mono">{(isMedium ? 0 : draft.cfgRescale).toFixed(2)}</span>
+                    </span>
+                    <input
+                      type="range"
+                      aria-label={t('CFG 重缩放')}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      disabled={isMedium}
+                      value={isMedium ? 0 : draft.cfgRescale}
+                      onChange={e => onUpdateDraft(cur => ({ ...cur, cfgRescale: Number(e.target.value) }), false)}
+                      className="w-full accent-indigo-600 disabled:opacity-40"
+                    />
+                  </label>
+                  {isMedium && (
+                    <p className="text-[10px] text-gray-400">
+                      {t('V5 Medium 档位由官方固定为 14 步与 Euler Ancestral 采样器；切至 High / Curated 可自由调节全部参数。')}
+                    </p>
+                  )}
+                </>
+              );
+            })()}
+          </div>
         </div>
       )}
 
@@ -1759,10 +2262,80 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                   {selectedBubble.hasTail ? t('指向尾巴：开') : t('指向尾巴：关')}
                 </button>
               </div>
+
               <label className="block">
-                <span className="mb-1 block text-gray-500">{t('字号')} {selectedBubble.fontSize}px</span>
-                <input type="range" min={12} max={56} value={selectedBubble.fontSize} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, fontSize: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+                <span className="mb-1 block text-[11px] text-gray-500">{t('漫画字体')}</span>
+                <select
+                  aria-label={t('气泡字体')}
+                  value={selectedBubble.fontFamily || 'comic-sans'}
+                  onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, fontFamily: e.target.value as ComicFontFamily }), true)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                >
+                  {COMIC_FONT_PRESETS.map(preset => (
+                    <option key={preset.id} value={preset.id}>{t(preset.label)}</option>
+                  ))}
+                </select>
               </label>
+
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="mb-1 block text-gray-500">{t('字号')} {selectedBubble.fontSize}px</span>
+                  <input type="range" min={12} max={56} value={selectedBubble.fontSize} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, fontSize: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-gray-500">{t('旋转')} {selectedBubble.rotation}°</span>
+                  <input type="range" aria-label={t('气泡旋转角度')} min={-45} max={45} value={selectedBubble.rotation} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, rotation: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+                </label>
+              </div>
+
+              <label className="block">
+                <span className="mb-1 block text-gray-500">{t('边框粗细')} {selectedBubble.strokeWidth}px</span>
+                <input type="range" aria-label={t('气泡边框粗细')} min={0} max={10} value={selectedBubble.strokeWidth} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, strokeWidth: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+              </label>
+
+              <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-600 dark:text-gray-300">
+                <label className="flex items-center gap-1">
+                  <span>{t('底色')}</span>
+                  <input
+                    type="color"
+                    aria-label={t('气泡底色')}
+                    value={selectedBubble.fillColor === 'transparent' ? '#ffffff' : selectedBubble.fillColor}
+                    onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, fillColor: e.target.value }), true)}
+                    className="h-5 w-6 cursor-pointer rounded border border-gray-300 bg-transparent"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => onUpdateBubble(selectedBubble.id, i => ({
+                    ...i,
+                    fillColor: i.fillColor === 'transparent' ? '#ffffff' : 'transparent',
+                    strokeWidth: i.fillColor === 'transparent' ? (i.strokeWidth || 3) : 0,
+                  }), true)}
+                  className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${selectedBubble.fillColor === 'transparent' ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                >
+                  {selectedBubble.fillColor === 'transparent' ? t('已透明底') : t('透明嵌字')}
+                </button>
+                <label className="flex items-center gap-1">
+                  <span>{t('字色')}</span>
+                  <input
+                    type="color"
+                    aria-label={t('气泡字色')}
+                    value={selectedBubble.textColor}
+                    onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, textColor: e.target.value }), true)}
+                    className="h-5 w-6 cursor-pointer rounded border border-gray-300 bg-transparent"
+                  />
+                </label>
+                <label className="flex items-center gap-1">
+                  <span>{t('边框')}</span>
+                  <input
+                    type="color"
+                    aria-label={t('气泡边框颜色')}
+                    value={selectedBubble.strokeColor === 'transparent' ? '#111827' : selectedBubble.strokeColor}
+                    onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, strokeColor: e.target.value }), true)}
+                    className="h-5 w-6 cursor-pointer rounded border border-gray-300 bg-transparent"
+                  />
+                </label>
+              </div>
             </div>
           )}
 
@@ -1790,9 +2363,28 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                 </button>
               </div>
               <label className="block">
-                <span className="mb-1 block text-gray-500">{t('字号')} {selectedText.fontSize}px</span>
-                <input type="range" min={14} max={96} value={selectedText.fontSize} onChange={e => onUpdateText(selectedText.id, i => ({ ...i, fontSize: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+                <span className="mb-1 block text-[11px] text-gray-500">{t('漫画字体')}</span>
+                <select
+                  aria-label={t('文字字体')}
+                  value={selectedText.fontFamily || 'impact'}
+                  onChange={e => onUpdateText(selectedText.id, i => ({ ...i, fontFamily: e.target.value as ComicFontFamily }), true)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                >
+                  {COMIC_FONT_PRESETS.map(preset => (
+                    <option key={preset.id} value={preset.id}>{t(preset.label)}</option>
+                  ))}
+                </select>
               </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="mb-1 block text-gray-500">{t('字号')} {selectedText.fontSize}px</span>
+                  <input type="range" min={14} max={96} value={selectedText.fontSize} onChange={e => onUpdateText(selectedText.id, i => ({ ...i, fontSize: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-gray-500">{t('旋转')} {selectedText.rotation}°</span>
+                  <input type="range" aria-label={t('文字旋转角度')} min={-90} max={90} value={selectedText.rotation} onChange={e => onUpdateText(selectedText.id, i => ({ ...i, rotation: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+                </label>
+              </div>
               <div className="flex items-center gap-4">
                 <label className="flex items-center gap-1.5"><span>{t('字色')}</span><input type="color" value={selectedText.color} onChange={e => onUpdateText(selectedText.id, i => ({ ...i, color: e.target.value }), true)} className="h-5 w-7 rounded border" /></label>
                 <label className="flex items-center gap-1.5"><span>{t('描边')}</span><input type="color" value={selectedText.strokeColor || '#ffffff'} onChange={e => onUpdateText(selectedText.id, i => ({ ...i, strokeColor: e.target.value }), true)} className="h-5 w-7 rounded border" /></label>

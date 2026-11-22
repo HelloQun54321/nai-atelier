@@ -35,6 +35,8 @@ export type ComicAnchorKind = 'character' | 'scene' | 'bubble' | 'inset';
 
 export type ComicBubbleShape = 'oval' | 'shout' | 'thought' | 'caption';
 
+export type ComicFontFamily = 'comic-sans' | 'round' | 'hand' | 'bold' | 'impact';
+
 export interface ComicAnchor {
   id: string;
   kind: ComicAnchorKind;
@@ -109,6 +111,7 @@ export interface ComicBubbleItem {
   tailY: number;
   text: string;
   writingMode: 'horizontal' | 'vertical';
+  fontFamily?: ComicFontFamily;
   fontSize: number;
   textColor: string;
   fillColor: string;
@@ -123,6 +126,7 @@ export interface ComicTextItem {
   y: number;
   text: string;
   writingMode: 'horizontal' | 'vertical';
+  fontFamily?: ComicFontFamily;
   fontSize: number;
   color: string;
   strokeColor: string;
@@ -176,6 +180,8 @@ export interface ComicAiGuidePanel {
   id: string;
   label: string;
   summary: string;
+  /** 英文镜头/景别/环境光影词，会在生图时馈入该格对应锚点，确保构图与氛围连贯。 */
+  visualNote?: string;
   /** 相对整页的半透明构图引导区（0..1）。 */
   x: number;
   y: number;
@@ -200,6 +206,10 @@ export interface ComicAiPagePlan {
   guidePanels: ComicAiGuidePanel[];
   anchors: ComicAnchor[];
   generatedPageImage?: ComicAiGeneratedPageImage;
+  /** 首次整页生成原图留底，局部重绘后可随时对比或一键恢复。 */
+  originalGeneratedPageImage?: ComicAiGeneratedPageImage;
+  /** 双区模式下分别保留区 1 / 区 2 已生成成图，支持单区重画与中途断点保留。 */
+  zoneImages?: Partial<Record<'0' | '1', ComicAiGeneratedPageImage>>;
   showGuideOverlay: boolean;
 }
 
@@ -221,6 +231,7 @@ export interface ComicPageDraft {
   globalNegativePrompt: string;
   steps: number;
   scale: number;
+  seed?: number;
   sampler: string;
   noiseSchedule: NaiNoiseSchedule;
   cfgRescale: number;

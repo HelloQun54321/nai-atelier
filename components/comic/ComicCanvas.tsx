@@ -10,7 +10,15 @@ import {
   rotatePointAround,
   snapComicPoint,
 } from '../../services/comic/comicGeometry';
+import {
+  buildCurvedTailPath,
+  buildOrganicBubbleSvgPath,
+  computeAutoFitFontSize,
+  resolveComicFont,
+  seededUnit,
+} from '../../services/comic/comicArtwork';
 import type { ComicAiZonePlan } from '../../services/comic/comicAiPageEngine';
+import type { ComicBubbleCandidate } from '../../services/comic/comicBubbleDetector';
 import { clampInpaintRect, type ComicInpaintDraft, type ComicInpaintRect } from '../../services/comic/comicInpaintEngine';
 import type {
   ComicBubbleItem,
@@ -28,6 +36,8 @@ interface ComicCanvasProps {
   draft: ComicPageDraft;
   aiZonePlan?: ComicAiZonePlan;
   inpaintDraft?: ComicInpaintDraft | null;
+  bubbleCandidates?: ComicBubbleCandidate[] | null;
+  comparingOriginalAiImage?: boolean;
   activeTool: ComicTool;
   selection: ComicSelection;
   zoom: number;
@@ -44,6 +54,9 @@ interface ComicCanvasProps {
   onToggleSnap: () => void;
   onUpdatePanel: (panelId: string, updater: (panel: ComicPanel) => ComicPanel, commit?: boolean) => void;
   onMoveAiAnchor?: (anchorId: string, x: number, y: number, commit?: boolean) => void;
+  onUpdateGuidePanel?: (guideId: string, patch: { x: number; y: number; width: number; height: number }, commit?: boolean) => void;
+  onToggleBubbleCandidate?: (candidateId: string) => void;
+  onWheelScalePanelImage?: (panelId: string, delta: number) => void;
   onChangeInpaintRect?: (rect: ComicInpaintRect) => void;
   onMoveInpaintAnchor?: (anchorId: string, x: number, y: number) => void;
   onAddPanel: (points: ComicPoint[]) => void;
@@ -70,6 +83,8 @@ type DragAction =
   | { kind: 'rotate-panel'; panelId: string; cx: number; cy: number; startAngle: number; origRotation: number }
   | { kind: 'move-anchor'; panelId: string; anchorId: string }
   | { kind: 'move-ai-anchor'; anchorId: string }
+  | { kind: 'move-guide-panel'; guideId: string; dx: number; dy: number; width: number; height: number }
+  | { kind: 'resize-guide-panel'; guideId: string; origX: number; origY: number }
   | { kind: 'draw-inpaint'; startPoint: ComicPoint; currentPoint: ComicPoint }
   | { kind: 'move-inpaint'; dx: number; dy: number; width: number; height: number }
   | { kind: 'resize-inpaint'; origX: number; origY: number }
@@ -89,41 +104,6 @@ type InlineEditState =
   | { kind: 'text'; id: string; value: string }
   | null;
 
-const bubblePathD = (cx: number, cy: number, rx: number, ry: number, shape: ComicBubbleItem['shape']): string => {
-  if (shape === 'caption') {
-    return `M ${cx - rx} ${cy - ry} H ${cx + rx} V ${cy + ry} H ${cx - rx} Z`;
-  }
-  if (shape === 'shout') {
-    const spikes = 18;
-    const pts: string[] = [];
-    for (let i = 0; i < spikes * 2; i++) {
-      const a = (i * Math.PI) / spikes;
-      const f = i % 2 === 0 ? 1.12 : 0.82;
-      pts.push(`${i === 0 ? 'M' : 'L'} ${(cx + Math.cos(a) * rx * f).toFixed(1)} ${(cy + Math.sin(a) * ry * f).toFixed(1)}`);
-    }
-    return `${pts.join(' ')} Z`;
-  }
-  if (shape === 'thought') {
-    const bumps = 12;
-    let d = '';
-    for (let i = 0; i < bumps; i++) {
-      const a0 = (i / bumps) * Math.PI * 2;
-      const a1 = ((i + 0.5) / bumps) * Math.PI * 2;
-      const a2 = ((i + 1) / bumps) * Math.PI * 2;
-      const x0 = cx + Math.cos(a0) * rx * 0.88;
-      const y0 = cy + Math.sin(a0) * ry * 0.88;
-      const xc = cx + Math.cos(a1) * rx * 1.12;
-      const yc = cy + Math.sin(a1) * ry * 1.12;
-      const x2 = cx + Math.cos(a2) * rx * 0.88;
-      const y2 = cy + Math.sin(a2) * ry * 0.88;
-      if (i === 0) d += `M ${x0.toFixed(1)} ${y0.toFixed(1)} `;
-      d += `Q ${xc.toFixed(1)} ${yc.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)} `;
-    }
-    return `${d}Z`;
-  }
-  return `M ${cx - rx} ${cy} a ${rx} ${ry} 0 1 0 ${rx * 2} 0 a ${rx} ${ry} 0 1 0 ${-rx * 2} 0 Z`;
-};
-
 const renderStickerSvg = (sticker: ComicStickerItem, pageW: number, pageH: number) => {
   const cx = sticker.x * pageW;
   const cy = sticker.y * pageH;
@@ -133,81 +113,137 @@ const renderStickerSvg = (sticker: ComicStickerItem, pageW: number, pageH: numbe
 
   return (
     <g transform={`translate(${cx} ${cy}) rotate(${sticker.rotation})`} opacity={sticker.opacity}>
-      {sticker.kind === 'speedlines' && Array.from({ length: 28 }, (_, i) => {
-        const a = (i / 28) * Math.PI * 2;
-        const inner = r * (0.48 + (i % 3) * 0.08);
+      {sticker.kind === 'speedlines' && Array.from({ length: 42 }, (_, i) => {
+        // 漫画 G 笔外粗内尖锥形集中线（疏密自然错落，告别机械等距细棒）
+        const jitter = (seededUnit(sticker.id, i * 3) - 0.5) * 0.08;
+        const a = (i / 42) * Math.PI * 2 + jitter;
+        const inner = r * (0.42 + seededUnit(sticker.id, i * 3 + 1) * 0.24);
+        const outerX = w * 0.54;
+        const outerY = h * 0.54;
+        const halfSpread = 0.012 + seededUnit(sticker.id, i * 3 + 2) * 0.022;
+        const tipX = Math.cos(a) * inner;
+        const tipY = Math.sin(a) * inner;
+        const b1x = Math.cos(a - halfSpread) * outerX;
+        const b1y = Math.sin(a - halfSpread) * outerY;
+        const b2x = Math.cos(a + halfSpread) * outerX;
+        const b2y = Math.sin(a + halfSpread) * outerY;
         return (
-          <line
+          <polygon
             key={i}
-            x1={Math.cos(a) * inner}
-            y1={Math.sin(a) * inner}
-            x2={Math.cos(a) * (w * 0.55)}
-            y2={Math.sin(a) * (h * 0.55)}
-            stroke={sticker.color}
-            strokeWidth={Math.max(2, r * 0.04)}
-            strokeLinecap="round"
+            points={`${tipX.toFixed(1)},${tipY.toFixed(1)} ${b1x.toFixed(1)},${b1y.toFixed(1)} ${b2x.toFixed(1)},${b2y.toFixed(1)}`}
+            fill={sticker.color}
           />
         );
       })}
       {sticker.kind === 'sweat' && (
-        <path
-          d={`M 0 ${-r * 0.85} C ${r * 0.65} ${-r * 0.05}, ${r * 0.6} ${r * 0.85}, 0 ${r * 0.85} C ${-r * 0.6} ${r * 0.85}, ${-r * 0.65} ${-r * 0.05}, 0 ${-r * 0.85} Z`}
-          fill="#e0f2fe"
-          stroke={sticker.color}
-          strokeWidth={Math.max(2.5, r * 0.1)}
-        />
+        <g>
+          <path
+            d={`M 0 ${-r * 0.92} C ${r * 0.58} ${-r * 0.08}, ${r * 0.68} ${r * 0.88}, 0 ${r * 0.88} C ${-r * 0.68} ${r * 0.88}, ${-r * 0.58} ${-r * 0.08}, 0 ${-r * 0.92} Z`}
+            fill="#e0f2fe"
+            stroke={sticker.color}
+            strokeWidth={Math.max(2.5, r * 0.11)}
+            strokeLinejoin="round"
+          />
+          {/* 日漫冷汗内部高光月牙 */}
+          <path
+            d={`M ${-r * 0.18} ${-r * 0.15} C ${-r * 0.34} ${r * 0.15}, ${-r * 0.28} ${r * 0.52}, ${-r * 0.04} ${r * 0.58}`}
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth={Math.max(2.5, r * 0.14)}
+            strokeLinecap="round"
+          />
+        </g>
       )}
-      {sticker.kind === 'anger' && [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([sx, sy], idx) => (
-        <path
-          key={idx}
-          d={`M ${sx * r * 0.72} ${sy * r * 0.22} Q ${sx * r * 0.22} ${sy * r * 0.22} ${sx * r * 0.22} ${sy * r * 0.72}`}
-          fill="none"
-          stroke={sticker.color}
-          strokeWidth={Math.max(3, r * 0.12)}
-          strokeLinecap="round"
-        />
-      ))}
+      {sticker.kind === 'anger' && (
+        <g>
+          {/* 双层白底外描边 + 锋利收笔青筋 */}
+          {[[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([sx, sy], idx) => (
+            <g key={idx}>
+              <path
+                d={`M ${sx * r * 0.78} ${sy * r * 0.18} Q ${sx * r * 0.2} ${sy * r * 0.2} ${sx * r * 0.18} ${sy * r * 0.78}`}
+                fill="none"
+                stroke="#ffffff"
+                strokeWidth={Math.max(5.5, r * 0.22)}
+                strokeLinecap="round"
+              />
+              <path
+                d={`M ${sx * r * 0.78} ${sy * r * 0.18} Q ${sx * r * 0.2} ${sy * r * 0.2} ${sx * r * 0.18} ${sy * r * 0.78}`}
+                fill="none"
+                stroke={sticker.color}
+                strokeWidth={Math.max(3, r * 0.13)}
+                strokeLinecap="round"
+              />
+            </g>
+          ))}
+        </g>
+      )}
       {sticker.kind === 'sparkle' && (
-        <polygon
-          points={Array.from({ length: 8 }, (_, i) => {
-            const a = (i * Math.PI) / 4;
-            const rad = i % 2 === 0 ? r * 0.9 : r * 0.25;
-            return `${(Math.cos(a) * rad).toFixed(1)},${(Math.sin(a) * rad).toFixed(1)}`;
-          }).join(' ')}
-          fill={sticker.color}
-        />
+        <g>
+          {/* 主四角流光星芒 + 左上/右下伴星 */}
+          <path
+            d={`M 0 ${-r * 0.95} Q ${r * 0.08} ${-r * 0.08} ${r * 0.95} 0 Q ${r * 0.08} ${r * 0.08} 0 ${r * 0.95} Q ${-r * 0.08} ${r * 0.08} ${-r * 0.95} 0 Q ${-r * 0.08} ${-r * 0.08} 0 ${-r * 0.95} Z`}
+            fill={sticker.color}
+            stroke="#ffffff"
+            strokeWidth={Math.max(2, r * 0.06)}
+            paintOrder="stroke"
+          />
+          <path
+            transform={`translate(${r * 0.56} ${-r * 0.56}) scale(0.36)`}
+            d={`M 0 ${-r} Q ${r * 0.12} ${-r * 0.12} ${r} 0 Q ${r * 0.12} ${r * 0.12} 0 ${r} Q ${-r * 0.12} ${r * 0.12} ${-r} 0 Q ${-r * 0.12} ${-r * 0.12} 0 ${-r} Z`}
+            fill={sticker.color}
+          />
+          <circle cx={-r * 0.55} cy={r * 0.52} r={Math.max(2, r * 0.09)} fill={sticker.color} />
+        </g>
       )}
-      {sticker.kind === 'shock' && [-2, -1, 0, 1, 2].map(i => (
-        <polyline
-          key={i}
-          points={`${i * w * 0.16},${-h * 0.42} ${i * w * 0.16 + (i % 2 ? 4 : -4)},0 ${i * w * 0.16},${h * 0.42}`}
-          fill="none"
-          stroke={sticker.color}
-          strokeWidth={Math.max(3, r * 0.11)}
-          strokeLinecap="round"
-        />
-      ))}
+      {sticker.kind === 'shock' && [-3, -2, -1, 0, 1, 2, 3].map(i => {
+        const x = i * w * 0.12;
+        const lenFactor = 0.72 + (Math.abs(i) % 2) * 0.22;
+        const thick = Math.max(2, r * (0.045 + (3 - Math.abs(i)) * 0.015));
+        return (
+          <polygon
+            key={i}
+            points={`${(x - thick).toFixed(1)},${(-h * 0.45 * lenFactor).toFixed(1)} ${(x + thick).toFixed(1)},${(-h * 0.45 * lenFactor).toFixed(1)} ${(x + (i % 2 ? 2 : -2)).toFixed(1)},${(h * 0.46 * lenFactor).toFixed(1)}`}
+            fill={sticker.color}
+          />
+        );
+      })}
       {sticker.kind === 'heart' && (
-        <path
-          d={`M 0 ${r * 0.75} C ${-r * 1.1} ${r * 0.1}, ${-r * 0.95} ${-r * 0.85}, 0 ${-r * 0.25} C ${r * 0.95} ${-r * 0.85}, ${r * 1.1} ${r * 0.1}, 0 ${r * 0.75} Z`}
-          fill={sticker.color}
-        />
+        <g>
+          <path
+            d={`M 0 ${r * 0.78} C ${-r * 1.1} ${r * 0.12}, ${-r * 0.95} ${-r * 0.85}, 0 ${-r * 0.24} C ${r * 0.95} ${-r * 0.85}, ${r * 1.1} ${r * 0.12}, 0 ${r * 0.78} Z`}
+            fill={sticker.color}
+            stroke="#ffffff"
+            strokeWidth={Math.max(2.5, r * 0.09)}
+            paintOrder="stroke"
+          />
+          <path
+            d={`M ${-r * 0.48} ${-r * 0.25} Q ${-r * 0.42} ${-r * 0.48} ${-r * 0.22} ${-r * 0.45}`}
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth={Math.max(2.2, r * 0.1)}
+            strokeLinecap="round"
+          />
+        </g>
       )}
       {(sticker.kind === 'exclamation' || sticker.kind === 'question') && (
-        <text
-          x={0}
-          y={0}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontSize={Math.round(r * 1.6)}
-          fontWeight={900}
-          fill={sticker.color}
-          stroke="#ffffff"
-          strokeWidth={Math.max(3, r * 0.14)}
-          paintOrder="stroke"
-        >
-          {sticker.kind === 'exclamation' ? '!' : '?'}
-        </text>
+        <g transform="rotate(-8)">
+          <text
+            x={0}
+            y={0}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontFamily={resolveComicFont('impact').cssFamily}
+            fontSize={Math.round(r * 1.7)}
+            fontWeight={900}
+            fill={sticker.color}
+            stroke="#ffffff"
+            strokeWidth={Math.max(4, r * 0.22)}
+            strokeLinejoin="round"
+            paintOrder="stroke"
+          >
+            {sticker.kind === 'exclamation' ? '!' : '?'}
+          </text>
+        </g>
       )}
     </g>
   );
@@ -217,6 +253,8 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   draft,
   aiZonePlan,
   inpaintDraft,
+  bubbleCandidates,
+  comparingOriginalAiImage,
   activeTool,
   selection,
   zoom,
@@ -233,6 +271,9 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   onToggleSnap,
   onUpdatePanel,
   onMoveAiAnchor,
+  onUpdateGuidePanel,
+  onToggleBubbleCandidate,
+  onWheelScalePanelImage,
   onChangeInpaintRect,
   onMoveInpaintAnchor,
   onAddPanel,
@@ -292,11 +333,25 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     };
   }, []);
 
-  // Ctrl/Cmd + 滚轮缩放画布
+  // Ctrl/Cmd + 滚轮缩放画布；「格内移图 (M)」或 Alt + 滚轮直接微调选中画格的图内缩放
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const onWheel = (event: WheelEvent) => {
+      if (
+        (activeTool === 'frame-image' || event.altKey)
+        && draft.creationMode === 'manual'
+        && selection?.kind === 'panel'
+        && onWheelScalePanelImage
+      ) {
+        const panel = draft.panels.find(p => p.id === selection.id);
+        if (panel?.image?.url) {
+          event.preventDefault();
+          const delta = event.deltaY < 0 ? 0.08 : -0.08;
+          onWheelScalePanelImage(panel.id, delta);
+          return;
+        }
+      }
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
       const delta = event.deltaY < 0 ? 0.1 : -0.1;
@@ -304,7 +359,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [zoom, onZoomChange]);
+  }, [zoom, onZoomChange, activeTool, draft.creationMode, draft.panels, selection, onWheelScalePanelImage]);
 
   // 渲染透明手绘层笔迹
   useEffect(() => {
@@ -554,6 +609,30 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       return;
     }
 
+    if (drag.kind === 'move-guide-panel') {
+      const x = Math.max(0.02, Math.min(0.98 - drag.width, pt.x - drag.dx));
+      const y = Math.max(0.02, Math.min(0.98 - drag.height, pt.y - drag.dy));
+      onUpdateGuidePanel?.(drag.guideId, {
+        x: Math.round(x * 1000) / 1000,
+        y: Math.round(y * 1000) / 1000,
+        width: drag.width,
+        height: drag.height,
+      }, false);
+      return;
+    }
+
+    if (drag.kind === 'resize-guide-panel') {
+      const width = Math.max(0.12, Math.min(0.98 - drag.origX, pt.x - drag.origX));
+      const height = Math.max(0.10, Math.min(0.98 - drag.origY, pt.y - drag.origY));
+      onUpdateGuidePanel?.(drag.guideId, {
+        x: drag.origX,
+        y: drag.origY,
+        width: Math.round(width * 1000) / 1000,
+        height: Math.round(height * 1000) / 1000,
+      }, false);
+      return;
+    }
+
     if (drag.kind === 'draw-inpaint') {
       const next = {
         x: Math.min(drag.startPoint.x, pt.x),
@@ -689,6 +768,9 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     } else if (drag.kind === 'move-ai-anchor') {
       const anchor = draft.aiPage.anchors.find(item => item.id === drag.anchorId);
       if (anchor) onMoveAiAnchor?.(anchor.id, anchor.x, anchor.y, true);
+    } else if (drag.kind === 'move-guide-panel' || drag.kind === 'resize-guide-panel') {
+      const gp = draft.aiPage.guidePanels.find(item => item.id === drag.guideId);
+      if (gp) onUpdateGuidePanel?.(gp.id, { x: gp.x, y: gp.y, width: gp.width, height: gp.height }, true);
     } else if (drag.kind === 'move-bubble') {
       const b = draft.bubbles.find(item => item.id === drag.id);
       if (b) onMoveBubble(b.id, b.x, b.y, true);
@@ -723,13 +805,23 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   const sliceTargetIds = useMemo(() => {
     if (drag?.kind !== 'slice') return new Set<string>();
     const ids = new Set<string>();
+    const aspect = pageW / Math.max(1, pageH);
     for (const panel of draft.panels) {
-      if (!panel.locked && panel.rotation === 0 && doesSegmentIntersectPolygon(drag.startPoint, drag.currentPoint, panel.points)) {
+      if (panel.locked) continue;
+      let s = drag.startPoint;
+      let e = drag.currentPoint;
+      if (panel.rotation) {
+        const b = getPanelBoundingBox(panel.points, 1, 1);
+        const c = { x: b.cx, y: b.cy };
+        s = rotatePointAround(s, c, -panel.rotation, aspect);
+        e = rotatePointAround(e, c, -panel.rotation, aspect);
+      }
+      if (doesSegmentIntersectPolygon(s, e, panel.points)) {
         ids.add(panel.id);
       }
     }
     return ids;
-  }, [drag, draft.panels]);
+  }, [drag, draft.panels, pageW, pageH]);
 
   const cursorClass = isPanningMode
     ? (drag?.kind === 'pan-viewport' ? 'cursor-grabbing' : 'cursor-grab')
@@ -749,11 +841,20 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       : draft.texts.find(item => item.id === inlineEdit.id)
     : undefined;
 
+  const hasRenderedImages = draft.creationMode === 'ai-page'
+    ? Boolean(
+      draft.aiPage.generatedPageImage?.url
+      || draft.aiPage.zoneImages?.['0']?.url
+      || draft.aiPage.zoneImages?.['1']?.url
+      || livePreviewImage,
+    )
+    : (draft.panels.some(p => Boolean(p.image?.url)) || Boolean(livePreviewImage));
+
   return (
     <div
-      className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-100 dark:bg-slate-950"
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-100/70 dark:bg-slate-950/60"
       style={{
-        // 细微绘图桌点阵底纹：去除纯色死空感，承托漫画画纸
+        // 细微绘图桌点阵底纹：去除纯色死空感，承托漫画画纸并透出工坊壁纸与液态玻璃
         backgroundImage: 'radial-gradient(circle, rgba(148, 163, 184, 0.24) 1px, transparent 1px)',
         backgroundSize: '20px 20px',
       }}
@@ -772,6 +873,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
             ref={stageRef}
             role="application"
             aria-label={t('漫画分镜画布')}
+            data-safe-mode-canvas={hasRenderedImages ? 'true' : undefined}
             onPointerDown={handleStagePointerDown}
             onPointerMove={handleStagePointerMove}
             onPointerUp={finishDrag}
@@ -804,20 +906,40 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                 if (layerId === 'panels') {
                   if (draft.creationMode === 'ai-page') {
                     const aiPage = draft.aiPage;
-                    const hasGenerated = Boolean(aiPage.generatedPageImage?.url);
-                    const showGuides = aiPage.showGuideOverlay || !hasGenerated;
+                    const displayBaseUrl = comparingOriginalAiImage && aiPage.originalGeneratedPageImage?.url
+                      ? aiPage.originalGeneratedPageImage.url
+                      : aiPage.generatedPageImage?.url;
+                    const hasGenerated = Boolean(displayBaseUrl) || Boolean(aiPage.zoneImages?.['0']?.url || aiPage.zoneImages?.['1']?.url);
+                    const showGuides = aiPage.showGuideOverlay || !displayBaseUrl;
                     const activeZoneRect = aiZonePlan?.zones[generatingAiZoneIndex ?? 0]?.rect || { x: 0, y: 0, width: 1, height: 1 };
                     return (
                       <g key="panels" clipPath="url(#comic-page-bounds)">
-                        {aiPage.generatedPageImage?.url && (
+                        {displayBaseUrl ? (
                           <image
-                            href={aiPage.generatedPageImage.url}
+                            href={displayBaseUrl}
                             x={0}
                             y={0}
                             width={pageW}
                             height={pageH}
                             preserveAspectRatio="xMidYMid slice"
                           />
+                        ) : (
+                          // 双区生成若只完成了其中一区，直接展示已保存的那半页成图，绝不丢失进度
+                          aiZonePlan?.zones.map(zone => {
+                            const savedZone = aiPage.zoneImages?.[String(zone.zoneIndex) as '0' | '1'];
+                            if (!savedZone?.url) return null;
+                            return (
+                              <image
+                                key={zone.zoneIndex}
+                                href={savedZone.url}
+                                x={zone.rect.x * pageW}
+                                y={zone.rect.y * pageH}
+                                width={zone.rect.width * pageW}
+                                height={zone.rect.height * pageH}
+                                preserveAspectRatio="xMidYMid slice"
+                              />
+                            );
+                          })
                         )}
                         {generatingAiPage && livePreviewImage && (
                           <image
@@ -1127,10 +1249,23 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                         const ry = (bubble.height * pageH) / 2;
                         const tx = bubble.tailX * pageW;
                         const ty = bubble.tailY * pageH;
-                        const angle = Math.atan2(ty - cy, tx - cx);
-                        const baseW = Math.min(rx, ry) * 0.22;
                         const selected = selection?.kind === 'bubble' && selection.id === bubble.id;
                         const isInlineEditing = inlineEdit?.kind === 'bubble' && inlineEdit.id === bubble.id;
+                        const isTransparentFill = !bubble.fillColor || bubble.fillColor === 'transparent';
+                        const strokeColor = selected ? '#4f46e5' : (bubble.strokeWidth > 0 ? bubble.strokeColor : 'none');
+                        const strokeW = selected ? Math.max(bubble.strokeWidth, 2) : bubble.strokeWidth;
+                        const bodyPath = buildOrganicBubbleSvgPath(cx, cy, rx, ry, bubble.shape, bubble.id);
+                        const tailPath = bubble.hasTail && bubble.shape !== 'caption' && bubble.shape !== 'thought' && !isTransparentFill
+                          ? buildCurvedTailPath(cx, cy, rx, ry, tx, ty)
+                          : '';
+                        const fontMeta = resolveComicFont(bubble.fontFamily);
+                        const fittedSize = computeAutoFitFontSize(
+                          bubble.text,
+                          bubble.fontSize,
+                          rx * 1.54,
+                          ry * 1.54,
+                          bubble.writingMode,
+                        );
                         return (
                           <g
                             key={bubble.id}
@@ -1150,35 +1285,48 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                               setDrag({ kind: 'move-bubble', id: bubble.id, dx: pt.x - bubble.x, dy: pt.y - bubble.y });
                             }}
                           >
-                            {bubble.hasTail && bubble.shape !== 'caption' && bubble.shape !== 'thought' && (
-                              <polygon
-                                points={`${cx + Math.cos(angle - Math.PI / 2) * baseW},${cy + Math.sin(angle - Math.PI / 2) * baseW} ${tx},${ty} ${cx + Math.cos(angle + Math.PI / 2) * baseW},${cy + Math.sin(angle + Math.PI / 2) * baseW}`}
-                                fill={bubble.fillColor}
-                                stroke={selected ? '#4f46e5' : bubble.strokeColor}
-                                strokeWidth={bubble.strokeWidth}
-                              />
-                            )}
-                            {bubble.hasTail && bubble.shape === 'thought' && [0.65, 0.85].map((ratio, idx) => (
+                            {bubble.hasTail && bubble.shape === 'thought' && !isTransparentFill && [0.56, 0.74, 0.90].map((ratio, idx) => (
                               <circle
                                 key={idx}
                                 cx={cx + (tx - cx) * ratio}
                                 cy={cy + (ty - cy) * ratio}
-                                r={idx === 0 ? Math.min(rx, ry) * 0.16 : Math.min(rx, ry) * 0.1}
+                                r={Math.min(rx, ry) * (idx === 0 ? 0.16 : idx === 1 ? 0.11 : 0.065)}
                                 fill={bubble.fillColor}
-                                stroke={selected ? '#4f46e5' : bubble.strokeColor}
-                                strokeWidth={bubble.strokeWidth}
+                                stroke={strokeColor}
+                                strokeWidth={strokeW}
                               />
                             ))}
-                            <g transform={bubble.rotation ? `rotate(${bubble.rotation} ${cx} ${cy})` : undefined}>
+                            {/* 先统一画外描边，再用内部填充无缝融合尾巴与气泡本体（彻底消除三角形接缝穿帮） */}
+                            {tailPath && strokeW > 0 && (
                               <path
-                                d={bubblePathD(cx, cy, rx, ry, bubble.shape)}
-                                fill={bubble.fillColor || 'transparent'}
-                                stroke={selected ? '#4f46e5' : (bubble.strokeWidth > 0 ? bubble.strokeColor : 'none')}
-                                strokeWidth={selected ? Math.max(bubble.strokeWidth, 2) : bubble.strokeWidth}
-                                strokeDasharray={selected && bubble.strokeWidth <= 0 ? '6 4' : undefined}
+                                d={tailPath}
+                                fill="none"
+                                stroke={strokeColor}
+                                strokeWidth={strokeW * 2}
+                                strokeLinejoin="round"
                               />
+                            )}
+                            <g transform={bubble.rotation ? `rotate(${bubble.rotation} ${cx} ${cy})` : undefined}>
+                              {strokeW > 0 && (
+                                <path
+                                  d={bodyPath}
+                                  fill="none"
+                                  stroke={strokeColor}
+                                  strokeWidth={isTransparentFill ? strokeW : strokeW * 2}
+                                  strokeLinejoin="round"
+                                  strokeDasharray={selected && bubble.strokeWidth <= 0 ? '6 4' : undefined}
+                                />
+                              )}
+                            </g>
+                            {tailPath && (
+                              <path d={tailPath} fill={bubble.fillColor} stroke="none" />
+                            )}
+                            <g transform={bubble.rotation ? `rotate(${bubble.rotation} ${cx} ${cy})` : undefined}>
+                              {!isTransparentFill && (
+                                <path d={bodyPath} fill={bubble.fillColor} stroke="none" />
+                              )}
                               {!isInlineEditing && (
-                                <foreignObject x={cx - rx * 0.8} y={cy - ry * 0.8} width={rx * 1.6} height={ry * 1.6}>
+                                <foreignObject x={cx - rx * 0.78} y={cy - ry * 0.78} width={rx * 1.56} height={ry * 1.56}>
                                   <div
                                     style={{
                                       width: '100%',
@@ -1188,9 +1336,10 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                       justifyContent: 'center',
                                       textAlign: 'center',
                                       color: bubble.textColor,
-                                      fontSize: `${bubble.fontSize}px`,
-                                      fontWeight: 600,
-                                      lineHeight: 1.25,
+                                      fontFamily: fontMeta.cssFamily,
+                                      fontSize: `${fittedSize}px`,
+                                      fontWeight: fontMeta.defaultWeight,
+                                      lineHeight: 1.22,
                                       writingMode: bubble.writingMode === 'vertical' ? 'vertical-rl' : 'horizontal-tb',
                                       wordBreak: 'break-word',
                                       overflow: 'hidden',
@@ -1271,11 +1420,13 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                 y={0}
                                 textAnchor="middle"
                                 dominantBaseline="central"
+                                fontFamily={resolveComicFont(item.fontFamily || 'impact').cssFamily}
                                 fontSize={item.fontSize}
-                                fontWeight={item.bold ? 800 : 600}
+                                fontWeight={item.bold ? 900 : 600}
                                 fill={item.color}
                                 stroke={item.strokeColor || undefined}
                                 strokeWidth={item.strokeColor ? Math.max(2, item.fontSize * 0.14) : 0}
+                                strokeLinejoin="round"
                                 paintOrder="stroke"
                                 style={{ writingMode: item.writingMode === 'vertical' ? 'vertical-rl' : 'horizontal-tb' }}
                               >
@@ -1471,8 +1622,84 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
               </div>
             )}
 
-            {draft.creationMode === 'ai-page' && !inpaintDraft && (draft.aiPage.showGuideOverlay || !draft.aiPage.generatedPageImage?.url) && (
+            {/* 可视化气泡候选校对叠层：点击框可直接勾选/取消，彻底杜绝黑白漫误检乱塞占位字 */}
+            {draft.creationMode === 'ai-page' && bubbleCandidates && bubbleCandidates.length > 0 && (
+              <div className="pointer-events-none absolute inset-0 z-25">
+                {bubbleCandidates.map((cand, idx) => (
+                  <button
+                    key={cand.id}
+                    type="button"
+                    aria-label={t('气泡候选 {0}', [idx + 1])}
+                    aria-pressed={cand.selected}
+                    onClick={event => {
+                      event.stopPropagation();
+                      onToggleBubbleCandidate?.(cand.id);
+                    }}
+                    style={{
+                      left: `${(cand.x - cand.width / 2) * 100}%`,
+                      top: `${(cand.y - cand.height / 2) * 100}%`,
+                      width: `${cand.width * 100}%`,
+                      height: `${cand.height * 100}%`,
+                    }}
+                    className={`pointer-events-auto absolute flex items-start justify-start rounded-lg border-2 p-1 text-left transition ${cand.selected ? 'border-emerald-500 bg-emerald-500/15 shadow-sm' : 'border-dashed border-slate-400/80 bg-slate-500/10 opacity-65 hover:opacity-100'}`}
+                  >
+                    <span className={`rounded px-1 py-0.5 text-[10px] font-bold text-white shadow ${cand.selected ? 'bg-emerald-600' : 'bg-slate-600'}`}>
+                      {cand.selected ? '✓ ' : ''}{idx + 1}{cand.text ? ` · ${cand.text.slice(0, 6)}` : ''}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {draft.creationMode === 'ai-page' && !inpaintDraft && !(bubbleCandidates && bubbleCandidates.length > 0) && (draft.aiPage.showGuideOverlay || !draft.aiPage.generatedPageImage?.url) && (
               <div className="pointer-events-none absolute inset-0 z-20">
+                {/* 引导格拖拽移动与右下角缩放把手：引导框不再是只能看的摆设 */}
+                {activeTool === 'select' && onUpdateGuidePanel && draft.aiPage.guidePanels.map((gp, idx) => (
+                  <div
+                    key={`guide-ctrl-${gp.id}`}
+                    style={{
+                      left: `${gp.x * 100}%`,
+                      top: `${gp.y * 100}%`,
+                      width: `${gp.width * 100}%`,
+                      height: `${gp.height * 100}%`,
+                    }}
+                    className="pointer-events-none absolute"
+                  >
+                    <button
+                      type="button"
+                      aria-label={t('移动引导格 {0}', [gp.label || `第 ${idx + 1} 格`])}
+                      title={t('拖拽移动引导格位置')}
+                      onPointerDown={event => {
+                        if (isPanningMode) return;
+                        event.stopPropagation();
+                        const pt = toNormalizedPoint(event.clientX, event.clientY);
+                        stageRef.current?.setPointerCapture?.(event.pointerId);
+                        setDrag({
+                          kind: 'move-guide-panel',
+                          guideId: gp.id,
+                          dx: pt.x - gp.x,
+                          dy: pt.y - gp.y,
+                          width: gp.width,
+                          height: gp.height,
+                        });
+                      }}
+                      className="pointer-events-auto absolute top-1.5 left-1.5 h-6 w-20 cursor-move rounded bg-transparent hover:bg-indigo-500/15"
+                    />
+                    <button
+                      type="button"
+                      aria-label={t('调整引导格 {0} 大小', [gp.label || `第 ${idx + 1} 格`])}
+                      title={t('拖拽调整引导格宽高')}
+                      onPointerDown={event => {
+                        if (isPanningMode) return;
+                        event.stopPropagation();
+                        stageRef.current?.setPointerCapture?.(event.pointerId);
+                        setDrag({ kind: 'resize-guide-panel', guideId: gp.id, origX: gp.x, origY: gp.y });
+                      }}
+                      className="pointer-events-auto absolute -right-1.5 -bottom-1.5 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border-2 border-white bg-indigo-500 shadow hover:scale-125"
+                    />
+                  </div>
+                ))}
+
                 {draft.aiPage.anchors.map((anchor, idx) => {
                   const isSelected = selection?.kind === 'ai-anchor' && selection.id === anchor.id;
                   const dotClass = anchor.kind === 'character' ? 'bg-blue-600'

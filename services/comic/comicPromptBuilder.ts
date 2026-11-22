@@ -283,6 +283,7 @@ export const buildComicPanelGenerationInput = (
     variety: page.variety === true,
     qualityPresetId: page.qualityPresetId || 'standard',
     ucPresetId: isMedium ? 'heavy' : (page.ucPresetId || 'light'),
+    ...(page.seed !== undefined ? { seed: page.seed } : {}),
     useCoords: panel.useCoords && characters.length > 0,
     characters,
   };
@@ -293,5 +294,29 @@ export const buildComicPanelGenerationInput = (
     params,
     guard,
     warnings,
+  };
+};
+
+const DANBOORU_CAST_PREFIX = 'danbooru:';
+
+/** 将 Danbooru 词库角色编码为稳定的 castCharacterIds 项。 */
+export const encodeDanbooruCastId = (tagName: string, chineseLabel?: string): string => {
+  const cleanTag = tagName.trim();
+  const cleanLabel = (chineseLabel || '').trim();
+  return cleanLabel ? `${DANBOORU_CAST_PREFIX}${cleanTag}|${cleanLabel}` : `${DANBOORU_CAST_PREFIX}${cleanTag}`;
+};
+
+/** 解析 castCharacterIds 中的 Danbooru 词库角色项；非词库项返回 null。 */
+export const parseDanbooruCastId = (id: string): { tag: string; label: string; prompt: string } | null => {
+  if (!id.startsWith(DANBOORU_CAST_PREFIX)) return null;
+  const rest = id.slice(DANBOORU_CAST_PREFIX.length);
+  const sep = rest.indexOf('|');
+  const tag = (sep >= 0 ? rest.slice(0, sep) : rest).trim();
+  if (!tag) return null;
+  const label = (sep >= 0 ? rest.slice(sep + 1) : '').trim() || tag.replace(/_/g, ' ');
+  return {
+    tag,
+    label,
+    prompt: tag.replace(/_/g, ' '),
   };
 };

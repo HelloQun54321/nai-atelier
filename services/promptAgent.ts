@@ -522,7 +522,11 @@ export const promptAgentService = {
       if (!fallback.ok) return readError(fallback) as never;
       const payload = await fallback.json() as { prompt?: string; provider?: string; model?: string };
       return {
-        ...parseComicStoryboardResponse(payload.prompt || '', { dialogueMode: input.dialogueMode }),
+        ...parseComicStoryboardResponse(payload.prompt || '', {
+          dialogueMode: input.dialogueMode,
+          existingGuidePanels: input.existingGuidePanels,
+          preserveExistingLayout: input.preserveExistingLayout,
+        }),
         provider: payload.provider,
         model: payload.model,
       };

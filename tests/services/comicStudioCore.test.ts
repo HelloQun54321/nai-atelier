@@ -14,7 +14,9 @@ import {
   buildComicPanelGenerationInput,
   COMIC_ANCHOR_HARD_LIMIT,
   COMIC_ANCHOR_SOFT_LIMIT,
+  encodeDanbooruCastId,
   evaluateAnchorGuard,
+  parseDanbooruCastId,
   stripColorTagsForMonochrome,
 } from '../../services/comic/comicPromptBuilder';
 import {
@@ -23,8 +25,21 @@ import {
 } from '../../services/comic/comicAiPageEngine';
 import {
   buildEmbeddedBubbleTextItems,
+  commitBubbleCandidates,
   detectWhiteBubblesFromPixels,
+  prepareBubbleCandidates,
 } from '../../services/comic/comicBubbleDetector';
+import {
+  buildCurvedTailPath,
+  buildOrganicBubbleSvgPath,
+  computeAutoFitFontSize,
+} from '../../services/comic/comicArtwork';
+import {
+  deleteCustomComicTemplate,
+  instantiateCustomTemplatePanels,
+  loadCustomComicTemplates,
+  saveCustomComicTemplate,
+} from '../../services/comic/comicCustomTemplates';
 import {
   buildComicInpaintRequest,
 } from '../../services/comic/comicInpaintEngine';
@@ -419,5 +434,131 @@ describe('comicBubbleDetector & comicInpaintEngine (Phase 3)', () => {
     expect(compiled.params.characters?.[0]?.x).toBeCloseTo(0.04 + 0.5 * 0.44, 2);
     expect(compiled.params.characters?.[0]?.y).toBeCloseTo(0.50 + 0.5 * 0.40, 2);
     expect(compiled.focusedRect.width).toBeGreaterThan(200);
+  });
+});
+
+describe('Comic Studio polish upgrades (layout preservation, visualNote, smart bubble review, artwork, templates)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('locks existing canvas guidePanels when preserveExistingLayout is true and feeds visualNote + seed into V5 generation', () => {
+    const existingGuidePanels = [
+      { label: '第 1 格', x: 0.04, y: 0.04, width: 0.92, height: 0.30 },
+      { label: '第 2 格', x: 0.04, y: 0.38, width: 0.92, height: 0.56 },
+    ];
+    const llmRaw = JSON.stringify({
+      title: '雨夜交汇',
+      layoutHint: '2-panel manga page, clean white gutters',
+      guidePanels: [
+        { label: '第 1 格', summary: '雨滴打在窗玻璃上', visualNote: 'extreme close-up, rain drops on classroom window, moody blue backlight', x: 0.1, y: 0.1, width: 0.5, height: 0.5 },
+        { label: '第 2 格', summary: '少女撑伞回眸', visualNote: 'medium shot, low angle, wet street reflection', x: 0.2, y: 0.6, width: 0.6, height: 0.3 },
+      ],
+      anchors: [
+        { kind: 'character', label: '少女-格2', prompt: '1girl, silver hair, holding umbrella', x: 0.5, y: 0.66 },
+      ],
+    });
+    const parsed = parseComicStoryboardResponse(llmRaw, {
+      dialogueMode: 'clean-vector',
+      existingGuidePanels,
+      preserveExistingLayout: true,
+    });
+    // 严格锁定用户画布参考框几何，不被大模型坐标覆盖
+    expect(parsed.guidePanels[0].x).toBe(0.04);
+    expect(parsed.guidePanels[0].height).toBe(0.30);
+    expect(parsed.guidePanels[0].visualNote).toContain('rain drops');
+    expect(parsed.guidePanels[1].height).toBe(0.56);
+
+    const draft = createInitialComicDraft('classic-4-121');
+    draft.creationMode = 'ai-page';
+    draft.seed = 424242;
+    draft.aiPage.splitMode = 'single';
+    draft.aiPage.guidePanels = parsed.guidePanels.map((gp, i) => ({ id: `g-${i}`, ...gp }));
+    draft.aiPage.anchors = parsed.anchors.map((a, i) => ({ id: `a-${i}`, ...a }));
+
+    const plan = planComicAiZones(draft);
+    const compiled = buildAiPageZoneRequest(draft, plan.zones[0], 1);
+    expect(compiled.params.seed).toBe(424242);
+    // 第 1 格无角色锚点但有 visualNote，应自动合成 1 个场景锚点；第 2 格角色锚点自动融合该格 visualNote
+    expect(compiled.params.characters).toHaveLength(2);
+    const prompts = (compiled.params.characters || []).map(c => c.prompt);
+    expect(prompts.some(p => p.includes('rain drops on classroom window'))).toBe(true);
+    expect(prompts.some(p => p.includes('silver hair') && p.includes('medium shot'))).toBe(true);
+  });
+
+  it('rejects unoutlined white highlights in monochrome mode while accepting ink-bordered speech bubbles and visual candidate review', () => {
+    const w = 200;
+    const h = 240;
+    const pixels = new Uint8ClampedArray(w * h * 4);
+    // 整张黑白灰网点底色（亮度 185，较浅）
+    for (let i = 0; i < w * h; i++) {
+      pixels[i * 4] = 185;
+      pixels[i * 4 + 1] = 185;
+      pixels[i * 4 + 2] = 185;
+      pixels[i * 4 + 3] = 255;
+    }
+    const drawEllipse = (cx: number, cy: number, rx: number, ry: number, borderInk: boolean) => {
+      for (let y = Math.floor(cy - ry - 3); y <= Math.ceil(cy + ry + 3); y++) {
+        for (let x = Math.floor(cx - rx - 3); x <= Math.ceil(cx + rx + 3); x++) {
+          if (x < 0 || x >= w || y < 0 || y >= h) continue;
+          const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
+          const idx = (y * w + x) * 4;
+          if (d <= 1) {
+            pixels[idx] = 252;
+            pixels[idx + 1] = 252;
+            pixels[idx + 2] = 252;
+          } else if (borderInk && d <= 1.25) {
+            pixels[idx] = 20;
+            pixels[idx + 1] = 20;
+            pixels[idx + 2] = 20;
+          }
+        }
+      }
+    };
+    // 上方：有黑墨线闭合边框的真气泡；下方：无黑线边框的人物白色衣服高光区
+    drawEllipse(100, 60, 28, 20, true);
+    drawEllipse(100, 170, 28, 20, false);
+
+    const monoDetected = detectWhiteBubblesFromPixels(pixels, w, h, { colorMode: 'monochrome' });
+    expect(monoDetected).toHaveLength(1);
+    expect(monoDetected[0].y).toBeCloseTo(60 / h, 1);
+
+    const candidates = prepareBubbleCandidates(monoDetected, [], []);
+    expect(candidates).toHaveLength(1);
+    candidates[0].text = '校对后的台词';
+    candidates[0].selected = true;
+    const committed = commitBubbleCandidates(candidates, { writingMode: 'vertical', pageHeight: 1216 });
+    expect(committed).toHaveLength(1);
+    expect(committed[0].text).toBe('校对后的台词');
+    expect(committed[0].fillColor).toBe('transparent');
+  });
+
+  it('auto-fits long dialogue text, generates hand-drawn bubble/tail paths, custom templates, and Danbooru cast IDs', () => {
+    const shortSize = computeAutoFitFontSize('你好', 26, 140, 90, 'horizontal');
+    const longSize = computeAutoFitFontSize('这是一段非常非常长的漫画台词测试内容用来确认不会溢出截断', 26, 140, 90, 'horizontal');
+    expect(shortSize).toBe(26);
+    expect(longSize).toBeLessThan(shortSize);
+    expect(longSize).toBeGreaterThanOrEqual(10);
+
+    for (const shape of ['oval', 'shout', 'thought', 'caption'] as const) {
+      const d = buildOrganicBubbleSvgPath(100, 60, 90, 50, shape, 'seed-1');
+      expect(d.startsWith('M ')).toBe(true);
+    }
+    const tail = buildCurvedTailPath(100, 60, 90, 50, 150, 140);
+    expect(tail).toContain('Q ');
+
+    const draft = createInitialComicDraft('classic-4-121');
+    const savedList = saveCustomComicTemplate('我的动作分镜', draft.panels);
+    expect(savedList).toHaveLength(1);
+    expect(loadCustomComicTemplates()).toHaveLength(1);
+    const instantiated = instantiateCustomTemplatePanels(savedList[0]);
+    expect(instantiated).toHaveLength(draft.panels.length);
+    expect(instantiated[0].id).not.toBe(draft.panels[0].id);
+    expect(deleteCustomComicTemplate(savedList[0].id)).toHaveLength(0);
+
+    const encoded = encodeDanbooruCastId('hatsune_miku', '初音未来');
+    const parsed = parseDanbooruCastId(encoded);
+    expect(parsed).toEqual({ tag: 'hatsune_miku', label: '初音未来', prompt: 'hatsune miku' });
+    expect(parseDanbooruCastId('custom-chain-1')).toBeNull();
   });
 });

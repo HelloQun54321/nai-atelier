@@ -162,6 +162,8 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
       expect(planSpy).toHaveBeenCalledTimes(1);
     });
     expect(planSpy.mock.calls[0][0].castCharacters?.[0]?.name).toBe('银发女主');
+    expect(planSpy.mock.calls[0][0].preserveExistingLayout).toBe(true);
+    expect(planSpy.mock.calls[0][0].existingGuidePanels?.length).toBeGreaterThan(0);
 
     // 画布渲染整页可拖锚点
     await waitFor(() => {
@@ -169,9 +171,11 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
       expect(screen.getByRole('button', { name: '整页锚点 台词-格2' })).toBeTruthy();
     });
 
-    // 切换上下双区，按钮展示「2 区拼合」
+    // 切换上下双区，按钮展示「2 区拼合」且提供单区独立精修入口
     fireEvent.click(screen.getByRole('button', { name: '上下双区' }));
     expect(screen.getByText('2 区拼合')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /仅画区 1/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /仅画区 2/ })).toBeTruthy();
 
     // 一键将气泡锚点转为可编辑矢量气泡
     fireEvent.click(screen.getByRole('button', { name: /气泡点转矢量嵌字/ }));
@@ -196,10 +200,55 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: /新增一页/ }));
     expect(screen.getByText('P02')).toBeTruthy();
 
-    // 切换进入整话连续阅读视图并切回书架
+    // 切换进入整话连续阅读视图并切回书架，同时验证可编辑工程导入/导出入口存在
+    expect(screen.getByRole('button', { name: /导出工程/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /导入工程/ })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /整话连续阅读/ }));
     expect(screen.getByRole('button', { name: /返回书架/ })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /返回书架/ }));
     expect(screen.getByRole('button', { name: /整话打包导出 ZIP/ })).toBeTruthy();
+  });
+
+  it('exposes batch panel generation, full V5 parameter tuning, rich bubble styling, and custom layout templates', () => {
+    renderStudio();
+
+    // 手动逐格模式提供「整页生成」一键顺序生图入口
+    expect(screen.getByRole('button', { name: /整页生成/ })).toBeTruthy();
+
+    // 画风设定标签提供完整的 Seed / Steps / CFG / Sampler / Noise Schedule 参数微调
+    fireEvent.click(screen.getByRole('tab', { name: '画风设定' }));
+    const seedInput = screen.getByRole('spinbutton', { name: '随机种子' }) as HTMLInputElement;
+    fireEvent.change(seedInput, { target: { value: '123456' } });
+    expect(seedInput.value).toBe('123456');
+    expect(screen.getByRole('slider', { name: '生图步数' })).toBeTruthy();
+    expect(screen.getByRole('slider', { name: '引导强度' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '采样器' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '噪声调度' })).toBeTruthy();
+
+    // 顶栏「画幅与模板」支持将当前分镜保存为自定义模板并删除
+    fireEvent.click(screen.getByRole('button', { name: '画幅与模板' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '自定义模板名称' }), { target: { value: '我的经典四格' } });
+    fireEvent.click(screen.getByRole('button', { name: /存为模板/ }));
+    expect(screen.getByText('我的经典四格')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '删除自定义模板 我的经典四格' }));
+    expect(screen.queryByText('我的经典四格')).toBeNull();
+
+    // 添加矢量气泡后，右侧属性栏支持字体、旋转、边框粗细与颜色调节
+    fireEvent.click(screen.getByRole('button', { name: '画幅与模板' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加气泡' }));
+    const stage = screen.getByRole('application', { name: '漫画分镜画布' });
+    vi.spyOn(stage, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 500, bottom: 700, width: 500, height: 700, toJSON: () => ({}),
+    });
+    fireEvent(stage, new MouseEvent('pointerdown', {
+      bubbles: true,
+      button: 0,
+      clientX: 120,
+      clientY: 120,
+    }));
+    expect(screen.getByRole('combobox', { name: '气泡字体' })).toBeTruthy();
+    expect(screen.getByRole('slider', { name: '气泡旋转角度' })).toBeTruthy();
+    expect(screen.getByRole('slider', { name: '气泡边框粗细' })).toBeTruthy();
+    expect(screen.getByLabelText('气泡底色')).toBeTruthy();
   });
 });

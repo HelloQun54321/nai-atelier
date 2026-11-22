@@ -602,7 +602,7 @@ const App = () => {
     if (safeMode) resetSafeModeReveals();
   }, [view, safeMode]);
 
-  const findSafeModeTarget = (target: HTMLElement, clientX: number, clientY: number): HTMLElement | null => {
+  const findSafeModeTarget = (target: Element, clientX: number, clientY: number): HTMLElement | null => {
     if (target instanceof HTMLImageElement) return target;
 
     const canvasTarget = target.closest<HTMLElement>('[data-safe-mode-canvas="true"]');
@@ -619,7 +619,7 @@ const App = () => {
     const interactiveBoundary = target.closest<HTMLElement>(
       'button, a, input, textarea, select, [role="button"], [contenteditable="true"]',
     );
-    let current: HTMLElement | null = target;
+    let current: HTMLElement | null = target instanceof HTMLElement ? target : target.parentElement;
     for (let depth = 0; current && depth < 6; depth++, current = current.parentElement) {
       const candidates = Array.from(current.querySelectorAll<HTMLImageElement>('img'))
         .filter(image => {
@@ -638,7 +638,7 @@ const App = () => {
   };
 
   const handleSafeModeClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!safeMode || !(event.target instanceof HTMLElement)) return;
+    if (!safeMode || !(event.target instanceof Element)) return;
     const title = safeModeHideTitles ? event.target.closest<HTMLElement>('[data-safe-mode-title="true"]') : null;
     if (title) {
       const work = title.closest<HTMLElement>('[data-safe-mode-work="true"]');

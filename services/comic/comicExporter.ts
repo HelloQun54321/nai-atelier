@@ -1,9 +1,17 @@
 import { downloadFile } from '../fileDownload';
 import { localHistory } from '../localHistory';
+import {
+  computeAutoFitFontSize,
+  resolveComicFont,
+  seededUnit,
+  traceCurvedTailCanvas,
+  traceOrganicBubbleCanvas,
+} from './comicArtwork';
 import type { ComicBook } from './comicBookshelf';
 import { getPanelBoundingBox } from './comicGeometry';
 import type {
   ComicBubbleItem,
+  ComicFontFamily,
   ComicLayerId,
   ComicPageDraft,
   ComicPanel,
@@ -31,56 +39,6 @@ const tracePanelPath = (ctx: CanvasRenderingContext2D, panel: ComicPanel, pageW:
   ctx.closePath();
 };
 
-const drawBubbleShapePath = (
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  rx: number,
-  ry: number,
-  shape: ComicBubbleItem['shape'],
-) => {
-  ctx.beginPath();
-  if (shape === 'caption') {
-    ctx.rect(cx - rx, cy - ry, rx * 2, ry * 2);
-    ctx.closePath();
-    return;
-  }
-  if (shape === 'shout') {
-    const spikes = 18;
-    for (let i = 0; i < spikes * 2; i++) {
-      const angle = (i * Math.PI) / spikes;
-      const factor = i % 2 === 0 ? 1.12 : 0.82;
-      const x = cx + Math.cos(angle) * rx * factor;
-      const y = cy + Math.sin(angle) * ry * factor;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    return;
-  }
-  if (shape === 'thought') {
-    const bumps = 12;
-    for (let i = 0; i < bumps; i++) {
-      const a0 = (i / bumps) * Math.PI * 2;
-      const a1 = ((i + 0.5) / bumps) * Math.PI * 2;
-      const a2 = ((i + 1) / bumps) * Math.PI * 2;
-      const x0 = cx + Math.cos(a0) * rx * 0.88;
-      const y0 = cy + Math.sin(a0) * ry * 0.88;
-      const xc = cx + Math.cos(a1) * rx * 1.12;
-      const yc = cy + Math.sin(a1) * ry * 1.12;
-      const x2 = cx + Math.cos(a2) * rx * 0.88;
-      const y2 = cy + Math.sin(a2) * ry * 0.88;
-      if (i === 0) ctx.moveTo(x0, y0);
-      ctx.quadraticCurveTo(xc, yc, x2, y2);
-    }
-    ctx.closePath();
-    return;
-  }
-  // oval
-  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-  ctx.closePath();
-};
-
 const drawWrappedText = (
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -93,11 +51,14 @@ const drawWrappedText = (
   color: string,
   strokeColor?: string,
   bold = false,
+  fontFamily?: ComicFontFamily,
 ) => {
   const clean = text.trim();
   if (!clean) return;
+  const fontMeta = resolveComicFont(fontFamily);
+  const weight = bold ? Math.max(800, fontMeta.defaultWeight) : fontMeta.defaultWeight;
   ctx.save();
-  ctx.font = `${bold ? '700 ' : '600 '}${fontSize}px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif`;
+  ctx.font = `${weight} ${fontSize}px ${fontMeta.cssFamily}`;
   ctx.fillStyle = color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -182,83 +143,118 @@ const drawSticker = (ctx: CanvasRenderingContext2D, sticker: ComicStickerItem, p
 
   switch (sticker.kind) {
     case 'speedlines': {
-      const rays = 28;
-      ctx.lineWidth = Math.max(2, r * 0.04);
+      const rays = 42;
       for (let i = 0; i < rays; i++) {
-        const a = (i / rays) * Math.PI * 2;
-        const inner = r * (0.48 + (i % 3) * 0.08);
+        const jitter = (seededUnit(sticker.id, i * 3) - 0.5) * 0.08;
+        const a = (i / rays) * Math.PI * 2 + jitter;
+        const inner = r * (0.42 + seededUnit(sticker.id, i * 3 + 1) * 0.24);
+        const halfSpread = 0.012 + seededUnit(sticker.id, i * 3 + 2) * 0.022;
         ctx.beginPath();
         ctx.moveTo(Math.cos(a) * inner, Math.sin(a) * inner);
-        ctx.lineTo(Math.cos(a) * (w * 0.55), Math.sin(a) * (h * 0.55));
-        ctx.stroke();
+        ctx.lineTo(Math.cos(a - halfSpread) * (w * 0.54), Math.sin(a - halfSpread) * (h * 0.54));
+        ctx.lineTo(Math.cos(a + halfSpread) * (w * 0.54), Math.sin(a + halfSpread) * (h * 0.54));
+        ctx.closePath();
+        ctx.fill();
       }
       break;
     }
     case 'sweat': {
       ctx.beginPath();
-      ctx.moveTo(0, -r * 0.85);
-      ctx.bezierCurveTo(r * 0.65, -r * 0.05, r * 0.6, r * 0.85, 0, r * 0.85);
-      ctx.bezierCurveTo(-r * 0.6, r * 0.85, -r * 0.65, -r * 0.05, 0, -r * 0.85);
+      ctx.moveTo(0, -r * 0.92);
+      ctx.bezierCurveTo(r * 0.58, -r * 0.08, r * 0.68, r * 0.88, 0, r * 0.88);
+      ctx.bezierCurveTo(-r * 0.68, r * 0.88, -r * 0.58, -r * 0.08, 0, -r * 0.92);
       ctx.closePath();
       ctx.fillStyle = '#e0f2fe';
       ctx.fill();
-      ctx.lineWidth = Math.max(2.5, r * 0.1);
+      ctx.lineWidth = Math.max(2.5, r * 0.11);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.18, -r * 0.15);
+      ctx.bezierCurveTo(-r * 0.34, r * 0.15, -r * 0.28, r * 0.52, -r * 0.04, r * 0.58);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(2.5, r * 0.14);
       ctx.stroke();
       break;
     }
     case 'anger': {
-      ctx.lineWidth = Math.max(3, r * 0.12);
-      const d = r * 0.22;
-      const e = r * 0.72;
+      const d = r * 0.2;
+      const e = r * 0.78;
       for (const [sx, sy] of [[1, 1], [-1, 1], [-1, -1], [1, -1]]) {
         ctx.beginPath();
-        ctx.moveTo(sx * e, sy * d);
-        ctx.quadraticCurveTo(sx * d, sy * d, sx * d, sy * e);
+        ctx.moveTo(sx * e, sy * r * 0.18);
+        ctx.quadraticCurveTo(sx * d, sy * d, sx * r * 0.18, sy * e);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(5.5, r * 0.22);
+        ctx.stroke();
+        ctx.strokeStyle = sticker.color;
+        ctx.lineWidth = Math.max(3, r * 0.13);
         ctx.stroke();
       }
       break;
     }
     case 'sparkle': {
+      const drawFourStar = (scale: number) => {
+        const s = r * scale;
+        ctx.beginPath();
+        ctx.moveTo(0, -s);
+        ctx.quadraticCurveTo(s * 0.09, -s * 0.09, s, 0);
+        ctx.quadraticCurveTo(s * 0.09, s * 0.09, 0, s);
+        ctx.quadraticCurveTo(-s * 0.09, s * 0.09, -s, 0);
+        ctx.quadraticCurveTo(-s * 0.09, -s * 0.09, 0, -s);
+        ctx.closePath();
+        ctx.fill();
+      };
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(2, r * 0.06);
+      drawFourStar(0.95);
+      ctx.save();
+      ctx.translate(r * 0.56, -r * 0.56);
+      drawFourStar(0.36);
+      ctx.restore();
       ctx.beginPath();
-      for (let i = 0; i < 8; i++) {
-        const a = (i * Math.PI) / 4;
-        const rad = i % 2 === 0 ? r * 0.9 : r * 0.25;
-        const px = Math.cos(a) * rad;
-        const py = Math.sin(a) * rad;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
+      ctx.arc(-r * 0.55, r * 0.52, Math.max(2, r * 0.09), 0, Math.PI * 2);
       ctx.fill();
       break;
     }
     case 'shock': {
-      ctx.lineWidth = Math.max(3, r * 0.11);
-      for (let i = -2; i <= 2; i++) {
-        const x = i * (w * 0.16);
+      for (let i = -3; i <= 3; i++) {
+        const x = i * (w * 0.12);
+        const lenFactor = 0.72 + (Math.abs(i) % 2) * 0.22;
+        const thick = Math.max(2, r * (0.045 + (3 - Math.abs(i)) * 0.015));
         ctx.beginPath();
-        ctx.moveTo(x, -h * 0.42);
-        ctx.lineTo(x + (i % 2 ? 4 : -4), 0);
-        ctx.lineTo(x, h * 0.42);
-        ctx.stroke();
+        ctx.moveTo(x - thick, -h * 0.45 * lenFactor);
+        ctx.lineTo(x + thick, -h * 0.45 * lenFactor);
+        ctx.lineTo(x + (i % 2 ? 2 : -2), h * 0.46 * lenFactor);
+        ctx.closePath();
+        ctx.fill();
       }
       break;
     }
     case 'heart': {
       ctx.beginPath();
-      ctx.moveTo(0, r * 0.75);
-      ctx.bezierCurveTo(-r * 1.1, r * 0.1, -r * 0.95, -r * 0.85, 0, -r * 0.25);
-      ctx.bezierCurveTo(r * 0.95, -r * 0.85, r * 1.1, r * 0.1, 0, r * 0.75);
+      ctx.moveTo(0, r * 0.78);
+      ctx.bezierCurveTo(-r * 1.1, r * 0.12, -r * 0.95, -r * 0.85, 0, -r * 0.24);
+      ctx.bezierCurveTo(r * 0.95, -r * 0.85, r * 1.1, r * 0.12, 0, r * 0.78);
       ctx.closePath();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(2.5, r * 0.09);
+      ctx.stroke();
       ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.48, -r * 0.25);
+      ctx.quadraticCurveTo(-r * 0.42, -r * 0.48, -r * 0.22, -r * 0.45);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(2.2, r * 0.1);
+      ctx.stroke();
       break;
     }
     case 'exclamation':
     case 'question': {
-      ctx.font = `900 ${Math.round(r * 1.6)}px "Impact", "Microsoft YaHei", sans-serif`;
+      ctx.rotate((-8 * Math.PI) / 180);
+      ctx.font = `900 ${Math.round(r * 1.7)}px ${resolveComicFont('impact').cssFamily}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.lineWidth = Math.max(3, r * 0.14);
+      ctx.lineWidth = Math.max(4, r * 0.22);
       ctx.strokeStyle = '#ffffff';
       const symbol = sticker.kind === 'exclamation' ? '!' : '?';
       ctx.strokeText(symbol, 0, 0);
@@ -404,41 +400,54 @@ export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob>
         const tx = bubble.tailX * page.width;
         const ty = bubble.tailY * page.height;
 
+        const isTransparentFill = !bubble.fillColor || bubble.fillColor === 'transparent';
         ctx.save();
-        // 先画气泡尾巴
-        if (bubble.hasTail && bubble.shape !== 'caption') {
-          if (bubble.shape === 'thought') {
-            const steps = [0.65, 0.85];
-            steps.forEach((ratio, idx) => {
-              const bx = cx + (tx - cx) * ratio;
-              const by = cy + (ty - cy) * ratio;
-              const rad = idx === 0 ? Math.min(rx, ry) * 0.16 : Math.min(rx, ry) * 0.1;
-              ctx.beginPath();
-              ctx.arc(bx, by, rad, 0, Math.PI * 2);
-              ctx.fillStyle = bubble.fillColor;
-              ctx.fill();
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+
+        if (bubble.hasTail && bubble.shape === 'thought' && !isTransparentFill) {
+          const steps = [0.56, 0.74, 0.90];
+          steps.forEach((ratio, idx) => {
+            const bx = cx + (tx - cx) * ratio;
+            const by = cy + (ty - cy) * ratio;
+            const rad = Math.min(rx, ry) * (idx === 0 ? 0.16 : idx === 1 ? 0.11 : 0.065);
+            ctx.beginPath();
+            ctx.arc(bx, by, rad, 0, Math.PI * 2);
+            ctx.fillStyle = bubble.fillColor;
+            ctx.fill();
+            if (bubble.strokeWidth > 0) {
               ctx.lineWidth = bubble.strokeWidth;
               ctx.strokeStyle = bubble.strokeColor;
               ctx.stroke();
-            });
-          } else {
-            const angle = Math.atan2(ty - cy, tx - cx);
-            const baseW = Math.min(rx, ry) * 0.22;
-            const p1x = cx + Math.cos(angle - Math.PI / 2) * baseW;
-            const p1y = cy + Math.sin(angle - Math.PI / 2) * baseW;
-            const p2x = cx + Math.cos(angle + Math.PI / 2) * baseW;
-            const p2y = cy + Math.sin(angle + Math.PI / 2) * baseW;
-            ctx.beginPath();
-            ctx.moveTo(p1x, p1y);
-            ctx.lineTo(tx, ty);
-            ctx.lineTo(p2x, p2y);
-            ctx.closePath();
-            ctx.fillStyle = bubble.fillColor;
-            ctx.fill();
-            ctx.lineWidth = bubble.strokeWidth;
-            ctx.strokeStyle = bubble.strokeColor;
-            ctx.stroke();
+            }
+          });
+        }
+
+        // 无缝融合：先画尾巴与气泡本体双倍宽外描边，再填充内部白色覆盖接缝
+        const hasCurvedTail = bubble.hasTail && bubble.shape !== 'caption' && bubble.shape !== 'thought' && !isTransparentFill;
+        if (hasCurvedTail && bubble.strokeWidth > 0) {
+          traceCurvedTailCanvas(ctx, cx, cy, rx, ry, tx, ty);
+          ctx.lineWidth = bubble.strokeWidth * 2;
+          ctx.strokeStyle = bubble.strokeColor;
+          ctx.stroke();
+        }
+        if (bubble.strokeWidth > 0) {
+          ctx.save();
+          if (bubble.rotation) {
+            ctx.translate(cx, cy);
+            ctx.rotate((bubble.rotation * Math.PI) / 180);
+            ctx.translate(-cx, -cy);
           }
+          traceOrganicBubbleCanvas(ctx, cx, cy, rx, ry, bubble.shape, bubble.id);
+          ctx.lineWidth = isTransparentFill ? bubble.strokeWidth : bubble.strokeWidth * 2;
+          ctx.strokeStyle = bubble.strokeColor;
+          ctx.stroke();
+          ctx.restore();
+        }
+        if (hasCurvedTail) {
+          traceCurvedTailCanvas(ctx, cx, cy, rx, ry, tx, ty);
+          ctx.fillStyle = bubble.fillColor;
+          ctx.fill();
         }
 
         if (bubble.rotation) {
@@ -446,37 +455,32 @@ export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob>
           ctx.rotate((bubble.rotation * Math.PI) / 180);
           ctx.translate(-cx, -cy);
         }
-        const isTransparentFill = !bubble.fillColor || bubble.fillColor === 'transparent';
-        if (!isTransparentFill || bubble.strokeWidth > 0) {
-          drawBubbleShapePath(ctx, cx, cy, rx, ry, bubble.shape);
-          if (!isTransparentFill) {
-            ctx.fillStyle = bubble.fillColor;
-            ctx.fill();
-          }
-          if (bubble.strokeWidth > 0) {
-            ctx.lineWidth = bubble.strokeWidth;
-            ctx.strokeStyle = bubble.strokeColor;
-            ctx.stroke();
-          }
-        }
-
-        // 再覆盖一层无边尾巴接缝让气泡内部过渡干干净净
-        if (bubble.hasTail && bubble.shape === 'oval' && !isTransparentFill) {
-          drawBubbleShapePath(ctx, cx, cy, Math.max(1, rx - bubble.strokeWidth * 0.5), Math.max(1, ry - bubble.strokeWidth * 0.5), bubble.shape);
+        if (!isTransparentFill) {
+          traceOrganicBubbleCanvas(ctx, cx, cy, rx, ry, bubble.shape, bubble.id);
           ctx.fillStyle = bubble.fillColor;
           ctx.fill();
         }
 
+        const fittedSize = computeAutoFitFontSize(
+          bubble.text,
+          bubble.fontSize,
+          rx * 1.52,
+          ry * 1.52,
+          bubble.writingMode,
+        );
         drawWrappedText(
           ctx,
           bubble.text,
           cx,
           cy,
-          rx * 1.48,
-          ry * 1.48,
-          bubble.fontSize,
+          rx * 1.52,
+          ry * 1.52,
+          fittedSize,
           bubble.writingMode,
           bubble.textColor,
+          undefined,
+          false,
+          bubble.fontFamily,
         );
         ctx.restore();
       }
@@ -502,6 +506,7 @@ export const renderComicPageToBlob = async (page: ComicPageDraft): Promise<Blob>
           item.color,
           item.strokeColor || undefined,
           item.bold,
+          item.fontFamily || 'impact',
         );
         ctx.restore();
       }
@@ -598,4 +603,21 @@ export const exportComicBookAsZip = async (
   await downloadFile(zipBlob, filename);
   return { filename, pageCount: total };
 };
+
+/** 导出可重新打开继续编辑的漫画工程包（.comic.json，保留全部矢量分镜、锚点、气泡、笔迹与参数）。 */
+export const exportComicBookProjectJson = async (book: ComicBook): Promise<{ filename: string }> => {
+  const payload = {
+    format: 'nai-atelier-comic-project',
+    schemaVersion: 1,
+    exportedAt: Date.now(),
+    book,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+  const safeBookName = (book.title || 'comic-project').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'comic-project';
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const filename = `${safeBookName}_${stamp}.comic.json`;
+  await downloadFile(blob, filename);
+  return { filename };
+};
+
 

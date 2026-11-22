@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   BookOpen,
+  BookmarkPlus,
   ChevronDown,
   Download,
   Grid,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import { COMIC_LAYOUT_TEMPLATES, COMIC_PAPER_PRESETS } from '../../services/comic/comicGeometry';
+import type { ComicCustomTemplate } from '../../services/comic/comicCustomTemplates';
 import { COMIC_V5_MODELS } from '../../services/comic/comicPromptBuilder';
 import type {
   ComicBubbleShape,
@@ -56,6 +58,10 @@ interface ComicToolbarProps {
   onSelectPaperPreset: (presetId: string) => void;
   onSetCustomPaperSize: (width: number, height: number) => void;
   onApplyTemplate: (templateId: string) => void;
+  customTemplates: ComicCustomTemplate[];
+  onSaveCustomTemplate: (label: string) => void;
+  onApplyCustomTemplate: (templateId: string) => void;
+  onDeleteCustomTemplate: (templateId: string) => void;
   onUpdatePageSettings: (patch: Partial<Pick<ComicPageDraft, 'v5Model' | 'steps' | 'colorMode' | 'dialogueMode' | 'gutterPx'>>) => void;
   onChangeBrush: (patch: { color?: string; size?: number; opacity?: number }) => void;
   onClearStrokes: () => void;
@@ -116,6 +122,10 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
   onSelectPaperPreset,
   onSetCustomPaperSize,
   onApplyTemplate,
+  customTemplates,
+  onSaveCustomTemplate,
+  onApplyCustomTemplate,
+  onDeleteCustomTemplate,
   onUpdatePageSettings,
   onChangeBrush,
   onClearStrokes,
@@ -132,6 +142,7 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
   const [pageMenuOpen, setPageMenuOpen] = useState(false);
   const [customW, setCustomW] = useState(String(draft.width));
   const [customH, setCustomH] = useState(String(draft.height));
+  const [newTemplateName, setNewTemplateName] = useState('');
   const pageMenuBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -147,7 +158,7 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
   };
 
   return (
-    <header className="relative z-30 flex flex-none flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-gray-200/90 bg-white/95 px-3 py-1.5 backdrop-blur-md dark:border-gray-800/90 dark:bg-gray-900/95">
+    <header className="appearance-panel relative z-30 flex flex-none flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-gray-200/80 bg-white/90 px-3 py-1.5 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/90">
       {/* 左区：页面标题 + 模式切换 + 规格/模板入口 */}
       <div className="flex min-w-0 items-center gap-2">
         {onBack && (
@@ -537,7 +548,59 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
                   <LayoutTemplate className="h-3.5 w-3.5 text-indigo-500" />
                   {t('一键分镜模板')}
                 </div>
-                <div className="max-h-48 space-y-1 overflow-y-auto pr-0.5">
+
+                {/* 个人自定义分镜模板保存与复用 */}
+                <div className="mb-2 flex items-center gap-1.5 rounded-lg border border-indigo-200/70 bg-indigo-50/40 p-1.5 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+                  <input
+                    type="text"
+                    aria-label={t('自定义模板名称')}
+                    value={newTemplateName}
+                    onChange={e => setNewTemplateName(e.target.value)}
+                    placeholder={t('将当前分镜存为模板…')}
+                    className="min-w-0 flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const label = newTemplateName.trim() || `${draft.title || t('自定义分镜')} (${draft.creationMode === 'ai-page' ? draft.aiPage.guidePanels.length : draft.panels.length}${t('格')})`;
+                      onSaveCustomTemplate(label);
+                      setNewTemplateName('');
+                    }}
+                    className="inline-flex flex-none items-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-indigo-500"
+                  >
+                    <BookmarkPlus className="h-3 w-3" /> {t('存为模板')}
+                  </button>
+                </div>
+
+                <div className="max-h-52 space-y-1 overflow-y-auto pr-0.5">
+                  {customTemplates.length > 0 && (
+                    <div className="mb-1.5 space-y-1">
+                      <div className="px-1 text-[10px] font-semibold text-indigo-500">{t('我的自定义模板')} ({customTemplates.length})</div>
+                      {customTemplates.map(tpl => (
+                        <div
+                          key={tpl.id}
+                          className="flex items-center gap-1 rounded-lg border border-indigo-200/80 bg-indigo-50/30 px-2 py-1 dark:border-indigo-900/60 dark:bg-indigo-950/20"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => { onApplyCustomTemplate(tpl.id); setPageMenuOpen(false); }}
+                            className="flex min-w-0 flex-1 flex-col text-left"
+                          >
+                            <span className="truncate font-semibold text-gray-800 dark:text-gray-100">{tpl.label}</span>
+                            <span className="text-[10px] text-gray-500 dark:text-gray-400">{t('自定义 {0} 格布局', [tpl.panels.length])}</span>
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={t('删除自定义模板 {0}', [tpl.label])}
+                            onClick={() => onDeleteCustomTemplate(tpl.id)}
+                            className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {COMIC_LAYOUT_TEMPLATES.map(tpl => (
                     <button
                       key={tpl.id}

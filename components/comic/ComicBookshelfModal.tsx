@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -8,11 +8,13 @@ import {
   Download,
   Edit3,
   Eye,
+  FileJson,
   FolderPlus,
   Layers,
   Pencil,
   Plus,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
@@ -40,6 +42,8 @@ interface ComicBookshelfModalProps {
   onDeletePage: (bookId: string, pageId: string) => void;
   onReorderPage: (bookId: string, fromIndex: number, toIndex: number) => void;
   onExportBookZip: (book: ComicBook) => void;
+  onExportBookProject: (book: ComicBook) => void;
+  onImportBookProject: (file: File) => void;
 }
 
 const PageThumbnail: React.FC<{ page: ComicPageDraft }> = ({ page }) => {
@@ -111,8 +115,11 @@ export const ComicBookshelfModal: React.FC<ComicBookshelfModalProps> = ({
   onDeletePage,
   onReorderPage,
   onExportBookZip,
+  onExportBookProject,
+  onImportBookProject,
 }) => {
   useLanguage();
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [viewMode, setViewMode] = useState<'shelf' | 'reader'>('shelf');
   const [readerLayout, setReaderLayout] = useState<'scroll' | 'single'>('scroll');
   const [readerIndex, setReaderIndex] = useState(0);
@@ -197,7 +204,7 @@ export const ComicBookshelfModal: React.FC<ComicBookshelfModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="flex h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
+        className="appearance-panel flex h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white/95 shadow-2xl dark:border-gray-800 dark:bg-gray-900/95"
         onClick={e => e.stopPropagation()}
       >
         {/* 弹窗顶栏 */}
@@ -242,6 +249,35 @@ export const ComicBookshelfModal: React.FC<ComicBookshelfModalProps> = ({
               </>
             ) : (
               <>
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".json,.comic.json,application/json"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) onImportBookProject(file);
+                    e.target.value = '';
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => importInputRef.current?.click()}
+                  title={t('导入可继续编辑的 .comic.json 工程文件')}
+                  className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                >
+                  <Upload className="h-3.5 w-3.5 text-indigo-500" />
+                  <span className="hidden sm:inline">{t('导入工程')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onExportBookProject(selectedBook)}
+                  title={t('导出可重新打开编辑的 .comic.json 工程包')}
+                  className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                >
+                  <FileJson className="h-3.5 w-3.5 text-emerald-500" />
+                  <span className="hidden sm:inline">{t('导出工程')}</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => { setReaderIndex(0); setViewMode('reader'); }}

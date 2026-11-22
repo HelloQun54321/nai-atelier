@@ -1610,14 +1610,16 @@ html[data-motion='full'] .queue-status-spinner {
   filter: blur(22px) brightness(0.68) saturate(0.5) contrast(0.92) !important;
 }
 
-/* 实验室图片编辑使用 canvas 绘制底图，沿用同一套安全模式遮挡与临时揭示逻辑。 */
-.safe-mode [data-safe-mode-canvas="true"]:not([data-safe-revealed="true"]) canvas[data-safe-mode-image="true"] {
+/* 实验室图片编辑与漫画画布使用 canvas / SVG image 绘制底图，沿用同一套安全模式遮挡与临时揭示逻辑。 */
+.safe-mode [data-safe-mode-canvas="true"]:not([data-safe-revealed="true"]) canvas[data-safe-mode-image="true"],
+.safe-mode [data-safe-mode-canvas="true"]:not([data-safe-revealed="true"]) svg image:not([data-safe-mode-ignore="true"]) {
   filter: blur(24px) brightness(1.08) saturate(0.45) !important;
   cursor: pointer;
   user-select: none;
 }
 
-.dark .safe-mode [data-safe-mode-canvas="true"]:not([data-safe-revealed="true"]) canvas[data-safe-mode-image="true"] {
+.dark .safe-mode [data-safe-mode-canvas="true"]:not([data-safe-revealed="true"]) canvas[data-safe-mode-image="true"],
+.dark .safe-mode [data-safe-mode-canvas="true"]:not([data-safe-revealed="true"]) svg image:not([data-safe-mode-ignore="true"]) {
   filter: blur(22px) brightness(0.68) saturate(0.5) contrast(0.92) !important;
 }
 

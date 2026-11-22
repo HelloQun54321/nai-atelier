@@ -66,7 +66,7 @@ export const ComicToolRail: React.FC<ComicToolRailProps> = ({
     <div
       role="toolbar"
       aria-label={t('漫画画布工具')}
-      className="flex flex-none flex-row items-center gap-1 overflow-x-auto border-b border-gray-200/90 bg-white/90 px-2 py-1.5 backdrop-blur-md dark:border-gray-800/90 dark:bg-gray-900/90 md:w-12 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-b-0 md:border-r md:px-1.5 md:py-2.5"
+      className="appearance-panel flex flex-none flex-row items-center gap-1 overflow-x-auto border-b border-gray-200/80 bg-white/85 px-2 py-1.5 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/85 md:w-12 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-b-0 md:border-r md:px-1.5 md:py-2.5"
     >
       {TOOL_GROUPS.map((group, groupIdx) => (
         <React.Fragment key={groupIdx}>
@@ -88,7 +88,7 @@ export const ComicToolRail: React.FC<ComicToolRailProps> = ({
                   aria-pressed={active}
                   title={t(item.tip)}
                   onClick={() => onSelectTool(item.id)}
-                  className={`group relative flex h-8 w-8 flex-none items-center justify-center rounded-lg transition md:h-9 md:w-9 ${active ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}
+                  className={`group relative flex h-9 w-9 flex-none items-center justify-center rounded-lg transition ${active ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}
                 >
                   <Icon className="h-4 w-4" aria-hidden="true" />
                   <span

@@ -2282,7 +2282,11 @@ export class PromptAgentService {
       await agent.prompt(buildComicStoryboardUserMessage(input));
       if (agent.state.errorMessage) throw Object.assign(new Error(agent.state.errorMessage), { status: 502 });
       return {
-        ...parseComicStoryboardResponse(extractAssistantText(agent.state.messages), { dialogueMode: input.dialogueMode }),
+        ...parseComicStoryboardResponse(extractAssistantText(agent.state.messages), {
+          dialogueMode: input.dialogueMode,
+          existingGuidePanels: input.existingGuidePanels,
+          preserveExistingLayout: input.preserveExistingLayout,
+        }),
         provider,
         model: modelId,
       };

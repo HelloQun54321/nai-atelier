@@ -38,6 +38,12 @@ const normalizeAiPage = (raw: unknown, width: number, height: number, gutterPx: 
     generatedPageImage: isRecord(raw.generatedPageImage) && typeof raw.generatedPageImage.url === 'string'
       ? raw.generatedPageImage as unknown as ComicAiPagePlan['generatedPageImage']
       : undefined,
+    originalGeneratedPageImage: isRecord(raw.originalGeneratedPageImage) && typeof raw.originalGeneratedPageImage.url === 'string'
+      ? raw.originalGeneratedPageImage as unknown as ComicAiPagePlan['originalGeneratedPageImage']
+      : undefined,
+    zoneImages: isRecord(raw.zoneImages)
+      ? raw.zoneImages as unknown as ComicAiPagePlan['zoneImages']
+      : undefined,
     showGuideOverlay: raw.showGuideOverlay !== false,
   };
 };
@@ -69,6 +75,9 @@ export const normalizeComicDraft = (raw: unknown): ComicPageDraft => {
     globalNegativePrompt: typeof raw.globalNegativePrompt === 'string' ? raw.globalNegativePrompt : '',
     steps: Number.isFinite(Number(raw.steps)) ? Math.max(1, Math.min(50, Number(raw.steps))) : fallback.steps,
     scale: Number.isFinite(Number(raw.scale)) ? Math.max(1, Math.min(20, Number(raw.scale))) : fallback.scale,
+    seed: raw.seed !== undefined && raw.seed !== null && Number.isFinite(Number(raw.seed)) && Number(raw.seed) >= 0
+      ? Math.floor(Number(raw.seed))
+      : undefined,
     sampler: typeof raw.sampler === 'string' && raw.sampler ? raw.sampler : fallback.sampler,
     noiseSchedule: (typeof raw.noiseSchedule === 'string' && raw.noiseSchedule ? raw.noiseSchedule : fallback.noiseSchedule) as ComicPageDraft['noiseSchedule'],
     cfgRescale: Number.isFinite(Number(raw.cfgRescale)) ? Math.max(0, Math.min(1, Number(raw.cfgRescale))) : 0,

@@ -11,6 +11,14 @@ export interface ComicStoryboardInput {
   colorMode?: 'color' | 'monochrome';
   dialogueMode?: 'clean-vector' | 'empty-bubble' | 'ai-text';
   castCharacters?: ComicStoryboardCastItem[];
+  existingGuidePanels?: Array<{
+    label: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
+  preserveExistingLayout?: boolean;
 }
 
 export interface ComicStoryboardResult {
@@ -19,6 +27,7 @@ export interface ComicStoryboardResult {
   guidePanels: Array<{
     label: string;
     summary: string;
+    visualNote?: string;
     x: number;
     y: number;
     width: number;
@@ -43,5 +52,9 @@ export function buildComicStoryboardSystemPrompt(): string;
 export function buildComicStoryboardUserMessage(input?: ComicStoryboardInput): string;
 export function parseComicStoryboardResponse(
   rawText: string,
-  options?: { dialogueMode?: 'clean-vector' | 'empty-bubble' | 'ai-text' },
+  options?: {
+    dialogueMode?: 'clean-vector' | 'empty-bubble' | 'ai-text';
+    existingGuidePanels?: ComicStoryboardInput['existingGuidePanels'];
+    preserveExistingLayout?: boolean;
+  },
 ): ComicStoryboardResult;

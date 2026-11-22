@@ -24,7 +24,7 @@ export function buildComicStoryboardSystemPrompt() {
     '',
     '必须遵守的 NovelAI V5 实测铁律：',
     '1. layoutHint（英文）只写极简分镜骨架壳（如 "4-panel manga page, 1-2-1 layout, crisp white gutters"），绝不剧透具体人物或剧情细节。',
-    '2. guidePanels 定义半透明构图引导区（归一化坐标 x, y, width, height ∈ [0.02, 0.96]），互不重叠且留有漫画白边间距；横版画幅推荐左右双列，竖版画幅推荐 1-2-1、L型、2x2 或上下节奏排列。',
+    '2. guidePanels 定义半透明构图引导区（归一化坐标 x, y, width, height ∈ [0.02, 0.96]），互不重叠且留有漫画白边间距；横版画幅推荐左右双列，竖版画幅推荐 1-2-1、L型、2x2 或上下节奏排列。如果用户在消息中提供了「当前画布参考格坐标」，则必须严格沿用这些格子的位置与大小（不要覆盖改动坐标），只补充每格的 summary（中文镜头剧情）与 visualNote（纯英文机位/景别/光影环境词，如 "wide shot, rainy school gate, cool twilight lighting"）。',
     '3. anchors 定义整页所有空间锚点，每个锚点坐标 (x, y) 必须准确落在对应 guidePanel 内部：',
     '   - kind="character"：人物锚点。同一角色在不同格出场必须拆成多个独立锚点！每个角色锚点的英文 prompt 必须包含：外貌服饰一致性特征 + 本格动作表情 + 本格景别机位（如 close-up / low angle）+ 本格背景光影环境。',
     '   - kind="scene"：仅用于「完全无人的空镜/静物格」（可写 no humans），或在有人格中精准定位某件角落关键道具（如桌上蛋糕、宝箱；此时绝不能写 no humans！）。严禁在已有角色锚点的格子里另建 no humans 背景槽！',
@@ -37,7 +37,7 @@ export function buildComicStoryboardSystemPrompt() {
     '  "title": "简短中文页标题",',
     '  "layoutHint": "4-panel manga page, 1-2-1 layout, clean white gutters",',
     '  "guidePanels": [',
-    '    { "label": "第 1 格", "summary": "中文分镜剧情与镜头说明", "x": 0.04, "y": 0.04, "width": 0.92, "height": 0.28 }',
+    '    { "label": "第 1 格", "summary": "中文分镜剧情与镜头说明", "visualNote": "wide shot, rainy street, overcast sky, reflections on wet pavement", "x": 0.04, "y": 0.04, "width": 0.92, "height": 0.28 }',
     '  ],',
     '  "anchors": [',
     '    {',
@@ -75,12 +75,26 @@ export function buildComicStoryboardUserMessage(input = {}) {
       .map((c, idx) => `  ${idx + 1}. ${c.name}: ${String(c.prompt || '').trim()}`)
     : [];
 
+  const existingPanels = Array.isArray(input.existingGuidePanels)
+    ? input.existingGuidePanels
+      .filter(p => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
+      .slice(0, 10)
+    : [];
+
   const lines = [
     `画幅方向：${orientation}`,
-    `目标分镜格数：${targetPanelCount} 格`,
+    `目标分镜格数：${existingPanels.length > 0 && input.preserveExistingLayout !== false ? existingPanels.length : targetPanelCount} 格`,
     `色彩风格：${colorMode}`,
     `对白策略：${dialogueMode}`,
   ];
+  if (existingPanels.length > 0 && input.preserveExistingLayout !== false) {
+    lines.push(
+      '当前画布参考格坐标（必须严格沿用以下各格的 x/y/width/height，并把每格锚点精准落在对应矩形内部）：',
+      ...existingPanels.map((p, idx) =>
+        `  格 ${idx + 1} (${String(p.label || `第 ${idx + 1} 格`)}): x=${Number(p.x).toFixed(3)}, y=${Number(p.y).toFixed(3)}, width=${Number(p.width).toFixed(3)}, height=${Number(p.height).toFixed(3)}`,
+      ),
+    );
+  }
   if (cast.length > 0) {
     lines.push('参演角色库设定（跨格出场请保持以下外观特征一致）：', ...cast);
   }
@@ -117,14 +131,19 @@ export function parseComicStoryboardResponse(rawText, options = {}) {
   }
 
   const rawPanels = Array.isArray(parsed.guidePanels) ? parsed.guidePanels : [];
-  const guidePanels = rawPanels.slice(0, 10).map((panel, idx) => {
+  const lockedPanels = options.preserveExistingLayout !== false && Array.isArray(options.existingGuidePanels) && options.existingGuidePanels.length > 0
+    ? options.existingGuidePanels
+    : null;
+  const guidePanels = (lockedPanels && rawPanels.length === lockedPanels.length ? lockedPanels : rawPanels.slice(0, 10)).map((panel, idx) => {
+    const aiPanel = rawPanels[idx] || panel;
     const x = clamp(panel?.x, 0.02, 0.90, 0.04);
     const y = clamp(panel?.y, 0.02, 0.90, 0.04);
     const width = clamp(panel?.width, 0.12, 1 - x - 0.02, 0.92);
     const height = clamp(panel?.height, 0.10, 1 - y - 0.02, 0.25);
     return {
-      label: typeof panel?.label === 'string' && panel.label.trim() ? panel.label.trim().slice(0, 32) : `第 ${idx + 1} 格`,
-      summary: typeof panel?.summary === 'string' ? panel.summary.trim().slice(0, 160) : '',
+      label: typeof aiPanel?.label === 'string' && aiPanel.label.trim() ? aiPanel.label.trim().slice(0, 32) : `第 ${idx + 1} 格`,
+      summary: typeof aiPanel?.summary === 'string' ? aiPanel.summary.trim().slice(0, 160) : '',
+      visualNote: typeof aiPanel?.visualNote === 'string' ? aiPanel.visualNote.trim().slice(0, 220) : '',
       x,
       y,
       width,
