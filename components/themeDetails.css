@@ -513,7 +513,7 @@ html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-them
   /* 电脑侧栏导航项跟随全局密度缩放，经典实色与液态玻璃疏密一致；触屏仍用下方 44px 底线。 */
   .app-sidebar nav button { height: var(--nai-sidebar-item-height, 36px); }
   .app-sidebar nav .space-y-1 { display: flex; flex-direction: column; row-gap: var(--nai-sidebar-item-gap, 3px); }
-  .app-sidebar nav .space-y-1 > :not([hidden]) ~ :not([hidden]) { margin-top: 0; }
+  .app-sidebar nav .space-y-1 > * { margin-block: 0; }
   html[data-density='compact'] .app-sidebar nav > div + div { margin-top: 4px; padding-top: 4px; }
 }
 @media (max-width: 767px) {
