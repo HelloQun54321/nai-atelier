@@ -739,7 +739,8 @@ html[data-surfaces='translucent'].dark {
   --nai-panel-surface: rgb(23 27 36 / 0.85);
 }
 
-html[data-surfaces='translucent'] .app-sidebar,
+/* 非玻璃材质侧栏背后无流动内容，取消无意义的 backdrop-filter 以保留 Windows ClearType 锐利字形。 */
+html[data-surfaces='translucent']:is([data-theme-material='glass'], [data-theme-material='frosted']) .app-sidebar,
 html[data-surfaces='translucent'] .settings-dialog,
 html[data-surfaces='translucent'] .settings-navigation,
 html[data-surfaces='translucent'] .operation-dialog,
