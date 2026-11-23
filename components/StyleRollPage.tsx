@@ -2,12 +2,12 @@ import { confirmationCostScope } from '../services/dailyConfirmation';
 import { flushSync } from 'react-dom';
 import { copyTagText } from '../services/externalImageTags';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Ban, ChevronDown, ChevronLeft, ChevronRight, Copy, CopyPlus, Folder, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, Pin, Plus, Save, Settings2, SlidersHorizontal, Trash2, Users, X } from 'lucide-react';
+import { Ban, ChevronDown, ChevronLeft, ChevronRight, Copy, CopyPlus, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, PanelLeft, Pin, Plus, Save, Settings2, SlidersHorizontal, Trash2, Users, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { MobileBottomSheet, MobileOverflowMenu } from './MobileUI';
 import { getLanguage, t, useLanguage } from '../services/i18n';
 import { formatGenerationDuration, readGenerationDurationMs } from '../services/generationDuration';
-import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateToChain, rollExperimentSummary, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
+import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, makePinnedRollRecordName, nextRollRecordName, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateToChain, rollExperimentSummary, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
 import { getRollSeries, nextRollSeriesStep, ROLL_SERIES_STOP_LABELS, rollSeriesWouldOverflow, startRollSeries, stopRollSeries, type RollSeriesStopReason } from '../services/styleRollSeries';
 import { rollFavoriteMatches, rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
@@ -377,8 +377,9 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const makeExperiment = () => {
     const now = Date.now();
     const template = createDefaultRollTemplate(runtime);
+    const existingNames = [...experiments.map(item => item.name), ...(experiment ? [experiment.name] : [])];
     const next: RollExperiment = {
-      version: 1, id: createUuid(), name: t('画风记录 {0}', [experiments.length + 1]), revision: 0, createdAt: now, updatedAt: now,
+      version: 1, id: createUuid(), name: nextRollRecordName(existingNames), revision: 0, createdAt: now, updatedAt: now,
       artists: structuredClone(artistOverrides), rules: roundRules, sampledOnly, chainArtistSource,
       template,
       candidates: [], rounds: [], pinnedArtists: [...pinnedArtists],
@@ -402,7 +403,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       try {
         const draft = makeExperiment();
         const tags = initialPinned.tags.slice(0, ROLL_MAX_ARTISTS);
-        draft.name = t('固定画师组 {0} 位', [tags.length]);
+        const existingNames = [...experiments.map(item => item.name), ...(experiment ? [experiment.name] : [])];
+        draft.name = makePinnedRollRecordName(tags, existingNames, (lead, total) => t('{0} 等 {1} 位', [lead, total]));
         draft.pinnedArtists = tags;
         const size = Math.min(ROLL_MAX_ARTISTS, Math.max(1, tags.length));
         draft.rules = { ...draft.rules, minArtists: size, maxArtists: size, preferredMinArtists: 0 };
@@ -775,7 +777,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     const draft = makeExperiment();
     draft.template = structuredClone(experiment.template);
     const pinned = candidate.tags.map(tag => tag.tag);
-    draft.name = t('固定画师组 {0} 位', [pinned.length]);
+    const existingNames = [...experiments.map(item => item.name), experiment.name];
+    draft.name = makePinnedRollRecordName(pinned, existingNames, (lead, total) => t('{0} 等 {1} 位', [lead, total]));
     draft.pinnedArtists = pinned;
     draft.rules = { ...draft.rules, minArtists: pinned.length, maxArtists: pinned.length, preferredMinArtists: 0 };
     const saved = await store(draft);
@@ -1056,13 +1059,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         ]} />
         <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={frozen} onClick={() => { setSelecting(false); setSelectedIds(new Set()); }} className="!px-2.5"><X /><span className="toolbar-responsive-label hidden md:inline">{t('退出多选')}</span></ToolbarButton>
       </> : <>
-        {/* 左侧：画风记录入口，与其他列表页的文件夹按钮等高同款；桌面开合左栏，手机打开底部面板。 */}
+        {/* 左侧：Roll 列表开关；用侧栏图标区分于右侧生图按钮，桌面开合左栏，手机打开底部面板。 */}
         {isMobile
-          ? <ToolbarButton className="mobile-touch !px-2.5" aria-label={t('切换画风记录')} title={[t('切换画风记录'), currentRecordName || t('新画风记录')].join(' · ')} aria-haspopup="dialog" aria-expanded={mobileRecordMenuOpen} active={mobileRecordMenuOpen} disabled={frozen || preparing} onClick={() => setMobileRecordMenuOpen(true)}>
-            <Folder className="h-4 w-4" />
+          ? <ToolbarButton className="mobile-touch !px-2.5" aria-label={t('切换画风记录')} title={[t('Roll 列表'), currentRecordName].filter(Boolean).join(' · ')} aria-haspopup="dialog" aria-expanded={mobileRecordMenuOpen} active={mobileRecordMenuOpen} disabled={frozen || preparing} onClick={() => setMobileRecordMenuOpen(true)}>
+            <PanelLeft className="h-4 w-4" />
           </ToolbarButton>
-          : <ToolbarButton active={recordsExpanded} className="!min-w-0 !max-w-36 !justify-start !px-3 sm:!max-w-48 lg:!max-w-64" aria-label={t('切换画风记录')} title={[t('切换画风记录'), currentRecordName || t('新画风记录')].join(' · ')} aria-expanded={recordsExpanded} disabled={frozen || preparing} onClick={toggleRecords}>
-            <Folder className="h-4 w-4" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
+          : <ToolbarButton active={recordsExpanded} className="!min-w-0 !max-w-36 !justify-start !px-3 sm:!max-w-48 lg:!max-w-64" aria-label={t('切换画风记录')} title={[t('Roll 列表'), currentRecordName].filter(Boolean).join(' · ')} aria-expanded={recordsExpanded} disabled={frozen || preparing} onClick={toggleRecords}>
+            <PanelLeft className="h-4 w-4" /><span className="min-w-0 truncate">{currentRecordName || t('Roll 列表')}</span>
           </ToolbarButton>}
 
         {/* 中间：以搜索框为界，左侧记录切换、右侧管理与执行操作。 */}
@@ -1213,7 +1216,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       </div>}
       </div>
     </div>
-    {isMobile && <ImagePreviewPortal><MobileBottomSheet open={mobileRecordMenuOpen} title={t('画风记录')} onClose={() => setMobileRecordMenuOpen(false)}>
+    {isMobile && <ImagePreviewPortal><MobileBottomSheet open={mobileRecordMenuOpen} title={t('Roll 列表')} onClose={() => setMobileRecordMenuOpen(false)}>
       <RollRecordNavigation records={experiments} selectedId={experimentId} mobile busy={frozen || preparing} loading={loading} className="flex min-h-0 flex-col"
         onSelect={id => { setExperimentId(id); setMobileRecordMenuOpen(false); }}
         onCreate={() => { setMobileRecordMenuOpen(false); createRecord(); }}

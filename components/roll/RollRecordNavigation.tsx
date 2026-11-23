@@ -75,7 +75,7 @@ export const RollRecordNavigation: React.FC<RollRecordNavigationProps> = ({ reco
       </div>
     </header>
     {active.length >= 8 && <div className="mb-2 flex flex-none items-center gap-1.5">
-      <input aria-label={t('搜索画风记录')} placeholder={t('搜索画风记录')} value={query} onChange={event => setQuery(event.target.value)}
+      <input aria-label={t('搜索 Roll')} placeholder={t('搜索 Roll')} value={query} onChange={event => setQuery(event.target.value)}
         className="mobile-touch h-8 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 text-xs font-normal text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
       {sortToggle}
     </div>}
@@ -103,7 +103,7 @@ export const RollRecordNavigation: React.FC<RollRecordNavigationProps> = ({ reco
             </div>
           </div>;
         })}
-        {!listed.length && <p role="status" className="px-2 py-3 text-xs text-gray-400">{loading ? t('正在读取画风记录…') : query.trim() ? t('没有匹配的画风记录') : t('还没有画风记录')}</p>}
+        {!listed.length && <p role="status" className="px-2 py-3 text-xs text-gray-400">{loading ? t('正在读取 Roll 列表…') : query.trim() ? t('没有匹配的 Roll') : t('还没有 Roll')}</p>}
       </div>
       {archived.length > 0 && <div className="mt-2 border-t border-gray-200 pt-2 dark:border-gray-800">
         <button type="button" disabled={busy} onClick={onPurgeArchived}

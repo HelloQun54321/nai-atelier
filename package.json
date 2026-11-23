@@ -1,7 +1,7 @@
 {
   "name": "nai-atelier",
   "private": true,
-  "version": "1.232.0",
+  "version": "1.232.1",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {

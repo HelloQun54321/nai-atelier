@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidateFixture, rollFixture, seededRandom } from '../fixtures/styleRoll';
-import { createDefaultRollTemplate, compactRollExperiment, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, formatRollStyle, ROLL_MAX_ARTISTS, getRollPinnedArtists, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidates, rollCandidateToChain, rollPrompt, rollRoundConditionKey, rollRoundSourceChainIds, rollSignature, rollSourceChainSetId, validateRollExperiment, validateRollPreset, validateRollTemplate, type RollExperiment } from '../../services/styleRoll';
+import { createDefaultRollTemplate, compactRollExperiment, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, formatRollStyle, ROLL_MAX_ARTISTS, getRollPinnedArtists, makePinnedRollRecordName, mergeRollArtists, nextRollRecordName, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidates, rollCandidateToChain, rollPrompt, rollRoundConditionKey, rollRoundSourceChainIds, rollSignature, rollSourceChainSetId, validateRollExperiment, validateRollPreset, validateRollTemplate, type RollExperiment } from '../../services/styleRoll';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 
 it('推荐模板工厂沿用当前默认值且各次结果独立', () => {
@@ -351,5 +351,21 @@ describe('来源串集合去重', () => {
     const changed = structuredClone(compacted);
     changed.sourceChainSets![0].chainIds.push('source-d');
     expect(rollRoundConditionKey(changed.rounds[0].snapshot, changed.sourceChainSets)).not.toBe(rollRoundConditionKey(compacted.rounds[0].snapshot, compacted.sourceChainSets));
+  });
+});
+
+describe('Roll 命名', () => {
+  it('默认新建按已有最大序号自增，兼容历史画风记录名称且绝不撞号', () => {
+    expect(nextRollRecordName([])).toBe('Roll 1');
+    expect(nextRollRecordName(['画风记录 39', '画风记录 42', '画风记录 40'])).toBe('Roll 43');
+    expect(nextRollRecordName(['Roll 5', '夕阳测图'])).toBe('Roll 6');
+    expect(nextRollRecordName(['夕阳', '白毛', '赛博'])).toBe('Roll 4');
+  });
+
+  it('固定画师新建带首位画师主名并去掉括号别名，重复自动递增后缀', () => {
+    expect(makePinnedRollRecordName(['dino (dinoartforame)'], [])).toBe('dino');
+    expect(makePinnedRollRecordName(['dino (dinoartforame)', 'pija', 'mimoza'], [])).toBe('dino 等 3 位');
+    expect(makePinnedRollRecordName(['dino (dinoartforame)', 'pija', 'mimoza'], ['dino 等 3 位'])).toBe('dino 等 3 位 2');
+    expect(makePinnedRollRecordName([], ['Roll 2'])).toBe('Roll 3');
   });
 });

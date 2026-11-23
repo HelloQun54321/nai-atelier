@@ -530,3 +530,55 @@ export function rollCandidateToChain(experiment: RollExperiment, candidate: Roll
     previewImage: imageUrl, createdAt: Date.now(), updatedAt: Date.now(),
   };
 }
+
+const ROLL_NUMBERED_NAME_RE = /^(?:Roll|画风记录)\s*#?(\d+)$/i;
+
+/**
+ * 计算下一条默认 Roll 名称（如 `Roll 43`）：
+ * 扫描所有已有名称（兼容历史 `画风记录 N` 与 `Roll N`）的最大编号 + 1，
+ * 避免删除旧记录后再次新建时发生序号碰撞。
+ */
+export function nextRollRecordName(existingNames: Iterable<string>): string {
+  const used = new Set<string>();
+  let maxNumber = 0;
+  let count = 0;
+  for (const raw of existingNames) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    count += 1;
+    used.add(trimmed.toLowerCase());
+    const match = trimmed.match(ROLL_NUMBERED_NAME_RE);
+    if (match) {
+      const value = Number(match[1]);
+      if (Number.isSafeInteger(value) && value > maxNumber) maxNumber = value;
+    }
+  }
+  let seq = Math.max(count, maxNumber) + 1;
+  while (used.has(`roll ${seq}`)) seq += 1;
+  return `Roll ${seq}`;
+}
+
+/**
+ * 为「固定画师新建」生成简短可辨识名称：取第一位画师主名（去掉括号别名后缀），
+ * 多人时显示「dino 等 5 位」；若与已有名称重复自动追加递增序号。
+ */
+export function makePinnedRollRecordName(
+  tags: readonly string[],
+  existingNames: Iterable<string>,
+  formatMulti: (lead: string, total: number) => string = (lead, total) => `${lead} 等 ${total} 位`,
+): string {
+  const used = new Set<string>();
+  for (const raw of existingNames) {
+    const trimmed = raw.trim();
+    if (trimmed) used.add(trimmed.toLowerCase());
+  }
+  const firstRaw = (tags[0] || '').trim();
+  const stripped = firstRaw.replace(/\s*\([^)]*\)\s*$/, '').trim() || firstRaw;
+  const lead = stripped.slice(0, 32);
+  if (!lead) return nextRollRecordName(existingNames);
+  const base = (tags.length > 1 ? formatMulti(lead, tags.length) : lead).slice(0, 110);
+  if (!used.has(base.toLowerCase())) return base;
+  let suffix = 2;
+  while (used.has(`${base} ${suffix}`.toLowerCase())) suffix += 1;
+  return `${base} ${suffix}`.slice(0, 120);
+}

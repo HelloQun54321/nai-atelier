@@ -258,7 +258,7 @@ it('手机390窄窗记录面板点新建直接建好并切换，关闭底部面�
   expect(window.history.state?.__naiMobileLayer).toMatch(/^sheet-/);
   fireEvent.click(screen.getByRole('button', { name: '新建记录' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: '画风记录' })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Roll 列表' })).toBeNull());
   expect(screen.queryByRole('dialog', { name: 'Roll 串配置' })).toBeNull();
   expect(mocks.generate).not.toHaveBeenCalled();
   expect(experiment).toEqual(original);
@@ -1412,10 +1412,10 @@ it('记录左栏支持搜索、按创建时间排序，并记住展开偏好', a
   fireEvent.click(within(navigation).getByRole('button', { name: '记录排序' }));
   expect(rows()[0]).toBe('打开画风记录：记录 7');
   expect(within(navigation).queryByRole('button', { name: '重新加载画风记录' })).toBeNull();
-  fireEvent.change(within(navigation).getByRole('textbox', { name: '搜索画风记录' }), { target: { value: '记录 3' } });
+  fireEvent.change(within(navigation).getByRole('textbox', { name: '搜索 Roll' }), { target: { value: '记录 3' } });
   expect(rows()).toEqual(['打开画风记录：记录 3']);
-  fireEvent.change(within(navigation).getByRole('textbox', { name: '搜索画风记录' }), { target: { value: '没有这条' } });
-  expect(within(navigation).getByRole('status').textContent).toBe('没有匹配的画风记录');
+  fireEvent.change(within(navigation).getByRole('textbox', { name: '搜索 Roll' }), { target: { value: '没有这条' } });
+  expect(within(navigation).getByRole('status').textContent).toBe('没有匹配的 Roll');
 });
 
 it('记录左栏内联重命名当前记录，删除后从导航移除且不触碰历史图片', async () => {
@@ -1444,10 +1444,10 @@ it('手机记录按钮打开底部面板，选中记录后面板收起', async (
   await setup();
   // 手机不铺桌面左栏：同一个按钮打开底部面板。
   fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
-  const panel = await screen.findByRole('dialog', { name: '画风记录' });
+  const panel = await screen.findByRole('dialog', { name: 'Roll 列表' });
   expect(within(panel).getByRole('button', { name: '打开画风记录：另一记录' })).toBeTruthy();
   fireEvent.click(within(panel).getByRole('button', { name: '打开画风记录：另一记录' }));
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: '画风记录' })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Roll 列表' })).toBeNull());
   expect(screen.getByRole('button', { name: '切换画风记录' }).getAttribute('title') || '').toContain('另一记录');
 });
 

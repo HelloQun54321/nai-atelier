@@ -47608,5 +47608,41 @@
     "Resume {0} left",
     "残り {0} 枚を続行",
     "남은 {0}장 이어서"
+  ],
+  "Roll 列表": [
+    "Roll 清單",
+    "Roll List",
+    "Roll リスト",
+    "Roll 목록"
+  ],
+  "搜索 Roll": [
+    "搜尋 Roll",
+    "Search Rolls",
+    "Roll を検索",
+    "Roll 검색"
+  ],
+  "正在读取 Roll 列表…": [
+    "正在讀取 Roll 清單…",
+    "Loading Roll list…",
+    "Roll リストを読み込み中…",
+    "Roll 목록을 불러오는 중…"
+  ],
+  "没有匹配的 Roll": [
+    "沒有符合的 Roll",
+    "No matching Rolls",
+    "一致する Roll がありません",
+    "일치하는 Roll이 없습니다"
+  ],
+  "还没有 Roll": [
+    "還沒有 Roll",
+    "No Rolls yet",
+    "Roll はまだありません",
+    "아직 Roll이 없습니다"
+  ],
+  "{0} 等 {1} 位": [
+    "{0} 等 {1} 位",
+    "{0} +{1} artists",
+    "{0} ほか {1} 名",
+    "{0} 외 {1}명"
   ]
 }
