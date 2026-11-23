@@ -1180,7 +1180,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               ];
               const collapseRowClass = 'mobile-touch -mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-gray-100 dark:hover:bg-gray-800';
               const menuRowClass = 'mobile-touch -mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-gray-800 transition-colors hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0';
-              return <div className="max-h-[78dvh] -mx-2 -my-1 space-y-3 overflow-y-auto overflow-x-hidden px-2 py-1">
+              return <div className="space-y-3">
               <section className="space-y-2.5">
                 <label className="grid grid-cols-[6.25rem_minmax(0,1fr)] items-center gap-2.5 text-xs font-semibold text-gray-700 dark:text-gray-200"><span>{t('本轮张数')}</span><input type="number" aria-label={t('本轮生成张数')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !h-9 text-center tabular-nums`} min={1} max={24} value={count} onChange={event => setCount(Math.min(24, Math.max(1, Number(event.target.value) || 1)))} /></label>
                 <StyleRollRuleFields rules={roundRules} onChange={setRoundRules} disabled={frozen} />

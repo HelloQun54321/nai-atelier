@@ -29,7 +29,7 @@ const PopoverSurface: React.FC<{ title: string; position: ReturnType<typeof getT
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose, panelRef]);
-  return <div ref={panelRef} role="dialog" aria-modal="true" aria-label={title} data-compact={compact || undefined} style={{ ...position, ...(zIndex !== undefined ? { zIndex: zIndex + 1 } : {}) }} className={`appearance-panel appearance-popover fixed z-[2101] -translate-x-1/2 ${above ? '-translate-y-full' : ''} overflow-y-auto rounded-xl border border-gray-200 bg-white ${compact ? 'p-1.5' : 'p-4'} shadow-xl dark:border-gray-800 dark:bg-gray-900`}><div className="appearance-popover-content">{children}</div></div>;
+  return <div ref={panelRef} role="dialog" aria-modal="true" aria-label={title} data-compact={compact || undefined} style={{ ...position, ...(zIndex !== undefined ? { zIndex: zIndex + 1 } : {}) }} className={`appearance-panel appearance-popover fixed z-[2101] -translate-x-1/2 ${above ? '-translate-y-full' : ''} overflow-y-auto overflow-x-hidden rounded-xl border border-gray-200 bg-white ${compact ? 'p-1.5' : 'p-4'} shadow-xl dark:border-gray-800 dark:bg-gray-900`}><div className="appearance-popover-content">{children}</div></div>;
 };
 
 /** 桌面弹层以按钮为中心，并脱离工作区裁切和隔离层。 */
