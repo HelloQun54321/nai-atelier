@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidateFixture, rollFixture, seededRandom } from '../fixtures/styleRoll';
-import { createDefaultRollTemplate, compactRollExperiment, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, formatRollStyle, ROLL_MAX_ARTISTS, getRollPinnedArtists, makePinnedRollRecordName, mergeRollArtists, nextRollRecordName, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidates, rollCandidateToChain, rollPrompt, rollRoundConditionKey, rollRoundSourceChainIds, rollSignature, rollSourceChainSetId, validateRollExperiment, validateRollPreset, validateRollTemplate, type RollExperiment } from '../../services/styleRoll';
+import { collectPrunableRollCandidateIds, createDefaultRollTemplate, compactRollExperiment, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, formatRollStyle, ROLL_MAX_ARTISTS, getRollPinnedArtists, makePinnedRollRecordName, mergeRollArtists, nextRollRecordName, normalizeRollAutoPruneKeepRounds, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidates, rollCandidateToChain, rollPrompt, rollRoundConditionKey, rollRoundSourceChainIds, rollSignature, rollSourceChainSetId, validateRollExperiment, validateRollPreset, validateRollTemplate, type RollExperiment } from '../../services/styleRoll';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 
 it('推荐模板工厂沿用当前默认值且各次结果独立', () => {
@@ -367,5 +367,32 @@ describe('Roll 命名', () => {
     expect(makePinnedRollRecordName(['dino (dinoartforame)', 'pija', 'mimoza'], [])).toBe('dino 等 3 位');
     expect(makePinnedRollRecordName(['dino (dinoartforame)', 'pija', 'mimoza'], ['dino 等 3 位'])).toBe('dino 等 3 位 2');
     expect(makePinnedRollRecordName([], ['Roll 2'])).toBe('Roll 3');
+  });
+});
+
+describe('旧轮清理', () => {
+  it('按保留轮数收集未保留候选，始终保护已收藏、已存风格串与最近轮次', () => {
+    const e = rollFixture();
+    e.candidates = [
+      candidateFixture('r1-fav', 'alpha'),
+      candidateFixture('r1-saved', 'beta'),
+      candidateFixture('r1-drop', 'gamma'),
+      candidateFixture('r2-drop', 'delta'),
+      candidateFixture('r3-drop', 'epsilon'),
+    ];
+    e.candidates[1].savedChainId = 'saved-chain-1';
+    e.rounds = [
+      { id: 'r1', candidateIds: ['r1-fav', 'r1-saved', 'r1-drop'], createdAt: 1, closedAt: 2 },
+      { id: 'r2', candidateIds: ['r2-drop'], createdAt: 3, closedAt: 4 },
+      { id: 'r3', candidateIds: ['r3-drop'], createdAt: 5 },
+    ];
+    const favorites = new Set(['r1-fav']);
+
+    expect(collectPrunableRollCandidateIds(e, favorites, 0)).toEqual(['r1-drop', 'r2-drop', 'r3-drop']);
+    expect(collectPrunableRollCandidateIds(e, favorites, 1)).toEqual(['r1-drop', 'r2-drop']);
+    expect(collectPrunableRollCandidateIds(e, favorites, 2)).toEqual(['r1-drop']);
+    expect(collectPrunableRollCandidateIds(e, favorites, 3)).toEqual([]);
+    expect(normalizeRollAutoPruneKeepRounds('2')).toBe(2);
+    expect(normalizeRollAutoPruneKeepRounds('99')).toBe(0);
   });
 });

@@ -7,7 +7,7 @@ import type { LocalGenItem, PromptChain } from '../types';
 import { MobileBottomSheet, MobileOverflowMenu } from './MobileUI';
 import { getLanguage, t, useLanguage } from '../services/i18n';
 import { formatGenerationDuration, readGenerationDurationMs } from '../services/generationDuration';
-import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, makePinnedRollRecordName, nextRollRecordName, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateToChain, rollExperimentSummary, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
+import { collectPrunableRollCandidateIds, createDefaultRollTemplate, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, makePinnedRollRecordName, nextRollRecordName, normalizeRollAutoPruneKeepRounds, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateToChain, rollExperimentSummary, rollSourceId, type RollAutoPruneKeepRounds, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
 import { getRollSeries, nextRollSeriesStep, ROLL_SERIES_STOP_LABELS, rollSeriesWouldOverflow, startRollSeries, stopRollSeries, type RollSeriesStopReason } from '../services/styleRollSeries';
 import { rollFavoriteMatches, rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
@@ -149,6 +149,15 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [prefsExpanded, setPrefsExpanded] = useState(false);
   const [intervalExpanded, setIntervalExpanded] = useState(false);
+  const [pruneExpanded, setPruneExpanded] = useState(false);
+  // 再 Roll 时自动清理旧轮未保留项（0=关闭，1=清上一轮，2/3=留最近 N 轮）；仅本端保存、默认关闭。
+  const [autoPruneKeepRounds, setAutoPruneKeepRounds] = useState<RollAutoPruneKeepRounds>(() => {
+    try { return normalizeRollAutoPruneKeepRounds(localStorage.getItem('nai-roll-auto-prune-keep-rounds')); } catch { return 0; }
+  });
+  const updateAutoPruneKeepRounds = (next: RollAutoPruneKeepRounds) => {
+    setAutoPruneKeepRounds(next);
+    try { localStorage.setItem('nai-roll-auto-prune-keep-rounds', String(next)); } catch { /* 本端偏好不可写时保留本次会话状态。 */ }
+  };
   const [preferredSliderMax, setPreferredSliderMax] = useState(() => Math.max(100, DEFAULT_ROLL_RULES.preferredMultiplier ?? 1));
   useEffect(() => {
     const multiplier = roundRules.preferredMultiplier ?? 1;
@@ -239,6 +248,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const chosen = visible.filter(candidate => selectedIds.has(candidate.id));
   const visibleFavorited = historyReady && collectionSettled ? visible.filter(candidate => rollFavoriteMatches(candidate, images, favoriteIds, true)) : [];
   const visibleUnfavorited = historyReady && collectionSettled ? visible.filter(candidate => rollFavoriteMatches(candidate, images, favoriteIds, false)) : [];
+  const prunableCandidateIds = useMemo(
+    () => experiment && historyReady && collectionSettled ? collectPrunableRollCandidateIds(experiment, favoriteIds, 0) : [],
+    [experiment, historyReady, collectionSettled, favoriteIds],
+  );
   useEffect(() => { if (!busy) setSelectedIds(current => { const next = new Set([...current].filter(id => visible.some(candidate => candidate.id === id))); return next.size === current.size ? current : next; }); }, [visible, busy]);
   useEffect(() => {
     if (selectedId && !visible.some(candidate => candidate.id === selectedId)) {
@@ -485,12 +498,17 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     await approveGenerationSeries(current, nextCost);
   }, 'generation');
   /** 抽取一轮候选并保存记录；手动 Roll、助手单轮与连续 Roll 共用同一份校验与落库。 */
-  const createRound = async (requested: number, useSamples: boolean) => {
+  const createRound = async (requested: number, useSamples: boolean, options: { autoPrune?: boolean } = {}) => {
     if (chainArtistSource === undefined && (libraryLoading || libraryError || !library.length)) throw new Error(libraryError || '画师词库尚未就绪，请重新加载');
     if (useSamples && sampledTags === null) throw new Error('正在读取画师样张，请稍候');
     if (useSamples && !effectiveLibrary.length && pinnedArtists.length < roundRules.maxArtists) throw new Error('没有可用的有样张画师，请先在画师库下载图包或生成样张');
     let source = experiment || makeExperiment();
     if (round && !round.closedAt) source = { ...source, rounds: source.rounds.map(item => item.id === round.id ? { ...item, closedAt: Date.now() } : item) };
+    // 仅手动点「再 Roll 一轮」且历史与收藏均已就绪时，按设定档位清理超出保留轮数的未收藏／未保存旧候选。
+    if (options.autoPrune && autoPruneKeepRounds > 0 && experiment && historyReady && collectionSettled) {
+      const pruneIds = collectPrunableRollCandidateIds(source, favoriteIds, autoPruneKeepRounds - 1);
+      if (pruneIds.length) source = removeRollCandidates(source, pruneIds);
+    }
     source = { ...source, artists: artistOverrides, drawPlan: undefined, pinnedArtists, chainArtistSource, rules: roundRules, sampledOnly: useSamples };
     const next = beginRollRound(source, useSamples ? effectiveLibrary : library, requested, { blockedTags: blocklist, sampledOnly: useSamples, preferredTags: await readPreferredTags() });
     const saved = await store(next), created = currentRollRound(saved)!;
@@ -501,7 +519,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (session || generatingRef.current) return;
     if (experiment && (!historyReady || historyLoading)) throw new Error('历史暂不可用，请重新加载后再生成。');
     if (!continuousGenerationEnabled && count > 1) throw new Error('连续生成已关闭，请开启后生成本轮');
-    const { saved, candidates } = await createRound(count, sampledOnly);
+    const { saved, candidates } = await createRound(count, sampledOnly, { autoPrune: true });
     void generate(candidates, saved);
   }, 'generation');
   /**
@@ -725,6 +743,23 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     await store(next);
     setSelectedIds(new Set()); setSelectedId('');
     notify(t('已删除 {0}', [label]), 'success');
+  });
+  /** 手动一键清理当前记录内既未收藏也未保存为风格串的候选（历史原图保留）。 */
+  const pruneUnkeptCandidates = () => void perform(async () => {
+    if (!experiment || !historyReady || !collectionSettled || session || generatingRef.current) return;
+    const ids = collectPrunableRollCandidateIds(experiment, favoriteIds, 0);
+    if (!ids.length) return;
+    if (!await confirm({
+      title: '清理未保留候选',
+      message: t('将移除本记录中 {0} 个未收藏且未保存为风格串的候选；已生成的历史图片与已保存的风格串仍保留。', [ids.length]),
+      confirmLabel: t('清理'),
+      tone: 'danger',
+    })) return;
+    const next = removeRollCandidates(experiment, ids);
+    await store(next);
+    setSelectedIds(new Set());
+    if (selectedId && ids.includes(selectedId)) setSelectedId('');
+    notify(t('已清理 {0} 个未保留候选', [ids.length]), 'success');
   });
   // 归档候选只来自更早的丢弃方式；现在「丢弃」就是直接删除，容量立即回到记录上，不再有可永久清理的归档项。
   // 记录删除与候选一致：二次确认后彻底移除，不保留回收站；历史原图与已保存的风格串独立保存。
@@ -1077,7 +1112,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           <ToolbarButton className="max-md:hidden" aria-label={t('批量选择候选')} title={t('多选')} disabled={frozen || !experiment || !visible.length} onClick={() => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); }}><ListChecks /><span className="toolbar-responsive-label hidden xl:inline">{t('多选')}</span></ToolbarButton>
           <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} title={t('本轮将生成 {0} 张，点击后确认费用', [count])} data-agent-action="business" tone="primary" disabled={!canStart} className="mobile-touch !px-2.5 font-bold shadow-sm transition-transform active:scale-95 md:!px-3" onClick={() => runRound()}><Dice5 className="h-4 w-4" /><span className="toolbar-responsive-label hidden md:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
           <div className="flex flex-none items-center max-md:hidden">
-          <ToolbarPopover label={t('设置')} title={t('设置')} icon={<Settings2 />} iconOnly iconTone="ghost" disabled={frozen || working} width={360} open={settingsOpen} onOpenChange={open => { setSettingsOpen(open); if (open) void loadQueueInterval(); else { setPrefsExpanded(false); setIntervalExpanded(false); } }}>
+          <ToolbarPopover label={t('设置')} title={t('设置')} icon={<Settings2 />} iconOnly iconTone="ghost" disabled={frozen || working} width={360} open={settingsOpen} onOpenChange={open => { setSettingsOpen(open); if (open) void loadQueueInterval(); else { setPrefsExpanded(false); setIntervalExpanded(false); setPruneExpanded(false); } }}>
             {close => {
               const preferredMultiplier = roundRules.preferredMultiplier ?? 1;
               const prefParts: string[] = [];
@@ -1091,16 +1126,25 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               const intervalSummary = intervalSeconds > 0
                 ? `${t('{0} 秒', [intervalSeconds.toFixed(1)])}${intervalJitter > 0 ? ` · ${t('±{0}%', [intervalJitter])}` : ''}`
                 : t('无等待');
-              const menuRowClass = 'mobile-touch flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-gray-800 transition-colors hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0';
-              return <div className="max-h-[78dvh] space-y-3 overflow-y-auto">
+              const pruneSummary = autoPruneKeepRounds === 0 ? t('关闭')
+                : autoPruneKeepRounds === 1 ? t('清上一轮')
+                : t('留最近 {0} 轮', [autoPruneKeepRounds]);
+              const pruneOptions: { value: RollAutoPruneKeepRounds; label: string }[] = [
+                { value: 0, label: t('关闭') },
+                { value: 1, label: t('清上一轮') },
+                { value: 2, label: t('留 2 轮') },
+                { value: 3, label: t('留 3 轮') },
+              ];
+              const collapseRowClass = 'mobile-touch -mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-gray-100 dark:hover:bg-gray-800';
+              const menuRowClass = 'mobile-touch -mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-gray-800 transition-colors hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0';
+              return <div className="max-h-[78dvh] -mx-2 -my-1 space-y-3 overflow-y-auto px-2 py-1">
               <section className="space-y-2.5">
                 <label className="grid grid-cols-[6.25rem_minmax(0,1fr)] items-center gap-2.5 text-xs font-semibold text-gray-700 dark:text-gray-200"><span>{t('本轮张数')}</span><input type="number" aria-label={t('本轮生成张数')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !h-9 text-center tabular-nums`} min={1} max={24} value={count} onChange={event => setCount(Math.min(24, Math.max(1, Number(event.target.value) || 1)))} /></label>
                 <StyleRollRuleFields rules={roundRules} onChange={setRoundRules} disabled={frozen} />
               </section>
               <section className="space-y-1 border-t border-gray-200/80 pt-2 dark:border-gray-800/80">
                 <div>
-                  <button type="button" aria-expanded={prefsExpanded} onClick={() => setPrefsExpanded(value => !value)}
-                    className="mobile-touch flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-gray-100 dark:hover:bg-gray-800">
+                  <button type="button" aria-expanded={prefsExpanded} onClick={() => setPrefsExpanded(value => !value)} className={collapseRowClass}>
                     <span className="font-semibold text-gray-700 dark:text-gray-200">{t('偏好与画师范围')}</span>
                     <span className="ml-auto truncate text-micro tabular-nums text-gray-500 dark:text-gray-400">{prefSummary}</span>
                     <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform ${prefsExpanded ? 'rotate-180' : ''}`} />
@@ -1136,8 +1180,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
                   </div>}
                 </div>
                 {continuousGenerationEnabled && <div>
-                  <button type="button" aria-expanded={intervalExpanded} onClick={() => setIntervalExpanded(value => !value)}
-                    className="mobile-touch flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-gray-100 dark:hover:bg-gray-800">
+                  <button type="button" aria-expanded={intervalExpanded} onClick={() => setIntervalExpanded(value => !value)} className={collapseRowClass}>
                     <span className="font-semibold text-gray-700 dark:text-gray-200">{t('生成间隔')}</span>
                     <span className="ml-auto truncate text-micro tabular-nums text-gray-500 dark:text-gray-400">{intervalSummary}</span>
                     <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform ${intervalExpanded ? 'rotate-180' : ''}`} />
@@ -1164,6 +1207,30 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
                     </label>
                   </div>}
                 </div>}
+                <div>
+                  <button type="button" aria-expanded={pruneExpanded} onClick={() => setPruneExpanded(value => !value)} className={collapseRowClass}>
+                    <span className="font-semibold text-gray-700 dark:text-gray-200">{t('旧轮清理')}</span>
+                    <span className="ml-auto truncate text-micro tabular-nums text-gray-500 dark:text-gray-400">{pruneSummary}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform ${pruneExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                  {pruneExpanded && <div className="mt-1.5 space-y-2.5 rounded-xl bg-gray-50/80 p-2.5 dark:bg-gray-800/40">
+                    <div role="group" aria-label={t('再 Roll 自动清理')} className="grid grid-cols-4 gap-1">
+                      {pruneOptions.map(option => {
+                        const activeOption = autoPruneKeepRounds === option.value;
+                        return <button key={option.value} type="button" aria-pressed={activeOption} onClick={() => updateAutoPruneKeepRounds(option.value)}
+                          className={`mobile-touch rounded-lg border px-1.5 py-1.5 text-center text-micro font-medium transition-colors ${activeOption ? 'border-[var(--nai-accent)] bg-[var(--nai-accent)]/12 text-[var(--nai-accent)] font-semibold' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+                          {option.label}
+                        </button>;
+                      })}
+                    </div>
+                    <button type="button" disabled={frozen || working || !experiment || !historyReady || !collectionSettled || prunableCandidateIds.length === 0}
+                      onClick={() => openFromSettings(close, () => pruneUnkeptCandidates())}
+                      className="mobile-touch flex w-full items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-red-500/50 dark:hover:bg-red-950/50 dark:hover:text-red-300">
+                      <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                      <span>{t('立即清理未保留项（{0}）', [prunableCandidateIds.length])}</span>
+                    </button>
+                  </div>}
+                </div>
               </section>
               <section className="space-y-0.5 border-t border-gray-200/80 pt-2 dark:border-gray-800/80">
                 <button type="button" className={menuRowClass} onClick={() => openFromSettings(close, () => setSetup({ ...(experiment || makeExperiment()), drawPlan: undefined, artists: artistOverrides, pinnedArtists, chainArtistSource, rules: roundRules, sampledOnly }))}>

@@ -582,3 +582,34 @@ export function makePinnedRollRecordName(
   while (used.has(`${base} ${suffix}`.toLowerCase())) suffix += 1;
   return `${base} ${suffix}`.slice(0, 120);
 }
+
+export type RollAutoPruneKeepRounds = 0 | 1 | 2 | 3;
+
+export function normalizeRollAutoPruneKeepRounds(value: unknown): RollAutoPruneKeepRounds {
+  const num = Number(value);
+  return num === 1 || num === 2 || num === 3 ? num : 0;
+}
+
+/**
+ * 收集可安全清理的未保留候选 ID：
+ * 永远跳过已归档、已存为风格串（savedChainId）或已收藏（favoriteIds）的候选；
+ * keepRecentRounds > 0 时额外保护最近 N 个非空轮次内的全部候选。
+ */
+export function collectPrunableRollCandidateIds(
+  experiment: RollExperiment,
+  favoriteIds: ReadonlySet<string>,
+  keepRecentRounds = 0,
+): string[] {
+  const protectedIds = new Set<string>();
+  const keepCount = Math.max(0, Math.floor(keepRecentRounds));
+  if (keepCount > 0 && experiment.rounds.length > 0) {
+    const activeIds = new Set(experiment.candidates.filter(candidate => !candidate.archived).map(candidate => candidate.id));
+    const nonEmptyRounds = experiment.rounds.filter(round => round.candidateIds.some(id => activeIds.has(id)));
+    for (const round of nonEmptyRounds.slice(-keepCount)) {
+      for (const id of round.candidateIds) protectedIds.add(id);
+    }
+  }
+  return experiment.candidates
+    .filter(candidate => !candidate.archived && !candidate.savedChainId && !favoriteIds.has(candidate.id) && !protectedIds.has(candidate.id))
+    .map(candidate => candidate.id);
+}

@@ -1495,3 +1495,50 @@ it('顶栏不再提供冗余筛选入口，搜索无结果禁用多选并可一�
   await waitFor(() => expect(screen.getByRole('button', { name: '查看候选 2' })).toBeTruthy());
   expect((screen.getByRole('button', { name: '批量选择候选' }) as HTMLButtonElement).disabled).toBe(false);
 });
+
+it('旧轮清理支持再 Roll 自动清上一轮（保护已收藏与已存风格串）及手动一键清理', async () => {
+  experiment.candidates = [
+    candidateFixture('fav-id', 'alpha'),
+    { ...candidateFixture('saved-id', 'beta'), savedChainId: 'chain-1' },
+    candidateFixture('drop-id', 'gamma'),
+  ];
+  experiment.rounds = [{ id: 'round-1', candidateIds: ['fav-id', 'saved-id', 'drop-id'], createdAt: 1 }];
+  const histRows = rows(experiment);
+  mocks.history.mockResolvedValue(histRows);
+  mocks.favorites.add(histRows[0].id);
+  await setup();
+
+  // 先测手动一键清理：3 个候选里只有 1 个未收藏也未保存
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
+  fireEvent.click(screen.getByRole('button', { name: /旧轮清理/ }));
+  const cleanNowBtn = screen.getByRole('button', { name: '立即清理未保留项（1）' });
+  fireEvent.click(cleanNowBtn);
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
+  expect(mocks.save.mock.calls[0][0].candidates.map((item: any) => item.id)).toEqual(['fav-id', 'saved-id']);
+
+  // 再开启「清上一轮」后手动再 Roll 一轮：自动清掉旧轮未保留项，保留收藏、已保存与新一轮
+  mocks.save.mockClear();
+  mocks.generate.mockClear();
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
+  fireEvent.click(screen.getByRole('button', { name: /旧轮清理/ }));
+  fireEvent.click(screen.getByRole('button', { name: '清上一轮' }));
+  expect(localStorage.getItem('nai-roll-auto-prune-keep-rounds')).toBe('1');
+  fireEvent.change(screen.getByRole('spinbutton', { name: '本轮生成张数' }), { target: { value: '2' } });
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
+
+  // 先 Roll 一轮得到 2 个未保留新候选
+  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
+  const afterFirstRoll = mocks.save.mock.calls[0][0] as RollExperiment;
+  expect(afterFirstRoll.candidates.map(item => item.id)).toContain('fav-id');
+  expect(afterFirstRoll.candidates.map(item => item.id)).toContain('saved-id');
+  expect(afterFirstRoll.candidates).toHaveLength(4);
+
+  // 再 Roll 下一轮时，上一轮那 2 个未保留候选被自动清掉，仅剩 fav-id、saved-id 和最新的 2 个候选
+  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledTimes(2));
+  const afterSecondRoll = mocks.save.mock.calls[1][0] as RollExperiment;
+  expect(afterSecondRoll.candidates.map(item => item.id)).toContain('fav-id');
+  expect(afterSecondRoll.candidates.map(item => item.id)).toContain('saved-id');
+  expect(afterSecondRoll.candidates).toHaveLength(4);
+});
