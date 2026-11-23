@@ -1059,10 +1059,15 @@ it('已归档候选不再出现在任何视图，原图与已保存风格串仍�
   expect(screen.queryByRole('button', { name: '永久清理所选' })).toBeNull();
 });
 
-it('已出图卡片不叠放左上角编号与轮次，未出图占位卡与右侧详情仍保留轮次信息', async () => {
+it('加载中与已出图卡片不叠放左上角编号与轮次，确认未出图占位卡与右侧详情仍保留轮次信息', async () => {
   experiment.rounds = [{ id: 'first', candidateIds: ['a', 'b'], createdAt: 1 }];
-  mocks.history.mockResolvedValue(rows(experiment).slice(0, 1));
-  await setup();
+  let resolveHistory!: (items: ReturnType<typeof rows>) => void;
+  mocks.history.mockImplementationOnce(() => new Promise(resolve => { resolveHistory = resolve; }));
+  render(<StyleRollPage active chains={[]} enforceFreeStepLimit generationStreamPreview={false} onSaveChain={vi.fn()} onOpenChain={vi.fn()} onNavigateToPlayground={vi.fn()} notify={vi.fn()} />);
+  const loadingCard = await screen.findByRole('button', { name: '查看候选 1' });
+  expect(within(loadingCard).queryByText('#1')).toBeNull();
+  expect(within(loadingCard).queryByText('R1')).toBeNull();
+  await act(async () => { resolveHistory(rows(experiment).slice(0, 1)); });
   const generatedCard = screen.getByRole('button', { name: '查看候选 1' });
   const pendingCard = screen.getByRole('button', { name: '查看候选 2' });
   expect(within(generatedCard).queryByText('#1')).toBeNull();

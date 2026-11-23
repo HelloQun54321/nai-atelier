@@ -80,8 +80,8 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
       className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border bg-white shadow-sm text-left transition-all duration-200 dark:bg-gray-850 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${selected ? '!border-indigo-500 ring-2 ring-indigo-500/25 shadow-md shadow-indigo-500/10' : 'border-gray-200/90 hover:border-indigo-400 hover:shadow-md dark:border-gray-800/80 dark:hover:border-indigo-500/50'} ${!selecting && selectionFocusEnabled && selectedId && !selected ? 'brightness-[.7]' : ''}`}>
 
       <div data-image-action-left className="absolute left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5">
-        {/* 已出图卡片左上角仅保留悬停删除，编号与轮次在右侧详情查看；未出图占位卡保留编号方便辨识进度。 */}
-        {!hasVisual && <span className="pointer-events-none flex flex-col items-start rounded-md bg-black/35 px-1.5 py-1 font-mono text-micro leading-tight text-white/90">
+        {/* 仅在历史已就绪且确认尚未出图的占位卡上显示编号与轮次；加载中与已出图卡片左上角只留悬停删除。 */}
+        {historyReady && !historyLoading && !hasVisual && <span className="pointer-events-none flex flex-col items-start rounded-md bg-black/35 px-1.5 py-1 font-mono text-micro leading-tight text-white/90">
           <span>#{index}</span>
           {roundNo ? <span className="text-mini opacity-60">R{roundNo}</span> : null}
         </span>}
