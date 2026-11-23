@@ -53,8 +53,9 @@ import { clearArtistPreference, collectionRevision, collectionSnapshot, collecti
 import { StyleRollGallery } from './roll/StyleRollGallery';
 import { RollRecordNavigation } from './roll/RollRecordNavigation';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
-import { formatCloudQueueCountLabel, formatCloudQueueStatusLabel, useCloudQueueStatus } from './CloudQueueStatus';
+import { useCloudQueueStatus } from './CloudQueueStatus';
 import { isCloudQueueTaskActive } from '../services/cloudQueue';
+import { resolveGenerationStatus } from '../services/generationStatus';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 
 interface Props {
@@ -991,7 +992,18 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const working = Boolean(session || preparing), frozen = busy || loading || detailLoading;
   const cloudQueue = useCloudQueueStatus();
   const activeCloudQueue = working && cloudQueue && isCloudQueueTaskActive(cloudQueue) && (!session?.cloudQueueTaskId || cloudQueue.taskId === session.cloudQueueTaskId) ? cloudQueue : null;
-  const generatingCandidateId = preparing || (session && (['preparing', 'generating', 'saving'].includes(session.state) || Boolean(activeCloudQueue))) ? previewCandidateId : undefined;
+  const effectiveGenerationState = session?.awaiting ? 'awaiting_confirmation' : (session?.state ?? (preparing ? 'preparing' : undefined));
+  const activeStatus = working ? resolveGenerationStatus({
+    occupied: true,
+    generationState: effectiveGenerationState,
+    generationStage: session?.stage,
+    generationProgress: session?.preview?.step ? { step: session.preview.step, total: session.steps } : null,
+    series: session?.progress ?? null,
+    cloudQueue: activeCloudQueue,
+    paused: session?.state === 'paused',
+  }) : null;
+  const generatingCandidateId = working && session?.state !== 'paused' && !session?.awaiting ? previewCandidateId : undefined;
+  const pendingBatchCount = continuousGenerationEnabled ? Math.min(24, roundPending.length) : Math.min(1, roundPending.length);
   const selectedPending = experiment ? rollPendingCandidates(experiment, images, chosen.map(candidate => candidate.id)) : [];
   const saveable = chosen.filter(candidate => images.has(candidate.id) && !candidate.archived && !candidate.savedChainId);
   const canStart = !frozen && !working && (chainArtistSource !== undefined || (!libraryLoading && !libraryError && library.length > 0)) && (!experiment || historyReady) && (!sampledOnly || (sampledTags !== null && (effectiveLibrary.length > 0 || pinnedArtists.length >= roundRules.maxArtists)));
@@ -1031,11 +1043,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         {/* 中间：以搜索框为界，左侧记录切换、右侧管理与执行操作。 */}
         <ToolbarSearch value={query} trailing={experiment && <ToolbarCountBadge inline total={round && roundPending.length > 0 ? round.candidateIds.length : visible.length} loaded={round && roundPending.length > 0 ? round.candidateIds.filter(id => images.has(id)).length : undefined} />} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师、中文名或编号')} placeholder={t('搜索画师、中文名或编号')} containerClassName="min-w-0 flex-1 !max-w-none md:!max-w-none" disabled={!experiment} />
 
-        {/* 右侧集群：多选、主 CTA、设置与更多。 */}
+        {/* 右侧集群：多选、主 CTA、设置与更多（固定不变，中断时不临时插入按钮）。 */}
         <div className="flex shrink-0 items-center gap-1.5 md:gap-2">
 
           <ToolbarButton className="max-md:hidden" aria-label={t('批量选择候选')} title={t('多选')} disabled={frozen || !experiment || !visible.length} onClick={() => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); }}><ListChecks /><span className="toolbar-responsive-label hidden xl:inline">{t('多选')}</span></ToolbarButton>
-          {!working && roundPending.length > 0 && <ToolbarButton className="max-md:hidden" aria-label={t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])} title={t('本轮还有 {0} 张没出，点击后确认费用', [roundPending.length])} data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus /><span className="toolbar-responsive-label hidden xl:inline">{t(continuousGenerationEnabled ? '补齐剩余 {0} 张' : '生成本轮 1 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])}</span><span className="toolbar-responsive-compact xl:hidden tabular-nums">{continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1}</span></ToolbarButton>}
           <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} title={t('本轮将生成 {0} 张，点击后确认费用', [count])} data-agent-action="business" tone="primary" disabled={!canStart} className="mobile-touch !px-2.5 font-bold shadow-sm transition-transform active:scale-95 md:!px-3" onClick={() => runRound()}><Dice5 className="h-4 w-4" /><span className="toolbar-responsive-label hidden md:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
           <div className="flex flex-none items-center max-md:hidden">
           <ToolbarPopover label={t('设置')} title={t('设置')} icon={<Settings2 />} iconOnly iconTone="ghost" disabled={frozen || working} width={360} open={settingsOpen} onOpenChange={open => { setSettingsOpen(open); if (open) void loadQueueInterval(); else { setPrefsExpanded(false); setIntervalExpanded(false); } }}>
@@ -1152,7 +1163,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           {/* 手机顶栏只留画风记录、搜索、Roll 与更多；设置、多选与提取收进「更多」。 */}
           <MobileOverflowMenu className="md:hidden" items={[
             { label: '设置', icon: <Settings2 />, disabled: frozen || working, onClick: () => { setSettingsOpen(true); void loadQueueInterval(); } },
-            ...(roundPending.length > 0 ? [{ label: t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1]), icon: <ImagePlus />, disabled: frozen || working || !historyReady, onClick: () => generatePending() }] : []),
             { label: '批量选择候选', icon: <ListChecks />, disabled: frozen || !experiment || !visible.length, onClick: () => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); } },
             { label: chainArtistSource ? `已选 ${chainArtistSource.chainIds.length} 串` : '从风格串提取', icon: <Layers />, disabled: frozen || working || libraryLoading, onClick: () => setChainTarget(experimentId) },
           ]} />
@@ -1168,7 +1178,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
     {(loading || detailLoading) && !experiment ? <PageSpinner className="workspace-scroll-viewport overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
       : <div className="relative flex min-h-0 flex-1">
-        <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} positions={roundPositions} generationState={{ generatingId: generatingCandidateId, nextId: nextPendingId, running: working, paused: session?.state === 'paused', awaiting: Boolean(session?.awaiting), saving: session?.state === 'saving', queueLabel: activeCloudQueue ? formatCloudQueueStatusLabel(activeCloudQueue) : null, queueDetail: activeCloudQueue ? formatCloudQueueCountLabel(activeCloudQueue) : null, error: generationError && generationError.experimentId === experiment.id ? generationError : null }} onGenerate={id => { const candidate = experiment.candidates.find(item => item.id === id); if (candidate) void generate([candidate], experiment); }} onPause={pause} onResume={resume} onCancel={cancelSession} onApprove={approve} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => deleteCandidates([id])} busy={frozen} emptyState={(() => {
+        <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} positions={roundPositions} pendingBatchCount={pendingBatchCount} generationState={{ generatingId: generatingCandidateId, nextId: nextPendingId, running: working, paused: session?.state === 'paused', awaiting: Boolean(session?.awaiting), saving: session?.state === 'saving', stopping: Boolean(session?.progress?.stopping), status: activeStatus, error: generationError && generationError.experimentId === experiment.id ? generationError : null }} onGenerate={id => { const candidate = experiment.candidates.find(item => item.id === id); if (candidate) void generate([candidate], experiment); }} onGeneratePending={() => generatePending()} onPause={pause} onResume={resume} onCancel={cancelSession} onApprove={approve} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => deleteCandidates([id])} busy={frozen} emptyState={(() => {
           const hasAnyCandidates = experiment.candidates.some(candidate => !candidate.archived);
           if (!hasAnyCandidates) return { title: t('还没有 Roll 候选'), hint: t('调整上方设置后点击开始，即可批量随机探索画风组合。'), actionLabel: t('开始第一轮'), actionPrimary: true, actionDisabled: !canStart, onAction: () => runRound() };
           const hasQuery = Boolean(query.trim());

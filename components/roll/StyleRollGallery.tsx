@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { AlertTriangle, Check, Dice5, Heart, LoaderCircle, Pause, Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, Check, Clock, Dice5, Heart, LoaderCircle, Pause, Save, Timer, Trash2 } from 'lucide-react';
 import type { LocalGenItem } from '../../types';
 import { t } from '../../services/i18n';
 import { type RollCandidate, type RollExperiment } from '../../services/styleRoll';
+import type { GenerationStatusDescriptor } from '../../services/generationStatus';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { useGalleryFrostedCaption } from '../../services/appearancePreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from '../ShortestColumnMasonry';
@@ -39,12 +40,15 @@ interface Props {
     paused: boolean;
     awaiting: boolean;
     saving: boolean;
-    /** 当前中转／公共排队状态，直接融合进生成中卡片占位区，不再额外弹出右下角浮条。 */
-    queueLabel?: string | null;
-    queueDetail?: string | null;
+    stopping?: boolean;
+    /** 与实验室生成按钮同源的实时状态语义（图标 + 文案）。 */
+    status?: GenerationStatusDescriptor | null;
     error?: { message: string; tone: 'error' | 'warning' } | null;
   } | null;
+  /** 当前轮剩余可一次性唤醒的待生成张数（>1 时队头卡主按钮直接恢复整批队列）。 */
+  pendingBatchCount?: number;
   onGenerate?: (id: string) => void;
+  onGeneratePending?: () => void;
   onPause?: () => void;
   onResume?: () => void;
   onCancel?: () => void;
@@ -59,24 +63,37 @@ interface Props {
 const GEN_PRIMARY = 'mobile-touch inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:opacity-40';
 const GEN_SECONDARY = 'mobile-touch inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white/90 px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-200 dark:hover:bg-gray-800';
 
-export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, positions, generationState, onGenerate, onPause, onResume, onCancel, onApprove, favoriteIds, emptyState, scrollRef, onScroll, notify }) => {
+export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, positions, generationState, pendingBatchCount = 0, onGenerate, onGeneratePending, onPause, onResume, onCancel, onApprove, favoriteIds, emptyState, scrollRef, onScroll, notify }) => {
   const display = useMobileImageDisplayPreferences('roll');
   const requestedColumns = useMasonryColumnCount(display, undefined, scrollRef, 220, false, Boolean(selectedId));
   const columns = display.desktopColumns === 'auto' ? Math.min(4, requestedColumns) : requestedColumns;
   const frosted = useGalleryFrostedCaption();
   const [ratios, setRatios] = useState<Record<string, number>>({});
   const ratio = (candidate: RollCandidate) => ratios[candidate.id] || (images.get(candidate.id)?.params.width ?? experiment.template.params.width) / (images.get(candidate.id)?.params.height ?? experiment.template.params.height);
+  const renderStatusIcon = (icon?: GenerationStatusDescriptor['icon']) => {
+    if (icon === 'clock') return <Clock className="h-5 w-5" />;
+    if (icon === 'timer') return <Timer className="h-5 w-5" />;
+    if (icon === 'pause') return <Pause className="h-5 w-5" />;
+    if (icon === 'alert') return <AlertTriangle className="h-5 w-5 text-amber-500" />;
+    return <LoaderCircle className="h-5 w-5 animate-spin" />;
+  };
 
   const renderCard = (candidate: RollCandidate) => {
     const item = images.get(candidate.id), index = experiment.candidates.indexOf(candidate) + 1;
     const selected = selecting ? selectedIds.has(candidate.id) : selectedId === candidate.id;
     const activate = () => { if (selecting) { if (!busy) onToggle(candidate.id); } else onSelect(selectedId === candidate.id ? '' : candidate.id); };
+    const isActiveGenerating = !item && Boolean(
+      preview?.id === candidate.id
+      || (generationState?.running && !generationState.paused && !generationState.awaiting && generationState.generatingId === candidate.id),
+    );
 
     return <PressRevealSurface key={candidate.id} pressDisabled={selecting} role={selecting ? 'checkbox' : 'button'} tabIndex={0}
-      data-agent-action="select" data-gallery-work-id={candidate.id} data-safe-mode-work="true"
+      data-agent-action="select" data-gallery-work-id={candidate.id} data-safe-mode-work="true" data-generating={isActiveGenerating ? 'true' : undefined}
       aria-label={t(selecting ? '选择候选 {0}' : '查看候选 {0}', [index])} aria-checked={selecting ? selected : undefined} aria-pressed={selecting ? undefined : selected} aria-disabled={selecting ? busy : undefined}
       onClick={activate} onKeyDown={event => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); activate(); } }}
-      className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border bg-white shadow-sm text-left transition-all duration-200 dark:bg-gray-850 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${selected ? '!border-indigo-500 ring-2 ring-indigo-500/25 shadow-md shadow-indigo-500/10' : 'border-gray-200/90 hover:border-indigo-400 hover:shadow-md dark:border-gray-800/80 dark:hover:border-indigo-500/50'} ${!selecting && selectionFocusEnabled && selectedId && !selected ? 'brightness-[.7]' : ''}`}>
+      className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border bg-white shadow-sm text-left transition-all duration-200 dark:bg-gray-850 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${isActiveGenerating ? 'roll-card-generating' : ''} ${selected ? '!border-indigo-500 ring-2 ring-indigo-500/25 shadow-md shadow-indigo-500/10' : 'border-gray-200/90 hover:border-indigo-400 hover:shadow-md dark:border-gray-800/80 dark:hover:border-indigo-500/50'} ${!selecting && selectionFocusEnabled && selectedId && !selected ? 'brightness-[.7]' : ''}`}>
+
+      {isActiveGenerating && <span aria-hidden="true" className="roll-card-orbit-glow" />}
 
       {!selecting && <div data-image-action-left className="absolute left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5">
         <div data-card-action="true" className="hover-reveal-md">
@@ -90,7 +107,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
         {item ? <SmartImage src={item.imageUrl} alt={t('候选 {0}', [index])} className="h-full w-full object-contain" onLoad={event => { const image = event.currentTarget, next = image.naturalWidth / Math.max(1, image.naturalHeight); if (next > 0 && next !== ratios[candidate.id]) setRatios(current => ({ ...current, [candidate.id]: next })); }} />
           : preview?.id === candidate.id ? <div className="relative h-full w-full">
             <img src={preview.image} alt={t('生成预览')} className="h-full w-full object-contain" />
-            <span className="pointer-events-none absolute inset-x-0 bottom-2 mx-auto w-fit rounded-full bg-black/55 px-2 py-0.5 text-micro text-white">{generationState?.saving ? t('正在保存…') : generationState?.queueLabel || t('生成中…')}</span>
+            <span className="pointer-events-none absolute inset-x-0 bottom-2 mx-auto w-fit rounded-full bg-black/55 px-2 py-0.5 text-micro text-white">{generationState?.status?.label || (generationState?.saving ? t('正在保存…') : t('生成中…'))}</span>
           </div>
             : <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2.5 px-4 text-center">
               {!historyReady ? (historyLoading ? <InlineSpinner label={t('加载中…')} className="text-xs" /> : <div className="text-xs font-medium">{t('历史暂不可用')}</div>) : (() => {
@@ -99,35 +116,39 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
                 const isGenerating = state?.generatingId === candidate.id;
                 const error = isNext ? state?.error : null;
                 const positionLabel = position ? t('本批第 {0}/{1} 张', [position.index, position.total]) : '';
+                const canResumeBatch = Boolean(pendingBatchCount > 1 && onGeneratePending);
                 const fire = (action?: () => void) => (event: React.MouseEvent) => { event.stopPropagation(); action?.(); };
                 if (error) return <>
                   <AlertTriangle className={`h-6 w-6 ${error.tone === 'warning' ? 'text-amber-500' : 'text-red-500'}`} />
                   <p className={`line-clamp-3 max-w-full break-words text-xs font-medium ${error.tone === 'warning' ? 'text-amber-700 dark:text-amber-300' : 'text-red-600 dark:text-red-300'}`} title={error.message}>{error.message}</p>
-                  {onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={GEN_PRIMARY}><Dice5 className="h-3.5 w-3.5" />{t('重试')}</button>}
+                  {canResumeBatch ? <>
+                    <button type="button" disabled={busy} onClick={fire(onGeneratePending)} className={GEN_PRIMARY}><Dice5 className="h-3.5 w-3.5" />{t('重试并继续（{0} 张）', [pendingBatchCount])}</button>
+                    {onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={GEN_SECONDARY}>{t('仅生此张')}</button>}
+                  </> : onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={GEN_PRIMARY}><Dice5 className="h-3.5 w-3.5" />{t('重试')}</button>}
                   {positionLabel && <span className="text-mini">{positionLabel}</span>}
                 </>;
                 if (state?.running) {
                   if (state.awaiting && isNext) return <>
-                    <LoaderCircle className="h-5 w-5 animate-spin" />
-                    <span className="text-xs font-medium">{t('等待费用确认')}</span>
+                    <AlertTriangle className="h-5 w-5 text-amber-500" />
+                    <span className="text-xs font-medium">{state.status?.label || t('等待确认费用')}</span>
                     {onApprove && <button type="button" disabled={busy} onClick={fire(onApprove)} className={GEN_PRIMARY}>{t('确认费用')}</button>}
                     {onCancel && <button type="button" onClick={fire(onCancel)} className={GEN_SECONDARY}>{t('取消')}</button>}
                   </>;
                   if (isGenerating) return <>
-                    <LoaderCircle className="h-5 w-5 animate-spin" />
-                    <span className="text-xs font-medium">{state.saving ? t('正在保存…') : state.queueLabel || t('生成中…')}</span>
-                    {!state.saving && state.queueDetail && <span className="text-mini text-gray-500 dark:text-gray-400">{state.queueDetail}</span>}
+                    {renderStatusIcon(state.status?.icon)}
+                    <span className="text-xs font-medium">{state.status?.label || (state.saving ? t('正在保存…') : t('生成中…'))}</span>
                     {state.paused
                       ? onResume && isNext && <button type="button" disabled={busy} onClick={fire(onResume)} className={GEN_SECONDARY}>{t('继续')}</button>
-                      : onPause && <button type="button" disabled={busy} onClick={fire(onPause)} className={GEN_SECONDARY}><Pause className="h-3 w-3" />{t('暂停')}</button>}
-                    {onCancel && <button type="button" onClick={fire(onCancel)} className={GEN_SECONDARY}>{t('取消')}</button>}
+                      : onPause && <button type="button" disabled={busy || state.stopping} onClick={fire(onPause)} className={GEN_SECONDARY}><Pause className="h-3 w-3" />{t('暂停')}</button>}
+                    {onCancel && <button type="button" disabled={state.stopping} onClick={fire(onCancel)} className={GEN_SECONDARY}>{t('取消')}</button>}
                   </>;
                   return <>
                     <div className="appearance-group flex h-10 w-10 items-center justify-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-gray-900">
-                      <Dice5 className="h-5 w-5" />
+                      {state.paused && isNext ? <Pause className="h-5 w-5" /> : <Dice5 className="h-5 w-5" />}
                     </div>
-                    <span className="text-xs font-medium">{state.paused && isNext ? t('任务已暂停') : t('排队中 · 第 {0} 位', [position?.index ?? 1])}</span>
+                    <span className="text-xs font-medium">{state.paused && isNext ? (state.status?.label || t('已暂停')) : t('排队中 · 第 {0} 位', [position?.index ?? 1])}</span>
                     {state.paused && isNext && onResume && <button type="button" disabled={busy} onClick={fire(onResume)} className={GEN_SECONDARY}>{t('继续')}</button>}
+                    {state.paused && isNext && onCancel && <button type="button" disabled={state.stopping} onClick={fire(onCancel)} className={GEN_SECONDARY}>{t('取消')}</button>}
                     {positionLabel && <span className="text-mini">{positionLabel}</span>}
                   </>;
                 }
@@ -135,7 +156,10 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
                   <div className="appearance-group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-gray-900">
                     <Dice5 className="h-6 w-6" />
                   </div>
-                  {onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={GEN_PRIMARY}>{t('生成')}</button>}
+                  {isNext && canResumeBatch ? <>
+                    <button type="button" disabled={busy} onClick={fire(onGeneratePending)} className={GEN_PRIMARY}>{t('继续生成剩余 {0} 张', [pendingBatchCount])}</button>
+                    {onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={GEN_SECONDARY}>{t('仅生此张')}</button>}
+                  </> : onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={canResumeBatch ? GEN_SECONDARY : GEN_PRIMARY}>{t(canResumeBatch ? '仅生此张' : '生成')}</button>}
                   {positionLabel && <span className="text-mini">{positionLabel}</span>}
                 </>;
               })()}

@@ -502,21 +502,25 @@ it.each([['', '1.4'], ['1.5', '1.4'], ['0.7', '3.1'], ['0.75', '1.4']])('无效�
   expect(await screen.findByText(/请检查画师数量和权重范围/)).toBeTruthy();
   expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled();
 });
-it('整轮按总费用确认，拒绝不提交，随后仅生成本轮原配方而不重新Roll', async () => {
+it('整轮按总费用确认，拒绝不提交，顶栏不临时插入补图按钮，队头卡片一键继续剩余队列而其余卡仅生此张', async () => {
   mocks.cost = 7; await setup(); configure('本轮生成张数', '2');
   mocks.confirm.mockResolvedValueOnce(false); fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
   await waitFor(() => expect(mocks.confirm).toHaveBeenCalledOnce()); expect(mocks.confirm.mock.calls[0][0].message).toContain('预计共消耗 14 Anlas'); expect(mocks.generate).not.toHaveBeenCalled();
-  fireEvent.click(await screen.findByRole('button', { name: '补齐剩余 2 张' })); await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
+  expect(screen.queryByRole('button', { name: /补齐剩余/ })).toBeNull();
+  const resumeBatch = await screen.findByRole('button', { name: '继续生成剩余 2 张' });
+  expect(screen.getAllByRole('button', { name: '仅生此张' })).toHaveLength(2);
+  fireEvent.click(resumeBatch); await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
   expect(mocks.generate.mock.calls[0][1]).toHaveLength(2); expect(mocks.save).toHaveBeenCalledOnce();
 });
-it('普通轮次第六张失败后仅手动补缺图，保留五张成品，不显示无效刷新操作', async () => {
+it('普通轮次第六张失败后仅在卡片内就地重试，保留五张成品，不显示无效刷新操作', async () => {
   experiment.candidates = ['a', 'b', 'c', 'd', 'e', 'f'].map(id => candidateFixture(id));
   experiment.rounds = [{ id: 'partial-round', candidateIds: ['a', 'b', 'c', 'd', 'e', 'f'], createdAt: 1 }];
   const before = structuredClone(experiment);
   mocks.history.mockResolvedValue(rows(experiment).slice(0, 5));
   mocks.generate.mockResolvedValueOnce({ session: {}, settle: Promise.resolve({ success: false, outcome: 'failed', error: '<!DOCTYPE html><html><title>502 Bad Gateway</title><body>synthetic-ray</body></html>' }) });
   await setup(); expect(screen.getByTitle('已加载 5 / 共 6')).toBeTruthy(); expect(mocks.generate).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: '补齐剩余 1 张' }));
+  expect(screen.queryByRole('button', { name: /补齐剩余/ })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '生成' }));
   const errorText = await screen.findByText('服务返回了错误页面，请稍后重试');
   expect(errorText.textContent).not.toMatch(/DOCTYPE|synthetic-ray|<html/);
   expect(screen.queryByRole('button', { name: '重新加载' })).toBeNull();
@@ -526,8 +530,8 @@ it('普通轮次第六张失败后仅手动补缺图，保留五张成品，不�
   expect(screen.queryByRole('button', { name: '关闭错误提示' })).toBeNull();
   expect(mocks.generate).toHaveBeenCalledOnce();
   mocks.generate.mockImplementationOnce(async () => { mocks.history.mockResolvedValue(rows(experiment)); return { session: {}, settle: Promise.resolve({ success: true }) }; });
-  fireEvent.click(screen.getByRole('button', { name: '补齐剩余 1 张' }));
-  await waitFor(() => expect(screen.queryByRole('button', { name: '补齐剩余 1 张' })).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: '重试' })).toBeNull());
   expect(mocks.generate).toHaveBeenCalledTimes(2); expect(mocks.generate.mock.calls[1][0]).toEqual(before);
   expect(mocks.generate.mock.calls[1][1]).toEqual(before.candidates[5]); expect(mocks.save).not.toHaveBeenCalled();
 });
@@ -541,10 +545,10 @@ it.each([false, true])('Roll 成图记账异常仍显示已保存结果与结算
     return { session: { accountingFailed: true, accountingError: '本地用量结算失败（HTTP 503）', ...(cleanupFailed ? { cleanupError: '合成后台释放失败' } : {}), lastSavedItem: saved }, settle: Promise.resolve({ success: true }) };
   });
   await setup();
-  fireEvent.click(screen.getByRole('button', { name: '补齐剩余 1 张' }));
+  fireEvent.click(screen.getByRole('button', { name: '生成' }));
   expect((await screen.findByText(/本地用量结算失败（HTTP 503）/)).textContent).toContain('图片已保存，但本地记账异常，请核对额度后再继续');
   if (cleanupFailed) expect(screen.getByText(/后台任务清理异常：合成后台释放失败/)).toBeTruthy();
-  await waitFor(() => expect(screen.queryByRole('button', { name: '补齐剩余 1 张' })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('button', { name: '生成' })).toBeNull());
   expect(screen.getByRole('button', { name: '查看候选 1' }).querySelector('img')?.getAttribute('src')).toContain(saved.id);
   expect(mocks.generate).toHaveBeenCalledOnce(); expect(mocks.upload).not.toHaveBeenCalled();
 });
@@ -987,24 +991,50 @@ it('无论加载中、已出图还是未出图占位卡均不叠放左上角编�
   expect(screen.getByLabelText('候选生成信息').textContent).toContain('R1');
 });
 
-it('中转与公共队列排队状态直接融入正在生成的候选卡占位区', async () => {
+it('生成中卡片与实验室按钮语义对齐并展示绕边强调色流光，中转不误报中转排队', async () => {
   experiment.rounds = [{ id: 'first', candidateIds: ['a', 'b'], createdAt: 1 }];
   mocks.history.mockResolvedValue([]);
-  mocks.session = { scope: `roll:${experiment.id}`, key: mocks.key, token: 't1', count: 2, state: 'generating', cloudQueueTaskId: 'q1', progress: { current: 0, total: 2, stopping: false } };
+  mocks.session = { scope: `roll:${experiment.id}`, key: mocks.key, token: 't1', count: 2, steps: 28, state: 'generating', cloudQueueTaskId: 'q1', progress: { current: 0, total: 2, stopping: false } };
   await setup();
   const generatingCard = screen.getByRole('button', { name: '查看候选 1' });
+  const queuedCard = screen.getByRole('button', { name: '查看候选 2' });
+  expect(generatingCard.getAttribute('data-generating')).toBe('true');
+  expect(generatingCard.querySelector('.roll-card-orbit-glow')).toBeTruthy();
+  expect(queuedCard.getAttribute('data-generating')).toBeNull();
   expect(within(generatingCard).getByText('生成中…')).toBeTruthy();
 
+  // 中转／拼车代理（proxy: true）与实验室一致：不写「中转排队」，继续按正常生成展示。
   act(() => {
     emitCloudQueueStatus({ taskId: 'q1', phase: 'waiting', proxy: true, cancelable: true });
   });
-  expect(within(generatingCard).getByText('中转排队／生成中…')).toBeTruthy();
+  expect(within(generatingCard).getByText('生成中…')).toBeTruthy();
+  expect(within(generatingCard).queryByText(/中转/)).toBeNull();
 
+  // 仅真实多人拼车公共队列等待才报「云端排队 · 第 N 位」。
   act(() => {
     emitCloudQueueStatus({ taskId: 'q1', phase: 'waiting', proxy: false, position: 2, queueSize: 4, cancelable: true });
   });
-  expect(within(generatingCard).getByText('排队中 · 前方 2 个任务')).toBeTruthy();
-  expect(within(generatingCard).getByText('队列共 4 个任务')).toBeTruthy();
+  expect(within(generatingCard).getByText('云端排队 · 第 2 位')).toBeTruthy();
+});
+
+it('多张中断出错后队头支持重试并继续唤醒整批队列，也可仅生此张', async () => {
+  experiment.rounds = [{ id: 'first', candidateIds: ['a', 'b'], createdAt: 1 }];
+  mocks.history.mockResolvedValue([]);
+  mocks.generate.mockResolvedValueOnce({ session: {}, settle: Promise.resolve({ success: false, outcome: 'failed', error: '网络超时' }) });
+  await setup();
+  expect(screen.queryByRole('button', { name: /补齐剩余/ })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '继续生成剩余 2 张' }));
+  await screen.findByText('网络超时');
+  const retryBatch = within(screen.getByRole('button', { name: '查看候选 1' })).getByRole('button', { name: '重试并继续（2 张）' });
+  expect(screen.getAllByRole('button', { name: '仅生此张' })).toHaveLength(2);
+  // 点击队头卡片的「重试并继续（2 张）」唤醒整批 2 张队列
+  fireEvent.click(retryBatch);
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledTimes(2));
+  expect(mocks.generate.mock.calls[1][1]).toHaveLength(2);
+  // 点击第二张卡片的「仅生此张」只提交那 1 张
+  fireEvent.click(within(screen.getByRole('button', { name: '查看候选 2' })).getByRole('button', { name: '仅生此张' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledTimes(3));
+  expect(mocks.generate.mock.calls[2][1]).toEqual(experiment.candidates[1]);
 });
 
 it('普通新建直接建好新记录并使用推荐模板与默认参数，不弹配置大窗且无风格串导入入口', async () => {

@@ -1789,3 +1789,58 @@ button[data-image-preview-navigation] > svg,
   width: calc(var(--nai-float-control, 32px) * .5) !important;
   height: calc(var(--nai-float-control, 32px) * .5) !important;
 }
+
+/* Roll 串正在生成中的候选卡：绕圆角边框旋转的强调色光效，仅在动效完整模式运行。 */
+@property --roll-card-glow-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes roll-card-border-orbit {
+  from { --roll-card-glow-angle: 0deg; }
+  to { --roll-card-glow-angle: 360deg; }
+}
+
+.roll-card-generating {
+  border-color: color-mix(in srgb, var(--nai-accent) 42%, transparent) !important;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--nai-accent) 18%, transparent),
+    0 6px 20px -4px color-mix(in srgb, var(--nai-accent) 34%, transparent);
+}
+
+.roll-card-orbit-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(
+    from var(--roll-card-glow-angle),
+    color-mix(in srgb, var(--nai-accent) 14%, transparent) 0deg,
+    color-mix(in srgb, var(--nai-accent) 14%, transparent) 225deg,
+    var(--nai-accent) 312deg,
+    color-mix(in srgb, var(--nai-accent) 38%, #ffffff) 344deg,
+    color-mix(in srgb, var(--nai-accent) 18%, transparent) 360deg
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+html[data-motion='full'] .roll-card-orbit-glow {
+  animation: roll-card-border-orbit 2.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-motion='full'] .roll-card-orbit-glow {
+    animation: none;
+  }
+}
+
+html:is([data-motion='reduced'], [data-motion='off']) .roll-card-orbit-glow {
+  animation: none;
+  background: color-mix(in srgb, var(--nai-accent) 70%, transparent);
+}

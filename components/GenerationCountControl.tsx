@@ -3,7 +3,7 @@ import { AlertCircle, ChevronDown, Clock, Image as ImageIcon, Images, ListEnd, L
 import { AnchoredToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ToolbarButton } from './DesignSystem';
 import { CloudQueueButton, useCloudQueueEnabled, useCloudQueueStatus } from './CloudQueueStatus';
-import { isCloudQueueTaskActive } from '../services/cloudQueue';
+import { isRealCloudQueueWaiting, resolveGenerationStatus } from '../services/generationStatus';
 import { formatGenerationDuration } from '../services/generationDuration';
 import { MobileBottomSheet } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
@@ -62,7 +62,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     || (series && series.current < series.total) || waiting.length > 0);
   const paused = Boolean(queueState?.paused);
   // 仅真实「公共队列」等待时抑制执行动效与计时；中转／拼车成员网关（proxy: true）无法区分排队与画图，按正常生成展示。
-  const cloudQueueWaiting = Boolean(isCloudQueueTaskActive(queueStatus) && !queueStatus?.proxy && queueStatus?.phase !== 'generating');
+  const cloudQueueWaiting = isRealCloudQueueWaiting(queueStatus);
   // 已保存后的短间隔延续动效；排队、暂停与费用待确认不能冒充正在执行。
   const executing = Boolean((generationState === 'preparing' || generationState === 'generating' || generationState === 'saving'
     || (generationState === 'waiting' && !series?.position && series && series.current > 0 && series.current < series.total))
@@ -125,38 +125,17 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
   };
   const showPrimaryCount = !dock && continuousGenerationEnabled && !primaryUnavailable && !occupied && count > 1;
   const showPrimaryCost = !dock && !primaryUnavailable && !occupied && Boolean(costLabel);
-  const primaryStatus: { icon: 'image' | 'spin' | 'pause' | 'clock' | 'timer' | 'alert'; label: string } = (() => {
-    if (primaryUnavailable) return { icon: paused ? 'pause' : 'image', label: primaryUnavailableLabel! };
-    if (series?.stopping) return { icon: 'spin', label: t("正在停止…") };
-    if (queueState?.pausing) return { icon: 'spin', label: saving ? t("正在保存…") : t("暂停中…") };
-    if (paused && occupied) return { icon: 'pause', label: t("已暂停") };
-    if (occupied && generationState === 'awaiting_confirmation') return { icon: 'alert', label: t("等待确认费用") };
-    if (saving) return { icon: 'spin', label: t("正在保存…") };
-    if (occupied && cloudQueueWaiting && queueStatus?.phase === 'waiting') {
-      const pos = queueStatus.position;
-      return { icon: 'spin', label: pos && pos > 0 ? t("云端排队 · 第 {0} 位", [pos]) : t("云端排队中…") };
-    }
-    if (occupied && generationState === 'preparing') {
-      if (generationStage === 'checking_pool') return { icon: 'spin', label: t("轮询密钥额度…") };
-      if (generationStage === 'checking_quota') return { icon: 'spin', label: t("核实额度中…") };
-      if (generationStage === 'preparing_references') return { icon: 'spin', label: t("处理参考图中…") };
-      return { icon: 'spin', label: t("准备中…") };
-    }
-    if (occupied && generationState === 'waiting') {
-      if (series?.position && series.position > 0) return { icon: 'clock', label: t("排队中 · 第 {0} 位", [series.position]) };
-      if (series && series.current > 0 && series.current < series.total) return { icon: 'timer', label: t("等待下一张…") };
-      return { icon: 'clock', label: t("等待中…") };
-    }
-    if (occupied) {
-      return {
-        icon: 'spin',
-        label: generationProgress
-          ? t("采样 {0} / {1}", [generationProgress.step, generationProgress.total])
-          : t("生成中…"),
-      };
-    }
-    return { icon: 'image', label: t("生成") };
-  })();
+  const primaryStatus = resolveGenerationStatus({
+    occupied,
+    generationState,
+    generationStage,
+    generationProgress,
+    series,
+    queueState,
+    cloudQueue: queueStatus,
+    paused,
+    unavailableLabel: primaryUnavailable ? primaryUnavailableLabel : undefined,
+  });
   const primaryLabel = primaryStatus.label;
   const primaryIcon = !dock ? (
     primaryStatus.icon === 'spin' ? <LoaderCircle aria-hidden="true" className="h-4 w-4 shrink-0 animate-spin" />
