@@ -49,10 +49,11 @@ NAI Atelier：本地个人 NovelAI 创作工坊。React 19 + TypeScript + Vite +
 - **测行为契约，不锁死视觉外观**：优先用 `getByRole` + 可访问名称、`aria-*`、`data-*` 与真实交互结果断言；**不断言普通 Tailwind 外观类名、精确长文案全文或 `title` 全文**（`hidden lg:flex` 等响应式可见性契约保留；禁止写扫描源码样式／像素的警察测试或只测节点存在的空壳测试；改到哪个文件就顺手把该文件的脆弱断言换成语义断言）。
 - **分级验证（拒绝过度耗时）**：
   - **用户明确要求「只修改、不验证」时**：立即停止追加测试或浏览器检查，仅按需更新本地前端产物供用户查看，不重启后端或跑全套构建。
-  - 提交时 `pre-commit` 已在隔离暂存快照自动执行密钥扫描、ESLint 与 TypeScript 检查，提交前不手动重复跑这三项。
-  - **普通 UI / 样式 / 局部逻辑**：只跑受影响范围的定向 Vitest（1～3 分钟闭环），严禁动辄跑全量打包或无头浏览器。
+  - 提交时 `pre-commit` 已在隔离暂存快照自动执行密钥扫描与相应级别检查，提交前不手动重复跑密钥扫描、ESLint 或 `tsc`。
+  - **纯样式／排版微调／静态文案小改**：不跑 Vitest，直接提交并设 `NAI_CHECK_SCOPE=code`（纯 CSS / 纯文档用 `minimal`），数秒闭环。
+  - **局部 UI 交互与单点逻辑**：优先用 `-t` 跑最相关用例或仅跑单个受影响测试文件，提交设 `NAI_CHECK_SCOPE=code`；严禁动辄跑全量测试、打包或无头浏览器。
   - **网关 / 计价 / 共用协议**：跑 `npm run test:gateway`；Pixiv、酒馆桥、备份、桌面、Android 等独立模块优先跑 `npm run test:node -- <对应文件>`；纯前端改动不惯性跑后端测试集。
-  - **复杂画布坐标、跨端同步或破坏性重构**：才采用全量构建 + 浏览器／真机验收。
+  - **跨模块重构、类型契约／依赖配置变更、复杂画布坐标或跨端同步**：才跑完整定向回归、默认 `full` 全量检查，必要时再做构建与浏览器／真机验收。
 
 ## 工作区与多对话并行规范（强制）
 
@@ -69,7 +70,7 @@ NAI Atelier：本地个人 NovelAI 创作工坊。React 19 + TypeScript + Vite +
 
 ## 提交、版本与日志规则（强制）
 
-1. **自动提交、不自动推送**：验证通过后直接本地提交（一提交一批次，不混无关改动）；**`git push` 必须等用户明确要求**。提交信息用英文一行 Conventional Commits（`feat:` / `fix:` / `perf:` / `refactor:` / `docs:` / `chore:` / `style:`，小写开头、结尾无句号），禁 `--no-verify`。按改动幅度设 `NAI_CHECK_SCOPE`：纯文档 `minimal`，小改代码 `code`，跨模块／核心逻辑／工程配置用默认 `full`。
+1. **自动提交、不自动推送**：验证通过后直接本地提交（一提交一批次，不混无关改动）；**`git push` 必须等用户明确要求**。提交信息用英文一行 Conventional Commits（`feat:` / `fix:` / `perf:` / `refactor:` / `docs:` / `chore:` / `style:`，小写开头、结尾无句号），禁 `--no-verify`。按改动幅度设 `NAI_CHECK_SCOPE`：纯文档／纯 CSS 用 `minimal`（只扫密钥），样式微调／局部逻辑用 `code`（密钥扫描 + 仅变动文件 ESLint，仅升版本号的 `package*.json` 不再强升全量），跨模块／改类型契约／改工程依赖配置用默认 `full`。
 2. **显式路径精准提交（防误卷他人改动、防后台卡死）**：严禁 `git add -A`、`git add .`、`git commit -a`，且**必须带 `-m`**（漏 `-m` 会在后台唤起 vim 挂死并锁住 `index.lock`）：
    ```bash
    git status --short              # 分清本次任务文件

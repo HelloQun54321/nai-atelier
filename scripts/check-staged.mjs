@@ -9,7 +9,34 @@ import { scanRepository } from './secret-scan.mjs';
 /** 门禁范围：minimal 只扫密钥，code 加变化文件的 ESLint，full 再加全量类型检查。 */
 const SCOPES = ['minimal', 'code', 'full'];
 const CODE_FILE = /\.(?:ts|tsx|js|jsx|mjs|cjs)$/i;
-const CONFIG_FILE = /^(?:package\.json|package-lock\.json|tsconfig[^/]*\.json|vite\.config\.[^/]+|eslint\.config\.[^/]+|vitest\.config\.[^/]+|wrangler\.toml)$/i;
+const PACKAGE_META_FILE = /^(?:package\.json|package-lock\.json)$/i;
+const STRICT_CONFIG_FILE = /^(?:tsconfig[^/]*\.json|vite\.config\.[^/]+|eslint\.config\.[^/]+|vitest\.config\.[^/]+|wrangler\.toml)$/i;
+
+export const stripPackageVersion = (file, parsed) => {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return parsed;
+  const copy = { ...parsed };
+  delete copy.version;
+  if (file === 'package-lock.json' && copy.packages && typeof copy.packages === 'object' && !Array.isArray(copy.packages) && copy.packages[''] && typeof copy.packages[''] === 'object') {
+    const rootPkg = { ...copy.packages[''] };
+    delete rootPkg.version;
+    copy.packages = { ...copy.packages, '': rootPkg };
+  }
+  return copy;
+};
+
+const isVersionOnlyPackageChange = (root, file) => {
+  if (!PACKAGE_META_FILE.test(file)) return false;
+  try {
+    const headRaw = execFileSync('git', ['show', `HEAD:${file}`], { cwd: root, windowsHide: true }).toString();
+    const stagedRaw = execFileSync('git', ['show', `:${file}`], { cwd: root, windowsHide: true }).toString();
+    return JSON.stringify(stripPackageVersion(file, JSON.parse(headRaw))) === JSON.stringify(stripPackageVersion(file, JSON.parse(stagedRaw)));
+  } catch {
+    return false;
+  }
+};
+
+export const hasEngineeringConfigChange = (root, files) =>
+  files.some(file => STRICT_CONFIG_FILE.test(file) || (PACKAGE_META_FILE.test(file) && !isVersionOnlyPackageChange(root, file)));
 
 export const resolveCheckScope = (value = process.env.NAI_CHECK_SCOPE) =>
   SCOPES.includes(String(value || '').toLowerCase()) ? String(value).toLowerCase() : 'full';
@@ -26,8 +53,8 @@ const run = (root, snapshot, script, args, label) => {
 
 export const checkStaged = (root = fileURLToPath(new URL('../', import.meta.url)), scope = resolveCheckScope()) => {
   const files = stagedFiles(root);
-  const hasConfig = files.some(file => CONFIG_FILE.test(file));
-  // 工程配置改动会改变类型与构建规则，轻量模式一律升级为全量。
+  const hasConfig = hasEngineeringConfigChange(root, files);
+  // 工程配置改动会改变类型与构建规则，轻量模式一律升级为全量；仅升版本号的 package*.json 不触发升级。
   if (scope === 'code' && hasConfig) { console.log('[pre-commit] 暂存区含工程配置，升级为全量检查'); scope = 'full'; }
   console.log(`[pre-commit] 暂存区密钥扫描（范围：${scope}）...`);
   const findings = scanRepository({ staged: true, cwd: root });
