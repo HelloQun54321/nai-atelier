@@ -49,6 +49,7 @@ import { emptyPromptLibraryCategoryTree, listPromptLibraryCustomCharacters, load
 import { PromptCaptureDialog } from './components/PromptCaptureDialog';
 import { ImagePreviewPortal } from './components/ImagePreviewPortal';
 import { InlineSpinner, PageSpinner, ToolbarButton } from './components/DesignSystem';
+import { consumePendingChunkReloadView, setActiveViewForChunkRecovery } from './services/chunkReload';
 
 const ChainEditor = lazy(() => import('./components/ChainEditor').then(module => ({ default: module.ChainEditor })));
 const ArtistLibrary = lazy(() => import('./components/ArtistLibrary').then(module => ({ default: module.ArtistLibrary })));
@@ -67,6 +68,11 @@ const ComicStudio = lazy(() => import('./components/comic/ComicStudio').then(mod
 
 type ViewState = 'list' | 'characters' | 'content-library' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'comic' | 'roll' | 'prompts' | 'content-roll' | 'content-roll-library';
 type KeepAliveView = Exclude<ViewState, 'edit'>;
+const RECOVERABLE_VIEWS: ReadonlySet<KeepAliveView> = new Set([
+  'list', 'characters', 'content-library', 'library', 'aitag', 'danbooru',
+  'pixiv', 'codex', 'inspiration', 'history', 'footprint', 'playground',
+  'comic', 'roll', 'prompts', 'content-roll', 'content-roll-library',
+]);
 
 // 手机端实验室返回箭头的落点：只记录内容页，编辑器/实验室本身不作为返回落点。
 const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'content-library', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'footprint', 'roll', 'prompts', 'content-roll', 'content-roll-library'];
@@ -187,7 +193,11 @@ const App = () => {
     window.history.scrollRestoration = 'manual';
     return () => { window.history.scrollRestoration = previous; };
   }, []);
-  const [view, setView] = useState<ViewState>('list');
+  const [view, setView] = useState<ViewState>(() => {
+    const restored = consumePendingChunkReloadView();
+    return restored && RECOVERABLE_VIEWS.has(restored as KeepAliveView) ? restored as ViewState : 'list';
+  });
+  if (view !== 'edit') setActiveViewForChunkRecovery(view);
   /* 一键 Roll 填入的撤销快照（只保留最近一次；刷新即失效） */
   const [contentRollUndo, setContentRollUndo] = useState<{ params: NAIParams; subject: string; createdRoleId: string } | null>(null);
   /* 从提示词库「载入到一键 Roll」带过来的那一组（工作区挂载时消费一次） */

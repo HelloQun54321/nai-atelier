@@ -5426,6 +5426,12 @@ const serveDistFile = async (req, res, url) => {
     }
     // 静态前端资源由网关直接提供，/api 与 /__internal 继续转发给 workerd。
     if (!url.pathname.startsWith('/api/') && !url.pathname.startsWith('/__internal/') && await serveDistFile(req, res, url)) return;
+    if (url.pathname.startsWith('/assets/')) {
+      const body = Buffer.from(JSON.stringify({ error: '静态资源文件不存在（页面版本可能已更新）' }));
+      res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length, 'Cache-Control': 'no-store' });
+      res.end(body);
+      return;
+    }
     if (url.pathname.startsWith('/tag-data/')) return sendJson(res, 404, { error: 'Tag 词库文件不存在' });
     if (url.pathname !== '/api/media') {
       const isCover = url.pathname.startsWith('/api/assets/covers/');

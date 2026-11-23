@@ -1,33 +1,50 @@
 import { t } from '../services/i18n';
 import React from 'react';
+import { isDynamicImportError, recoverFromDynamicImportError } from '../services/chunkReload';
 
 interface ErrorBoundaryState {
   error: Error | null;
+  reloading: boolean;
 }
 
 /**
  * 顶层错误边界：任一视图渲染抛错（如后端返回异常数据形状）时显示可恢复页面，
- * 而不是让整棵 keep-alive 组件树卸载成白屏。刷新后应用照常启动。
+ * 而不是让整棵 keep-alive 组件树卸载成白屏。若命中旧分包失效，则优先静默刷新恢复。
  */
 export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { error: null };
+  state: ErrorBoundaryState = { error: null, reloading: false };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { error };
+    return { error, reloading: false };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
+    if (recoverFromDynamicImportError(error)) {
+      this.setState({ reloading: true });
+      return;
+    }
     console.error('界面渲染崩溃:', error, info.componentStack);
   }
 
   render() {
     if (!this.state.error) return this.props.children;
+    if (this.state.reloading) {
+      return (
+        <div className="workspace-canvas flex min-h-screen flex-col items-center justify-center gap-3 bg-gray-50 p-6 text-center dark:bg-gray-950">
+          <div className="appearance-surface rounded-2xl border border-gray-200 bg-white px-6 py-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <h1 className="text-sm font-bold text-gray-800 dark:text-gray-100">{t("正在同步新版界面…")}</h1>
+            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{t("本地数据保留，稍候自动返回目标页面。")}</p>
+          </div>
+        </div>
+      );
+    }
+    const staleChunk = isDynamicImportError(this.state.error);
     return (
       <div className="workspace-canvas flex min-h-screen flex-col items-center justify-center gap-4 bg-gray-50 p-6 text-center dark:bg-gray-950">
         <div className="appearance-surface rounded-2xl border border-gray-200 bg-white px-6 py-8 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-          <h1 className="text-base font-bold text-gray-800 dark:text-gray-100">{t("界面遇到了意外错误")}</h1>
+          <h1 className="text-base font-bold text-gray-800 dark:text-gray-100">{t(staleChunk ? "页面版本已更新" : "界面遇到了意外错误")}</h1>
           <p className="mt-2 max-w-md text-xs leading-5 text-gray-500 dark:text-gray-400">
-            {t("本地数据保留，请刷新重试。")}</p>
+            {t(staleChunk ? "本地数据保留，请确认服务正常后刷新以加载最新界面。" : "本地数据保留，请刷新重试。")}</p>
           <pre className="appearance-group mt-4 max-w-md overflow-auto rounded-lg bg-gray-100 p-3 text-left text-meta leading-4 text-gray-600 dark:bg-gray-800 dark:text-gray-300">{t(this.state.error.message)}</pre>
           <button
             type="button"

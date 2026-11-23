@@ -10,12 +10,14 @@ import { restoreFloatingControlSize } from './services/floatingControls';
 import { initThemeLight } from './services/themeDetails';
 import { initPointerTilt } from './services/pointerTilt';
 import { restoreUpdateDrafts } from './services/appUpdate';
+import { installVitePreloadErrorRecovery } from './services/chunkReload';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
+installVitePreloadErrorRecovery();
 restoreAppearancePreferences();
 restoreFloatingControlSize();
 initThemeLight();
