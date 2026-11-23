@@ -78,8 +78,8 @@ it('Roll画师收藏读取失败保持未知计数，主动重试后展示真实
 });
 
 const Fixture = ({ library = ['alpha', 'beta'].map(name => ({ name, chinese: '', postCount: 1 })), initialRules = DEFAULT_ROLL_RULES }: { library?: ArtistDictionaryEntry[]; initialRules?: RollRules }) => {
-  const [pinned, setPinned] = useState<string[]>([]), [blocked, setBlocked] = useState<string[]>([]), [sampledOnly, setSampledOnly] = useState(false), [rules, setRules] = useState(initialRules);
-  return <StyleRollArtistDialog library={library} pinned={pinned} onPinnedChange={setPinned} blocked={blocked} onBlockedChange={async tags => { await mocks.block(tags); setBlocked(tags); }} excluded={[]} onExcludedChange={() => {}} sampledOnly={sampledOnly} onSampledOnlyChange={setSampledOnly} rules={rules} onRulesChange={setRules} onClose={() => {}} />;
+  const [pinned, setPinned] = useState<string[]>([]), [blocked, setBlocked] = useState<string[]>([]);
+  return <StyleRollArtistDialog library={library} pinned={pinned} onPinnedChange={setPinned} blocked={blocked} onBlockedChange={async tags => { await mocks.block(tags); setBlocked(tags); }} excluded={[]} onExcludedChange={() => {}} rules={initialRules} onClose={() => {}} />;
 };
 
 it('加载状态：Roll画师样张读取中不显示空结果，完成后才确认真空', async () => {
@@ -332,14 +332,12 @@ it('复用画师库四种排序，排序重置滚动且保留锁定、筛选和�
   expect(mocks.favorite).not.toHaveBeenCalled(); expect(mocks.block).not.toHaveBeenCalled();
 });
 
-it('样张与缺图空封面同时可见，点击封面只锁定 Tag', async () => {
+it('样张与缺图空封面同时可见，点击封面只锁定 Tag，不再重复提供抽取设置浮层', async () => {
   render(<Fixture />); await screen.findByAltText('alpha');
   expect(screen.getByText(/暂无样张$/)).toBeTruthy();
+  expect(within(screen.getByRole('dialog', { name: 'Roll 画师' })).queryByRole('button', { name: '抽取设置' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '锁定画师：beta' }));
   expect(screen.getByRole('button', { name: '锁定画师：beta' }).getAttribute('aria-pressed')).toBe('true');
-  fireEvent.click(within(screen.getByRole('dialog', { name: 'Roll 画师' })).getByRole('button', { name: '抽取设置' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '只从有样张的画师中抽取' }));
-  expect(screen.getByText(/暂无样张$/)).toBeTruthy();
   expect(mocks.block).not.toHaveBeenCalled(); expect(mocks.favorite).not.toHaveBeenCalled();
 });
 
@@ -361,87 +359,13 @@ it('屏蔽成功后卡片留在列表，移除锁定并取消偏好；失败保�
   expect(mocks.clearFavorite).not.toHaveBeenCalled();
 });
 
-it('两个角分别是屏蔽和偏好，缺图也可收藏，用户可改倍率和保底', async () => {
+it('两个角分别是屏蔽和偏好，缺图也可收藏', async () => {
   render(<Fixture />); await screen.findByAltText('alpha');
   const favorite = screen.getByRole('button', { name: '偏好画师：beta' });
   expect(favorite.parentElement?.className).toContain('right-2');
   expect(screen.getByRole('button', { name: '屏蔽画师：beta' }).className).toContain('left-2');
   fireEvent.click(favorite); await waitFor(() => expect(mocks.favorite).toHaveBeenCalledWith('beta', '', undefined));
   expect(screen.getByRole('button', { name: '锁定画师：beta' }).getAttribute('aria-pressed')).toBe('false');
-  fireEvent.click(screen.getByRole('button', { name: '抽取设置' }));
-  fireEvent.change(screen.getByLabelText('偏好抽中倍率'), { target: { value: '4.5' } });
-  fireEvent.change(screen.getByLabelText('每串偏好保底人数'), { target: { value: '2' } });
-  expect(screen.getByLabelText('偏好抽中倍率')).toHaveProperty('value', '4.5');
-  expect(screen.getByLabelText('每串偏好保底人数')).toHaveProperty('value', '2');
-});
-
-it.each([390, 1280])('宽度 %s：偏好倍率滑条与数字双向同步，回到1倍不改保底锁定或偏好', async width => {
-  vi.stubGlobal('innerWidth', width);
-  render(<Fixture initialRules={{ ...DEFAULT_ROLL_RULES, preferredMinArtists: 1 }} />);
-  await screen.findByAltText('alpha');
-  fireEvent.click(screen.getByRole('button', { name: '抽取设置' }));
-  const slider = screen.getByRole('slider', { name: '偏好抽中倍率滑条' });
-  const number = screen.getByRole('spinbutton', { name: '偏好抽中倍率' });
-  expect(slider).toHaveProperty('value', '1'); expect(slider).toHaveProperty('min', '1');
-  expect(slider).toHaveProperty('max', '100'); expect(slider).toHaveProperty('step', '0.1');
-  fireEvent.change(slider, { target: { value: '4.5' } }); expect(number).toHaveProperty('value', '4.5');
-  fireEvent.change(number, { target: { value: '12.3' } }); expect(slider).toHaveProperty('value', '12.3');
-  fireEvent.change(slider, { target: { value: '1' } }); expect(number).toHaveProperty('value', '1');
-  expect(screen.getByRole('spinbutton', { name: '每串偏好保底人数' })).toHaveProperty('value', '1');
-  expect(screen.getByRole('button', { name: '锁定画师：alpha' }).getAttribute('aria-pressed')).toBe('false');
-  expect(mocks.favorite).not.toHaveBeenCalled(); expect(mocks.block).not.toHaveBeenCalled();
-});
-
-it.each([320, 1280])('宽度 %s：仅收藏开关只在抽取卡片显示，旧规则默认关闭且切换保留倍率保底', async width => {
-  vi.stubGlobal('innerWidth', width);
-  const initialRules = { ...DEFAULT_ROLL_RULES, preferredMultiplier: 4.5, preferredMinArtists: 2 };
-  delete initialRules.preferredOnly;
-  render(<Fixture initialRules={initialRules} />);
-  const image = await screen.findByAltText('alpha');
-  expect(screen.queryByRole('checkbox', { name: '只抽取收藏画师' })).toBeNull();
-  const settings = screen.getByRole('button', { name: '抽取设置' }); fireEvent.click(settings);
-  const panel = screen.getByRole('dialog', { name: '抽取设置' });
-  const only = within(panel).getByRole('checkbox', { name: '只抽取收藏画师' });
-  expect(only).toHaveProperty('checked', false);
-  expect(only.closest('label')?.classList.contains('min-h-11')).toBe(true);
-  expect(panel.style.width).toBe(`${Math.min(320, width - 24)}px`);
-  const multiplier = within(panel).getByRole('spinbutton', { name: '偏好抽中倍率' });
-  const slider = within(panel).getByRole('slider', { name: '偏好抽中倍率滑条' });
-  const minimum = within(panel).getByRole('spinbutton', { name: '每串偏好保底人数' });
-  fireEvent.click(only);
-  expect(only).toHaveProperty('checked', true);
-  for (const control of [multiplier, slider, minimum]) expect(control.matches(':disabled')).toBe(true);
-  expect(multiplier.closest('fieldset')?.classList.contains('opacity-50')).toBe(true);
-  expect(multiplier).toHaveProperty('value', '4.5'); expect(minimum).toHaveProperty('value', '2');
-  expect(screen.getByRole('checkbox', { name: '只从有样张的画师中抽取' }).matches(':disabled')).toBe(false);
-  fireEvent.keyDown(window, { key: 'Escape' }); fireEvent.click(settings);
-  const restored = screen.getByRole('checkbox', { name: '只抽取收藏画师' });
-  expect(restored).toHaveProperty('checked', true); fireEvent.click(restored);
-  const enabledMultiplier = screen.getByRole('spinbutton', { name: '偏好抽中倍率' });
-  expect(enabledMultiplier.matches(':disabled')).toBe(false);
-  expect(enabledMultiplier).toHaveProperty('value', '4.5');
-  expect(screen.getByRole('spinbutton', { name: '每串偏好保底人数' })).toHaveProperty('value', '2');
-  fireEvent.change(enabledMultiplier, { target: { value: '6' } });
-  expect(screen.getByRole('slider', { name: '偏好抽中倍率滑条' })).toHaveProperty('value', '6');
-  expect(screen.getByAltText('alpha')).toBe(image);
-  expect(initialRules).toMatchObject({ preferredMultiplier: 4.5, preferredMinArtists: 2 });
-  expect(initialRules.preferredOnly).toBeUndefined();
-  expect(mocks.favorite).not.toHaveBeenCalled(); expect(mocks.block).not.toHaveBeenCalled();
-});
-
-it('已存大倍率不截断，数字扩大滑条范围后拖回低倍率也不收缩跳动', async () => {
-  render(<Fixture initialRules={{ ...DEFAULT_ROLL_RULES, preferredMultiplier: 250 }} />);
-  await screen.findByAltText('alpha');
-  const settings = screen.getByRole('button', { name: '抽取设置' }); fireEvent.click(settings);
-  const slider = screen.getByRole('slider', { name: '偏好抽中倍率滑条' });
-  const number = screen.getByRole('spinbutton', { name: '偏好抽中倍率' });
-  expect(slider).toHaveProperty('value', '250'); expect(slider).toHaveProperty('max', '250');
-  fireEvent.change(number, { target: { value: '500.5' } });
-  expect(slider).toHaveProperty('max', '500.5'); expect(slider).toHaveProperty('value', '500.5');
-  fireEvent.change(slider, { target: { value: '2.5' } });
-  expect(number).toHaveProperty('value', '2.5'); expect(slider).toHaveProperty('max', '500.5');
-  fireEvent.keyDown(window, { key: 'Escape' }); fireEvent.click(settings);
-  expect(screen.getByRole('slider', { name: '偏好抽中倍率滑条' })).toHaveProperty('value', '2.5');
 });
 
 it('收藏库已有的画师会直接显示偏好，并可按偏好筛选', async () => {
@@ -453,31 +377,17 @@ it('收藏库已有的画师会直接显示偏好，并可按偏好筛选', asyn
   expect(screen.getByRole('button', { name: '锁定画师：beta' })).toBeTruthy();
 });
 
-it.each([390, 1280])('宽度 %s：参数以独立小卡片弹出，关闭保留输入、选择及原图片节点', async width => {
-  vi.stubGlobal('innerWidth', width);
+it('画师弹窗内可直接展开手动添加固定 Tag，切换已锁定回到顶部且不破坏图片节点', async () => {
   render(<Fixture />); const image = await screen.findByAltText('alpha');
-  expect(screen.queryByRole('spinbutton', { name: '偏好抽中倍率' })).toBeNull();
   expect(screen.queryByRole('complementary', { name: '分组导航' })).toBeNull();
-  expect(screen.queryByText('1 倍不加权，0 位不保底；已锁定的偏好计入保底，不足时停止。')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '锁定画师：alpha' }));
-  const settings = screen.getByRole('button', { name: '抽取设置' });
-  fireEvent.click(settings);
-  const panel = screen.getByRole('dialog', { name: '抽取设置' });
-  const gallery = document.querySelector<HTMLElement>('[data-roll-artist-gallery]')!;
-  expect(panel.classList.contains('appearance-popover')).toBe(true);
-  expect(panel.style.width).toBe('320px');
-  expect(panel.style.position || panel.className).toContain('fixed');
-  expect(screen.getByRole('dialog', { name: 'Roll 画师' }).contains(panel)).toBe(false);
-  expect(gallery.contains(panel)).toBe(false);
-  fireEvent.change(screen.getByRole('spinbutton', { name: '偏好抽中倍率' }), { target: { value: '2.5' } });
-  fireEvent.keyDown(window, { key: 'Escape' });
-  expect(screen.queryByRole('spinbutton', { name: '偏好抽中倍率' })).toBeNull();
-  expect(screen.getByRole('dialog', { name: 'Roll 画师' })).toBeTruthy();
-  expect(screen.getByAltText('alpha')).toBe(image);
-  fireEvent.click(settings);
-  expect(screen.getByRole('spinbutton', { name: '偏好抽中倍率' })).toHaveProperty('value', '2.5');
+  expect(screen.queryByRole('textbox', { name: '固定画师 Tag（可选）' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '手动添加固定 Tag' }));
+  fireEvent.change(screen.getByRole('textbox', { name: '固定画师 Tag（可选）' }), { target: { value: 'alpha' } });
+  fireEvent.click(screen.getByRole('button', { name: '添加到固定画师 Tag（可选）' }));
   expect(screen.getByRole('button', { name: '锁定画师：alpha' }).getAttribute('aria-pressed')).toBe('true');
-  fireEvent.keyDown(window, { key: 'Escape' }); gallery.scrollTop = 600;
+  expect(screen.getByAltText('alpha')).toBe(image);
+  const gallery = document.querySelector<HTMLElement>('[data-roll-artist-gallery]')!;
+  gallery.scrollTop = 600;
   fireEvent.click(screen.getByRole('button', { name: '已锁定' }));
   expect(gallery.scrollTop).toBe(0);
   expect(screen.queryByRole('button', { name: '锁定画师：beta' })).toBeNull();
@@ -584,8 +494,8 @@ it('多词搜索仍与偏好锁定屏蔽和使用统计取交集，搜索不改�
   const library = ['alpha_tag', 'beta_tag', 'gamma'].map((name, index) => ({ name, chinese: '', postCount: 30 - index }));
   mocks.items = [{ sourceType: 'artist', sourceId: 'alpha_tag' }, { sourceType: 'artist', sourceId: 'beta_tag' }];
   mocks.usage.mockResolvedValue({ byTag: new Map([['alpha tag', { chains: 2, images: 0, lastAt: 1 }], ['beta tag', { chains: 1, images: 1, lastAt: 1 }]]), indexed: 2, total: 2 });
-  const onPinnedChange = vi.fn(), onBlockedChange = vi.fn(), onExcludedChange = vi.fn(), onRulesChange = vi.fn(), onSampledOnlyChange = vi.fn();
-  render(<StyleRollArtistDialog library={library} pinned={['beta_tag']} onPinnedChange={onPinnedChange} blocked={['alpha_tag']} onBlockedChange={onBlockedChange} excluded={[]} onExcludedChange={onExcludedChange} sampledOnly={false} onSampledOnlyChange={onSampledOnlyChange} rules={DEFAULT_ROLL_RULES} onRulesChange={onRulesChange} onClose={() => {}} />);
+  const onPinnedChange = vi.fn(), onBlockedChange = vi.fn(), onExcludedChange = vi.fn();
+  render(<StyleRollArtistDialog library={library} pinned={['beta_tag']} onPinnedChange={onPinnedChange} blocked={['alpha_tag']} onBlockedChange={onBlockedChange} excluded={[]} onExcludedChange={onExcludedChange} rules={DEFAULT_ROLL_RULES} onClose={() => {}} />);
   await screen.findByText('收录 2 串 · 生成 0 张');
   const names = () => screen.getAllByRole('button', { name: /^锁定画师：/ }).map(card => card.getAttribute('aria-label')!.slice('锁定画师：'.length));
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: ' ALPHA TAG，beta_tag, gamma ' } });
@@ -598,17 +508,17 @@ it('多词搜索仍与偏好锁定屏蔽和使用统计取交集，搜索不改�
   fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'used' } });
   fireEvent.change(screen.getByRole('combobox', { name: '图片生成' }), { target: { value: 'unused' } });
   expect(names()).toEqual(['alpha_tag']);
-  for (const callback of [onPinnedChange, onBlockedChange, onExcludedChange, onRulesChange, onSampledOnlyChange]) expect(callback).not.toHaveBeenCalled();
+  for (const callback of [onPinnedChange, onBlockedChange, onExcludedChange]) expect(callback).not.toHaveBeenCalled();
   expect(mocks.favorite).not.toHaveBeenCalled();
 });
 
 
-it('Roll分组浏览与原搜索、偏好、屏蔽取交集，不改固定名单或抽取规则', async () => {
+it('Roll分组浏览与原搜索、偏好、屏蔽取交集，不改固定名单', async () => {
   mocks.groupGet.mockResolvedValue({ revision: 1, groups: [{ id: 'g', name: '测试组' }], memberships: { 'artist:alpha_tag': ['g'], 'artist:beta_tag': ['g'] } });
   mocks.items = [{ sourceType: 'artist', sourceId: 'beta_tag' }];
   const library = ['alpha_tag', 'beta_tag', 'gamma'].map(name => ({ name, chinese: '', postCount: 1 }));
-  const onPinnedChange = vi.fn(), onBlockedChange = vi.fn(), onExcludedChange = vi.fn(), onRulesChange = vi.fn(), onSampledOnlyChange = vi.fn();
-  render(<StyleRollArtistDialog library={library} pinned={['beta_tag']} onPinnedChange={onPinnedChange} blocked={['alpha_tag']} onBlockedChange={onBlockedChange} excluded={[]} onExcludedChange={onExcludedChange} sampledOnly={false} onSampledOnlyChange={onSampledOnlyChange} rules={DEFAULT_ROLL_RULES} onRulesChange={onRulesChange} onClose={() => {}} />);
+  const onPinnedChange = vi.fn(), onBlockedChange = vi.fn(), onExcludedChange = vi.fn();
+  render(<StyleRollArtistDialog library={library} pinned={['beta_tag']} onPinnedChange={onPinnedChange} blocked={['alpha_tag']} onBlockedChange={onBlockedChange} excluded={[]} onExcludedChange={onExcludedChange} rules={DEFAULT_ROLL_RULES} onClose={() => {}} />);
   await waitFor(() => expect(mocks.groupGet).toHaveBeenCalledWith('/catalog-groups/artist', expect.anything()));
   expect(screen.queryByRole('complementary', { name: '分组导航' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
@@ -626,7 +536,7 @@ it('Roll分组浏览与原搜索、偏好、屏蔽取交集，不改固定名单
   expect(names()).toEqual(['锁定画师：beta_tag']);
   expect(JSON.parse(localStorage.getItem('nai_catalog_groups_roll-artists')!).active).toBe('g');
   expect(localStorage.getItem('nai_catalog_groups_artist')).toBeNull();
-  for (const callback of [onPinnedChange, onBlockedChange, onExcludedChange, onRulesChange, onSampledOnlyChange]) expect(callback).not.toHaveBeenCalled();
+  for (const callback of [onPinnedChange, onBlockedChange, onExcludedChange]) expect(callback).not.toHaveBeenCalled();
 });
 
 it('分组筛选先覆盖完整目录再分页，精确原名区分同义画师且设组仅包含库内固定项', async () => {
@@ -634,7 +544,7 @@ it('分组筛选先覆盖完整目录再分页，精确原名区分同义画师�
   library.push({ name: 'artist 80', chinese: '', postCount: 1 });
   mocks.groupGet.mockResolvedValue({ revision: 1, groups: [{ id: 'g', name: '末页组' }], memberships: { 'artist:artist_80': ['g'], 'artist:artist_81': ['g'] } });
   const onPinnedChange = vi.fn();
-  render(<StyleRollArtistDialog library={library} pinned={['artist_80', 'artist 80', 'missing']} onPinnedChange={onPinnedChange} blocked={[]} onBlockedChange={mocks.block} excluded={[]} onExcludedChange={vi.fn()} sampledOnly={false} onSampledOnlyChange={vi.fn()} rules={DEFAULT_ROLL_RULES} onRulesChange={vi.fn()} onClose={() => {}} />);
+  render(<StyleRollArtistDialog library={library} pinned={['artist_80', 'artist 80', 'missing']} onPinnedChange={onPinnedChange} blocked={[]} onBlockedChange={mocks.block} excluded={[]} onExcludedChange={vi.fn()} rules={DEFAULT_ROLL_RULES} onClose={() => {}} />);
   await waitFor(() => expect(screen.getByRole('button', { name: '设置分组' })).toHaveProperty('disabled', false));
   expect(screen.queryByRole('button', { name: '锁定画师：artist_80' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
@@ -678,8 +588,8 @@ it('分组元数据更新不重置全部画师浏览的已加载页与滚动', a
 it.each([false, true])('真实Roll卡片拖入分组：固定来源=%s，追加归属且不改变任何抽取状态', async selected => {
   const state = { revision: 1, groups: [{ id: 'old', name: '原组' }, { id: 'target', name: '目标组' }], memberships: { 'artist:alpha': ['old'], 'artist:beta': ['old'] } };
   mocks.groupGet.mockResolvedValue(state);
-  const onPinnedChange = vi.fn(), onBlockedChange = vi.fn(), onExcludedChange = vi.fn(), onRulesChange = vi.fn(), onSampledOnlyChange = vi.fn();
-  render(<StyleRollArtistDialog library={['alpha', 'beta', 'gamma'].map(name => ({ name, chinese: '', postCount: 1 }))} pinned={['alpha', 'beta']} onPinnedChange={onPinnedChange} blocked={[]} onBlockedChange={onBlockedChange} excluded={[]} onExcludedChange={onExcludedChange} sampledOnly={false} onSampledOnlyChange={onSampledOnlyChange} rules={DEFAULT_ROLL_RULES} onRulesChange={onRulesChange} onClose={() => {}} />);
+  const onPinnedChange = vi.fn(), onBlockedChange = vi.fn(), onExcludedChange = vi.fn();
+  render(<StyleRollArtistDialog library={['alpha', 'beta', 'gamma'].map(name => ({ name, chinese: '', postCount: 1 }))} pinned={['alpha', 'beta']} onPinnedChange={onPinnedChange} blocked={[]} onBlockedChange={onBlockedChange} excluded={[]} onExcludedChange={onExcludedChange} rules={DEFAULT_ROLL_RULES} onClose={() => {}} />);
   const source = screen.getByRole('button', { name: selected ? '锁定画师：alpha' : '锁定画师：gamma' });
   await waitFor(() => expect(source.draggable).toBe(true));
   const dragOrigin = selected ? await within(source).findByRole('img') : source;
@@ -712,7 +622,7 @@ it.each([false, true])('真实Roll卡片拖入分组：固定来源=%s，追加�
   // 同组再次拖入不重复保存。
   fireEvent.dragStart(dragOrigin, { dataTransfer: transfer }); fireEvent.drop(destination, { dataTransfer: transfer });
   expect(mocks.groupPut).toHaveBeenCalledOnce();
-  for (const callback of [onPinnedChange, onBlockedChange, onExcludedChange, onRulesChange, onSampledOnlyChange, mocks.favorite, mocks.begin]) expect(callback).not.toHaveBeenCalled();
+  for (const callback of [onPinnedChange, onBlockedChange, onExcludedChange, mocks.favorite, mocks.begin]) expect(callback).not.toHaveBeenCalled();
 });
 
 
@@ -721,7 +631,7 @@ it('Roll分组计数使用未筛选完整真实目录，分页外和资料变化
   const memberships = Object.fromEntries(library.map(entry => ['artist:' + entry.name, ['g']]));
   memberships['artist:ghost'] = ['g'];
   mocks.groupGet.mockResolvedValue({ revision: 1, groups: [{ id: 'g', name: '完整组' }], memberships });
-  const props = { library, pinned: ['ghost'], onPinnedChange: vi.fn(), blocked: ['unknown'], onBlockedChange: mocks.block, excluded: [], onExcludedChange: vi.fn(), sampledOnly: false, onSampledOnlyChange: vi.fn(), rules: DEFAULT_ROLL_RULES, onRulesChange: vi.fn(), onClose: vi.fn() };
+  const props = { library, pinned: ['ghost'], onPinnedChange: vi.fn(), blocked: ['unknown'], onBlockedChange: mocks.block, excluded: [], onExcludedChange: vi.fn(), rules: DEFAULT_ROLL_RULES, onClose: vi.fn() };
   const view = render(<StyleRollArtistDialog {...props} />);
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
   await waitFor(() => expectDirectoryCount('完整组', '82'));
@@ -738,14 +648,14 @@ it('Roll分组计数使用未筛选完整真实目录，分页外和资料变化
   expectDirectoryCount('全部', '83');
   expectDirectoryCount('完整组', '82');
   expectDirectoryCount('未分组', '1');
-  expect(props.onPinnedChange).not.toHaveBeenCalled(); expect(props.onRulesChange).not.toHaveBeenCalled();
+  expect(props.onPinnedChange).not.toHaveBeenCalled();
 });
 
 it('Roll目录或样张读取中及真实目录读取失败时分组计数未知，恢复后显示真实数', async () => {
   let resolveSamples!: (value: { templates: Record<string, never>; samples: [] }) => void;
   mocks.data.mockImplementationOnce(() => new Promise(resolve => { resolveSamples = resolve; }));
   mocks.groupGet.mockResolvedValue({ revision: 1, groups: [{ id: 'g', name: '未知组' }], memberships: { 'artist:alpha': ['g'] } });
-  const props = { library: [{ name: 'alpha', chinese: '', postCount: 1 }], pinned: [], onPinnedChange: vi.fn(), blocked: [], onBlockedChange: mocks.block, excluded: [], onExcludedChange: vi.fn(), sampledOnly: false, onSampledOnlyChange: vi.fn(), rules: DEFAULT_ROLL_RULES, onRulesChange: vi.fn(), onClose: vi.fn() };
+  const props = { library: [{ name: 'alpha', chinese: '', postCount: 1 }], pinned: [], onPinnedChange: vi.fn(), blocked: [], onBlockedChange: mocks.block, excluded: [], onExcludedChange: vi.fn(), rules: DEFAULT_ROLL_RULES, onClose: vi.fn() };
   const view = render(<StyleRollArtistDialog {...props} />);
   fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
   await waitFor(() => expectDirectoryCount('未知组', '—'));

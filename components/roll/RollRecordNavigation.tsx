@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Check, FolderOpen, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { ArrowDownWideNarrow, Check, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { getLanguage, t, useLanguage } from '../../services/i18n';
 import type { RollExperimentSummary } from '../../services/styleRoll';
 
@@ -14,7 +14,6 @@ export interface RollRecordNavigationProps {
   className?: string;
   onSelect: (id: string) => void;
   onCreate: () => void;
-  onReload: () => void;
   onRename: (id: string, name: string) => void;
   /** 删除记录与候选一致：二次确认后彻底移除，不保留回收站。 */
   onDelete: (id: string) => void;
@@ -35,7 +34,7 @@ export const rollRecordTimeLabel = (value: number, language = getLanguage(), now
   } catch { return ''; }
 };
 
-export const RollRecordNavigation: React.FC<RollRecordNavigationProps> = ({ records, selectedId, busy = false, loading = false, mobile = false, className = '', onSelect, onCreate, onReload, onRename, onDelete, onPurgeArchived }) => {
+export const RollRecordNavigation: React.FC<RollRecordNavigationProps> = ({ records, selectedId, busy = false, loading = false, mobile = false, className = '', onSelect, onCreate, onRename, onDelete, onPurgeArchived }) => {
   useLanguage();
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<'recent' | 'created'>('recent');
@@ -58,23 +57,28 @@ export const RollRecordNavigation: React.FC<RollRecordNavigationProps> = ({ reco
   };
   const rowMeta = (item: RollExperimentSummary) => t('{0} 轮 · {1} 个候选 · {2}', [item.rounds, item.candidates, rollRecordTimeLabel(sort === 'created' ? item.createdAt : item.updatedAt)]);
   const actionClass = 'mobile-touch flex h-7 w-7 flex-none items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white hover:text-gray-700 disabled:opacity-40 dark:hover:bg-gray-800 dark:hover:text-gray-200 [&>svg]:h-3.5 [&>svg]:w-3.5';
+  const sortToggle = <button type="button" aria-label={t('记录排序')} aria-pressed={sort === 'created'} title={t(sort === 'recent' ? '当前按最近更新排序，点击切换为创建时间' : '当前按创建时间排序，点击切换为最近更新')}
+    onClick={() => setSort(current => current === 'recent' ? 'created' : 'recent')}
+    className={`mobile-touch inline-flex h-8 flex-none items-center gap-1 rounded-lg border px-2 text-micro font-medium transition-colors ${sort === 'created' ? 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800/80 dark:bg-indigo-950/50 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+    <ArrowDownWideNarrow className="h-3.5 w-3.5" />
+    <span>{t(sort === 'recent' ? '最近' : '创建')}</span>
+  </button>;
   return <aside aria-label={t('画风记录列表')} className={className}>
     <header className="mb-2 flex flex-none items-center gap-1.5 px-0.5">
-      <FolderOpen className="h-4 w-4 flex-none text-gray-400" />
-      <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('画风记录')}</span>
-      <span aria-hidden="true" className="text-micro tabular-nums text-gray-400">{active.length}</span>
-      <div className="ml-auto flex items-center gap-0.5">
-        <button type="button" className={actionClass} aria-label={t('重新加载画风记录')} title={t('重新加载画风记录')} disabled={busy || loading} onClick={onReload}><RefreshCw className={loading ? 'animate-spin' : undefined} /></button>
-        <button type="button" className={actionClass} aria-label={t('新建记录')} title={t('新建记录')} disabled={busy} onClick={onCreate}><Plus /></button>
+      <span className="text-xs font-medium tabular-nums text-gray-500 dark:text-gray-400">{t('共 {0} 条', [active.length])}</span>
+      <div className="ml-auto flex items-center gap-1">
+        {active.length >= 3 && active.length < 8 && sortToggle}
+        <button type="button" aria-label={t('新建记录')} title={t('新建记录')} disabled={busy} onClick={onCreate}
+          className="mobile-touch inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-50 disabled:opacity-40 dark:text-indigo-400 dark:hover:bg-indigo-950/50">
+          <Plus className="h-3.5 w-3.5" /><span>{t('新建')}</span>
+        </button>
       </div>
     </header>
-    {active.length >= 8 && <input aria-label={t('搜索画风记录')} placeholder={t('搜索画风记录')} value={query} onChange={event => setQuery(event.target.value)}
-      className="mobile-touch mb-2 h-8 w-full flex-none rounded-lg border border-gray-200 bg-white px-2 text-xs font-normal text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />}
-    {active.length >= 3 && <select aria-label={t('记录排序')} value={sort} onChange={event => setSort(event.target.value === 'created' ? 'created' : 'recent')}
-      className="mobile-touch mb-2 h-8 w-full flex-none rounded-lg border border-gray-200 bg-white px-1.5 text-xs font-normal text-gray-700 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">
-      <option value="recent">{t('最近更新')}</option>
-      <option value="created">{t('创建时间')}</option>
-    </select>}
+    {active.length >= 8 && <div className="mb-2 flex flex-none items-center gap-1.5">
+      <input aria-label={t('搜索画风记录')} placeholder={t('搜索画风记录')} value={query} onChange={event => setQuery(event.target.value)}
+        className="mobile-touch h-8 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 text-xs font-normal text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
+      {sortToggle}
+    </div>}
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div role="list" aria-label={t('画风记录列表')} className="space-y-0.5">
         {listed.map(item => {

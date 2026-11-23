@@ -2,7 +2,7 @@ import { confirmationCostScope } from '../services/dailyConfirmation';
 import { flushSync } from 'react-dom';
 import { copyTagText } from '../services/externalImageTags';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Ban, ChevronLeft, ChevronRight, Copy, CopyPlus, Folder, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, Pin, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
+import { Ban, ChevronDown, ChevronLeft, ChevronRight, Copy, CopyPlus, Folder, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, Pin, Plus, RotateCcw, Save, Settings2, SlidersHorizontal, Trash2, Users, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { MobileBottomSheet, MobileOverflowMenu } from './MobileUI';
 import { getLanguage, t, useLanguage } from '../services/i18n';
@@ -69,7 +69,7 @@ interface Props {
   onOpenArtistLibrary?: (name?: string) => void;
   initialPinned?: { tags: string[]; token: number } | null;
 }
-const ROLL_FILTER_LABELS = { all: '全部', unsaved: '已出图但未保存', saved: '已保存', pending: '待生成', favorited: '已收藏' } as const;
+const ROLL_FILTER_LABELS = { all: '全部', unsaved: '未保存', saved: '已保存', pending: '待生成', favorited: '已收藏' } as const;
 /** 依赖已出图结果、候选会因保存或收藏离开当前结果的筛选：就绪前显示读取状态，离开时详情衔接下一项。 */
 const ROLL_TRIAGE_FILTERS: readonly string[] = ['unsaved', 'favorited'];
 /** 画师库带入的固定画师只消费一次；页面被保活淘汰后重建也不重复建记录。 */
@@ -147,6 +147,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const [recordsExpanded, setRecordsExpanded] = useState(() => { try { return localStorage.getItem('nai-roll-records-expanded') === 'true'; } catch { return false; } });
   const [mobileRecordMenuOpen, setMobileRecordMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [prefsExpanded, setPrefsExpanded] = useState(false);
+  const [intervalExpanded, setIntervalExpanded] = useState(false);
+  const [preferredSliderMax, setPreferredSliderMax] = useState(() => Math.max(100, DEFAULT_ROLL_RULES.preferredMultiplier ?? 1));
+  useEffect(() => {
+    const multiplier = roundRules.preferredMultiplier ?? 1;
+    if (Number.isFinite(multiplier)) setPreferredSliderMax(max => Math.max(max, multiplier));
+  }, [roundRules.preferredMultiplier]);
   const toggleRecords = () => setRecordsExpanded(current => {
     const next = !current;
     try { localStorage.setItem('nai-roll-records-expanded', String(next)); } catch { /* 本端偏好不可写时仍可展开。 */ }
@@ -753,6 +760,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (target.name === trimmed) return;
     await store({ ...target, name: trimmed });
   });
+  /** 新建记录：直接建好并切过去，沿用当前抽取规则与默认生成模板，不再先弹配置大窗。 */
+  const createRecord = () => void perform(async () => {
+    const saved = await store(makeExperiment());
+    selectedExperimentRef.current = saved.id;
+    setExperimentId(saved.id);
+    setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
+  });
   const sendToLab = () => {
     if (!experiment || !selected) return;
     const chain = rollCandidateToChain(experiment, selected);
@@ -1027,12 +1041,23 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
             <Folder className="h-4 w-4" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
           </ToolbarButton>}
         <ToolbarPopover title={t('筛选与排序')} label={t('筛选')} count={Number(filter !== 'all') + Number(Boolean(roundId)) + Number(sort !== 'new')} disabled={!experiment}>
-          {close => <div className="space-y-4">
-            <div role="group" aria-label={t('候选筛选')} className="grid grid-cols-2 gap-2">
-              {(['all', 'unsaved', 'saved', 'pending', 'favorited'] as const).map(value => <ToolbarButton key={value} className={value === 'all' ? 'col-span-2' : undefined} aria-label={t(ROLL_FILTER_LABELS[value])} active={filter === value} onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}>{t(ROLL_FILTER_LABELS[value])}<span className="ml-auto text-xs opacity-60">{value === 'favorited' && (!collectionSettled || !historyReady) ? '—' : experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }, undefined, favoriteIds).length : 0}</span></ToolbarButton>)}
+          {close => {
+            const hasActiveFilter = filter !== 'all' || Boolean(roundId) || sort !== 'new' || Boolean(query.trim());
+            return <div className="space-y-3.5">
+            <div role="group" aria-label={t('候选筛选')} className="flex flex-wrap gap-1.5">
+              {(['all', 'unsaved', 'saved', 'pending', 'favorited'] as const).map(value => {
+                const activeFilter = filter === value;
+                const total = value === 'favorited' && (!collectionSettled || !historyReady) ? '—' : experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }, undefined, favoriteIds).length : 0;
+                return <button key={value} type="button" aria-label={t(ROLL_FILTER_LABELS[value])} aria-pressed={activeFilter}
+                  onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}
+                  className={`mobile-touch inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors ${activeFilter ? 'border-indigo-200 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-800/80 dark:bg-indigo-950/50 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'}`}>
+                  <span>{t(ROLL_FILTER_LABELS[value])}</span>
+                  <span className="text-micro tabular-nums opacity-60">{total}</span>
+                </button>;
+              })}
             </div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{`${t('第 {0} 轮', [(experiment?.rounds.indexOf(item) ?? 0) + 1])}${roundConditionLabel(item) ? ` · ${roundConditionLabel(item)}` : ` · ${item.candidateIds.length}`}`}</option>)}</select></label>
-            {scopedRound?.snapshot && <ToolbarButton className="w-full" onClick={() => {
+            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={`${TOOLBAR_FIELD_CLASS} !h-9`}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{`${t('第 {0} 轮', [(experiment?.rounds.indexOf(item) ?? 0) + 1])}${roundConditionLabel(item) ? ` · ${roundConditionLabel(item)}` : ` · ${item.candidateIds.length}`}`}</option>)}</select></label>
+            {scopedRound?.snapshot && <ToolbarButton className="!h-9 w-full" onClick={() => {
               const snapshot = scopedRound.snapshot!;
               setRoundRules({ ...snapshot.rules, maxArtists: Math.max(snapshot.rules.maxArtists, snapshot.pinnedArtists?.length ?? 0) });
               setPinnedArtists(snapshot.pinnedArtists ?? []);
@@ -1050,11 +1075,21 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               setSampledOnly(Boolean(snapshot.sampledOnly));
               close();
             }}><RotateCcw />{t('沿用这轮条件')}</ToolbarButton>}
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('候选排序')} value={sort} onChange={event => setSort(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="new">{t('最新生成')}</option><option value="old">{t('最早优先')}</option></select></label>
-            <div className="border-t border-gray-200 pt-2.5 dark:border-gray-800">
-              <button type="button" className="mobile-touch rounded-lg px-2 py-1 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/50" onClick={() => { setFilter('all'); setRoundId(''); setSort('new'); setQuery(''); close(); }}>{t('重置筛选')}</button>
+            <div className="space-y-1.5">
+              <span className="block text-xs font-semibold text-gray-700 dark:text-gray-200">{t('排序')}</span>
+              <div role="group" aria-label={t('候选排序')} className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-800/80">
+                {([['new', '最新生成'], ['old', '最早优先']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={sort === value}
+                  onClick={() => setSort(value)}
+                  className={`mobile-touch h-7 rounded-lg text-xs font-medium transition-colors ${sort === value ? 'bg-white font-semibold text-indigo-700 shadow-xs dark:bg-gray-900 dark:text-indigo-300' : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'}`}>
+                  {t(label)}
+                </button>)}
+              </div>
             </div>
-          </div>}
+            {hasActiveFilter && <div className="border-t border-gray-200 pt-2 dark:border-gray-800">
+              <button type="button" className="mobile-touch rounded-lg px-2 py-1 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/50" onClick={() => { setFilter('all'); setRoundId(''); setSort('new'); setQuery(''); close(); }}>{t('重置筛选')}</button>
+            </div>}
+          </div>;
+          }}
         </ToolbarPopover>
 
         {/* 中间：以搜索框为界，左侧浏览筛选、右侧管理与执行操作。 */}
@@ -1067,73 +1102,112 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           {!working && roundPending.length > 0 && <ToolbarButton className="max-md:hidden" aria-label={t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])} title={t('本轮还有 {0} 张没出，点击后确认费用', [roundPending.length])} data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus /><span className="toolbar-responsive-label hidden xl:inline">{t(continuousGenerationEnabled ? '补齐剩余 {0} 张' : '生成本轮 1 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])}</span><span className="toolbar-responsive-compact xl:hidden tabular-nums">{continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1}</span></ToolbarButton>}
           <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} title={t('本轮将生成 {0} 张，点击后确认费用', [count])} data-agent-action="business" tone="primary" disabled={!canStart} className="mobile-touch !px-2.5 font-bold shadow-sm transition-transform active:scale-95 md:!px-3" onClick={() => runRound()}><Dice5 className="h-4 w-4" /><span className="toolbar-responsive-label hidden md:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
           <div className="flex flex-none items-center max-md:hidden">
-          <ToolbarPopover label={t('设置')} title={t('设置')} icon={<Settings2 />} iconOnly iconTone="ghost" disabled={frozen || working} width={360} open={settingsOpen} onOpenChange={open => { setSettingsOpen(open); if (open) void loadQueueInterval(); }}>
+          <ToolbarPopover label={t('设置')} title={t('设置')} icon={<Settings2 />} iconOnly iconTone="ghost" disabled={frozen || working} width={360} open={settingsOpen} onOpenChange={open => { setSettingsOpen(open); if (open) void loadQueueInterval(); else { setPrefsExpanded(false); setIntervalExpanded(false); } }}>
             {close => {
               const preferredMultiplier = roundRules.preferredMultiplier ?? 1;
-              const preferredSliderMax = Math.max(100, Number.isFinite(preferredMultiplier) ? preferredMultiplier : 100);
-              return <div className="max-h-[75dvh] space-y-4 overflow-y-auto pr-0.5">
-              <section className="space-y-3">
-                <p className="text-micro font-bold text-gray-500 dark:text-gray-400">{t('本轮')}</p>
-                <label className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300"><span>{t('本轮张数')}</span><input type="number" aria-label={t('本轮生成张数')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 text-center tabular-nums`} min={1} max={24} value={count} onChange={event => setCount(Math.min(24, Math.max(1, Number(event.target.value) || 1)))} /></label>
-              {continuousGenerationEnabled && <>
-                <label className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300" title={t('每张图片保存后等待；0 秒不额外等待')}>
-                  <span>{t('生成间隔')}</span>
-                  <span className="relative flex min-w-0 items-center">
-                    <input type="number" aria-label={t('生成间隔')} min={0} max={3600} step={0.1} inputMode="decimal" value={intervalDraft} disabled={intervalPending}
-                      onChange={event => setIntervalDraft(event.target.value)} onBlur={commitInterval}
-                      onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }}
-                      className={`${TOOLBAR_FIELD_CLASS} !mt-0 min-w-0 flex-1 pr-7 text-center tabular-nums`} />
-                    <span aria-hidden="true" className="pointer-events-none absolute right-2.5 text-xs font-normal text-gray-400">{t('秒')}</span>
-                  </span>
-                </label>
-                <label className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300">
-                  <span>{t('随机浮动')}</span>
-                  <select aria-label={t('间隔随机浮动幅度')} value={intervalJitter} disabled={intervalPending}
-                    onChange={event => { const next = validateGenerationIntervalJitter(Number(event.target.value)); if (next !== intervalJitter) void changeInterval(intervalSeconds, next); }}
-                    className={`${TOOLBAR_FIELD_CLASS} !mt-0`}>
-                    <option value={0}>{t('关闭（固定间隔）')}</option>
-                    {[10, 20, 30, 50].map(percent => <option key={percent} value={percent}>{t('±{0}%', [percent])}</option>)}
-                  </select>
-                </label>
-              </>}
-              </section>
-              <section className="space-y-3 border-t border-gray-200 pt-3 dark:border-gray-800">
-                <p className="text-micro font-bold text-gray-500 dark:text-gray-400">{t('记录设置')}</p>
+              const prefParts: string[] = [];
+              if (roundRules.preferredOnly) prefParts.push(t('仅收藏'));
+              else {
+                if (preferredMultiplier > 1) prefParts.push(t('偏好 {0}×', [preferredMultiplier]));
+                if ((roundRules.preferredMinArtists ?? 0) > 0) prefParts.push(t('保底 {0} 人', [roundRules.preferredMinArtists ?? 0]));
+              }
+              if (sampledOnly) prefParts.push(t('仅样张'));
+              const prefSummary = prefParts.length ? prefParts.join(' · ') : t('默认随机');
+              const intervalSummary = intervalSeconds > 0
+                ? `${t('{0} 秒', [intervalSeconds.toFixed(1)])}${intervalJitter > 0 ? ` · ${t('±{0}%', [intervalJitter])}` : ''}`
+                : t('无等待');
+              const menuRowClass = 'mobile-touch flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-gray-800 transition-colors hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0';
+              return <div className="max-h-[78dvh] space-y-3 overflow-y-auto">
+              <section className="space-y-2.5">
+                <label className="grid grid-cols-[6.25rem_minmax(0,1fr)] items-center gap-2.5 text-xs font-semibold text-gray-700 dark:text-gray-200"><span>{t('本轮张数')}</span><input type="number" aria-label={t('本轮生成张数')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !h-9 text-center tabular-nums`} min={1} max={24} value={count} onChange={event => setCount(Math.min(24, Math.max(1, Number(event.target.value) || 1)))} /></label>
                 <StyleRollRuleFields rules={roundRules} onChange={setRoundRules} disabled={frozen} />
-                <div className="space-y-2.5 border-t border-gray-200/80 pt-2.5 dark:border-gray-800/80">
-                  <label className="mobile-touch flex min-w-0 items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-                    <input type="checkbox" className="h-4 w-4 shrink-0 accent-indigo-600" disabled={frozen} checked={roundRules.preferredOnly ?? false} onChange={event => setRoundRules({ ...roundRules, preferredOnly: event.target.checked })} />
-                    <span>{t('只抽取收藏画师')}</span>
-                  </label>
-                  <fieldset disabled={frozen || (roundRules.preferredOnly ?? false)} className={`min-w-0 space-y-2.5 ${roundRules.preferredOnly ? 'opacity-50' : ''}`}>
-                    <div>
-                      <label className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300">
-                        <span>{t('偏好抽中倍率')}</span>
+              </section>
+              <section className="space-y-1 border-t border-gray-200/80 pt-2 dark:border-gray-800/80">
+                <div>
+                  <button type="button" aria-expanded={prefsExpanded} onClick={() => setPrefsExpanded(value => !value)}
+                    className="mobile-touch flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-gray-100 dark:hover:bg-gray-800">
+                    <span className="font-semibold text-gray-700 dark:text-gray-200">{t('偏好与画师范围')}</span>
+                    <span className="ml-auto truncate text-micro tabular-nums text-gray-500 dark:text-gray-400">{prefSummary}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform ${prefsExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                  {prefsExpanded && <div className="mt-1.5 space-y-2.5 rounded-xl bg-gray-50/80 p-2.5 dark:bg-gray-800/40">
+                    <label className="mobile-touch flex min-w-0 items-center gap-2 text-xs font-medium text-gray-800 dark:text-gray-100">
+                      <input type="checkbox" className="h-4 w-4 shrink-0 accent-indigo-600" disabled={frozen} checked={roundRules.preferredOnly ?? false} onChange={event => setRoundRules({ ...roundRules, preferredOnly: event.target.checked })} />
+                      <span>{t('只抽取收藏画师')}</span>
+                    </label>
+                    <fieldset disabled={frozen || (roundRules.preferredOnly ?? false)} className={`min-w-0 space-y-2.5 ${roundRules.preferredOnly ? 'opacity-50' : ''}`}>
+                      <div>
+                        <label className="grid grid-cols-[6.25rem_minmax(0,1fr)] items-center gap-2.5 text-xs font-semibold text-gray-700 dark:text-gray-200">
+                          <span>{t('偏好抽中倍率')}</span>
+                          <span className="relative flex min-w-0 items-center">
+                            <input aria-label={t('偏好抽中倍率')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !h-9 min-w-0 flex-1 pr-6 text-center tabular-nums`} type="number" min={1} step={0.1} value={preferredMultiplier} onChange={event => setRoundRules({ ...roundRules, preferredMultiplier: Number(event.target.value) })} />
+                            <span aria-hidden="true" className="pointer-events-none absolute right-2.5 text-xs font-normal text-gray-400">×</span>
+                          </span>
+                        </label>
+                        <input type="range" aria-label={t('偏好抽中倍率滑条')} min={1} max={preferredSliderMax} step={0.1} value={preferredMultiplier} onChange={event => setRoundRules({ ...roundRules, preferredMultiplier: Number(event.target.value) })} className="mobile-touch mt-1 block w-full accent-[var(--nai-accent)]" />
+                      </div>
+                      <label className="grid grid-cols-[6.25rem_minmax(0,1fr)] items-center gap-2.5 text-xs font-semibold text-gray-700 dark:text-gray-200">
+                        <span>{t('每串偏好保底人数')}</span>
                         <span className="relative flex min-w-0 items-center">
-                          <input aria-label={t('偏好抽中倍率')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 min-w-0 flex-1 pr-6 text-center tabular-nums`} type="number" min={1} step={0.1} value={preferredMultiplier} onChange={event => setRoundRules({ ...roundRules, preferredMultiplier: Number(event.target.value) })} />
-                          <span aria-hidden="true" className="pointer-events-none absolute right-2.5 text-xs font-normal text-gray-400">×</span>
+                          <input aria-label={t('每串偏好保底人数')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !h-9 min-w-0 flex-1 pr-7 text-center tabular-nums`} type="number" min={0} max={roundRules.maxArtists} step={1} value={roundRules.preferredMinArtists ?? 0} onChange={event => setRoundRules({ ...roundRules, preferredMinArtists: Number(event.target.value) })} />
+                          <span aria-hidden="true" className="pointer-events-none absolute right-2.5 text-xs font-normal text-gray-400">{t('人')}</span>
                         </span>
                       </label>
-                      <input type="range" aria-label={t('偏好抽中倍率滑条')} min={1} max={preferredSliderMax} step={0.1} value={preferredMultiplier} onChange={event => setRoundRules({ ...roundRules, preferredMultiplier: Number(event.target.value) })} className="mobile-touch mt-1 block w-full accent-[var(--nai-accent)]" />
-                    </div>
-                    <label className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300">
-                      <span>{t('每串偏好保底人数')}</span>
+                    </fieldset>
+                    <label className="mobile-touch flex min-w-0 items-center gap-2 text-xs font-medium text-gray-800 dark:text-gray-100">
+                      <input type="checkbox" className="h-4 w-4 shrink-0 accent-indigo-600" disabled={frozen} checked={sampledOnly} onChange={event => setSampledOnly(event.target.checked)} />
+                      <span>{t('只从有样张的画师中抽取')}</span>
+                    </label>
+                  </div>}
+                </div>
+                {continuousGenerationEnabled && <div>
+                  <button type="button" aria-expanded={intervalExpanded} onClick={() => setIntervalExpanded(value => !value)}
+                    className="mobile-touch flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-gray-100 dark:hover:bg-gray-800">
+                    <span className="font-semibold text-gray-700 dark:text-gray-200">{t('生成间隔')}</span>
+                    <span className="ml-auto truncate text-micro tabular-nums text-gray-500 dark:text-gray-400">{intervalSummary}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform ${intervalExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                  {intervalExpanded && <div className="mt-1.5 space-y-2.5 rounded-xl bg-gray-50/80 p-2.5 dark:bg-gray-800/40">
+                    <label className="grid grid-cols-[6.25rem_minmax(0,1fr)] items-center gap-2.5 text-xs font-semibold text-gray-700 dark:text-gray-200" title={t('每张图片保存后等待；0 秒不额外等待')}>
+                      <span>{t('生成间隔')}</span>
                       <span className="relative flex min-w-0 items-center">
-                        <input aria-label={t('每串偏好保底人数')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 min-w-0 flex-1 pr-7 text-center tabular-nums`} type="number" min={0} max={roundRules.maxArtists} step={1} value={roundRules.preferredMinArtists ?? 0} onChange={event => setRoundRules({ ...roundRules, preferredMinArtists: Number(event.target.value) })} />
-                        <span aria-hidden="true" className="pointer-events-none absolute right-2.5 text-xs font-normal text-gray-400">{t('人')}</span>
+                        <input type="number" aria-label={t('生成间隔')} min={0} max={3600} step={0.1} inputMode="decimal" value={intervalDraft} disabled={intervalPending}
+                          onChange={event => setIntervalDraft(event.target.value)} onBlur={commitInterval}
+                          onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }}
+                          className={`${TOOLBAR_FIELD_CLASS} !mt-0 !h-9 min-w-0 flex-1 pr-7 text-center tabular-nums`} />
+                        <span aria-hidden="true" className="pointer-events-none absolute right-2.5 text-xs font-normal text-gray-400">{t('秒')}</span>
                       </span>
                     </label>
-                  </fieldset>
-                  <label className="mobile-touch flex min-w-0 items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-                    <input type="checkbox" className="h-4 w-4 shrink-0 accent-indigo-600" disabled={frozen} checked={sampledOnly} onChange={event => setSampledOnly(event.target.checked)} />
-                    <span>{t('只从有样张的画师中抽取')}</span>
-                  </label>
-                </div>
-                <div className="space-y-1 border-t border-gray-200/80 pt-2.5 dark:border-gray-800/80">
-                <ToolbarButton className="w-full !justify-between !px-2" onClick={() => openFromSettings(close, () => setChainTarget(experimentId))}><span className="flex items-center gap-2"><Layers />{t('从风格串提取')}</span><span className="ml-auto text-xs font-normal text-gray-500">{chainArtistSource ? t('已选 {0} 串', [chainArtistSource.chainIds.length]) : t('画师库')}</span><ChevronRight /></ToolbarButton>
-                <ToolbarButton className="w-full !justify-between !px-2" onClick={() => openFromSettings(close, () => setArtistDialogOpen(true))}><span className="flex items-center gap-2"><Settings2 />{t('管理画师与偏好')}</span><span className="ml-auto text-xs font-normal text-gray-500">{t('固定 {0} 位', [pinnedArtists.length])}</span><ChevronRight /></ToolbarButton>
-                <ToolbarButton className="w-full !justify-between !px-2" onClick={() => openFromSettings(close, () => setSetup({ ...(experiment || makeExperiment()), drawPlan: undefined, artists: artistOverrides, pinnedArtists, chainArtistSource, rules: roundRules, sampledOnly }))}><span className="flex items-center gap-2"><Settings2 />{t('提示词与生成设置')}</span><ChevronRight /></ToolbarButton>
-                </div>
+                    <label className="grid grid-cols-[6.25rem_minmax(0,1fr)] items-center gap-2.5 text-xs font-semibold text-gray-700 dark:text-gray-200">
+                      <span>{t('随机浮动')}</span>
+                      <select aria-label={t('间隔随机浮动幅度')} value={intervalJitter} disabled={intervalPending}
+                        onChange={event => { const next = validateGenerationIntervalJitter(Number(event.target.value)); if (next !== intervalJitter) void changeInterval(intervalSeconds, next); }}
+                        className={`${TOOLBAR_FIELD_CLASS} !mt-0 !h-9`}>
+                        <option value={0}>{t('关闭（固定间隔）')}</option>
+                        {[10, 20, 30, 50].map(percent => <option key={percent} value={percent}>{t('±{0}%', [percent])}</option>)}
+                      </select>
+                    </label>
+                  </div>}
+                </div>}
+              </section>
+              <section className="space-y-0.5 border-t border-gray-200/80 pt-2 dark:border-gray-800/80">
+                <button type="button" className={menuRowClass} onClick={() => openFromSettings(close, () => setSetup({ ...(experiment || makeExperiment()), drawPlan: undefined, artists: artistOverrides, pinnedArtists, chainArtistSource, rules: roundRules, sampledOnly }))}>
+                  <SlidersHorizontal className="text-gray-500 dark:text-gray-400" />
+                  <span>{t('提示词与生成设置')}</span>
+                  <ChevronRight className="ml-auto !h-3.5 !w-3.5 text-gray-400" />
+                </button>
+                <button type="button" className={menuRowClass} onClick={() => openFromSettings(close, () => setArtistDialogOpen(true))}>
+                  <Users className="text-gray-500 dark:text-gray-400" />
+                  <span>{t('管理画师与偏好')}</span>
+                  <span className="ml-auto text-micro font-normal tabular-nums text-gray-500 dark:text-gray-400">{t('固定 {0} 位', [pinnedArtists.length])}</span>
+                  <ChevronRight className="!h-3.5 !w-3.5 text-gray-400" />
+                </button>
+                <button type="button" className={menuRowClass} onClick={() => openFromSettings(close, () => setChainTarget(experimentId))}>
+                  <Layers className="text-gray-500 dark:text-gray-400" />
+                  <span>{t('从风格串提取')}</span>
+                  <span className="ml-auto text-micro font-normal tabular-nums text-gray-500 dark:text-gray-400">{chainArtistSource ? t('已选 {0} 串', [chainArtistSource.chainIds.length]) : t('画师库')}</span>
+                  <ChevronRight className="!h-3.5 !w-3.5 text-gray-400" />
+                </button>
               </section>
             </div>;
             }}
@@ -1153,8 +1227,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     <div className="flex min-h-0 min-w-0 flex-1">
       {!isMobile && recordsExpanded && <RollRecordNavigation records={experiments} selectedId={experimentId} busy={frozen || preparing} loading={loading}
         className="workspace-fixed-pane workspace-category-navigation appearance-panel hidden min-h-0 w-52 flex-none flex-col overflow-hidden border-r border-gray-200 p-3 dark:border-gray-800 md:flex"
-        onSelect={id => setExperimentId(id)} onCreate={() => setSetup(makeExperiment())}
-        onReload={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); }}
+        onSelect={id => setExperimentId(id)} onCreate={createRecord}
         onRename={(id, name) => renameRecord(id, name)} onDelete={deleteRecord} onPurgeArchived={purgeArchived} />}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
     {(loading || detailLoading) && !experiment ? <PageSpinner className="workspace-scroll-viewport overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
@@ -1172,14 +1245,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     {isMobile && <ImagePreviewPortal><MobileBottomSheet open={mobileRecordMenuOpen} title={t('画风记录')} onClose={() => setMobileRecordMenuOpen(false)}>
       <RollRecordNavigation records={experiments} selectedId={experimentId} mobile busy={frozen || preparing} loading={loading} className="flex min-h-0 flex-col"
         onSelect={id => { setExperimentId(id); setMobileRecordMenuOpen(false); }}
-        onCreate={() => openFromSettings(() => setMobileRecordMenuOpen(false), () => setSetup(makeExperiment()))}
-        onReload={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); }}
+        onCreate={() => { setMobileRecordMenuOpen(false); createRecord(); }}
         onRename={(id, name) => renameRecord(id, name)} onDelete={deleteRecord} onPurgeArchived={purgeArchived} />
     </MobileBottomSheet></ImagePreviewPortal>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')} actions={detailActions}>{detail}</MobileDetailView></ImagePreviewPortal>}
     {active && chainTarget !== null && chainTarget === experimentId && !setup && <StyleRollChainArtistDialog knownArtists={knownArtists} source={chainArtistSource} blocked={[...blocklist, ...excludedArtistTags]} onConfirm={source => { if (active && !frozen && !working && chainTarget === experimentId) setChainArtistSource(source); }} onClose={() => setChainTarget(null)} />}
-    {setup && <StyleRollSetup key={setup.id} initial={setup} initialSection={setup.candidates.length > 0 ? 'template' : 'pool'} libraryCount={library.length} libraryLoading={libraryLoading} libraryError={libraryError} blockedTags={blocklist} library={libraryEntries} onBlockedChange={updateBlocklist} enforceFreeStepLimit={enforceFreeStepLimit} forceEmptySeed={forceEmptySeed} onForceEmptySeedChange={onForceEmptySeedChange} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
-    {artistDialogOpen && <StyleRollArtistDialog enforceFreeStepLimit={enforceFreeStepLimit} library={libraryEntries} loading={libraryLoading} libraryError={libraryError} pinned={pinnedArtists} onPinnedChange={setPinnedArtists} blocked={blocklist} onBlockedChange={updateBlocklist} excluded={excludedArtistTags} onExcludedChange={tags => setArtistOverrides(current => current.map(artist => ({ ...artist, excluded: tags.includes(artist.tag) })))} sampledOnly={sampledOnly} onSampledOnlyChange={setSampledOnly} rules={roundRules} onRulesChange={setRoundRules} onClose={() => setArtistDialogOpen(false)} />}
+    {setup && <StyleRollSetup key={setup.id} initial={setup} enforceFreeStepLimit={enforceFreeStepLimit} forceEmptySeed={forceEmptySeed} onForceEmptySeedChange={onForceEmptySeedChange} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
+    {artistDialogOpen && <StyleRollArtistDialog enforceFreeStepLimit={enforceFreeStepLimit} library={libraryEntries} loading={libraryLoading} libraryError={libraryError} pinned={pinnedArtists} onPinnedChange={setPinnedArtists} blocked={blocklist} onBlockedChange={updateBlocklist} excluded={excludedArtistTags} onExcludedChange={tags => setArtistOverrides(current => current.map(artist => ({ ...artist, excluded: tags.includes(artist.tag) })))} rules={roundRules} onClose={() => setArtistDialogOpen(false)} />}
     {lightbox && <ImageLightbox src={lightbox.imageUrl} generationData={lightbox} favorite={{ imageUrl: lightbox.imageUrl, sourceType: 'history', sourceId: lightbox.id }} notify={notify} onClose={() => setLightbox(null)}>
       {formatGenerationDuration(readGenerationDurationMs(lightbox)) && <div data-image-preview-footer className="pointer-events-none absolute bottom-16 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1.5 text-xs tabular-nums text-white">{new Date(lightbox.createdAt).toLocaleString(getLanguage())} · {formatGenerationDuration(readGenerationDurationMs(lightbox))}</div>}
     </ImageLightbox>}

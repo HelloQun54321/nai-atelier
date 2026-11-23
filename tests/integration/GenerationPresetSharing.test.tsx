@@ -45,8 +45,7 @@ it('Roll与画师样张通过真实共用编辑器双向选择完整预设，后
     params: { ...createDefaultRollTemplate(DEFAULT_NAI_RUNTIME).params, model: 'nai-diffusion-4-5-full', seed: 123, scale: 6,
       characters: [{ id: 'role', prompt: 'full character', negativePrompt: 'bad hands', x: .2, y: .8 }] } };
   const original = structuredClone(initial), rollSave = vi.fn(), rollClose = vi.fn();
-  const roll = render(<StyleRollSetup initial={initial} onBlockedChange={async () => {}} enforceFreeStepLimit onSave={rollSave} onClose={rollClose} />);
-  fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
+  const roll = render(<StyleRollSetup initial={initial} enforceFreeStepLimit onSave={rollSave} onClose={rollClose} />);
   await waitFor(() => expect(screen.queryByText('正在读取生成预设…')).toBeNull());
   fireEvent.change(screen.getByRole('textbox', { name: '预设名称' }), { target: { value: '来自Roll' } });
   fireEvent.click(screen.getByRole('button', { name: '另存新预设' }));
@@ -73,8 +72,8 @@ it('Roll与画师样张通过真实共用编辑器双向选择完整预设，后
   await screen.findByRole('option', { name: '来自画师库' }); artist.unmount();
   const fromArtist = [...state.presets.values()].find(preset => preset.name === '来自画师库') as RollPreset;
 
-  render(<StyleRollSetup initial={initial} onBlockedChange={async () => {}} enforceFreeStepLimit onSave={rollSave} onClose={() => {}} />);
-  fireEvent.click(screen.getByRole('button', { name: '生成配置' })); await screen.findByRole('option', { name: '来自画师库' });
+  render(<StyleRollSetup initial={initial} enforceFreeStepLimit onSave={rollSave} onClose={() => {}} />);
+  await screen.findByRole('option', { name: '来自画师库' });
   fireEvent.change(screen.getByRole('combobox', { name: '生成配置预设' }), { target: { value: fromArtist.id } });
   expect(rollSave).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));

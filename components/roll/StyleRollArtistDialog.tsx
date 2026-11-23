@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Check, FolderPlus, SlidersHorizontal, X } from 'lucide-react';
+import { Check, FolderPlus, Plus, SlidersHorizontal } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import type { ArtistDictionaryEntry } from '../../services/tagDictionary';
 import { matchesArtistSearch, parseArtistSearchTerms } from '../../services/tagLibrary';
@@ -20,8 +20,8 @@ import { ImageActivityContext } from '../SmartImage';
 import { ArtistSampleGenerationStatus, useArtistSampleActions } from '../useArtistSampleActions';
 import { ShortestColumnMasonry, useMasonryColumnCount } from '../ShortestColumnMasonry';
 import { useImageRatios } from '../useImageRatios';
-import { IconButton, InlineSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect } from '../DesignSystem';
-import { AnchoredToolbarPopover, TOOLBAR_FIELD_CLASS } from '../ToolbarPopover';
+import { InlineSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect } from '../DesignSystem';
+import { AnchoredToolbarPopover } from '../ToolbarPopover';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { PressRevealSurface } from '../PressRevealSurface';
@@ -36,15 +36,14 @@ interface Props {
   pinned: string[]; onPinnedChange: (tags: string[]) => void;
   blocked: string[]; onBlockedChange: (tags: string[]) => Promise<void>;
   excluded: string[]; onExcludedChange: (tags: string[]) => void;
-  sampledOnly: boolean; onSampledOnlyChange: (value: boolean) => void;
-  rules: RollRules; onRulesChange: (rules: RollRules) => void;
+  rules: Pick<RollRules, 'maxArtists'>;
   enforceFreeStepLimit?: boolean;
   onClose: () => void;
 }
 
 export const StyleRollArtistDialog: React.FC<Props> = props => <ImagePreviewPortal><ArtistDialog {...props} /></ImagePreviewPortal>;
 
-const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned, onPinnedChange, blocked, onBlockedChange, excluded, onExcludedChange, sampledOnly, onSampledOnlyChange, rules, onRulesChange, enforceFreeStepLimit, onClose }) => {
+const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned, onPinnedChange, blocked, onBlockedChange, excluded, onExcludedChange, rules, enforceFreeStepLimit, onClose }) => {
   useLanguage();
   const collection = useSyncExternalStore(subscribeCollection, collectionSnapshot);
   const preferred = useMemo(() => new Set(collection.filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => normalizeRollArtistKey(item.sourceId!))), [collection]);
@@ -62,12 +61,6 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
   const [cardPacks, setCardPacks] = useState<Record<string, ArtistSamplePack>>({});
   const [query, setQuery] = useState(''), [filter, setFilter] = useState('all'), [limit, setLimit] = useState(60);
   const searchTerms = useMemo(() => parseArtistSearchTerms(query), [query]);
-  const preferredMultiplier = rules.preferredMultiplier ?? 1;
-  const [preferredSliderMax, setPreferredSliderMax] = useState(() => Math.max(100, preferredMultiplier));
-  // 数字输入保留大倍率，扩展后的滑条范围在拖动期间不缩小。
-  useEffect(() => {
-    if (Number.isFinite(preferredMultiplier)) setPreferredSliderMax(max => Math.max(max, preferredMultiplier));
-  }, [preferredMultiplier]);
   const [sort, setSort] = useState<ArtistBrowseSort>(() => {
     const saved = localStorage.getItem('nai_roll_artist_sort') || localStorage.getItem('nai_artist_sort');
     return saved === 'least' || saved === 'name-asc' || saved === 'name-desc' || isArtistUsageSort(saved || '') ? saved as ArtistBrowseSort : 'popular';
@@ -85,15 +78,13 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
     return () => { current = false; controller.abort(); };
   }, [usageRetry]);
   useEffect(() => localHistory.subscribe(() => setUsageRetry(value => value + 1)), []);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [manualPinOpen, setManualPinOpen] = useState(false);
   const gallery = useRef<HTMLDivElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
   const imageDisplay = useMobileImageDisplayPreferences('artists');
   const columns = useMasonryColumnCount(imageDisplay, undefined, gallery);
   const [artistRatios, updateImageRatio] = useImageRatios();
   const frostedCaption = useGalleryFrostedCaption();
-  const settingsAnchor = useRef<HTMLDivElement>(null);
-  const closeSettings = React.useCallback(() => setSettingsOpen(false), []);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const notify = React.useCallback((message: string, type?: 'success' | 'error') => setError(type === 'success' ? '' : message), []);
   const catalogArtists = useMemo(() => {
@@ -211,16 +202,16 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
         {groups.toolbar}
         <ToolbarButton aria-label={t('设置分组')} title={t('设置分组')} disabled={!groups.canAssign} onClick={groups.openAssignDialog}><FolderPlus /></ToolbarButton>
         <ToolbarSearch containerClassName="order-last basis-full !max-w-none sm:order-none sm:basis-0" aria-label={t('搜索画师')} placeholder={t('搜索画师，多个词用逗号分隔')} value={query} onChange={event => { setQuery(event.target.value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} />
-        <div ref={settingsAnchor} className="shrink-0"><ToolbarButton aria-label={t('抽取设置')} aria-expanded={settingsOpen} aria-haspopup="dialog" active={settingsOpen} onClick={() => { setUsageOpen(false); setSettingsOpen(value => !value); }}><SlidersHorizontal /><span className="hidden sm:inline">{t('抽取设置')}</span></ToolbarButton></div>
         <ToolbarButton tone="primary" disabled={busy} onClick={close}>{t('完成')}</ToolbarButton>
         <ToolbarCountCaption>{favoritesPending ? t('匹配 {0} 位', ['—']) : `${t(loading ? '已加载 {0} 位' : groups.activeGroup !== '*' || filter !== 'all' || chainsFilter !== 'all' || imagesFilter !== 'all' || searchTerms.length > 0 ? '匹配 {0} 位' : '共 {0} 位', [artists.length])}${loading ? '' : ` · ${t('已加载 {0} 位', [Math.min(limit, artists.length)])}`}`}</ToolbarCountCaption>
       </header>
       <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2 sm:px-5">
         <div role="group" aria-label={t('画师范围')} className="flex min-w-0 items-center gap-1 overflow-x-auto">
           {([['all', '全部画师', undefined], ['pinned', '已锁定', pinned.length], ['blocked', '已屏蔽', blockedKeys.size]] as const).map(([value, label, total]) => <button key={value} type="button" aria-label={t(label)} aria-pressed={filter === value} onClick={() => changeFilter(value)} className={`mobile-touch flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs transition-colors ${filter === value ? 'bg-indigo-50 font-semibold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>{t(label)}{total !== undefined && <span className="text-micro tabular-nums opacity-70">{total}</span>}</button>)}
+          <button type="button" aria-expanded={manualPinOpen} onClick={() => setManualPinOpen(value => !value)} className={`mobile-touch flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-2 text-xs transition-colors ${manualPinOpen ? 'bg-indigo-50 font-semibold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}><Plus className="h-3.5 w-3.5" />{t('手动添加固定 Tag')}</button>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          <div ref={usageAnchor}><ToolbarButton aria-label={t('筛选')} aria-expanded={usageOpen} active={chainsFilter !== 'all' || imagesFilter !== 'all'} onClick={() => { setSettingsOpen(false); setUsageOpen(value => !value); }}><SlidersHorizontal /><span className="hidden sm:inline">{t('筛选')}</span></ToolbarButton></div>
+          <div ref={usageAnchor}><ToolbarButton aria-label={t('筛选')} aria-expanded={usageOpen} active={chainsFilter !== 'all' || imagesFilter !== 'all'} onClick={() => setUsageOpen(value => !value)}><SlidersHorizontal /><span className="hidden sm:inline">{t('筛选')}</span></ToolbarButton></div>
           <ToolbarSelect label="画师排序" value={sort} containerClassName="min-w-0 max-w-[44vw] sm:max-w-none" className="truncate !text-xs" onChange={event => {
             const value = event.target.value as ArtistBrowseSort; setSort(value); setLimit(60);
             if (gallery.current) gallery.current.scrollTop = 0;
@@ -232,6 +223,9 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
           </ToolbarSelect>
         </div>
       </div>
+      {manualPinOpen && <div className="shrink-0 border-y border-gray-200/80 bg-gray-50/70 px-3 py-2.5 dark:border-gray-800/80 dark:bg-gray-950/40 sm:px-5">
+        <StyleRollArtistInput label="固定画师 Tag（可选）" value={pinned} onChange={onPinnedChange} limit={rules.maxArtists} blocked={[...blocked, ...excluded]} disabled={busy} />
+      </div>}
       {(error || sampleError || libraryError || groups.error) && <p role="alert" className="shrink-0 px-4 pb-2 text-xs text-red-500">{t(error || sampleError || libraryError || groups.error)}{(groups.error || sampleError) && <button type="button" className="mobile-touch ml-2 underline" onClick={() => groups.error ? void groups.reload() : setSampleRetry(value => value + 1)}>{t('重试')}</button>}</p>}
       {usageOpen && <AnchoredToolbarPopover anchorRef={usageAnchor} title={t('筛选')} width={280} allowMobile onClose={closeUsage}>
         <div className="space-y-3">
@@ -245,22 +239,6 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
             <option value="all">{t('全部')}</option><option value="used">{t('已生成')}</option><option value="unused">{t('未生成')}</option>
           </ToolbarSelect></div>
           {(chainsFilter !== 'all' || imagesFilter !== 'all') && <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setChainsFilter('all'); setImagesFilter('all'); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }}>{t('重置筛选')}</button>}
-        </div>
-      </AnchoredToolbarPopover>}
-      {settingsOpen && <AnchoredToolbarPopover anchorRef={settingsAnchor} title={t('抽取设置')} width={320} allowMobile onClose={closeSettings}>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t('抽取设置')}</strong><IconButton label="关闭" className="!h-7 !w-7 !border-transparent !bg-transparent" onClick={closeSettings}><X /></IconButton></div>
-          <label className="mobile-touch flex min-h-11 min-w-0 items-center gap-2 text-xs"><input type="checkbox" className="h-4 w-4 shrink-0 accent-indigo-600" checked={rules.preferredOnly ?? false} onChange={event => onRulesChange({ ...rules, preferredOnly: event.target.checked })} />{t('只抽取收藏画师')}</label>
-          <fieldset disabled={rules.preferredOnly ?? false} className={`min-w-0 space-y-3 ${rules.preferredOnly ? 'opacity-50' : ''}`}>
-          <div>
-            <label className="flex items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-300"><span>{t('偏好抽中倍率')}</span><span className="flex w-24 shrink-0 items-center gap-1.5"><input aria-label={t('偏好抽中倍率')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !px-2 text-center tabular-nums`} type="number" min={1} step={0.1} value={preferredMultiplier} onChange={event => onRulesChange({ ...rules, preferredMultiplier: Number(event.target.value) })} /><span aria-hidden="true">×</span></span></label>
-            <input type="range" aria-label={t('偏好抽中倍率滑条')} min={1} max={preferredSliderMax} step={0.1} value={preferredMultiplier} onChange={event => onRulesChange({ ...rules, preferredMultiplier: Number(event.target.value) })} className="mobile-touch block w-full accent-[var(--nai-accent)]" />
-            <div aria-hidden="true" className="flex justify-between text-micro tabular-nums text-gray-400"><span>1×</span><span>{preferredSliderMax}×</span></div>
-          </div>
-          <label className="flex items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-300"><span>{t('每串偏好保底人数')}</span><span className="flex w-24 shrink-0 items-center gap-1.5"><input aria-label={t('每串偏好保底人数')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !px-2 text-center tabular-nums`} type="number" min={0} max={rules.maxArtists} step={1} value={rules.preferredMinArtists ?? 0} onChange={event => onRulesChange({ ...rules, preferredMinArtists: Number(event.target.value) })} /><span aria-hidden="true">{t('人')}</span></span></label>
-          </fieldset>
-          <label className="mobile-touch flex items-center gap-2 border-t border-gray-200 pt-3 text-xs dark:border-gray-800"><input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={sampledOnly} onChange={event => onSampledOnlyChange(event.target.checked)} />{t('只从有样张的画师中抽取')}</label>
-          <details><summary className="mobile-touch cursor-pointer text-xs text-gray-500">{t('手动添加固定 Tag')}</summary><div className="mt-2"><StyleRollArtistInput label="固定画师 Tag（可选）" value={pinned} onChange={onPinnedChange} limit={rules.maxArtists} blocked={[...blocked, ...excluded]} disabled={busy} /></div></details>
         </div>
       </AnchoredToolbarPopover>}
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
