@@ -10,22 +10,22 @@ import { normalizeCloudQueueCount } from '../worker/cloudQueueNumbers.mjs';
 
 type GenerationProgress = { step: number; total: number };
 
-const statusLabel = (status: QueueStatus, progress?: GenerationProgress | null) => {
-  if (status.phase === 'preparing') return '准备生成…';
-  if (status.phase === 'joining') return '加入队列中…';
+export const formatCloudQueueStatusLabel = (status: QueueStatus, progress?: GenerationProgress | null) => {
+  if (status.phase === 'preparing') return t('准备生成…');
+  if (status.phase === 'joining') return t('加入队列中…');
   if (status.phase === 'waiting') {
-    if (status.proxy) return '中转排队／生成中…';
+    if (status.proxy) return t('中转排队／生成中…');
     const ahead = normalizeCloudQueueCount(status.position);
-    return ahead === null ? '排队中 · 前方任务数未知' : `排队中 · 前方 ${ahead} 个任务`;
+    return ahead === null ? t('排队中 · 前方任务数未知') : t('排队中 · 前方 {0} 个任务', [ahead]);
   }
-  if (status.phase === 'ready') return '即将生成…';
-  if (status.phase === 'generating') return progress ? `生成中 ${progress.step}/${progress.total}` : '生成中…';
-  if (status.phase === 'cancelled') return status.proxy ? '已停止等待' : '已取消排队';
-  if (status.phase === 'error') return status.error || '公共队列连接失败';
-  return '生成完成';
+  if (status.phase === 'ready') return t('即将生成…');
+  if (status.phase === 'generating') return progress ? t('生成中 {0}/{1}', [progress.step, progress.total]) : t('生成中…');
+  if (status.phase === 'cancelled') return t(status.proxy ? '已停止等待' : '已取消排队');
+  if (status.phase === 'error') return t(status.error || '公共队列连接失败');
+  return t('生成完成');
 };
 
-const queueCountLabel = (status: QueueStatus) => {
+export const formatCloudQueueCountLabel = (status: QueueStatus) => {
   if (status.proxy) return null;
   if (!['waiting', 'ready', 'generating'].includes(status.phase)) return null;
   const count = normalizeCloudQueueCount(status.queueSize);
@@ -59,8 +59,8 @@ const QueueStatusBody: React.FC<{ status: QueueStatus; compact?: boolean; genera
         <div className="flex min-w-0 max-w-full items-center justify-center gap-2">
           {active && <span aria-hidden="true" className="queue-status-spinner h-4 w-4 shrink-0 rounded-full border-2 border-white/90 border-t-transparent" />}
           <div className="min-w-0 text-center">
-            <p className="truncate text-sm font-bold leading-5">{t(statusLabel(status, generationProgress))}</p>
-            {queueCountLabel(status) && <p className="mt-0.5 text-xs leading-4 text-white/90">{t(queueCountLabel(status))}</p>}
+            <p className="truncate text-sm font-bold leading-5">{formatCloudQueueStatusLabel(status, generationProgress)}</p>
+            {formatCloudQueueCountLabel(status) && <p className="mt-0.5 text-xs leading-4 text-white/90">{formatCloudQueueCountLabel(status)}</p>}
             {status.cleanupError && <p className="mt-0.5 text-xs leading-4 text-white/90">{t(status.cleanupError)}</p>}
             {!status.proxy && status.greeting && <p className="mt-0.5 truncate text-center text-xs leading-4 text-white/75">{t("当前使用者：{0}", [status.greeting])}</p>}
           </div>

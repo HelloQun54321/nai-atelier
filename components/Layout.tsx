@@ -378,7 +378,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
 
   return (
     <div className="workspace-canvas relative flex h-[100dvh] bg-gray-50 font-sans text-gray-900 transition-colors duration-300 dark:bg-gray-900 dark:text-gray-100">
-      <CloudQueueStatus hidden={Boolean(hideNav)} />
+      {/* 实验室／编辑／漫画（hideNav）与 Roll 页均由页内就地展示出图与排队状态，不再叠加全局右下角浮条。 */}
+      <CloudQueueStatus hidden={Boolean(hideNav || activeView === 'roll' || currentView === 'roll')} />
 
       <aside data-collapsed={sidebarCollapsed} data-resizing={isSidebarResizing} style={{ width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth }} className={`app-sidebar relative z-40 hidden flex-shrink-0 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:flex ${isSidebarResizing ? '' : 'transition-[width] duration-200'}`}>
         {sidebarCollapsed ? (

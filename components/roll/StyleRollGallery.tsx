@@ -28,8 +28,6 @@ interface Props {
   onSave: (id: string) => void; onArchive: (id: string) => void; busy: boolean;
   /** 正在生成的候选与其流式预览图。 */
   preview?: { id: string; image: string } | null;
-  /** 每个候选所属轮次，用于在编号旁标出 R2/R3。 */
-  roundNumbers?: Map<string, number>;
   /** 本批排序：未出图卡片显示「本批第 n/总数 张」。 */
   positions?: Map<string, { index: number; total: number }>;
   /** 生成状态与操作：直接落在候选卡占位区，不再使用底部悬浮小框。 */
@@ -41,6 +39,9 @@ interface Props {
     paused: boolean;
     awaiting: boolean;
     saving: boolean;
+    /** 当前中转／公共排队状态，直接融合进生成中卡片占位区，不再额外弹出右下角浮条。 */
+    queueLabel?: string | null;
+    queueDetail?: string | null;
     error?: { message: string; tone: 'error' | 'warning' } | null;
   } | null;
   onGenerate?: (id: string) => void;
@@ -58,7 +59,7 @@ interface Props {
 const GEN_PRIMARY = 'mobile-touch inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:opacity-40';
 const GEN_SECONDARY = 'mobile-touch inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white/90 px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-200 dark:hover:bg-gray-800';
 
-export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, roundNumbers, positions, generationState, onGenerate, onPause, onResume, onCancel, onApprove, favoriteIds, emptyState, scrollRef, onScroll, notify }) => {
+export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, positions, generationState, onGenerate, onPause, onResume, onCancel, onApprove, favoriteIds, emptyState, scrollRef, onScroll, notify }) => {
   const display = useMobileImageDisplayPreferences('roll');
   const requestedColumns = useMasonryColumnCount(display, undefined, scrollRef, 220, false, Boolean(selectedId));
   const columns = display.desktopColumns === 'auto' ? Math.min(4, requestedColumns) : requestedColumns;
@@ -68,10 +69,8 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
   const renderCard = (candidate: RollCandidate) => {
     const item = images.get(candidate.id), index = experiment.candidates.indexOf(candidate) + 1;
-    const roundNo = roundNumbers?.get(candidate.id);
     const selected = selecting ? selectedIds.has(candidate.id) : selectedId === candidate.id;
     const activate = () => { if (selecting) { if (!busy) onToggle(candidate.id); } else onSelect(selectedId === candidate.id ? '' : candidate.id); };
-    const hasVisual = Boolean(item || preview?.id === candidate.id);
 
     return <PressRevealSurface key={candidate.id} pressDisabled={selecting} role={selecting ? 'checkbox' : 'button'} tabIndex={0}
       data-agent-action="select" data-gallery-work-id={candidate.id} data-safe-mode-work="true"
@@ -79,24 +78,19 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
       onClick={activate} onKeyDown={event => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); activate(); } }}
       className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border bg-white shadow-sm text-left transition-all duration-200 dark:bg-gray-850 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${selected ? '!border-indigo-500 ring-2 ring-indigo-500/25 shadow-md shadow-indigo-500/10' : 'border-gray-200/90 hover:border-indigo-400 hover:shadow-md dark:border-gray-800/80 dark:hover:border-indigo-500/50'} ${!selecting && selectionFocusEnabled && selectedId && !selected ? 'brightness-[.7]' : ''}`}>
 
-      <div data-image-action-left className="absolute left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5">
-        {/* 仅在历史已就绪且确认尚未出图的占位卡上显示编号与轮次；加载中与已出图卡片左上角只留悬停删除。 */}
-        {historyReady && !historyLoading && !hasVisual && <span className="pointer-events-none flex flex-col items-start rounded-md bg-black/35 px-1.5 py-1 font-mono text-micro leading-tight text-white/90">
-          <span>#{index}</span>
-          {roundNo ? <span className="text-mini opacity-60">R{roundNo}</span> : null}
-        </span>}
-        {!selecting && <div data-card-action="true" className="hover-reveal-md">
+      {!selecting && <div data-image-action-left className="absolute left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5">
+        <div data-card-action="true" className="hover-reveal-md">
           <button type="button" aria-label={t('删除候选 {0}', [index])} title={t('删除')} disabled={busy} onClick={event => { event.stopPropagation(); onArchive(candidate.id); }} className="nai-float-btn mobile-size-locked flex items-center justify-center rounded-full bg-black/50 text-white shadow-md transition-all hover:scale-110 hover:bg-red-600 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
             <Trash2 className="h-3.5 w-3.5" />
           </button>
-        </div>}
-      </div>
+        </div>
+      </div>}
 
       <div className="appearance-media mobile-gallery-frame relative w-full overflow-hidden border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-950" style={{ '--mobile-image-ratio': String(ratio(candidate)) } as React.CSSProperties}>
         {item ? <SmartImage src={item.imageUrl} alt={t('候选 {0}', [index])} className="h-full w-full object-contain" onLoad={event => { const image = event.currentTarget, next = image.naturalWidth / Math.max(1, image.naturalHeight); if (next > 0 && next !== ratios[candidate.id]) setRatios(current => ({ ...current, [candidate.id]: next })); }} />
           : preview?.id === candidate.id ? <div className="relative h-full w-full">
             <img src={preview.image} alt={t('生成预览')} className="h-full w-full object-contain" />
-            <span className="pointer-events-none absolute inset-x-0 bottom-2 mx-auto w-fit rounded-full bg-black/55 px-2 py-0.5 text-micro text-white">{generationState?.saving ? t('正在保存…') : t('生成中…')}</span>
+            <span className="pointer-events-none absolute inset-x-0 bottom-2 mx-auto w-fit rounded-full bg-black/55 px-2 py-0.5 text-micro text-white">{generationState?.saving ? t('正在保存…') : generationState?.queueLabel || t('生成中…')}</span>
           </div>
             : <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2.5 px-4 text-center">
               {!historyReady ? (historyLoading ? <InlineSpinner label={t('加载中…')} className="text-xs" /> : <div className="text-xs font-medium">{t('历史暂不可用')}</div>) : (() => {
@@ -121,7 +115,8 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
                   </>;
                   if (isGenerating) return <>
                     <LoaderCircle className="h-5 w-5 animate-spin" />
-                    <span className="text-xs font-medium">{state.saving ? t('正在保存…') : t('生成中…')}</span>
+                    <span className="text-xs font-medium">{state.saving ? t('正在保存…') : state.queueLabel || t('生成中…')}</span>
+                    {!state.saving && state.queueDetail && <span className="text-mini text-gray-500 dark:text-gray-400">{state.queueDetail}</span>}
                     {state.paused
                       ? onResume && isNext && <button type="button" disabled={busy} onClick={fire(onResume)} className={GEN_SECONDARY}>{t('继续')}</button>
                       : onPause && <button type="button" disabled={busy} onClick={fire(onPause)} className={GEN_SECONDARY}><Pause className="h-3 w-3" />{t('暂停')}</button>}

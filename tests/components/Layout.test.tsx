@@ -8,7 +8,13 @@ vi.mock('../../services/anlasBudget', () => ({ useAnlasBudget: () => ({}) }));
 vi.mock('../../services/naiUsage', () => ({ useNovelaiUsage: () => ({}) }));
 vi.mock('../../components/AnlasBalanceBar', () => ({ AnlasBalanceBar: () => null }));
 vi.mock('../../components/OpusUsageBar', () => ({ OpusUsageBar: () => null }));
-vi.mock('../../components/CloudQueueStatus', () => ({ CloudQueueStatus: () => null }));
+const cloudQueueHiddenCalls = vi.hoisted(() => ({ latest: undefined as boolean | undefined }));
+vi.mock('../../components/CloudQueueStatus', () => ({
+  CloudQueueStatus: ({ hidden }: { hidden?: boolean }) => {
+    cloudQueueHiddenCalls.latest = hidden;
+    return null;
+  },
+}));
 
 const createProps = (activeView = 'list') => ({
   children: <div>workspace</div>, onNavigate: vi.fn(), currentView: activeView, activeView,
@@ -82,6 +88,13 @@ it('素材浏览分组默认收起，手动展开状态跨Layout重挂载保存'
   expect(collapsedGroup.getAttribute('aria-expanded')).toBe('false');
   expect(collapsedGroup.querySelector('.text-micro')?.textContent).toBe('AITag');
   expect(localStorage.getItem('nai_sidebar_external_gallery_expanded')).toBe('false');
+});
+
+it('Roll 串页面隐藏全局右下角队列浮条，普通列表页保持展示', () => {
+  const { rerender } = renderLayout('list');
+  expect(cloudQueueHiddenCalls.latest).toBe(false);
+  rerender(<div className="agent-stage"><Layout {...createProps('roll')} /></div>);
+  expect(cloudQueueHiddenCalls.latest).toBe(true);
 });
 
 it('创作足迹保留电脑侧栏入口，打开足迹时由它标为当前页', () => {

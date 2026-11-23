@@ -53,6 +53,8 @@ import { clearArtistPreference, collectionRevision, collectionSnapshot, collecti
 import { StyleRollGallery } from './roll/StyleRollGallery';
 import { RollRecordNavigation } from './roll/RollRecordNavigation';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
+import { formatCloudQueueCountLabel, formatCloudQueueStatusLabel, useCloudQueueStatus } from './CloudQueueStatus';
+import { isCloudQueueTaskActive } from '../services/cloudQueue';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 
 interface Props {
@@ -986,10 +988,12 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const livePreview = (generationStreamPreview || session?.state === 'saving') && experiment && session && session.scope === rollSourceId(experiment.id) && session.preview?.image && previewCandidateId
     ? { id: previewCandidateId, image: session.preview.image }
     : null;
-  const generatingCandidateId = preparing || (session && ['preparing', 'generating', 'saving'].includes(session.state)) ? previewCandidateId : undefined;
+  const working = Boolean(session || preparing), frozen = busy || loading || detailLoading;
+  const cloudQueue = useCloudQueueStatus();
+  const activeCloudQueue = working && cloudQueue && isCloudQueueTaskActive(cloudQueue) && (!session?.cloudQueueTaskId || cloudQueue.taskId === session.cloudQueueTaskId) ? cloudQueue : null;
+  const generatingCandidateId = preparing || (session && (['preparing', 'generating', 'saving'].includes(session.state) || Boolean(activeCloudQueue))) ? previewCandidateId : undefined;
   const selectedPending = experiment ? rollPendingCandidates(experiment, images, chosen.map(candidate => candidate.id)) : [];
   const saveable = chosen.filter(candidate => images.has(candidate.id) && !candidate.archived && !candidate.savedChainId);
-  const working = Boolean(session || preparing), frozen = busy || loading || detailLoading;
   const canStart = !frozen && !working && (chainArtistSource !== undefined || (!libraryLoading && !libraryError && library.length > 0)) && (!experiment || historyReady) && (!sampledOnly || (sampledTags !== null && (effectiveLibrary.length > 0 || pinnedArtists.length >= roundRules.maxArtists)));
   return <div ref={rootRef} className="workspace-canvas flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100" data-roll-page="true">
     <WorkspaceChrome>
@@ -1164,7 +1168,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
     {(loading || detailLoading) && !experiment ? <PageSpinner className="workspace-scroll-viewport overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
       : <div className="relative flex min-h-0 flex-1">
-        <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} roundNumbers={roundNumbers} positions={roundPositions} generationState={{ generatingId: generatingCandidateId, nextId: nextPendingId, running: working, paused: session?.state === 'paused', awaiting: Boolean(session?.awaiting), saving: session?.state === 'saving', error: generationError && generationError.experimentId === experiment.id ? generationError : null }} onGenerate={id => { const candidate = experiment.candidates.find(item => item.id === id); if (candidate) void generate([candidate], experiment); }} onPause={pause} onResume={resume} onCancel={cancelSession} onApprove={approve} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => deleteCandidates([id])} busy={frozen} emptyState={(() => {
+        <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} positions={roundPositions} generationState={{ generatingId: generatingCandidateId, nextId: nextPendingId, running: working, paused: session?.state === 'paused', awaiting: Boolean(session?.awaiting), saving: session?.state === 'saving', queueLabel: activeCloudQueue ? formatCloudQueueStatusLabel(activeCloudQueue) : null, queueDetail: activeCloudQueue ? formatCloudQueueCountLabel(activeCloudQueue) : null, error: generationError && generationError.experimentId === experiment.id ? generationError : null }} onGenerate={id => { const candidate = experiment.candidates.find(item => item.id === id); if (candidate) void generate([candidate], experiment); }} onPause={pause} onResume={resume} onCancel={cancelSession} onApprove={approve} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => deleteCandidates([id])} busy={frozen} emptyState={(() => {
           const hasAnyCandidates = experiment.candidates.some(candidate => !candidate.archived);
           if (!hasAnyCandidates) return { title: t('还没有 Roll 候选'), hint: t('调整上方设置后点击开始，即可批量随机探索画风组合。'), actionLabel: t('开始第一轮'), actionPrimary: true, actionDisabled: !canStart, onAction: () => runRound() };
           const hasQuery = Boolean(query.trim());

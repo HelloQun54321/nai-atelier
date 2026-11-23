@@ -10,6 +10,7 @@ import { StyleRollPage } from '../../components/StyleRollPage';
 import { executeAgentCommand, getAgentCommands } from '../../services/agentCommands';
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { setLanguage } from '../../services/i18n';
+import { emitCloudQueueStatus } from '../../services/cloudQueue';
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), loadOne: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), alert: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, remove: vi.fn(), setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, ensureCollection: vi.fn(), favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>(), interrupted: [] as any[], clearInterrupted: vi.fn(), restore: vi.fn(async () => {}), getQueue: vi.fn(async () => ({ intervalSeconds: 2, intervalJitterPercent: 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })), setIntervalPref: vi.fn(async (_key: string, seconds: number, jitterPercent?: number) => ({ intervalSeconds: seconds, intervalJitterPercent: jitterPercent ?? 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })) }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: async () => ({ available: true, canManage: true, packs: [] }), ARTIST_SAMPLES_CHANGED: 'nai-artist-samples-changed', getArtistSampleLibrary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
@@ -78,7 +79,7 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { callback: ResizeObserverCallback; constructor(callback: ResizeObserverCallback) { this.callback = callback; } observe(target: Element) { this.callback([{ target, contentRect: { width: 1024 } } as ResizeObserverEntry], this as unknown as ResizeObserver); } unobserve() {} disconnect() {} });
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: async () => new Blob(['synthetic-image'], { type: 'image/png' }) })));
 });
-afterEach(() => { cleanup(); document.querySelectorAll('[data-test-alert]').forEach(node => node.remove()); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
+afterEach(() => { emitCloudQueueStatus(null); cleanup(); document.querySelectorAll('[data-test-alert]').forEach(node => node.remove()); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
 const setup = async (options = {}) => {
   const onSaveChain = vi.fn(async chain => ({ ...chain, id: 'saved-chain' })), onNavigateToPlayground = vi.fn();
   const props = { active: true, chains: [], enforceFreeStepLimit: true, generationStreamPreview: true, notify: vi.fn(), onSaveChain, onNavigateToPlayground, onOpenChain: vi.fn(), ...options };
@@ -967,7 +968,7 @@ it('已归档候选不再出现在任何视图，原图与已保存风格串仍�
   expect(screen.queryByRole('button', { name: '永久清理所选' })).toBeNull();
 });
 
-it('加载中与已出图卡片不叠放左上角编号与轮次，确认未出图占位卡与右侧详情仍保留轮次信息', async () => {
+it('无论加载中、已出图还是未出图占位卡均不叠放左上角编号与轮次，右侧详情仍保留轮次信息', async () => {
   experiment.rounds = [{ id: 'first', candidateIds: ['a', 'b'], createdAt: 1 }];
   let resolveHistory!: (items: ReturnType<typeof rows>) => void;
   mocks.history.mockImplementationOnce(() => new Promise(resolve => { resolveHistory = resolve; }));
@@ -980,10 +981,30 @@ it('加载中与已出图卡片不叠放左上角编号与轮次，确认未出�
   const pendingCard = screen.getByRole('button', { name: '查看候选 2' });
   expect(within(generatedCard).queryByText('#1')).toBeNull();
   expect(within(generatedCard).queryByText('R1')).toBeNull();
-  expect(within(pendingCard).getByText('#2')).toBeTruthy();
-  expect(within(pendingCard).getByText('R1')).toBeTruthy();
+  expect(within(pendingCard).queryByText('#2')).toBeNull();
+  expect(within(pendingCard).queryByText('R1')).toBeNull();
   fireEvent.click(generatedCard);
   expect(screen.getByLabelText('候选生成信息').textContent).toContain('R1');
+});
+
+it('中转与公共队列排队状态直接融入正在生成的候选卡占位区', async () => {
+  experiment.rounds = [{ id: 'first', candidateIds: ['a', 'b'], createdAt: 1 }];
+  mocks.history.mockResolvedValue([]);
+  mocks.session = { scope: `roll:${experiment.id}`, key: mocks.key, token: 't1', count: 2, state: 'generating', cloudQueueTaskId: 'q1', progress: { current: 0, total: 2, stopping: false } };
+  await setup();
+  const generatingCard = screen.getByRole('button', { name: '查看候选 1' });
+  expect(within(generatingCard).getByText('生成中…')).toBeTruthy();
+
+  act(() => {
+    emitCloudQueueStatus({ taskId: 'q1', phase: 'waiting', proxy: true, cancelable: true });
+  });
+  expect(within(generatingCard).getByText('中转排队／生成中…')).toBeTruthy();
+
+  act(() => {
+    emitCloudQueueStatus({ taskId: 'q1', phase: 'waiting', proxy: false, position: 2, queueSize: 4, cancelable: true });
+  });
+  expect(within(generatingCard).getByText('排队中 · 前方 2 个任务')).toBeTruthy();
+  expect(within(generatingCard).getByText('队列共 4 个任务')).toBeTruthy();
 });
 
 it('普通新建直接建好新记录并使用推荐模板与默认参数，不弹配置大窗且无风格串导入入口', async () => {
