@@ -29,6 +29,7 @@ import {
   ArrowLeft,
   Copy,
   Folder,
+  Heart,
   Library,
   ImagePlus,
   LoaderCircle,
@@ -189,6 +190,7 @@ interface PromptLibraryInternalProps extends PromptLibraryProps {
   initialDirectoryIds?: string[];
   directoryNavigation?: React.ReactNode;
   directorySelectionKey?: string;
+  favoritesFilter?: { active: boolean; onToggle: () => void };
   config: PromptLibraryKindConfig;
   initialEntry?: PromptChain;
   onEditorClose?: () => void;
@@ -234,6 +236,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   initialDirectoryIds = [],
   directoryNavigation,
   directorySelectionKey,
+  favoritesFilter,
 }) => {
   useLanguage();
   const library = usePromptLibrary();
@@ -764,8 +767,14 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const listToolbarContent = (
     <>
       {categoryToggle}
-      <ToolbarPopover title={t('筛选{0}', [t(config.title)])} count={selectedTags.size} width={320} zIndex={dynamicDirectories ? 1960 : undefined}>
+      <ToolbarPopover title={t('筛选{0}', [t(config.title)])} count={selectedTags.size + Number(!!favoritesFilter?.active)} width={320} zIndex={dynamicDirectories ? 1960 : undefined}>
         <div className="space-y-3">
+          {favoritesFilter && (
+            <button type="button" aria-pressed={favoritesFilter.active} onClick={() => { favoritesFilter.onToggle(); resetScroll(); }}
+              className={`mobile-touch flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${favoritesFilter.active ? 'border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-700/70 dark:bg-rose-950/40 dark:text-rose-300' : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+              <Heart className={`h-3.5 w-3.5 ${favoritesFilter.active ? 'fill-current' : ''}`} />{t('只看收藏')}
+            </button>
+          )}
           <label className="block text-xs font-semibold text-gray-500">{t('排序')}
             <select aria-label={t('排序')} className={TOOLBAR_FIELD_CLASS} value={sort} onChange={event => { setSort(event.target.value as LibraryBrowsing['sort']); resetScroll(); }}>
               <option value="updated">{t('最近更新')}</option><option value="name">{t('名称')}</option>
@@ -1341,23 +1350,37 @@ const DirectoryPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   const setDirectoriesOpen = (next: boolean) => { setExpanded(next); try { localStorage.setItem('nai-prompt-library-directories-expanded', String(next)); } catch { /* 本端存储受限时仍可切换。 */ } };
   const toggleDirectories = () => setDirectoriesOpen(!expanded);
   const [selection, setSelection] = useState<PromptLibraryDirectorySelection>(() => {
-    const all = { directoryIds: [], allDirectories: true, unclassified: false, favorites: false };
+    const all = { directoryIds: [], allDirectories: true, unclassified: false };
     try {
       const saved = JSON.parse(localStorage.getItem(MANAGER_DIRECTORY_KEY) || 'null');
       if (!saved || !Array.isArray(saved.directoryIds) || saved.directoryIds.some((id: unknown) => typeof id !== 'string' || !directories.nodes.some(node => node.id === id))
-        || typeof saved.allDirectories !== 'boolean' || typeof saved.unclassified !== 'boolean' || typeof saved.favorites !== 'boolean'
-        || Number(saved.allDirectories) + Number(saved.unclassified) + Number(saved.favorites) + Number(saved.directoryIds.length > 0) !== 1) return all;
-      return { directoryIds: [...new Set<string>(saved.directoryIds)], allDirectories: saved.allDirectories, unclassified: saved.unclassified, favorites: saved.favorites };
+        || typeof saved.allDirectories !== 'boolean' || typeof saved.unclassified !== 'boolean') return all;
+      const ids = [...new Set<string>(saved.directoryIds)];
+      const allDirectories = saved.allDirectories || (!ids.length && !saved.unclassified);
+      if (Number(allDirectories) + Number(saved.unclassified) + Number(ids.length > 0) !== 1) return all;
+      return { directoryIds: ids, allDirectories, unclassified: saved.unclassified };
     } catch { return all; }
   });
-  const { directoryIds: selectedIds, allDirectories: allSelected, unclassified, favorites: favoritesSelected = false } = selection;
+  const [favoritesOnly, setFavoritesOnly] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(MANAGER_DIRECTORY_KEY) || 'null')?.favorites === true; }
+    catch { return false; }
+  });
+  const { directoryIds: selectedIds, allDirectories: allSelected, unclassified } = selection;
   const favorites = usePromptLibraryFavorites(props.chains);
   const leaveGuard = useRef<(() => Promise<boolean>) | null>(null);
-  const select = async (ids: string[], all: boolean, unclassifiedOnly: boolean, favoriteOnly = false) => {
+  const persistSelection = (next: PromptLibraryDirectorySelection, nextFav: boolean) => {
+    try { localStorage.setItem(MANAGER_DIRECTORY_KEY, JSON.stringify({ ...next, favorites: nextFav })); } catch { /* 本端存储受限时仍保留本次选择。 */ }
+  };
+  const select = async (ids: string[], all: boolean, unclassifiedOnly: boolean) => {
     if (leaveGuard.current && !await leaveGuard.current()) return;
-    const next = { directoryIds: ids, allDirectories: all, unclassified: unclassifiedOnly, favorites: favoriteOnly };
+    const next = { directoryIds: ids, allDirectories: all, unclassified: unclassifiedOnly };
     setSelection(next);
-    try { localStorage.setItem(MANAGER_DIRECTORY_KEY, JSON.stringify(next)); } catch { /* 本端存储受限时仍保留本次选择。 */ }
+    persistSelection(next, favoritesOnly);
+  };
+  const toggleFavoritesOnly = () => {
+    const nextFav = !favoritesOnly;
+    setFavoritesOnly(nextFav);
+    persistSelection(selection, nextFav);
   };
   useEffect(() => {
     if (!props.requestCloseRef) return;
@@ -1365,12 +1388,13 @@ const DirectoryPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
     return () => { props.requestCloseRef!.current = null; };
   }, [props.requestCloseRef, props.onClose]);
   const fragments = props.chains.filter(chain => !!fragmentKindOf(chain));
-  const chains = favoritesSelected ? fragments.filter(chain => favorites.ids?.has(chain.id)) : allSelected ? fragments : unclassified ? fragments.filter(chain => !getPromptLibraryEntryDirectoryIds(chain, directories).length) : selectPromptLibraryDirectoryEntries(fragments, directories, selectedIds);
-  const selectionKey = favoritesSelected ? 'favorites' : allSelected ? 'all' : unclassified ? 'unclassified' : selectedIds.join(',');
-  const currentPath = favoritesSelected ? t('收藏') : allSelected ? t('全部') : unclassified ? t('未归类') : selectedIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).join('、');
+  const directoryChains = allSelected ? fragments : unclassified ? fragments.filter(chain => !getPromptLibraryEntryDirectoryIds(chain, directories).length) : selectPromptLibraryDirectoryEntries(fragments, directories, selectedIds);
+  const chains = favoritesOnly ? directoryChains.filter(chain => favorites.ids?.has(chain.id)) : directoryChains;
+  const selectionKey = (allSelected ? 'all' : unclassified ? 'unclassified' : selectedIds.join(',')) + (favoritesOnly ? ':fav' : '');
+  const currentPath = allSelected ? t('全部') : unclassified ? t('未归类') : selectedIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).join('、');
   const categoryToggle = <ToolbarButton data-agent-action="browse" aria-label={t(expanded ? '收起目录' : '展开目录')} title={[t(expanded ? '收起目录' : '展开目录'), currentPath].join(' · ')} aria-expanded={expanded} aria-controls={navigationId} active={expanded || !allSelected || unclassified} onClick={toggleDirectories} className="!px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{currentPath}</span></ToolbarButton>;
-  const navigation = expanded && <div className="min-h-0 min-w-0 shrink-0 md:flex md:w-52 md:flex-col md:overflow-hidden"><PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={fragments} countsPending={countsPending} selectedIds={selectedIds} allSelected={allSelected} unclassified={unclassified} favorites={favoritesSelected} favoriteIds={favorites.ids} expanded={expanded} embedded onCreate={library.onCreateDirectory} onRename={library.onRenameDirectory} onDelete={library.onDeleteDirectory} onMove={library.onMoveDirectory} onRequestClose={() => setDirectoriesOpen(false)} disabled={library.directoriesBusy} onSelect={selection => { void select(selection.directoryIds, selection.allDirectories, selection.unclassified, selection.favorites); }} /></div>;
-  return <PromptLibrary {...props} chains={chains} requestCloseRef={undefined} config={favoritesSelected && favorites.status !== 'ready' ? { ...DIRECTORY_CONFIG, emptyTitle: favorites.status === 'error' ? '收藏库加载失败，请稍后重试' : '加载中…', emptyHint: '' } : DIRECTORY_CONFIG} dynamicDirectories initialDirectoryIds={favoritesSelected || allSelected || unclassified ? [] : selectedIds} directorySelectionKey={selectionKey} directoryNavigation={navigation} categoryToggle={categoryToggle} registerLeaveGuard={guard => { leaveGuard.current = guard; return () => { leaveGuard.current = null; }; }} />;
+  const navigation = expanded && <div className="min-h-0 min-w-0 shrink-0 md:flex md:w-52 md:flex-col md:overflow-hidden"><PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={fragments} countsPending={countsPending} selectedIds={selectedIds} allSelected={allSelected} unclassified={unclassified} expanded={expanded} embedded onCreate={library.onCreateDirectory} onRename={library.onRenameDirectory} onDelete={library.onDeleteDirectory} onMove={library.onMoveDirectory} onRequestClose={() => setDirectoriesOpen(false)} disabled={library.directoriesBusy} onSelect={selection => { void select(selection.directoryIds, selection.allDirectories, selection.unclassified); }} /></div>;
+  return <PromptLibrary {...props} chains={chains} requestCloseRef={undefined} config={favoritesOnly && favorites.status !== 'ready' ? { ...DIRECTORY_CONFIG, emptyTitle: favorites.status === 'error' ? '收藏库加载失败，请稍后重试' : '加载中…', emptyHint: '' } : DIRECTORY_CONFIG} dynamicDirectories initialDirectoryIds={allSelected || unclassified ? [] : selectedIds} directorySelectionKey={selectionKey} favoritesFilter={{ active: favoritesOnly, onToggle: toggleFavoritesOnly }} directoryNavigation={navigation} categoryToggle={categoryToggle} registerLeaveGuard={guard => { leaveGuard.current = guard; return () => { leaveGuard.current = null; }; }} />;
 };
 
 export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => usePromptLibrary()?.directories ? <DirectoryPromptLibraryHub {...props} /> : <LegacyPromptLibraryHub {...props} />;

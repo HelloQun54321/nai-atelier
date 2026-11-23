@@ -44,37 +44,41 @@ const chooseGroup = async (id: string) => {
   if (!screen.queryByLabelText('选择分组')) fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
   await pickDirectoryOptionAsync('选择分组', id);
 };
-const chooseFavoriteDirectory = async () => await chooseGroup('#favorites');
+const chooseFavoriteDirectory = async () => {
+  const trigger = screen.getByRole('button', { name: '筛选' });
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger);
+  const toggle = screen.getByRole('button', { name: '只看收藏' });
+  if (toggle.getAttribute('aria-pressed') !== 'true') fireEvent.click(toggle);
+  fireEvent.click(trigger);
+};
 
-it('Roll画师收藏目录共享真实收藏，计数去重、忽略归档且保留独立浏览选择', async () => {
+it('Roll画师旧收藏目录记忆回退全部，筛选只看收藏共享真实收藏并忽略归档', async () => {
   mocks.items = [{ sourceType: 'artist', sourceId: 'beta' }, { sourceType: 'artist', sourceId: 'beta' }, { sourceType: 'artist', sourceId: 'alpha', archived: true }];
   localStorage.setItem('nai_catalog_groups_roll-artists', JSON.stringify({ active: '#favorites', expanded: true }));
   render(<Fixture />);
-  await waitFor(() => expectDirectoryCount('收藏', '1'));
+  await screen.findByRole('button', { name: '锁定画师：alpha' });
+  fireEvent.click(screen.getByLabelText('选择分组'));
+  const options = Array.from(within(screen.getByRole('dialog', { name: '选择分组' })).getAllByRole('option')).map(option => option.getAttribute('data-value'));
+  expect(options.slice(0, 2)).toEqual(['*', '']);
+  expect(options).not.toContain('#favorites');
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  await chooseFavoriteDirectory();
   expect(screen.getByRole('button', { name: '锁定画师：beta' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '锁定画师：alpha' })).toBeNull();
-  fireEvent.click(screen.getByLabelText('选择分组'));
-  expect(Array.from(within(screen.getByRole('dialog', { name: '选择分组' })).getAllByRole('option')).slice(0, 3).map(option => option.getAttribute('data-value'))).toEqual(['*', '', '#favorites']);
-  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
-  expect(screen.queryByRole('button', { name: '偏好画师' })).toBeNull();
-  expect(screen.queryByRole('button', { name: '重命名分组' })).toBeNull();
-  fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: 'no-match' } });
-  expectDirectoryCount('收藏', '1');
   expect(localStorage.getItem('nai_catalog_groups_artist')).toBeNull();
   expect(mocks.groupPut).not.toHaveBeenCalled();
 });
 
-it('Roll画师收藏读取失败保持未知计数，主动重试后展示真实结果', async () => {
+it('Roll画师收藏读取失败显示重试，主动重试后展示真实结果', async () => {
   mocks.items = [{ sourceType: 'artist', sourceId: 'beta' }];
   mocks.ensure.mockRejectedValueOnce(Error('合成收藏读取失败'));
-  localStorage.setItem('nai_catalog_groups_roll-artists', JSON.stringify({ active: '#favorites', expanded: true }));
   render(<Fixture />);
   await screen.findByText('合成收藏读取失败');
-  expectDirectoryCount('收藏', '—');
+  await chooseFavoriteDirectory();
   expect(screen.queryByText('没有匹配的画师')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
-  await waitFor(() => expectDirectoryCount('收藏', '1'));
-  expect(screen.getByRole('button', { name: '锁定画师：beta' })).toBeTruthy();
+  await screen.findByRole('button', { name: '锁定画师：beta' });
+  expect(screen.queryByRole('button', { name: '锁定画师：alpha' })).toBeNull();
 });
 
 const Fixture = ({ library = ['alpha', 'beta'].map(name => ({ name, chinese: '', postCount: 1 })), initialRules = DEFAULT_ROLL_RULES }: { library?: ArtistDictionaryEntry[]; initialRules?: RollRules }) => {
@@ -527,7 +531,9 @@ it('Roll分组浏览与原搜索、偏好、屏蔽取交集，不改固定名单
   const names = () => screen.getAllByRole('button', { name: /^锁定画师：/ }).map(card => card.getAttribute('aria-label'));
   expect(names()).toEqual(['锁定画师：alpha_tag', '锁定画师：beta_tag']);
   await chooseFavoriteDirectory(); expect(names()).toEqual(['锁定画师：beta_tag']);
-  await chooseGroup('g');
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.click(screen.getByRole('button', { name: '只看收藏' }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   fireEvent.click(screen.getByRole('button', { name: '已屏蔽' })); expect(names()).toEqual(['锁定画师：alpha_tag']);
   fireEvent.click(screen.getByRole('button', { name: '全部画师' }));
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: 'beta' } });

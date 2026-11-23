@@ -10,7 +10,7 @@ import { isTopmostModal, useModalA11y } from '../useModalA11y';
 import { ImageActivityContext } from '../SmartImage';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { useConfirmDialog } from '../ConfirmDialog';
-import { DIRECTORY_FAVORITES_ID, DirectoryTreeNavigation } from '../DirectoryTreeNavigation';
+import { DirectoryTreeNavigation } from '../DirectoryTreeNavigation';
 import { DirectoryTreeChecklist } from '../DirectoryTreeChecklist';
 import { DirectoryNodeDialog } from '../DirectoryNodeDialog';
 
@@ -35,9 +35,8 @@ function FolderDialog({ title, busy, onClose, children }: { title: string; busy:
   </div>;
 }
 
-export function ChainFolderNavigation({ store, selected, onSelect, chainIds, favoriteCount, onMove, notify, disabled = false, expanded = true, countsPending = false, onRequestClose }: {
+export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onMove, notify, disabled = false, expanded = true, countsPending = false, onRequestClose }: {
   store: Store; selected: string; onSelect: (id: string) => void; chainIds: string[];
-  favoriteCount?: number | string;
   countsPending?: boolean;
   onMove: (ids: string[], folderId: string) => Promise<void>; notify: Notify; disabled?: boolean; expanded?: boolean;
   onRequestClose?: () => void;
@@ -105,7 +104,7 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, fav
     } catch { /* 外部文件和文字不作为风格串移动。 */ }
   };
   return <>
-    <DirectoryTreeNavigation label={t('风格串文件夹')} title={t('文件夹')} nodes={folders} selectedId={selected} onSelect={onSelect} expanded={expanded} preferenceKey="nai-style-folder-branches" counts={new Map<string, number | string>([...counts, [DIRECTORY_FAVORITES_ID, favoriteCount ?? '—']])} virtualNodes={[{ id: DIRECTORY_FAVORITES_ID, name: t('收藏') }]} disabled={busy} actionDisabled={blocked}
+    <DirectoryTreeNavigation label={t('风格串文件夹')} title={t('文件夹')} nodes={folders} selectedId={selected} onSelect={onSelect} expanded={expanded} preferenceKey="nai-style-folder-branches" counts={counts} disabled={busy} actionDisabled={blocked}
       className="chain-folder-navigation" selectLabel={t('选择文件夹')} createLabel={t('新建文件夹')} renameLabel={t('编辑文件夹')} deleteLabel={t('删除文件夹')} unclassifiedLabel={t('未整理')}
       onRequestClose={onRequestClose}
       onCreate={() => open('new')} onRename={id => { const folder = folders.find(item => item.id === id); if (folder) open(folder); }} onDelete={() => void remove()}

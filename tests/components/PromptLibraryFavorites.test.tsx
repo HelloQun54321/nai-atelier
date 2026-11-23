@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { directoryPickerValue, expectDirectoryCount, openDirectoryPicker, pickDirectoryOption } from '../support/directoryPicker';
+import { directoryPickerValue, openDirectoryPicker, pickDirectoryOption } from '../support/directoryPicker';
 import type { Inspiration, PromptChain } from '../../types';
 import { PromptLibraryBrowser } from '../../components/PromptLibraryBrowser';
 import { PromptLibraryHub } from '../../components/PromptLibrary';
@@ -77,28 +77,35 @@ beforeEach(() => {
   vi.stubGlobal('matchMedia', (media: string) => ({ matches: false, media, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
-const count = (button: HTMLElement) => document.getElementById(button.getAttribute('aria-describedby')!)?.textContent;
+const toggleFilterFavorites = () => {
+  const trigger = screen.getByRole('button', { name: /^筛选/ });
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole('button', { name: '只看收藏' }));
+};
 
-it('片段与组合收藏按原对象去重，换封面仍保留，搜索取交集，取消收藏即时更新', async () => {
+it('片段与组合只看收藏按原对象去重，支持与目录和分类叠加，取消收藏即时更新', async () => {
   const view = render(<Browser />);
-  await waitFor(() => expectDirectoryCount('收藏', '1'));
-  expect(openDirectoryPicker('选择提示词目录').getByRole('option', { name: '收藏 (1)' })).toBeTruthy();
+  await waitFor(() => expect(collection.ensure).toHaveBeenCalled());
+  expect(screen.queryByRole('button', { name: '收藏' })).toBeNull();
+  expect(openDirectoryPicker('选择提示词目录').queryByRole('option', { name: /^收藏/ })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '关闭' }));
-  fireEvent.click(screen.getAllByRole('button', { name: '收藏' }).find(button => button.closest('.directory-tree-navigation'))!);
+  pickDirectoryOption('选择提示词目录', 'clothes');
+  expect(screen.getByRole('button', { name: '查看红衣' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '查看蓝衣' })).toBeTruthy();
+  toggleFilterFavorites();
   expect(screen.getByRole('button', { name: '查看红衣' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '查看蓝衣' })).toBeNull();
-  expect(screen.getByRole('button', { name: '收起目录' }).title).toContain('收藏');
+  expect(screen.getByRole('button', { name: '收起目录' }).title).toContain('服装');
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '蓝衣' } });
   expect(screen.queryByRole('button', { name: '查看红衣' })).toBeNull();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
-  pickDirectoryOption('选择组合分类', '#favorites');
+  pickDirectoryOption('选择组合分类', '');
+  toggleFilterFavorites();
   expect(screen.getByRole('button', { name: '查看组合一' })).toBeTruthy();
-  expect(count(screen.getByRole('button', { name: '收藏' }))).toBe('1');
   act(() => { collection.items = collection.items.map(item => item.sourceId === 'combo' ? { ...item, archived: true } : item); collection.listeners.forEach(listener => listener()); });
   expect(screen.queryByRole('button', { name: '查看组合一' })).toBeNull();
-  expect(count(screen.getByRole('button', { name: '收藏' }))).toBe('0');
-  fireEvent.click(screen.getByRole('button', { name: '全部' }));
+  toggleFilterFavorites();
   expect(screen.getByRole('button', { name: '查看组合一' })).toBeTruthy();
   view.unmount();
   expect(collection.listeners.size).toBe(0);
@@ -107,73 +114,74 @@ it('片段与组合收藏按原对象去重，换封面仍保留，搜索取交�
 it('仅缺来源身份的旧收藏回退图片地址，明确属于其它对象的图片不串收藏', async () => {
   collection.items = [saved('legacy', undefined, { imageUrl: chains[0].previewImage }), saved('someone-else', 'other-object', { imageUrl: chains[1].previewImage })];
   render(<Browser />);
-  await waitFor(() => expect(count(screen.getByRole('button', { name: '收藏' }))).toBe('1'));
-  pickDirectoryOption('选择提示词目录', '#favorites');
+  await waitFor(() => expect(collection.ensure).toHaveBeenCalled());
+  toggleFilterFavorites();
   expect(screen.getByRole('button', { name: '查看红衣' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '查看蓝衣' })).toBeNull();
   expect(JSON.parse(localStorage.getItem('nai-prompt-library-browse')!).directoryIds).toEqual([]);
 });
 
-it('收藏读取失败保留未知计数并明确显示失败，不显示零匹配', async () => {
+it('收藏读取失败明确显示失败，不显示零匹配', async () => {
   collection.ensure.mockRejectedValue(new Error('synthetic failure'));
   render(<Browser />);
-  fireEvent.click(screen.getByRole('button', { name: '收藏' }));
+  toggleFilterFavorites();
   expect(await screen.findByText('收藏库加载失败，请稍后重试')).toBeTruthy();
-  expect(count(screen.getByRole('button', { name: '收藏' }))).toBe('?');
   expect(screen.queryByText('没有匹配的提示词')).toBeNull();
 });
 
-it('首次读取失败后共享收藏成功更新快照，目录重新核实并恢复真实收藏', async () => {
+it('首次读取失败后共享收藏成功更新快照，重新核实并恢复真实收藏', async () => {
   collection.ensure.mockRejectedValueOnce(new Error('synthetic failure'));
   render(<Browser />);
-  fireEvent.click(screen.getByRole('button', { name: '收藏' }));
+  toggleFilterFavorites();
   await screen.findByText('收藏库加载失败，请稍后重试');
   expect(collection.ensure).toHaveBeenCalledTimes(1);
-  expect(count(screen.getByRole('button', { name: '收藏' }))).toBe('?');
   act(() => { collection.items = [saved('fresh-first', 'first')]; collection.listeners.forEach(listener => listener()); });
   await waitFor(() => expect(screen.getByRole('button', { name: '查看红衣' })).toBeTruthy());
-  expect(count(screen.getByRole('button', { name: '收藏' }))).toBe('1');
   expect(screen.queryByText('收藏库加载失败，请稍后重试')).toBeNull();
   expect(collection.ensure).toHaveBeenCalledTimes(2);
 });
 
-it('管理片段沿用同一收藏快照和手机选择器，不改原条目或触发写入', async () => {
+it('管理片段沿用同一收藏快照并在筛选中只看收藏，不改原条目或触发写入', async () => {
   const create = vi.fn(), before = JSON.stringify(chains);
   render(<ConfirmDialogProvider><PromptLibraryContext.Provider value={{ chains, directories, save: vi.fn() }}><PromptLibraryHub chains={chains} onCreate={create} onUpdateChain={vi.fn()} onDelete={vi.fn()} notify={notify} embedded /></PromptLibraryContext.Provider></ConfirmDialogProvider>);
-  await waitFor(() => expect(count(screen.getByRole('button', { name: '收藏' }))).toBe('1'));
-  pickDirectoryOption('选择提示词目录', '#favorites');
+  await waitFor(() => expect(collection.ensure).toHaveBeenCalled());
+  toggleFilterFavorites();
   await waitFor(() => expect(screen.queryByRole('button', { name: '片段：蓝衣' })).toBeNull());
   expect(screen.getByRole('button', { name: '片段：红衣' })).toBeTruthy();
   expect(JSON.stringify(chains)).toBe(before);
   expect(create).not.toHaveBeenCalled();
 });
 
-it('管理片段收藏选择卸载后恢复，管理浏览记忆不覆盖主页面', async () => {
+it('管理片段只看收藏卸载后恢复，管理浏览记忆不覆盖主页面', async () => {
   const browserMemory = JSON.stringify({ scope: 'saved', combinationCategory: '花园', combinationFavorites: false });
   localStorage.setItem('nai-prompt-library-browse', browserMemory);
   const view = render(<Manager />);
-  await waitFor(() => expectDirectoryCount('收藏', '1'));
-  pickDirectoryOption('选择提示词目录', '#favorites');
-  await waitFor(() => expect(directoryPickerValue('选择提示词目录')).toBe('#favorites'));
+  await waitFor(() => expect(collection.ensure).toHaveBeenCalled());
+  toggleFilterFavorites();
+  await waitFor(() => expect(screen.queryByRole('button', { name: '片段：蓝衣' })).toBeNull());
   view.unmount();
   render(<Manager />);
   await screen.findByRole('button', { name: '片段：红衣' });
-  expect(directoryPickerValue('选择提示词目录')).toBe('#favorites');
+  expect(directoryPickerValue('选择提示词目录')).toBe('*');
   expect(screen.queryByRole('button', { name: '片段：蓝衣' })).toBeNull();
   expect(localStorage.getItem('nai-prompt-library-browse')).toBe(browserMemory);
 });
 
-it.each(['clothes', '', '*'])('管理片段目录选择「%s」覆盖原收藏状态并独立恢复', async value => {
+it.each(['clothes', '', '*'])('管理片段目录选择「%s」与只看收藏筛选正交并独立恢复', async value => {
   localStorage.setItem(managerKey, JSON.stringify({ directoryIds: [], allDirectories: false, unclassified: false, favorites: true }));
   const view = render(<Manager />);
   await screen.findByRole('button', { name: '片段：红衣' });
+  expect(directoryPickerValue('选择提示词目录')).toBe('*');
   pickDirectoryOption('选择提示词目录', value);
-  await waitFor(() => expect(JSON.parse(localStorage.getItem(managerKey)!).favorites).toBe(false));
+  await waitFor(() => expect(JSON.parse(localStorage.getItem(managerKey)!)).toEqual({ directoryIds: value === 'clothes' ? ['clothes'] : [], allDirectories: value === '*', unclassified: value === '', favorites: true }));
   view.unmount();
   render(<Manager />);
   expect(directoryPickerValue('选择提示词目录')).toBe(value);
-  expect(JSON.parse(localStorage.getItem(managerKey)!)).toEqual({ directoryIds: value === 'clothes' ? ['clothes'] : [], allDirectories: value === '*', unclassified: value === '', favorites: false });
-  if (value !== '') expect(screen.getByRole('button', { name: '片段：蓝衣' })).toBeTruthy();
+  if (value === '') expect(screen.queryByRole('button', { name: '片段：红衣' })).toBeNull();
+  else {
+    expect(await screen.findByRole('button', { name: '片段：红衣' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '片段：蓝衣' })).toBeNull();
+  }
   expect(localStorage.getItem('nai-prompt-library-browse')).toBeNull();
 });
 
@@ -190,7 +198,7 @@ it('管理片段具体目录与全部来回切换，只恢复最后一次选择'
 it.each([
   '{invalid',
   JSON.stringify({ directoryIds: ['deleted'], allDirectories: false, unclassified: false, favorites: false }),
-  JSON.stringify({ directoryIds: [], allDirectories: true, unclassified: false, favorites: true }),
+  JSON.stringify({ directoryIds: ['clothes'], allDirectories: true, unclassified: false, favorites: false }),
   JSON.stringify({ directoryIds: [], allDirectories: false, unclassified: false, favorites: false }),
 ])('管理片段无效浏览偏好回到全部：%s', value => {
   localStorage.setItem(managerKey, value);
@@ -205,8 +213,8 @@ it('管理片段本端存储受限时仍能切换，重开回到全部', async (
   vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) { if (key === managerKey) throw Error('合成写入受限'); originalSet.call(this, key, value); });
   const view = render(<Manager />);
   expect(directoryPickerValue('选择提示词目录')).toBe('*');
-  pickDirectoryOption('选择提示词目录', '#favorites');
-  await waitFor(() => expect(directoryPickerValue('选择提示词目录')).toBe('#favorites'));
+  pickDirectoryOption('选择提示词目录', 'clothes');
+  await waitFor(() => expect(directoryPickerValue('选择提示词目录')).toBe('clothes'));
   view.unmount(); render(<Manager />);
   expect(directoryPickerValue('选择提示词目录')).toBe('*');
 });
@@ -217,7 +225,7 @@ it('管理片段拒绝离开未保存详情时保留当前目录和持久偏好'
   render(<Manager />);
   fireEvent.click(screen.getByRole('button', { name: '片段：红衣' }));
   fireEvent.change(screen.getByRole('textbox', { name: '片段名称' }), { target: { value: '未保存草稿' } });
-  pickDirectoryOption('选择提示词目录', '#favorites');
+  pickDirectoryOption('选择提示词目录', '*');
   fireEvent.click(await screen.findByRole('button', { name: '取消' }));
   await waitFor(() => expect(screen.getByRole('textbox', { name: '片段名称' })).toHaveProperty('value', '未保存草稿'));
   expect(directoryPickerValue('选择提示词目录')).toBe('clothes');

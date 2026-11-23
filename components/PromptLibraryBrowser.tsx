@@ -2,7 +2,7 @@ import type { PromptLibraryPanelActions } from './PromptLibrary';
 import { getEntryPurposes, promptPurposeLabel, type PromptPurposeId } from '../services/promptPurposes.mjs';
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
-import { Folder } from 'lucide-react';
+import { Folder, Heart } from 'lucide-react';
 import type { PromptChain } from '../types';
 import { t, useLanguage } from '../services/i18n';
 import { FRAGMENT_LABELS, isPromptLibraryCharacterProjection, projectCustomCharacterAsCombination, promptLibraryEntryLabel, type PromptFragmentKind } from '../services/promptLibraryEntries';
@@ -50,7 +50,10 @@ const readMemory = (directories: PromptLibraryTreeState): { scope: PromptBrowseS
     const candidateLegacyId = Object.hasOwn(LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, value.kind) ? LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS[value.kind as keyof typeof LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS] : '';
     const legacyId = directories.nodes.some(node => node.id === candidateLegacyId) ? candidateLegacyId : '';
     const hasDirectoryPreference = Array.isArray(value.directoryIds) || !!legacyId;
-    return { scope, favorites: value.favorites === true, combinationFavorites: value.combinationFavorites === true, combinationCategory: typeof value.combinationCategory === 'string' ? value.combinationCategory : null, combinationUnclassified: value.combinationUnclassified === true, directoryIds: Array.isArray(value.directoryIds) ? value.directoryIds.filter((id: unknown) => typeof id === 'string') : legacyId ? [legacyId] : [], allDirectories: typeof value.allDirectories === 'boolean' ? value.allDirectories : !hasDirectoryPreference, unclassified: value.unclassified === true, sort: value.sort === 'name' ? 'name' : 'updated' };
+    const directoryIds = Array.isArray(value.directoryIds) ? value.directoryIds.filter((id: unknown) => typeof id === 'string') : legacyId ? [legacyId] : [];
+    const unclassified = value.unclassified === true;
+    const allDirectories = typeof value.allDirectories === 'boolean' ? (value.allDirectories || (!directoryIds.length && !unclassified)) : !hasDirectoryPreference;
+    return { scope, favorites: value.favorites === true, combinationFavorites: value.combinationFavorites === true, combinationCategory: typeof value.combinationCategory === 'string' ? value.combinationCategory : null, combinationUnclassified: value.combinationUnclassified === true, directoryIds, allDirectories, unclassified, sort: value.sort === 'name' ? 'name' : 'updated' };
   } catch { return { scope: 'items', favorites: false, combinationFavorites: false, combinationCategory: null, combinationUnclassified: false, directoryIds: [], allDirectories: true, unclassified: false, sort: 'updated' }; }
 };
 
@@ -155,11 +158,15 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   const scopeTotal = useMemo(() => entries.filter(entry => entry.section === memory.scope).length, [entries, memory.scope]);
   const directoryEntries = useMemo(() => memory.scope !== 'items' ? entries : (() => {
     const fragments = entries.filter(entry => isPromptLibraryFragmentEntry(entry.chain));
-    const included = new Set((memory.favorites ? fragments.filter(entry => favorites.ids?.has(entry.chain.id)).map(entry => entry.chain) : memory.allDirectories ? fragments.map(entry => entry.chain) : selectPromptLibraryDirectoryEntries(fragments.map(entry => entry.chain), directories, memory.directoryIds)).map(chain => chain.id));
-    return entries.filter(entry => entry.section !== 'items' || included.has(entry.chain.id) || !memory.favorites && memory.unclassified && !getPromptLibraryEntryDirectoryIds(entry.chain, directories).length);
+    const included = new Set((memory.allDirectories ? fragments.map(entry => entry.chain) : selectPromptLibraryDirectoryEntries(fragments.map(entry => entry.chain), directories, memory.directoryIds)).map(chain => chain.id));
+    return entries.filter(entry => {
+      if (entry.section !== 'items') return true;
+      const inDirectory = included.has(entry.chain.id) || (memory.unclassified && !getPromptLibraryEntryDirectoryIds(entry.chain, directories).length);
+      return inDirectory && (!memory.favorites || !!favorites.ids?.has(entry.chain.id));
+    });
   })(), [entries, memory.scope, memory.allDirectories, memory.directoryIds, memory.unclassified, memory.favorites, favorites.ids, directories]);
   const folderEntries = useMemo(() => memory.scope !== 'saved' ? directoryEntries : directoryEntries.filter(entry => {
-    if (memory.combinationFavorites) return favorites.ids?.has(entry.chain.id);
+    if (memory.combinationFavorites && !favorites.ids?.has(entry.chain.id)) return false;
     const tags = getCustomChainTags(entry.chain.tags);
     if (memory.combinationCategory !== null) return tags.some(tag => selectedCategoryIds?.has(tag));
     if (!memory.combinationUnclassified) return true;
@@ -231,14 +238,15 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     scrollPositions.current[scope] = 0;
     resetScroll();
     setMemory(previous => {
-      const next = { ...previous, scope, ...patch, favorites: patch.favorites === true };
+      const next = { ...previous, scope, ...patch };
       try { localStorage.setItem(MEMORY_KEY, JSON.stringify(next)); } catch { /* 本端存储受限时仍可浏览。 */ }
       return next;
     });
   };
   const setScope = (scope: PromptBrowseScope) => updateMemory({ ...memory, scope }, false);
+  const toggleFavorites = () => updateMemory(memory.scope === 'saved' ? { ...memory, combinationFavorites: !memory.combinationFavorites } : { ...memory, favorites: !memory.favorites });
   const directoryScope = memory.scope === 'items';
-  const selectedDirectoryPath = favoritesSelected ? t('收藏') : memory.scope === 'saved' ? (memory.combinationCategory === null ? null : categoryLabel(memory.combinationCategory)) ?? t(memory.combinationUnclassified ? '未归类' : '全部') : memory.allDirectories ? t('全部') : memory.unclassified ? t('未归类') : memory.directoryIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).filter(Boolean).join('、');
+  const selectedDirectoryPath = memory.scope === 'saved' ? (memory.combinationCategory === null ? null : categoryLabel(memory.combinationCategory)) ?? t(memory.combinationUnclassified ? '未归类' : '全部') : memory.allDirectories ? t('全部') : memory.unclassified ? t('未归类') : memory.directoryIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).filter(Boolean).join('、');
   const remove = async (chain: PromptChain) => {
     if (!onDelete || deleting.current) return;
     deleting.current = true; setDeletingId(chain.id);
@@ -256,15 +264,19 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     callback?.();
   };
   const toolbar = <>
-    <ToolbarButton data-agent-action="browse" aria-label={t(navigationExpanded ? '收起目录' : '展开目录')} title={[t(navigationExpanded ? '收起目录' : '展开目录'), selectedDirectoryPath || t('全部目录')].filter(Boolean).join(' · ')} aria-expanded={navigationExpanded} aria-controls={navigationId} active={navigationExpanded || favoritesSelected || (directoryScope ? !memory.allDirectories || memory.unclassified : memory.combinationCategory !== null || memory.combinationUnclassified)} onClick={toggleDirectories} className="mobile-touch !px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{selectedDirectoryPath || t('全部目录')}</span></ToolbarButton>
+    <ToolbarButton data-agent-action="browse" aria-label={t(navigationExpanded ? '收起目录' : '展开目录')} title={[t(navigationExpanded ? '收起目录' : '展开目录'), selectedDirectoryPath || t('全部目录')].filter(Boolean).join(' · ')} aria-expanded={navigationExpanded} aria-controls={navigationId} active={navigationExpanded || (directoryScope ? !memory.allDirectories || memory.unclassified : memory.combinationCategory !== null || memory.combinationUnclassified)} onClick={toggleDirectories} className="mobile-touch !px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{selectedDirectoryPath || t('全部目录')}</span></ToolbarButton>
     {!mobile && wide && <SegmentedControl ariaLabel={t('提示词库分区')} value={memory.scope} onChange={setScope} options={SCOPES.map(([scope, label]) => ({ value: scope, label }))} />}
     {!mobile && !wide && <select aria-label={t('提示词库范围')} value={memory.scope} onChange={event => setScope(event.target.value as PromptBrowseScope)}
       className="appearance-input mobile-touch h-10 w-24 shrink-0 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700">
       {SCOPES.map(([scope, label]) => <option key={scope} value={scope}>{t(label)}</option>)}
     </select>}
-    <ToolbarPopover label="筛选" title={t(memory.scope === 'saved' ? '筛选组合' : '筛选提示词库')} width={320} count={tags.length}>
+    <ToolbarPopover label="筛选" title={t(memory.scope === 'saved' ? '筛选组合' : '筛选提示词库')} width={320} count={tags.length + Number(favoritesSelected)}>
       {(close, mobile) => <>
-      {mobile && <label className="block text-xs font-semibold text-gray-500">{t('提示词库范围')}<select aria-label={t('提示词库范围')} value={memory.scope} onChange={event => setScope(event.target.value as PromptBrowseScope)} className={TOOLBAR_FIELD_CLASS}>{SCOPES.map(([scope, label]) => <option key={scope} value={scope}>{t(label)}</option>)}</select></label>}
+      <button type="button" aria-pressed={favoritesSelected} onClick={toggleFavorites}
+        className={`mobile-touch flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${favoritesSelected ? 'border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-700/70 dark:bg-rose-950/40 dark:text-rose-300' : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+        <Heart className={`h-3.5 w-3.5 ${favoritesSelected ? 'fill-current' : ''}`} />{t('只看收藏')}
+      </button>
+      {mobile && <label className="mt-4 block text-xs font-semibold text-gray-500">{t('提示词库范围')}<select aria-label={t('提示词库范围')} value={memory.scope} onChange={event => setScope(event.target.value as PromptBrowseScope)} className={TOOLBAR_FIELD_CLASS}>{SCOPES.map(([scope, label]) => <option key={scope} value={scope}>{t(label)}</option>)}</select></label>}
       <div className="mt-4 space-y-2">
         {tags.length > 0 && <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setTags([]); resetScroll(); }}>{t('清除标签筛选')}</button>}
         {memory.scope === 'saved' ? <fieldset><legend className="text-xs font-semibold text-gray-500">{t('文件夹')}</legend>
@@ -275,7 +287,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
       </div>
       <label className="mt-4 block text-xs font-semibold text-gray-500">{t('排序')}<select aria-label={t('排序')} value={memory.sort} className={TOOLBAR_FIELD_CLASS}
         onChange={event => updateMemory({ ...memory, sort: event.target.value as 'updated' | 'name' })}><option value="updated">{t('最近更新')}</option><option value="name">{t('名称')}</option></select></label>
-      <div className="mt-4 flex flex-wrap gap-2"><ToolbarButton onClick={() => { setTags([]); setQuery(''); updateMemory({ ...memory }); }}>{t('重置筛选')}</ToolbarButton>
+      <div className="mt-4 flex flex-wrap gap-2"><ToolbarButton onClick={() => { setTags([]); setQuery(''); updateMemory(memory.scope === 'saved' ? { ...memory, combinationFavorites: false } : { ...memory, favorites: false }); }}>{t('重置筛选')}</ToolbarButton>
         <ToolbarButton onClick={() => { close(); coverActions.openCoverSettings(); }}>{t('封面生成设置')}</ToolbarButton>
         {mobile && onExtract && <ToolbarButton onClick={() => void openFromFilter(close, mobile, onExtract)}>{t('AI 提取分类')}</ToolbarButton>}</div>
       </>}
@@ -284,7 +296,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
       onChange={event => { setQuery(event.target.value); resetScroll(); }} className="max-[360px]:!pl-2" containerClassName="min-w-0 flex-1 md:max-w-none! max-[360px]:[&>svg]:hidden" />
   </>;
   return <>{toolbarSlot && createPortal(toolbar, toolbarSlot)}<div data-workspace-body className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row" style={{ '--workspace-chrome-height': '0px' } as React.CSSProperties}>
-    {directoryScope ? <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={libraryChains} countsPending={countsPending} selectedIds={memory.directoryIds} allSelected={memory.allDirectories} unclassified={memory.unclassified} favorites={memory.favorites} favoriteIds={favorites.ids} onSelect={updateDirectoryMemory} expanded={directoriesExpanded} onRename={onRenameDirectory} onDelete={onDeleteDirectory} onCreate={onCreateDirectory} onMove={onMoveDirectory} onRequestClose={() => setNavigationOpen(false)} disabled={directoriesBusy} /> : <PromptLibraryCategoryNavigation id={navigationId} chains={combinationChains} customCharacters={customCharacters} countsPending={countsPending} names={categoryNames} tree={categoryTree} selected={memory.combinationCategory} unclassified={memory.combinationUnclassified} favorites={memory.combinationFavorites} favoriteIds={favorites.ids} expanded={categoriesExpanded} disabled={categoriesBusy} onRequestClose={() => setNavigationOpen(false)} onSelect={selection => updateMemory({ ...memory, combinationCategory: selection.category, combinationUnclassified: selection.unclassified, combinationFavorites: selection.favorites === true })} />}
+    {directoryScope ? <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={libraryChains} countsPending={countsPending} selectedIds={memory.directoryIds} allSelected={memory.allDirectories} unclassified={memory.unclassified} onSelect={updateDirectoryMemory} expanded={directoriesExpanded} onRename={onRenameDirectory} onDelete={onDeleteDirectory} onCreate={onCreateDirectory} onMove={onMoveDirectory} onRequestClose={() => setNavigationOpen(false)} disabled={directoriesBusy} /> : <PromptLibraryCategoryNavigation id={navigationId} chains={combinationChains} customCharacters={customCharacters} countsPending={countsPending} names={categoryNames} tree={categoryTree} selected={memory.combinationCategory} unclassified={memory.combinationUnclassified} expanded={categoriesExpanded} disabled={categoriesBusy} onRequestClose={() => setNavigationOpen(false)} onSelect={selection => updateMemory({ ...memory, combinationCategory: selection.category, combinationUnclassified: selection.unclassified })} />}
     <div className={`aitag-split relative grid min-h-0 min-w-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
     <div ref={scrollRef} onScroll={event => {
       selectionAnchor.onScroll();

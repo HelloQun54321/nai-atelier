@@ -246,17 +246,17 @@ it.each(['dictionary', 'catalog'])('分组数量在%s读取失败时保持未知
   expectDirectoryCount('全部', '—');
   expectDirectoryCount('合成组', '—');
 });
-it('收藏作为独立目录切换，真实分组与搜索、样张和使用统计继续取交集', async () => {
+it('只看收藏在筛选内生效，与真实分组、搜索、样张和使用统计取交集', async () => {
   localStorage.setItem('nai_artist_only_samples', 'false');
   prepareGroups({ 'artist:alpha artist': ['g1'], 'artist:missing artist': ['g1'], 'artist:alpha_artist': ['g2'] });
   mocks.collection = [{ sourceType: 'artist', sourceId: 'alpha artist' }, { sourceType: 'artist', sourceId: 'beta artist' }];
   setup(); await screen.findByTestId('cover-alpha artist');
   pickDirectoryOption('选择分组', 'g1');
   expect(sampleCards()).toHaveLength(2);
-  setArtistScope('preferred');
+  setArtistFavorites(true);
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist']);
+  setArtistFavorites(false);
   expect(sampleCards()).toHaveLength(2);
-  setArtistScope('all');
-  pickDirectoryOption('选择分组', 'g1');
   openArtistFilters();
   pickDirectoryOption('风格串收录', 'unused');
   expect(screen.getByTestId('cover-missing artist')).toBeTruthy();
@@ -516,7 +516,7 @@ it.each(['favorites', 'blocked'])('排除%s等待最新名单，失败保留浏�
   await act(async () => reject(new Error('合成名单读取失败')));
   expect(notify).toHaveBeenCalledWith('合成名单读取失败', 'error');
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('alpha');
-  expect(directoryPickerValue('选择分组')).toBe('#favorites');
+  expect(within(screen.getByRole('dialog', { name: '筛选画师' })).getByRole('button', { name: '只看收藏' }).getAttribute('aria-pressed')).toBe('true');
   let resolve!: (value?: string[]) => void;
   read.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
   fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
@@ -708,13 +708,18 @@ const getArtistScope = () => {
   if (!screen.queryByRole('combobox', { name: '画师范围' })) fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
   return screen.getByRole('combobox', { name: '画师范围' }) as HTMLSelectElement;
 };
+const setArtistFavorites = (enabled: boolean) => {
+  openArtistFilters();
+  const toggle = within(screen.getByRole('dialog', { name: '筛选画师' })).getByRole('button', { name: '只看收藏' });
+  if ((toggle.getAttribute('aria-pressed') === 'true') !== enabled) fireEvent.click(toggle);
+};
 const setArtistScope = (value: 'all' | 'preferred' | 'blocked') => {
   const scope = getArtistScope();
   fireEvent.change(scope, { target: { value: value === 'preferred' ? 'all' : value } });
-  pickDirectoryOption('选择分组', value === 'preferred' ? '#favorites' : '*');
+  setArtistFavorites(value === 'preferred');
 };
 
-it('收藏目录按现有画师去重计数，保留本端选择并即时响应收藏归档', async () => {
+it('旧收藏目录记忆回退全部，筛选只看收藏按现存画师匹配并即时响应收藏归档', async () => {
   mocks.collection = [
     { sourceType: 'artist', sourceId: 'alpha artist', imageUrl: '/synthetic/old-cover.png' },
     { sourceType: 'artist', sourceId: 'alpha artist', imageUrl: '/synthetic/another.png' },
@@ -722,32 +727,27 @@ it('收藏目录按现有画师去重计数，保留本端选择并即时响应�
     { sourceType: 'artist', sourceId: 'deleted artist' },
   ];
   localStorage.setItem('nai_catalog_groups_artist', JSON.stringify({ active: '#favorites', expanded: true }));
-  const view = setup();
-  await waitFor(() => expectDirectoryCount('收藏', '1'));
-  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist']);
-  const options = directoryPickerOptions('选择分组');
-  expect(options.slice(0, 3).map(option => option.getAttribute('data-value'))).toEqual(['*', '', '#favorites']);
-  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
-  expect(screen.queryByRole('button', { name: '重命名分组' })).toBeNull();
-  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'no-match' } });
-  expectDirectoryCount('收藏', '1');
-  act(() => { mocks.collection = []; mocks.collectionListeners.forEach(listener => listener()); });
-  expectDirectoryCount('收藏', '0');
-  pickDirectoryOption('选择分组', '*');
-  pickDirectoryOption('选择分组', '#favorites');
-  view.unmount();
-  mocks.collection = [{ sourceType: 'artist', sourceId: 'beta artist' }];
   setup();
-  await waitFor(() => expectDirectoryCount('收藏', '1'));
-  expect(directoryPickerValue('选择分组')).toBe('#favorites');
+  await screen.findByTestId('cover-alpha artist');
+  expect(directoryPickerValue('选择分组')).toBe('*');
+  const options = directoryPickerOptions('选择分组');
+  expect(options.slice(0, 2).map(option => option.getAttribute('data-value'))).toEqual(['*', '']);
+  expect(options.some(option => option.getAttribute('data-value') === '#favorites')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  setArtistFavorites(true);
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist']);
+  act(() => { mocks.collection = []; mocks.collectionListeners.forEach(listener => listener()); });
+  expect(sampleCards()).toHaveLength(0);
+  act(() => { mocks.collection = [{ sourceType: 'artist', sourceId: 'alpha artist' }]; mocks.collectionListeners.forEach(listener => listener()); });
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist']);
 });
 
-it('收藏目录叠加屏蔽范围时，名单读取失败仍显示错误而不是空结果', async () => {
+it('只看收藏叠加屏蔽范围时，名单读取失败仍显示错误而不是空结果', async () => {
   mocks.collection = [{ sourceType: 'artist', sourceId: 'alpha artist' }];
   mocks.blockLoad.mockRejectedValueOnce(Error('合成屏蔽名单失败'));
   setup(); await screen.findByTestId('cover-alpha artist');
   setArtistScope('blocked');
-  pickDirectoryOption('选择分组', '#favorites');
+  setArtistFavorites(true);
   expect(screen.getByText('画师状态读取失败')).toBeTruthy();
   expect(screen.queryByText('没有匹配的画师')).toBeNull();
   mocks.blockLoad.mockResolvedValueOnce(['alpha artist']);
@@ -1554,10 +1554,8 @@ it('使用统计筛选先筛完整目录，支持零值交集并保留搜索与�
   fireEvent.change(chains, { target: { value: 'used' } });
   await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：beta artist']));
   fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
-  await waitFor(() => expect(sampleCards()).toHaveLength(0));
-  expect(directoryPickerValue('选择分组')).toBe('#favorites');
-  setArtistScope('all');
   await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist']));
+  expect(within(screen.getByRole('dialog', { name: '筛选画师' })).getByRole('button', { name: '只看收藏' }).getAttribute('aria-pressed')).toBe('false');
   expect(directoryPickerValue('风格串收录')).toBe('all');
   expect(directoryPickerValue('图片生成')).toBe('all');
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');

@@ -40,7 +40,7 @@ const setup = async () => {
 /** 优先点桌面目录树，避免手机底部面板往返回栈塞残留层。 */
 const choose = async (id: string) => {
   const navigation = within(screen.getByLabelText('风格串文件夹'));
-  const special: Record<string, string> = { '*': '全部', '': '未整理', '#favorites': '收藏' };
+  const special: Record<string, string> = { '*': '全部', '': '未整理' };
   if (Object.prototype.hasOwnProperty.call(special, id)) {
     fireEvent.click(navigation.getByRole('button', { name: special[id] }));
     return;
@@ -58,45 +58,42 @@ const choose = async (id: string) => {
   await pickDirectoryOptionAsync('选择文件夹', id);
 };
 
-it('收藏目录按对象身份计数、换封面仍保留，并且不接受作品拖入或被用于新建归属', async () => {
+it('旧收藏目录记忆回退全部，只看收藏在筛选内按对象身份匹配、换封面保留并与文件夹取交集', async () => {
+  stored.folders = [{ id: 'f1', name: '古风', parentId: null }];
+  stored.assignments = { a: ['f1'], b: ['f1'] };
   favorites.push({ sourceType: 'chain', sourceId: 'a', imageUrl: '/synthetic/previous.png' }, { sourceType: 'chain', sourceId: 'a', imageUrl: '/synthetic/another.png' }, { sourceType: 'chain', sourceId: 'b', imageUrl: '/synthetic/archived.png', archived: true });
   localStorage.setItem('nai-style-folder-selection', '#favorites');
   const { props, rerender } = await setup();
-  fireEvent.click(screen.getByLabelText('选择文件夹'));
-  await waitFor(() => expect(screen.getByRole('option', { name: '收藏 (1)' })).toBeTruthy());
-  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
-  await flushDirectoryPickerHistory();
+  expect(screen.queryByRole('button', { name: '收藏' })).toBeNull();
+  expect(screen.getByRole('button', { name: '打开风格串：风格 a' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '打开风格串：风格 b' })).toBeTruthy();
+  await choose('f1');
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  const filterDialog = screen.getByRole('dialog', { name: '筛选与排序' });
+  const favToggle = within(filterDialog).getByRole('button', { name: '只看收藏' });
+  fireEvent.click(favToggle);
+  expect(favToggle.getAttribute('aria-pressed')).toBe('true');
   expect(screen.getByRole('button', { name: '打开风格串：风格 a' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '打开风格串：风格 b' })).toBeNull();
-  expect(localStorage.getItem('nai-style-folder-selection')).toBe('#favorites');
   rerender(<ChainList {...props} chains={[{ ...makeChain('a'), previewImage: '/synthetic/new-cover.png' }, makeChain('b')]} />);
   expect(screen.getByRole('button', { name: '打开风格串：风格 a' })).toBeTruthy();
-  const favorite = screen.getByRole('button', { name: '收藏' });
-  const dataTransfer = { types: [CHAIN_FOLDER_DRAG_TYPE], getData: () => JSON.stringify(['a']) };
-  fireEvent.dragOver(favorite, { dataTransfer }); fireEvent.drop(favorite, { dataTransfer });
-  expect(put).not.toHaveBeenCalled();
-  expect(screen.queryByRole('button', { name: '编辑文件夹' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '新建文件夹' }));
-  expect((screen.getByRole('combobox', { name: '上级文件夹' }) as HTMLSelectElement).value).toBe('');
-  fireEvent.click(screen.getByRole('button', { name: '取消' }));
   act(() => { favorites.forEach(item => { item.archived = true; }); favoriteListeners.forEach(listener => listener()); });
-  fireEvent.click(screen.getByLabelText('选择文件夹'));
-  expect(screen.getByRole('option', { name: '收藏 (0)' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '打开风格串：风格 a' })).toBeNull();
+  fireEvent.click(within(filterDialog).getByRole('button', { name: '重置筛选' }));
+  expect(screen.getByRole('button', { name: '打开风格串：风格 a' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '打开风格串：风格 b' })).toBeTruthy();
 });
 
-it('收藏目录读取失败显示未知计数和重试，成功后恢复真实内容', async () => {
-  localStorage.setItem('nai-style-folder-selection', '#favorites');
+it('筛选只看收藏读取失败显示重试，成功后恢复真实内容', async () => {
   ensureFavorites.mockRejectedValueOnce(Error('合成失败'));
   await setup();
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '筛选与排序' })).getByRole('button', { name: '只看收藏' }));
   await screen.findByText('收藏库加载失败，请稍后重试');
-  fireEvent.click(screen.getByLabelText('选择文件夹'));
-  expect(screen.getByRole('option', { name: '收藏 (—)' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
-  await flushDirectoryPickerHistory();
+  favorites.push({ sourceType: 'chain', sourceId: 'a', imageUrl: '/synthetic/a.png' });
   fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
-  fireEvent.click(screen.getByLabelText('选择文件夹'));
-  await screen.findByRole('option', { name: '收藏 (0)' });
+  await screen.findByRole('button', { name: '打开风格串：风格 a' });
+  expect(screen.queryByRole('button', { name: '打开风格串：风格 b' })).toBeNull();
 });
 // 单条归属改由多选工具栏入口设置，卡片悬浮层不再提供该按钮。
 const selectChainsForFolders = (ids: string[]) => {

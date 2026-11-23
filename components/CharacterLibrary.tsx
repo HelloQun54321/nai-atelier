@@ -30,7 +30,7 @@ import { ImageCardActions } from './ImageCardActions';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, ChevronDown, Dice5, LoaderCircle, Pencil, Plus, Settings2, Tag, Trash2, UserRound } from 'lucide-react';
+import { Check, ChevronDown, Dice5, Heart, LoaderCircle, Pencil, Plus, Settings2, Tag, Trash2, UserRound } from 'lucide-react';
 import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar, EmptyState } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
@@ -41,7 +41,6 @@ import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
-import { DIRECTORY_FAVORITES_ID } from './DirectoryTreeNavigation';
 import { useCatalogGroupBrowser } from './CatalogGroups';
 import { buildCharacterVariantIndex, groupCharacterVariantKeys, resolveCharacterVariantMembershipKeys, characterVariantFavoriteTarget, type CharacterVariantFavorite } from '../services/characterVariants';
 import { createUuid } from '../services/id';
@@ -261,18 +260,16 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     { id: '#source:catalog', name: 'danbooru', matches: (key: string) => key.startsWith('catalog:'), count: catalogSourceCount },
     { id: '#source:custom', name: t('自定义'), matches: (key: string) => key.startsWith('custom:'), count: customSourceCount },
   ], [catalogSourceCount, customSourceCount, language]);
-  const matchesFavorite = useCallback((key: string) => favorites.has(key), [favorites]);
-  const favoriteCount = useMemo(() => collectionReady && catalogKeys ? new Set(catalogKeys.filter(key => key.length <= 512 && /^(catalog|custom):[^\u0000-\u001f\u007f]+$/u.test(key) && key.slice(key.indexOf(':') + 1).trim() && matchesFavorite(key))).size : undefined, [collectionReady, catalogKeys, matchesFavorite]);
   const resolveMembershipKeys = useCallback((keys: readonly string[]) => {
     if (keys.some(key => key.startsWith('catalog:')) && (!groupCatalogReady || groupLoading || groupError)) {
       throw new Error(t(groupError ? '角色 Tag 目录加载失败，请重试' : '角色目录加载中，请稍后重试'));
     }
     return resolveCharacterVariantMembershipKeys(keys, variantIndex);
   }, [groupCatalogReady, groupLoading, groupError, variantIndex, language]);
-  const groups = useCatalogGroupBrowser('character', groupKeys, notify, 'character', catalogKeys, { virtualGroups: sourceGroups, favorites: { matches: matchesFavorite, count: favoriteCount }, resolveMembershipKeys });
+  const groups = useCatalogGroupBrowser('character', groupKeys, notify, 'character', catalogKeys, { virtualGroups: sourceGroups, resolveMembershipKeys });
   // 手机：角色库设置收进「更多」，用受控开关从菜单打开同一个面板。
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
-  const showFavOnly = groups.activeGroup === DIRECTORY_FAVORITES_ID;
+  const [showFavOnly, setShowFavOnly] = useState(false);
   const tab: CharacterTab = groups.activeGroup === '#source:catalog' ? 'catalog' : groups.activeGroup === '#source:custom' ? 'custom' : 'all';
   const customSource = tab === 'custom';
   const grouped = groups.activeGroup !== '*';
@@ -567,7 +564,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       for (const card of groupCards) {
         if (card.kind !== 'catalog' || !card.tagName) continue;
         for (const entry of variantIndex.get(normalizeTagQuery(card.tagName)) || []) {
-          if (groups.matches('catalog:' + entry.name)) candidates.set(entry.name, entry);
+          if (groups.matches('catalog:' + entry.name) && (!showFavOnly || favorites.has('catalog:' + entry.name))) candidates.set(entry.name, entry);
         }
       }
       for (const entry of filterCharacterDictionaryEntries([...candidates.values()], searchTerm, sort)) {
@@ -578,7 +575,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     return groupCharacterVariantKeys(groupCards.map(card => card.key), variantIndex, new Set(eligible.keys())).map(group => ({
       id: group.id, representative: eligible.get(group.representativeKey)!, members: group.memberKeys.map(key => eligible.get(key)!),
     }));
-  }, [gachaCards, tab, groups.matches, searchTerm, sort, catalogToCard, groupCards, variantIndex]);
+  }, [gachaCards, tab, groups.matches, showFavOnly, favorites, searchTerm, sort, catalogToCard, groupCards, variantIndex]);
   const visibleGroups = (grouped || Boolean(searchTerm.trim())) && !gachaCards ? cardGroups.slice(0, groupLimit) : cardGroups;
   const localPagination = grouped || Boolean(searchTerm.trim());
   const hasMoreVisible = localPagination ? cardGroups.length > groupLimit : nextPage < pageCount;
@@ -842,16 +839,19 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        <WorkspaceChrome>
 <WorkspaceToolbar>
          {groups.toolbar}
-         <ToolbarPopover title={t("筛选角色")} count={Number(sort !== 'popular')}>
+         <ToolbarPopover title={t("筛选角色")} count={Number(showFavOnly) + Number(sort !== 'popular')}>
            {close => <div className="space-y-3">
+             <button type="button" aria-pressed={showFavOnly} onClick={() => { setShowFavOnly(value => !value); leaveGacha(); }} className={`mobile-touch flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${showFavOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>
+               <Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} />{t('只看收藏')}
+             </button>
              <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("角色排序")} value={sort} onChange={event => { setSort(event.target.value as CharacterDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="popular">{searchTerm.trim() ? t("相关性优先 · 热度高") : t("热度从高到低")}</option><option value="least">{searchTerm.trim() ? t("相关性优先 · 热度低") : t("热度从低到高")}</option><option value="name-asc">{t("名称 A → Z")}</option><option value="name-desc">{t("名称 Z → A")}</option></select></label>
              <div className="flex items-center justify-between gap-2">
-               <button type="button" onClick={() => { setSort('popular'); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
+               <button type="button" onClick={() => { setShowFavOnly(false); setSort('popular'); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
                {gachaCards && <button type="button" onClick={() => { leaveGacha(); close(); }} className="text-xs font-semibold text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">{t("返回完整目录")}</button>}
              </div>
            </div>}
          </ToolbarPopover>
-         <ToolbarSearch value={searchTerm} loading={!customSource && isLoading} trailing={(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountBadge inline total={!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length} loaded={visibleCards.length} />} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
+         <ToolbarSearch value={searchTerm} loading={!customSource && isLoading} trailing={(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountBadge inline total={!grouped && !showFavOnly && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length} loaded={visibleCards.length} />} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
          <div className="flex flex-none items-center gap-2 max-md:hidden">
            <ToolbarButton aria-label={gachaCards ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={!drawReady || isGachaLoading || drawAvailable <= 0} className="mobile-touch" tone="neutral">{isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="toolbar-responsive-label hidden md:inline">{gachaCards ? t("再抽一批") : t("随机抽卡")}</span></ToolbarButton>
            <ToolbarPopover label={t("角色库设置")} title={t("角色库设置")} icon={<Settings2 />} iconOnly iconTone="ghost" open={mobileSettingsOpen} onOpenChange={setMobileSettingsOpen} width={320}>

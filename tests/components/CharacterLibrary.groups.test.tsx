@@ -73,7 +73,7 @@ it('加载状态：自定义链未知时来源与完整计数未知，缓存非�
   await waitFor(() => expectDirectoryCount('danbooru', '3'));
   expectDirectoryCount('自定义', '—');
   expectDirectoryCount('全部', '—');
-  expectDirectoryCount('收藏', '—');
+  expect(screen.queryByRole('button', { name: '收藏' })).toBeNull();
   view.rerender(<CharacterLibrary {...view.props} chainsLoading={false} chainsError="合成读取失败" />);
   expectDirectoryCount('自定义', '—');
   expectDirectoryCount('danbooru', '3');
@@ -83,7 +83,6 @@ it('加载状态：自定义链未知时来源与完整计数未知，缓存非�
   view.rerender(<CharacterLibrary {...view.props} chainsLoading={false} />);
   expectDirectoryCount('自定义', '0');
   expectDirectoryCount('全部', '3');
-  expectDirectoryCount('收藏', '0');
 });
 it('来源目录与用户分组可切换，来源搜索按身份过滤且同名角色不混淆', async () => {
   localStorage.setItem('nai_character_link_variant_favorites', 'false');
@@ -452,23 +451,30 @@ it('读取真实收藏失败不开始补齐，角色库设置展示错误并允�
 });
 
 
-it('收藏目录计数等待真实收藏就绪，使用完整有效身份且不随搜索缩小', async () => {
+const toggleCharacterFavorites = () => {
+  const trigger = screen.getByRole('button', { name: /^筛选/ });
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger);
+  fireEvent.click(within(screen.getByRole('dialog', { name: '筛选角色' })).getByRole('button', { name: '只看收藏' }));
+};
+
+it('只看收藏筛选等待真实收藏就绪，支持与分组取交集且不自动写入收藏', async () => {
   let ready!: () => void;
   mocks.ensure.mockImplementationOnce(() => new Promise<void>(resolve => { ready = resolve; }));
-  localStorage.setItem('nai_character_favorites', JSON.stringify(['catalog:late', 'catalog:missing']));
-  setup(); await select('#favorites');
-  expectDirectoryCount('收藏', '—');
+  localStorage.setItem('nai_character_favorites', JSON.stringify(['catalog:late', 'catalog:missing', 'custom:custom']));
+  setup();
+  toggleCharacterFavorites();
   expect(screen.queryByText('没有找到符合条件的角色')).toBeNull();
-  expect(screen.getByRole('status').textContent).toContain('加载中');
+  expect(screen.getAllByRole('status').some(node => node.textContent?.includes('加载中'))).toBe(true);
   await act(async () => ready());
-  await waitFor(() => expectDirectoryCount('收藏', '1'));
-  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'not-found' } });
-  expectDirectoryCount('收藏', '1');
+  await waitFor(() => expect(screen.getAllByRole('button', { name: '选择角色：同名' })).toHaveLength(2));
+  await select('one');
+  expect(screen.getAllByRole('button', { name: '选择角色：同名' })).toHaveLength(1);
+  expect(screen.getByRole('button', { name: '选择角色：同名' }).getAttribute('data-gallery-work-id')).toBe('catalog:late');
   expect(mocks.favorite).not.toHaveBeenCalled();
 });
 
 
-it('旧词库覆写chainId收藏只读映射原Tag，参与收藏目录和已有族补齐', async () => {
+it('旧词库覆写chainId收藏只读映射原Tag，参与只看收藏筛选和已有族补齐', async () => {
   mocks.all.mockResolvedValue(variantFamily);
   const override = { ...custom, id: 'legacy-catalog-id', name: '胡滕', tags: ['__character_catalog__'], basePrompt: '历史改过的正文', params: { ...custom.params, _characterCatalogTag: variantFamily[0].name } };
   const oldFavorite = { sourceType: 'character', sourceId: override.id, archived: false, imageUrl: '/kept-old-cover.png' };
@@ -477,9 +483,8 @@ it('旧词库覆写chainId收藏只读映射原Tag，参与收藏目录和已有
   await waitFor(() => expect(mocks.favorite).toHaveBeenCalledOnce());
   expect(mocks.favorite.mock.calls[0][0].groupSourceIds).toEqual(variantFamily.map(entry => entry.name));
   expect(mocks.favorite.mock.calls[0][1]).toBe(true);
-  await select('#favorites');
+  toggleCharacterFavorites();
   expect(screen.getByRole('button', { name: '选择角色：胡滕' }).getAttribute('data-gallery-work-id')).toBe('catalog:' + variantFamily[0].name);
-  expectDirectoryCount('收藏', '1');
   expect(oldFavorite.sourceId).toBe('legacy-catalog-id'); expect(oldFavorite.imageUrl).toBe('/kept-old-cover.png');
 });
 

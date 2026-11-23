@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Check, FolderPlus, Plus, SlidersHorizontal } from 'lucide-react';
+import { Check, FolderPlus, Heart, Plus, SlidersHorizontal } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import type { ArtistDictionaryEntry } from '../../services/tagDictionary';
 import { matchesArtistSearch, parseArtistSearchTerms } from '../../services/tagLibrary';
@@ -27,7 +27,6 @@ import { useMobileHistoryLayer } from '../MobileUI';
 import { PressRevealSurface } from '../PressRevealSurface';
 import { StyleRollArtistInput } from './StyleRollArtistInput';
 import { useCatalogGroupBrowser } from '../CatalogGroups';
-import { DIRECTORY_FAVORITES_ID } from '../DirectoryTreeNavigation';
 import { useGalleryLoadMore } from '../useGalleryLoadMore';
 import { ToolbarCountCaption } from '../ToolbarCountCaption';
 
@@ -59,7 +58,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
   useEffect(() => { const changed = () => setSampleRetry(value => value + 1); window.addEventListener(ARTIST_SAMPLES_CHANGED, changed); return () => window.removeEventListener(ARTIST_SAMPLES_CHANGED, changed); }, []);
   const [defaultPack] = useState<ArtistSamplePack>(() => localStorage.getItem('nai_artist_sample_pack') === 'v5' ? 'v5' : 'v45');
   const [cardPacks, setCardPacks] = useState<Record<string, ArtistSamplePack>>({});
-  const [query, setQuery] = useState(''), [filter, setFilter] = useState('all'), [limit, setLimit] = useState(60);
+  const [query, setQuery] = useState(''), [filter, setFilter] = useState('all'), [favOnly, setFavOnly] = useState(false), [limit, setLimit] = useState(60);
   const searchTerms = useMemo(() => parseArtistSearchTerms(query), [query]);
   const [sort, setSort] = useState<ArtistBrowseSort>(() => {
     const saved = localStorage.getItem('nai_roll_artist_sort') || localStorage.getItem('nai_artist_sort');
@@ -95,10 +94,8 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
   }, [library, pinned, blocked, excluded, collection]);
   const groupSelection = useMemo(() => library.filter(entry => pinned.includes(entry.name)).map(entry => 'artist:' + entry.name), [library, pinned]);
   const catalogKeys = useMemo(() => loading || sampleLoading || libraryError ? undefined : library.map(entry => 'artist:' + entry.name), [library, loading, sampleLoading, libraryError]);
-  const groups = useCatalogGroupBrowser('artist', groupSelection, notify, 'roll-artists', catalogKeys, {
-    favorites: { matches: key => preferred.has(normalizeRollArtistKey(key.slice('artist:'.length))), count: collectionStatus === 'ready' && catalogKeys ? catalogArtists.filter(entry => preferred.has(normalizeRollArtistKey(entry.name))).length : undefined },
-  });
-  const favoritesPending = groups.activeGroup === DIRECTORY_FAVORITES_ID && collectionStatus !== 'ready';
+  const groups = useCatalogGroupBrowser('artist', groupSelection, notify, 'roll-artists', catalogKeys);
+  const favoritesPending = favOnly && collectionStatus !== 'ready';
   const groupRevision = groups.activeGroup === '*' ? 0 : groups.state.revision;
   useEffect(() => { setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }, [groups.activeGroup, groupRevision]);
   const active = useContext(ImageActivityContext);
@@ -149,9 +146,9 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
     const activeSort = !usage && isArtistUsageSort(sort) ? 'popular' : sort;
     return catalogArtists.filter(entry => {
       const key = normalizeRollArtistKey(entry.name);
-      return groups.matches('artist:' + entry.name) && matchesArtistSearch(entry, searchTerms) && (!usage || matchesArtistUsage(entry.name, usage, chainsFilter, imagesFilter)) && (filter === 'all' || filter === 'pinned' && pinnedKeys.has(key) || filter === 'blocked' && blockedKeys.has(key));
+      return groups.matches('artist:' + entry.name) && (!favOnly || preferred.has(key)) && matchesArtistSearch(entry, searchTerms) && (!usage || matchesArtistUsage(entry.name, usage, chainsFilter, imagesFilter)) && (filter === 'all' || filter === 'pinned' && pinnedKeys.has(key) || filter === 'blocked' && blockedKeys.has(key));
     }).sort((left, right) => compareArtistUsage(left, right, activeSort, index));
-  }, [catalogArtists, searchTerms, filter, pinnedKeys, preferred, blockedKeys, sort, usage, chainsFilter, imagesFilter, groups.matches]);
+  }, [catalogArtists, searchTerms, filter, favOnly, pinnedKeys, preferred, blockedKeys, sort, usage, chainsFilter, imagesFilter, groups.matches]);
   const changeFilter = (value: string) => { setFilter(value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; };
   const perform = async (action: () => Promise<void>) => {
     if (busy) return; setBusy(true); setError('');
@@ -176,7 +173,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
   });
   const visibleArtists = useMemo(() => artists.slice(0, limit), [artists, limit]);
   useGalleryLoadMore(gallery, sentinel, !loading && !sampleLoading && !favoritesPending && artists.length > limit, () => setLimit(current => current + 60), '500px', limit);
-  const resultKey = JSON.stringify([query, filter, sort, chainsFilter, imagesFilter, groups.activeGroup]);
+  const resultKey = JSON.stringify([query, filter, favOnly, sort, chainsFilter, imagesFilter, groups.activeGroup]);
   const estimateCardHeight = React.useCallback((artist: ArtistDictionaryEntry, width: number) => {
     const pack = cardPacks[artist.name] || defaultPack;
     return Math.max(1, width) / Math.max(0.1, artistRatios[`${pack}:${artist.name}`] || 2 / 3) + (frostedCaption ? 2 : 92);
@@ -203,7 +200,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
         <ToolbarButton aria-label={t('设置分组')} title={t('设置分组')} disabled={!groups.canAssign} onClick={groups.openAssignDialog}><FolderPlus /></ToolbarButton>
         <ToolbarSearch containerClassName="order-last basis-full !max-w-none sm:order-none sm:basis-0" aria-label={t('搜索画师')} placeholder={t('搜索画师，多个词用逗号分隔')} value={query} onChange={event => { setQuery(event.target.value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} />
         <ToolbarButton tone="primary" disabled={busy} onClick={close}>{t('完成')}</ToolbarButton>
-        <ToolbarCountCaption>{favoritesPending ? t('匹配 {0} 位', ['—']) : `${t(loading ? '已加载 {0} 位' : groups.activeGroup !== '*' || filter !== 'all' || chainsFilter !== 'all' || imagesFilter !== 'all' || searchTerms.length > 0 ? '匹配 {0} 位' : '共 {0} 位', [artists.length])}${loading ? '' : ` · ${t('已加载 {0} 位', [Math.min(limit, artists.length)])}`}`}</ToolbarCountCaption>
+        <ToolbarCountCaption>{favoritesPending ? t('匹配 {0} 位', ['—']) : `${t(loading ? '已加载 {0} 位' : groups.activeGroup !== '*' || favOnly || filter !== 'all' || chainsFilter !== 'all' || imagesFilter !== 'all' || searchTerms.length > 0 ? '匹配 {0} 位' : '共 {0} 位', [artists.length])}${loading ? '' : ` · ${t('已加载 {0} 位', [Math.min(limit, artists.length)])}`}`}</ToolbarCountCaption>
       </header>
       <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2 sm:px-5">
         <div role="group" aria-label={t('画师范围')} className="flex min-w-0 items-center gap-1 overflow-x-auto">
@@ -211,7 +208,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
           <button type="button" aria-expanded={manualPinOpen} onClick={() => setManualPinOpen(value => !value)} className={`mobile-touch flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-2 text-xs transition-colors ${manualPinOpen ? 'bg-indigo-50 font-semibold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}><Plus className="h-3.5 w-3.5" />{t('手动添加固定 Tag')}</button>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          <div ref={usageAnchor}><ToolbarButton aria-label={t('筛选')} aria-expanded={usageOpen} active={chainsFilter !== 'all' || imagesFilter !== 'all'} onClick={() => setUsageOpen(value => !value)}><SlidersHorizontal /><span className="hidden sm:inline">{t('筛选')}</span></ToolbarButton></div>
+          <div ref={usageAnchor}><ToolbarButton aria-label={t('筛选')} aria-expanded={usageOpen} active={favOnly || chainsFilter !== 'all' || imagesFilter !== 'all'} onClick={() => setUsageOpen(value => !value)}><SlidersHorizontal /><span className="hidden sm:inline">{t('筛选')}</span></ToolbarButton></div>
           <ToolbarSelect label="画师排序" value={sort} containerClassName="min-w-0 max-w-[44vw] sm:max-w-none" className="truncate !text-xs" onChange={event => {
             const value = event.target.value as ArtistBrowseSort; setSort(value); setLimit(60);
             if (gallery.current) gallery.current.scrollTop = 0;
@@ -229,6 +226,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
       {(error || sampleError || libraryError || groups.error) && <p role="alert" className="shrink-0 px-4 pb-2 text-xs text-red-500">{t(error || sampleError || libraryError || groups.error)}{(groups.error || sampleError) && <button type="button" className="mobile-touch ml-2 underline" onClick={() => groups.error ? void groups.reload() : setSampleRetry(value => value + 1)}>{t('重试')}</button>}</p>}
       {usageOpen && <AnchoredToolbarPopover anchorRef={usageAnchor} title={t('筛选')} width={280} allowMobile onClose={closeUsage}>
         <div className="space-y-3">
+          <button type="button" aria-pressed={favOnly} onClick={() => { setFavOnly(value => !value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} className={`mobile-touch flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${favOnly ? 'border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-700/70 dark:bg-rose-950/40 dark:text-rose-300' : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}`}><Heart className={`h-3.5 w-3.5 ${favOnly ? 'fill-current' : ''}`} />{t('只看收藏')}</button>
           {usageStatus === 'loading' && <InlineSpinner label={t('正在统计画师使用…')} className="text-xs" />}
           {usageStatus === 'error' && <p role="alert" className="flex items-center justify-between gap-2 text-xs text-red-500">{t('画师使用统计暂不可用')}<button type="button" className="shrink-0 underline" onClick={() => setUsageRetry(value => value + 1)}>{t('重试统计')}</button></p>}
           <div className="space-y-1"><p className="text-xs font-medium">{t('风格串收录')}</p><ToolbarSelect containerClassName="w-full" label={t('风格串收录')} value={chainsFilter} disabled={!usageReady} onChange={event => { setChainsFilter(event.target.value as ArtistUsageFilter); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }}>
@@ -238,7 +236,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
           <div className="space-y-1"><p className="text-xs font-medium">{t('图片生成')}</p><ToolbarSelect containerClassName="w-full" label={t('图片生成')} value={imagesFilter} disabled={!usageReady} onChange={event => { setImagesFilter(event.target.value as ArtistUsageFilter); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }}>
             <option value="all">{t('全部')}</option><option value="used">{t('已生成')}</option><option value="unused">{t('未生成')}</option>
           </ToolbarSelect></div>
-          {(chainsFilter !== 'all' || imagesFilter !== 'all') && <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setChainsFilter('all'); setImagesFilter('all'); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }}>{t('重置筛选')}</button>}
+          {(favOnly || chainsFilter !== 'all' || imagesFilter !== 'all') && <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setFavOnly(false); setChainsFilter('all'); setImagesFilter('all'); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }}>{t('重置筛选')}</button>}
         </div>
       </AnchoredToolbarPopover>}
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">

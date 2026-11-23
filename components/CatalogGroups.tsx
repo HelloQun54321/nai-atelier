@@ -4,7 +4,7 @@ import { t, useLanguage } from '../services/i18n';
 import { createUuid } from '../services/id';
 import { readCatalogGroups, removeCatalogGroup, updateCatalogGroupMemberships, type CatalogGroupKind, type CatalogGroupState } from '../services/catalogGroups';
 import { flattenDirectoryTree, getDirectoryDescendantIds, getDirectoryPath } from '../services/directoryTree.mjs';
-import { DIRECTORY_FAVORITES_ID, DirectoryTreeNavigation } from './DirectoryTreeNavigation';
+import { DirectoryTreeNavigation } from './DirectoryTreeNavigation';
 import { DirectoryTreeSelect } from './DirectoryTreeSelect';
 import { DirectoryTreeChecklist } from './DirectoryTreeChecklist';
 import { DirectoryNodeDialog } from './DirectoryNodeDialog';
@@ -20,10 +20,10 @@ type Notify = (message: string, type?: 'success' | 'error') => void;
 const field = 'mobile-touch min-w-0 rounded-lg border border-gray-300 bg-transparent px-2 py-2 text-sm dark:border-gray-700';
 const DRAG_TYPE = 'application/x-nai-catalog-group-entries';
 const preference = (scope: string) => {
-  try { return JSON.parse(localStorage.getItem(`nai_catalog_groups_${scope}`) || '{}') as { expanded?: boolean; active?: string }; } catch { return {}; }
+  try { const saved = JSON.parse(localStorage.getItem(`nai_catalog_groups_${scope}`) || '{}') as { expanded?: boolean; active?: string }; return saved.active === '#favorites' ? { ...saved, active: '*' } : saved; } catch { return {}; }
 };
 
-export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: readonly string[], notify: Notify, scope: string = kind, catalogKeys?: readonly string[], navigationOptions?: { navigationHeader?: React.ReactNode; activeFilterLabel?: string; favorites?: { matches: (key: string) => boolean; count?: number }; virtualGroups?: readonly { id: string; name: string; matches: (key: string) => boolean; count?: number }[]; resolveMembershipKeys?: (keys: readonly string[]) => readonly string[] }) {
+export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: readonly string[], notify: Notify, scope: string = kind, catalogKeys?: readonly string[], navigationOptions?: { navigationHeader?: React.ReactNode; activeFilterLabel?: string; virtualGroups?: readonly { id: string; name: string; matches: (key: string) => boolean; count?: number }[]; resolveMembershipKeys?: (keys: readonly string[]) => readonly string[] }) {
   useLanguage();
   const data = useCatalogGroups(kind), navigationId = useId();
   const confirmAction = useConfirmDialog(), active = useContext(ImageActivityContext);
@@ -33,7 +33,7 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
   const [view, setView] = useState(() => ({ scope, ...preference(scope) }));
   const current = view.scope === scope ? view : { scope, ...preference(scope) };
   const expanded = Boolean(current.expanded), requested = current.active ?? '*';
-  const virtualGroups = [...(navigationOptions?.favorites ? [{ id: DIRECTORY_FAVORITES_ID, name: t('收藏'), ...navigationOptions.favorites }] : []), ...(navigationOptions?.virtualGroups ?? [])];
+  const virtualGroups = navigationOptions?.virtualGroups ?? [];
   const virtualGroup = virtualGroups?.find(group => group.id === requested);
   const activeGroup = !virtualGroup && data.ready && requested !== '*' && requested !== '' && !data.state.groups.some(group => group.id === requested) ? '*' : requested;
   const [dialog, setDialog] = useState<{ scope: string; keys: string[]; editing?: string; parentId?: string | null } | null>(null);

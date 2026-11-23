@@ -18,7 +18,7 @@ import { TagSelectionBar } from './TagSelectionBar';
 import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryPage } from '../services/tagDictionary';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, Dice5, LoaderCircle, Settings2 } from 'lucide-react';
+import { Check, Dice5, Heart, LoaderCircle, Settings2 } from 'lucide-react';
 import { InlineSpinner, PageSpinner, SegmentedControl, ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { MobileOverflowMenu } from './MobileUI';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
@@ -36,7 +36,6 @@ import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { artistSampleGenerationBusy, artistSampleGenerationRevision, getArtistSampleGeneration, getGeneratedArtistSamples, readArtistSampleApiKey, subscribeArtistSampleGeneration } from '../services/artistSampleGeneration';
 import { useAgentCommand } from '../services/agentCommands';
 import { useCatalogGroupBrowser } from './CatalogGroups';
-import { DIRECTORY_FAVORITES_ID } from './DirectoryTreeNavigation';
 
 interface CartItem {
     name: string;
@@ -222,14 +221,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const [preferredRetry, setPreferredRetry] = useState(0);
     const favoriteKeys = useMemo(() => new Set([...favorites].map(normalizeRollArtistKey)), [favorites]);
     const [statusFilter, setStatusFilter] = useState<ArtistStatusFilter>('all');
+    const [favOnly, setFavOnly] = useState(false);
     const statusBrowse = statusFilter !== 'all';
     const catalogKeys = useMemo(() => sampleLoading || sampleError || Object.values(catalogErrors).some(Boolean)
         ? undefined : [...new Set(libraryDictionary.map(entry => 'artist:' + entry.name))], [sampleLoading, sampleError, catalogErrors, libraryDictionary]);
     const groups = useCatalogGroupBrowser('artist', cart.map(item => 'artist:' + item.name), notify, 'artist', catalogKeys, {
-        favorites: {
-            matches: key => favoriteKeys.has(normalizeRollArtistKey(key.slice('artist:'.length))),
-            count: preferredStatus === 'ready' && catalogKeys ? catalogKeys.filter(key => favoriteKeys.has(normalizeRollArtistKey(key.slice('artist:'.length)))).length : undefined,
-        },
         navigationHeader: <label className="mb-3 block text-xs font-semibold text-gray-500 dark:text-gray-400">{t('画师范围')}
             <select aria-label={t('画师范围')} value={statusFilter} onChange={event => changeStatus(event.target.value as ArtistStatusFilter)} className={`${TOOLBAR_FIELD_CLASS} mt-1 w-full`}>
                 <option value="all">{t('全部画师')}</option><option value="blocked">{t('已屏蔽')}</option>
@@ -237,10 +233,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         </label>,
         activeFilterLabel: statusBrowse ? t('已屏蔽') : undefined,
     });
-    const favoriteBrowse = groups.activeGroup === DIRECTORY_FAVORITES_ID;
+    const favoriteBrowse = favOnly;
     const groupBrowse = groups.activeGroup !== '*';
-    const gachaPool = useMemo(() => sampledArtists.filter(entry => !groupBrowse || groups.ready && !groups.error && groups.matches('artist:' + entry.name))
-        .sort((left, right) => compareLibraryTags(left, right, 'popular')), [sampledArtists, groupBrowse, groups.ready, groups.error, groups.matches]);
+    const matchesFavoriteArtist = useCallback((name: string) => !favoriteBrowse || favoriteKeys.has(normalizeRollArtistKey(name)), [favoriteBrowse, favoriteKeys]);
+    const gachaPool = useMemo(() => sampledArtists.filter(entry => (!groupBrowse || groups.ready && !groups.error && groups.matches('artist:' + entry.name)) && matchesFavoriteArtist(entry.name))
+        .sort((left, right) => compareLibraryTags(left, right, 'popular')), [sampledArtists, groupBrowse, groups.ready, groups.error, groups.matches, matchesFavoriteArtist]);
     const [focusedName, setFocusedName] = useState<string | null>(null);
     const favoriteStatusPending = favoriteBrowse && preferredStatus !== 'ready';
     const statusLoad = favoriteStatusPending ? preferredStatus : blockedStatus;
@@ -360,9 +357,9 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const statsSortReady = usageState.status === 'ready' && libraryDictionary.length > 0;
     const usageFiltersActive = chainUsageFilter !== 'all' || imageUsageFilter !== 'all';
     const localUsageBrowse = isArtistUsageSort(artistSort) || usageFiltersActive;
-    const localCatalogBrowse = localUsageBrowse || groupBrowse || statusBrowse;
+    const localCatalogBrowse = localUsageBrowse || groupBrowse || statusBrowse || favoriteBrowse;
     const isCatalogLoading = !onlySamples && !localCatalogBrowse && (hasSearch ? catalogSearchLoading : catalogPageLoading);
-    const resultKey = JSON.stringify([searchTerm, onlySamples, statusFilter, artistSort, chainUsageFilter, imageUsageFilter, samplePack, groups.activeGroup]);
+    const resultKey = JSON.stringify([searchTerm, onlySamples, statusFilter, favOnly, artistSort, chainUsageFilter, imageUsageFilter, samplePack, groups.activeGroup]);
     const onScrollRestore = useKeepAliveScrollRestore(scrollContainerRef, 'library', { skipRestore: selectionAnchor.hasAnchor, resetKey: resultKey, onReset: selectionAnchor.clearAnchor });
     const catalogSearchRequestRef = useRef(0);
     const catalogSentinelRef = useRef<HTMLDivElement>(null);
@@ -390,13 +387,14 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         if (groupBrowse && (!groups.ready || groups.error)) return [];
         const sampledNames = onlySamples ? new Set(sampledArtists.map(entry => entry.name)) : null;
         return libraryDictionary.filter(entry => (!groupBrowse || groups.matches('artist:' + entry.name)) && (!sampledNames || sampledNames.has(entry.name)) &&
+            matchesFavoriteArtist(entry.name) &&
             matchesStatus(entry.name) &&
             matchesArtistSearch(entry, searchTerms) &&
             (!usageFiltersActive || !usageIndex || matchesArtistUsage(entry.name, usageIndex, chainUsageFilter, imageUsageFilter)))
             .slice().sort((left, right) => usageIndex
                 ? compareArtistUsage(left, right, artistSort, usageIndex)
                 : compareLibraryTags(left, right, dictionarySort(artistSort)));
-    }, [artistSort, libraryDictionary, onlySamples, gachaArtists, sampledArtists, searchTerms, matchesStatus, usageIndex, localCatalogBrowse, usageFiltersActive, chainUsageFilter, imageUsageFilter, groupBrowse, groups.ready, groups.error, groups.matches]);
+    }, [artistSort, libraryDictionary, onlySamples, gachaArtists, sampledArtists, searchTerms, matchesFavoriteArtist, matchesStatus, usageIndex, localCatalogBrowse, usageFiltersActive, chainUsageFilter, imageUsageFilter, groupBrowse, groups.ready, groups.error, groups.matches]);
     const recentGachaIndicesRef = useRef<number[][]>([]);
     const catalogScrollTopRef = useRef(0);
     const gachaGenerationRef = useRef(0);
@@ -615,8 +613,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
 
     const matchedArtists = useMemo(() => availableArtists.filter(artist => {
         if (groupBrowse && (!groups.ready || groups.error || !groups.matches('artist:' + artist.name))) return false;
-        return matchesStatus(artist.name) && matchesArtistSearch(artist, searchTerms);
-    }), [availableArtists, matchesStatus, searchTerms, groupBrowse, groups.ready, groups.error, groups.matches]);
+        return matchesFavoriteArtist(artist.name) && matchesStatus(artist.name) && matchesArtistSearch(artist, searchTerms);
+    }), [availableArtists, matchesFavoriteArtist, matchesStatus, searchTerms, groupBrowse, groups.ready, groups.error, groups.matches]);
     const localPagination = localCatalogBrowse || onlySamples || hasSearch;
     const filteredArtists = useMemo(() => !statusReady ? [] : !gachaArtists && localPagination ? matchedArtists.slice(0, sampleLimit) : matchedArtists, [matchedArtists, statusReady, gachaArtists, localPagination, sampleLimit]);
     const hasMoreVisible = localPagination ? matchedArtists.length > sampleLimit : hasMoreUnionCatalog;
@@ -722,8 +720,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             <WorkspaceChrome>
 <WorkspaceToolbar>
                 {groups.toolbar}
-                <ToolbarPopover title={t("筛选画师")} count={Number(artistSort !== 'popular') + Number(!onlySamples) + Number(chainUsageFilter !== 'all') + Number(imageUsageFilter !== 'all')}>
+                <ToolbarPopover title={t("筛选画师")} count={Number(favOnly) + Number(artistSort !== 'popular') + Number(!onlySamples) + Number(chainUsageFilter !== 'all') + Number(imageUsageFilter !== 'all')}>
                     {close => <div className="space-y-3">
+                        <button type="button" aria-pressed={favOnly} onClick={() => { setFavOnly(value => !value); setSampleLimit(100); leaveGacha(); }} className={`mobile-touch flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${favOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>
+                            <Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} />{t('只看收藏')}
+                        </button>
                         <div className="space-y-1.5">
                             <span className="block text-sm font-semibold dark:text-white">{t('画师样张模型')}</span>
                             <SegmentedControl
@@ -749,12 +750,12 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                         <label className="block text-sm font-semibold dark:text-white">{t('风格串收录')}<select aria-label={t('风格串收录')} value={chainUsageFilter} disabled={!statsSortReady} onChange={event => { setChainUsageFilter(event.target.value as ArtistUsageFilter); setSampleLimit(100); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="all">{t('全部')}</option><option value="used">{t('已收录')}</option><option value="unused">{t('未收录')}</option></select></label>
                         <label className="block text-sm font-semibold dark:text-white">{t('图片生成')}<select aria-label={t('图片生成')} value={imageUsageFilter} disabled={!statsSortReady} onChange={event => { setImageUsageFilter(event.target.value as ArtistUsageFilter); setSampleLimit(100); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="all">{t('全部')}</option><option value="used">{t('已生成')}</option><option value="unused">{t('未生成')}</option></select></label>
                         <div className="flex items-center justify-between gap-2">
-                            <button type="button" onClick={() => { setArtistSort('popular'); setChainUsageFilter('all'); setImageUsageFilter('all'); setStatusFilter('all'); updateOnlySamples(true); setSampleLimit(100); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
+                            <button type="button" onClick={() => { setFavOnly(false); setArtistSort('popular'); setChainUsageFilter('all'); setImageUsageFilter('all'); setStatusFilter('all'); updateOnlySamples(true); setSampleLimit(100); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
                             {gachaArtists && <button type="button" onClick={() => { returnToCatalog(); close(); }} className="text-xs font-semibold text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">{t("返回完整目录")}</button>}
                         </div>
                     </div>}
                 </ToolbarPopover>
-                <ToolbarSearch value={searchTerm} loading={isCatalogLoading} trailing={statusReady && (!localCatalogBrowse || !sampleLoading && !sampleError) && (!groupBrowse || groups.ready && !groups.error) && !isCatalogLoading && !catalogError && !searchError && !(onlySamples && currentSampleError) && ((!onlySamples && !gachaArtists) || !sampleLoading) && <ToolbarCountBadge inline total={gachaArtists ? undefined : hasSearch || onlySamples || localCatalogBrowse ? matchedArtists.length : hasMoreUnionCatalog ? undefined : artistCatalogCount + packOnlyArtists.length} loaded={gachaArtists ? filteredArtists.length : localCatalogBrowse && !(groupBrowse || usageFiltersActive || statusBrowse) ? visibleCatalogArtists.length : filteredArtists.length} />} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索画师，多个词用逗号分隔")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
+                <ToolbarSearch value={searchTerm} loading={isCatalogLoading} trailing={statusReady && (!localCatalogBrowse || !sampleLoading && !sampleError) && (!groupBrowse || groups.ready && !groups.error) && !isCatalogLoading && !catalogError && !searchError && !(onlySamples && currentSampleError) && ((!onlySamples && !gachaArtists) || !sampleLoading) && <ToolbarCountBadge inline total={gachaArtists ? undefined : hasSearch || onlySamples || localCatalogBrowse ? matchedArtists.length : hasMoreUnionCatalog ? undefined : artistCatalogCount + packOnlyArtists.length} loaded={gachaArtists ? filteredArtists.length : localCatalogBrowse && !(groupBrowse || usageFiltersActive || statusBrowse || favoriteBrowse) ? visibleCatalogArtists.length : filteredArtists.length} />} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索画师，多个词用逗号分隔")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
                 <ToolbarButton aria-label={gachaArtists ? t("再选一批") : t("随机选画师")} title={gachaPool.length ? undefined : t(groupBrowse ? '没有匹配的画师样张' : '先下载样张图包或生成样张')} onClick={() => void drawGacha()} disabled={isGachaLoading || gachaPool.length <= 0} className="mobile-touch max-md:hidden" tone="neutral">
                         {isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="toolbar-responsive-label hidden md:inline">{gachaArtists ? t("再选一批") : t("随机选画师")}</span>
                 </ToolbarButton>
@@ -781,7 +782,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             <div data-workspace-body className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
             {groups.navigation}
             <div ref={scrollContainerRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="workspace-canvas workspace-scroll-viewport min-w-0 flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
-                {(groupBrowse || statusBrowse) && !gachaArtists && <>
+                {(groupBrowse || statusBrowse || favoriteBrowse) && !gachaArtists && <>
                     {!statusReady ? statusLoad === 'error'
                         ? <div role="alert" className="py-4 text-sm text-red-500">{t('画师状态读取失败')}<button type="button" className="mobile-touch ml-2 underline" onClick={() => favoriteStatusPending ? setPreferredRetry(current => current + 1) : setBlockedRetry(current => current + 1)}>{t('重新加载')}</button></div>
                         : <PageSpinner />
@@ -789,7 +790,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                         : groupBrowse && !groups.ready || sampleLoading ? (filteredArtists.length ? <InlineSpinner className="w-full py-4" /> : <PageSpinner />)
                         : !filteredArtists.length ? <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">{t('没有匹配的画师')}{onlySamples && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('浏览全部画师')}</button>}</WorkspacePageState> : null}
                 </>}
-                {!groupBrowse && !statusBrowse && onlySamples && !filteredArtists.length && <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">
+                {!groupBrowse && !statusBrowse && !favoriteBrowse && onlySamples && !filteredArtists.length && <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">
                     {sampleLoading ? <PageSpinner /> : <>
                     {currentSampleError ? sampleStatusText : usageFiltersActive ? t('没有匹配的画师') : currentPackStatus?.phase === 'ready' && isArtistSampleSourceForPack(samplePack, currentPackStatus) && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}
                     {currentSampleError && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSampleRefresh(current => current + 1)}>{t('重试')}</button>}
@@ -800,9 +801,9 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                     </div>}
                     </>}
                 </WorkspacePageState>}
-                {!groupBrowse && !statusBrowse && !onlySamples && (isCatalogLoading || localCatalogBrowse && sampleLoading) && (filteredArtists.length ? <InlineSpinner className="w-full py-4" /> : <PageSpinner />)}
-                {!groupBrowse && !statusBrowse && !onlySamples && filteredArtists.length > 0 && (searchError || catalogError) && <p role="alert" className="py-4 text-sm text-red-500">{searchError || catalogError}<button type="button" className="mobile-touch ml-2 underline" onClick={() => searchError ? setSearchRetry(current => current + 1) : setCatalogRetry(current => current + 1)}>{t('重试')}</button></p>}
-                {!groupBrowse && !statusBrowse && !onlySamples && !filteredArtists.length && !isCatalogLoading && !(localCatalogBrowse && sampleLoading) && <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">
+                {!groupBrowse && !statusBrowse && !favoriteBrowse && !onlySamples && (isCatalogLoading || localCatalogBrowse && sampleLoading) && (filteredArtists.length ? <InlineSpinner className="w-full py-4" /> : <PageSpinner />)}
+                {!groupBrowse && !statusBrowse && !favoriteBrowse && !onlySamples && filteredArtists.length > 0 && (searchError || catalogError) && <p role="alert" className="py-4 text-sm text-red-500">{searchError || catalogError}<button type="button" className="mobile-touch ml-2 underline" onClick={() => searchError ? setSearchRetry(current => current + 1) : setCatalogRetry(current => current + 1)}>{t('重试')}</button></p>}
+                {!groupBrowse && !statusBrowse && !favoriteBrowse && !onlySamples && !filteredArtists.length && !isCatalogLoading && !(localCatalogBrowse && sampleLoading) && <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">
                     {searchError || catalogError ? <>
                         {searchError || catalogError}
                         <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => searchError ? setSearchRetry(current => current + 1) : setCatalogRetry(current => current + 1)}>{t('重试')}</button>

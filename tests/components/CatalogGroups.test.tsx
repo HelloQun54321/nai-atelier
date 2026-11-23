@@ -74,28 +74,28 @@ it('新增归属可扩展到关联成员，移除只处理明确选中项并保�
   expect(mocks.save.mock.calls[0][0].memberships).toEqual({ 'artist:a': ['one'], 'artist:b': ['two', 'one'], 'artist:outside': ['one', 'two'] });
 });
 
-it('收藏使用业务已有对象状态，位于来源前并保留浏览选择，不写入分组或归属', () => {
+it('旧的收藏目录记忆安全回退全部，虚拟分组保持只读且不写入分组或归属', () => {
   localStorage.setItem('nai_catalog_groups_artist', JSON.stringify({ active: DIRECTORY_FAVORITES_ID, expanded: true }));
-  function FavoritesBrowser() {
+  function VirtualGroupBrowser() {
     const groups = useCatalogGroupBrowser('artist', ['artist:a'], mocks.notify, 'artist', completeKeys, {
-      favorites: { matches: key => key === 'artist:b', count: 1 },
-      virtualGroups: [{ id: '#source', name: '来源', matches: () => true, count: 5 }],
+      virtualGroups: [{ id: '#source', name: '来源', matches: key => key === 'artist:b', count: 1 }],
     });
-    return <>{groups.toolbar}{groups.navigation}<output data-testid="favorite-matches">{String(groups.matches('artist:a'))}/{String(groups.matches('artist:b'))}</output><article data-testid="favorite-drag" {...groups.cardDragProps('artist:a')} /></>;
+    return <>{groups.toolbar}{groups.navigation}<output data-testid="virtual-matches">{String(groups.matches('artist:a'))}/{String(groups.matches('artist:b'))}</output><article data-testid="virtual-drag" {...groups.cardDragProps('artist:a')} /></>;
   }
-  render(<FavoritesBrowser />);
-  expect(screen.getByTestId('favorite-matches').textContent).toBe('false/true');
-  expect(shownCount('收藏')).toBe('1');
-  expect(Array.from(openDirectoryPicker('选择分组').getAllByRole('option')).slice(0, 4).map(option => option.getAttribute('data-value'))).toEqual(['*', '', DIRECTORY_FAVORITES_ID, '#source']);
+  render(<VirtualGroupBrowser />);
+  expect(screen.getByTestId('virtual-matches').textContent).toBe('true/true');
+  expect(screen.queryByRole('button', { name: '收藏' })).toBeNull();
+  expect(Array.from(openDirectoryPicker('选择分组').getAllByRole('option')).slice(0, 3).map(option => option.getAttribute('data-value'))).toEqual(['*', '', '#source']);
   fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  expect(shownCount('来源')).toBe('1');
+  fireEvent.click(screen.getByRole('button', { name: '来源' }));
+  expect(screen.getByTestId('virtual-matches').textContent).toBe('false/true');
   expect(screen.queryByRole('button', { name: '重命名分组' })).toBeNull();
   const dataTransfer = transfer();
-  fireEvent.dragStart(screen.getByTestId('favorite-drag'), { dataTransfer });
-  fireEvent.drop(screen.getByRole('button', { name: '收藏' }), { dataTransfer });
+  fireEvent.dragStart(screen.getByTestId('virtual-drag'), { dataTransfer });
+  fireEvent.drop(screen.getByRole('button', { name: '来源' }), { dataTransfer });
   expect(mocks.save).not.toHaveBeenCalled();
-  pickDirectoryOption('选择分组', '*');
-  fireEvent.click(screen.getByRole('button', { name: '收藏' }));
-  expect(JSON.parse(localStorage.getItem('nai_catalog_groups_artist')!).active).toBe(DIRECTORY_FAVORITES_ID);
+  expect(JSON.parse(localStorage.getItem('nai_catalog_groups_artist')!).active).toBe('#source');
 });
 
 it('业务范围嵌入已有导航，收起保留筛选与分组，按钮提示范围且不改归属计数', () => {
