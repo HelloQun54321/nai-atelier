@@ -83,7 +83,7 @@ describe('appearance preferences', () => {
       .not.toHaveProperty('promptInputAutoHeight');
     expect(validateAppearancePreset({ name: '主题', promptTranslationAutoHeight: true }))
       .not.toHaveProperty('promptTranslationAutoHeight');
-    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, promptInputAutoHeight: false }, CUPERTINO_LIQUID_GLASS_PRESET)).toBe(true);
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, promptInputAutoHeight: false }, BUILTIN_APPEARANCE_PRESET)).toBe(true);
   });
 
   it('读取旧实验室分类偏好时忽略，保存新偏好时不再写回', () => {
@@ -131,7 +131,7 @@ describe('appearance preferences', () => {
     const normalized = normalizeAppearancePreferences({
       designTheme: 'nai-atelier',
       themeMode: 'dark',
-      accentColor: '#0EA5E9',
+      accentColor: '#6366F1',
       density: 'compact',
       corners: 'sharp',
       surfaces: 'translucent',
@@ -159,7 +159,7 @@ describe('appearance preferences', () => {
     expect(normalized).toEqual({
       designTheme: 'nai-atelier',
       themeMode: 'dark',
-      accentColor: '#0ea5e9',
+      accentColor: '#6366f1',
       density: 'compact',
       corners: 'sharp',
       surfaces: 'translucent',
@@ -196,7 +196,7 @@ describe('appearance preferences', () => {
       },
       labSectionedPrompt: false,
       customPresets: [],
-      activePresetId: 'builtin-cupertino-liquid-glass',
+      activePresetId: 'builtin-default',
     });
   });
 
@@ -227,15 +227,16 @@ describe('appearance preferences', () => {
     });
   });
 
-  it('无本地记录时直接使用出厂液态玻璃深色，不改写已有本端外观', () => {
+  it('无本地记录时直接使用出厂默认（白天透光），不改写已有本端外观', () => {
     expect(loadAppearancePreferences()).toEqual({
       ...DEFAULT_APPEARANCE_PREFERENCES,
       labPageLayouts: cloneDefaultLabPageLayouts(),
       generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES },
     });
-    saveAppearancePreferences({ ...BUILTIN_APPEARANCE_PRESET, galleryPointerTiltAngle: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltAngle, galleryPointerTiltWeight: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltWeight, designTheme: 'nai-atelier', tagAssistEnabled: true, promptInputAutoHeight: true, labSectionedPrompt: false, promptTranslationAutoHeight: true, generationStreamPreview: false, rememberGenerationSettings: true, generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES }, continuousGenerationEnabled: true, forceEmptySeed: false, enforceFreeStepLimit: true, labPageLayouts: cloneDefaultLabPageLayouts(), customPresets: [], activePresetId: 'builtin-default' });
+    saveAppearancePreferences({ ...BUILTIN_APPEARANCE_PRESET, surfaces: 'solid', themeMode: 'dark', galleryPointerTiltAngle: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltAngle, galleryPointerTiltWeight: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltWeight, designTheme: 'nai-atelier', tagAssistEnabled: true, promptInputAutoHeight: true, labSectionedPrompt: false, promptTranslationAutoHeight: true, generationStreamPreview: false, rememberGenerationSettings: true, generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES }, continuousGenerationEnabled: true, forceEmptySeed: false, enforceFreeStepLimit: true, labPageLayouts: cloneDefaultLabPageLayouts(), customPresets: [], activePresetId: 'builtin-default' });
     expect(loadAppearancePreferences().activePresetId).toBe('builtin-default');
     expect(loadAppearancePreferences().surfaces).toBe('solid');
+    expect(loadAppearancePreferences().themeMode).toBe('dark');
     expect(loadAppearancePreferences().palette).toBeUndefined();
   });
 

@@ -4,20 +4,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BUILTIN_APPEARANCE_PRESET, DEFAULT_APPEARANCE_PREFERENCES } from '../../services/appearancePreferences';
 import { collectorIsLocal, syncCollectorAppearance, useCollectorAppearance } from '../../services/collectorAppearance';
 import { LANGUAGES, setLanguage } from '../../services/i18n';
-import { BUILTIN_APPEARANCE_PRESETS } from '../../services/builtinAppearancePresets';
+import { CUPERTINO_LIQUID_GLASS_PRESET } from '../../services/builtinAppearancePresets';
 
 const fetchMock = vi.fn();
 beforeEach(() => { fetchMock.mockReset().mockResolvedValue({ ok: true }); vi.stubGlobal('fetch', fetchMock); });
 afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
-// 出厂默认已改为液态玻璃；这些用例里的「默认／实色」基准用经典实色内置主题表达，
-// 并显式清掉继承自默认主题的配色、材质与背景，避免它们跟着一起同步。
-const solidDefaults: typeof DEFAULT_APPEARANCE_PREFERENCES = { ...DEFAULT_APPEARANCE_PREFERENCES, ...BUILTIN_APPEARANCE_PRESET, activePresetId: BUILTIN_APPEARANCE_PRESET.id, palette: undefined, details: undefined, background: undefined, workspaceBackgrounds: undefined };
+// 这些用例里的「实色」基准显式设为实色且跟随系统，清掉配色、材质与背景。
+const solidDefaults: typeof DEFAULT_APPEARANCE_PREFERENCES = { ...DEFAULT_APPEARANCE_PREFERENCES, ...BUILTIN_APPEARANCE_PRESET, themeMode: 'system', surfaces: 'solid', activePresetId: BUILTIN_APPEARANCE_PRESET.id, palette: undefined, details: undefined, background: undefined, workspaceBackgrounds: undefined };
 describe('悬浮窗外观同步', () => {
   it('复用主界面背景解析：自选明暗、显式移除、默认壁纸和旧背景均原样同步', async () => {
     const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=';
     const custom = { image, fit: 'tile' as const, opacity: .3, tileSize: 64 };
     const id = 'builtin-cupertino-liquid-glass';
-    const initial: typeof DEFAULT_APPEARANCE_PREFERENCES = { ...DEFAULT_APPEARANCE_PREFERENCES, ...BUILTIN_APPEARANCE_PRESETS[1], activePresetId: id, workspaceBackgrounds: { [id]: { light: custom, dark: null } } };
+    const initial: typeof DEFAULT_APPEARANCE_PREFERENCES = { ...DEFAULT_APPEARANCE_PREFERENCES, ...BUILTIN_APPEARANCE_PRESET, activePresetId: id, workspaceBackgrounds: { [id]: { light: custom, dark: null } } };
     const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: initial } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(JSON.parse(fetchMock.mock.lastCall![1].body).backgrounds).toEqual({ light: custom, dark: null });
@@ -68,7 +67,7 @@ describe('悬浮窗外观同步', () => {
   it('两套内置主题同步材质、圆角及明暗强调色，切回默认清除苹果主题参数', async () => {
     const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: solidDefaults } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const cupertino = BUILTIN_APPEARANCE_PRESETS[0];
+    const cupertino = CUPERTINO_LIQUID_GLASS_PRESET;
     view.rerender({ preferences: { ...solidDefaults, ...cupertino, activePresetId: cupertino.id } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(JSON.parse(fetchMock.mock.lastCall![1].body)).toMatchObject({ surfaces: 'translucent', corners: 'soft', palette: cupertino.palette, accents: { light: '#007aff', dark: '#0a84ff' } });
@@ -88,7 +87,7 @@ describe('悬浮窗外观同步', () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty('palette');
   });
   it('玻璃窗口同步完整明暗材质，实时修改透明度和高光，恢复实色时清除', async () => {
-    const cupertino = BUILTIN_APPEARANCE_PRESETS[0];
+    const cupertino = CUPERTINO_LIQUID_GLASS_PRESET;
     const initial: typeof DEFAULT_APPEARANCE_PREFERENCES = { ...solidDefaults, ...cupertino };
     const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: initial } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));

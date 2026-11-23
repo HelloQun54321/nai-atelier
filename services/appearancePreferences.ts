@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from 'react';
-import cupertinoThemeFile from '../public/themes/cupertino-liquid-glass.json';
 import { applyThemeColors, HEX_COLOR_PATTERN, normalizeThemePalettes, ThemePalettes } from './themePalette';
 import { applyThemeDetails, normalizeThemeDetails, resolveThemeDetails, ThemeDetails } from './themeDetails';
 import { appearanceValues, validateAppearancePreset } from './appearancePresets';
@@ -102,17 +101,17 @@ export interface AppearancePreset {
   background?: ThemeBackground;
 }
 
-/** 经典实色内置主题（石墨炭黑／清风海蓝）；出厂默认已改为液态玻璃深色，本项仍可选。 */
+/** 出厂默认内置主题（NAI Atelier 默认：浅色透光、晴空蓝、标准排版与完整动效）。 */
 export const BUILTIN_APPEARANCE_PRESET: AppearancePreset = {
   id: 'builtin-default',
   name: 'NAI Atelier 默认',
   createdAt: 0,
   isBuiltin: true,
   accentColor: '#0d8bf2',
-  themeMode: 'system',
+  themeMode: 'light',
   density: 'standard',
   corners: 'standard',
-  surfaces: 'solid',
+  surfaces: 'translucent',
   motion: 'full',
   fontScale: 'standard',
   galleryFrostedCaption: true,
@@ -122,16 +121,11 @@ export const BUILTIN_APPEARANCE_PRESET: AppearancePreset = {
   gallerySelectionFocus: true,
 };
 
-/** 出厂默认选用的内置主题 ID（Cupertino Liquid Glass 深色）。 */
-export const DEFAULT_ACTIVE_APPEARANCE_PRESET_ID = 'builtin-cupertino-liquid-glass';
+/** 出厂默认选用的内置主题 ID（NAI Atelier 默认·浅色模式）。 */
+export const DEFAULT_ACTIVE_APPEARANCE_PRESET_ID = BUILTIN_APPEARANCE_PRESET.id;
 
-/** 出厂视觉参数与公开 Cupertino JSON 共用，避免默认与内置预设分叉。 */
-const factoryVisuals = appearanceValues({
-  id: 'factory',
-  name: 'factory',
-  createdAt: 0,
-  ...(cupertinoThemeFile.presets[0] as Omit<AppearancePreset, 'id' | 'name' | 'createdAt'>),
-});
+/** 出厂视觉参数与「NAI Atelier 默认」内置预设同源，避免默认与内置预设分叉。 */
+const factoryVisuals = appearanceValues(BUILTIN_APPEARANCE_PRESET);
 
 export interface AppearancePreferences {
   designTheme: DesignTheme;
@@ -189,7 +183,7 @@ export const POINTER_TILT_WEIGHT = { min: 0, max: 100, step: 5, default: 50 } as
 
 const STORAGE_KEY = 'nai_appearance_preferences';
 const LEGACY_THEME_KEY = 'nai_theme';
-/** 新安装出厂外观：Cupertino Liquid Glass 深色；已有本端保存的外观不被覆盖。 */
+/** 新安装出厂外观：NAI Atelier 默认（浅色透光）；已有本端保存的外观不被覆盖。 */
 export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   designTheme: 'nai-atelier',
   ...factoryVisuals,
@@ -245,8 +239,8 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     ? input.activePresetId.trim()
     : DEFAULT_ACTIVE_APPEARANCE_PRESET_ID;
   const rawDetails = normalizeThemeDetails(input.details);
-  // 旧版内置 Cupertino 默认曾固化 12/22/14 圆角，升级后交还给通用「圆角语言」，避免切换或修改圆角被覆盖。
-  const details = activePresetId === DEFAULT_ACTIVE_APPEARANCE_PRESET_ID
+  // 旧版内置 Cupertino 曾固化 12/22/14 圆角，升级后交还给通用「圆角语言」，避免切换或修改圆角被覆盖。
+  const details = activePresetId === 'builtin-cupertino-liquid-glass'
     && rawDetails?.controlRadius === 12
     && rawDetails?.panelRadius === 22
     && rawDetails?.cardRadius === 14
@@ -368,7 +362,7 @@ export const loadAppearancePreferences = (): AppearancePreferences => {
   } catch {
     // 损坏或禁止读取的本地存储直接回退，初始化在错误边界挂载前也不能阻断启动。
   }
-  // 新安装直接使用出厂默认（含液态玻璃配色）；已有本端记录只规范化字段，不回填新默认配色。
+  // 新安装直接使用出厂默认（NAI Atelier 默认·浅色透光）；已有本端记录只规范化字段，不覆盖用户已选外观。
   if (!hasStoredPreferences) {
     const preferences = {
       ...DEFAULT_APPEARANCE_PREFERENCES,

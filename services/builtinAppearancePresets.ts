@@ -10,11 +10,11 @@ export const CUPERTINO_LIQUID_GLASS_PRESET: AppearancePreset = {
   isBuiltin: true,
 };
 
-/** 新安装与「恢复出厂默认」使用的内置主题（预设二深色）。 */
-export const DEFAULT_ACTIVE_APPEARANCE_PRESET = CUPERTINO_LIQUID_GLASS_PRESET;
+/** 新安装与「恢复出厂默认」使用的内置主题（NAI Atelier 默认·白天透光）。 */
+export const DEFAULT_ACTIVE_APPEARANCE_PRESET = BUILTIN_APPEARANCE_PRESET;
 
-// 出厂默认排在首位，经典实色仍可选用。
+// 出厂默认排在首位，液态玻璃仍可选用。
 export const BUILTIN_APPEARANCE_PRESETS: AppearancePreset[] = [
-  CUPERTINO_LIQUID_GLASS_PRESET,
   BUILTIN_APPEARANCE_PRESET,
+  CUPERTINO_LIQUID_GLASS_PRESET,
 ];

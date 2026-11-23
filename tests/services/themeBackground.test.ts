@@ -54,10 +54,10 @@ describe('自定义工作区背景', () => {
       expect(document.documentElement.style.getPropertyValue('--nai-background-size')).toBe('auto, 256px auto');
       expect(document.documentElement.style.getPropertyValue('--nai-background-image')).toContain(image);
     }
-    applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, ...appearanceValues(BUILTIN_APPEARANCE_PRESET), activePresetId: 'builtin-default' }, true);
+    applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, true);
     expect(document.documentElement.dataset.themeBackground).toBe('false');
     expect(document.documentElement.style.getPropertyValue('--nai-background-image')).toBe('');
-    applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, true);
+    applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, activePresetId: 'builtin-cupertino-liquid-glass' }, true);
     expect(document.documentElement.dataset.themeBackground).toBe('true');
     expect(document.documentElement.style.getPropertyValue('--nai-background-image')).toContain('cupertino-night.webp');
     expect(readAppearancePresetImport('{"name":"旧主题"}')[0].background).toBeUndefined();

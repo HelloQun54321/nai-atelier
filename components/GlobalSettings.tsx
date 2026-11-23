@@ -1,5 +1,5 @@
 import { t, useLanguage, getLanguage, setLanguage, LANGUAGES, type Language } from '../services/i18n';
-import { BUILTIN_APPEARANCE_PRESETS, DEFAULT_ACTIVE_APPEARANCE_PRESET } from '../services/builtinAppearancePresets';
+import { BUILTIN_APPEARANCE_PRESETS, CUPERTINO_LIQUID_GLASS_PRESET, DEFAULT_ACTIVE_APPEARANCE_PRESET } from '../services/builtinAppearancePresets';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
@@ -1005,8 +1005,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                     </span>
                                   </div>
                                   <span className="mt-0.5 block text-xs leading-5 text-gray-500 dark:text-gray-400">
-                                    {preset.id === DEFAULT_ACTIVE_APPEARANCE_PRESET.id ? t("当前出厂默认：液态玻璃深色。")
-                                      : preset.id === BUILTIN_APPEARANCE_PRESET.id ? t("经典实色外观（石墨炭黑 / 晴空蓝）。")
+                                    {preset.id === BUILTIN_APPEARANCE_PRESET.id ? t("当前出厂默认：浅色透光（晴空蓝）。")
+                                      : preset.id === CUPERTINO_LIQUID_GLASS_PRESET.id ? t("液态玻璃质感（附带明暗壁纸）。")
                                       : t("{0} · {1}密度 · {2}圆角", [preset.themeMode === 'dark' ? t('深色') : preset.themeMode === 'light' ? t('浅色') : t('跟随系统'), preset.density === 'compact' ? t('紧凑') : preset.density === 'comfortable' ? t('舒展') : t('标准'), preset.corners === 'sharp' ? t('锐利') : preset.corners === 'soft' ? t('柔和') : t('标准')])}
                                   </span>
                                 </>
