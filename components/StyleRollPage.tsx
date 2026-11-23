@@ -774,6 +774,49 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (id === experimentId) setExperimentId(experiments.find(item => item.id !== id && !item.archived)?.id || '');
     notify(t('已删除画风记录「{0}」', [summary.name]), 'success');
   });
+  /** 批量删除选中的 Roll 记录：一次二次确认，自动跳过正在生成的记录，历史原图与已保存风格串保留。 */
+  const deleteRecords = async (ids: string[]): Promise<boolean> => {
+    if (busyRef.current || loadingRef.current) return false;
+    const idSet = new Set(ids);
+    const targets = experiments.filter(item => !item.archived && idSet.has(item.id) && !getGenerationSeriesSession(rollSourceId(item.id)));
+    if (!targets.length || generatingRef.current) return false;
+    if (!await confirm({
+      title: '批量删除记录',
+      message: t('将永久删除选中的 {0} 条 Roll 记录，其中的轮次与候选配方一并移除；已生成的历史图片与已保存的风格串保留，删除后不能还原。', [targets.length]),
+      confirmLabel: t('删除 {0} 条', [targets.length]),
+      tone: 'danger',
+    })) return false;
+    busyRef.current = true; setBusy(true);
+    const removedIds = new Set<string>();
+    const failed: string[] = [];
+    try {
+      for (const item of targets) {
+        try {
+          await deleteRollExperiment(item.id, item.revision);
+          removedIds.add(item.id);
+        } catch {
+          failed.push(item.name);
+        }
+      }
+      if (!mounted.current) return removedIds.size > 0;
+      if (removedIds.size > 0) {
+        setExperiments(current => current.filter(item => !removedIds.has(item.id)));
+        if (removedIds.has(experimentId)) {
+          setExperimentId(experiments.find(item => !item.archived && !removedIds.has(item.id))?.id || '');
+        }
+      }
+      notify(
+        failed.length
+          ? t('已删除 {0} 条，{1} 条失败：{2}', [removedIds.size, failed.length, failed.join('、')])
+          : t('已删除 {0} 条 Roll 记录', [removedIds.size]),
+        failed.length ? 'error' : 'success',
+      );
+      return removedIds.size > 0;
+    } finally {
+      busyRef.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  };
   /** 旧版本把删除做成回收站；这里只提供一次性清理出口，清完就没有这个状态了。 */
   const purgeArchived = () => void perform(async () => {
     const targets = experiments.filter(item => item.archived);
@@ -1137,7 +1180,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               ];
               const collapseRowClass = 'mobile-touch -mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-gray-100 dark:hover:bg-gray-800';
               const menuRowClass = 'mobile-touch -mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-gray-800 transition-colors hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0';
-              return <div className="max-h-[78dvh] -mx-2 -my-1 space-y-3 overflow-y-auto px-2 py-1">
+              return <div className="max-h-[78dvh] -mx-2 -my-1 space-y-3 overflow-y-auto overflow-x-hidden px-2 py-1">
               <section className="space-y-2.5">
                 <label className="grid grid-cols-[6.25rem_minmax(0,1fr)] items-center gap-2.5 text-xs font-semibold text-gray-700 dark:text-gray-200"><span>{t('本轮张数')}</span><input type="number" aria-label={t('本轮生成张数')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !h-9 text-center tabular-nums`} min={1} max={24} value={count} onChange={event => setCount(Math.min(24, Math.max(1, Number(event.target.value) || 1)))} /></label>
                 <StyleRollRuleFields rules={roundRules} onChange={setRoundRules} disabled={frozen} />
@@ -1266,10 +1309,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     </WorkspaceToolbar>
     </WorkspaceChrome>
     <div className="flex min-h-0 min-w-0 flex-1">
-      {!isMobile && recordsExpanded && <RollRecordNavigation records={experiments} selectedId={experimentId} busy={frozen || preparing} loading={loading}
+      {!isMobile && recordsExpanded && <RollRecordNavigation records={experiments} selectedId={experimentId} generatingRecordId={session ? experiments.find(item => rollSourceId(item.id) === session.scope)?.id : undefined} busy={frozen || preparing} loading={loading}
         className="workspace-fixed-pane workspace-category-navigation appearance-panel hidden min-h-0 w-52 flex-none flex-col overflow-hidden border-r border-gray-200 p-3 dark:border-gray-800 md:flex"
         onSelect={id => setExperimentId(id)} onCreate={createRecord}
-        onRename={(id, name) => renameRecord(id, name)} onDelete={deleteRecord} onPurgeArchived={purgeArchived} />}
+        onRename={(id, name) => renameRecord(id, name)} onDelete={deleteRecord} onDeleteMany={deleteRecords} onPurgeArchived={purgeArchived} />}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
     {(loading || detailLoading) && !experiment ? <PageSpinner className="workspace-scroll-viewport overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
       : <div className="relative flex min-h-0 flex-1">
@@ -1284,10 +1327,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       </div>
     </div>
     {isMobile && <ImagePreviewPortal><MobileBottomSheet open={mobileRecordMenuOpen} title={t('Roll 列表')} onClose={() => setMobileRecordMenuOpen(false)}>
-      <RollRecordNavigation records={experiments} selectedId={experimentId} mobile busy={frozen || preparing} loading={loading} className="flex min-h-0 flex-col"
+      <RollRecordNavigation records={experiments} selectedId={experimentId} generatingRecordId={session ? experiments.find(item => rollSourceId(item.id) === session.scope)?.id : undefined} mobile busy={frozen || preparing} loading={loading} className="flex min-h-0 flex-col"
         onSelect={id => { setExperimentId(id); setMobileRecordMenuOpen(false); }}
         onCreate={() => { setMobileRecordMenuOpen(false); createRecord(); }}
-        onRename={(id, name) => renameRecord(id, name)} onDelete={deleteRecord} onPurgeArchived={purgeArchived} />
+        onRename={(id, name) => renameRecord(id, name)} onDelete={deleteRecord} onDeleteMany={deleteRecords} onPurgeArchived={purgeArchived} />
     </MobileBottomSheet></ImagePreviewPortal>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')} actions={detailActions}>{detail}</MobileDetailView></ImagePreviewPortal>}
     {active && chainTarget !== null && chainTarget === experimentId && !setup && <StyleRollChainArtistDialog knownArtists={knownArtists} source={chainArtistSource} blocked={[...blocklist, ...excludedArtistTags]} onConfirm={source => { if (active && !frozen && !working && chainTarget === experimentId) setChainArtistSource(source); }} onClose={() => setChainTarget(null)} />}

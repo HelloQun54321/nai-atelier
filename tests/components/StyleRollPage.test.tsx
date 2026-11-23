@@ -1542,3 +1542,40 @@ it('旧轮清理支持再 Roll 自动清上一轮（保护已收藏与已存风�
   expect(afterSecondRoll.candidates.map(item => item.id)).toContain('saved-id');
   expect(afterSecondRoll.candidates).toHaveLength(4);
 });
+
+it('左栏 Roll 列表支持原地批量清理，提供空记录、7 天前与留最近 10 条快捷勾选', async () => {
+  const now = Date.now();
+  const eightDaysAgo = now - 8 * 24 * 60 * 60 * 1000;
+  const records = Array.from({ length: 12 }, (_, index) => recordSummary(`rec-${index}`, `Roll ${index + 1}`, {
+    candidates: index === 11 ? 0 : 5,
+    rounds: index === 11 ? 0 : 1,
+    createdAt: index < 2 ? eightDaysAgo : now - index * 1000,
+    updatedAt: index < 2 ? eightDaysAgo : now - index * 1000,
+  }));
+  mocks.load.mockResolvedValue(records);
+  mocks.loadOne.mockImplementation(async (id: string) => structuredClone({ ...experiment, id, name: records.find(item => item.id === id)?.name || id }));
+  await setup();
+
+  fireEvent.click(screen.getByRole('button', { name: '切换画风记录' }));
+  const navigation = await screen.findByRole('complementary', { name: '画风记录列表' });
+  fireEvent.click(within(navigation).getByRole('button', { name: '批量清理记录' }));
+
+  // 快捷勾选「空记录」只勾中 rec-11（0 候选）
+  fireEvent.click(within(navigation).getByRole('button', { name: '空记录' }));
+  expect(within(navigation).getByText('已选 1 条')).toBeTruthy();
+
+  // 快捷勾选「7 天前」勾中 rec-0 与 rec-1
+  fireEvent.click(within(navigation).getByRole('button', { name: '7 天前' }));
+  expect(within(navigation).getByText('已选 2 条')).toBeTruthy();
+
+  // 快捷勾选「留最近 10 条」勾中最早的 2 条，手动取消勾掉 1 条后再批量删除
+  fireEvent.click(within(navigation).getByRole('button', { name: '留最近 10 条' }));
+  expect(within(navigation).getByText('已选 2 条')).toBeTruthy();
+  fireEvent.click(within(navigation).getByRole('checkbox', { name: '选择画风记录：Roll 1' }));
+  expect(within(navigation).getByText('已选 1 条')).toBeTruthy();
+
+  fireEvent.click(within(navigation).getByRole('button', { name: '删除所选 (1)' }));
+  await waitFor(() => expect(mocks.remove).toHaveBeenCalledOnce());
+  expect(mocks.remove).toHaveBeenCalledWith('rec-1', expect.any(Number));
+  await waitFor(() => expect(within(navigation).queryByRole('button', { name: '打开画风记录：Roll 2' })).toBeNull());
+});
