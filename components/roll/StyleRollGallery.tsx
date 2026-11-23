@@ -3,7 +3,6 @@ import { AlertTriangle, Check, Dice5, Heart, LoaderCircle, Pause, Save, Trash2 }
 import type { LocalGenItem } from '../../types';
 import { t } from '../../services/i18n';
 import { type RollCandidate, type RollExperiment } from '../../services/styleRoll';
-import { buildRollWeightBand, rollChipColor } from './rollPalette';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { useGalleryFrostedCaption } from '../../services/appearancePreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from '../ShortestColumnMasonry';
@@ -72,9 +71,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
     const roundNo = roundNumbers?.get(candidate.id);
     const selected = selecting ? selectedIds.has(candidate.id) : selectedId === candidate.id;
     const activate = () => { if (selecting) { if (!busy) onToggle(candidate.id); } else onSelect(selectedId === candidate.id ? '' : candidate.id); };
-
-    // 权重色带：颜色跟画师走，宽度按占比，整体按权重降序铺开
-    const band = buildRollWeightBand(candidate.tags);
+    const hasVisual = Boolean(item || preview?.id === candidate.id);
 
     return <PressRevealSurface key={candidate.id} pressDisabled={selecting} role={selecting ? 'checkbox' : 'button'} tabIndex={0}
       data-agent-action="select" data-gallery-work-id={candidate.id} data-safe-mode-work="true"
@@ -83,11 +80,11 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
       className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border bg-white shadow-sm text-left transition-all duration-200 dark:bg-gray-850 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${selected ? '!border-indigo-500 ring-2 ring-indigo-500/25 shadow-md shadow-indigo-500/10' : 'border-gray-200/90 hover:border-indigo-400 hover:shadow-md dark:border-gray-800/80 dark:hover:border-indigo-500/50'} ${!selecting && selectionFocusEnabled && selectedId && !selected ? 'brightness-[.7]' : ''}`}>
 
       <div data-image-action-left className="absolute left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5">
-        {/* 左上角：编号（参与搜索与详情标题）与删除按钮上下排列。 */}
-                <span className="pointer-events-none flex flex-col items-start rounded-md bg-black/35 px-1.5 py-1 font-mono text-micro leading-tight text-white/90">
+        {/* 已出图卡片左上角仅保留悬停删除，编号与轮次在右侧详情查看；未出图占位卡保留编号方便辨识进度。 */}
+        {!hasVisual && <span className="pointer-events-none flex flex-col items-start rounded-md bg-black/35 px-1.5 py-1 font-mono text-micro leading-tight text-white/90">
           <span>#{index}</span>
           {roundNo ? <span className="text-mini opacity-60">R{roundNo}</span> : null}
-        </span>
+        </span>}
         {!selecting && <div data-card-action="true" className="hover-reveal-md">
           <button type="button" aria-label={t('删除候选 {0}', [index])} title={t('删除')} disabled={busy} onClick={event => { event.stopPropagation(); onArchive(candidate.id); }} className="nai-float-btn mobile-size-locked flex items-center justify-center rounded-full bg-black/50 text-white shadow-md transition-all hover:scale-110 hover:bg-red-600 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
             <Trash2 className="h-3.5 w-3.5" />
@@ -176,28 +173,17 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
           </>
         )}
 
-        {/* 底部微型画师权重色带：颜色锚定画师位置，按权重降序铺开，段与段直接相接 */}
-        {band.length > 0 && (
-          <div className="absolute inset-x-0 bottom-0 z-10 flex h-1 w-full overflow-hidden bg-black/30 opacity-80 transition-opacity group-hover:opacity-100">
-            {band.map(segment => (
-              <span key={segment.key} title={segment.label} className="h-full shrink-0" style={{ flexGrow: segment.pct, flexBasis: 0, backgroundColor: segment.color }} />
-            ))}
-          </div>
-        )}
       </div>
 
-
-
-      {/* 卡片底栏：按权重优先展示前 2 位主画师与剩余数量，保证 4～5 列下也能读清名字；颜色继续锚定原串序号与详情、色带一一对应。 */}
-      <div className="gallery-card-caption flex items-center justify-between px-3 py-2 gap-2 bg-white/95 dark:bg-gray-850/95 border-t border-gray-100 dark:border-gray-800" style={frosted ? { paddingBottom: '1.75rem' } : undefined}>
+      {/* 卡片底栏：按权重优先展示前 2 位主画师与剩余数量。 */}
+      <div className="gallery-card-caption flex items-center justify-between px-3 py-2 gap-2 bg-white/95 dark:bg-gray-850/95 border-t border-gray-100 dark:border-gray-800">
         <div className="flex w-full flex-nowrap items-center gap-1 overflow-hidden min-w-0 flex-1" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
           {candidate.tags
             .map((entry, originalIndex) => ({ entry, originalIndex }))
             .sort((a, b) => b.entry.weight - a.entry.weight || a.originalIndex - b.originalIndex)
             .slice(0, 2)
-            .map(({ entry, originalIndex }) => (
-            <span key={entry.tag} className="gallery-card-badge inline-flex min-w-0 shrink items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-micro font-medium text-gray-700 dark:text-gray-200 border border-gray-200/50 dark:border-gray-700/50">
-              <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: rollChipColor(originalIndex) }} />
+            .map(({ entry }) => (
+            <span key={entry.tag} className="gallery-card-badge inline-flex min-w-0 shrink items-center rounded-md bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-micro font-medium text-gray-700 dark:text-gray-200 border border-gray-200/50 dark:border-gray-700/50">
               <span className="truncate">{entry.tag}</span>
             </span>
           ))}

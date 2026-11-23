@@ -1059,10 +1059,18 @@ it('已归档候选不再出现在任何视图，原图与已保存风格串仍�
   expect(screen.queryByRole('button', { name: '永久清理所选' })).toBeNull();
 });
 
-it('候选编号旁显示所属轮次，便于区分新一轮结果', async () => {
-  experiment.rounds = [{ id: 'first', candidateIds: ['a'], createdAt: 1 }];
+it('已出图卡片不叠放左上角编号与轮次，未出图占位卡与右侧详情仍保留轮次信息', async () => {
+  experiment.rounds = [{ id: 'first', candidateIds: ['a', 'b'], createdAt: 1 }];
+  mocks.history.mockResolvedValue(rows(experiment).slice(0, 1));
   await setup();
-  expect(screen.getByText('R1')).toBeTruthy();
+  const generatedCard = screen.getByRole('button', { name: '查看候选 1' });
+  const pendingCard = screen.getByRole('button', { name: '查看候选 2' });
+  expect(within(generatedCard).queryByText('#1')).toBeNull();
+  expect(within(generatedCard).queryByText('R1')).toBeNull();
+  expect(within(pendingCard).getByText('#2')).toBeTruthy();
+  expect(within(pendingCard).getByText('R1')).toBeTruthy();
+  fireEvent.click(generatedCard);
+  expect(screen.getByLabelText('候选生成信息').textContent).toContain('R1');
 });
 
 it('普通新建使用推荐模板与默认参数，不继承当前记录且无风格串导入入口', async () => {

@@ -53,7 +53,6 @@ import { StyleRollRuleFields } from './roll/StyleRollRuleFields';
 import { clearArtistPreference, collectionRevision, collectionSnapshot, collectionTargetActive, ensureCollection, subscribeCollection, toggleArtistPreference } from '../services/collectionFavorites';
 import { StyleRollGallery } from './roll/StyleRollGallery';
 import { RollRecordNavigation } from './roll/RollRecordNavigation';
-import { rollChipColor } from './roll/rollPalette';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 
@@ -853,8 +852,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         <span>{t('画师与权重')}</span>
         <span className="font-mono text-xs">{selected.tags.length} {t('位画师')}</span>
       </div>
-      <div className="space-y-2.5">{selected.tags.map((entry, index) => {
-        const chipColor = rollChipColor(index);
+      <div className="space-y-2.5">{selected.tags.map(entry => {
         const sampleUrl = sampleUrls.get(normalizeArtistSampleTag(entry.tag));
         const chinese = chineseNames.get(normalizeArtistSampleTag(entry.tag));
         const artistKey = normalizeRollArtistKey(entry.tag);
@@ -862,12 +860,12 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         const isBlocked = blockedArtistKeys.has(artistKey);
         return <div key={entry.tag} className="flex min-w-0 items-center gap-2.5 text-sm">
           <button type="button" disabled={!onOpenArtistLibrary} onClick={() => onOpenArtistLibrary?.(entry.tag)} title={onOpenArtistLibrary ? t('在画师库查看 {0}', [entry.tag]) : undefined} className="shrink-0 disabled:cursor-default">
-            {sampleUrl ? <SmartImage src={sampleUrl} alt="" thumbnailVariant="thumb-160" containerClassName="relative h-11 w-11 overflow-hidden rounded-xl" className="h-full w-full object-cover" previewTransform={sampleUrl.startsWith('/api/artist-samples/image?') ? 'artist-sample-padding-v2' : undefined} /> : <span className="flex h-11 w-11 items-center justify-center rounded-xl text-sm font-bold text-white" style={{ backgroundColor: chipColor }}>{entry.tag.slice(0, 1)}</span>}
+            {sampleUrl ? <SmartImage src={sampleUrl} alt="" thumbnailVariant="thumb-160" containerClassName="relative h-11 w-11 overflow-hidden rounded-xl" className="h-full w-full object-cover" previewTransform={sampleUrl.startsWith('/api/artist-samples/image?') ? 'artist-sample-padding-v2' : undefined} /> : <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gray-200 text-sm font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-200">{entry.tag.slice(0, 1)}</span>}
           </button>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center justify-between gap-2">
               <button type="button" disabled={!onOpenArtistLibrary} onClick={() => onOpenArtistLibrary?.(entry.tag)} title={onOpenArtistLibrary ? t('在画师库查看 {0}', [entry.tag]) : entry.tag} className={`min-w-0 truncate text-left text-xs font-medium disabled:cursor-default ${isBlocked ? 'text-gray-400 line-through dark:text-gray-500' : 'text-gray-800 dark:text-gray-200'}`}>{entry.tag}</button>
-              <div className="flex flex-none items-center gap-1.5"><span className="h-1.5 w-12 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800"><span className="block h-full rounded-full" style={{ width: `${Math.min(100, Math.max(5, (entry.weight / 3) * 100))}%`, backgroundColor: chipColor }} /></span><span className="w-6 text-right font-mono text-xs font-semibold tabular-nums text-gray-600 dark:text-gray-300">{entry.weight.toFixed(1)}</span></div>
+              <div className="flex flex-none items-center gap-1.5"><span className="h-1.5 w-12 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800"><span className="block h-full rounded-full bg-[var(--nai-accent)]" style={{ width: `${Math.min(100, Math.max(5, (entry.weight / 3) * 100))}%` }} /></span><span className="w-6 text-right font-mono text-xs font-semibold tabular-nums text-gray-600 dark:text-gray-300">{entry.weight.toFixed(1)}</span></div>
             </div>
             <div className="mt-0.5 flex min-w-0 items-center justify-between gap-1">
               <span className="min-w-0 truncate text-micro text-gray-400" title={chinese || undefined}>{chinese || ''}</span>
