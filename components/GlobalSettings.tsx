@@ -61,7 +61,7 @@ import { AppearancePaletteEditor } from './AppearancePaletteEditor';
 import { AppearanceBackgroundEditor } from './AppearanceBackgroundEditor';
 import { AppearancePresetPreview } from './AppearancePresetPreview';
 import { AppearanceDetailEditor } from './AppearanceDetailEditor';
-import { normalizeThemeDetails, resolveThemeDetails } from '../services/themeDetails';
+import { normalizeThemeDetails } from '../services/themeDetails';
 import { resolveWorkspaceBackground, type BackgroundMode } from '../services/themeBackground';
 import { sharedAppearancePresets } from '../services/sharedAppearancePresets';
 import { useSharedAppearancePresets } from './useSharedAppearancePresets';
@@ -586,13 +586,12 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       ? { ...patch, galleryPointerTilt: false }
       : patch;
     setAppearancePreferences(current => {
-      if ((!next.corners && !next.accentColor) || 'details' in next || !current.details) return { ...current, ...next };
+      if (!next.corners || 'details' in next || !current.details) return { ...current, ...next };
       const details = { ...current.details };
-      if (next.corners) { delete details.controlRadius; delete details.panelRadius; delete details.cardRadius; }
+      delete details.controlRadius; delete details.panelRadius; delete details.cardRadius;
       for (const mode of ['light', 'dark'] as const) {
         const variant = { ...details[mode] };
-        if (next.corners) { delete variant.controlRadius; delete variant.panelRadius; delete variant.cardRadius; }
-        if (next.accentColor) delete variant.accentColor;
+        delete variant.controlRadius; delete variant.panelRadius; delete variant.cardRadius;
         details[mode] = variant;
       }
       return { ...current, ...next, details: normalizeThemeDetails(details) };
@@ -721,7 +720,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   if (!open) return null;
 
   const activeSectionMeta = activeSection === 'home' ? null : visibleSections.find(section => section.id === activeSection) || null;
-  const effectiveAccent = resolveThemeDetails(appearancePreferences.details, isDark)?.accentColor || appearancePreferences.accentColor;
+  const effectiveAccent = appearancePreferences.accentColor;
 
   return (
     <div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/55 p-0 md:p-4" onMouseDown={requestClose}>
@@ -941,7 +940,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     {allPresets.map(preset => {
                       const isSelected = activePresetId === preset.id && !appearanceModified;
                       const isEditing = editingPresetId === preset.id;
-                      const presetAccent = resolveThemeDetails(preset.details, preset.themeMode === 'system' ? isDark : preset.themeMode === 'dark')?.accentColor || preset.accentColor;
                       return (
                         <div
                           key={preset.id}
@@ -1000,9 +998,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                       <span className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-mini font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400" title={t("内置主题（锁定保护不可删除）")}>
                                         <Lock className="h-2.5 w-2.5" />{t("内置锁定")}</span>
                                     )}
-                                    <span className="text-micro font-semibold text-indigo-600 dark:text-indigo-300">
-                                      {isSelected ? t("当前使用（{0}）", [isDark ? t('深色版本') : t('浅色版本')]) : t("强调色：{0}", [presetAccent])}
-                                    </span>
+                                    {isSelected && (
+                                      <span className="text-micro font-semibold text-indigo-600 dark:text-indigo-300">
+                                        {t("当前使用（{0}）", [isDark ? t('深色版本') : t('浅色版本')])}
+                                      </span>
+                                    )}
                                   </div>
                                   <span className="mt-0.5 block text-xs leading-5 text-gray-500 dark:text-gray-400">
                                     {preset.id === BUILTIN_APPEARANCE_PRESET.id ? t("当前出厂默认：浅色透光（晴空蓝）。")
@@ -1012,15 +1012,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                 </>
                               )}
                             </div>
-                            <AppearancePresetPreview preset={preset} isDark={isDark} backgrounds={appearancePreferences.workspaceBackgrounds} />
+                            <AppearancePresetPreview preset={preset} isDark={isDark} backgrounds={appearancePreferences.workspaceBackgrounds} accentColor={effectiveAccent} />
                           </div>
 
                           {/* 卡片底部操作栏 */}
-                          <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2 dark:border-gray-800/80" onClick={e => e.stopPropagation()}>
-                            <span className="flex items-center gap-1.5 text-micro font-medium text-gray-400">
-                              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: presetAccent }} />
-                              <span className="font-mono">{presetAccent}</span>
-                            </span>
+                          <div className="mt-2 flex items-center justify-end border-t border-gray-100 pt-2 dark:border-gray-800/80" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center gap-1">
                               <button
                                 type="button"
@@ -1069,20 +1065,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
               <SettingsCard title={t("个性化")} icon={<SlidersHorizontal />} className="appearance-control-panel">
                 <div>
-                  <div className="mb-2 flex items-center justify-between"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t("强调色")}</span><span className="font-mono text-micro uppercase text-gray-400">{effectiveAccent}</span></div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {ACCENT_PRESETS.map(preset => (
-                      <button key={preset.color} type="button" onClick={() => updateAppearance({ accentColor: preset.color })} aria-label={t("强调色：{0}", [t(preset.label)])} title={t(preset.label)} className="relative flex h-11 w-11 flex-none items-center justify-center rounded-full md:h-8 md:w-8">
-                        <span aria-hidden="true" className={`flex h-8 w-8 items-center justify-center rounded-full border-2 transition hover:scale-105 ${effectiveAccent === preset.color ? 'border-gray-900 ring-2 ring-gray-900/15 dark:border-white dark:ring-white/20' : 'border-white shadow-sm dark:border-gray-700'}`} style={{ backgroundColor: preset.color }}>
-                          {effectiveAccent === preset.color && <Check className="h-3.5 w-3.5 text-white drop-shadow" />}
-                        </span>
-                      </button>
-                    ))}
-                    <label className="appearance-group relative flex h-8 min-w-24 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-gray-300 bg-white px-2 text-micro font-bold text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"><Palette className="h-3.5 w-3.5" />{t("自定义")}<input type="color" value={effectiveAccent} onChange={event => updateAppearance({ accentColor: event.target.value })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label={t("自定义强调色")} /></label>
-                  </div>
-                </div>
-
-                <div className="mt-4">
                   <div className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">{t("表面材质")}</div>
                   <AppearanceOptionGroup value={appearancePreferences.surfaces} onChange={value => updateAppearance({ surfaces: value as SurfaceStyle })} options={[{ value: 'solid', label: t("实色") }, { value: 'translucent', label: t("透光") }]} />
                 </div>
@@ -1091,6 +1073,19 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <span className="text-xs font-bold text-gray-700 dark:text-gray-200">{t("通用显示偏好")}</span>
                     <span className="text-micro text-gray-500 dark:text-gray-400">{t("切换主题预设时保持不变")}</span>
+                  </div>
+                  <div className="mb-4">
+                    <div className="mb-2 flex items-center justify-between"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t("强调色")}</span><span className="font-mono text-micro uppercase text-gray-400">{effectiveAccent}</span></div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {ACCENT_PRESETS.map(preset => (
+                        <button key={preset.color} type="button" onClick={() => updateAppearance({ accentColor: preset.color })} aria-label={t("强调色：{0}", [t(preset.label)])} title={t(preset.label)} className="relative flex h-11 w-11 flex-none items-center justify-center rounded-full md:h-8 md:w-8">
+                          <span aria-hidden="true" className={`flex h-8 w-8 items-center justify-center rounded-full border-2 transition hover:scale-105 ${effectiveAccent === preset.color ? 'border-gray-900 ring-2 ring-gray-900/15 dark:border-white dark:ring-white/20' : 'border-white shadow-sm dark:border-gray-700'}`} style={{ backgroundColor: preset.color }}>
+                            {effectiveAccent === preset.color && <Check className="h-3.5 w-3.5 text-white drop-shadow" />}
+                          </span>
+                        </button>
+                      ))}
+                      <label className="appearance-group relative flex h-8 min-w-24 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-gray-300 bg-white px-2 text-micro font-bold text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"><Palette className="h-3.5 w-3.5" />{t("自定义")}<input type="color" value={effectiveAccent} onChange={event => updateAppearance({ accentColor: event.target.value })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label={t("自定义强调色")} /></label>
+                    </div>
                   </div>
                   <div className="grid gap-4 lg:grid-cols-2">
                   <div><div className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">{t("界面密度")}</div><AppearanceOptionGroup value={appearancePreferences.density} onChange={value => updateAppearance({ density: value as InterfaceDensity })} options={[{ value: 'comfortable', label: t("舒展") }, { value: 'standard', label: t("标准") }, { value: 'compact', label: t("紧凑") }]} /></div>

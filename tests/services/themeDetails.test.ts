@@ -45,8 +45,8 @@ describe('可分享的高级主题能力', () => {
   it('交付的 Cupertino 示例通过真实导入器，并保留明暗覆盖与可分享参数', () => {
     const [preset] = readAppearancePresetImport(readFileSync('public/themes/cupertino-liquid-glass.json', 'utf8'));
     expect(preset.name).toBe('Cupertino Liquid Glass');
-    expect(resolveThemeDetails(preset.details, false)?.accentColor).toBe('#007aff');
-    expect(resolveThemeDetails(preset.details, true)?.accentColor).toBe('#0a84ff');
+    expect(resolveThemeDetails(preset.details, false)?.accentColor).toBeUndefined();
+    expect(resolveThemeDetails(preset.details, true)?.accentColor).toBeUndefined();
     expect(resolveThemeDetails(preset.details, true)?.controlStyle).toBe('filled');
     for (const dark of [false, true]) {
       const details = resolveThemeDetails(preset.details, dark)!;
@@ -74,16 +74,16 @@ describe('可分享的高级主题能力', () => {
     }
   });
 
-  it('切换明暗即时更新强调色和材质，清除高级主题不残留控件或分层覆盖', () => {
-    const preferences = { ...DEFAULT_APPEARANCE_PREFERENCES, surfaces: 'translucent' as const, details: { controlStyle: 'filled' as const, sidebarOpacity: .72, toolbarOpacity: .84, panelOpacity: .96, dark: { accentColor: '#0a84ff', borderOpacity: .25 }, light: { accentColor: '#006adc', controlShadow: .4 } } };
+  it('切换明暗即时更新材质，强调色统一遵循全局选项且清除高级主题不残留控件或分层覆盖', () => {
+    const preferences = { ...DEFAULT_APPEARANCE_PREFERENCES, accentColor: '#8b5cf6', surfaces: 'translucent' as const, details: { controlStyle: 'filled' as const, sidebarOpacity: .72, toolbarOpacity: .84, panelOpacity: .96, dark: { accentColor: '#0a84ff', borderOpacity: .25 }, light: { accentColor: '#006adc', controlShadow: .4 } } };
     const root = document.documentElement;
     applyAppearancePreferences(preferences, true);
     expect(root.dataset.controlStyle).toBe('filled');
-    expect(root.style.getPropertyValue('--nai-accent')).toBe('#0a84ff');
+    expect(root.style.getPropertyValue('--nai-accent')).toBe('#8b5cf6');
     expect(root.style.getPropertyValue('--nai-panel-opacity')).toBe('96%');
     expect(root.style.getPropertyValue('--nai-border-opacity')).toBe('25%');
     applyAppearancePreferences(preferences, false);
-    expect(root.style.getPropertyValue('--nai-accent')).toBe('#006adc');
+    expect(root.style.getPropertyValue('--nai-accent')).toBe('#8b5cf6');
     expect(root.style.getPropertyValue('--nai-control-shadow')).toBe('0.4');
     expect(root.style.getPropertyValue('--nai-border-opacity')).toBe('');
     applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, false);

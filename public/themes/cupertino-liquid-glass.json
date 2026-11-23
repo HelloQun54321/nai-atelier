@@ -3,7 +3,7 @@
   "presets": [
     {
       "name": "Cupertino Liquid Glass",
-      "accentColor": "#007aff",
+      "accentColor": "#0d8bf2",
       "themeMode": "dark",
       "density": "standard",
       "corners": "soft",
@@ -64,7 +64,6 @@
         "light": {
           "labEditorOpacity": 0.74,
           "saturation": 105,
-          "accentColor": "#007aff",
           "highlight": 0.38,
           "borderOpacity": 0.28,
           "controlShadow": 0.12,
@@ -73,7 +72,6 @@
           "panelOpacity": 0.82
         },
         "dark": {
-          "accentColor": "#0a84ff",
           "highlight": 0.22,
           "borderOpacity": 0.24,
           "controlShadow": 0.1,

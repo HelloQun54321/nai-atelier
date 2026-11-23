@@ -374,7 +374,7 @@ describe('appearance preferences', () => {
     expect(appearanceMatchesPreset(DEFAULT_APPEARANCE_PREFERENCES, factory)).toBe(true);
     expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, forceEmptySeed: true }, factory)).toBe(true);
     expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, themeMode: 'light', density: 'compact', corners: 'sharp', fontScale: 'small', motion: 'off', galleryFrostedCaption: false }, factory)).toBe(true);
-    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, accentColor: '#ffffff' }, factory)).toBe(false);
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, accentColor: '#ffffff' }, factory)).toBe(true);
     expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, surfaces: 'solid' }, factory)).toBe(false);
     expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, palette: { light: { panel: '#ffffff', text: '#112233' } } }, { ...factory, palette: { light: { text: '#112233', panel: '#ffffff' } } })).toBe(true);
   });

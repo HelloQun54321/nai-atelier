@@ -59,18 +59,18 @@ describe('悬浮窗外观同步', () => {
     expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(fetchMock.mock.calls.every(call => call[0] === '/api/style-collector/appearance')).toBe(true);
   });
-  it('未覆盖的明暗强调色沿用基础强调色', async () => {
+  it('悬浮窗明暗始终统一使用全局强调色，不随主题细节按明暗单独覆盖', async () => {
     renderHook(() => useCollectorAppearance({ ...DEFAULT_APPEARANCE_PREFERENCES, accentColor: '#123456', details: { dark: { accentColor: '#abcdef' } } }, false));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    expect(JSON.parse(fetchMock.mock.lastCall![1].body).accents).toEqual({ light: '#123456', dark: '#abcdef' });
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body).accents).toEqual({ light: '#123456', dark: '#123456' });
   });
-  it('两套内置主题同步材质、圆角及明暗强调色，切回默认清除苹果主题参数', async () => {
+  it('两套内置主题同步材质与圆角并统一沿用全局强调色，切回默认清除苹果主题参数', async () => {
     const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: solidDefaults } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const cupertino = CUPERTINO_LIQUID_GLASS_PRESET;
     view.rerender({ preferences: { ...solidDefaults, ...cupertino, activePresetId: cupertino.id } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(JSON.parse(fetchMock.mock.lastCall![1].body)).toMatchObject({ surfaces: 'translucent', corners: 'soft', palette: cupertino.palette, accents: { light: '#007aff', dark: '#0a84ff' } });
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body)).toMatchObject({ surfaces: 'translucent', corners: 'soft', palette: cupertino.palette, accents: { light: '#0d8bf2', dark: '#0d8bf2' } });
     view.rerender({ preferences: solidDefaults });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(JSON.parse(fetchMock.mock.lastCall![1].body)).toMatchObject({ surfaces: 'solid', corners: 'standard', accents: { light: '#0d8bf2', dark: '#0d8bf2' } });

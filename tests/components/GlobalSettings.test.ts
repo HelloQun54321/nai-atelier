@@ -138,17 +138,20 @@ describe('GlobalSettings', () => {
   it('无自定义主题且共享库离线时仍可选用内置苹果主题，锁定原件并保留通用偏好与生图偏好', async () => {
     themeFixture.fail = true;
     const changed = vi.fn<(preferences: AppearancePreferences) => void>();
-    render(React.createElement(SettingsHarness, { initialAppearancePreferences: { corners: 'sharp', density: 'compact', gallerySelectionFocus: false, galleryFrostedCaption: false, galleryHoverFloat: false, forceEmptySeed: true, continuousGenerationEnabled: false }, onAppearancePreferencesChange: changed }));
+    render(React.createElement(SettingsHarness, { initialAppearancePreferences: { accentColor: '#8b5cf6', corners: 'sharp', density: 'compact', gallerySelectionFocus: false, galleryFrostedCaption: false, galleryHoverFloat: false, forceEmptySeed: true, continuousGenerationEnabled: false }, onAppearancePreferencesChange: changed }));
     const glass = screen.getByRole('button', { name: '应用外观预设：Cupertino Liquid Glass' });
     expect(glass.textContent).toContain('内置锁定');
     expect(glass.textContent).not.toContain('石墨炭黑');
     expect(screen.queryByRole('button', { name: '删除「Cupertino Liquid Glass」' })).toBeNull();
     expect(screen.queryByRole('button', { name: '重命名「Cupertino Liquid Glass」' })).toBeNull();
     fireEvent.click(glass);
-    expect(changed.mock.lastCall?.[0]).toMatchObject({ activePresetId: 'builtin-cupertino-liquid-glass', corners: 'sharp', density: 'compact', gallerySelectionFocus: false, galleryFrostedCaption: false, galleryHoverFloat: false, forceEmptySeed: true, continuousGenerationEnabled: false, details: { material: 'glass' } });
+    expect(changed.mock.lastCall?.[0]).toMatchObject({ activePresetId: 'builtin-cupertino-liquid-glass', accentColor: '#8b5cf6', corners: 'sharp', density: 'compact', gallerySelectionFocus: false, galleryFrostedCaption: false, galleryHoverFloat: false, forceEmptySeed: true, continuousGenerationEnabled: false, details: { material: 'glass' } });
     expect(changed.mock.lastCall?.[0].details?.panelRadius).toBeUndefined();
     expect(glass.getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(screen.getByRole('button', { name: '强调色：紫罗兰' }));
+    // 更改强调色属于通用偏好，不把主题标为已修改；更改表面材质等主题风格才会标记修改。
+    fireEvent.click(screen.getByRole('button', { name: '强调色：绯红' }));
+    expect(screen.queryByText('当前外观已修改')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '实色' }));
     expect(screen.getByText('当前外观已修改')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '保存修改' })).toBeNull();
     expect(screen.getByRole('button', { name: '另存当前主题' })).toBeTruthy();
@@ -881,46 +884,48 @@ describe('GlobalSettings', () => {
     expect(screen.getByRole('link', { name: 'helloqun54321@qq.com' }).getAttribute('href')).toBe('mailto:helloqun54321@qq.com');
   });
 
-  it('当前外观修改不会改写已保存卡片，明确标记修改并提供当前外观导出', async () => {
+  it('通用强调色不触发主题修改标记，主题风格改动才标记已修改并支持导出', async () => {
     const { container } = render(React.createElement(SettingsHarness));
 
     const activeCard = container.querySelector('.atelier-theme-card');
     expect(activeCard).toBeTruthy();
     expect(activeCard?.parentElement?.classList.contains('grid-cols-1')).toBe(true);
     expect(activeCard?.parentElement?.classList.contains('sm:grid-cols-2')).toBe(false);
-
-    // 出厂默认卡片预览色标为 NAI Atelier 默认晴空蓝
-    expect(activeCard?.textContent).toContain('#0d8bf2');
-
-    // 点击第二个强调色（靛蓝 #6366f1）
-    const indigoButton = screen.getByRole('button', { name: '强调色：靛蓝' });
-    fireEvent.click(indigoButton);
-
-    expect(await screen.findByText('当前外观已修改')).toBeTruthy();
-    expect(activeCard?.getAttribute('aria-pressed')).toBe('false');
-    expect(activeCard?.textContent).toContain('#0d8bf2');
-    expect(activeCard?.textContent).not.toContain('#6366f1');
+    expect(activeCard?.getAttribute('aria-pressed')).toBe('true');
 
     const previewAccentBar = activeCard?.querySelector('.atelier-theme-preview [data-preview-part="action"]');
     expect(previewAccentBar).toBeTruthy();
-    expect(previewAccentBar?.getAttribute('style')).toMatch(/rgb\(/);
+    const initialAccentStyle = previewAccentBar?.getAttribute('style') || '';
+
+    // 强调色属于通用显示偏好：切换不会标记主题已修改，但会即时反映在预设预览条中
+    fireEvent.click(screen.getByRole('button', { name: '强调色：靛蓝' }));
+    expect(screen.queryByText('当前外观已修改')).toBeNull();
+    expect(activeCard?.getAttribute('aria-pressed')).toBe('true');
+    expect(previewAccentBar?.getAttribute('style')).not.toBe(initialAccentStyle);
+
+    // 修改属于主题本身的表面材质才会标记当前外观已修改，且不改写已保存卡片
+    fireEvent.click(screen.getByRole('button', { name: '实色' }));
+    expect(await screen.findByText('当前外观已修改')).toBeTruthy();
+    expect(activeCard?.getAttribute('aria-pressed')).toBe('false');
+
     fireEvent.click(screen.getByRole('button', { name: '导出当前外观' }));
     await waitFor(() => expect(downloadFile).toHaveBeenCalledTimes(1));
     const reader = new FileReader();
     const json = await new Promise<string>(resolve => { reader.onload = () => resolve(String(reader.result)); reader.readAsText(vi.mocked(downloadFile).mock.calls[0][0] as Blob); });
-    expect(readAppearancePresetImport(json)[0].accentColor).toBe('#6366f1');
+    expect(readAppearancePresetImport(json)[0]).toMatchObject({ surfaces: 'solid', accentColor: '#6366f1' });
   });
 
-  it('基础强调色和圆角能接回明暗覆盖，保留其他高级材质', async () => {
+  it('基础圆角能接回明暗覆盖，保留其他高级材质且不再提供主题版本强调色', async () => {
     const changed = vi.fn<(preferences: AppearancePreferences) => void>();
-    render(React.createElement(SettingsHarness, { initialAppearancePreferences: { details: { controlRadius: 8, dark: { accentColor: '#0a84ff', controlRadius: 6, blur: 28 }, light: { accentColor: '#007aff', panelRadius: 14 } } }, onAppearancePreferencesChange: changed }));
+    render(React.createElement(SettingsHarness, { initialAppearancePreferences: { details: { controlRadius: 8, dark: { controlRadius: 6, blur: 28 }, light: { panelRadius: 14 } } }, onAppearancePreferencesChange: changed }));
     await waitThemeLibrary();
     fireEvent.click(screen.getByRole('button', { name: '强调色：紫罗兰' }));
     expect(changed.mock.lastCall?.[0].accentColor).toBe('#8b5cf6');
-    expect(changed.mock.lastCall?.[0].details?.dark?.accentColor).toBeUndefined();
-    expect(changed.mock.lastCall?.[0].details?.light?.accentColor).toBeUndefined();
     fireEvent.click(screen.getByRole('button', { name: '锐利' }));
     expect(changed.mock.lastCall?.[0].details).toEqual({ dark: { blur: 28 } });
+    fireEvent.click(screen.getByText('控件、排版与玻璃细节'));
+    fireEvent.change(screen.getByLabelText('编辑范围'), { target: { value: 'dark' } });
+    expect(screen.queryByLabelText('版本强调色')).toBeNull();
   });
 
   it('配色可以编辑并覆盖保存，恢复默认保留所有主题、生图偏好和布局', async () => {

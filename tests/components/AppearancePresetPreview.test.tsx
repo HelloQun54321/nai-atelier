@@ -31,11 +31,11 @@ describe('主题卡片独立预览', () => {
     view.rerender(<AppearancePresetPreview preset={BUILTIN_APPEARANCE_PRESET} isDark />);
     expect(preview.style.backgroundSize).toBe('');
   });
-  it('预览使用自己的明暗覆盖，不借用当前界面的强调色或几何', () => {
-    const view = render(<AppearancePresetPreview preset={{ ...BUILTIN_APPEARANCE_PRESET, details: { panelRadius: 16, dark: { accentColor: '#123456', panelRadius: 24 } } }} isDark />);
+  it('预览使用自己的几何覆盖，强调色统一遵循全局选项而非主题明暗覆盖', () => {
+    const view = render(<AppearancePresetPreview preset={{ ...BUILTIN_APPEARANCE_PRESET, details: { panelRadius: 16, dark: { accentColor: '#123456', panelRadius: 24 } } }} isDark accentColor="#8b5cf6" />);
     const preview = view.container.querySelector('[data-preview-mode="dark"]') as HTMLElement;
     expect(preview.style.borderRadius).toBe('12px');
-    expect(preview.querySelector<HTMLElement>('[data-preview-part="action"]')?.style.backgroundColor).toBe(hexRgb(themeAccentColors('#123456', true)[600]));
+    expect(preview.querySelector<HTMLElement>('[data-preview-part="action"]')?.style.backgroundColor).toBe(hexRgb(themeAccentColors('#8b5cf6', true)[600]));
   });
   it('同时展示明暗原件，当前模式只影响标记，不污染另一套配色', () => {
     const preset = { ...BUILTIN_APPEARANCE_PRESET, themeMode: 'light' as const, corners: 'sharp' as const, density: 'compact' as const, palette: { light: { canvas: '#fff4dd', sidebar: '#eee2ce', panel: '#fffaf0', text: '#362415', border: '#a08060' } } };
@@ -55,7 +55,7 @@ describe('主题卡片独立预览', () => {
     expect(dark.style.backgroundColor).toBe('rgb(13, 15, 20)');
   });
   it('高级面板、控件和卡片几何各自预览，实色不显示玻璃高光', () => {
-    const preset = { ...BUILTIN_APPEARANCE_PRESET, details: { controlRadius: 999, panelRadius: 24, cardRadius: 8, spacing: .2, material: 'glass' as const } };
+    const preset = { ...BUILTIN_APPEARANCE_PRESET, surfaces: 'solid' as const, details: { controlRadius: 999, panelRadius: 24, cardRadius: 8, spacing: .2, material: 'glass' as const } };
     const view = render(<AppearancePresetPreview preset={preset} isDark={false} />);
     const preview = view.container.querySelector('[data-preview-mode="light"]') as HTMLElement;
     expect(preview.style.borderRadius).toBe('12px');

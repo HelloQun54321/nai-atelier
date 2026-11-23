@@ -22,7 +22,7 @@ export function useCollectorAppearance(preferences: AppearancePreferences, isDar
     const backgrounds = Object.fromEntries((['light', 'dark'] as const).map(mode => [mode, resolveWorkspaceBackground(workspaceBackgrounds, activePresetId || DEFAULT_ACTIVE_APPEARANCE_PRESET_ID, mode, background) ?? null]));
     const appearance = { themeMode, accentColor, motion, isDark, language, surfaces, corners,
       ...(Object.values(backgrounds).some(Boolean) ? { backgrounds } : {}),
-      accents: { light: details?.light?.accentColor || accentColor, dark: details?.dark?.accentColor || accentColor }, ...(palette || surfaces === 'translucent' ? { palette: { light: resolveThemePalette(palette, false), dark: resolveThemePalette(palette, true) } } : {}),
+      accents: { light: accentColor, dark: accentColor }, ...(palette || surfaces === 'translucent' ? { palette: { light: resolveThemePalette(palette, false), dark: resolveThemePalette(palette, true) } } : {}),
       ...(surfaces === 'translucent' || details ? { materials: Object.fromEntries(([false, true] as const).map(dark => {
         const value = resolveThemeDetails(details, dark);
         return [dark ? 'dark' : 'light', {

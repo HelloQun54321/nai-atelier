@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { applyThemeColors, HEX_COLOR_PATTERN, normalizeThemePalettes, ThemePalettes } from './themePalette';
-import { applyThemeDetails, normalizeThemeDetails, resolveThemeDetails, ThemeDetails } from './themeDetails';
+import { applyThemeDetails, normalizeThemeDetails, ThemeDetails } from './themeDetails';
 import { appearanceValues, validateAppearancePreset } from './appearancePresets';
 import { applyThemeBackground, normalizeThemeBackground, normalizeWorkspaceBackgrounds, resolveWorkspaceBackground, type ThemeBackground, type WorkspaceBackgrounds } from './themeBackground';
 export { APPEARANCE_FORMAT_VERSION, THEME_STYLE_KEYS, appearanceValues, appearancePresetStyleValues, appearanceMatchesPreset, serializeAppearancePresets, validateAppearancePreset, readAppearancePresetImport, parseAppearancePresetsFromJson } from './appearancePresets';
@@ -239,27 +239,33 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     ? input.activePresetId.trim()
     : DEFAULT_ACTIVE_APPEARANCE_PRESET_ID;
   const rawDetails = normalizeThemeDetails(input.details);
-  // 旧版内置 Cupertino 曾固化 12/22/14 圆角，升级后交还给通用「圆角语言」，避免切换或修改圆角被覆盖。
-  const details = activePresetId === 'builtin-cupertino-liquid-glass'
-    && rawDetails?.controlRadius === 12
-    && rawDetails?.panelRadius === 22
-    && rawDetails?.cardRadius === 14
+  // 统一清理旧版按明暗单独覆盖的强调色；旧版内置 Cupertino 曾固化 12/22/14 圆角，升级后交还给通用「圆角语言」。
+  const details = rawDetails
     ? normalizeThemeDetails((() => {
-      const next = { ...rawDetails };
-      delete next.controlRadius;
-      delete next.panelRadius;
-      delete next.cardRadius;
+      const next: ThemeDetails = { ...rawDetails };
+      if (activePresetId === 'builtin-cupertino-liquid-glass'
+        && next.controlRadius === 12
+        && next.panelRadius === 22
+        && next.cardRadius === 14) {
+        delete next.controlRadius;
+        delete next.panelRadius;
+        delete next.cardRadius;
+      }
+      for (const mode of ['light', 'dark'] as const) {
+        if (!next[mode]?.accentColor) continue;
+        const variant = { ...next[mode] };
+        delete variant.accentColor;
+        next[mode] = variant;
+      }
       return next;
     })())
     : rawDetails;
   const rawAccentColor = typeof input.accentColor === 'string' && HEX_COLOR_PATTERN.test(input.accentColor)
     ? input.accentColor.toLowerCase()
     : DEFAULT_APPEARANCE_PREFERENCES.accentColor;
-  // 已选用「NAI Atelier 默认」且仍停留在旧默认 #0ea5e9 时平滑同步到新版清风海蓝，不覆盖其他预设或用户自选色。
+  // 已选用「NAI Atelier 默认」且仍停留在旧默认 #0ea5e9 时平滑同步到新版晴空蓝，不覆盖用户自选色。
   const accentColor = activePresetId === BUILTIN_APPEARANCE_PRESET.id
     && rawAccentColor === LEGACY_BUILTIN_ACCENT_COLOR
-    && !details?.light?.accentColor
-    && !details?.dark?.accentColor
     ? BUILTIN_APPEARANCE_PRESET.accentColor
     : rawAccentColor;
   const backgroundPresetId = activePresetId;
@@ -413,7 +419,8 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences, i
   root.dataset.promptTranslationAutoHeight = String(preferences.promptTranslationAutoHeight);
   if (captionChanged) window.dispatchEvent(new Event('nai-gallery-caption-change'));
   if (inputAutoChanged || translationAutoChanged) window.dispatchEvent(new Event('nai-prompt-auto-height-change'));
-  const accent = resolveThemeDetails(preferences.details, isDark)?.accentColor || preferences.accentColor;
+  // 所有主题明暗统一遵循用户选择的强调色，不再由主题高级细节按明暗单独覆盖。
+  const accent = preferences.accentColor;
   root.style.setProperty('--nai-accent', accent);
   applyThemeColors(root, preferences.palette, isDark, preferences.surfaces === 'translucent', accent);
   applyThemeDetails(root, preferences.details, preferences);

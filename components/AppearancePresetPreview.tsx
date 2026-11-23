@@ -6,13 +6,13 @@ import { resolveThemeDetails } from '../services/themeDetails';
 import { themeBackgroundStyle, resolveWorkspaceBackground, type WorkspaceBackgrounds } from '../services/themeBackground';
 import { t } from '../services/i18n';
 
-export const AppearancePresetPreview: React.FC<{ preset: AppearancePreset; isDark: boolean; backgrounds?: WorkspaceBackgrounds }> = ({ preset, isDark, backgrounds }) => {
+export const AppearancePresetPreview: React.FC<{ preset: AppearancePreset; isDark: boolean; backgrounds?: WorkspaceBackgrounds; accentColor?: string }> = ({ preset, isDark, backgrounds, accentColor }) => {
   const activeDark = preset.themeMode === 'system' ? isDark : preset.themeMode === 'dark';
   return <div className="atelier-theme-preview grid w-full max-w-[34rem] min-w-0 gap-2.5" aria-hidden="true">
     {[false, true].map(dark => {
       const colors = resolveThemePalette(preset.palette, dark);
       const details = resolveThemeDetails(preset.details, dark);
-      const accent = details?.accentColor || preset.accentColor;
+      const accent = accentColor || preset.accentColor;
       const accentText = dark ? mixThemeColor(accent, colors.text, .25) : themeAccentColors(accent, false)[800];
       const action = themeAccentColors(accent, dark)[600], onAction = themeForeground(action);
       const radius = details?.panelRadius !== undefined ? details.panelRadius / 2 : preset.corners === 'sharp' ? 3 : preset.corners === 'soft' ? 12 : 8;

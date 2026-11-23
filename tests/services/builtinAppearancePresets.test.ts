@@ -30,7 +30,9 @@ describe('内置外观主题', () => {
     expect(appearanceMatchesPreset(DEFAULT_APPEARANCE_PREFERENCES, DEFAULT_ACTIVE_APPEARANCE_PRESET)).toBe(true);
     const exported = readAppearancePresetImport(readFileSync('public/themes/cupertino-liquid-glass.json', 'utf8'))[0];
     expect(appearanceValues(CUPERTINO_LIQUID_GLASS_PRESET)).toEqual(appearanceValues(exported));
-    expect(CUPERTINO_LIQUID_GLASS_PRESET).toMatchObject({ isBuiltin: true, createdAt: 0, themeMode: 'dark', galleryFrostedCaption: true, galleryHoverFloat: true, galleryPointerTilt: false, gallerySelectionFocus: true, details: { material: 'glass', light: { accentColor: '#007aff' }, dark: { accentColor: '#0a84ff' } } });
+    expect(CUPERTINO_LIQUID_GLASS_PRESET).toMatchObject({ isBuiltin: true, createdAt: 0, accentColor: '#0d8bf2', themeMode: 'dark', galleryFrostedCaption: true, galleryHoverFloat: true, galleryPointerTilt: false, gallerySelectionFocus: true, details: { material: 'glass' } });
+    expect(CUPERTINO_LIQUID_GLASS_PRESET.details?.light?.accentColor).toBeUndefined();
+    expect(CUPERTINO_LIQUID_GLASS_PRESET.details?.dark?.accentColor).toBeUndefined();
     expect(normalizeAppearancePreferences({ ...appearanceValues(CUPERTINO_LIQUID_GLASS_PRESET), activePresetId: CUPERTINO_LIQUID_GLASS_PRESET.id }).activePresetId).toBe(CUPERTINO_LIQUID_GLASS_PRESET.id);
   });
 
