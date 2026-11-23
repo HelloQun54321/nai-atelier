@@ -1043,21 +1043,40 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         <ToolbarPopover title={t('筛选与排序')} label={t('筛选')} count={Number(filter !== 'all') + Number(Boolean(roundId)) + Number(sort !== 'new')} disabled={!experiment}>
           {close => {
             const hasActiveFilter = filter !== 'all' || Boolean(roundId) || sort !== 'new' || Boolean(query.trim());
-            return <div className="space-y-3.5">
-            <div role="group" aria-label={t('候选筛选')} className="flex flex-wrap gap-1.5">
-              {(['all', 'unsaved', 'saved', 'pending', 'favorited'] as const).map(value => {
-                const activeFilter = filter === value;
-                const total = value === 'favorited' && (!collectionSettled || !historyReady) ? '—' : experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }, undefined, favoriteIds).length : 0;
-                return <button key={value} type="button" aria-label={t(ROLL_FILTER_LABELS[value])} aria-pressed={activeFilter}
-                  onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}
-                  className={`mobile-touch inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors ${activeFilter ? 'border-indigo-200 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-800/80 dark:bg-indigo-950/50 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'}`}>
-                  <span>{t(ROLL_FILTER_LABELS[value])}</span>
-                  <span className="text-micro tabular-nums opacity-60">{total}</span>
-                </button>;
-              })}
+            const filterCount = (value: keyof typeof ROLL_FILTER_LABELS) =>
+              value === 'favorited' && (!collectionSettled || !historyReady)
+                ? '—'
+                : experiment
+                  ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }, undefined, favoriteIds).length
+                  : 0;
+            const pickFilter = (value: keyof typeof ROLL_FILTER_LABELS) => {
+              setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close();
+            };
+            return <div className="space-y-3">
+            <div role="group" aria-label={t('候选筛选')} className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('状态')}</span>
+                <button type="button" aria-label={t(ROLL_FILTER_LABELS.all)} aria-pressed={filter === 'all'}
+                  onClick={() => pickFilter('all')}
+                  className={`mobile-touch inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors ${filter === 'all' ? 'border-indigo-200 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-800/80 dark:bg-indigo-950/50 dark:text-indigo-300' : 'border-gray-200 bg-white font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+                  <span>{t(ROLL_FILTER_LABELS.all)}</span>
+                  <span className="text-micro tabular-nums opacity-65">{filterCount('all')}</span>
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {(['unsaved', 'saved', 'pending', 'favorited'] as const).map(value => {
+                  const activeFilter = filter === value;
+                  return <button key={value} type="button" aria-label={t(ROLL_FILTER_LABELS[value])} aria-pressed={activeFilter}
+                    onClick={() => pickFilter(value)}
+                    className={`mobile-touch flex h-8 min-w-0 items-center justify-between gap-2 rounded-lg border px-2.5 text-xs transition-colors ${activeFilter ? 'border-indigo-200 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-800/80 dark:bg-indigo-950/50 dark:text-indigo-300' : 'border-gray-200 bg-white font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'}`}>
+                    <span className="truncate">{t(ROLL_FILTER_LABELS[value])}</span>
+                    <span className="shrink-0 text-micro tabular-nums opacity-60">{filterCount(value)}</span>
+                  </button>;
+                })}
+              </div>
             </div>
-            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={`${TOOLBAR_FIELD_CLASS} !h-9`}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{`${t('第 {0} 轮', [(experiment?.rounds.indexOf(item) ?? 0) + 1])}${roundConditionLabel(item) ? ` · ${roundConditionLabel(item)}` : ` · ${item.candidateIds.length}`}`}</option>)}</select></label>
-            {scopedRound?.snapshot && <ToolbarButton className="!h-9 w-full" onClick={() => {
+            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={`${TOOLBAR_FIELD_CLASS} !h-8 !rounded-lg !py-0 !text-xs`}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{`${t('第 {0} 轮', [(experiment?.rounds.indexOf(item) ?? 0) + 1])}${roundConditionLabel(item) ? ` · ${roundConditionLabel(item)}` : ` · ${item.candidateIds.length}`}`}</option>)}</select></label>
+            {scopedRound?.snapshot && <ToolbarButton className="!h-8 !rounded-lg !text-xs w-full" onClick={() => {
               const snapshot = scopedRound.snapshot!;
               setRoundRules({ ...snapshot.rules, maxArtists: Math.max(snapshot.rules.maxArtists, snapshot.pinnedArtists?.length ?? 0) });
               setPinnedArtists(snapshot.pinnedArtists ?? []);
@@ -1077,10 +1096,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
             }}><RotateCcw />{t('沿用这轮条件')}</ToolbarButton>}
             <div className="space-y-1.5">
               <span className="block text-xs font-semibold text-gray-700 dark:text-gray-200">{t('排序')}</span>
-              <div role="group" aria-label={t('候选排序')} className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-800/80">
+              <div role="group" aria-label={t('候选排序')} className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800/80">
                 {([['new', '最新生成'], ['old', '最早优先']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={sort === value}
                   onClick={() => setSort(value)}
-                  className={`mobile-touch h-7 rounded-lg text-xs font-medium transition-colors ${sort === value ? 'bg-white font-semibold text-indigo-700 shadow-xs dark:bg-gray-900 dark:text-indigo-300' : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'}`}>
+                  className={`mobile-touch h-7 rounded-md text-xs font-medium transition-colors ${sort === value ? 'bg-white font-semibold text-indigo-700 shadow-xs dark:bg-gray-900 dark:text-indigo-300' : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'}`}>
                   {t(label)}
                 </button>)}
               </div>
