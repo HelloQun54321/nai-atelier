@@ -1844,3 +1844,29 @@ html:is([data-motion='reduced'], [data-motion='off']) .roll-card-orbit-glow {
   animation: none;
   background: color-mix(in srgb, var(--nai-accent) 70%, transparent);
 }
+
+/* 生成中卡片中央圆钮外圈的细强调色旋转进度环。 */
+.roll-stop-btn-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
+  border: 2px solid color-mix(in srgb, var(--nai-accent) 18%, transparent);
+  border-top-color: var(--nai-accent);
+  pointer-events: none;
+}
+
+html[data-motion='full'] .roll-stop-btn-ring {
+  animation: queue-status-spinner-spin 1.1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-motion='full'] .roll-stop-btn-ring {
+    animation: none;
+    border-color: color-mix(in srgb, var(--nai-accent) 55%, transparent);
+  }
+}
+
+html:is([data-motion='reduced'], [data-motion='off']) .roll-stop-btn-ring {
+  animation: none;
+  border-color: color-mix(in srgb, var(--nai-accent) 55%, transparent);
+}

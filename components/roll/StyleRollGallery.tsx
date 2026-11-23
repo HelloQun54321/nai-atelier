@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { AlertTriangle, Check, Clock, Dice5, Heart, LoaderCircle, Pause, Save, Timer, Trash2 } from 'lucide-react';
+import { AlertTriangle, Check, Dice5, Heart, LoaderCircle, Play, RotateCw, Save, Square, Trash2 } from 'lucide-react';
 import type { LocalGenItem } from '../../types';
 import { t } from '../../services/i18n';
 import { type RollCandidate, type RollExperiment } from '../../services/styleRoll';
 import type { GenerationStatusDescriptor } from '../../services/generationStatus';
+import { formatGenerationDuration, readGenerationDurationMs } from '../../services/generationDuration';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { useGalleryFrostedCaption } from '../../services/appearancePreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from '../ShortestColumnMasonry';
@@ -27,6 +28,8 @@ interface Props {
   historyReady: boolean; historyLoading: boolean;
   selecting: boolean; selectedIds: Set<string>; onSelect: (id: string) => void; onToggle: (id: string) => void;
   onSave: (id: string) => void; onArchive: (id: string) => void; busy: boolean;
+  /** 由页面统一算好的当前列数（与默认满一行张数同源，省略时按图库默认规则计算）。 */
+  columns?: number;
   /** 正在生成的候选与其流式预览图。 */
   preview?: { id: string; image: string } | null;
   /** 本批排序：未出图卡片显示「本批第 n/总数 张」。 */
@@ -43,13 +46,14 @@ interface Props {
     stopping?: boolean;
     /** 与实验室生成按钮同源的实时状态语义（图标 + 文案）。 */
     status?: GenerationStatusDescriptor | null;
+    /** 正在生成时的 0.1s 实时跳表文案，紧贴生成圆钮下方展示。 */
+    liveElapsedLabel?: string;
     error?: { message: string; tone: 'error' | 'warning' } | null;
   } | null;
   /** 当前轮剩余可一次性唤醒的待生成张数（>1 时队头卡主按钮直接恢复整批队列）。 */
   pendingBatchCount?: number;
   onGenerate?: (id: string) => void;
   onGeneratePending?: () => void;
-  onPause?: () => void;
   onResume?: () => void;
   onCancel?: () => void;
   onApprove?: () => void;
@@ -60,23 +64,20 @@ interface Props {
   notify: (message: string, type?: 'success' | 'error') => void;
 }
 
-const GEN_PRIMARY = 'mobile-touch inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:opacity-40';
+const GEN_PRIMARY = 'mobile-touch inline-flex items-center gap-1.5 rounded-full bg-[var(--nai-accent)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:brightness-110 disabled:opacity-40';
 const GEN_SECONDARY = 'mobile-touch inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white/90 px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-200 dark:hover:bg-gray-800';
+const ICON_CIRCLE_PRIMARY = 'mobile-touch inline-flex h-12 w-12 items-center justify-center rounded-full bg-[var(--nai-accent)] text-white shadow-md transition-all hover:scale-105 hover:brightness-110 active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nai-accent)] focus-visible:ring-offset-2';
+const ICON_CIRCLE_MUTED = 'mobile-touch inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200/90 bg-gray-100/90 text-gray-500 shadow-xs transition-all hover:scale-105 hover:border-[var(--nai-accent)]/50 hover:text-[var(--nai-accent)] active:scale-95 disabled:opacity-40 dark:border-gray-700/80 dark:bg-gray-900/90 dark:text-gray-400';
+const ICON_CIRCLE_STOP = 'mobile-touch relative inline-flex h-12 w-12 items-center justify-center rounded-full border border-gray-200/80 bg-white/90 text-gray-700 shadow-sm transition-all hover:scale-105 hover:border-red-300 hover:bg-red-50 hover:text-red-600 active:scale-95 disabled:opacity-50 dark:border-gray-700/80 dark:bg-gray-900/85 dark:text-gray-200 dark:hover:border-red-500/50 dark:hover:bg-red-950/60 dark:hover:text-red-300';
+const INLINE_LINK_BTN = 'mobile-touch inline-flex items-center justify-center rounded-full px-2 py-0.5 text-mini font-medium text-gray-500 transition-colors hover:text-[var(--nai-accent)] disabled:opacity-40 dark:text-gray-400';
 
-export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, positions, generationState, pendingBatchCount = 0, onGenerate, onGeneratePending, onPause, onResume, onCancel, onApprove, favoriteIds, emptyState, scrollRef, onScroll, notify }) => {
+export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, columns: columnsProp, preview, positions, generationState, pendingBatchCount = 0, onGenerate, onGeneratePending, onResume, onCancel, onApprove, favoriteIds, emptyState, scrollRef, onScroll, notify }) => {
   const display = useMobileImageDisplayPreferences('roll');
   const requestedColumns = useMasonryColumnCount(display, undefined, scrollRef, 220, false, Boolean(selectedId));
-  const columns = display.desktopColumns === 'auto' ? Math.min(4, requestedColumns) : requestedColumns;
+  const columns = columnsProp ?? (display.desktopColumns === 'auto' ? Math.min(4, requestedColumns) : requestedColumns);
   const frosted = useGalleryFrostedCaption();
   const [ratios, setRatios] = useState<Record<string, number>>({});
   const ratio = (candidate: RollCandidate) => ratios[candidate.id] || (images.get(candidate.id)?.params.width ?? experiment.template.params.width) / (images.get(candidate.id)?.params.height ?? experiment.template.params.height);
-  const renderStatusIcon = (icon?: GenerationStatusDescriptor['icon']) => {
-    if (icon === 'clock') return <Clock className="h-5 w-5" />;
-    if (icon === 'timer') return <Timer className="h-5 w-5" />;
-    if (icon === 'pause') return <Pause className="h-5 w-5" />;
-    if (icon === 'alert') return <AlertTriangle className="h-5 w-5 text-amber-500" />;
-    return <LoaderCircle className="h-5 w-5 animate-spin" />;
-  };
 
   const renderCard = (candidate: RollCandidate) => {
     const item = images.get(candidate.id), index = experiment.candidates.indexOf(candidate) + 1;
@@ -86,6 +87,8 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
       preview?.id === candidate.id
       || (generationState?.running && !generationState.paused && !generationState.awaiting && generationState.generatingId === candidate.id),
     );
+    const durationLabel = item ? formatGenerationDuration(readGenerationDurationMs(item)) : '';
+    const liveElapsedLabel = isActiveGenerating ? (generationState?.liveElapsedLabel || '') : '';
 
     return <PressRevealSurface key={candidate.id} pressDisabled={selecting} role={selecting ? 'checkbox' : 'button'} tabIndex={0}
       data-agent-action="select" data-gallery-work-id={candidate.id} data-safe-mode-work="true" data-generating={isActiveGenerating ? 'true' : undefined}
@@ -107,9 +110,12 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
         {item ? <SmartImage src={item.imageUrl} alt={t('候选 {0}', [index])} className="h-full w-full object-contain" onLoad={event => { const image = event.currentTarget, next = image.naturalWidth / Math.max(1, image.naturalHeight); if (next > 0 && next !== ratios[candidate.id]) setRatios(current => ({ ...current, [candidate.id]: next })); }} />
           : preview?.id === candidate.id ? <div className="relative h-full w-full">
             <img src={preview.image} alt={t('生成预览')} className="h-full w-full object-contain" />
-            <span className="pointer-events-none absolute inset-x-0 bottom-2 mx-auto w-fit rounded-full bg-black/55 px-2 py-0.5 text-micro text-white">{generationState?.status?.label || (generationState?.saving ? t('正在保存…') : t('生成中…'))}</span>
+            <span className="pointer-events-none absolute inset-x-0 bottom-2 mx-auto inline-flex w-fit items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-0.5 text-micro text-white">
+              <span>{generationState?.status?.label || (generationState?.saving ? t('正在保存…') : t('生成中…'))}</span>
+              {liveElapsedLabel && <span className="tabular-nums opacity-85">{liveElapsedLabel}</span>}
+            </span>
           </div>
-            : <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2.5 px-4 text-center">
+            : <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2 px-4 text-center">
               {!historyReady ? (historyLoading ? <InlineSpinner label={t('加载中…')} className="text-xs" /> : <div className="text-xs font-medium">{t('历史暂不可用')}</div>) : (() => {
                 const state = generationState, position = positions?.get(candidate.id);
                 const isNext = state?.nextId === candidate.id;
@@ -118,15 +124,21 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
                 const positionLabel = position ? t('本批第 {0}/{1} 张', [position.index, position.total]) : '';
                 const canResumeBatch = Boolean(pendingBatchCount > 1 && onGeneratePending);
                 const fire = (action?: () => void) => (event: React.MouseEvent) => { event.stopPropagation(); action?.(); };
-                if (error) return <>
-                  <AlertTriangle className={`h-6 w-6 ${error.tone === 'warning' ? 'text-amber-500' : 'text-red-500'}`} />
-                  <p className={`line-clamp-3 max-w-full break-words text-xs font-medium ${error.tone === 'warning' ? 'text-amber-700 dark:text-amber-300' : 'text-red-600 dark:text-red-300'}`} title={error.message}>{error.message}</p>
-                  {canResumeBatch ? <>
-                    <button type="button" disabled={busy} onClick={fire(onGeneratePending)} className={GEN_PRIMARY}><Dice5 className="h-3.5 w-3.5" />{t('重试并继续（{0} 张）', [pendingBatchCount])}</button>
-                    {onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={GEN_SECONDARY}>{t('仅生此张')}</button>}
-                  </> : onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={GEN_PRIMARY}><Dice5 className="h-3.5 w-3.5" />{t('重试')}</button>}
-                  {positionLabel && <span className="text-mini">{positionLabel}</span>}
-                </>;
+                if (error) {
+                  const retryTone = error.tone === 'warning' ? 'bg-amber-500 hover:bg-amber-600 focus-visible:ring-amber-500' : 'bg-red-500 hover:bg-red-600 focus-visible:ring-red-500';
+                  const retryLabel = canResumeBatch ? t('重试并继续（{0} 张）', [pendingBatchCount]) : t('重试');
+                  return <>
+                    <p className={`line-clamp-3 max-w-full break-words text-xs font-medium ${error.tone === 'warning' ? 'text-amber-700 dark:text-amber-300' : 'text-red-600 dark:text-red-300'}`} title={error.message}>{error.message}</p>
+                    {(canResumeBatch ? onGeneratePending : onGenerate) && (
+                      <button type="button" disabled={busy} aria-label={retryLabel} title={retryLabel} onClick={fire(canResumeBatch ? onGeneratePending : () => onGenerate?.(candidate.id))} className={`mobile-touch inline-flex h-12 w-12 items-center justify-center rounded-full text-white shadow-md transition-all hover:scale-105 active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${retryTone}`}>
+                        <RotateCw className="h-5 w-5" />
+                      </button>
+                    )}
+                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{retryLabel}</span>
+                    {canResumeBatch && onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={INLINE_LINK_BTN}>{t('仅生此张')}</button>}
+                    {positionLabel && <span className="text-mini text-gray-400 dark:text-gray-500">{positionLabel}</span>}
+                  </>;
+                }
                 if (state?.running) {
                   if (state.awaiting && isNext) return <>
                     <AlertTriangle className="h-5 w-5 text-amber-500" />
@@ -135,32 +147,51 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
                     {onCancel && <button type="button" onClick={fire(onCancel)} className={GEN_SECONDARY}>{t('取消')}</button>}
                   </>;
                   if (isGenerating) return <>
-                    {renderStatusIcon(state.status?.icon)}
-                    <span className="text-xs font-medium">{state.status?.label || (state.saving ? t('正在保存…') : t('生成中…'))}</span>
-                    {state.paused
-                      ? onResume && isNext && <button type="button" disabled={busy} onClick={fire(onResume)} className={GEN_SECONDARY}>{t('继续')}</button>
-                      : onPause && <button type="button" disabled={busy || state.stopping} onClick={fire(onPause)} className={GEN_SECONDARY}><Pause className="h-3 w-3" />{t('暂停')}</button>}
-                    {onCancel && <button type="button" disabled={state.stopping} onClick={fire(onCancel)} className={GEN_SECONDARY}>{t('取消')}</button>}
+                    <button type="button" disabled={!onCancel || state.stopping} aria-label={t('停止生成')} title={t('停止生成')} onClick={fire(onCancel)} className={ICON_CIRCLE_STOP}>
+                      {!state.stopping && <span aria-hidden="true" className="roll-stop-btn-ring" />}
+                      {state.stopping ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Square className="h-3.5 w-3.5 fill-current" />}
+                    </button>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-700 dark:text-gray-200">
+                      <span>{state.status?.label || (state.saving ? t('正在保存…') : t('生成中…'))}</span>
+                      {liveElapsedLabel && <span className="tabular-nums opacity-75" data-live-duration>{liveElapsedLabel}</span>}
+                    </span>
+                    {positionLabel && <span className="text-mini text-gray-400 dark:text-gray-500">{positionLabel}</span>}
+                  </>;
+                  if (state.paused && isNext) return <>
+                    {onResume && <button type="button" disabled={busy} aria-label={t('继续')} title={t('继续')} onClick={fire(onResume)} className={ICON_CIRCLE_PRIMARY}>
+                      <Play className="h-5 w-5 translate-x-0.5 fill-current" />
+                    </button>}
+                    <span className="text-xs font-medium text-gray-700 dark:text-gray-200">{state.status?.label || t('已暂停')}</span>
+                    {onCancel && <button type="button" disabled={state.stopping} onClick={fire(onCancel)} className={INLINE_LINK_BTN}>{t('取消')}</button>}
+                    {positionLabel && <span className="text-mini text-gray-400 dark:text-gray-500">{positionLabel}</span>}
                   </>;
                   return <>
                     <div className="appearance-group flex h-10 w-10 items-center justify-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-gray-900">
-                      {state.paused && isNext ? <Pause className="h-5 w-5" /> : <Dice5 className="h-5 w-5" />}
+                      <Dice5 className="h-5 w-5" />
                     </div>
-                    <span className="text-xs font-medium">{state.paused && isNext ? (state.status?.label || t('已暂停')) : t('排队中 · 第 {0} 位', [position?.index ?? 1])}</span>
-                    {state.paused && isNext && onResume && <button type="button" disabled={busy} onClick={fire(onResume)} className={GEN_SECONDARY}>{t('继续')}</button>}
-                    {state.paused && isNext && onCancel && <button type="button" disabled={state.stopping} onClick={fire(onCancel)} className={GEN_SECONDARY}>{t('取消')}</button>}
-                    {positionLabel && <span className="text-mini">{positionLabel}</span>}
+                    <span className="text-xs font-medium">{t('排队中 · 第 {0} 位', [position?.index ?? 1])}</span>
+                    {positionLabel && <span className="text-mini text-gray-400 dark:text-gray-500">{positionLabel}</span>}
                   </>;
                 }
+                if (isNext && canResumeBatch) return <>
+                  <button type="button" disabled={busy} aria-label={t('继续生成剩余 {0} 张', [pendingBatchCount])} title={t('继续生成剩余 {0} 张', [pendingBatchCount])} onClick={fire(onGeneratePending)} className={ICON_CIRCLE_PRIMARY}>
+                    <Play className="h-5 w-5 translate-x-0.5 fill-current" />
+                  </button>
+                  <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('继续剩余 {0} 张', [pendingBatchCount])}</span>
+                  {onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={INLINE_LINK_BTN}>{t('仅生此张')}</button>}
+                  {positionLabel && <span className="text-mini text-gray-400 dark:text-gray-500">{positionLabel}</span>}
+                </>;
+                if (canResumeBatch) return <>
+                  {onGenerate && <button type="button" disabled={busy} aria-label={t('仅生此张')} title={t('仅生此张')} onClick={fire(() => onGenerate(candidate.id))} className={ICON_CIRCLE_MUTED}>
+                    <Play className="h-4 w-4 translate-x-0.5 fill-current" />
+                  </button>}
+                  {positionLabel && <span className="text-mini text-gray-400 dark:text-gray-500">{positionLabel}</span>}
+                </>;
                 return <>
-                  <div className="appearance-group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-gray-900">
-                    <Dice5 className="h-6 w-6" />
-                  </div>
-                  {isNext && canResumeBatch ? <>
-                    <button type="button" disabled={busy} onClick={fire(onGeneratePending)} className={GEN_PRIMARY}>{t('继续生成剩余 {0} 张', [pendingBatchCount])}</button>
-                    {onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={GEN_SECONDARY}>{t('仅生此张')}</button>}
-                  </> : onGenerate && <button type="button" disabled={busy} onClick={fire(() => onGenerate(candidate.id))} className={canResumeBatch ? GEN_SECONDARY : GEN_PRIMARY}>{t(canResumeBatch ? '仅生此张' : '生成')}</button>}
-                  {positionLabel && <span className="text-mini">{positionLabel}</span>}
+                  {onGenerate && <button type="button" disabled={busy} aria-label={t('生成')} title={t('生成')} onClick={fire(() => onGenerate(candidate.id))} className={ICON_CIRCLE_PRIMARY}>
+                    <Play className="h-5 w-5 translate-x-0.5 fill-current" />
+                  </button>}
+                  {positionLabel && <span className="text-mini text-gray-400 dark:text-gray-500">{positionLabel}</span>}
                 </>;
               })()}
             </div>}
@@ -194,9 +225,9 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
       </div>
 
-      {/* 卡片底栏：按权重优先展示前 2 位主画师与剩余数量。 */}
-      <div className="gallery-card-caption flex items-center justify-between px-3 py-2 gap-2 bg-white/95 dark:bg-gray-850/95 border-t border-gray-100 dark:border-gray-800">
-        <div className="flex w-full flex-nowrap items-center gap-1 overflow-hidden min-w-0 flex-1" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
+      {/* 卡片底栏：按权重优先展示前 2 位主画师与剩余数量；出图完成后在正下方居左永久保留生成耗时。 */}
+      <div className="gallery-card-caption flex flex-col items-stretch justify-center px-3 py-2 gap-1 bg-white/95 dark:bg-gray-850/95 border-t border-gray-100 dark:border-gray-800">
+        <div className="flex w-full flex-nowrap items-center gap-1 overflow-hidden min-w-0" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
           {candidate.tags
             .map((entry, originalIndex) => ({ entry, originalIndex }))
             .sort((a, b) => b.entry.weight - a.entry.weight || a.originalIndex - b.originalIndex)
@@ -212,6 +243,11 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
             </span>
           )}
         </div>
+        {durationLabel && (
+          <div className="gallery-card-meta text-left text-mini leading-none tabular-nums text-gray-500 dark:text-gray-400" data-generation-duration>
+            {durationLabel}
+          </div>
+        )}
       </div>
     </PressRevealSurface>;
   };

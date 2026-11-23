@@ -11,6 +11,7 @@ import { executeAgentCommand, getAgentCommands } from '../../services/agentComma
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { setLanguage } from '../../services/i18n';
 import { emitCloudQueueStatus } from '../../services/cloudQueue';
+import { clearImageDisplayPageOverride, setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), loadOne: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), alert: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, remove: vi.fn(), setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, ensureCollection: vi.fn(), favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>(), interrupted: [] as any[], clearInterrupted: vi.fn(), restore: vi.fn(async () => {}), getQueue: vi.fn(async () => ({ intervalSeconds: 2, intervalJitterPercent: 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })), setIntervalPref: vi.fn(async (_key: string, seconds: number, jitterPercent?: number) => ({ intervalSeconds: seconds, intervalJitterPercent: jitterPercent ?? 0, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] })) }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: async () => ({ available: true, canManage: true, packs: [] }), ARTIST_SAMPLES_CHANGED: 'nai-artist-samples-changed', getArtistSampleLibrary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
@@ -79,7 +80,7 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { callback: ResizeObserverCallback; constructor(callback: ResizeObserverCallback) { this.callback = callback; } observe(target: Element) { this.callback([{ target, contentRect: { width: 1024 } } as ResizeObserverEntry], this as unknown as ResizeObserver); } unobserve() {} disconnect() {} });
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: async () => new Blob(['synthetic-image'], { type: 'image/png' }) })));
 });
-afterEach(() => { emitCloudQueueStatus(null); cleanup(); document.querySelectorAll('[data-test-alert]').forEach(node => node.remove()); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
+afterEach(() => { emitCloudQueueStatus(null); clearImageDisplayPageOverride('roll'); localStorage.clear(); cleanup(); document.querySelectorAll('[data-test-alert]').forEach(node => node.remove()); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
 const setup = async (options = {}) => {
   const onSaveChain = vi.fn(async chain => ({ ...chain, id: 'saved-chain' })), onNavigateToPlayground = vi.fn();
   const props = { active: true, chains: [], enforceFreeStepLimit: true, generationStreamPreview: true, notify: vi.fn(), onSaveChain, onNavigateToPlayground, onOpenChain: vi.fn(), ...options };
@@ -635,7 +636,7 @@ it('卡片直接保存；下一轮重新从画师库随机抽取，不再继承�
 it('未完成轮次可直接再Roll，保留已生成图片和原配方', async () => {
   experiment.rounds = [{ id: 'unfinished', candidateIds: ['a', 'b'], createdAt: 1 }];
   await setup(); fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' })); await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
-  const e = mocks.generate.mock.calls[0][0]; expect(e.rounds[0].closedAt).toBeGreaterThan(0); expect(e.rounds.at(-1).candidateIds).toHaveLength(6); expect(e.candidates.slice(0, 2)).toEqual(experiment.candidates);
+  const e = mocks.generate.mock.calls[0][0]; expect(e.rounds[0].closedAt).toBeGreaterThan(0); expect(e.rounds.at(-1).candidateIds).toHaveLength(5); expect(e.candidates.slice(0, 2)).toEqual(experiment.candidates);
 });
 it('批量管理原位替换工具栏，按当前搜索全选，保存成功后退出仍能打开风格串', async () => {
   const { props } = await setup();
@@ -849,7 +850,7 @@ it('页面只提供Roll和配方操作，不包含筛选弹窗、对比入口、
   await waitFor(() => expect(props.onSaveChain).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
   await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
-  expect(mocks.generate.mock.calls[0][0].rounds.at(-1).candidateIds).toHaveLength(6);
+  expect(mocks.generate.mock.calls[0][0].rounds.at(-1).candidateIds).toHaveLength(5);
 });
 
 it('卡片画师标签最多三个并显示剩余数量，编号只保留在左上角', async () => {
@@ -991,17 +992,24 @@ it('无论加载中、已出图还是未出图占位卡均不叠放左上角编�
   expect(screen.getByLabelText('候选生成信息').textContent).toContain('R1');
 });
 
-it('生成中卡片与实验室按钮语义对齐并展示绕边强调色流光，中转不误报中转排队', async () => {
+it('生成中卡片用单颗圆形停止按钮与绕边流光强调，不渲染暂停按钮并同步实时跳表，完成后底栏保留耗时', async () => {
   experiment.rounds = [{ id: 'first', candidateIds: ['a', 'b'], createdAt: 1 }];
-  mocks.history.mockResolvedValue([]);
-  mocks.session = { scope: `roll:${experiment.id}`, key: mocks.key, token: 't1', count: 2, steps: 28, state: 'generating', cloudQueueTaskId: 'q1', progress: { current: 0, total: 2, stopping: false } };
+  const doneImage = { ...rollImageFixture(experiment, experiment.candidates[1]), params: { ...experiment.template.params, _local_generation_duration_ms: 92400 } };
+  mocks.history.mockResolvedValue([doneImage]);
+  mocks.session = { scope: `roll:${experiment.id}`, key: mocks.key, token: 't1', count: 2, steps: 28, state: 'generating', cloudQueueTaskId: 'q1', progress: { current: 1, total: 2, stopping: false } };
   await setup();
   const generatingCard = screen.getByRole('button', { name: '查看候选 1' });
-  const queuedCard = screen.getByRole('button', { name: '查看候选 2' });
+  const finishedCard = screen.getByRole('button', { name: '查看候选 2' });
   expect(generatingCard.getAttribute('data-generating')).toBe('true');
   expect(generatingCard.querySelector('.roll-card-orbit-glow')).toBeTruthy();
-  expect(queuedCard.getAttribute('data-generating')).toBeNull();
+  expect(finishedCard.getAttribute('data-generating')).toBeNull();
   expect(within(generatingCard).getByText('生成中…')).toBeTruthy();
+  expect(within(generatingCard).queryByRole('button', { name: '暂停' })).toBeNull();
+  // 生成中单颗圆形停止按钮点击后直接停止当前批次
+  fireEvent.click(within(generatingCard).getByRole('button', { name: '停止生成' }));
+  expect(mocks.stop).toHaveBeenCalledOnce();
+  // 完成后底栏画师标签正下方永久保留真实耗时（如 1m 32.4s）
+  expect(finishedCard.querySelector('[data-generation-duration]')?.textContent).toBe('1m 32.4s');
 
   // 中转／拼车代理（proxy: true）与实验室一致：不写「中转排队」，继续按正常生成展示。
   act(() => {
@@ -1015,6 +1023,31 @@ it('生成中卡片与实验室按钮语义对齐并展示绕边强调色流光�
     emitCloudQueueStatus({ taskId: 'q1', phase: 'waiting', proxy: false, position: 2, queueSize: 4, cancelable: true });
   });
   expect(within(generatingCard).getByText('云端排队 · 第 2 位')).toBeTruthy();
+});
+
+it('默认本轮张数自适应展示列数（一次满一行），手动修改后遵循手动值', async () => {
+  setMobileImageDisplayPreferences({ layout: 'masonry', columns: 'auto', desktopColumns: 5 }, 'roll');
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
+  expect(mocks.generate.mock.calls[0][0].rounds.at(-1).candidateIds).toHaveLength(5);
+
+  // 未手动修改前，切换展示列数为 7 列时自动同步为 7 张
+  act(() => {
+    setMobileImageDisplayPreferences({ layout: 'masonry', columns: 'auto', desktopColumns: 7 }, 'roll');
+  });
+  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledTimes(2));
+  expect(mocks.generate.mock.calls[1][0].rounds.at(-1).candidateIds).toHaveLength(7);
+
+  // 手动在设置中改成 3 张后，再切展示列数也不会覆盖手动设定
+  configure('本轮生成张数', '3');
+  act(() => {
+    setMobileImageDisplayPreferences({ layout: 'masonry', columns: 'auto', desktopColumns: 6 }, 'roll');
+  });
+  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledTimes(3));
+  expect(mocks.generate.mock.calls[2][0].rounds.at(-1).candidateIds).toHaveLength(3);
 });
 
 it('多张中断出错后队头支持重试并继续唤醒整批队列，也可仅生此张', async () => {
