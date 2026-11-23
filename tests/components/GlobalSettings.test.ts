@@ -257,7 +257,7 @@ describe('GlobalSettings', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true');
     const fields = ['参数设置', '全局正向提示词', '全局负面提示词', '角色正向提示词', '角色负面提示词'];
     for (const field of fields) expect((screen.getByRole('checkbox', { name: field }) as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByText('只作用于实验室；从风格串等入口打开时只保留本次页面会话的草稿，不跨重启恢复。')).toBeTruthy();
+    expect(screen.getByText('仅作用于实验室')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('checkbox', { name: '全局正向提示词' }));
     fireEvent.click(screen.getByRole('checkbox', { name: '全局负面提示词' }));
@@ -345,7 +345,7 @@ describe('GlobalSettings', () => {
     const entries = screen.getAllByRole('button', { name: '隐私与分享' });
     fireEvent.click(entries.at(-1)!);
     const toggle = await screen.findByRole('switch', { name: '分享图片时移除生成信息' });
-    expect(screen.getByText('复制／下载时移除生成信息；原图与历史保留。')).toBeTruthy();
+    expect(screen.getByText('复制／下载时自动清洗')).toBeTruthy();
     fireEvent.click(toggle);
     expect(getCleanSharedImages()).toBe(true);
   });
@@ -486,7 +486,7 @@ describe('GlobalSettings', () => {
       expect(screen.getByLabelText(t('生图网关地址'))).toBe(address);
       expect(address.value).toBe('https://gateway.example/v1');
       expect(screen.getByLabelText(t('渠道 API Key'))).toBeTruthy();
-      expect(screen.getByText(t('网关接收成员 Key、提示词及本次参考图；余额与扣费以网关为准，生图不提供实时预览。'))).toBeTruthy();
+      expect(screen.getByText(t('网关接收 Key、提示词与参考图，扣费以网关为准'))).toBeTruthy();
     }
   });
 
@@ -642,7 +642,7 @@ describe('GlobalSettings', () => {
     view.unmount();
     render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
     expect((await screen.findByRole('switch', { name: '分享图片时移除生成信息' })).getAttribute('aria-checked')).toBe('true');
-    expect(screen.getByText('复制／下载时移除生成信息；原图与历史保留。')).toBeTruthy();
+    expect(screen.getByText('复制／下载时自动清洗')).toBeTruthy();
   });
   it('图片悬浮按钮的下载格式默认原图，可切到生成信息并写入设置', async () => {
     render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
@@ -742,7 +742,7 @@ describe('GlobalSettings', () => {
     subscriptionFixture.balance = { fixedTrainingStepsLeft: 2500, purchasedTrainingSteps: 0 };
     sessionStorage.setItem('nai_api_key', 'STA1N-settings-managed');
     render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
-    await screen.findByText('当前成员网关已独立分配并管理你的可用点数，无需手动设置本地 1666 预算。');
+    await screen.findByText('可用点数由成员网关管理');
     expect(screen.queryByRole('spinbutton', { name: '可支配 Anlas 点数' })).toBeNull();
     expect(screen.queryByRole('button', { name: '恢复 1666' })).toBeNull();
     expect(screen.getByText('网关余额').nextElementSibling?.textContent).toBe('2,500 点');
@@ -790,15 +790,15 @@ describe('GlobalSettings', () => {
     await screen.findByRole('checkbox', { name: '显示当前使用者的个性语' });
     fireEvent.change(address, { target: { value: serviceUrl } });
     fireEvent.blur(address);
-    await screen.findByText('按 Key 保存，由中转服务排队。');
-    expect(screen.getByText(/启用中转会发送 Key、提示词及本次参考图/)).toBeTruthy();
-    expect(screen.queryByText('不上传 Key、提示词或图片。')).toBeNull();
+    await screen.findByText(/由中转服务排队/);
+    expect(screen.getByText(/会发送 Key、提示词与参考图/)).toBeTruthy();
+    expect(screen.queryByText(/不上传 Key/)).toBeNull();
     expect(screen.queryByRole('checkbox', { name: '显示当前使用者的个性语' })).toBeNull();
     expect(screen.queryByRole('textbox', { name: '排队个性语（最多15字）' })).toBeNull();
     fireEvent.change(address, { target: { value: 'https://st-chatu-novelai-queue.hf.space/' } });
     fireEvent.blur(address);
     expect(await screen.findByRole('checkbox', { name: '显示当前使用者的个性语' })).toBeTruthy();
-    expect(screen.getByText('不上传 Key、提示词或图片。')).toBeTruthy();
+    expect(screen.getByText(/不上传 Key/)).toBeTruthy();
   });
 
   it('Android 版关于与系统分类展示软件内声明，版本与 GitHub 入口只保留一处', async () => {
@@ -1086,7 +1086,6 @@ describe('GlobalSettings', () => {
     const follow = screen.getByRole('switch', { name: '跟随全局' });
     expect(follow.getAttribute('aria-checked')).toBe('true');
     expect(screen.getByRole('button', { name: '方形' }).matches(':disabled')).toBe(true);
-    expect(screen.getByText('当前值继承自全局设置；关闭后可单独调整此页面')).toBeTruthy();
     expect(getMobileImageDisplayPreferences('artists').layout).toBe('square');
 
     fireEvent.click(follow);

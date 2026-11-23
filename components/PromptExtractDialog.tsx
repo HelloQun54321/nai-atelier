@@ -697,8 +697,8 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
 
   const visionBlocked = config ? !config.imageInput : false;
   const costNotice = config?.label
-    ? t('AI 分析使用 {0}，模型服务可能收费；不消耗生图额度。', [config.label])
-    : t('AI 分析使用当前助手模型，模型服务可能收费；不消耗生图额度。');
+    ? t('使用 {0}，可能产生模型费用', [config.label])
+    : t('使用当前助手模型，可能产生模型费用');
   /** 保存期间锁住会改变本批次的输入与编辑操作。 */
   const inputLocked = saving || pending.current;
   const stored = image?.stored;
@@ -729,8 +729,8 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
             {persistIssue && (
               <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-micro text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
                 {persistIssue === 'unavailable'
-                  ? t('本端浏览器存储不可用，草稿只保留在当前页面，刷新会丢失；已入库条目不受影响。')
-                  : t('草稿暂存失败（可能是浏览器存储已满或被清理），这次的工作还在当前页面，请先保存要保留的条目。')}
+                  ? t('本地存储不可用，刷新后草稿将丢失')
+                  : t('草稿暂存失败，请及时保存条目')}
               </p>
             )}
             <div>
@@ -831,21 +831,15 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
                   </div>
                 </div>
               )}
-              {image && <div className="mt-2 flex flex-wrap items-center gap-2">
-                <p className="min-w-0 flex-1 text-xs text-gray-500 dark:text-gray-400">{t('看图提取会发送图片副本，结果为视觉推断。')}</p>
-                {(canClassify || hasCandidates) && <ToolbarButton onClick={() => void runAnalysis('vision')}
+              {image && (canClassify || hasCandidates) && <div className="mt-2 flex justify-end">
+                <ToolbarButton onClick={() => void runAnalysis('vision')}
                   disabled={visionDisabled} className="mobile-touch"
                   title={hasCandidates ? t('重新分析成功后替换未保存候选') : undefined}>
                   <Sparkles /><span>{t('AI 看图提取')}</span>
-                </ToolbarButton>}
+                </ToolbarButton>
               </div>}
-              {image && visionBlocked && <p role="status" className="mt-1 text-xs text-amber-600 dark:text-amber-400">{t('当前模型不支持看图，可按文字分类。')}</p>}
+              {image && visionBlocked && <p role="status" className="mt-1 text-xs text-amber-600 dark:text-amber-400">{t('当前模型不支持看图')}</p>}
             </div>
-
-            {canClassify && <p className="text-xs text-gray-500 dark:text-gray-400">{text.trim()
-              ? t(directories ? '文字分类发送输入框文字与当前提示词目录' : '文字分类仅发送输入框文字')
-              : t(directories ? '文字分类发送图片内嵌提示词与当前提示词目录' : '文字分类仅发送图片内嵌提示词')}</p>}
-            {directories && image && <p className="text-xs text-gray-500 dark:text-gray-400">{t('看图按固定用途标记，保存前可调整。')}</p>}
 
             {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
@@ -853,10 +847,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
 
             {grouped.length > 0 && (
               <div className="space-y-3">
-                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                  <h3 className={DETAIL_LABEL_CLASS}>{t('待入库片段')}</h3>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{t('重新分析成功后替换未保存候选')}</span>
-                </div>
+                <h3 className={DETAIL_LABEL_CLASS}>{t('待入库片段')}</h3>
                 {grouped.map(group => (
                   <section key={group.kind} data-extract-kind={group.kind} className="space-y-2">
                     <h3 className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t(group.label)}</h3>
@@ -889,11 +880,11 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
                             aria-label={t('{0}提示词', [label])} className={`${DETAIL_FIELD_CLASS} h-20 resize-y font-mono!`}
                             tagAssistEnabled showTranslations allowAiTranslation />
                           {draft.needsTranslation && (
-                            <p className="mt-1 text-micro text-amber-600 dark:text-amber-400">{t('这段中文还没有英文译法，默认不勾选；补上英文提示词后才会入库。')}</p>
+                            <p className="mt-1 text-micro text-amber-600 dark:text-amber-400">{t('待补英文提示词（默认不勾选）')}</p>
                           )}
                           {draft.needsReview && (
                             <p className="mt-1 text-micro text-amber-600 dark:text-amber-400">
-                              {t('权重／括号结构没能可靠还原（{0}），默认不勾选；请手动改写英文提示词加上权重后再入库。', [draft.reviewNote || t('结构可疑')])}
+                              {t('权重结构待核对（{0}），默认不勾选', [draft.reviewNote || t('结构可疑')])}
                             </p>
                           )}
                           {draft.original && (
@@ -909,14 +900,14 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
 
             {unclassified && (
               <section data-extract-unclassified="true" className="rounded-2xl border border-amber-300 bg-amber-50/60 p-3 dark:border-amber-800 dark:bg-amber-950/20">
-                <h3 className="text-xs font-semibold text-amber-700 dark:text-amber-300">{t('未归类内容（不会入库，可手动复制）')}</h3>
+                <h3 className="text-xs font-semibold text-amber-700 dark:text-amber-300">{t('未归类（不入库）')}</h3>
                 <p className="mt-1 break-words font-mono! text-micro text-gray-700 dark:text-gray-200">{unclassified}</p>
               </section>
             )}
 
             {(excluded.negative || excluded.parameters) && (
               <section data-extract-excluded="true" className="rounded-2xl border border-gray-200 p-3 text-micro text-gray-500 dark:border-gray-800 dark:text-gray-400">
-                <p className="font-semibold">{t('已从正向内容中剥离（不会入库）')}</p>
+                <p className="font-semibold">{t('已剥离（不入库）')}</p>
                 {excluded.negative && <p className="mt-1 break-words">{t('负面提示词：{0}', [excluded.negative])}</p>}
                 {excluded.parameters && <p className="mt-1 break-words">{t('生成参数：{0}', [excluded.parameters])}</p>}
               </section>

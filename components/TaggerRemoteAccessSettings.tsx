@@ -88,7 +88,7 @@ export function TaggerRemoteAccessSettings() {
           {policy?.enabled ? t('已开启') : t('未开启')}
         </span>
       ) : undefined}
-      description={<span id="tagger-remote-help">{t('仅兼容反推接口的来源校验，不代替登录或代理认证。展开配置可查看首次配置方法。')}</span>}
+      description={<span id="tagger-remote-help">{t('仅用于反推接口来源校验，不代替登录认证')}</span>}
       action={
         <button
           type="button"
@@ -135,7 +135,7 @@ export function TaggerRemoteAccessSettings() {
             className={`${SETTINGS_TEXTAREA_CLASS} mt-1.5 resize-none font-mono`}
           />
           <p id="tagger-remote-format" className="mt-1.5 text-meta leading-5 text-gray-500 dark:text-gray-400">
-            {t('填写协议、主机和端口，不含路径或通配符。反代需保留 Host；关闭后保留列表。')}
+            {t('填写协议、主机与端口（不含路径或通配符）')}
           </p>
         </div>
 
@@ -177,19 +177,14 @@ export function TaggerRemoteAccessSettings() {
           summaryClassName="py-1"
         >
           <div className="mt-2 space-y-2">
-            <p className="font-semibold text-gray-700 dark:text-gray-300">{t('通过页面配置')}</p>
-            <p>{t('在运行工坊的设备打开 http://127.0.0.1:3000，进入「全局设置 → 同步与网络访问 → 反推 HTTPS 入口」，开启并保存正式来源。远程部署可在自己的电脑执行下列 SSH 转发，再打开 http://127.0.0.1:13000。')}</p>
+            <p className="font-semibold text-gray-700 dark:text-gray-300">{t('本机或 SSH 转发后打开配置页')}</p>
             <pre className="appearance-content min-w-0 whitespace-pre-wrap break-all rounded-lg bg-gray-100 p-2.5 font-mono dark:bg-gray-900/70"><code>ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:13000:127.0.0.1:3000 user@server</code></pre>
-            <p>{t('将 user@server 替换为 SSH 登录地址；3000 为服务器网关端口，13000 为本机转发端口，请按实际情况调整。')}</p>
-            <p className="pt-1 font-semibold text-gray-700 dark:text-gray-300">{t('通过命令行配置')}</p>
-            <p>{t('在运行工坊的服务器上执行；远程部署请先 SSH 登录。容器部署须在能通过 127.0.0.1 访问网关的容器或主机环境执行。示例使用默认网关端口 3000，请按实际端口同时调整请求地址与 Origin。')}</p>
-            <p>{t('保存前先查看配置。将 https://atelier.example.com 替换为正式来源，不含页面路径；非默认端口需写明。保存会替换整个允许列表，需保留的来源必须一起填写。')}</p>
+            <p className="pt-1 font-semibold text-gray-700 dark:text-gray-300">{t('或在服务器命令行设置')}</p>
             <ol className="list-decimal space-y-2 pl-5">
               <li>{t('查看当前配置')}<pre className="appearance-content mt-1 min-w-0 whitespace-pre-wrap break-all rounded-lg bg-gray-100 p-2.5 font-mono dark:bg-gray-900/70"><code>{`curl --noproxy '*' -sS -i 'http://127.0.0.1:3000/api/lan/tagger-remote-access'`}</code></pre></li>
-              <li>{t('保存允许的来源')}<pre className="appearance-content mt-1 min-w-0 whitespace-pre-wrap break-all rounded-lg bg-gray-100 p-2.5 font-mono dark:bg-gray-900/70"><code>{`curl --noproxy '*' -sS -i -X PUT 'http://127.0.0.1:3000/api/lan/tagger-remote-access' -H 'Origin: http://127.0.0.1:3000' -H 'Content-Type: application/json' --data-raw '{"enabled":true,"origins":["https://atelier.example.com"]}'`}</code></pre></li>
+              <li>{t('保存允许的来源（覆盖原列表）')}<pre className="appearance-content mt-1 min-w-0 whitespace-pre-wrap break-all rounded-lg bg-gray-100 p-2.5 font-mono dark:bg-gray-900/70"><code>{`curl --noproxy '*' -sS -i -X PUT 'http://127.0.0.1:3000/api/lan/tagger-remote-access' -H 'Origin: http://127.0.0.1:3000' -H 'Content-Type: application/json' --data-raw '{"enabled":true,"origins":["https://atelier.example.com"]}'`}</code></pre></li>
             </ol>
-            <p>{t('返回 HTTP 200 后回到 HTTPS 页面重试，无需重启。若返回 HTTP 503，请先排查配置读取错误，不要删除或覆盖原配置。')}</p>
-            <p>{t('反代须保留原始 Host，并设置独立认证、隔离源站直连；此设置不提供公网认证。')}</p>
+            <p>{t('反代须保留原始 Host 并自行配置认证。')}</p>
           </div>
         </SettingsDisclosure>
       </div>

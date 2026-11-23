@@ -58,7 +58,6 @@ export const AgentConnectionForm: React.FC<{
           <input type="password" value={presetKey} onChange={event => setPresetKey(event.target.value)} placeholder={t("填写 API 密钥")} autoComplete="new-password" className={`mt-1 font-mono ${inputStyle}`} />
         </label>
         {preset && <p className="break-all text-micro text-gray-500 dark:text-gray-400">{t("接口地址：{0}", [preset.baseUrl])}</p>}
-        <p className="text-micro text-gray-500 dark:text-gray-400">{t("保存后自动获取模型并选择首个模型，可在编辑中调整。")}</p>
         <button type="button" disabled={!preset || !presetKey.trim() || busy} onClick={() => preset && onSavePreset?.(preset, presetKey)} className="mobile-touch w-full rounded-xl bg-emerald-700 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-40">{busy ? t("正在连接…") : t("保存连接")}</button>
         <p className="text-micro text-gray-500 dark:text-gray-400">{t("Key 加密保存在本机")}</p>
       </div> : <fieldset disabled={busy} className="space-y-4">

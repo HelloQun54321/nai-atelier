@@ -1629,7 +1629,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           <label className={`${labelClass} mobile-touch inline-flex cursor-pointer items-center gap-2`}><input type="checkbox" checked={excludeVibe} onChange={event => changeLocalFilter(() => setExcludeVibe(event.target.checked))} className="h-4 w-4 accent-indigo-600" />{t('排除氛围参考')}</label>
           <label className={`${labelClass} mobile-touch inline-flex cursor-pointer items-center gap-2`}><input type="checkbox" checked={excludePrecise} onChange={event => changeLocalFilter(() => setExcludePrecise(event.target.checked))} className="h-4 w-4 accent-indigo-600" />{t('排除精准参考')}</label>
         </div>
-        <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{t('按首图判断整组；缺少首图生成信息的作品暂不显示。')}</p>
+        <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{t('按首图生成信息筛选')}</p>
       </div>
     </>;
   };

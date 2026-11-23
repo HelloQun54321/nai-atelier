@@ -94,7 +94,6 @@ it('提取发送当前目录树并显示完整路径，可修改目录后保存�
   mocks.extract.mockResolvedValue({ ...textResult(), items: [{ kind: 'preset', name: '水彩纸张', prompt: 'watercolor, paper', directoryIds: ['paper'] }], unclassified: null });
   renderDialog({ directories });
   pasteText('watercolor, paper');
-  expect(screen.getByText('文字分类发送输入框文字与当前提示词目录')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await screen.findAllByText('绘画方式 / 水彩 / 纸纹');
   expect(mocks.extract.mock.calls[0][0]).toEqual({ mode: 'text', text: 'watercolor, paper', directories });
@@ -165,7 +164,7 @@ it('原文默认收起编辑工具，展开收起保留权重与空白，清空�
   expect(fieldByLabel('提示词原文').value).toBe('');
   fireEvent.click(screen.getByRole('button', { name: '撤销清空' }));
   expect(fieldByLabel('提示词原文').value).toBe(source);
-  await waitFor(() => expect(screen.getByText(/AI 分析使用 test-model/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/使用 test-model/)).toBeTruthy());
   expect(document.body.textContent).not.toContain('custom-private-provider-id');
   expect(mocks.extract).not.toHaveBeenCalled();
 });
@@ -205,8 +204,6 @@ it('同时有文字与图片时说明文字优先，看图按钮只发送图片�
   pasteText('typed scene');
   fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [makeImageFile()] } });
   await screen.findByText('已读取内嵌提示词');
-  expect(screen.getByText('文字分类仅发送输入框文字')).toBeTruthy();
-  expect(screen.getByText('看图提取会发送图片副本，结果为视觉推断。')).toBeTruthy();
   expect(screen.getByRole('button', { name: '按文字分类' }).getAttribute('data-tone')).toBe('primary');
   expect(screen.getByRole('button', { name: 'AI 看图提取' }).getAttribute('data-tone')).toBe('neutral');
   expect(mocks.extract).not.toHaveBeenCalled();
@@ -223,12 +220,11 @@ it('打开时不自动调用模型；点击后才按文字分类，并按六类�
   mocks.extract.mockResolvedValue(textResult());
   renderDialog();
   expect(mocks.extract).not.toHaveBeenCalled();
-  expect(screen.getByText(/模型服务可能收费/)).toBeTruthy();
+  expect(screen.getByText(/可能产生模型费用/)).toBeTruthy();
   expect(screen.queryByRole('button', { name: /保存所选片段/ })).toBeNull();
   expect(screen.queryByRole('button', { name: 'AI 看图提取' })).toBeNull();
 
   pasteText();
-  expect(screen.getByText('文字分类仅发送输入框文字')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames()).toEqual(['appearance', 'wardrobe', 'pose', 'camera']));
   expect(mocks.extract).toHaveBeenCalledTimes(1);
@@ -342,7 +338,6 @@ it('图片内嵌元数据优先按原始提示词分类，不需要额外调用�
   fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [makeImageFile('归档.png')] } });
   await waitFor(() => expect(screen.getByText(/已读取内嵌提示词/)).toBeTruthy());
   expect(mocks.extract).not.toHaveBeenCalled();
-  expect(screen.getByText('文字分类仅发送图片内嵌提示词')).toBeTruthy();
   expect(screen.getByRole('button', { name: '按文字分类' }).getAttribute('data-tone')).toBe('primary');
   expect(screen.getByRole('button', { name: 'AI 看图提取' }).getAttribute('data-tone')).toBe('neutral');
 
@@ -362,7 +357,7 @@ it('模型声明不支持图片输入时禁用看图按钮；接口失败保留�
   mocks.extract.mockRejectedValue(Object.assign(new Error('当前模型不支持图片输入'), { status: 400 }));
   renderDialog();
   fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [makeImageFile()] } });
-  await waitFor(() => expect(screen.getByText('当前模型不支持看图，可按文字分类。')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('当前模型不支持看图')).toBeTruthy());
   expect((screen.getByRole('button', { name: 'AI 看图提取' }) as HTMLButtonElement).disabled).toBe(true);
 
   pasteText('red eyes');
@@ -931,7 +926,7 @@ it('英文界面元数据读取和逐项保存错误也翻译内层原因，重�
   fireEvent.change(fieldByLabel(t('提示词原文')), { target: { value: 'white hair' } });
   fireEvent.click(screen.getByRole('button', { name: t('按文字分类') }));
   await waitFor(() => expect(kindNames()).toEqual(['appearance']));
-  expect(document.body.textContent).toContain(t('重新分析成功后替换未保存候选'));
+  expect(screen.getByRole('button', { name: t('重新按文字分类') }).getAttribute('title')).toBe(t('重新分析成功后替换未保存候选'));
   fireEvent.click(screen.getByRole('button', { name: t('保存所选片段（{0}）', ['1']) }));
   await waitFor(() => expect(screen.getAllByRole('alert').some(node => node.textContent === '白发红瞳少女：' + t('助手没有返回可用的提取结果'))).toBe(true));
 });

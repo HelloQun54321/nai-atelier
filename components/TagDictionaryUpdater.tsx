@@ -200,7 +200,7 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
         <span>{t('词库生成时间')}：{formatDate(status?.manifest?.generatedAt)}</span>
       </div>
       <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-micro leading-5 text-gray-400 dark:text-gray-500">
-        <span>{t('内置下载失败时，打开「词库来源」，在仓库根目录下载 tag.sqlite（约 {0} MB）后点「导入词库」。', [TAG_DICTIONARY_APPROX_SIZE_MB])}</span>
+        <span>{t('手动导入 tag.sqlite（约 {0} MB）：', [TAG_DICTIONARY_APPROX_SIZE_MB])}</span>
         <a href={TAG_DICTIONARY_DOWNLOAD_URL} target="_blank" rel="noreferrer" title={t('打开 tag.sqlite 下载直链')} className="inline-flex items-center gap-0.5 font-medium text-indigo-600 underline decoration-indigo-300 underline-offset-2 transition-colors hover:text-indigo-500 dark:text-indigo-300 dark:decoration-indigo-500/50 dark:hover:text-indigo-200">
           <Download className="h-3 w-3" aria-hidden="true" />
           {t('下载直链')}

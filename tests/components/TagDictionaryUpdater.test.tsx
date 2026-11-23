@@ -116,7 +116,7 @@ it('三个操作共用同一控件体系，导入使用进入本地的向下图�
 
 it('设置行说明指明仓库根目录的 tag.sqlite，并提供下载直链', async () => {  render(<TagDictionaryUpdater notify={vi.fn()} />);
   await screen.findByText('123');
-  expect(screen.getByText(/在仓库根目录下载 tag\.sqlite（约 24 MB）/)).toBeTruthy();
+  expect(screen.getByText(/tag\.sqlite（约 24 MB）/)).toBeTruthy();
   const link = screen.getByRole('link', { name: '下载直链' });
   expect(link.getAttribute('href')).toBe('https://raw.githubusercontent.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table/main/tag.sqlite');
   expect(link.getAttribute('target')).toBe('_blank');

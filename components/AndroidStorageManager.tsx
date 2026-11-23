@@ -32,7 +32,7 @@ export function AndroidStorageManager({ notify }: { notify: (message: string, ty
   };
   return <div className="space-y-4">
     <SettingsCard><StorageLocationManager notify={notify} /></SettingsCard>
-    <SettingsCard title={t("手机数据")} headingLevel={4} icon={<Database />} description={t("资料、历史和原图保存在本机。卸载应用会删除这些资料，卸载或换机前请导出备份。")}>
+    <SettingsCard title={t("手机数据")} headingLevel={4} icon={<Database />} description={t("卸载应用将清空本机资料，换机前请导出备份")}>
       <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t("备份密码")}<input type="password" autoComplete="new-password" value={password} onChange={event=>setPassword(event.target.value)} placeholder={t("至少 8 位，恢复时需要同一密码")} className={`${SETTINGS_INPUT_CLASS} mt-1 font-normal`} /></label>
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" disabled={Boolean(busy)||password.length<8} onClick={()=>void perform('正在备份…',async()=>{
@@ -45,7 +45,7 @@ export function AndroidStorageManager({ notify }: { notify: (message: string, ty
           setBackup(await native.backup({action:'inspect',password}) as typeof backup);
         })} data-appearance="control" data-tone="neutral" className={SETTINGS_BTN_NEUTRAL}><Upload className="h-3.5 w-3.5" />{t("选择备份")}</button>
       </div>
-      <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("备份包含原图、资料、设置、Key 与助手会话，使用密码加密；不包含可重新下载的词库、缩略图和反推模型。")}</p>
+      <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("加密备份原图、资料、设置与 Key（不含缓存资源）")}</p>
       {busy&&<p role="status" className="mt-3 text-xs text-indigo-500">{busy}</p>}
       {backup&&<div className={`${SETTINGS_SUBPANEL_CLASS} mt-3 text-xs`}>
         <p>{t("{0} · {1} 个文件 · {2} MB", [new Date(backup.createdAt).toLocaleString(getLanguage()), backup.files, (backup.bytes/1048576).toFixed(1)])}</p>

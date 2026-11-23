@@ -181,7 +181,6 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
             className="mobile-touch inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
             <RotateCcw aria-hidden="true" className="h-4 w-4" />{t('撤销整理')}
           </button>
-          <p className={HINT_CLASS}>{t('去错了就撤销，恢复整理前的提示词。')}</p>
         </div>
       </div>
     </AnchoredToolbarPopover>}
@@ -206,7 +205,6 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
             className="mobile-touch inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
             <RotateCcw aria-hidden="true" className="h-4 w-4" />{t('撤销校对')}
           </button>
-          <p className={HINT_CLASS}>{t('改错了就撤销，恢复校对前的提示词。')}</p>
         </div>
       </div>
     </AnchoredToolbarPopover>}
@@ -222,8 +220,7 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
         <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">{t('整理提示词')}</div>
         <fieldset>
           <legend className={LEGEND_CLASS}>{t('保留什么')}</legend>
-          <div className="flex flex-wrap gap-1.5">{keepOptions.map(option => <FilterPill key={option.value} active={draft.keep === option.value} onClick={() => update({ keep: option.value })}>{option.label}</FilterPill>)}</div>
-          <p className={HINT_CLASS}>{keepOptions.find(option => option.value === draft.keep)?.hint}</p>
+          <div className="flex flex-wrap gap-1.5">{keepOptions.map(option => <FilterPill key={option.value} title={option.hint} active={draft.keep === option.value} onClick={() => update({ keep: option.value })}>{option.label}</FilterPill>)}</div>
         </fieldset>
         <fieldset>
           <legend className={LEGEND_CLASS}>{t('识别方式')}</legend>
@@ -231,32 +228,31 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
             <FilterPill active={method === 'rules'} disabled={draft.keep === 'custom'} onClick={() => update({ method: 'rules' })}>{t('规则（本地）')}</FilterPill>
             <FilterPill active={method === 'ai'} disabled={draft.keep === 'artists' || draft.keep === 'all'} onClick={() => update({ method: 'ai' })}><Sparkles aria-hidden="true" className="h-3.5 w-3.5" />{t('AI 精准')}</FilterPill>
           </div>
-          <p className={HINT_CLASS}>{method === 'ai'
-            ? t('点一次调用一次设置里选的创作助手模型，不消耗 Anlas，模型服务可能另外计费。')
-            : draft.keep === 'artists' || draft.keep === 'all' ? t('这一项靠词库识别，不需要 AI。') : t('按词库和常见画风词判断，瞬间完成、不花钱；写得乱的串可以换 AI。')}</p>
+          {method === 'ai' && <p className={HINT_CLASS}>{t('调用创作助手模型，可能产生费用')}</p>}
         </fieldset>
         {draft.keep === 'custom' && <div className="space-y-2">
           <textarea aria-label={t('整理要求')} rows={3} maxLength={PROMPT_TIDY_INSTRUCTION_LIMIT} value={draft.instruction} placeholder={t('例如：只保留画师和光影，去掉质量词')}
             onChange={event => update({ instruction: event.target.value })} className={`${FIELD_CLASS} resize-y`} />
           <label className={CHECK_CLASS}><input type="checkbox" className="mt-0.5" checked={draft.rewrite} onChange={event => update({ rewrite: event.target.checked })} />
-            <span>{t('允许 AI 改写词句')}<span className={`block ${HINT_CLASS}`}>{t('默认只挑选保留哪些段，原词一字不改；要统一权重、翻译等改动时再打开。')}</span></span></label>
+            <span>{t('允许 AI 改写词句')}</span></label>
         </div>}
         {!rewrite && <div className="flex flex-wrap gap-x-4 gap-y-2">
           <label className={CHECK_CLASS}><input type="checkbox" className="mt-0.5" checked={draft.dedupe} onChange={event => update({ dedupe: event.target.checked })} />{t('去掉重复词')}</label>
           <label className={CHECK_CLASS}><input type="checkbox" className="mt-0.5" checked={draft.artistPrefix} onChange={event => update({ artistPrefix: event.target.checked })} />{t('给画师补 artist: 前缀')}</label>
         </div>}
         {sample && <label className={CHECK_CLASS}><input type="checkbox" className="mt-0.5" checked={draft.sample} onChange={event => update({ sample: event.target.checked })} />
-          <span>{t('整理后生成样张')}<span className={`block ${HINT_CLASS}`}>{t('用整理结果接上样张面板里的 main 和角色出一张图，参数按样张面板的选择。')}</span></span></label>}
+          <span>{t('整理后生成样张')}</span></label>}
         <div>
           <button type="button" disabled={disabled || Boolean(busy)} onClick={() => { void run(draft, 'draft').then(done => { if (done) setOpen(false); }); }}
             className="mobile-touch inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 disabled:cursor-not-allowed disabled:opacity-50">
             {busy === 'draft' ? spinner : <WandSparkles aria-hidden="true" className="h-4 w-4" />}{t('整理并覆盖')}
           </button>
-          <p className={HINT_CLASS}>{t('直接覆盖当前提示词，可以点撤销或按 Ctrl+Z 恢复。')}</p>
         </div>
         <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
-          <div className={LEGEND_CLASS}>{t('快捷按钮')}</div>
-          <p className={`${HINT_CLASS} !mt-0 mb-2`}>{t('把上面的设置存成按钮，排在提示词工具栏里一键使用，最多 {0} 个。', [PROMPT_TIDY_PRESET_LIMIT])}</p>
+          <div className={`${LEGEND_CLASS} flex items-center justify-between`}>
+            <span>{t('快捷按钮')}</span>
+            <span className="font-normal tabular-nums text-gray-400">{presets.length}/{PROMPT_TIDY_PRESET_LIMIT}</span>
+          </div>
           <div className="flex gap-2">
             <input aria-label={t('快捷按钮名称')} value={presetName} maxLength={PROMPT_TIDY_NAME_LIMIT} disabled={full} placeholder={full ? t('快捷按钮已满，请先删掉一个') : t('按钮名称')}
               onChange={event => setPresetName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && presetName.trim()) { event.preventDefault(); savePreset(); } }} className={`${FIELD_CLASS} min-w-0 flex-1`} />

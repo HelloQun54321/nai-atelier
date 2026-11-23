@@ -62,7 +62,7 @@ const LibraryOptions: React.FC<PromptLibraryPickerProps & { close: () => void }>
         </div>
         {conflict ? (
             <p role="status" className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                {t('这是「{0}」的条目，当前栏位属于「{1}」：跨类应用不阻止，但请确认内容是否合适', [
+                {t('跨类应用：「{0}」→「{1}」', [
                     t(PROMPT_LIBRARY_KIND_LABELS[kind]), t(PROMPT_LIBRARY_KIND_LABELS[targetKind || kind]),
                 ])}
             </p>

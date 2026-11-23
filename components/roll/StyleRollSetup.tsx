@@ -1,6 +1,6 @@
 import GenerationTemplateEditor from '../GenerationTemplateEditor';
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Layers, LockKeyhole, X } from 'lucide-react';
+import { Layers, X } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import { getRollArtistRange, getRollPinnedArtists, validateRollExperiment, type RollExperiment, type RollTemplate } from '../../services/styleRoll';
 import { ChainEditorCharacters } from '../chain/ChainEditorCharacters';
@@ -39,8 +39,6 @@ const SetupForm: React.FC<Props> = ({ initial, initialSection = 'pool', libraryC
   const editingBusy = busy || presetBusy;
   const dialog = useModalA11y<HTMLDivElement>(active);
   const close = useMobileHistoryLayer(active, () => { if (busy || presetBusy) return false; onClose(); }, 'roll-setup');
-  // 配置不再随候选固定：已出的图保持原样，改动只作用于之后的生成。
-  const started = draft.candidates.length > 0;
   useEffect(() => {
     const key = (event: KeyboardEvent) => { if (active && event.key === 'Escape' && !event.defaultPrevented && isTopmostModal(dialog.current)) { event.preventDefault(); close(); } };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
@@ -71,7 +69,6 @@ const SetupForm: React.FC<Props> = ({ initial, initialSection = 'pool', libraryC
           <ToolbarButton aria-label={t('从风格串提取')} title={draft.chainArtistSource ? t('已选 {0} 串 · {1} 位画师', [draft.chainArtistSource.chainIds.length, draft.chainArtistSource.artists.length]) : t('从风格串提取')} disabled={editingBusy || libraryLoading} onClick={() => setChainDialogOpen(true)}><Layers /><span className="flex min-w-0 max-w-[9rem] flex-col items-start sm:max-w-[12rem]"><span className="text-xs leading-4">{t('从风格串提取')}</span><span className="max-w-full truncate text-micro font-normal leading-3 tabular-nums opacity-70">{draft.chainArtistSource ? t('已选 {0} 串 · {1} 位画师', [draft.chainArtistSource.chainIds.length, draft.chainArtistSource.artists.length]) : t('画师库')}</span></span></ToolbarButton></div>
         </div>}
         <div className={section === 'template' ? 'space-y-4' : 'hidden'}>
-          {started && <p className="flex items-center gap-2 text-xs text-gray-500"><LockKeyhole className="h-4 w-4" />{t('这一记录已经出过图：修改提示词、模型或 Seed 只影响接下来生成的图片，已有的图保持不变。')}</p>}
           <GenerationTemplateEditor value={draft.template} onChange={template => setDraft(current => ({ ...current, template }))} disabled={busy} enforceFreeStepLimit={enforceFreeStepLimit} forceEmptySeed={forceEmptySeed} onForceEmptySeedChange={onForceEmptySeedChange} onBusyChange={setPresetBusy}
             characterSlot={<RollCharacterComposer template={draft.template} disabled={editingBusy} onChange={template => setDraft(current => ({ ...current, template }))} />} />
         </div>
@@ -136,7 +133,6 @@ const RollCharacterComposer: React.FC<{ template: RollTemplate; disabled: boolea
       removeCharacter={index => patch({ characters: characters.filter((_, item) => item !== index) })}
       activeLabLayout={DEFAULT_LAB_PAGE_LAYOUTS['text-to-image']}
       mobileEditorTab="character"
-      coordinateHint={t('位置用于多人构图，单角色可以不动')}
     />
   </section>;
 };

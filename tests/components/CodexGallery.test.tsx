@@ -388,7 +388,7 @@ it('部分原图元数据仍一键取用所有已知字段，并标明未提供�
   const partial = { ...metadata, negativePrompt: undefined, rawNegative: '', params: { steps: 20, sampler: 'k_euler', seed: 0 } };
   mocks.metadata.mockResolvedValueOnce(partial);
   setup(); fireEvent.click(await screen.findByRole('button', { name: /合成词条/ }));
-  await screen.findByText('部分元数据，缺失参数保留当前设置');
+  await screen.findByText('部分元数据，缺项沿用当前设置');
   fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ fullMetadata: true, partialMetadata: true, params: partial.params, importSettings: true, importSeed: true, importModel: false });
 });

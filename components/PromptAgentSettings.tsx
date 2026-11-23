@@ -374,7 +374,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         <SettingsCardHeader
           title={t('使用搜索 API')}
           icon={<Globe />}
-          description={t('开启后优先调用搜索服务（兼容 DeepSeek Search/Fetch 协议）；按成功请求计费，每 1000 次 5 元，失败、无结果或超时不收费，2026-11-01 前免费。')}
+          description={t('兼容 DeepSeek 搜索协议（每千次 5 元，2026-11-01 前免费）')}
           action={
             <SettingsSwitch
               label={t('使用搜索 API')}
@@ -396,7 +396,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
             {config?.searchApiKeyCustom && <button type="button" data-appearance="control" data-tone="neutral" onClick={() => { void saveSearchApi({ apiKey: '' }); }} disabled={searchSaving} className={SETTINGS_BTN_NEUTRAL}>{t('清除已保存 Key')}</button>}
           </div>
         </div>
-        <p className="mt-2 text-xs leading-5 text-gray-400 dark:text-gray-500">{config?.searchApiKeyCustom ? t('已保存搜索专用 Key。') : config?.searchApiKeyConfigured ? t('将使用同地址的已配置连接。') : t('未检测到可用 Key，开启后仍使用免费搜索。')}</p>
+        <p className="mt-2 text-xs leading-5 text-gray-400 dark:text-gray-500">{config?.searchApiKeyCustom ? t('已保存搜索专用 Key') : config?.searchApiKeyConfigured ? t('使用同地址已配置连接') : t('未配置 Key，仍使用免费搜索')}</p>
       </section>
       <section aria-label={t("生图协作")} className={SETTINGS_CARD_CLASS}>
         <SettingsCardHeader title={t("生图协作")} icon={<Sparkles />} className="mb-2" />
@@ -407,12 +407,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         <SettingsCardHeader
           title={t('破限模式')}
           icon={<ShieldAlert />}
-          description={
-            <>
-              <p>{t('默认开启。开启后向助手注入创作向破限交付契约：直接给出可用成果，不以前置审查、说教或替代方案回避请求；工具权限与费用确认照常生效。')}</p>
-              <p className="mt-1">{t('保存后从下一次助手请求生效，不改变正在运行的任务或已有对话；本模式只约束输出内容与交付尺度，不改变工具权限、费用确认或模型服务端的审核过滤。')}</p>
-            </>
-          }
+          description={t('直接输出创作成果，减少前置拒答与说教')}
           action={
             <SettingsSwitch
               label={t('破限模式')}
@@ -463,7 +458,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
               data-appearance="control" data-tone="neutral"
               className={SETTINGS_BTN_NEUTRAL}>{t('恢复内置默认')}</button>
           </div>
-          <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{config.creativeDirectRulesCustom ? t('当前使用自定义规则') : t('当前使用内置默认规则')}；{t('已保存 {0} 条规则', [rulePresets.length])}；{t('保存后从下一次助手任务生效。')}</p>
+          <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{config.creativeDirectRulesCustom ? t('自定义规则') : t('内置默认')} · {t('已保存 {0} 条', [rulePresets.length])}</p>
         </SettingsDisclosure>}
       </section>
     </div>

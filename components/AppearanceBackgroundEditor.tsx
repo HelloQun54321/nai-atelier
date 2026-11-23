@@ -25,8 +25,7 @@ export const AppearanceBackgroundEditor: React.FC<{ background?: ThemeBackground
   };
   return <details className="appearance-group mt-4 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
     <summary className="cursor-pointer text-xs font-bold text-gray-700 dark:text-gray-200">{t('工作区背景')}</summary>
-    {onModeChange && <div className="mt-3"><SegmentedControl ariaLabel={t('背景明暗版本')} options={[{ value: 'light', label: '浅色背景' }, { value: 'dark', label: '深色背景' }]} value={mode} onChange={onModeChange} />
-      <p className="mt-2 text-meta text-gray-500 dark:text-gray-400">{t('每个预设的明暗背景单独记住，重新应用预设不会覆盖。')}</p></div>}
+    {onModeChange && <div className="mt-3"><SegmentedControl ariaLabel={t('背景明暗版本')} options={[{ value: 'light', label: '浅色背景' }, { value: 'dark', label: '深色背景' }]} value={mode} onChange={onModeChange} /></div>}
     <div className="mt-3 flex flex-wrap items-center gap-2">
       <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" aria-label={t('选择背景图片')} className="hidden" onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void upload(file); }} />
       <ToolbarButton disabled={busy} onClick={() => input.current?.click()}>{t(busy ? '正在处理背景…' : background ? '更换背景图片' : '选择背景图片')}</ToolbarButton>

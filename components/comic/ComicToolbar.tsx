@@ -399,21 +399,21 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
               </button>
             </>
           ) : (
-            <span className="text-[11px] text-gray-400">{t('格内移图：直接拖拽已成图的分镜格调整画面构图')}</span>
+            <span className="text-[11px] text-gray-400">{t('拖拽画格调整构图')}</span>
           )
         )}
 
         {activeTool === 'hand' && (
-          <span className="truncate text-[11px] text-gray-400">{t('抓手 (H)：左键拖拽直接平移画布，Ctrl+滚轮缩放')}</span>
+          <span className="truncate text-[11px] text-gray-400">{t('拖拽平移 · Ctrl+滚轮缩放')}</span>
         )}
         {activeTool === 'zoom' && (
-          <span className="truncate text-[11px] text-gray-400">{t('缩放镜 (Z)：左键点击放大，按住 Alt 点击缩小')}</span>
+          <span className="truncate text-[11px] text-gray-400">{t('点击放大 · Alt+点击缩小')}</span>
         )}
         {activeTool === 'draw-panel' && (
-          <span className="truncate text-[11px] text-gray-400">{t('自由拉框 (R)：在画布拖拽绘制新分镜格，自动对齐边缘')}</span>
+          <span className="truncate text-[11px] text-gray-400">{t('拖拽绘制分镜格')}</span>
         )}
         {activeTool === 'text' && (
-          <span className="truncate text-[11px] text-gray-400">{t('自由文字 (T)：点击画布放置拟声词或效果字，双击修改内容')}</span>
+          <span className="truncate text-[11px] text-gray-400">{t('点击放置 · 双击编辑')}</span>
         )}
       </div>
       )}

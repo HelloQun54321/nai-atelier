@@ -46,7 +46,7 @@ export const AppearanceDetailEditor: React.FC<{ details?: ThemeDetails; onChange
     <div className="mt-3 grid gap-3 sm:grid-cols-2">
       <DetailNumber field="globalOpacity" value={values?.globalOpacity} inheritedValue={effective?.globalOpacity ?? effective?.opacity ?? .85} onChange={value => updateNumber('globalOpacity', value)} />
       <div className="flex items-center justify-between gap-2 text-meta text-gray-500 dark:text-gray-400 sm:col-span-2">
-        <span>{t('全局覆盖分层设置，实验室编辑面板独立。')}</span>
+        <span>{t('覆盖分层透明度（实验室面板独立）')}</span>
         {values?.globalOpacity !== undefined && <button type="button" onClick={() => updateNumber('globalOpacity', undefined)} className="mobile-touch shrink-0 text-indigo-600 dark:text-indigo-300">{t('清除全局覆盖')}</button>}
       </div>
       <DetailNumber field="labEditorOpacity" value={values?.labEditorOpacity} inheritedValue={scope === 'common' ? undefined : resolveThemeDetails(details, scope === 'dark')?.labEditorOpacity ?? (scope === 'dark' ? .6 : .425)} onChange={value => updateNumber('labEditorOpacity', value)} />
@@ -61,7 +61,6 @@ export const AppearanceDetailEditor: React.FC<{ details?: ThemeDetails; onChange
       {(Object.keys(THEME_DETAIL_NUMBERS) as ThemeDetailNumber[]).filter(key => key !== 'labEditorOpacity' && key !== 'globalOpacity').map(key => <DetailNumber key={`${scope}-${key}`} field={key} value={values?.[key]} disabled={effective?.globalOpacity !== undefined && ['opacity', 'sidebarOpacity', 'toolbarOpacity', 'panelOpacity'].includes(key)} onChange={value => updateNumber(key, value)} />)}
       {scope === 'common' && <label className="text-meta text-gray-600 dark:text-gray-300">{t('过渡曲线')}<select aria-label={t('过渡曲线')} value={details?.motionCurve || 'smooth'} onChange={event => update({ motionCurve: event.target.value as ThemeDetails['motionCurve'] })} className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-2 dark:border-gray-600"><option value="smooth">{t('平滑')}</option><option value="spring">{t('弹性')}</option></select></label>}
     </div>
-    <p className="mt-3 text-meta text-gray-500 dark:text-gray-400">{t('留空跟随基础外观；字体使用设备已安装字体。减少或关闭动效仍优先。')}</p>
     {scope !== 'common' && details?.[scope] && <button type="button" onClick={() => update({ [scope]: undefined })} className="mobile-touch mt-2 rounded-lg px-2 py-1 text-meta text-indigo-600 dark:text-indigo-300">{t('清除当前明暗覆盖')}</button>}
     {details && <button type="button" onClick={() => onChange(undefined)} className="mobile-touch mt-2 rounded-lg px-2 py-1 text-meta text-indigo-600 dark:text-indigo-300">{t('恢复基础控件外观')}</button>}
   </details>;

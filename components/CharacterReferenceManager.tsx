@@ -345,7 +345,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
                     })}
                   </div>
                 </div>)}{!references.slots.length && <p className="appearance-group rounded-xl bg-gray-50 px-3 py-8 text-center text-xs text-gray-500 dark:bg-gray-950">{t("未选择参考图")}</p>}</div>
-                {references.slots.length > 0 && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"><b>{t("本次额外消耗 {0} Anlas", [references.slots.length * referenceCost])}</b><p className="mt-1 opacity-80">{t("{0} 张参考图 × {1}；每次生成都会重新计费。", [references.slots.length, referenceCost])}</p>{references.slots.filter(slot => slot.type !== 'style').length > 1 && <p className="mt-1 font-medium">{t("多个参考在同一次生成里一起生效，费用按张分别计算")}</p>}</div>}
+                {references.slots.length > 0 && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"><b>{t("本次额外消耗 {0} Anlas", [references.slots.length * referenceCost])}</b><p className="mt-1 opacity-80">{t("{0} 张 × {1} Anlas／次", [references.slots.length, referenceCost])}</p></div>}
               </div>
 
             </aside>

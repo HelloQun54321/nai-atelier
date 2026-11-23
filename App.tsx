@@ -1503,7 +1503,7 @@ const App = () => {
               notify(t('已保存')); return libraryEditEntry.id;
             }} /></ImagePreviewPortal>}
           {libraryEditEntry && librarySectionOf(libraryEditEntry) === 'saved' && <LibraryDialog title="选择组合中的角色" onClose={() => setLibraryEditEntry(null)}>
-            <p className="text-sm text-gray-500">{t('旧组合保留不变，所选角色与全局内容载入后另存为新组合。')}</p>
+            <p className="text-sm text-gray-500">{t('选择要载入的角色（另存为新组合）')}</p>
             <div className="flex flex-wrap gap-2">{contentRead((libraryEditEntry.params as { _rollContentSnapshot?: unknown })?._rollContentSnapshot).roles.map((role, index) =>
               <ToolbarButton key={role.key} onClick={() => { handleLoadContentRoll(libraryEditEntry, index); setLibraryEditEntry(null); }}>{role.name || t('角色 {0}', [String(index + 1)])}</ToolbarButton>)}</div>
           </LibraryDialog>}

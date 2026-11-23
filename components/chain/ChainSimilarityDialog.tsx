@@ -302,7 +302,6 @@ const ChainSimilarityPanel: React.FC<ChainSimilarityDialogProps> = ({ chains, fi
         })}
         {result && visibleCount < result.groups.length && <ToolbarButton onClick={() => setVisibleCount(count => count + 40)}>{t('加载更多')}</ToolbarButton>}
         {result && result.insufficient.length > 0 && <details className="mt-3 border-t border-gray-200 pt-3 dark:border-gray-800"><summary className="mobile-touch cursor-pointer text-xs text-gray-500">{t('线索不足 {0} 条', [result.insufficient.length])}</summary>
-          <p className="py-2 text-xs text-gray-500">{t('画风线索不足或权重语义待核对，可打开原串核对。')}</p>
           {result.insufficient.map(profile => <button key={profile.chain.id} type="button" disabled={deletingId !== null} onClick={() => void openOriginal(profile.chain.id)} className="mobile-touch flex w-full items-center justify-between gap-3 border-t border-gray-100 py-2 text-left text-sm dark:border-gray-800"><span data-safe-mode-title="true" className="min-w-0 truncate">{profile.chain.name}</span>{profile.uncertainWeights && <span className="text-xs text-amber-700 dark:text-amber-300">{t('权重语义待核对')}</span>}<ExternalLink className="h-4 w-4 flex-none" /></button>)}
         </details>}
       </div>

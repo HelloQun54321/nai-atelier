@@ -303,8 +303,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
             <div>
-              <p className="text-xs text-gray-600 dark:text-gray-300">{t('按所选用途生成提示词搭配')}</p>
-              <label className="mt-2 block">
+              <label className="block">
                 <span className={DETAIL_LABEL_CLASS}>{t('描述你想要的画面')}</span>
                 <textarea
                   autoFocus
@@ -315,7 +314,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
                   className={`${DETAIL_FIELD_CLASS} h-24 resize-y`}
                 />
               </label>
-              <p className="mt-2 text-micro text-gray-400 dark:text-gray-500">{t('使用当前创作助手模型生成提示词，模型服务可能收费；不消耗生图额度。')}</p>
+              <p className="mt-2 text-micro text-gray-400 dark:text-gray-500">{t('调用助手模型，可能产生模型费用')}</p>
             </div>
 
             <PromptPurposePicker label="生成用途" value={purposes} onChange={setPurposes} disabled={generating || saving} />
@@ -331,7 +330,6 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
                     {t('{0} 类缺失，可重试', [missing.length])}
                   </p>
                 )}
-                <p className="text-micro text-gray-400 dark:text-gray-500">{t('勾选后一起保存')}</p>
                 {drafts.map(draft => {
                   const label = draft.purposes?.map(id => t(promptPurposeLabel(id))).join('、') || t('未标记用途');
                   return (
@@ -422,7 +420,6 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
                 )}
               </div>
               <select aria-label={t('风格串目标角色')} value={chainRoleId} onChange={event => setChainRoleId(event.target.value)} className={DETAIL_FIELD_CLASS}><option value="new">{t('新建角色')}</option>{selectedChain?.params.characters?.map((role, index) => <option key={role.id} value={role.id}>{t('角色 {0}', [index + 1])}</option>)}</select>
-              <p className="mt-1 text-micro text-gray-400">{t('人物内容写入所选角色，场景与镜头写入全局栏位。')}</p>
               <div className="mt-2 flex items-center gap-2">
                 <ToolbarButton onClick={() => void writeToChain()} disabled={chainWriting || !pickedCount} tone="primary" className="mobile-touch">
                   {chainWriting ? <LoaderCircle className="animate-spin" /> : null}

@@ -1076,8 +1076,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
               </label>
             </div>
 
-            <p className="text-micro text-gray-400 dark:text-gray-500">{t(config.generateHint)}</p>
-            <p className="text-micro text-gray-400 dark:text-gray-500">{t('使用当前创作助手模型生成提示词，模型服务可能收费；不消耗生图额度。')}</p>
+            <p className="text-micro text-gray-400 dark:text-gray-500">{t('调用助手模型，可能产生模型费用')}</p>
 
             {drafts && (
               <div className="space-y-3">

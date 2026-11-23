@@ -1157,7 +1157,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
 
             </WorkspaceChrome>
             <div ref={historyScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport flex-1 overflow-y-auto p-4 md:p-6 pb-20">
-                {(moveCapability === 'requires-remote-migration' || migrationArchive?.error) && <div role="status" className="mb-4 space-y-2 text-sm"><p>{t('请先连接本地服务完成浏览器历史迁移，再使用回收站清理。原资料仍可只读浏览与导出。')}</p>{migrationArchive?.error && <p className="break-words">{migrationArchive.error}</p>}<div className="flex flex-wrap gap-2">{migrationArchive && <ToolbarButton onClick={() => setShowMigrationArchive(true)}>{t('浏览器历史只读档案')}</ToolbarButton>}<ToolbarButton disabled={migrationProgress !== null} onClick={() => void retryMigration()}>{t('重试迁移')}</ToolbarButton></div></div>}
+                {(moveCapability === 'requires-remote-migration' || migrationArchive?.error) && <div role="status" className="mb-4 space-y-2 text-sm"><p>{t('请先完成本地历史迁移，再使用回收站清理')}</p>{migrationArchive?.error && <p className="break-words">{migrationArchive.error}</p>}<div className="flex flex-wrap gap-2">{migrationArchive && <ToolbarButton onClick={() => setShowMigrationArchive(true)}>{t('浏览器历史只读档案')}</ToolbarButton>}<ToolbarButton disabled={migrationProgress !== null} onClick={() => void retryMigration()}>{t('重试迁移')}</ToolbarButton></div></div>}
                 {loadFailed && <div role="alert" className="mb-4 flex items-center justify-center gap-3 text-sm text-gray-500"><span>{t("历史加载失败")}</span><ToolbarButton onClick={() => void goToPage(currentPageRef.current, true)}>{t("重试")}</ToolbarButton></div>}
                 {isLoading && items.length > 0 && <InlineSpinner label={t('加载中…')} className="mb-4 w-full" />}
                 {isLoading && items.length === 0 ? (
@@ -1274,11 +1274,11 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                             {cleanMode === 'days'
                                 ? t("将 {0} 天前的 {1} 张图片移入回收站", [Math.floor(cleanDays), cleanPreviewLabel])
-                                : t("保留最近 {1} 张，其余可移入 {0} 张；有效收藏与引用额外保留", [cleanPreviewLabel, Math.floor(cleanCount)])
+                                : t("保留最近 {1} 张，其余可移入 {0} 张", [cleanPreviewLabel, Math.floor(cleanCount)])
                             }
                         </p>
                         {cleanPreview === 'error' && <p role="alert" className="text-xs text-red-500 mb-2">{t("读取失败，请重试")}</p>}
-                        <p className="text-xs text-gray-500 mb-4">{t("有效收藏与引用会跳过。移入回收站不释放空间，也不会自动过期，可在回收站恢复。")}</p>
+                        <p className="text-xs text-gray-500 mb-4">{t("收藏与引用会自动跳过；可在回收站恢复")}</p>
                         {cleanPreview && cleanPreview !== 'error' && <div role="region" aria-label={t('{0}预览', [t('清理')])} tabIndex={0} className="mb-3 max-h-[40dvh] overflow-y-auto">
                             <p className="whitespace-pre-wrap break-words text-xs">{movePreviewMessage(cleanPreview)}</p>
                         </div>}

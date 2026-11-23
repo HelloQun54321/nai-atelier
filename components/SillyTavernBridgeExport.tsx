@@ -435,7 +435,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
         <div className="pb-1">
           <SettingsSwitchRow
             label="智慧姬同步"
-            description="发送工坊精选，接收酒馆预设；关闭保留资料。"
+            description="双向同步工坊精选与酒馆预设"
             checked={chatu8Preferences.enabled}
             disabled={!chatu8Preferences.ready || chatu8Preferences.busy || installing || exporting}
             onChange={next => { void handleToggleChatu8(next); }}
@@ -447,7 +447,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
         <div className="pt-1">
           <SettingsSwitchRow
             label="柏宝绘同步"
-            description="接收柏宝绘预设、Vibe 与历史图；仅在酒馆手动点击「立即同步」时写回，写入后需刷新酒馆页面生效。"
+            description="同步柏宝绘预设、Vibe 与历史图（写回后需刷新酒馆）"
             checked={baiBaiPreferences.enabled}
             disabled={!baiBaiPreferences.ready || baiBaiPreferences.busy || installing || exporting}
             onChange={next => { void handleToggleBaiBai(next); }}

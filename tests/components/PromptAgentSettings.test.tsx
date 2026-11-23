@@ -228,11 +228,11 @@ it('联网搜索可保存独立地址与 Key，未配置时提示回退免费搜
   const toggle = screen.getByRole('switch', { name: '使用搜索 API' }) as HTMLButtonElement;
   await waitFor(() => expect(toggle.disabled).toBe(false));
   expect(toggle.getAttribute('aria-checked')).toBe('false');
-  expect(screen.getByText('未检测到可用 Key，开启后仍使用免费搜索。')).toBeTruthy();
+  expect(screen.getByText('未配置 Key，仍使用免费搜索')).toBeTruthy();
   fireEvent.click(toggle);
   await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
   fireEvent.change(screen.getByLabelText(/API Key/), { target: { value: 'synthetic-key' } });
   fireEvent.click(screen.getByRole('button', { name: '保存搜索设置' }));
-  await waitFor(() => expect(screen.getByText('已保存搜索专用 Key。')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('已保存搜索专用 Key')).toBeTruthy());
   expect(fetch.mock.calls.some(([url, init]) => String(url).endsWith('/search-api') && JSON.parse(String(init?.body)).apiKey === 'synthetic-key')).toBe(true);
 });

@@ -118,7 +118,6 @@ export const PromptLibrarySettings: React.FC = () => {
       <SettingsCardHeader
         title={t("库生成提示词")}
         icon={<BookOpen />}
-        description={t('用于当前目录的提示词生成。')}
         className="mb-3"
       />
       <div className="space-y-3">
@@ -177,7 +176,7 @@ export const PromptLibrarySettings: React.FC = () => {
             </div>
             <button type="button" data-appearance="control" data-tone="neutral" disabled={!preview} onClick={() => void copyPreview()} className={librarySecondaryButtonClass}>{t("复制全文")}</button>
           </div>
-          <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("最前面两段是自定义内容（置顶），其后是内置提示词；预览使用输入框当前内容，无需先保存。")}</p>
+          <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("自定义内容置顶，预览实时取用当前输入")}</p>
           <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("当前长度 {0} 个字符", [preview?.length ?? 0])}</p>
           <pre aria-label={t("系统提示词预览")} className="appearance-group mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-white p-3 text-micro leading-5 text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200">{preview ? preview.systemPrompt : previewing ? t("正在生成预览…") : t("暂无预览内容，请点“预览最终系统提示词”。")}</pre>
         </div>

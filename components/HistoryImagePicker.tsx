@@ -176,9 +176,6 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
                 {scopeChainId ? t("这条目的生成图 {0} 张", [pending || error ? '—' : totalCount]) : t("全部 {0} 张", [pending || error ? '—' : totalCount])}
               </span>
             </div>
-            {scopeChainId ? (
-              <p className="mt-1 text-micro text-gray-400">{t("只显示这条提示词自己生成过的图，之后用它的图会自动出现。")}</p>
-            ) : null}
           </div>
           <div className="flex flex-none items-center gap-1">
             <button type="button" onClick={onClose} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={t("关闭历史图片选择")}><X className="h-5 w-5" /></button>

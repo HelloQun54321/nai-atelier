@@ -347,7 +347,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
           {metadata && <p className="text-xs text-gray-500">{[metadata.params.model && getNaiModelDisplayLabel(metadata.params.model), metadata.params.width && metadata.params.height && `${metadata.params.width} × ${metadata.params.height}`, metadata.params.steps && `${metadata.params.steps} ${t('步')}`, metadata.params.scale !== undefined && `CFG ${metadata.params.scale}`].filter(Boolean).join(' · ')}</p>}
           {reading && <InlineSpinner label={t('读取中…')} className="text-xs" />}
           {metadata === null && <p role="status" className="text-xs text-gray-500">{t('无可用原图配置，取用条目内容')}</p>}
-          {importValue?.partialMetadata && <p role="status" className="text-xs text-gray-500">{t('部分元数据，缺失参数保留当前设置')}</p>}
+          {importValue?.partialMetadata && <p role="status" className="text-xs text-gray-500">{t('部分元数据，缺项沿用当前设置')}</p>}
           {metadataError && <div className="space-y-2"><p role="alert" className="text-xs text-amber-700 dark:text-amber-300">{metadataError}</p><ToolbarButton onClick={() => void readOriginal()}>{t('重试')}</ToolbarButton></div>}
           {selectedImage?.parameterSource && <p className="text-xs text-gray-500">{t('图片来源：{0}', [selectedImage.parameterSource])}</p>}
           {promptSection(metadata ? '正向提示词' : '条目提示词', detailEntry.prompt, true)}

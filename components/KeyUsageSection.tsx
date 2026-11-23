@@ -76,8 +76,8 @@ export const KeyUsageSection: React.FC<Props> = ({ rows, period, periodPicker, i
           <div className="flex justify-between gap-3 py-1"><span className="text-gray-600 dark:text-gray-300">{t('生图')}</span><span className="tabular-nums">{resource(row.generationAnlas)} Anlas</span></div>
           <div className="flex justify-between gap-3 py-1"><span className="text-gray-600 dark:text-gray-300">{t('氛围参考编码')}</span><span className="tabular-nums">{hasRecords ? number(row.encodingAnlas) : '—'} Anlas</span></div>
         </div>
-        {row.unknownBillingImages > 0 && <p className="key-usage__detail-wide text-amber-600 dark:text-amber-400">{t('{0} 张图片缺少计费快照，点数与额度未计入已知用量。', [number(row.unknownBillingImages)])}</p>}
-        {row.lifetime && <div className="key-usage__detail-wide border-t border-gray-200 pt-2 text-gray-500 dark:border-gray-700 dark:text-gray-400">{t('本地累计（含旧版）：{0} Anlas · {1} 张 Opus，不受所选周期限制。', [number(row.lifetime.anlasSpent), number(row.lifetime.opusImages)])}</div>}
+        {row.unknownBillingImages > 0 && <p className="key-usage__detail-wide text-amber-600 dark:text-amber-400">{t('{0} 张缺少计费记录，未计入用量', [number(row.unknownBillingImages)])}</p>}
+        {row.lifetime && <div className="key-usage__detail-wide border-t border-gray-200 pt-2 text-gray-500 dark:border-gray-700 dark:text-gray-400">{t('历史累计：{0} Anlas · {1} 张 Opus', [number(row.lifetime.anlasSpent), number(row.lifetime.opusImages)])}</div>}
       </div>
     </details>;
   });
@@ -99,8 +99,6 @@ export const KeyUsageSection: React.FC<Props> = ({ rows, period, periodPicker, i
               {columns}{renderRows(historicalRows)}
             </details>}
           </>}
-    <p className="mt-2 text-micro leading-5 text-gray-400 dark:text-gray-500">{includeLifetime
-      ? t('Anlas／Opus 含已有累计；张数与模型仅含新记录，“—”表示未记录，费用为估算。')
-      : t('仅显示所选周期的新记录；已有累计可切到“全部年份”查看，“—”表示未记录。')}</p>
+    <p className="mt-2 text-micro leading-5 text-gray-400 dark:text-gray-500">{t('费用为本地估算，“—”表示未记录')}</p>
   </section>;
 };

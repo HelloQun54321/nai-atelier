@@ -55,7 +55,7 @@ describe('Anlas 预算／余额布局', () => {
     view.rerender(React.createElement(AnlasBalanceBar, { variant: 'details', budget, subscription: account }));
     expect(screen.getByText('网关余额').nextElementSibling?.textContent).toBe('2,500 点');
     expect(screen.queryByText('本地预算')).toBeNull();
-    expect(screen.getByText('成员网关已独立分配可用点数，无需本地 1666 预算')).toBeTruthy();
+    expect(screen.getByText('可用点数由成员网关管理')).toBeTruthy();
     for (const language of LANGUAGES) {
       act(() => setLanguage(language.code));
       const refresh = screen.getByRole('button');

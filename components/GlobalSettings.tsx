@@ -813,7 +813,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   checked={imageDisplayFollowsGlobal}
                   onChange={toggleImageDisplayInheritance}
                   label="跟随全局"
-                  description={imageDisplayFollowsGlobal ? "当前值继承自全局设置；关闭后可单独调整此页面" : undefined}
                   bordered
                 />}
                 <fieldset aria-labelledby="image-display-heading" disabled={imageDisplayScope !== 'global' && imageDisplayFollowsGlobal} className="min-w-0 disabled:opacity-60">
@@ -837,10 +836,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     </div>
                     <div className="md:col-span-2">
                       <div className="flex items-end justify-between gap-3 border-t border-gray-200/70 pt-3 dark:border-gray-700/70">
-                        <div className="min-w-0">
-                          <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{t("悬浮按钮大小")}</span>
-                          <p className="mt-0.5 text-micro text-gray-400">{t("图片上的收藏、下载、保存、删除与左右切换共用这一个尺寸")}</p>
-                        </div>
+                        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{t("悬浮按钮大小")}</span>
                         <span className="shrink-0 text-xs font-bold tabular-nums text-gray-600 dark:text-gray-300">{floatingControlSize} px</span>
                       </div>
                       <input type="range" min={FLOATING_CONTROL_MIN} max={FLOATING_CONTROL_MAX} step={2} value={floatingControlSize} onChange={event => setFloatingControlSize(Number(event.target.value))} className="mt-2 block w-full accent-indigo-500" aria-label={t("悬浮按钮大小")} />
@@ -1112,19 +1108,18 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     checked={appearancePreferences.gallerySelectionFocus}
                     onChange={next => updateAppearance({ gallerySelectionFocus: next })}
                     label="选中作品聚焦模式"
-                    description="选中作品时淡化其他作品并垂直居中；居中滚动遵循上方动效设置。"
+                    description="选中时淡化其他作品并居中"
                   />
                   <SettingsSwitchRow
                     checked={appearancePreferences.galleryFrostedCaption}
                     onChange={next => updateAppearance({ galleryFrostedCaption: next })}
                     label="全图磨砂卡片"
-                    description="图片铺满卡片，名称叠在底部渐变磨砂上；关闭后恢复图下信息栏。"
+                    description="图片铺满卡片，名称叠在底部"
                   />
                   <SettingsSwitchRow
                     checked={appearancePreferences.galleryHoverFloat}
                     onChange={next => updateAppearance({ galleryHoverFloat: next })}
                     label="卡片悬停浮动"
-                    description="鼠标经过时轻轻抬起并放大图片。"
                   />
                 </div>
 
@@ -1151,7 +1146,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   checked={appearancePreferences.rememberGenerationSettings}
                   onChange={next => updateAppearance({ rememberGenerationSettings: next })}
                   label="记住上次生图设置"
-                  description="只作用于实验室；从风格串等入口打开时只保留本次页面会话的草稿，不跨重启恢复。"
+                  description="仅作用于实验室"
                 />
                 {appearancePreferences.rememberGenerationSettings && <div className="mt-2 border-t border-gray-100 pt-3 dark:border-gray-800/80">
                   <div className="flex flex-wrap gap-2 text-xs text-gray-700 dark:text-gray-300">
@@ -1166,7 +1161,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     <span className="whitespace-nowrap">{t(label)}</span>
                   </label>)}
                   </div>
-                  <p className="mt-2 text-micro leading-4 text-gray-500 dark:text-gray-400">{t("重启后仅恢复实验室勾选的内容；风格串等编辑页不跨重启恢复。不影响当前输入或已保存的预设。")}</p>
                 </div>}
               </SettingsCard>
 
@@ -1177,7 +1171,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   checked={appearancePreferences.promptInputAutoHeight && appearancePreferences.promptTranslationAutoHeight}
                   onChange={next => updateAppearance({ promptInputAutoHeight: next, promptTranslationAutoHeight: next })}
                   label="提示词框高度跟随内容"
-                  description="原文框与翻译区按内容自动增高，过长时内部滚动；关闭后使用固定高度。"
                 />
               </SettingsCard>
             </>}
@@ -1213,7 +1206,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                           });
                         }}
                         label="Key 池自动轮询"
-                        description="按满圈率优先自动选用池内 Opus 额度最充足的密钥；全池耗尽或需付费时直接停止提示。"
+                        description="优先选用 Opus 额度最充足的密钥"
                         className="!py-1"
                       />
                       {keyPool.config.enabled && (
@@ -1329,8 +1322,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 {newKeyMode !== 'official' && <>
                   <input type="url" aria-label={newKeyMode === 'per-use' ? t("按次渠道地址") : t("生图网关地址")} value={newKeyGatewayUrl} onChange={event => setNewKeyGatewayUrl(event.target.value)} placeholder={newKeyMode === 'per-use' ? 'https://example.com/ai/generate-image' : 'https://gateway.example/v1'} autoComplete="off" className={SETTINGS_INPUT_CLASS} />
                   <p className="text-xs leading-5 text-amber-600 dark:text-amber-400">{newKeyMode === 'per-use'
-                    ? t("按次渠道按调用次数自行计费，工坊不查询点数与额度，也不显示费用估算；生成照常发往该地址。")
-                    : t("网关接收成员 Key、提示词及本次参考图；余额与扣费以网关为准，生图不提供实时预览。")}</p>
+                    ? t("按次渠道自行计费，不查询点数与额度")
+                    : t("网关接收 Key、提示词与参考图，扣费以网关为准")}</p>
                 </>}
                 <input
                   value={newKeyName}
@@ -1359,7 +1352,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   </button>
                   <button type="button" data-appearance="control" data-tone="primary" onClick={() => void addKeyEntry()} className={SETTINGS_BTN_PRIMARY}>{t("添加")}</button>
                 </div>
-                <p className="pt-0.5 text-meta leading-5 text-amber-600 dark:text-amber-400">{t("保存后列表只显示脱敏格式 pst-…XXXX，可点条目旁的眼睛或复制图标取回完整 Key。")}{t("Key 明文保存在本机，局域网访问需密码。")}</p>
+                <p className="pt-0.5 text-meta leading-5 text-amber-600 dark:text-amber-400">{t("Key 明文保存在本机，局域网访问需密码")}</p>
               </div>
             </SettingsCard>
 
@@ -1368,10 +1361,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 title={t("多人拼车公共队列")}
                 icon={<Users />}
                 description={
-                  <div className="space-y-0.5">
-                    <p>{getCloudQueueGenerationUrl(cloudQueue.serviceUrl) ? t("按 Key 保存，由中转服务排队。") : t("按 Key 保存，同 Key 依次生图。")}</p>
-                    <p className="text-amber-600 dark:text-amber-400">{getCloudQueueGenerationUrl(cloudQueue.serviceUrl) ? t("启用中转会发送 Key、提示词及本次参考图；停止等待不保证服务端取消。") : t("不上传 Key、提示词或图片。")}</p>
-                  </div>
+                  getCloudQueueGenerationUrl(cloudQueue.serviceUrl)
+                    ? <span className="text-amber-600 dark:text-amber-400">{t("由中转服务排队，会发送 Key、提示词与参考图")}</span>
+                    : t("同 Key 依次生图，不上传 Key 或提示词")
                 }
                 action={
                   <SettingsSwitch
@@ -1399,7 +1391,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
             {naiChannelMode === 'per-use' && (
               <SettingsCard title={t("Anlas 点数预算")} headingLevel={4} icon={<Sparkles />}>
-                <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{t("当前为按次渠道：工坊不查询点数与额度，也不估算费用；费用按该渠道自己的规则计算。")}</p>
+                <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{t("按次渠道自行计费，不统计点数与额度")}</p>
               </SettingsCard>
             )}
 
@@ -1407,9 +1399,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               <SettingsCard title={t("Anlas 点数预算")} headingLevel={4} icon={<Sparkles />} bodyClassName="space-y-3">
                 <AnlasBalanceBar variant="details" budget={anlasBudget} subscription={novelaiSubscription} />
                 <OpusUsageBar collapsed={false} showDetails />
-                {novelaiSubscription.info?.source === 'gateway' && novelaiSubscription.info?.gatewayManagedWallet === true ? (
-                  <p className="text-meta leading-5 text-gray-500 dark:text-gray-400">{t("当前成员网关已独立分配并管理你的可用点数，无需手动设置本地 1666 预算。")}</p>
-                ) : (
+                {novelaiSubscription.info?.source === 'gateway' && novelaiSubscription.info?.gatewayManagedWallet === true ? null : (
                   <div className="space-y-1.5">
                     <label htmlFor="settings-anlas-budget-input" className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t("可支配 Anlas 点数")}</label>
                     <div className="flex flex-wrap items-center gap-2">
@@ -1510,7 +1500,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     catch { notify('设置保存失败，请检查浏览器存储权限', 'error'); }
                   }}
                   label="分享图片时移除生成信息"
-                  description="复制／下载时移除生成信息；原图与历史保留。"
+                  description="复制／下载时自动清洗"
                 />
                 <div className={`${SETTINGS_SUBPANEL_CLASS} space-y-3`}>
                   <div className="block">
@@ -1527,9 +1517,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       containerClassName="w-full"
                     >
                       <option value="all">{t("全部生成信息")}</option>
-                      <option value="prompts">{t("仅提示词")}</option>
+                      <option value="prompts">{t("仅提示词（保留参数）")}</option>
                     </SettingsSelect>
-                    <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">{t("仅提示词会保留生成参数。")}</span>
                   </div>
                   <label className="block">
                     <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-300">{t("自定义文本")}</span>
@@ -1537,7 +1526,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       try { setSharedImageCustomText(event.target.value); }
                       catch { notify('设置保存失败，请检查浏览器存储权限', 'error'); }
                     }} className={SETTINGS_INPUT_CLASS} />
-                    <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">{t("清洗后写入自定义文本，原图与历史保留。")}</span>
                   </label>
                 </div>
                 <div className="border-t border-gray-100 pt-1 dark:border-gray-800/80">
@@ -1548,7 +1536,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       catch { notify('设置保存失败，请检查浏览器存储权限', 'error'); }
                     }}
                     label="图片悬浮按钮下载生成信息（JSON）"
-                    description="开启后，图上的下载按钮导出 prompt、负面提示词与生成参数；图片没有生成信息时仍下载原图。"
+                    description="无生成信息时仍下载原图"
                   />
                 </div>
               </SettingsCard>

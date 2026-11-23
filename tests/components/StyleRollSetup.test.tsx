@@ -94,8 +94,7 @@ it('已有候选仍可修改生成配置，画师锁定及排除仍可保存且�
   fireEvent.change(screen.getByLabelText('最低权重'), { target: { value: '0.2' } });
   fireEvent.change(screen.getByLabelText('最高权重'), { target: { value: '2.5' } });
   fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
-  // 出过图后不再冻结：只提示改动仅影响之后的生成，模板仍可编辑
-  expect(screen.getByText(/已经出过图/)).toBeTruthy();
+  // 出过图后不再冻结：模板仍可直接编辑
   expect((screen.getByRole('combobox', { name: '公共提示词' }) as HTMLTextAreaElement).disabled).toBe(false);
   expect(screen.getByRole('button', { name: '添加角色' })).toHaveProperty('disabled', false);
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());

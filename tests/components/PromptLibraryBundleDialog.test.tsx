@@ -236,8 +236,7 @@ it('没有风格串可写时不显示入口，取消勾选后写入按钮禁用'
 it('Esc、遮罩与取消都能关闭，且说明只走当前助手模型、可能收费、不消耗生图额度', async () => {
   setup();
   expect(screen.getByRole('dialog', { name: 'AI 生成搭配' }).getAttribute('aria-modal')).toBe('true');
-  expect(screen.getByText('按所选用途生成提示词搭配')).toBeTruthy();
-  expect(screen.getByText('使用当前创作助手模型生成提示词，模型服务可能收费；不消耗生图额度。')).toBeTruthy();
+  expect(screen.getByText('调用助手模型，可能产生模型费用')).toBeTruthy();
   expect((screen.getByLabelText('描述你想要的画面') as HTMLTextAreaElement).placeholder).toBe('例如：雨夜天台，少女，湿发，霓虹倒影');
 
   const dialog = screen.getByRole('dialog', { name: 'AI 生成搭配' });

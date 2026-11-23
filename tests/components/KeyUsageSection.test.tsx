@@ -35,7 +35,7 @@ it('各 Key 独立显示模型张数和费用，原位展开费用拆分及不�
   const detail = within(main.closest('details')!);
   expect(detail.getByText('8 Anlas')).toBeTruthy();
   expect(detail.getByText('2 Anlas')).toBeTruthy();
-  expect(detail.getByText(/本地累计（含旧版）：90 Anlas/)).toBeTruthy();
+  expect(detail.getByText(/历史累计：90 Anlas/)).toBeTruthy();
   expect(shared.closest('details')!.open).toBe(false);
 });
 
@@ -44,7 +44,7 @@ it('未知计费不显示为零，未保存在保管箱的 Key 仍可区分', as
   await screen.findByText('使用中');
   const main = screen.getByLabelText('当前密钥 用量明细');
   expect(within(main).getAllByText('—')).toHaveLength(2);
-  expect(screen.getByText(/2 张图片缺少计费快照/)).toBeTruthy();
+  expect(screen.getByText(/2 张缺少计费记录/)).toBeTruthy();
 });
 
 it('统计加载、失败和空记录分别呈现，不用零代替读取失败', () => {
@@ -102,5 +102,5 @@ it('全部年份直接显示旧累计，不重复相加；旧版未记录的张�
   expect(within(summary).queryByText('100')).toBeNull();
   view.rerender(<KeyUsageSection {...props} rows={[legacyOnly]} />);
   expect(within(screen.getByLabelText('主号 用量明细')).getAllByText('—')).toHaveLength(5);
-  expect(screen.getByText(/本地累计（含旧版）：90 Anlas/)).toBeTruthy();
+  expect(screen.getByText(/历史累计：90 Anlas/)).toBeTruthy();
 });

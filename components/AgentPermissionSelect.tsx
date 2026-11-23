@@ -6,9 +6,9 @@ import { Check, ChevronDown, Eye, Loader2, ShieldAlert, ShieldCheck } from 'luci
 import { promptAgentService, type AgentPermissionMode } from '../services/promptAgent';
 
 const levels = [
-  { mode: 'read_only', name: '只读', icon: Eye, description: '查询项目资料、浏览和展示图片，不修改或保存。' },
-  { mode: 'standard', name: '标准', icon: ShieldCheck, description: '正常操作项目；首次向电脑目标目录写入图片时请你批准。' },
-  { mode: 'full', name: '完全访问', icon: ShieldAlert, description: '自动读写图片、创建文件夹；生图及费用无需再次确认。' },
+  { mode: 'read_only', name: '只读', icon: Eye, description: '仅查询与浏览，不修改资料' },
+  { mode: 'standard', name: '标准', icon: ShieldCheck, description: '正常操作项目，写入本地目录前询问' },
+  { mode: 'full', name: '完全访问', icon: ShieldAlert, description: '自动读写图片，生图与费用无需确认' },
 ] as const;
 
 export const AgentPermissionSelect: React.FC<{ disabled?: boolean }> = ({ disabled }) => {
@@ -106,7 +106,7 @@ export const AgentPermissionSelect: React.FC<{ disabled?: boolean }> = ({ disabl
       {levels.map(item => { const LevelIcon = item.icon; const active = item.mode === mode; return <button key={item.mode} type="button" role="menuitemradio" aria-checked={active} disabled={busy || disabled} onClick={() => void change(item.mode)} className={`appearance-group flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] disabled:opacity-50 ${active ? 'bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-50 dark:hover:bg-gray-800/60'} ${item.mode === 'full' ? 'text-amber-700 dark:text-amber-400' : 'text-gray-800 dark:text-gray-100'}`}>
         <LevelIcon className="mt-0.5 h-4 w-4 shrink-0" /><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{t(item.name)}</span><span className={`mt-0.5 block text-xs leading-5 ${item.mode === 'full' ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>{t(item.description)}</span></span>{active && <Check aria-label={t("已选择")} className="mt-0.5 h-4 w-4 shrink-0" />}
       </button>; })}
-      <p className="mt-1 border-t border-gray-100 px-3 pb-1 pt-2 text-xs leading-5 text-gray-500 dark:border-gray-800 dark:text-gray-400">{t("仅图片文件；编码／删除／清空需确认。")}</p>
+      <p className="mt-1 border-t border-gray-100 px-3 pb-1 pt-2 text-xs leading-5 text-gray-500 dark:border-gray-800 dark:text-gray-400">{t("编码与删除仍需确认")}</p>
     </div>, document.body)}
   </div>;
 };

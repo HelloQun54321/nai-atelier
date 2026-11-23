@@ -634,7 +634,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-bold text-gray-800 dark:text-gray-100">{t('本页剧情与分镜编排')}</span>
-                  <span className="text-[11px] text-gray-400">{t('调用创作助手，不消耗生图额度')}</span>
                 </div>
                 <textarea
                   rows={3}
@@ -758,9 +757,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                                 <span>{t('Danbooru 词库角色')}</span>
                                 {castDictLoading && <InlineSpinner className="h-2.5 w-2.5" />}
                               </div>
-                              {!castQuery.trim() ? (
-                                <p className="px-2 py-1 text-[10px] text-gray-400">{t('输入角色中文名或英文 Tag 即可检索全量词库角色')}</p>
-                              ) : castDictResults.length > 0 ? (
+                              {!castQuery.trim() ? null : castDictResults.length > 0 ? (
                                 castDictResults.map(entry => {
                                   const encodedId = encodeDanbooruCastId(entry.name, entry.chinese);
                                   const checked = aiPage.castCharacterIds.includes(encodedId);
@@ -803,7 +800,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       onChange={e => onTogglePreserveGuideLayout(e.target.checked)}
                       className="rounded accent-indigo-600"
                     />
-                    <span>{t('沿用当前画布参考格布局（可直接在画布拖移与缩放）')}</span>
+                    <span>{t('沿用当前画布参考格布局')}</span>
                   </label>
                 </div>
 
@@ -869,7 +866,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
                 {aiZonePlan.overallLevel === 'hard-exceeded' && (
                   <p className="rounded-lg bg-red-50 px-2.5 py-1.5 text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                    {t('单个分区超过 24 槽硬上限，请展开下方高级选项切换双区或停用部分锚点后再生成。')}
+                    {t('单区超过 24 槽上限，请切双区或停用部分锚点')}
                   </p>
                 )}
 
@@ -907,17 +904,17 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
                     {aiZonePlan.autoSplitTriggered && (
                       <p className="rounded-lg bg-indigo-50/90 px-2.5 py-1.5 text-[11px] text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">
-                        {t('格数或槽位超过单区甜点区，已自动拆为 2 张免费 Opus 区依次生成并无缝拼合。')}
+                        {t('已自动拆为双区免费生成并拼合')}
                       </p>
                     )}
                     {aiZonePlan.recommendDualSplit && (
                       <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                        {t('当前强制单区已超过甜点密度，建议切换「自动」或双区以保持人物清晰度。')}
+                        {t('当前单区密度过高，建议切换双区')}
                       </p>
                     )}
                     {aiZonePlan.overallLevel === 'soft-warning' && (
                       <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                        {t('存在单个分区超过 12 个锚点，人物可能缩为 Q 版；可切双区或精简次要锚点。')}
+                        {t('单区超过 12 个锚点，建议精简或切双区')}
                       </p>
                     )}
 
@@ -1059,7 +1056,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
                       <label className="block">
                         <span className="mb-1 block text-[10px] font-medium text-gray-500 dark:text-gray-400">
-                          {t('全页统一环境光照词（防双区背景割裂）')}
+                          {t('全页统一环境光照词')}
                         </span>
                         <input
                           type="text"
@@ -1075,7 +1072,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                              {t('破格前景块（武器冲出框 / 跨格立绘）')}
+                              {t('破格前景块')}
                             </span>
                             <button
                               type="button"
@@ -1517,9 +1514,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                           <span>{t('Danbooru 词库角色')}</span>
                           {charDictLoading && <InlineSpinner className="h-2.5 w-2.5" />}
                         </div>
-                        {!charQuery.trim() ? (
-                          <p className="px-2 py-1 text-[10px] text-gray-400">{t('输入角色中文名或英文 Tag 即可检索全量词库角色')}</p>
-                        ) : charDictResults.length > 0 ? (
+                        {!charQuery.trim() ? null : charDictResults.length > 0 ? (
                           charDictResults.map(entry => (
                             <button
                               key={entry.name}
@@ -1549,7 +1544,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
                 {aiPage.anchors.length === 0 ? (
                   <p className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-[11px] text-gray-400 dark:border-gray-700">
-                    {t('输入剧情点「AI 编排分镜与锚点」，或直接点击上方按钮手动放置整页锚点')}
+                    {t('暂无锚点，可 AI 编排或手动添加')}
                   </p>
                 ) : (
                   <div className="space-y-1.5">
@@ -1623,7 +1618,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                                 <div className="space-y-1.5 rounded-lg border border-amber-200/80 bg-amber-50/40 p-2 dark:border-amber-900/50 dark:bg-amber-950/20">
                                   <div className="flex items-center justify-between gap-1">
                                     <span className="text-[10px] font-medium text-amber-800 dark:text-amber-200">
-                                      {t('画布已实时显示气泡：单击调大小、双击改台词')}
+                                      {t('画布气泡预览')}
                                     </span>
                                     <button
                                       type="button"
@@ -1686,7 +1681,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                 </summary>
                 <div className="mt-2.5 space-y-2">
                   <label className="block">
-                    <span className="mb-1 block text-[11px] text-gray-500">{t('极简版式总词（不写单格剧情，防止串格）')}</span>
+                    <span className="mb-1 block text-[11px] text-gray-500">{t('整页版式词')}</span>
                     <input
                       type="text"
                       value={aiPage.layoutHint}
@@ -1695,9 +1690,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                     />
                   </label>
-                  <p className="text-[10px] text-gray-400">
-                    {t('可用左侧「切分 (C)」工具直接在画布一刀斜切任意引导格，锁框模式下将按斜切多边形直出。')}
-                  </p>
                   <div className="space-y-1.5">
                     {aiPage.guidePanels.map((gp, idx) => (
                       <div key={gp.id} className="space-y-1.5 rounded border border-gray-200/80 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-800/50">
@@ -1950,12 +1942,12 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
                     {guard.level === 'soft-warning' && (
                       <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                        {t('当前格锚点超过 12 个全精甜点区，人物可能自动缩为 Q 版以容纳所有元素。')}
+                        {t('超过 12 个锚点，人物细节可能下降')}
                       </p>
                     )}
                     {guard.level === 'hard-exceeded' && (
                       <p className="rounded-lg bg-red-50 px-2.5 py-1.5 text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                        {t('单次生图硬上限为 24 个锚点，请停用或删除超出部分后再生成。')}
+                        {t('超过 24 个锚点上限，请精简后再生成')}
                       </p>
                     )}
 
@@ -2049,9 +2041,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                               <span>{t('Danbooru 词库角色')}</span>
                               {charDictLoading && <InlineSpinner className="h-2.5 w-2.5" />}
                             </div>
-                            {!charQuery.trim() ? (
-                              <p className="px-2 py-1 text-[10px] text-gray-400">{t('输入角色中文名或英文 Tag 即可检索全量词库角色')}</p>
-                            ) : charDictResults.length > 0 ? (
+                            {!charQuery.trim() ? null : charDictResults.length > 0 ? (
                               charDictResults.map(entry => (
                                 <button
                                   key={entry.name}
@@ -2082,7 +2072,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     {activePanel.anchors.length > 0 && (
                       <div className="space-y-2 pt-1">
                         <div className="flex items-center justify-between text-[11px] text-gray-500">
-                          <span>{t('可在此或主画布直接拖动圆点')}</span>
+                          <span>{t('拖动圆点调整位置')}</span>
                           <label className="inline-flex cursor-pointer items-center gap-1">
                             <input
                               type="checkbox"
@@ -2193,7 +2183,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                                 <div className="mt-1.5 space-y-1.5 rounded-lg border border-amber-200/80 bg-amber-50/40 p-2 dark:border-amber-900/50 dark:bg-amber-950/20">
                                   <div className="flex items-center justify-between gap-1">
                                     <span className="text-[10px] font-medium text-amber-800 dark:text-amber-200">
-                                      {t('画布已实时显示气泡：单击调大小、双击改台词')}
+                                      {t('画布气泡预览')}
                                     </span>
                                     <button
                                       type="button"
@@ -2542,7 +2532,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
               </div>
               {draft.colorMode === 'monochrome' && (
                 <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                  {t('生图时会自动剥离发送副本中的彩色词并压制色相，绝不修改角色库原资料。')}
+                  {t('生图时自动剥离彩色词并压制色相')}
                 </p>
               )}
             </div>
@@ -2707,7 +2697,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     </label>
                     {isMedium && (
                       <p className="text-[10px] text-gray-400">
-                        {t('V5 Medium 档位由官方固定为 14 步与 Euler Ancestral 采样器；切至 High / Curated 可自由调节全部参数。')}
+                        {t('V5 Medium 固定 14 步与 Euler Ancestral')}
                       </p>
                     )}
                   </>
@@ -3094,7 +3084,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
             {fontManagerOpen && (
               <div className="space-y-1.5 rounded-xl border border-gray-200/80 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-800/40">
                 <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                  {t('全部为 SIL OFL 1.1 开源免费商用字体，下载后缓存在 local-cache/comic-fonts/ 永久离线生效，画布与导出 PNG 同步应用。')}
+                  {t('开源商用字体，下载后离线生效')}
                 </p>
                 {fontCatalog.fonts.map(font => {
                   const isBusy = downloadingFontId === font.id || font.downloading;

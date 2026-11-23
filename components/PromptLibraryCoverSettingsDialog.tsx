@@ -103,7 +103,6 @@ const PromptLibraryCoverSettingsDialogContent: React.FC<PromptLibraryCoverSettin
       <header className="flex flex-none items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-700">
         <div className="min-w-0 flex-1">
           <h2 className="font-bold dark:text-white">{t('封面生成设置')}</h2>
-          <p className="mt-1 break-words text-xs text-gray-500">{t('用 {content} 插入条目正文；模板负面与参数不随条目变化')}</p>
         </div>
         <button type="button" aria-label={t('关闭')} disabled={busy} onClick={close} className="mobile-touch rounded-lg p-2 text-gray-500"><X className="h-4 w-4" /></button>
       </header>

@@ -11,8 +11,7 @@ afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
 it('生图协作偏好独立保存，不改变思考与工具展开状态', () => {
   render(<AgentGenerationOptions />);
   const toggle = screen.getByRole('switch', { name: '自动应用提示词与参数' });
-  expect(toggle.className).toContain('mobile-touch'); expect(toggle.className).toContain('h-11 w-11');
-  expect(toggle.firstElementChild?.className).toContain('h-5 w-9');
+  expect(toggle.getAttribute('aria-checked')).toBe('true');
   fireEvent.click(screen.getByRole('switch', { name: '自动应用提示词与参数' }));
   fireEvent.click(screen.getByRole('switch', { name: '生成后在聊天展示图片' }));
   expect(getAgentDisplayPreferences()).toEqual({ thinkingExpanded: false, toolsExpanded: false, autoApplyDraft: false, autoShowGenerated: false });

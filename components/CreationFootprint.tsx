@@ -626,11 +626,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
 
             <SectionCard
               title={granularity === 'week' ? t('创作活动 · {0}', [weekLabel]) : granularity === 'month' ? t('创作活动 · {0}', [formatYearMonth(selectedMonth)]) : t('创作活动 · {0}', [selectedYear || t('全部年份')])}
-              hint={granularity === 'week'
-                ? t('所选周每天生成的作品数；点击某天查看当天作品')
-                : granularity === 'month'
-                  ? t('所选月份每天生成的作品数；点击某天查看当天作品')
-                  : (selectedYear ? t('所选年份每天生成的作品数；点击某天查看当天作品') : t('全部年份统计；热力图显示最近一年'))}
+              hint={!selectedYear && granularity === 'year' ? t('热力图显示最近一年') : undefined}
               action={<div className="flex flex-wrap items-center gap-2">
                 {periodPicker}
                 <span className="hidden items-center gap-1.5 text-micro text-gray-400 sm:flex">{t('少')}<span className="h-2.5 w-2.5 rounded-[2px] bg-gray-200 dark:bg-gray-800" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-300 dark:bg-indigo-800" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-400 dark:bg-indigo-700" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-500 dark:bg-indigo-700" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-700 dark:bg-indigo-500" />{t('多')}</span>
@@ -671,24 +667,24 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
 
             {keyUsage}
             <div className="grid gap-4 lg:grid-cols-2">
-              <SectionCard title={t('风格串使用排行')} hint={t('按由该风格串生成的作品数排序')} action={<button type="button" onClick={() => onOpenHistory({ sort: 'newest' })} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开历史')}</button>}>
+              <SectionCard title={t('风格串使用排行')} action={<button type="button" onClick={() => onOpenHistory({ sort: 'newest' })} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开历史')}</button>}>
                 {groupedChains.length ? <div className="space-y-0.5">{groupedChains.slice(0, 8).map(chain => <RankingRow key={chain.name || chain.id} name={chainLabel(chain)} images={chain.images} lastAt={chain.lastAt} onClick={() => openChain(chain)} />)}</div> : <p className="py-8 text-center text-sm text-gray-400">{t('暂无')}</p>}
               </SectionCard>
-              <SectionCard title={t('画师使用排行')} hint={t('按历史 Prompt 中的 artist: 标签统计')}>
+              <SectionCard title={t('画师使用排行')}>
                 {stats.artists.length ? <div className="space-y-0.5">{stats.artists.slice(0, 8).map(artist => <RankingRow key={artist.name} name={artist.name} images={artist.images} lastAt={artist.lastAt} onClick={() => openArtist(artist.name)} accent="rose" />)}</div> : <p className="py-8 text-center text-sm text-gray-400">{t('暂无')}</p>}
                 {stats.artistScan.truncated && <p className="mt-2 text-micro text-gray-400">{t('基于最近 {0} 张作品统计', [formatNumber(stats.artistScan.scanned)])}</p>}
               </SectionCard>
             </div>
 
             <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-              <SectionCard title={granularity === 'week' ? t('所选周趋势') : granularity === 'month' ? t('所选月份趋势') : (selectedYear ? t('年度月度趋势') : t('最近一年月度趋势'))} hint={granularity === 'year' ? t('每月生成的作品数') : t('每天生成的作品数')}>
+              <SectionCard title={granularity === 'week' ? t('所选周趋势') : granularity === 'month' ? t('所选月份趋势') : (selectedYear ? t('年度月度趋势') : t('最近一年月度趋势'))}>
                 <div className="flex h-28 items-end gap-1" role="img" aria-label={granularity === 'year' ? t('每月生成的作品数') : t('每天生成的作品数')}>
                   {trend.map(day => <button key={day.key} type="button" onClick={() => openTrend(day.key)} title={t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className="mobile-touch flex h-full flex-1 items-end rounded-t focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"><span className={`w-full rounded-t transition-colors ${day.count ? 'bg-indigo-500/85 hover:bg-indigo-600 dark:bg-indigo-400/80' : 'bg-gray-100 dark:bg-gray-800'}`} style={{ height: `${Math.max(3, day.count / maxTrend * 100)}%` }} /></button>)}
                 </div>
                 <div className="mt-2 flex justify-between text-micro text-gray-400"><span>{granularity === 'year' ? formatMonth(new Date(Number(activeYear), 0, 1)) : trend[0] ? formatDay(dayKeyToTime(trend[0].key)) : ''}</span><span>{granularity === 'year' ? formatMonth(new Date(Number(activeYear), 11, 1)) : granularity === 'week' ? formatDay(endOfWeek(weekStart)) : formatDay(monthBounds.end)}</span></div>
               </SectionCard>
 
-              <SectionCard title={t('收藏概览')} hint={t('全部收藏，不随上方范围变化')} action={<button type="button" onClick={onOpenCollection} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开收藏库')}</button>}>
+              <SectionCard title={t('收藏概览')} hint={t('全部收藏')} action={<button type="button" onClick={onOpenCollection} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开收藏库')}</button>}>
                 {collectionLoading && <p role="status" className="sr-only">{t('正在读取收藏库…')}</p>}
                 {collectionError && <p role="alert" className="mb-3 text-sm text-red-500">{collectionError} <button type="button" onClick={() => setReload(value => value + 1)} className="underline">{t('重试')}</button></p>}
                 <div className="grid grid-cols-3 gap-2">
@@ -696,11 +692,10 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
                   <button type="button" onClick={onOpenCollection} className="appearance-group mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{(collectionReady ? formatNumber(collectionStats.artists) : '—')}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的画师')}</span></button>
                   <button type="button" onClick={onOpenCollection} className="appearance-group mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{(collectionReady ? formatNumber(collectionStats.total) : '—')}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的图片')}</span></button>
                 </div>
-                <p className="mt-3 text-micro leading-5 text-gray-400">{t('收藏是作品级记录；这里只汇总数量，不改变收藏内容。')}</p>
               </SectionCard>
             </div>
 
-            <SectionCard title={t('创作洞察')} hint={t('从已保存作品归纳，不代表官方额度结算')}>
+            <SectionCard title={t('创作洞察')}>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <button type="button" onClick={() => topModel && openModel(topModel.model)} disabled={!topModel} className="mobile-touch rounded-xl border border-gray-100 p-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50/40 disabled:cursor-default dark:border-gray-800 dark:hover:border-indigo-900 dark:hover:bg-indigo-950/20"><span className="flex items-center gap-1.5 text-micro text-gray-400"><Sparkles className="h-3 w-3" />{t('最常用模型')}</span><span className="mt-1 block truncate text-sm font-bold text-gray-800 dark:text-gray-100">{topModel ? getNaiModelDisplayLabel(topModel.model) : t('暂无')}</span></button>
                 <div className="rounded-xl border border-gray-100 p-3 dark:border-gray-800"><span className="flex items-center gap-1.5 text-micro text-gray-400"><BarChart3 className="h-3 w-3" />{t('最常用尺寸')}</span><span className="mt-1 block text-sm font-bold text-gray-800 dark:text-gray-100">{topSize ? `${topSize.width} × ${topSize.height}` : t('暂无')}</span></div>
@@ -714,7 +709,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
             </SectionCard>
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <SectionCard title={t('角色使用排行')} hint={t('按历史中的角色提示词统计')}>
+              <SectionCard title={t('角色使用排行')}>
                 {stats.characters.length ? <div className="space-y-0.5">{stats.characters.slice(0, 8).map(character => <RankingRow key={character.id} name={character.name || t('未命名角色')} images={character.images} lastAt={character.lastAt} onClick={() => onOpenHistory({ search: character.name, sort: 'newest' })} accent="rose" />)}</div> : <p className="py-8 text-center text-sm text-gray-400">{t('暂无')}</p>}
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('带角色 {0} 张 · {1} 个槽', [formatNumber(stats.characterUsage.images), formatNumber(stats.characterUsage.slots)])}</span>
@@ -723,7 +718,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
                   <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('角色库')} · {(chainsLoading || chainsError ? '—' : formatNumber(chainStats.character))}</span>
                 </div>
               </SectionCard>
-              <SectionCard title={t('常用标签')} hint={t('从 Prompt 与角色内容归纳')}>
+              <SectionCard title={t('常用标签')}>
                 {stats.tags.length ? <div className="flex flex-wrap gap-1.5">{stats.tags.slice(0, 12).map(tag => <button key={tag.name} type="button" onClick={() => onOpenHistory({ search: tag.name, sort: 'newest' })} className="appearance-group mobile-touch rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">{tag.name} · {formatNumber(tag.images)}</button>)}</div> : <p className="py-8 text-center text-sm text-gray-400">{t('暂无')}</p>}
                 <div className="mt-3 flex flex-wrap gap-2 text-micro text-gray-400 dark:text-gray-500">
                   <span>{t('探索画师')} {formatNumber(stats.uniqueArtists)}</span>
@@ -733,7 +728,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
               </SectionCard>
             </div>
 
-            <SectionCard title={t('创作资产')} hint={t('本地保存的配方、参考与实验')} action={<button type="button" onClick={onOpenRoll} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开 Roll 串')}</button>}>
+            <SectionCard title={t('创作资产')} action={<button type="button" onClick={onOpenRoll} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开 Roll 串')}</button>}>
               {(assetsLoading || chainsLoading) && <InlineSpinner label={t('加载中…')} className="mb-3" />}
               {assetsError && <p role="alert" className="mb-3 text-sm text-red-500">{assetsError} <button type="button" onClick={() => setReload(value => value + 1)} className="underline">{t('重试')}</button></p>}
               {chainsError && <p role="alert" className="mb-3 text-sm text-red-500">{t(chainsError)} {onRetryChains && <button type="button" onClick={onRetryChains} className="underline">{t('重试')}</button>}</p>}
@@ -760,20 +755,19 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
             </SectionCard>
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <SectionCard title={t('创作助手')} hint={t('会话与消息元数据，不读取聊天内容')}>
+              <SectionCard title={t('创作助手')}>
                 {agentLoading && !assets.agent ? <InlineSpinner label={t('正在读取…')} className="py-6" /> : !assets.agent ? <p className="py-6 text-center text-sm text-gray-400">{t('助手服务未连接')}</p> : <div className="grid grid-cols-2 gap-2">
                   <SmallMetric label={t('会话')} value={formatNumber(agentStats.sessions)} />
                   <SmallMetric label={t('消息')} value={formatNumber(agentStats.messages)} />
                 </div>}
                 {agentStats.models.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{agentStats.models.map(([model, count]) => <span key={model} className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{model} · {formatNumber(count)}</span>)}</div>}
               </SectionCard>
-              <SectionCard title={t('生成结果')} hint={t('所选周期内的全工坊事件')}>
+              <SectionCard title={t('生成结果')}>
                 <div className="mt-3 grid grid-cols-3 gap-2">
                   <SmallMetric label={t('失败')} value={eventsLoading || eventsError ? '—' : formatNumber(generationOutcomes.failed)} />
                   <SmallMetric label={t('取消')} value={eventsLoading || eventsError ? '—' : formatNumber(generationOutcomes.cancelled)} />
                   <SmallMetric label={t('受阻')} value={eventsLoading || eventsError ? '—' : formatNumber(generationOutcomes.blocked)} />
                 </div>
-                <p className="mt-1 text-micro leading-5 text-gray-400 dark:text-gray-500">{t('失败、取消与受阻自本版本起记录；历史只保留成功保存的作品。')}</p>
               </SectionCard>
             </div>
           </>}

@@ -88,7 +88,6 @@ it('设置面板把当前设置存成快捷按钮，工具栏一键按所存设�
   render(<Harness initial="artist:a, 1girl" notify={vi.fn()} />);
   const panel = openPanel();
   fireEvent.click(screen.getByRole('button', { name: '只留画师' }));
-  expect(panel.textContent).toContain('这一项靠词库识别，不需要 AI。');
   expect(screen.getByRole('button', { name: /AI 精准/ })).toHaveProperty('disabled', true);
   fireEvent.change(screen.getByRole('textbox', { name: '快捷按钮名称' }), { target: { value: '画师' } });
   fireEvent.click(screen.getByRole('button', { name: '存为快捷按钮' }));

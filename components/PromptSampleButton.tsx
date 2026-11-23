@@ -93,7 +93,6 @@ export const PromptSampleButton: React.FC<{ value: string; disabled?: boolean; n
                   {originalSizeValue && !isBuiltinSize(originalSizeValue) && <option value={originalSizeValue}>{t('自定义尺寸')} · {originalSizeValue.replace('x', '×')}</option>}
                 </select>
               </label>
-              <p className={HINT_CLASS}>{t('其余沿用当前编辑器里的模型、步数、采样器、种子、负面词和氛围参考，也就是这串原图的设置。')}</p>
             </div>
             : snapshot && <div className="mt-2 space-y-2">
               <div className="grid grid-cols-2 gap-2">
@@ -122,8 +121,7 @@ export const PromptSampleButton: React.FC<{ value: string; disabled?: boolean; n
               <label className={PARAM_LABEL_CLASS}>{t('负面提示词')}
                 <textarea rows={2} maxLength={PROMPT_SAMPLE_TEXT_LIMIT} value={snapshot.negativePrompt} placeholder={t('留空沿用原图的负面词')} onChange={event => patchSnapshot({}, event.target.value)} className={FIELD_CLASS} />
               </label>
-              <div className="flex items-start justify-between gap-2">
-                <p className={`${HINT_CLASS} !mt-0`}>{t('只用于样张，不含角色、氛围参考与精准参考；第一次切换时已按当前参数填好。')}</p>
+              <div className="flex justify-end">
                 <button type="button" onClick={() => { updatePromptSampleSettings({ snapshot: fromCurrent() }); notify(t('已填入当前参数'), 'success'); }}
                   className="mobile-touch h-7 flex-none rounded-lg px-2 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{t('从当前参数填入')}</button>
               </div>
@@ -136,8 +134,8 @@ export const PromptSampleButton: React.FC<{ value: string; disabled?: boolean; n
         </div>
         <fieldset>
           <legend className={LEGEND_CLASS}>{t('角色')}</legend>
-          <label className="mb-1.5 flex items-start gap-2 text-xs text-gray-700 dark:text-gray-200"><input type="checkbox" className="mt-0.5" checked={settings.keepOriginalCharacters} onChange={event => updatePromptSampleSettings({ keepOriginalCharacters: event.target.checked })} />
-            <span>{t('沿用原图角色')}<span className={`block ${HINT_CLASS}`}>{t('角色、站位和精准参考都按原图来；下面填的样张角色先不用，取消勾选即恢复。')}</span></span></label>
+          <label className="mb-1.5 flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200"><input type="checkbox" checked={settings.keepOriginalCharacters} onChange={event => updatePromptSampleSettings({ keepOriginalCharacters: event.target.checked })} />
+            <span>{t('沿用原图角色')}</span></label>
           {!settings.keepOriginalCharacters && <div className="space-y-1.5">
             {settings.characters.map((prompt, index) => <div key={index} className="flex items-start gap-1">
               <textarea rows={1} aria-label={t('角色 {0} 提示词', [index + 1])} maxLength={PROMPT_SAMPLE_TEXT_LIMIT} value={prompt} onChange={event => setCharacter(index, event.target.value)} className={`${FIELD_CLASS} min-w-0 flex-1`} />
@@ -154,7 +152,6 @@ export const PromptSampleButton: React.FC<{ value: string; disabled?: boolean; n
             className="mobile-touch inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 disabled:cursor-not-allowed disabled:opacity-50">
             <ImagePlay aria-hidden="true" className="h-4 w-4" />{t('生成样张')}
           </button>
-          <p className={HINT_CLASS}>{t('提示词框里的内容原样接上 main，不会先整理；想先提取画风串，可在整理面板勾选「整理后生成样张」。角色放进角色栏，图片进当前预览和历史，扣费前照常确认。')}</p>
         </div>
       </div>
     </AnchoredToolbarPopover>}

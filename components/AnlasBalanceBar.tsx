@@ -90,7 +90,7 @@ export const AnlasBalanceBar: React.FC<AnlasBalanceBarProps> = ({ collapsed = fa
         </dl>
       )}
       {balanceKnown && <dl className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-micro text-gray-500 dark:text-gray-400"><dt>{t(gateway ? '成员分配 / Paid' : "订阅赠送 / Paid")}</dt><dd className="tabular-nums">{balance!.fixedTrainingStepsLeft.toLocaleString(getLanguage())} / {balance!.purchasedTrainingSteps.toLocaleString(getLanguage())}</dd></dl>}
-      <p className="mt-2 text-micro text-gray-500 dark:text-gray-400">{gatewayManaged ? t('成员网关已独立分配可用点数，无需本地 1666 预算') : t(!info ? '本地预算 ≠ 账号余额' : gateway ? "本地预算 ≠ 网关余额" : "本地预算 ≠ 官方余额")}</p>
+      <p className="mt-2 text-micro text-gray-500 dark:text-gray-400">{gatewayManaged ? t('可用点数由成员网关管理') : t(!info ? '本地预算 ≠ 账号余额' : gateway ? "本地预算 ≠ 网关余额" : "本地预算 ≠ 官方余额")}</p>
       {error && <p role="status" className="mt-2 break-words text-xs text-amber-600 dark:text-amber-400">{total === null ? t("余额未知") : t("显示上次余额")}：{t(error)}</p>}
     </section>
   );

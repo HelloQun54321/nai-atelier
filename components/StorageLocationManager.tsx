@@ -149,7 +149,7 @@ export function StorageLocationManager({ notify }: { notify: (message: string, t
     <div className="pt-2 text-sm font-medium text-gray-900 dark:text-gray-100">{t(label)}</div>
     <div className="min-w-0">
       <p className="truncate pt-2 font-mono text-xs text-gray-700 dark:text-gray-300" title={path}>{path}</p>
-      <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{kind === 'data' ? t('风格串、原图、历史与设置。') : t('缩略图、词库、反推模型与画师图包，可重新下载。')}{kind === 'cache' && storage?.cacheFollowsData && <span className="ml-2">{t('跟随工坊')}</span>}</p>
+      <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{kind === 'data' ? t('风格串、原图、历史与设置') : t('缩略图、词库与反推模型（可重下）')}{kind === 'cache' && storage?.cacheFollowsData && <span className="ml-2">{t('跟随工坊')}</span>}</p>
       {renderFeedback(kind)}
     </div>
     {storage?.canManage && <div className="flex flex-none items-center gap-2">
@@ -199,7 +199,7 @@ export function StorageLocationManager({ notify }: { notify: (message: string, t
               {exports?.directory && <button type="button" data-appearance="control" data-tone="neutral" className={SETTINGS_BTN_NEUTRAL} disabled={pending('export') || migrating} onClick={() => void perform('export', async () => { setExports(await clearExportDirectory()); return true; })}>{t('清除')}</button>}
             </div>
           </div>
-          <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{exports?.platform === 'android' && exports.mode === 'system' ? t('图片保存到相册；其他文件由系统询问位置。') : t('图片和文件默认导出至此目录；未单独指定导出路径时使用。')}</p>
+          <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{exports?.platform === 'android' && exports.mode === 'system' ? t('图片保存至相册，其余由系统询问') : t('未指定路径时默认导出至此目录')}</p>
           {renderFeedback('export')}
         </div>
       </div>

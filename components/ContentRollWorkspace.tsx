@@ -545,7 +545,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
           {detail ? <span className="content-roll-result-tags font-mono text-xs text-gray-500 dark:text-gray-400"> · {detail}</span> : null}
           {constraint && <span data-content-roll-constraint={kind} className="ml-1 inline-flex align-middle"><InfoPopover label="说明" content={constraint} /></span>}
         </p>
-        {interactionGateHint && <p data-content-roll-interaction-gate className="mt-0.5 text-xs leading-5 text-amber-700 dark:text-amber-300">{t('当前启用角色不足 2 人，互动默认不参与；可手动勾选')}</p>}
+        {interactionGateHint && <p data-content-roll-interaction-gate className="mt-0.5 text-xs leading-5 text-amber-700 dark:text-amber-300">{t('角色不足 2 人，互动默认不参与')}</p>}
       </div>
       <div className="content-roll-row-actions flex items-center justify-end gap-0.5">
         <IconButton label={locked[kind] ? '已固定' : '固定'} title={t(locked[kind] ? '解除固定' : '固定这一条')} aria-pressed={!!locked[kind]} disabled={!filled || !checked || applying || saving} onClick={() => toggleLock(kind)} className={locked[kind] ? 'text-indigo-600 dark:text-indigo-300' : ''}>{locked[kind] ? <Lock /> : <LockOpen />}<span className="sr-only">{t(locked[kind] ? '已固定' : '固定')}</span></IconButton>
@@ -592,15 +592,15 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
           <span className="content-roll-participation tabular-nums">{t('参与 {0} / {1} 项', [selectedCount, rows.length])}{lockedCount ? ` · ${t('已固定 {0} 项', [lockedCount])}` : ''}</span>
           <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1" role={chainsError && !chainsLoading ? 'alert' : chainsLoading ? undefined : 'status'}>
             {countsPending ? <>{chainsLoading ? <InlineSpinner label={t('加载中…')} /> : <span>{t(chainsError || '读取失败')}</span>}{chainsError && !chainsLoading && onRetryChains && <button type="button" className="mobile-touch px-2 text-indigo-600 dark:text-indigo-300" onClick={onRetryChains}>{t('重试')}</button>}</>
-              : !hasCandidates ? <span>{t('当前范围没有可随机抽取的片段，可更换目录或手写。')}</span> : !selectedCount ? <span>{t('请选择参与抽取的用途')}</span> : null}
+              : !hasCandidates ? <span>{t('当前范围暂无可抽取片段')}</span> : !selectedCount ? <span>{t('请选择参与抽取的用途')}</span> : null}
             {directories && !countsPending && excludedCount > 0 && <ToolbarPopover label={t('{0} 条未参与随机', [excludedCount])} title={t('查看原因')} icon={<Info />} width={360} zIndex={2100} className="content-roll-exclusions">
-              <div data-content-roll-exclusions><p className="text-sm">{t('未标注或混合片段可手动取用；单用途随机搭配只抽取相应用途片段。')}</p><p className="mt-2 text-xs">{([
+              <div data-content-roll-exclusions><p className="text-sm">{t('仅抽取已标注对应单用途的片段')}</p><p className="mt-2 text-xs">{([
                 ['unmarked', '未标注'], ['mixed', '多用途混合'], ['negative_only', '负面专用'], ['empty_prompt', '空正文'], ['non_fragment', '非片段'],
-              ] as const).filter(([reason]) => excludedCandidates[reason]).map(([reason, label]) => t('{0} {1} 条', [t(label), excludedCandidates[reason]!])).join(' · ')}</p><p className="mt-2 text-xs text-gray-500">{t('按已保存用途筛选，未自动核验正文。')}</p></div>
+              ] as const).filter(([reason]) => excludedCandidates[reason]).map(([reason, label]) => t('{0} {1} 条', [t(label), excludedCandidates[reason]!])).join(' · ')}</p></div>
             </ToolbarPopover>}
             {current && <ToolbarPopover label="抽取记录" title={t('抽取记录')} icon={<Copy />} width={480} zIndex={2100} className="content-roll-exclusions">
               <p className="break-all text-xs text-gray-500">{t('组合随机码 {0}', [current?.seed || '—'])}</p>
-              <p className="mt-1 text-xs text-gray-500">{t('组合随机码只用于复现这一组，不是生图 seed。')}</p>
+              <p className="mt-1 text-xs text-gray-500">{t('仅用于复现本组，非生图 Seed')}</p>
               <ToolbarButton className="mt-3" onClick={() => void copyEvidence()}><Copy />{t('复制组合数据')}</ToolbarButton>
               <pre data-content-roll-evidence="true" className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-gray-500">{evidenceText}</pre>
             </ToolbarPopover>}

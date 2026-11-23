@@ -249,7 +249,7 @@ it.each([
   mocks.exportStatus.mockResolvedValue({ ...exportState, platform, systemDirectory });
   await setup();
   expect(screen.getByText(expected)).toBeTruthy();
-  if (platform === 'android') expect(screen.getByText('图片保存到相册；其他文件由系统询问位置。')).toBeTruthy();
+  if (platform === 'android') expect(screen.getByText('图片保存至相册，其余由系统询问')).toBeTruthy();
 });
 
 it('每次询问沿用导出API，不更改工坊路径', async () => {

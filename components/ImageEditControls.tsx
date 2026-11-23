@@ -507,7 +507,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
               <button type="button" disabled={isBusy} onClick={() => onDraftChange({ imageToImageSizeMode: 'custom', params: { ...selectableParams, width: snapped.width, height: snapped.height } })} className="mobile-touch rounded-lg border border-amber-400 px-2 py-1 text-xs font-semibold disabled:opacity-40 dark:border-amber-700">{t("使用最近合法尺寸 {0} × {1}", [snapped.width, snapped.height])}</button>
             </div>;
           })()}
-          {sizeMode !== 'original' && <div className="text-gray-500 dark:text-gray-400">{t("等比保留底图，比例不同处按透明设置填白或留空。{0}", [sizeMode === 'free' && t("仅调整像素范围，实际费用见生成按钮。")])}</div>}
+          {sizeMode !== 'original' && <div className="text-gray-500 dark:text-gray-400">{t("等比保留底图，留边按透明设置填充")}</div>}
         </div>}
         <ChainEditorParams params={selectableParams} prompt={draft.prompt} setParams={params => onDraftChange({ params })} canEdit={!isBusy} markChange={() => undefined} hideResolution mode={operation} forceEmptySeed={forceEmptySeed} onForceEmptySeedChange={onForceEmptySeedChange} enforceFreeStepLimit={enforceFreeStepLimit} />
       </LabModuleSection>

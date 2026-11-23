@@ -409,7 +409,7 @@ export const ComicBookshelfModal: React.FC<ComicBookshelfModalProps> = ({
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">{selectedBook.title}</h3>
-                  <p className="text-[11px] text-gray-400">{t('共 {0} 页 · 可拖拽卡片调整页序，点击卡片立即进入编辑', [selectedBook.pages.length])}</p>
+                  <p className="text-[11px] text-gray-400">{t('共 {0} 页 · 拖拽排序', [selectedBook.pages.length])}</p>
                 </div>
                 <button
                   type="button"

@@ -558,7 +558,7 @@ it('真实片段输入只抽单用途非空正词，排除原因计数忽略普�
   expect(explanation.closest('[role="dialog"]')).toBeTruthy();
   expect(explanation.textContent).toContain('未标注 1 条 · 多用途混合 1 条 · 负面专用 1 条 · 空正文 1 条 · 非片段 1 条');
   expect(screen.queryByRole('button', { name: '7 条未参与随机' })).toBeNull();
-  expect(explanation.textContent).toContain('按已保存用途筛选，未自动核验正文。');
+  expect(explanation.textContent).toContain('单用途');
   openPurposeGroup('主体与外观');
   const select = editorControl('combobox', { name: '选择服饰与配件片段' });
   expect(within(select).getAllByRole('option').map(option => option.textContent)).toEqual(['手写或选择片段', '衬衫']);

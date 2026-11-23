@@ -122,7 +122,7 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(notify).toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: '黑白网点漫' }));
-    expect(screen.getByText(/自动剥离发送副本中的彩色词/)).toBeTruthy();
+    expect(screen.getByText(/自动剥离彩色词/)).toBeTruthy();
 
     // 从画布底部悬浮胶囊的「··· 更多画布工具」里打开画笔，顶栏动态属性条实时显示粗细且不切换右侧标签
     fireEvent.click(screen.getByRole('button', { name: '更多画布工具' }));
@@ -132,9 +132,9 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
 
     // 单键快捷键依然支持抓手平移与格内移图工具，并在顶栏展示对应提示
     fireEvent.keyDown(window, { key: 'h' });
-    expect(screen.getByText(/抓手 \(H\)/)).toBeTruthy();
+    expect(screen.getByText(/拖拽平移/)).toBeTruthy();
     fireEvent.keyDown(window, { key: 'm' });
-    expect(screen.getByText(/格内移图/)).toBeTruthy();
+    expect(screen.getByText(/拖拽画格调整构图/)).toBeTruthy();
 
     // 切到步骤 3「气泡嵌字」；并通过底部「··· -> 图层与叠图」按需呼出图层浮层（不再占用主标签）
     fireEvent.click(screen.getByRole('tab', { name: /气泡嵌字/ }));

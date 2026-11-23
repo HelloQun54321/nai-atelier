@@ -34,7 +34,6 @@ export const AgentGenerationOptions: React.FC = () => {
   const value = useAgentDisplayPreferences();
   return <div className="space-y-2">
     {([['autoApplyDraft', '自动应用提示词与参数'], ['autoShowGenerated', '生成后在聊天展示图片']] as const).map(([key, label]) => <div key={key} className="flex min-h-10 items-center justify-between gap-4 text-sm text-gray-700 dark:text-gray-200"><span>{t(label)}</span><AgentPreferenceSwitch label={t(label)} checked={value[key]} onChange={() => setAgentDisplayPreferences({ [key]: !value[key] })} /></div>)}
-    <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{t("冲突保留两份；完全访问下生图无需确认。")}</p>
   </div>;
 };
 
