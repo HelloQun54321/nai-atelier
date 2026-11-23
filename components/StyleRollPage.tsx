@@ -2,15 +2,14 @@ import { confirmationCostScope } from '../services/dailyConfirmation';
 import { flushSync } from 'react-dom';
 import { copyTagText } from '../services/externalImageTags';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Ban, ChevronDown, ChevronLeft, ChevronRight, Copy, CopyPlus, Folder, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, Pin, Plus, RotateCcw, Save, Settings2, SlidersHorizontal, Trash2, Users, X } from 'lucide-react';
+import { Ban, ChevronDown, ChevronLeft, ChevronRight, Copy, CopyPlus, Folder, Heart, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, Pin, Plus, Save, Settings2, SlidersHorizontal, Trash2, Users, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { MobileBottomSheet, MobileOverflowMenu } from './MobileUI';
 import { getLanguage, t, useLanguage } from '../services/i18n';
 import { formatGenerationDuration, readGenerationDurationMs } from '../services/generationDuration';
-import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateToChain, rollExperimentSummary, rollRoundSourceChainIds, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
+import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateToChain, rollExperimentSummary, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollExperiment, type RollExperimentSummary, type RollRules } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
 import { getRollSeries, nextRollSeriesStep, ROLL_SERIES_STOP_LABELS, rollSeriesWouldOverflow, startRollSeries, stopRollSeries, type RollSeriesStopReason } from '../services/styleRollSeries';
-import { buildRollChainArtistSource } from '../services/styleRollChainArtists';
 import { rollFavoriteMatches, rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
 import { ARTIST_SAMPLES_CHANGED, getArtistSampleLibrary, normalizeArtistSampleTag } from '../services/artistSamples';
 import { loadArtistSampleUrls } from '../services/artistSampleUrls';
@@ -69,11 +68,7 @@ interface Props {
   onOpenArtistLibrary?: (name?: string) => void;
   initialPinned?: { tags: string[]; token: number } | null;
 }
-const ROLL_FILTER_LABELS = { all: '全部', unsaved: '未保存', saved: '已保存', pending: '待生成', favorited: '已收藏' } as const;
-/** 依赖已出图结果、候选会因保存或收藏离开当前结果的筛选：就绪前显示读取状态，离开时详情衔接下一项。 */
-const ROLL_TRIAGE_FILTERS: readonly string[] = ['unsaved', 'favorited'];
 /** 画师库带入的固定画师只消费一次；页面被保活淘汰后重建也不重复建记录。 */
-const artistCountLabel = (rules: RollRules) => rules.minArtists === rules.maxArtists ? String(rules.maxArtists) : `${rules.minArtists}–${rules.maxArtists}`;
 const consumedPinnedTokens = new Set<number>();
 /** 一次出图的结果：连续 Roll 据此决定进入下一轮还是停下。 */
 type RollGenerateOutcome = { ok: true } | { ok: false; reason: 'skipped' | 'error' | 'cancelled' | 'declined' | 'record_full' | 'opus_limit'; error?: string };
@@ -134,14 +129,14 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const [history, setHistory] = useState<LocalGenItem[]>([]), [historyLoading, setHistoryLoading] = useState(false);
   const [historyReadyId, setHistoryReadyId] = useState('');
   const [selectedId, setSelectedId] = useState('');
-  const [filter, setFilter] = useState('all'), [count, setCount] = useState(6);
+  const [count, setCount] = useState(6);
   const [roundRules, setRoundRules] = useState<RollRules>({ ...DEFAULT_ROLL_RULES });
   const [artistDialogOpen, setArtistDialogOpen] = useState(false);
   const [chainTarget, setChainTarget] = useState<string | null>(null);
   const knownArtists = useMemo(() => new Set(libraryEntries.map(artist => normalizeArtistUsageKey(artist.name))), [libraryEntries]);
   useEffect(() => { setChainTarget(null); }, [active, experimentId]);
   const [artistOverrides, setArtistOverrides] = useState<RollExperiment['artists']>([]);
-  const [query, setQuery] = useState(''), [sort, setSort] = useState('new'), [roundId, setRoundId] = useState('');
+  const [query, setQuery] = useState('');
   const [selecting, setSelecting] = useState(false), [selectedIds, setSelectedIds] = useState(new Set<string>());
   // 画风记录：桌面用可折叠左栏（与其他资料页同构），手机用底部面板承载同一份列表。
   const [recordsExpanded, setRecordsExpanded] = useState(() => { try { return localStorage.getItem('nai-roll-records-expanded') === 'true'; } catch { return false; } });
@@ -180,15 +175,15 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const librarySequence = useRef(0);
   const savedChains = useRef(new Map<string, PromptChain>()), mounted = useRef(true);
   const savedCovers = useRef(new Map<string, string>());
-  const saveView = JSON.stringify([active, experimentId, filter, roundId, query, sort, selecting]);
+  const saveView = JSON.stringify([active, experimentId, query, selecting]);
   const saveViewRef = useRef(saveView); saveViewRef.current = saveView;
   const sampleLoaded = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, selectedId || null, active, selectionFocusEnabled);
-  const rememberScroll = useKeepAliveScrollRestore(scrollRef, `roll:${experimentId}:${filter}`, {
+  const rememberScroll = useKeepAliveScrollRestore(scrollRef, `roll:${experimentId}`, {
     skipRestore: selectionAnchor.hasAnchor,
-    resetKey: `${filter}|${query}|${sort}|${roundId}`,
+    resetKey: query,
     onReset: selectionAnchor.clearAnchor,
   });
   selectedExperimentRef.current = experimentId;
@@ -207,14 +202,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   }, [experiment]);
   const selected = experiment?.candidates.find(item => item.id === selectedId);
   const images = useMemo(() => experiment ? rollCandidateImages(experiment, history) : new Map<string, LocalGenItem>(), [experiment, history]);
-  // 与卡片爱心共用收藏库判定，收藏或取消后筛选与多选即时跟随。
+  // 与卡片爱心共用收藏库判定，收藏或取消后多选即时跟随。
   const collectionVersion = useSyncExternalStore(subscribeCollection, collectionRevision, collectionRevision);
   const [collectionSettled, setCollectionSettled] = useState(false);
-  const [collectionFailed, setCollectionFailed] = useState(false);
   const loadFavorites = useCallback(async () => {
-    setCollectionSettled(false); setCollectionFailed(false);
+    setCollectionSettled(false);
     try { await ensureCollection(); if (mounted.current) setCollectionSettled(true); }
-    catch { if (mounted.current) setCollectionFailed(true); }
+    catch { /* 收藏状态暂不可用时保持多选快捷项禁用 */ }
   }, []);
   useEffect(() => { if (active) void loadFavorites(); }, [active, loadFavorites]);
   const favoriteIds = useMemo(() => new Set([...images].filter(([, item]) => collectionTargetActive({ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id })).map(([id]) => id)), [images, collectionVersion]);
@@ -228,23 +222,19 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   }, [round]);
   const selectedImage = selected && images.get(selected.id);
   const historyReady = Boolean(experiment && historyReadyId === experiment.id);
-  const filterReady = filter === 'favorited' ? historyReady && collectionSettled : filter === 'pending' || filter === 'unsaved' ? historyReady : true;
   const cost = experiment ? estimateV45GenerationCost(experiment.template.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true) : 0;
   const costLabel = !subscription.info ? t(subscription.loading ? '费用确认中…' : '费用未知') : t(formatGenerationCostLabel(cost, experiment?.template.params.model));
-  const visible = useMemo(() => experiment ? rollWorkspaceCandidates(experiment, images, { filter, roundId, query, sort }, chineseNames, favoriteIds) : [], [experiment, images, filter, roundId, query, sort, chineseNames, favoriteIds]);
+  const visible = useMemo(() => experiment ? rollWorkspaceCandidates(experiment, images, { filter: 'all', roundId: '', query, sort: 'new' }, chineseNames, favoriteIds) : [], [experiment, images, query, chineseNames, favoriteIds]);
   const chosen = visible.filter(candidate => selectedIds.has(candidate.id));
   const visibleFavorited = historyReady && collectionSettled ? visible.filter(candidate => rollFavoriteMatches(candidate, images, favoriteIds, true)) : [];
   const visibleUnfavorited = historyReady && collectionSettled ? visible.filter(candidate => rollFavoriteMatches(candidate, images, favoriteIds, false)) : [];
   useEffect(() => { if (!busy) setSelectedIds(current => { const next = new Set([...current].filter(id => visible.some(candidate => candidate.id === id))); return next.size === current.size ? current : next; }); }, [visible, busy]);
-  const previousVisible = useRef<string[]>([]);
   useEffect(() => {
     if (selectedId && !visible.some(candidate => candidate.id === selectedId)) {
-      const previous = previousVisible.current, index = previous.indexOf(selectedId), available = new Set(visible.map(candidate => candidate.id));
-      setSelectedId(ROLL_TRIAGE_FILTERS.includes(filter) && index >= 0 ? [...previous.slice(index + 1), ...previous.slice(0, index).reverse()].find(id => available.has(id)) || '' : '');
+      setSelectedId('');
       selectionAnchor.clearAnchor();
     }
-    previousVisible.current = visible.map(candidate => candidate.id);
-  }, [visible, selectedId, filter]);
+  }, [visible, selectedId]);
   useEffect(() => { setSaveFailures(null); setSavingProgress(null); }, [active, experimentId]);
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -298,7 +288,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     catch (cause) { if (mounted.current && selectedExperimentRef.current === id && sequence === historySequence.current) setError((cause as Error).message); }
     finally { if (mounted.current && sequence === historySequence.current) setHistoryLoading(false); }
   }, []);
-  useEffect(() => { setHistory([]); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setRoundId(''); setQuery(''); setFilter('all'); }, [experimentId]);
+  useEffect(() => { setHistory([]); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setQuery(''); }, [experimentId]);
   useEffect(() => { setRoundRules(experiment ? { ...experiment.rules, ...getRollArtistRange(experiment) } : { ...DEFAULT_ROLL_RULES }); }, [experimentId, experiment?.rules]);
   useEffect(() => { setArtistOverrides(experiment?.artists ?? []); }, [experimentId, experiment?.artists]);
   useEffect(() => { setPinnedArtists(experiment ? getRollPinnedArtists(experiment) : []); }, [experimentId, experiment?.pinnedArtists, experiment?.drawPlan, experiment?.artists]);
@@ -408,7 +398,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         const saved = await store(draft);
         selectedExperimentRef.current = saved.id;
         setExperimentId(saved.id); setPinnedArtists(tags);
-        setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
+        setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setQuery('');
         notify(t('已新建画风记录并固定 {0} 位画师', [tags.length]), 'success');
       } catch (cause) { if (mounted.current) setError((cause as Error).message); }
     })();
@@ -491,7 +481,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     source = { ...source, artists: artistOverrides, drawPlan: undefined, pinnedArtists, chainArtistSource, rules: roundRules, sampledOnly: useSamples };
     const next = beginRollRound(source, useSamples ? effectiveLibrary : library, requested, { blockedTags: blocklist, sampledOnly: useSamples, preferredTags: await readPreferredTags() });
     const saved = await store(next), created = currentRollRound(saved)!;
-    selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
+    selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setQuery('');
     return { saved, created, candidates: saved.candidates.filter(candidate => created.candidateIds.includes(candidate.id)) };
   };
   const runRound = () => void perform(async () => {
@@ -569,7 +559,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     const pending = rollPendingCandidates(experiment, images, ids).slice(0, continuousGenerationEnabled ? 24 : 1);
     if (!pending.length) return;
     if (ids || !round || round.closedAt) source = await store({ ...experiment, rounds: [...experiment.rounds.map(item => item.id === round?.id && !item.closedAt ? { ...item, closedAt: Date.now() } : item), { id: createUuid(), candidateIds: pending.map(candidate => candidate.id), createdAt: Date.now() }] });
-    setSelectedId(''); setSelecting(false); setSelectedIds(new Set()); setRoundId(''); setFilter('all'); void generate(pending, source);
+    setSelectedId(''); setSelecting(false); setSelectedIds(new Set()); void generate(pending, source);
   }, 'generation');
   const resume = () => void perform(async () => {
     if (!session || session.state !== 'paused') return;
@@ -725,7 +715,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (!await confirm({ title: '删除候选', message: t('将永久删除 {0}；已生成的历史图片与已保存的风格串仍保留，删除后不能还原。', [label]), confirmLabel: t('删除'), tone: 'danger' })) return;
     const next = removeRollCandidates(experiment, targets.map(candidate => candidate.id));
     await store(next);
-    if (roundId && !next.rounds.some(round => round.id === roundId)) setRoundId('');
     setSelectedIds(new Set()); setSelectedId('');
     notify(t('已删除 {0}', [label]), 'success');
   });
@@ -765,7 +754,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     const saved = await store(makeExperiment());
     selectedExperimentRef.current = saved.id;
     setExperimentId(saved.id);
-    setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
+    setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setQuery('');
   });
   const sendToLab = () => {
     if (!experiment || !selected) return;
@@ -787,7 +776,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     selectedExperimentRef.current = saved.id;
     setExperimentId(saved.id);
     setPinnedArtists(pinned);
-    setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
+    setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setQuery('');
     notify(t('已新建记录，之后每轮只随机权重'), 'success');
   });
   const [detailBlockBusy, setDetailBlockBusy] = useState<string | null>(null);
@@ -965,7 +954,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       if (!pending.length) return { generationStarted: false, ids: [], note: '没有待生成候选。' };
       let source = experiment;
       if (ids || !round || round.closedAt) source = await store({ ...experiment, rounds: [...experiment.rounds.map(item => item.id === round?.id && !item.closedAt ? { ...item, closedAt: Date.now() } : item), { id: createUuid(), candidateIds: pending.map(candidate => candidate.id), createdAt: Date.now() }] });
-      setSelectedId(''); setSelecting(false); setSelectedIds(new Set()); setRoundId(''); setFilter('all');
+      setSelectedId(''); setSelecting(false); setSelectedIds(new Set());
       void generate(pending, source, { skipConfirmation: args.agentPermissionMode === 'full' });
       return { experimentId: source.id, ids: pending.map(candidate => candidate.id), generationStarted: true };
     },
@@ -997,17 +986,11 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const livePreview = (generationStreamPreview || session?.state === 'saving') && experiment && session && session.scope === rollSourceId(experiment.id) && session.preview?.image && previewCandidateId
     ? { id: previewCandidateId, image: session.preview.image }
     : null;
-  const scopedRound = experiment?.rounds.find(item => item.id === roundId);
   const generatingCandidateId = preparing || (session && ['preparing', 'generating', 'saving'].includes(session.state)) ? previewCandidateId : undefined;
   const selectedPending = experiment ? rollPendingCandidates(experiment, images, chosen.map(candidate => candidate.id)) : [];
   const saveable = chosen.filter(candidate => images.has(candidate.id) && !candidate.archived && !candidate.savedChainId);
   const working = Boolean(session || preparing), frozen = busy || loading || detailLoading;
   const canStart = !frozen && !working && (chainArtistSource !== undefined || (!libraryLoading && !libraryError && library.length > 0)) && (!experiment || historyReady) && (!sampledOnly || (sampledTags !== null && (effectiveLibrary.length > 0 || pinnedArtists.length >= roundRules.maxArtists)));
-  const roundConditionLabel = (item: RollExperiment['rounds'][number]) => {
-    const snapshot = item.snapshot;
-    if (!snapshot) return '';
-    return `${t('{0} 位画师', [artistCountLabel(snapshot.rules)])} · ${t('固定 {0} 位', [snapshot.pinnedArtists?.length ?? 0])}${snapshot.rules.preferredOnly ? ` · ${t('只抽取收藏画师')}` : ''} · ${snapshot.rules.minWeight.toFixed(1)}～${snapshot.rules.maxWeight.toFixed(1)} · ${t('{0} 张', [item.candidateIds.length])}`;
-  };
   return <div ref={rootRef} className="workspace-canvas flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100" data-roll-page="true">
     <WorkspaceChrome>
 <WorkspaceToolbar>
@@ -1040,78 +1023,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           : <ToolbarButton active={recordsExpanded} className="!min-w-0 !max-w-36 !justify-start !px-3 sm:!max-w-48 lg:!max-w-64" aria-label={t('切换画风记录')} title={[t('切换画风记录'), currentRecordName || t('新画风记录')].join(' · ')} aria-expanded={recordsExpanded} disabled={frozen || preparing} onClick={toggleRecords}>
             <Folder className="h-4 w-4" /><span className="min-w-0 truncate">{currentRecordName || t('新画风记录')}</span>
           </ToolbarButton>}
-        <ToolbarPopover title={t('筛选与排序')} label={t('筛选')} count={Number(filter !== 'all') + Number(Boolean(roundId)) + Number(sort !== 'new')} disabled={!experiment}>
-          {close => {
-            const hasActiveFilter = filter !== 'all' || Boolean(roundId) || sort !== 'new' || Boolean(query.trim());
-            const filterCount = (value: keyof typeof ROLL_FILTER_LABELS) =>
-              value === 'favorited' && (!collectionSettled || !historyReady)
-                ? '—'
-                : experiment
-                  ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }, undefined, favoriteIds).length
-                  : 0;
-            const pickFilter = (value: keyof typeof ROLL_FILTER_LABELS) => {
-              setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close();
-            };
-            return <div className="space-y-3">
-            <div role="group" aria-label={t('候选筛选')} className="space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('状态')}</span>
-                <button type="button" aria-label={t(ROLL_FILTER_LABELS.all)} aria-pressed={filter === 'all'}
-                  onClick={() => pickFilter('all')}
-                  className={`mobile-touch inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors ${filter === 'all' ? 'border-indigo-200 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-800/80 dark:bg-indigo-950/50 dark:text-indigo-300' : 'border-gray-200 bg-white font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
-                  <span>{t(ROLL_FILTER_LABELS.all)}</span>
-                  <span className="text-micro tabular-nums opacity-65">{filterCount('all')}</span>
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {(['unsaved', 'saved', 'pending', 'favorited'] as const).map(value => {
-                  const activeFilter = filter === value;
-                  return <button key={value} type="button" aria-label={t(ROLL_FILTER_LABELS[value])} aria-pressed={activeFilter}
-                    onClick={() => pickFilter(value)}
-                    className={`mobile-touch flex h-8 min-w-0 items-center justify-between gap-2 rounded-lg border px-2.5 text-xs transition-colors ${activeFilter ? 'border-indigo-200 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-800/80 dark:bg-indigo-950/50 dark:text-indigo-300' : 'border-gray-200 bg-white font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'}`}>
-                    <span className="truncate">{t(ROLL_FILTER_LABELS[value])}</span>
-                    <span className="shrink-0 text-micro tabular-nums opacity-60">{filterCount(value)}</span>
-                  </button>;
-                })}
-              </div>
-            </div>
-            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={`${TOOLBAR_FIELD_CLASS} !h-8 !rounded-lg !py-0 !text-xs`}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{`${t('第 {0} 轮', [(experiment?.rounds.indexOf(item) ?? 0) + 1])}${roundConditionLabel(item) ? ` · ${roundConditionLabel(item)}` : ` · ${item.candidateIds.length}`}`}</option>)}</select></label>
-            {scopedRound?.snapshot && <ToolbarButton className="!h-8 !rounded-lg !text-xs w-full" onClick={() => {
-              const snapshot = scopedRound.snapshot!;
-              setRoundRules({ ...snapshot.rules, maxArtists: Math.max(snapshot.rules.maxArtists, snapshot.pinnedArtists?.length ?? 0) });
-              setPinnedArtists(snapshot.pinnedArtists ?? []);
-              // 旧快照内联了当时的画师清单；新快照只存来源串 ID（或指向记录级集合），按现有风格串重新提取。
-              const sourceChainIds = rollRoundSourceChainIds(snapshot, experiment?.sourceChainSets);
-              if (snapshot.chainArtistSource) setChainArtistSource(snapshot.chainArtistSource);
-              else if (sourceChainIds) {
-                if (!sourceChainIds.length) setChainArtistSource({ chainIds: [], artists: [] });
-                else {
-                  const restored = buildRollChainArtistSource(chains.filter(chain => sourceChainIds.includes(chain.id)), knownArtists);
-                  setChainArtistSource(restored.artists.length ? restored : undefined);
-                  if (!restored.artists.length) notify(t('这轮使用的来源风格串已删除'), 'error');
-                }
-              } else setChainArtistSource(undefined);
-              setSampledOnly(Boolean(snapshot.sampledOnly));
-              close();
-            }}><RotateCcw />{t('沿用这轮条件')}</ToolbarButton>}
-            <div className="space-y-1.5">
-              <span className="block text-xs font-semibold text-gray-700 dark:text-gray-200">{t('排序')}</span>
-              <div role="group" aria-label={t('候选排序')} className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800/80">
-                {([['new', '最新生成'], ['old', '最早优先']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={sort === value}
-                  onClick={() => setSort(value)}
-                  className={`mobile-touch h-7 rounded-md text-xs font-medium transition-colors ${sort === value ? 'bg-white font-semibold text-indigo-700 shadow-xs dark:bg-gray-900 dark:text-indigo-300' : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'}`}>
-                  {t(label)}
-                </button>)}
-              </div>
-            </div>
-            {hasActiveFilter && <div className="border-t border-gray-200 pt-2 dark:border-gray-800">
-              <button type="button" className="mobile-touch rounded-lg px-2 py-1 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/50" onClick={() => { setFilter('all'); setRoundId(''); setSort('new'); setQuery(''); close(); }}>{t('重置筛选')}</button>
-            </div>}
-          </div>;
-          }}
-        </ToolbarPopover>
 
-        {/* 中间：以搜索框为界，左侧浏览筛选、右侧管理与执行操作。 */}
+        {/* 中间：以搜索框为界，左侧记录切换、右侧管理与执行操作。 */}
         <ToolbarSearch value={query} trailing={experiment && <ToolbarCountBadge inline total={round && roundPending.length > 0 ? round.candidateIds.length : visible.length} loaded={round && roundPending.length > 0 ? round.candidateIds.filter(id => images.has(id)).length : undefined} />} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师、中文名或编号')} placeholder={t('搜索画师、中文名或编号')} containerClassName="min-w-0 flex-1 !max-w-none md:!max-w-none" disabled={!experiment} />
 
         {/* 右侧集群：多选、主 CTA、设置与更多。 */}
@@ -1232,7 +1145,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
             }}
           </ToolbarPopover>
           </div>
-          {/* 手机顶栏只留画风记录、搜索、筛选、Roll 与更多；设置、多选与提取收进「更多」。 */}
+          {/* 手机顶栏只留画风记录、搜索、Roll 与更多；设置、多选与提取收进「更多」。 */}
           <MobileOverflowMenu className="md:hidden" items={[
             { label: '设置', icon: <Settings2 />, disabled: frozen || working, onClick: () => { setSettingsOpen(true); void loadQueueInterval(); } },
             ...(roundPending.length > 0 ? [{ label: t('补齐剩余 {0} 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1]), icon: <ImagePlus />, disabled: frozen || working || !historyReady, onClick: () => generatePending() }] : []),
@@ -1251,12 +1164,12 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
     {(loading || detailLoading) && !experiment ? <PageSpinner className="workspace-scroll-viewport overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
       : <div className="relative flex min-h-0 flex-1">
-        {ROLL_TRIAGE_FILTERS.includes(filter) && !filterReady ? (filter === 'favorited' && collectionFailed ? <div role="alert" className="flex flex-1 items-center justify-center gap-2 p-6 text-sm text-gray-500"><span>{t('收藏状态读取失败')}</span><ToolbarButton onClick={() => void loadFavorites()}>{t('重新加载')}</ToolbarButton></div> : historyReady || historyLoading ? <PageSpinner /> : <div role="status" className="flex flex-1 items-center justify-center p-6 text-sm text-gray-500">{t('历史暂不可用')}</div>) : <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} roundNumbers={roundNumbers} positions={roundPositions} generationState={{ generatingId: generatingCandidateId, nextId: nextPendingId, running: working, paused: session?.state === 'paused', awaiting: Boolean(session?.awaiting), saving: session?.state === 'saving', error: generationError && generationError.experimentId === experiment.id ? generationError : null }} onGenerate={id => { const candidate = experiment.candidates.find(item => item.id === id); if (candidate) void generate([candidate], experiment); }} onPause={pause} onResume={resume} onCancel={cancelSession} onApprove={approve} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => deleteCandidates([id])} busy={frozen} emptyState={(() => {
+        <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} roundNumbers={roundNumbers} positions={roundPositions} generationState={{ generatingId: generatingCandidateId, nextId: nextPendingId, running: working, paused: session?.state === 'paused', awaiting: Boolean(session?.awaiting), saving: session?.state === 'saving', error: generationError && generationError.experimentId === experiment.id ? generationError : null }} onGenerate={id => { const candidate = experiment.candidates.find(item => item.id === id); if (candidate) void generate([candidate], experiment); }} onPause={pause} onResume={resume} onCancel={cancelSession} onApprove={approve} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => deleteCandidates([id])} busy={frozen} emptyState={(() => {
           const hasAnyCandidates = experiment.candidates.some(candidate => !candidate.archived);
           if (!hasAnyCandidates) return { title: t('还没有 Roll 候选'), hint: t('调整上方设置后点击开始，即可批量随机探索画风组合。'), actionLabel: t('开始第一轮'), actionPrimary: true, actionDisabled: !canStart, onAction: () => runRound() };
-          const hasActiveFilter = filter !== 'all' || Boolean(roundId) || Boolean(query.trim()) || sort !== 'new';
-          return { title: t('暂无匹配候选'), hint: hasActiveFilter ? t('当前筛选或搜索条件下没有命中候选。') : undefined, actionLabel: hasActiveFilter ? t('重置筛选') : undefined, onAction: hasActiveFilter ? () => { setFilter('all'); setRoundId(''); setSort('new'); setQuery(''); } : undefined };
-        })()} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />}
+          const hasQuery = Boolean(query.trim());
+          return { title: t('暂无匹配候选'), actionLabel: hasQuery ? t('清空搜索') : undefined, onAction: hasQuery ? () => setQuery('') : undefined };
+        })()} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />
         {!isMobile && selected && <aside className="workspace-fixed-pane appearance-surface flex w-84 max-w-[40%] flex-none flex-col border-l border-gray-200/80 bg-white/95 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/95 xl:w-92 shadow-sm"><div className="appearance-surface flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="appearance-surface text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><div className="flex items-center gap-1">{detailActions}<IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div></div><div className="appearance-surface min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}
       </div>}
       </div>
