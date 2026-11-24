@@ -9,7 +9,7 @@ import { FRAGMENT_LABELS, isPromptLibraryCharacterProjection, projectCustomChara
 import { filterPromptBrowseEntries, normalizeBrowseText, promptBrowseEntries, promptBrowseSummary, type PromptBrowseScope } from '../services/promptLibraryBrowse';
 import { EmptyState, PageSpinner, SegmentedControl, ToolbarButton, ToolbarSearch } from './DesignSystem';
 import { PromptLibraryReadStatus, usePromptLibrary, type PromptLibraryReadState } from './PromptLibraryAccess';
-import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
+import { FilterPanelFooter, FilterToggleButton, TOOLBAR_FIELD_CLASS, TOOLBAR_LABEL_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { PromptLibraryCard, PromptLibraryGallery } from './PromptLibraryCard';
 import { PromptPurposePicker } from './PromptPurposePicker';
@@ -274,26 +274,24 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
       {SCOPES.map(([scope, label]) => <option key={scope} value={scope}>{t(label)}</option>)}
     </select>}
     <ToolbarPopover label="筛选" title={t(memory.scope === 'saved' ? '筛选组合' : '筛选提示词库')} width={320} count={tags.length + Number(favoritesSelected)}>
-      {(close, mobile) => <>
-      <button type="button" aria-pressed={favoritesSelected} onClick={toggleFavorites}
-        className={`mobile-touch flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${favoritesSelected ? 'border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-700/70 dark:bg-rose-950/40 dark:text-rose-300' : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
-        <Heart className={`h-3.5 w-3.5 ${favoritesSelected ? 'fill-current' : ''}`} />{t('只看收藏')}
-      </button>
-      {mobile && <label className="mt-4 block text-xs font-semibold text-gray-500">{t('提示词库范围')}<select aria-label={t('提示词库范围')} value={memory.scope} onChange={event => setScope(event.target.value as PromptBrowseScope)} className={TOOLBAR_FIELD_CLASS}>{SCOPES.map(([scope, label]) => <option key={scope} value={scope}>{t(label)}</option>)}</select></label>}
-      <div className="mt-4 space-y-2">
+      {(close, mobile) => <div className="space-y-3.5">
+      <FilterToggleButton active={favoritesSelected} tone="rose" icon={<Heart className={favoritesSelected ? 'fill-current' : ''} />} onClick={toggleFavorites}>{t('只看收藏')}</FilterToggleButton>
+      {mobile && <label className={TOOLBAR_LABEL_CLASS}>{t('提示词库范围')}<select aria-label={t('提示词库范围')} value={memory.scope} onChange={event => setScope(event.target.value as PromptBrowseScope)} className={TOOLBAR_FIELD_CLASS}>{SCOPES.map(([scope, label]) => <option key={scope} value={scope}>{t(label)}</option>)}</select></label>}
+      <div className="space-y-2">
         {tags.length > 0 && <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setTags([]); resetScroll(); }}>{t('清除标签筛选')}</button>}
-        {memory.scope === 'saved' ? <fieldset><legend className="text-xs font-semibold text-gray-500">{t('文件夹')}</legend>
+        {memory.scope === 'saved' ? <fieldset><legend className={TOOLBAR_LABEL_CLASS}>{t('文件夹')}</legend>
           <div className="mt-2 flex max-h-48 flex-wrap gap-1 overflow-y-auto">{combinationTags.map(tag => <button key={tag} type="button" aria-pressed={tags.includes(tag)}
             title={categoryLabel(tag)} className={tags.includes(tag) ? 'mobile-touch rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-2 py-1 text-sm text-white' : 'appearance-group mobile-touch rounded-lg px-2 py-1 text-sm text-gray-600 dark:text-gray-300'}
             onClick={() => { setTags(previous => previous.includes(tag) ? previous.filter(value => value !== tag) : [...previous, tag]); resetScroll(); }}>{categoryLabel(tag)}</button>)}</div>
         </fieldset> : <PromptPurposePicker value={tags as PromptPurposeId[]} onChange={next => { setTags(next); resetScroll(); }} />}
       </div>
-      <label className="mt-4 block text-xs font-semibold text-gray-500">{t('排序')}<select aria-label={t('排序')} value={memory.sort} className={TOOLBAR_FIELD_CLASS}
+      <label className={TOOLBAR_LABEL_CLASS}>{t('排序')}<select aria-label={t('排序')} value={memory.sort} className={TOOLBAR_FIELD_CLASS}
         onChange={event => updateMemory({ ...memory, sort: event.target.value as 'updated' | 'name' })}><option value="updated">{t('最近更新')}</option><option value="name">{t('名称')}</option></select></label>
-      <div className="mt-4 flex flex-wrap gap-2"><ToolbarButton onClick={() => { setTags([]); setQuery(''); updateMemory(memory.scope === 'saved' ? { ...memory, combinationFavorites: false } : { ...memory, favorites: false }); }}>{t('重置筛选')}</ToolbarButton>
+      <FilterPanelFooter onReset={() => { setTags([]); setQuery(''); updateMemory(memory.scope === 'saved' ? { ...memory, combinationFavorites: false } : { ...memory, favorites: false }); }}>
         <ToolbarButton onClick={() => { close(); coverActions.openCoverSettings(); }}>{t('封面生成设置')}</ToolbarButton>
-        {mobile && onExtract && <ToolbarButton onClick={() => void openFromFilter(close, mobile, onExtract)}>{t('AI 提取分类')}</ToolbarButton>}</div>
-      </>}
+        {mobile && onExtract && <ToolbarButton onClick={() => void openFromFilter(close, mobile, onExtract)}>{t('AI 提取分类')}</ToolbarButton>}
+      </FilterPanelFooter>
+      </div>}
     </ToolbarPopover>
     <ToolbarSearch value={query} trailing={!countsPending && <ToolbarCountBadge inline total={scopeTotal} loaded={shown.length} />} aria-label={t('搜索名称、正文或标签')} placeholder={t(wide ? '搜索名称、正文或标签' : '搜索')}
       onChange={event => { setQuery(event.target.value); resetScroll(); }} className="max-[360px]:!pl-2" containerClassName="min-w-0 flex-1 md:max-w-none! max-[360px]:[&>svg]:hidden" />

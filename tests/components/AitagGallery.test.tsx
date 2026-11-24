@@ -222,8 +222,8 @@ it('真实瀑布流：月榜＋模型＋画师＋排除两种参考，迟到命�
   await waitFor(() => expect(mocks.search.mock.calls.at(-1)?.[0].sort).toBe('monthly'));
   fireEvent.change(screen.getByLabelText('模型版本（已加载条目）'), { target: { value: 'NovelAI Diffusion V4.5' } });
   fireEvent.change(screen.getByLabelText('画师串'), { target: { value: 'with' } });
-  fireEvent.click(screen.getByRole('checkbox', { name: '排除氛围参考' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '排除精准参考' }));
+  fireEvent.click(screen.getByRole('button', { name: '排除氛围参考' }));
+  fireEvent.click(screen.getByRole('button', { name: '排除精准参考' }));
   await waitFor(() => expect(waits.at(-1)?.options.metadataIds).toEqual([2, 4, 6, 8, 10, 12]));
   const original = [1, 3, 5, 7, 9, 11].map(id => card(id));
   const parents = original.map(element => element.parentElement);
@@ -1202,8 +1202,8 @@ it.each([1280, 390])('%spx 条件在搜索框内从左侧开始、输入在后�
   expect(screen.getAllByRole('searchbox')).toHaveLength(1);
   fireEvent.change(input, { target: { value: '未提交关键词' } });
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '排除氛围参考' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '排除精准参考' }));
+  fireEvent.click(screen.getByRole('button', { name: '排除氛围参考' }));
+  fireEvent.click(screen.getByRole('button', { name: '排除精准参考' }));
   const dialog = screen.getByRole('dialog', { name: 'AITag 筛选' });
   if (width === 390) fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }));
   else fireEvent.keyDown(window, { key: 'Escape' });
@@ -1216,8 +1216,8 @@ it.each([1280, 390])('%spx 条件在搜索框内从左侧开始、输入在后�
   fireEvent.click(screen.getByRole('button', { name: '查看其余 2 个筛选条件' }));
   expect(within(screen.getByRole('dialog', { name: 'AITag 筛选' })).getAllByRole('button', { name: /移除筛选/ })).toHaveLength(2);
   fireEvent.click(screen.getByRole('button', { name: '移除筛选：排除氛围参考' }));
-  expect((screen.getByRole('checkbox', { name: '排除氛围参考' }) as HTMLInputElement).checked).toBe(false);
-  expect((screen.getByRole('checkbox', { name: '排除精准参考' }) as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByRole('button', { name: '排除氛围参考' }).getAttribute('aria-pressed')).toBe('false');
+  expect(screen.getByRole('button', { name: '排除精准参考' }).getAttribute('aria-pressed')).toBe('true');
   expect(screen.getByRole('searchbox', { name: '搜索 AITag 作品' })).toBe(input);
   expect(input.value).toBe('未提交关键词');
   expect(mocks.search).toHaveBeenCalledTimes(calls);
@@ -1236,11 +1236,11 @@ it.each([1280, 390])('%spx 两项参考排除独立勾选，兼容空参考、�
   mocks.search.mockImplementation(async options => ({ items: options.page === 1 ? items : [], total: 6, page: options.page, page_size: 60 }));
   const view = await setup('portrait');
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  expect((screen.getByRole('checkbox', { name: '排除氛围参考' }) as HTMLInputElement).checked).toBe(false);
-  expect((screen.getByRole('checkbox', { name: '排除精准参考' }) as HTMLInputElement).checked).toBe(false);
-  fireEvent.click(screen.getByRole('checkbox', { name: '排除氛围参考' }));
+  expect(screen.getByRole('button', { name: '排除氛围参考' }).getAttribute('aria-pressed')).toBe('false');
+  expect(screen.getByRole('button', { name: '排除精准参考' }).getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(screen.getByRole('button', { name: '排除氛围参考' }));
   expect(visibleIds()).toEqual([1, 3, 6]);
-  fireEvent.click(screen.getByRole('checkbox', { name: '排除精准参考' }));
+  fireEvent.click(screen.getByRole('button', { name: '排除精准参考' }));
   expect(visibleIds()).toEqual([1, 6]);
   expect(screen.getByRole('button', { name: '筛选 2' })).toBeTruthy();
   expect(document.querySelector('[data-toolbar-count-badge]')?.getAttribute('title')).toBe('已加载 2 / 共 6');
@@ -1262,8 +1262,8 @@ it('整组只按首图筛选，打开含参考的后续图片不改变结果或�
   }] });
   await setup('portrait');
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '排除氛围参考' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '排除精准参考' }));
+  fireEvent.click(screen.getByRole('button', { name: '排除氛围参考' }));
+  fireEvent.click(screen.getByRole('button', { name: '排除精准参考' }));
   expect(mocks.getWork).not.toHaveBeenCalled();
   fireEvent.click(card(1));
   await waitFor(() => expect(screen.getAllByRole('button', { name: '保存到风格串' })).toHaveLength(2));
@@ -1280,7 +1280,7 @@ it('参考筛选等待首图信息，补齐后排除参考作品；沿用元数�
   mocks.waitForFirstImageCache.mockImplementation(() => new Promise(resolve => { waits.push(resolve); }));
   await setup('portrait');
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '排除氛围参考' }));
+  fireEvent.click(screen.getByRole('button', { name: '排除氛围参考' }));
   await waitFor(() => expect(mocks.waitForFirstImageCache.mock.calls.at(-1)?.[0].metadataIds).toEqual([1, 2]));
   expect(visibleIds()).toEqual([]);
   expect(screen.getAllByText('正在读取 2 个作品的元数据').length).toBeGreaterThan(0);
@@ -1295,7 +1295,7 @@ it('离线参考筛选隐藏未知首图，不为此联网补齐或卡住缓存�
   mocks.searchCache.mockImplementation(async options => ({ items: [works[0], unknown], total: 2, page: options.page }));
   await setup('portrait');
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '排除精准参考' }));
+  fireEvent.click(screen.getByRole('button', { name: '排除精准参考' }));
   expect(visibleIds()).toEqual([1]);
   expect(screen.queryByText(/正在读取.*作品的元数据/)).toBeNull();
   expect(mocks.waitForFirstImageCache).not.toHaveBeenCalled();

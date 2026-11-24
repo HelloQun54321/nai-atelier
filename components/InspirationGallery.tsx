@@ -14,7 +14,7 @@ import { createUuid } from '../services/id';
 import { COLLECTION_SORT_LABELS, CollectionSort, collectionGroupKey, getCollectionBoardIds, getCollectionTags, groupCollectionItems, normalizeInspirationTags, rememberCollectionFolder, sortCollectionGroups, sourceLabel } from '../services/inspirationUtils';
 import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
-import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
+import { FilterPanelFooter, TOOLBAR_FIELD_CLASS, TOOLBAR_LABEL_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { SearchFilterChips } from './SearchFilterChips';
 import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { ImageActivityContext } from './SmartImage';
@@ -445,11 +445,11 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       nodeProps={id => { const board = boards.find(board => board.id === id); return board ? { ...folderDropProps(id), 'data-collection-folder': id, 'aria-label': t('选择收藏夹：{0}', [board.name]), 'aria-pressed': boardId === id, style: { '--collection-folder-color': board.color || '#6366f1' } as React.CSSProperties, className: `[&>svg]:[color:var(--collection-folder-color)] ${boardDrag?.id === id ? 'opacity-50' : ''} ${boardDrag?.targetId === id && boardDrag.id !== id ? 'ring-2 ring-indigo-500' : ''} ${dropTarget === id ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 dark:bg-indigo-950' : ''}` } : { 'aria-label': id === '*' ? `${t('全部')} ${counts.all}` : `${t('未整理')} ${counts.unorganized}`, 'aria-pressed': id === '*' ? collection === 'all' && !boardId && !sourceFilter : collection === 'unorganized' }; }}
       header={<>{boardsLoading && !boards.length && <InlineSpinner label={t('正在读取…')} className="mb-2 text-xs" />}{boardsError && <p role="alert" className="mb-2 text-xs text-red-500">{t(boardsError)} <button type="button" onClick={() => void loadBoards()} className="underline">{t('重试')}</button></p>}<p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('来源')}</p><div className="mb-4 space-y-1">{availableSources.map(source => { const Icon = sourceIcon(source); return <CollectionButton key={source} active={sourceFilter === source} count={sourceCounts[source] || 0} icon={<Icon />} label={t(collectionSourceLabel(source))} onClick={() => { setSourceFilter(source); setBoardId(''); setCollection('all'); onPicked?.(); }} />; })}</div></>} />
   </div>;
-  const renderFilterControls = (_mobile: boolean, onManageTags: () => void) => <div className="grid grid-cols-2 gap-3">
-    <label className="col-span-2 text-xs font-semibold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('收藏排序')} value={sort} onChange={event => setSort(event.target.value as CollectionSort)} className={TOOLBAR_FIELD_CLASS}>{Object.entries(COLLECTION_SORT_LABELS).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label>
-    <section className="col-span-2 min-w-0 space-y-3">
+  const renderFilterControls = (_mobile: boolean, onManageTags: () => void) => <div className="space-y-3.5">
+    <label className={TOOLBAR_LABEL_CLASS}>{t('排序')}<select aria-label={t('收藏排序')} value={sort} onChange={event => setSort(event.target.value as CollectionSort)} className={TOOLBAR_FIELD_CLASS}>{Object.entries(COLLECTION_SORT_LABELS).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label>
+    <section className="min-w-0 space-y-2.5">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('标签（同时满足）')}</h3>
+        <h3 className={TOOLBAR_LABEL_CLASS}>{t('标签（同时满足）')}</h3>
         {/* 重读提示放在标题行内，避免插进标签云把面板撑高。 */}
         {tagsLoading && <InlineSpinner label={t('正在读取…')} className="ml-auto mr-1" />}
         {/* 重读失败也放在标题行，不出现在标签云里把面板撑高。 */}
@@ -514,10 +514,12 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         <ToolbarButton aria-label={t("退出多选")} title={t("退出多选")} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="toolbar-responsive-label hidden md:inline">{t("退出多选")}</span></ToolbarButton>
       </> : <>
       <ToolbarPopover title={t("筛选收藏")} open={showFilters} onOpenChange={setShowFilters} count={activeFilterCount} width={360}>
-        {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile, () => {
+        {(close, mobile) => <div className="space-y-3.5">{renderFilterControls(mobile, () => {
           // 先卸载筛选层并归还焦点，再打开标签管理，避免两层抢焦点和返回操作。
           flushSync(close); setTagManagerOpen(true);
-        })}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); setBoardId(''); setCollection('all'); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 px-3 text-sm font-bold text-white">{t("确认")}</button></div></div>}
+        })}<FilterPanelFooter onReset={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); setBoardId(''); setCollection('all'); }}>
+          <ToolbarButton tone="primary" onClick={close}>{t("确认")}</ToolbarButton>
+        </FilterPanelFooter></div>}
       </ToolbarPopover>
       <ToolbarSearch value={search} trailing={inspirationsData !== null && <ToolbarCountBadge inline total={groups.length} loaded={Math.min(visibleCount, groups.length)} />} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="min-w-0 flex-1 md:max-w-none!">
         <SearchFilterChips chips={tagChips} expanded={showFilters} onMore={() => setShowFilters(true)} />

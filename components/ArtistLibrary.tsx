@@ -21,7 +21,7 @@ import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMa
 import { Check, Dice5, Heart, LoaderCircle, Settings2 } from 'lucide-react';
 import { InlineSpinner, PageSpinner, SegmentedControl, ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { MobileOverflowMenu } from './MobileUI';
-import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
+import { FilterPanelFooter, FilterToggleButton, TOOLBAR_FIELD_CLASS, TOOLBAR_LABEL_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { useArtistSampleActions, ArtistSampleGenerationStatus } from './useArtistSampleActions';
 import { indexArtistSampleGallery } from '../services/artistSampleGallery';
@@ -720,13 +720,14 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             <WorkspaceChrome>
 <WorkspaceToolbar>
                 {groups.toolbar}
-                <ToolbarPopover title={t("筛选画师")} count={Number(favOnly) + Number(artistSort !== 'popular') + Number(!onlySamples) + Number(chainUsageFilter !== 'all') + Number(imageUsageFilter !== 'all')}>
-                    {close => <div className="space-y-3">
-                        <button type="button" aria-pressed={favOnly} onClick={() => { setFavOnly(value => !value); setSampleLimit(100); leaveGacha(); }} className={`mobile-touch flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${favOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>
-                            <Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} />{t('只看收藏')}
-                        </button>
+                <ToolbarPopover title={t("筛选画师")} width={320} count={Number(favOnly) + Number(artistSort !== 'popular') + Number(!onlySamples) + Number(chainUsageFilter !== 'all') + Number(imageUsageFilter !== 'all')}>
+                    {close => <div className="space-y-3.5">
+                        <div className="grid grid-cols-2 gap-2">
+                            <FilterToggleButton active={favOnly} tone="rose" icon={<Heart className={favOnly ? 'fill-current' : ''} />} onClick={() => { setFavOnly(value => !value); setSampleLimit(100); leaveGacha(); }}>{t('只看收藏')}</FilterToggleButton>
+                            <FilterToggleButton active={onlySamples} onClick={() => { updateOnlySamples(!onlySamples); leaveGacha(); }}>{t('只看有样张')}</FilterToggleButton>
+                        </div>
                         <div className="space-y-1.5">
-                            <span className="block text-sm font-semibold dark:text-white">{t('画师样张模型')}</span>
+                            <span className={TOOLBAR_LABEL_CLASS}>{t('画师样张模型')}</span>
                             <SegmentedControl
                                 mode="buttons"
                                 ariaLabel={t('画师样张模型')}
@@ -738,21 +739,21 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                                     { value: 'v5', label: 'V5 Full' },
                                 ]}
                             />
+                            <p role="status" className={`text-xs ${currentSampleError || download?.stage === 'error' || currentPackStatus?.phase === 'error' ? 'text-red-500' : 'text-gray-500'}`}>{sampleStatusText}{samplePack === 'v5' && hasLegacyV5Samples && <span className="block">{t('旧 Curated 样张已保留，不计入 Full 浏览')}</span>}</p>
                         </div>
-                        <p role="status" className={`text-xs ${currentSampleError || download?.stage === 'error' || currentPackStatus?.phase === 'error' ? 'text-red-500' : 'text-gray-500'}`}>{sampleStatusText}{samplePack === 'v5' && hasLegacyV5Samples && <span className="block">{t('旧 Curated 样张已保留，不计入 Full 浏览')}</span>}</p>
                         {usageState.status === 'loading' && <InlineSpinner label={t('正在统计画师使用…')} className="text-xs" />}
                         {usageState.status === 'error' && <p role="alert" className="flex items-center justify-between gap-2 text-xs text-red-500">{t('画师使用统计暂不可用')}<button type="button" className="shrink-0 underline" onClick={() => setUsageRetry(current => current + 1)}>{t('重试统计')}</button></p>}
-                        <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={onlySamples} onChange={event => { updateOnlySamples(event.target.checked); leaveGacha(); }} />{t('只看有样张')}</label>
-                        <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("画师排序")} value={artistSort} onChange={event => { setArtistSort(event.target.value as ArtistLibrarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}>
+                        <label className={TOOLBAR_LABEL_CLASS}>{t("排序")}<select aria-label={t("画师排序")} value={artistSort} onChange={event => { setArtistSort(event.target.value as ArtistLibrarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}>
                             <option value="popular">{hasSearch ? t("相关性优先 · 热度高") : t("热度从高到低")}</option><option value="least">{hasSearch ? t("相关性优先 · 热度低") : t("热度从低到高")}</option><option value="name-asc">{t("名称 A → Z")}</option><option value="name-desc">{t("名称 Z → A")}</option>
                             <option value="usage-chains" disabled={!statsSortReady}>{t('收录串数从高到低')}</option><option value="usage-chains-asc" disabled={!statsSortReady}>{t('收录串数从低到高')}</option><option value="usage-images" disabled={!statsSortReady}>{t('生成图片数从高到低')}</option><option value="usage-images-asc" disabled={!statsSortReady}>{t('生成图片数从低到高')}</option>
                         </select></label>
-                        <label className="block text-sm font-semibold dark:text-white">{t('风格串收录')}<select aria-label={t('风格串收录')} value={chainUsageFilter} disabled={!statsSortReady} onChange={event => { setChainUsageFilter(event.target.value as ArtistUsageFilter); setSampleLimit(100); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="all">{t('全部')}</option><option value="used">{t('已收录')}</option><option value="unused">{t('未收录')}</option></select></label>
-                        <label className="block text-sm font-semibold dark:text-white">{t('图片生成')}<select aria-label={t('图片生成')} value={imageUsageFilter} disabled={!statsSortReady} onChange={event => { setImageUsageFilter(event.target.value as ArtistUsageFilter); setSampleLimit(100); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="all">{t('全部')}</option><option value="used">{t('已生成')}</option><option value="unused">{t('未生成')}</option></select></label>
-                        <div className="flex items-center justify-between gap-2">
-                            <button type="button" onClick={() => { setFavOnly(false); setArtistSort('popular'); setChainUsageFilter('all'); setImageUsageFilter('all'); setStatusFilter('all'); updateOnlySamples(true); setSampleLimit(100); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
-                            {gachaArtists && <button type="button" onClick={() => { returnToCatalog(); close(); }} className="text-xs font-semibold text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">{t("返回完整目录")}</button>}
+                        <div className="grid grid-cols-2 gap-3">
+                            <label className={TOOLBAR_LABEL_CLASS}>{t('风格串收录')}<select aria-label={t('风格串收录')} value={chainUsageFilter} disabled={!statsSortReady} onChange={event => { setChainUsageFilter(event.target.value as ArtistUsageFilter); setSampleLimit(100); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="all">{t('全部')}</option><option value="used">{t('已收录')}</option><option value="unused">{t('未收录')}</option></select></label>
+                            <label className={TOOLBAR_LABEL_CLASS}>{t('图片生成')}<select aria-label={t('图片生成')} value={imageUsageFilter} disabled={!statsSortReady} onChange={event => { setImageUsageFilter(event.target.value as ArtistUsageFilter); setSampleLimit(100); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="all">{t('全部')}</option><option value="used">{t('已生成')}</option><option value="unused">{t('未生成')}</option></select></label>
                         </div>
+                        <FilterPanelFooter onReset={() => { setFavOnly(false); setArtistSort('popular'); setChainUsageFilter('all'); setImageUsageFilter('all'); setStatusFilter('all'); updateOnlySamples(true); setSampleLimit(100); leaveGacha(); }}>
+                            {gachaArtists && <button type="button" onClick={() => { returnToCatalog(); close(); }} className="text-xs font-semibold text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">{t("返回完整目录")}</button>}
+                        </FilterPanelFooter>
                     </div>}
                 </ToolbarPopover>
                 <ToolbarSearch value={searchTerm} loading={isCatalogLoading} trailing={statusReady && (!localCatalogBrowse || !sampleLoading && !sampleError) && (!groupBrowse || groups.ready && !groups.error) && !isCatalogLoading && !catalogError && !searchError && !(onlySamples && currentSampleError) && ((!onlySamples && !gachaArtists) || !sampleLoading) && <ToolbarCountBadge inline total={gachaArtists ? undefined : hasSearch || onlySamples || localCatalogBrowse ? matchedArtists.length : hasMoreUnionCatalog ? undefined : artistCatalogCount + packOnlyArtists.length} loaded={gachaArtists ? filteredArtists.length : localCatalogBrowse && !(groupBrowse || usageFiltersActive || statusBrowse || favoriteBrowse) ? visibleCatalogArtists.length : filteredArtists.length} />} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索画师，多个词用逗号分隔")} containerClassName="min-w-0 flex-1 md:max-w-none!" />

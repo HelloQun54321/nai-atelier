@@ -7,7 +7,7 @@ import { createUuid } from '../services/id';
 import { ToolbarButton } from './DesignSystem';
 import { MobileBottomSheet } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
-import { AnchoredToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
+import { AnchoredToolbarPopover, FilterPanelFooter, FilterToggleButton, TOOLBAR_FIELD_CLASS, TOOLBAR_LABEL_CLASS } from './ToolbarPopover';
 import './historyToolbar.css';
 
 interface Props {
@@ -80,48 +80,49 @@ export const HistoryBrowseControls: React.FC<Props> = ({ query, options, mobile,
     + Number(Boolean(query.operation))
     + Number(Boolean(query.source));
   const chronologicalSort = query.sort === 'favorite' && !query.favoriteOnly ? 'newest' : query.sort || 'newest';
-  const form = <form onSubmit={apply} className="space-y-4">
-    <button
-      type="button"
-      aria-pressed={Boolean(query.favoriteOnly)}
+  const form = <form onSubmit={apply} className="space-y-3.5">
+    <FilterToggleButton
+      active={Boolean(query.favoriteOnly)}
+      tone="rose"
+      icon={<Heart className={query.favoriteOnly ? 'fill-current' : ''} />}
       onClick={() => {
         const favoriteOnly = !query.favoriteOnly;
         onApply({ ...query, favoriteOnly, sort: !favoriteOnly && query.sort === 'favorite' ? 'newest' : query.sort });
       }}
-      className={`mobile-touch flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${query.favoriteOnly ? 'border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-700/70 dark:bg-rose-950/40 dark:text-rose-300' : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}`}
     >
-      <Heart className={`h-3.5 w-3.5 ${query.favoriteOnly ? 'fill-current' : ''}`} />{t("只看收藏")}
-    </button>
+      {t("只看收藏")}
+    </FilterToggleButton>
     <fieldset className="space-y-2">
-      <legend className="text-xs font-semibold">{t("时间范围 · {0}", [getDateLabel(query)])}</legend>
+      <legend className={TOOLBAR_LABEL_CLASS}>{t("时间范围 · {0}", [getDateLabel(query)])}</legend>
       <div className="flex gap-2">
         <ToolbarButton type="button" onClick={() => quickDate(recentDates(1))}>{t("今天")}</ToolbarButton>
         <ToolbarButton type="button" onClick={() => quickDate(recentDates(7))}>{t("近 7 天")}</ToolbarButton>
         <ToolbarButton type="button" onClick={() => quickDate({ from: '', to: '' })}>{t("不限日期")}</ToolbarButton>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <label className="text-xs font-semibold">{t("开始日期")}<input type="date" aria-label={t("开始日期")} className={TOOLBAR_FIELD_CLASS} value={dates.from} onChange={event => setDates(value => ({ ...value, from: event.target.value }))} /></label>
-        <label className="text-xs font-semibold">{t("结束日期")}<input type="date" aria-label={t("结束日期")} className={TOOLBAR_FIELD_CLASS} value={dates.to} onChange={event => setDates(value => ({ ...value, to: event.target.value }))} /></label>
+        <label className={TOOLBAR_LABEL_CLASS}>{t("开始日期")}<input type="date" aria-label={t("开始日期")} className={TOOLBAR_FIELD_CLASS} value={dates.from} onChange={event => setDates(value => ({ ...value, from: event.target.value }))} /></label>
+        <label className={TOOLBAR_LABEL_CLASS}>{t("结束日期")}<input type="date" aria-label={t("结束日期")} className={TOOLBAR_FIELD_CLASS} value={dates.to} onChange={event => setDates(value => ({ ...value, to: event.target.value }))} /></label>
       </div>
     </fieldset>
     <div className="grid grid-cols-2 gap-3">
-      <label className="text-xs font-semibold">{t("模型")}<select aria-label={t("历史模型")} className={TOOLBAR_FIELD_CLASS} value={draft.model} onChange={event => setDraft(value => ({ ...value, model: event.target.value }))}><option value="">{t("全部模型")}</option>{options.models.map(model => <option key={model} value={model}>{getNaiModelDisplayLabel(model)}</option>)}</select></label>
-      <label className="text-xs font-semibold">{t("生成方式")}<select aria-label={t("历史生成方式")} className={TOOLBAR_FIELD_CLASS} value={draft.operation} onChange={event => setDraft(value => ({ ...value, operation: event.target.value }))}>{[['', '全部方式'], ['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']].map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label>
+      <label className={TOOLBAR_LABEL_CLASS}>{t("模型")}<select aria-label={t("历史模型")} className={TOOLBAR_FIELD_CLASS} value={draft.model} onChange={event => setDraft(value => ({ ...value, model: event.target.value }))}><option value="">{t("全部模型")}</option>{options.models.map(model => <option key={model} value={model}>{getNaiModelDisplayLabel(model)}</option>)}</select></label>
+      <label className={TOOLBAR_LABEL_CLASS}>{t("生成方式")}<select aria-label={t("历史生成方式")} className={TOOLBAR_FIELD_CLASS} value={draft.operation} onChange={event => setDraft(value => ({ ...value, operation: event.target.value }))}>{[['', '全部方式'], ['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']].map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label>
     </div>
-    <label className="block text-xs font-semibold">{t("来源")}<select aria-label={t("历史来源")} className={TOOLBAR_FIELD_CLASS} value={draft.source} onChange={event => setDraft(value => ({ ...value, source: event.target.value }))}><option value="">{t("全部来源")}</option>{options.sources.map(source => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label>
-    <label className="block text-xs font-semibold">{t("排序")}<select aria-label={t("历史排序")} className={TOOLBAR_FIELD_CLASS} value={chronologicalSort} onChange={event => onApply({ ...query, sort: event.target.value as HistorySort, seed: undefined })}>
-      <option value="newest">{t(HISTORY_SORT_LABELS.newest)}</option><option value="oldest">{t(HISTORY_SORT_LABELS.oldest)}</option>
-      {query.favoriteOnly && <option value="favorite">{t(HISTORY_SORT_LABELS.favorite)}</option>}
-      {query.sort === 'random' && <option value="random" disabled>{t("随机顺序")}</option>}
-    </select></label>
+    <div className="grid grid-cols-2 gap-3">
+      <label className={TOOLBAR_LABEL_CLASS}>{t("来源")}<select aria-label={t("历史来源")} className={TOOLBAR_FIELD_CLASS} value={draft.source} onChange={event => setDraft(value => ({ ...value, source: event.target.value }))}><option value="">{t("全部来源")}</option>{options.sources.map(source => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label>
+      <label className={TOOLBAR_LABEL_CLASS}>{t("排序")}<select aria-label={t("历史排序")} className={TOOLBAR_FIELD_CLASS} value={chronologicalSort} onChange={event => onApply({ ...query, sort: event.target.value as HistorySort, seed: undefined })}>
+        <option value="newest">{t(HISTORY_SORT_LABELS.newest)}</option><option value="oldest">{t(HISTORY_SORT_LABELS.oldest)}</option>
+        {query.favoriteOnly && <option value="favorite">{t(HISTORY_SORT_LABELS.favorite)}</option>}
+        {query.sort === 'random' && <option value="random" disabled>{t("随机顺序")}</option>}
+      </select></label>
+    </div>
     <ToolbarButton type="button" className="w-full" onClick={() => { onApply({ ...query, sort: 'random', seed: createUuid() }); setOpen(false); }}>
       <Shuffle />{query.sort === 'random' ? t("重新洗牌") : t("随机浏览")}
     </ToolbarButton>
     {error && <p role="alert" className="text-sm text-red-500">{t(error)}</p>}
-    <div className="flex items-center justify-between gap-2">
-      <button type="button" className="min-h-10 text-xs font-semibold text-gray-500 dark:text-gray-400" onClick={reset}>{t("重置筛选")}</button>
+    <FilterPanelFooter onReset={reset}>
       <ToolbarButton type="submit" tone="primary">{t("应用筛选")}</ToolbarButton>
-    </div>
+    </FilterPanelFooter>
   </form>;
   return <div className="history-browse-controls">
     <div ref={anchor}>
@@ -130,7 +131,7 @@ export const HistoryBrowseControls: React.FC<Props> = ({ query, options, mobile,
         {filterCount > 0 && <span aria-hidden="true" data-filter-count={filterCount} className="pointer-events-none absolute -right-1 -top-1 flex min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-mini font-bold leading-4 text-white ring-2 ring-white tabular-nums dark:ring-gray-900">{filterCount}</span>}
       </ToolbarButton>
     </div>
-    {open && !mobile && <AnchoredToolbarPopover anchorRef={anchor} title={t("筛选")} width={380} onClose={() => setOpen(false)}>{form}</AnchoredToolbarPopover>}
+    {open && !mobile && <AnchoredToolbarPopover anchorRef={anchor} title={t("筛选")} width={360} onClose={() => setOpen(false)}>{form}</AnchoredToolbarPopover>}
     {open && mobile && <ImagePreviewPortal><MobileBottomSheet open title={t("筛选")} onClose={() => setOpen(false)}>{form}</MobileBottomSheet></ImagePreviewPortal>}
   </div>;
 };

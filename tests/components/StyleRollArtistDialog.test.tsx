@@ -259,8 +259,8 @@ it('使用筛选有可见标题，刷新等待和失败时继续保留上次完�
   localStorage.setItem('nai_artist_sort', 'usage-images');
   render(<Fixture />); await screen.findByText('收录 2 串 · 生成 3 张');
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  expect(screen.getByText('风格串收录').tagName).toBe('P');
-  expect(screen.getByText('图片生成').tagName).toBe('P');
+  expect(screen.getByText('风格串收录').tagName).toBe('LABEL');
+  expect(screen.getByText('图片生成').tagName).toBe('LABEL');
   const filter = screen.getByRole('combobox', { name: '风格串收录' }) as HTMLSelectElement;
   fireEvent.change(filter, { target: { value: 'used' } });
   expect(screen.queryByRole('button', { name: '锁定画师：alpha' })).toBeNull();

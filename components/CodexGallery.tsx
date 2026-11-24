@@ -1,7 +1,7 @@
 import { PromptLibraryCaptureButton } from './PromptLibraryAccess';
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ChevronLeft, ChevronRight, Copy, FlaskConical, FolderTree, ImagePlus, Layers, LoaderCircle } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, Copy, FlaskConical, FolderTree, Heart, ImagePlus, Layers, LoaderCircle } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import type { User, ImageEditOperation, PromptChain } from '../types';
 import { IMPORT_SESSION_KEY, type BaseImageImport } from '../services/metadataService';
@@ -18,7 +18,7 @@ import { SmartImage } from './SmartImage';
 import { ViewableImage } from './ImageLightbox';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { useImageRatios } from './useImageRatios';
-import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
+import { FilterPanelFooter, FilterToggleButton, TOOLBAR_FIELD_CLASS, TOOLBAR_LABEL_CLASS, TOOLBAR_MENU_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
@@ -277,7 +277,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
       {image && <ImageShareOverlay imageUrl={getMobileOriginalUrl(image.originalUrl || image.url)} filename={`${entry.id}.png`} favorite={groupTarget(entry)} notify={notify} />}
     </MediaCardShell>;
   };
-  const field = (label: string, content: React.ReactNode) => <label className="block text-xs font-semibold text-gray-500">{t(label)}{content}</label>;
+  const field = (label: string, content: React.ReactNode) => <label className={TOOLBAR_LABEL_CLASS}>{t(label)}{content}</label>;
   const select = (label: string, name: keyof Filters, values: [string, string][]) => field(label, <select aria-label={t(label)} className={TOOLBAR_FIELD_CLASS} value={String(filter[name])} onChange={event => changeFilter({ [name]: event.target.value })}>{values.map(([value, text]) => <option key={value} value={value}>{t(text)}</option>)}</select>);
 
   return <div className="flex h-full min-h-0 flex-col" data-agent-page-scope="codex" data-agent-page-title={t('法典')}>
@@ -298,14 +298,18 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
           {paths.filter(path => path.toLocaleLowerCase().includes(directorySearch.trim().toLocaleLowerCase())).map(path => <button type="button" key={path} title={path} aria-label={path} aria-pressed={filter.path === path} className={`${TOOLBAR_MENU_CLASS} ${filter.path === path ? '!text-indigo-600 dark:!text-indigo-300' : ''}`} style={{ paddingLeft: `${12 + (path.split('/').length - 1) * 12}px` }} onClick={() => { changeFilter({ path }); close(); }}>{directorySearch ? path : path.split('/').at(-1)}</button>)}
         </div>}
       </ToolbarPopover>}
-      <ToolbarPopover title={t('法典筛选')} width={400} count={filterCount}>
-        {close => <div className="space-y-4">
-          {mode === 'books' ? select('内容更新', 'update', [['', '全部'], ['latest', '最近更新'], ...updates.map(update => [update, update] as [string, string])]) : select('分类', 'category', [['', '全部'], ...categories.map(category => [category, category] as [string, string])])}
-          {select('内容分级', 'rating', [['all', '全部'], ['normal', '常规'], ['nsfw', '成人'], ['r18g', '重口']])}
-          {select('图片', 'images', [['all', '全部'], ['image', '有配图'], ['original', '有可用原图'], ['none', '纯文本']])}
-          {select('排序', 'sort', mode === 'community' ? [['default', '最新投稿'], ['likes', '站内点赞'], ['name', '名称 A → Z']] : [['default', '书目顺序'], ['name', '名称 A → Z']])}
-          <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={filter.favorite} onChange={event => changeFilter({ favorite: event.target.checked })} />{t('本地已收藏')}</label>
-          <div className="flex justify-between"><ToolbarButton onClick={clearFilters}>{t('重置')}</ToolbarButton><ToolbarButton tone="primary" onClick={close}>{t('确认')}</ToolbarButton></div>
+      <ToolbarPopover title={t('法典筛选')} width={360} count={filterCount}>
+        {close => <div className="space-y-3.5">
+          <FilterToggleButton active={filter.favorite} tone="rose" icon={<Heart className={filter.favorite ? 'fill-current' : ''} />} onClick={() => changeFilter({ favorite: !filter.favorite })}>{t('本地已收藏')}</FilterToggleButton>
+          <div className="grid grid-cols-2 gap-3">
+            {mode === 'books' ? select('内容更新', 'update', [['', '全部'], ['latest', '最近更新'], ...updates.map(update => [update, update] as [string, string])]) : select('分类', 'category', [['', '全部'], ...categories.map(category => [category, category] as [string, string])])}
+            {select('内容分级', 'rating', [['all', '全部'], ['normal', '常规'], ['nsfw', '成人'], ['r18g', '重口']])}
+            {select('图片', 'images', [['all', '全部'], ['image', '有配图'], ['original', '有可用原图'], ['none', '纯文本']])}
+            {select('排序', 'sort', mode === 'community' ? [['default', '最新投稿'], ['likes', '站内点赞'], ['name', '名称 A → Z']] : [['default', '书目顺序'], ['name', '名称 A → Z']])}
+          </div>
+          <FilterPanelFooter onReset={clearFilters} resetLabel="重置">
+            <ToolbarButton tone="primary" onClick={close}>{t('确认')}</ToolbarButton>
+          </FilterPanelFooter>
         </div>}
       </ToolbarPopover>
       <ToolbarSearch value={filter.query} loading={loading} trailing={result && !loading && <ToolbarCountBadge inline total={filtered.length} loaded={Math.min(visibleLimit, filtered.length)} />} onChange={event => changeFilter({ query: event.target.value })} placeholder={t('标题、提示词、作者或说明')} containerClassName="min-w-0 md:max-w-none!" />

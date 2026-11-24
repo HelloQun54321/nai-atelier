@@ -264,7 +264,7 @@ it('只看收藏在筛选内生效，与真实分组、搜索、样张和使用�
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha' } });
   expect(sampleCards()).toHaveLength(0);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
-  fireEvent.click(screen.getByRole('checkbox', { name: '只看有样张' }));
+  fireEvent.click(screen.getByRole('button', { name: '只看有样张' }));
   expect(sampleCards()).toHaveLength(0);
   pickDirectoryOption('风格串收录', 'all');
   expect(sampleCards()).toHaveLength(1);
@@ -756,7 +756,7 @@ it('只看收藏叠加屏蔽范围时，名单读取失败仍显示错误而不�
   expect(sampleCards()).toHaveLength(1);
 });
 const openArtistFilters = () => { const button = screen.getByRole('button', { name: /^筛选/ }); if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button); };
-const disableSampleFilter = () => { fireEvent.click(screen.getByRole('button', { name: /^筛选/ })); fireEvent.click(screen.getByRole('checkbox', { name: '只看有样张' })); fireEvent.keyDown(window, { key: 'Escape' }); };
+const disableSampleFilter = () => { fireEvent.click(screen.getByRole('button', { name: /^筛选/ })); fireEvent.click(screen.getByRole('button', { name: '只看有样张' })); fireEvent.keyDown(window, { key: 'Escape' }); };
 const switchCard = (tag: string, pack: 'v45' | 'v5') => fireEvent.click(within(screen.getByTestId('cover-' + tag)).getByRole('button', { name: '卡片 ' + pack }));
 
 it('完整目录分页保留全部词库画师并追加两包独有名称，切模型和批量取用不丢条目', async () => {
@@ -1276,7 +1276,7 @@ it('逗号OR搜索统一匹配当前版本有图池、图包独有名、收藏�
   pickDirectoryOption('图片生成', 'unused');
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：pack_or', '选择画师：alpha artist']);
   expect(screen.getByTitle(/共 2$/)).toBeTruthy();
-  fireEvent.click(screen.getByRole('checkbox', { name: '只看有样张' }));
+  fireEvent.click(screen.getByRole('button', { name: '只看有样张' }));
   expect(sampleCards()).toHaveLength(2);
   expect(mocks.begin).not.toHaveBeenCalled();
 });
@@ -1419,9 +1419,9 @@ it('当前样张包未配置时默认展示完整目录，用户关闭样张筛�
   setup();
   await screen.findByTestId('cover-missing artist');
   fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-  const checkbox = screen.getByRole('checkbox', { name: '只看有样张' }) as HTMLInputElement;
-  expect(checkbox.checked).toBe(false);
-  fireEvent.click(checkbox);
+  const toggle = screen.getByRole('button', { name: '只看有样张' });
+  expect(toggle.getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(toggle);
   expect(localStorage.getItem('nai_artist_only_samples')).toBe('true');
 });
 

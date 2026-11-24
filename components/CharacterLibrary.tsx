@@ -33,7 +33,7 @@ import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMa
 import { Check, ChevronDown, Dice5, Heart, LoaderCircle, Pencil, Plus, Settings2, Tag, Trash2, UserRound } from 'lucide-react';
 import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar, EmptyState } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
-import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
+import { FilterPanelFooter, FilterToggleButton, TOOLBAR_FIELD_CLASS, TOOLBAR_LABEL_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { ToolbarCountBadge } from './ToolbarCountBadge';
 import { DanbooruCover } from './DanbooruCover';
 import { TagSelectionBar } from './TagSelectionBar';
@@ -839,16 +839,13 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        <WorkspaceChrome>
 <WorkspaceToolbar>
          {groups.toolbar}
-         <ToolbarPopover title={t("筛选角色")} count={Number(showFavOnly) + Number(sort !== 'popular')}>
-           {close => <div className="space-y-3">
-             <button type="button" aria-pressed={showFavOnly} onClick={() => { setShowFavOnly(value => !value); leaveGacha(); }} className={`mobile-touch flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${showFavOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>
-               <Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} />{t('只看收藏')}
-             </button>
-             <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("角色排序")} value={sort} onChange={event => { setSort(event.target.value as CharacterDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="popular">{searchTerm.trim() ? t("相关性优先 · 热度高") : t("热度从高到低")}</option><option value="least">{searchTerm.trim() ? t("相关性优先 · 热度低") : t("热度从低到高")}</option><option value="name-asc">{t("名称 A → Z")}</option><option value="name-desc">{t("名称 Z → A")}</option></select></label>
-             <div className="flex items-center justify-between gap-2">
-               <button type="button" onClick={() => { setShowFavOnly(false); setSort('popular'); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
+         <ToolbarPopover title={t("筛选角色")} width={320} count={Number(showFavOnly) + Number(sort !== 'popular')}>
+           {close => <div className="space-y-3.5">
+             <FilterToggleButton active={showFavOnly} tone="rose" icon={<Heart className={showFavOnly ? 'fill-current' : ''} />} onClick={() => { setShowFavOnly(value => !value); leaveGacha(); }}>{t('只看收藏')}</FilterToggleButton>
+             <label className={TOOLBAR_LABEL_CLASS}>{t("排序")}<select aria-label={t("角色排序")} value={sort} onChange={event => { setSort(event.target.value as CharacterDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="popular">{searchTerm.trim() ? t("相关性优先 · 热度高") : t("热度从高到低")}</option><option value="least">{searchTerm.trim() ? t("相关性优先 · 热度低") : t("热度从低到高")}</option><option value="name-asc">{t("名称 A → Z")}</option><option value="name-desc">{t("名称 Z → A")}</option></select></label>
+             <FilterPanelFooter onReset={() => { setShowFavOnly(false); setSort('popular'); leaveGacha(); }} resetDisabled={!showFavOnly && sort === 'popular'}>
                {gachaCards && <button type="button" onClick={() => { leaveGacha(); close(); }} className="text-xs font-semibold text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">{t("返回完整目录")}</button>}
-             </div>
+             </FilterPanelFooter>
            </div>}
          </ToolbarPopover>
          <ToolbarSearch value={searchTerm} loading={!customSource && isLoading} trailing={(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountBadge inline total={!grouped && !showFavOnly && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length} loaded={visibleCards.length} />} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="min-w-0 flex-1 md:max-w-none!" />

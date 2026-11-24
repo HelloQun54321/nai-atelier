@@ -50,7 +50,7 @@ import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
-import { ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
+import { FilterPanelFooter, FilterToggleButton, TOOLBAR_FIELD_CLASS, TOOLBAR_LABEL_CLASS, TOOLBAR_MENU_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { IMAGE_CARD_ACTION_CLASS, IMAGE_CARD_ACTION_TONE, ImageShareOverlay } from './ImageShareActions';
 import { collectionSnapshot, subscribeCollection, aitagCollectionImages, type CollectionTarget } from '../services/collectionFavorites';
 import { buildMediaUrl, getMobileOriginalUrl } from '../services/mobileImageCache';
@@ -1616,18 +1616,14 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const activeChips = filterChips.map(chip => ({ ...chip, disabled: isLoading && (chip.key === 'cache' || chip.key === 'sort') }));
   const renderActiveFilters = () => activeChips.length > 0 && <div role="group" aria-label={t('已生效的筛选条件')} className="mb-3 flex flex-wrap items-center gap-1.5">{activeChips.map(chip => <SearchFilterChip key={chip.key} chip={chip} />)}</div>;
   const renderLocalFilterSelects = (mobile: boolean) => {
-    const labelClass = mobile ? 'text-sm font-bold dark:text-white' : 'text-xs text-gray-500 dark:text-gray-400';
-    const selectClass = mobile
-      ? 'mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-800 dark:bg-gray-800'
-      : 'mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white';
     return <>
-      <label className={`${labelClass} ${mobile ? 'col-span-2' : ''}`}>{t("模型版本（已加载条目）")}<select value={modelFilter} onChange={event => changeLocalFilter(() => setModelFilter(event.target.value))} disabled={(!mobile && isLoading) || modelOptions.length === 0} className={selectClass}><option value="">{t("全部")}</option>{modelOptions.map(label => <option key={label} value={label}>{t(label)}</option>)}</select></label>
-      <label className={labelClass}>{t("画师串")}<select value={artistFilter} onChange={event => changeLocalFilter(() => setArtistFilter(event.target.value as AitagArtistFilter))} className={selectClass}><option value="all">{t("全部")}</option><option value="with">{t("含画师串")}</option><option value="without">{t("无画师串")}</option></select></label>
-      <label className={labelClass}>{t("风格串")}<select value={chainFilter} onChange={event => changeLocalFilter(() => setChainFilter(event.target.value as AitagChainFilter))} className={selectClass}><option value="all">{t("全部")}</option><option value="saved">{t("已保存")}</option><option value="unsaved">{t("未保存")}</option></select></label>
-      <div className="col-span-full space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800">
-        <div className="flex flex-wrap gap-x-5 gap-y-1">
-          <label className={`${labelClass} mobile-touch inline-flex cursor-pointer items-center gap-2`}><input type="checkbox" checked={excludeVibe} onChange={event => changeLocalFilter(() => setExcludeVibe(event.target.checked))} className="h-4 w-4 accent-indigo-600" />{t('排除氛围参考')}</label>
-          <label className={`${labelClass} mobile-touch inline-flex cursor-pointer items-center gap-2`}><input type="checkbox" checked={excludePrecise} onChange={event => changeLocalFilter(() => setExcludePrecise(event.target.checked))} className="h-4 w-4 accent-indigo-600" />{t('排除精准参考')}</label>
+      <label className={`${TOOLBAR_LABEL_CLASS} ${mobile ? 'col-span-2' : ''}`}>{t("模型版本（已加载条目）")}<select value={modelFilter} onChange={event => changeLocalFilter(() => setModelFilter(event.target.value))} disabled={(!mobile && isLoading) || modelOptions.length === 0} className={TOOLBAR_FIELD_CLASS}><option value="">{t("全部")}</option>{modelOptions.map(label => <option key={label} value={label}>{t(label)}</option>)}</select></label>
+      <label className={TOOLBAR_LABEL_CLASS}>{t("画师串")}<select value={artistFilter} onChange={event => changeLocalFilter(() => setArtistFilter(event.target.value as AitagArtistFilter))} className={TOOLBAR_FIELD_CLASS}><option value="all">{t("全部")}</option><option value="with">{t("含画师串")}</option><option value="without">{t("无画师串")}</option></select></label>
+      <label className={TOOLBAR_LABEL_CLASS}>{t("风格串")}<select value={chainFilter} onChange={event => changeLocalFilter(() => setChainFilter(event.target.value as AitagChainFilter))} className={TOOLBAR_FIELD_CLASS}><option value="all">{t("全部")}</option><option value="saved">{t("已保存")}</option><option value="unsaved">{t("未保存")}</option></select></label>
+      <div className="col-span-full space-y-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+        <div className="grid grid-cols-2 gap-2">
+          <FilterToggleButton active={excludeVibe} onClick={() => changeLocalFilter(() => setExcludeVibe(!excludeVibe))}>{t('排除氛围参考')}</FilterToggleButton>
+          <FilterToggleButton active={excludePrecise} onClick={() => changeLocalFilter(() => setExcludePrecise(!excludePrecise))}>{t('排除精准参考')}</FilterToggleButton>
         </div>
         <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{t('按首图生成信息筛选')}</p>
       </div>
@@ -1639,21 +1635,20 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       <WorkspaceChrome>
 <WorkspaceToolbar>
           <span role="status" aria-label={isAitagConnected ? t("aitag.win 连接正常") : t("aitag.win 暂时不可用")} title={isAitagConnected ? t("aitag.win 连接正常") : t("aitag.win 暂时不可用")} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]' : 'bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.14)]'}`} />
-          <ToolbarPopover title={t("AITag 筛选")} count={activeFilterCount} width={544} open={showFilters} onOpenChange={setShowFilters}>
-            {(close, mobile) => <div className="space-y-4">
+          <ToolbarPopover title={t("AITag 筛选")} count={activeFilterCount} width={480} open={showFilters} onOpenChange={setShowFilters}>
+            {(close, mobile) => <div className="space-y-3.5">
               {renderActiveFilters()}
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400">{t("提示词搜索")}<input value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { handleSearch(); close(); } }} placeholder={t("逗号分隔多个条件，- 开头排除")} className="mobile-touch mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-normal text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white" /></label>
+              <label className={TOOLBAR_LABEL_CLASS}>{t("提示词搜索")}<input value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { handleSearch(); close(); } }} placeholder={t("逗号分隔多个条件，- 开头排除")} className={TOOLBAR_FIELD_CLASS} /></label>
               <div className={`grid gap-3 ${mobile ? 'grid-cols-2' : 'grid-cols-3'}`}>
-                <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">{t("缓存")}<select value={cacheFilter} onChange={e => handleCacheFilterChange(e.target.value as AitagCacheFilter)} disabled={isLoading} className="mobile-touch mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-normal text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="all">{t("全部")}</option><option value="favorite">{t("收藏")}</option><option value="full">{t("已缓存全部")}</option><option value="first-image">{t("已缓存首图")}</option></select></label>
-                <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">{t("排序")}<select value={sort} onChange={e => handleSortChange(e.target.value as AitagSort)} className="mobile-touch mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-normal text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="new">{t("最新")}</option><option value="monthly">{t("月榜")}</option></select></label>
-                <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">{t("月份")}<select value={sort === 'monthly' ? rankMonth : ''} onChange={e => handleRankMonthChange(e.target.value)} disabled={isLoading || sort !== 'monthly'} className="mobile-touch mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-normal text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="">{t("无需月份")}</option><option value="current">{t("当前月份")}</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">{t("更早")}</option></select></label>
+                <label className={TOOLBAR_LABEL_CLASS}>{t("缓存")}<select value={cacheFilter} onChange={e => handleCacheFilterChange(e.target.value as AitagCacheFilter)} disabled={isLoading} className={TOOLBAR_FIELD_CLASS}><option value="all">{t("全部")}</option><option value="favorite">{t("收藏")}</option><option value="full">{t("已缓存全部")}</option><option value="first-image">{t("已缓存首图")}</option></select></label>
+                <label className={TOOLBAR_LABEL_CLASS}>{t("排序")}<select value={sort} onChange={e => handleSortChange(e.target.value as AitagSort)} className={TOOLBAR_FIELD_CLASS}><option value="new">{t("最新")}</option><option value="monthly">{t("月榜")}</option></select></label>
+                <label className={TOOLBAR_LABEL_CLASS}>{t("月份")}<select value={sort === 'monthly' ? rankMonth : ''} onChange={e => handleRankMonthChange(e.target.value)} disabled={isLoading || sort !== 'monthly'} className={TOOLBAR_FIELD_CLASS}><option value="">{t("无需月份")}</option><option value="current">{t("当前月份")}</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">{t("更早")}</option></select></label>
               </div>
               <div className={`grid gap-3 ${mobile ? 'grid-cols-2' : 'grid-cols-3'}`}>{renderLocalFilterSelects(mobile)}</div>
               {mobile && <div className="appearance-group rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">{t('共 {0} 条', [formatCount(total)])}{' · '}{t('已加载 {0} 条', [formatCount(visibleItems.length)])}</div>}
-              <div className="flex items-center gap-3">
-                <button type="button" onClick={() => { resetFilters(); if (mobile) close(); }} disabled={!canResetFilters} className="mobile-touch px-2 text-xs font-bold text-indigo-600 disabled:opacity-40 dark:text-indigo-300">{t("重置筛选")}</button>
-                <button type="button" onClick={() => { handleSearch(); close(); }} className="mobile-touch h-10 flex-1 rounded-xl bg-indigo-700 text-sm font-bold text-white hover:bg-indigo-600 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600">{t("应用筛选")}</button>
-              </div>
+              <FilterPanelFooter onReset={() => { resetFilters(); if (mobile) close(); }} resetDisabled={!canResetFilters}>
+                <ToolbarButton tone="primary" onClick={() => { handleSearch(); close(); }}>{t("应用筛选")}</ToolbarButton>
+              </FilterPanelFooter>
             </div>}
           </ToolbarPopover>
           <ListJumpButton page={page} totalPages={totalPages} disabled={isLoading} onJump={goToPage} />

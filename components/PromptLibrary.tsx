@@ -55,7 +55,7 @@ import { HistoryImagePicker } from './HistoryImagePicker';
 import { PromptLibraryCard, PromptLibraryGallery } from './PromptLibraryCard';
 import { ImageLightbox } from './ImageLightbox';
 import { ImageActivityContext, SmartImage } from './SmartImage';
-import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
+import { FilterPanelFooter, FilterToggleButton, TOOLBAR_FIELD_CLASS, TOOLBAR_LABEL_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { PromptLibraryBundleDialog } from './PromptLibraryBundleDialog';
 import type { PromptLibraryBundleChainWrite } from './PromptLibraryBundleDialog';
@@ -768,14 +768,11 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     <>
       {categoryToggle}
       <ToolbarPopover title={t('筛选{0}', [t(config.title)])} count={selectedTags.size + Number(!!favoritesFilter?.active)} width={320} zIndex={dynamicDirectories ? 1960 : undefined}>
-        <div className="space-y-3">
+        <div className="space-y-3.5">
           {favoritesFilter && (
-            <button type="button" aria-pressed={favoritesFilter.active} onClick={() => { favoritesFilter.onToggle(); resetScroll(); }}
-              className={`mobile-touch flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${favoritesFilter.active ? 'border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-700/70 dark:bg-rose-950/40 dark:text-rose-300' : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
-              <Heart className={`h-3.5 w-3.5 ${favoritesFilter.active ? 'fill-current' : ''}`} />{t('只看收藏')}
-            </button>
+            <FilterToggleButton active={favoritesFilter.active} tone="rose" icon={<Heart className={favoritesFilter.active ? 'fill-current' : ''} />} onClick={() => { favoritesFilter.onToggle(); resetScroll(); }}>{t('只看收藏')}</FilterToggleButton>
           )}
-          <label className="block text-xs font-semibold text-gray-500">{t('排序')}
+          <label className={TOOLBAR_LABEL_CLASS}>{t('排序')}
             <select aria-label={t('排序')} className={TOOLBAR_FIELD_CLASS} value={sort} onChange={event => { setSort(event.target.value as LibraryBrowsing['sort']); resetScroll(); }}>
               <option value="updated">{t('最近更新')}</option><option value="name">{t('名称')}</option>
             </select>
@@ -823,7 +820,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
             </div>
           )}
           {selectedTags.size > 1 && <p className="text-xs text-gray-400">{t('只显示同时包含全部所选标签的{0}', [t(config.itemNoun)])}</p>}
-          <div className="pt-1"><ToolbarButton onClick={() => coverActions.openCoverSettings()}>{t('封面生成设置')}</ToolbarButton></div>
+          <FilterPanelFooter onReset={selectedTags.size > 0 || favoritesFilter?.active ? () => { setSelectedTags(new Set()); if (favoritesFilter?.active) favoritesFilter.onToggle(); resetScroll(); } : undefined}>
+            <ToolbarButton onClick={() => coverActions.openCoverSettings()}>{t('封面生成设置')}</ToolbarButton>
+          </FilterPanelFooter>
         </div>
       </ToolbarPopover>
       <div className="relative min-w-0 flex-1">

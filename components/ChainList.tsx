@@ -37,7 +37,7 @@ import { ChainTagManager } from './chain/ChainTagManager';
 import { getCustomChainTags } from '../services/chainTags';
 import { chainReferenceSummary } from '../services/chainReferenceBadges';
 import { useConfirmDialog } from './ConfirmDialog';
-import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
+import { FilterPanelFooter, FilterToggleButton, TOOLBAR_FIELD_CLASS, TOOLBAR_LABEL_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { useChainFolders } from '../services/useChainFolders';
 import { folderContains, getChainFolderIds, updateChainFolderMemberships } from '../services/chainFolders';
@@ -557,24 +557,26 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     ...(canSyncBaiBai ? [{ label: '柏宝绘同步', hint: baiBaiSyncSelection.savedCount > 0 ? `待同步 ${baiBaiSyncSelection.savedCount}` : '', icon: <Link2 />, onClick: () => toggleSyncTarget('st-baibai'), disabled: baiBaiSyncSelection.busy && !baiBaiSyncSelection.open }] : []),
   ];
   // 桌面弹层与手机抽屉共享筛选内容，切换视图也保持同一份筛选状态。
-  const renderFilterContent = (close: () => void, mobile: boolean) => <div className="space-y-4">
-    <div className="flex items-center justify-between"><span className="text-xs text-gray-500 dark:text-gray-400">{filterCount > 0 ? t("{0} 项筛选已启用", [filterCount]) : t("全部资料")}</span>{filtersActive && <button type="button" onClick={resetFilters} className="mobile-touch px-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>}</div>
-    <div className="grid grid-cols-2 gap-3">
-      <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t("排序")}<select aria-label={t("排序")} value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="mobile-touch mt-2 h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-xs font-normal outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"><option value="updated_desc">{t("最近更新")}</option><option value="updated_asc">{t("最早更新")}</option><option value="created_desc">{t("最近创建")}</option><option value="created_asc">{t("最早创建")}</option></select></label>
-      <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t("模型")}<select aria-label={t("模型筛选")} value={selectedModel} onChange={event => setSelectedModel(event.target.value)} className="mobile-touch mt-2 h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-xs font-normal outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"><option value="">{t("全部模型")}</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{t(model.label)}</option>)}</select></label>
-    </div>
+  const renderFilterContent = (close: () => void, mobile: boolean) => <div className="space-y-3.5">
     <div className="grid grid-cols-2 gap-2">
-      <button type="button" aria-pressed={favOnly} onClick={() => setFavOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${favOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} />{t("只看收藏")}</button>
-      <button type="button" aria-pressed={untestedOnly} onClick={() => setUntestedOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${untestedOnly ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><EyeOff className="h-4 w-4" />{t("只看待实测")}</button>
-      <button type="button" aria-pressed={vibesOnly} onClick={() => setVibesOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${vibesOnly ? 'bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><Sparkles className="h-4 w-4" />{t("有氛围参考")}</button>
-      <button type="button" aria-pressed={characterRefsOnly} onClick={() => setCharacterRefsOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${characterRefsOnly ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><ScanSearch className="h-4 w-4" />{t("有精准参考")}</button>
+      <FilterToggleButton active={favOnly} tone="rose" icon={<Heart className={favOnly ? 'fill-current' : ''} />} onClick={() => setFavOnly(value => !value)}>{t("只看收藏")}</FilterToggleButton>
+      <FilterToggleButton active={untestedOnly} tone="amber" icon={<EyeOff />} onClick={() => setUntestedOnly(value => !value)}>{t("只看待实测")}</FilterToggleButton>
+      <FilterToggleButton active={vibesOnly} tone="violet" icon={<Sparkles />} onClick={() => setVibesOnly(value => !value)}>{t("有氛围参考")}</FilterToggleButton>
+      <FilterToggleButton active={characterRefsOnly} tone="cyan" icon={<ScanSearch />} onClick={() => setCharacterRefsOnly(value => !value)}>{t("有精准参考")}</FilterToggleButton>
+    </div>
+    <div className="grid grid-cols-2 gap-3">
+      <label className={TOOLBAR_LABEL_CLASS}>{t("排序")}<select aria-label={t("排序")} value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className={TOOLBAR_FIELD_CLASS}><option value="updated_desc">{t("最近更新")}</option><option value="updated_asc">{t("最早更新")}</option><option value="created_desc">{t("最近创建")}</option><option value="created_asc">{t("最早创建")}</option></select></label>
+      <label className={TOOLBAR_LABEL_CLASS}>{t("模型")}<select aria-label={t("模型筛选")} value={selectedModel} onChange={event => setSelectedModel(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="">{t("全部模型")}</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{t(model.label)}</option>)}</select></label>
     </div>
     <div>
-      <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t("自定义标签")}</span><div className="flex items-center gap-1">{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="mobile-touch px-2 text-xs text-gray-500 dark:text-gray-400">{t("清除标签筛选")}</button>}{!isGuest && <button type="button" disabled={syncSelection.busy} onClick={() => void openTagManager(close, mobile)} className="mobile-touch inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"><Tags className="h-3.5 w-3.5" />{t('管理标签')}</button>}</div></div>
+      <div className="mb-2 flex items-center justify-between gap-2"><span className={TOOLBAR_LABEL_CLASS}>{t("自定义标签")}</span><div className="flex items-center gap-1">{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="mobile-touch px-2 text-xs text-gray-500 dark:text-gray-400">{t("清除标签筛选")}</button>}{!isGuest && <button type="button" disabled={syncSelection.busy} onClick={() => void openTagManager(close, mobile)} className="mobile-touch inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"><Tags className="h-3.5 w-3.5" />{t('管理标签')}</button>}</div></div>
       {customTagOptions.length > 12 && <input aria-label={t("搜索自定义标签")} placeholder={t("搜索标签")} value={tagSearch} onChange={event => setTagSearch(event.target.value)} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !mb-2 text-xs`} />}
       {customTagOptions.length === 0 ? (isLoading ? <InlineSpinner label={t('加载中…')} className="text-xs" /> : <p className="text-xs text-gray-400">{loadError ? t(loadError) : t("暂无自定义标签，可在卡片铅笔中添加")}</p>) : <div className="max-h-40 overflow-y-auto"><div className="flex flex-wrap gap-1.5">{visibleTagOptions.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => toggleTag(tag)} className={`mobile-touch max-w-full break-words rounded-full border px-3 py-1.5 text-xs ${selectedTags.has(tag) ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-transparent bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{tag}</button>)}</div>{visibleTagOptions.length === 0 && <p className="py-1 text-xs text-gray-400">{t("没有匹配的标签")}</p>}</div>}
       {selectedTags.size > 1 && <p className="mt-2 text-xs text-gray-400">{t("同时包含所选标签")}</p>}
     </div>
+    <FilterPanelFooter onReset={resetFilters} resetDisabled={!filtersActive}>
+      <span className="text-xs text-gray-400">{filterCount > 0 ? t("{0} 项筛选已启用", [filterCount]) : t("全部资料")}</span>
+    </FilterPanelFooter>
   </div>;
 
   return (
@@ -601,7 +603,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </> : <>
           {!isGuest && type === 'style' && <ToolbarButton data-agent-action="browse" aria-label={t(foldersExpanded ? '收起文件夹' : '展开文件夹')} title={[t(foldersExpanded ? '收起文件夹' : '展开文件夹'), activeFolderLabel].join(' · ')} aria-expanded={foldersExpanded} active={foldersExpanded || activeFolder !== '*'} disabled={folderStore.busy} onClick={toggleFolders} className="!px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{activeFolderLabel}</span></ToolbarButton>}
           <div ref={filterHostRef} className="flex-none">
-            <ToolbarPopover title={t("筛选与排序")} count={filterCount} active={filtersActive} open={showFilters} onOpenChange={setShowFilters}>
+            <ToolbarPopover title={t("筛选与排序")} width={320} count={filterCount} active={filtersActive} open={showFilters} onOpenChange={setShowFilters}>
               {(close, mobile) => renderFilterContent(close, mobile)}
             </ToolbarPopover>
           </div>

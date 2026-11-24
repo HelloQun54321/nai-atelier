@@ -21,7 +21,7 @@ import { ArtistSampleGenerationStatus, useArtistSampleActions } from '../useArti
 import { ShortestColumnMasonry, useMasonryColumnCount } from '../ShortestColumnMasonry';
 import { useImageRatios } from '../useImageRatios';
 import { InlineSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect } from '../DesignSystem';
-import { AnchoredToolbarPopover } from '../ToolbarPopover';
+import { AnchoredToolbarPopover, FilterPanelFooter, FilterToggleButton, TOOLBAR_FIELD_CLASS, TOOLBAR_LABEL_CLASS } from '../ToolbarPopover';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { PressRevealSurface } from '../PressRevealSurface';
@@ -224,19 +224,20 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
         <StyleRollArtistInput label="固定画师 Tag（可选）" value={pinned} onChange={onPinnedChange} limit={rules.maxArtists} blocked={[...blocked, ...excluded]} disabled={busy} />
       </div>}
       {(error || sampleError || libraryError || groups.error) && <p role="alert" className="shrink-0 px-4 pb-2 text-xs text-red-500">{t(error || sampleError || libraryError || groups.error)}{(groups.error || sampleError) && <button type="button" className="mobile-touch ml-2 underline" onClick={() => groups.error ? void groups.reload() : setSampleRetry(value => value + 1)}>{t('重试')}</button>}</p>}
-      {usageOpen && <AnchoredToolbarPopover anchorRef={usageAnchor} title={t('筛选')} width={280} allowMobile onClose={closeUsage}>
-        <div className="space-y-3">
-          <button type="button" aria-pressed={favOnly} onClick={() => { setFavOnly(value => !value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} className={`mobile-touch flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${favOnly ? 'border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-700/70 dark:bg-rose-950/40 dark:text-rose-300' : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}`}><Heart className={`h-3.5 w-3.5 ${favOnly ? 'fill-current' : ''}`} />{t('只看收藏')}</button>
+      {usageOpen && <AnchoredToolbarPopover anchorRef={usageAnchor} title={t('筛选')} width={320} allowMobile onClose={closeUsage}>
+        <div className="space-y-3.5">
+          <FilterToggleButton active={favOnly} tone="rose" icon={<Heart className={favOnly ? 'fill-current' : ''} />} onClick={() => { setFavOnly(value => !value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }}>{t('只看收藏')}</FilterToggleButton>
           {usageStatus === 'loading' && <InlineSpinner label={t('正在统计画师使用…')} className="text-xs" />}
           {usageStatus === 'error' && <p role="alert" className="flex items-center justify-between gap-2 text-xs text-red-500">{t('画师使用统计暂不可用')}<button type="button" className="shrink-0 underline" onClick={() => setUsageRetry(value => value + 1)}>{t('重试统计')}</button></p>}
-          <div className="space-y-1"><p className="text-xs font-medium">{t('风格串收录')}</p><ToolbarSelect containerClassName="w-full" label={t('风格串收录')} value={chainsFilter} disabled={!usageReady} onChange={event => { setChainsFilter(event.target.value as ArtistUsageFilter); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }}>
-            <option value="all">{t('全部')}</option><option value="used">{t('已收录')}</option><option value="unused">{t('未收录')}</option>
-          </ToolbarSelect>
+          <div className="grid grid-cols-2 gap-3">
+            <label className={TOOLBAR_LABEL_CLASS}>{t('风格串收录')}<select aria-label={t('风格串收录')} value={chainsFilter} disabled={!usageReady} onChange={event => { setChainsFilter(event.target.value as ArtistUsageFilter); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} className={TOOLBAR_FIELD_CLASS}>
+              <option value="all">{t('全部')}</option><option value="used">{t('已收录')}</option><option value="unused">{t('未收录')}</option>
+            </select></label>
+            <label className={TOOLBAR_LABEL_CLASS}>{t('图片生成')}<select aria-label={t('图片生成')} value={imagesFilter} disabled={!usageReady} onChange={event => { setImagesFilter(event.target.value as ArtistUsageFilter); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} className={TOOLBAR_FIELD_CLASS}>
+              <option value="all">{t('全部')}</option><option value="used">{t('已生成')}</option><option value="unused">{t('未生成')}</option>
+            </select></label>
           </div>
-          <div className="space-y-1"><p className="text-xs font-medium">{t('图片生成')}</p><ToolbarSelect containerClassName="w-full" label={t('图片生成')} value={imagesFilter} disabled={!usageReady} onChange={event => { setImagesFilter(event.target.value as ArtistUsageFilter); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }}>
-            <option value="all">{t('全部')}</option><option value="used">{t('已生成')}</option><option value="unused">{t('未生成')}</option>
-          </ToolbarSelect></div>
-          {(favOnly || chainsFilter !== 'all' || imagesFilter !== 'all') && <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setFavOnly(false); setChainsFilter('all'); setImagesFilter('all'); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }}>{t('重置筛选')}</button>}
+          <FilterPanelFooter resetDisabled={!favOnly && chainsFilter === 'all' && imagesFilter === 'all'} onReset={() => { setFavOnly(false); setChainsFilter('all'); setImagesFilter('all'); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} />
         </div>
       </AnchoredToolbarPopover>}
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">

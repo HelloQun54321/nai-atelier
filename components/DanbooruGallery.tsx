@@ -24,7 +24,7 @@ import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { ExternalImageTools } from './ExternalImageTools';
 import { ImageTaggerPanel } from './ImageTaggerPanel';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
-import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
+import { FilterPanelFooter, FilterToggleButton, TOOLBAR_FIELD_CLASS, TOOLBAR_LABEL_CLASS, TOOLBAR_MENU_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { SmartImage } from './SmartImage';
@@ -468,10 +468,12 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
     <div className="workspace-canvas flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceChrome>
 <WorkspaceToolbar>
-        <ToolbarPopover title={t("Danbooru 筛选")} count={Number(sort !== 'rank') + Number(rating !== 'all') + Number(ratio !== 'all') + Number(soloOnly)}>
-        <div className="space-y-4">
-          <button type="button" onClick={() => void handleApplyFilter({ sort: 'rank', rating: 'all', ratio: 'all', soloOnly: false })} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
-          <label className="block text-sm font-bold dark:text-white">
+        <ToolbarPopover title={t("Danbooru 筛选")} width={320} count={Number(sort !== 'rank') + Number(rating !== 'all') + Number(ratio !== 'all') + Number(soloOnly)}>
+        <div className="space-y-3.5">
+          <FilterToggleButton active={soloOnly} onClick={() => { void handleApplyFilter({ soloOnly: !soloOnly }); }}>
+            {t("仅单人 (solo)")}
+          </FilterToggleButton>
+          <label className={TOOLBAR_LABEL_CLASS}>
             {t("排序方式")}<select
               value={sort}
               onChange={event => { void handleApplyFilter({ sort: event.target.value as DanbooruSort }); }}
@@ -483,42 +485,34 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
               <option value="latest">{t("最新")}</option>
             </select>
           </label>
-          <label className="block text-sm font-bold dark:text-white">
-            {t("评级范围")}<select
-              value={rating}
-              onChange={event => { void handleApplyFilter({ rating: event.target.value as DanbooruRating }); }}
-              className={TOOLBAR_FIELD_CLASS}
-            >
-              <option value="all">{t("全部评级")}</option>
-              <option value="g">{t("全年龄 G")}</option>
-              <option value="s">{t("微涩 S")}</option>
-              <option value="q">{t("擦边 Q")}</option>
-              <option value="e">R-18 E</option>
-            </select>
-          </label>
-          <label className="block text-sm font-bold dark:text-white">
-            {t("画幅比例")}<select
-              value={ratio}
-              onChange={event => { void handleApplyFilter({ ratio: event.target.value as DanbooruRatio }); }}
-              className={TOOLBAR_FIELD_CLASS}
-            >
-              <option value="all">{t("不限比例")}</option>
-              <option value="portrait">{t("竖屏")}</option>
-              <option value="landscape">{t("横屏")}</option>
-              <option value="square">{t("方图")}</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={() => { void handleApplyFilter({ soloOnly: !soloOnly }); }}
-            className={`mobile-touch h-10 w-full rounded-xl border px-3 text-sm font-semibold transition-colors ${
-              soloOnly
-                ? 'border-indigo-600 bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white'
-                : 'appearance-group border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'
-            }`}
-          >
-            {soloOnly ? t("✓ 已启用仅单人 (solo)") : t("启用仅单人 (solo)")}
-          </button>
+          <div className="grid grid-cols-2 gap-3">
+            <label className={TOOLBAR_LABEL_CLASS}>
+              {t("评级范围")}<select
+                value={rating}
+                onChange={event => { void handleApplyFilter({ rating: event.target.value as DanbooruRating }); }}
+                className={TOOLBAR_FIELD_CLASS}
+              >
+                <option value="all">{t("全部评级")}</option>
+                <option value="g">{t("全年龄 G")}</option>
+                <option value="s">{t("微涩 S")}</option>
+                <option value="q">{t("擦边 Q")}</option>
+                <option value="e">R-18 E</option>
+              </select>
+            </label>
+            <label className={TOOLBAR_LABEL_CLASS}>
+              {t("画幅比例")}<select
+                value={ratio}
+                onChange={event => { void handleApplyFilter({ ratio: event.target.value as DanbooruRatio }); }}
+                className={TOOLBAR_FIELD_CLASS}
+              >
+                <option value="all">{t("不限比例")}</option>
+                <option value="portrait">{t("竖屏")}</option>
+                <option value="landscape">{t("横屏")}</option>
+                <option value="square">{t("方图")}</option>
+              </select>
+            </label>
+          </div>
+          <FilterPanelFooter onReset={() => void handleApplyFilter({ sort: 'rank', rating: 'all', ratio: 'all', soloOnly: false })} resetDisabled={sort === 'rank' && rating === 'all' && ratio === 'all' && !soloOnly} />
         </div>
         </ToolbarPopover>
         <ListJumpButton page={page} disabled={loading} onJump={target => { void load(queryRef.current, target); }} />

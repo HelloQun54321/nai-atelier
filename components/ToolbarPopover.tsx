@@ -7,8 +7,71 @@ import { MobileBottomSheet, useMobileHistoryLayer } from './MobileUI';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { useGlassRefraction } from './useGlassRefraction';
 
-export const TOOLBAR_FIELD_CLASS = 'mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-normal text-gray-800 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100';
+export const TOOLBAR_LABEL_CLASS = 'block text-xs font-semibold text-gray-500 dark:text-gray-400';
+export const TOOLBAR_FIELD_CLASS = 'mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100';
 export const TOOLBAR_MENU_CLASS = 'mobile-touch flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:flex-none';
+
+export type FilterToggleTone = 'rose' | 'amber' | 'violet' | 'cyan' | 'indigo';
+
+const FILTER_TOGGLE_ACTIVE: Record<FilterToggleTone, string> = {
+  rose: 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-700/70 dark:bg-rose-950/40 dark:text-rose-300',
+  amber: 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700/70 dark:bg-amber-950/40 dark:text-amber-300',
+  violet: 'border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-700/70 dark:bg-violet-950/40 dark:text-violet-300',
+  cyan: 'border-cyan-300 bg-cyan-50 text-cyan-700 dark:border-cyan-700/70 dark:bg-cyan-950/40 dark:text-cyan-300',
+  indigo: 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700/70 dark:bg-indigo-950/40 dark:text-indigo-300',
+};
+
+/** 筛选浮层内的统一布尔切换芯片，替代各页零散的复选框与自定义按钮。 */
+export const FilterToggleButton: React.FC<{
+  active: boolean;
+  onClick: () => void;
+  icon?: React.ReactNode;
+  tone?: FilterToggleTone;
+  disabled?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}> = ({ active, onClick, icon, tone = 'indigo', disabled, className = '', children }) => (
+  <button
+    type="button"
+    aria-pressed={active}
+    disabled={disabled}
+    onClick={onClick}
+    className={`mobile-touch flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition-colors disabled:opacity-40 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0 ${
+      active
+        ? FILTER_TOGGLE_ACTIVE[tone]
+        : 'appearance-group border-gray-200/80 bg-gray-50/80 text-gray-600 hover:border-gray-300 hover:bg-gray-100/80 dark:border-gray-700/80 dark:bg-gray-800/70 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:bg-gray-800'
+    } ${className}`}
+  >
+    {icon}
+    <span className="truncate">{children}</span>
+  </button>
+);
+
+/** 筛选浮层统一底栏：左重置，右放辅助或提交操作。 */
+export const FilterPanelFooter: React.FC<{
+  onReset?: () => void;
+  resetLabel?: string;
+  resetDisabled?: boolean;
+  children?: React.ReactNode;
+  className?: string;
+}> = ({ onReset, resetLabel = '重置筛选', resetDisabled = false, children, className = '' }) => {
+  useLanguage();
+  return (
+    <div className={`flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 dark:border-gray-800 ${className}`}>
+      {onReset ? (
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={resetDisabled}
+          className="mobile-touch px-1 text-xs font-semibold text-indigo-600 transition-colors hover:text-indigo-700 disabled:opacity-40 dark:text-indigo-300 dark:hover:text-indigo-200"
+        >
+          {t(resetLabel)}
+        </button>
+      ) : <span />}
+      {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
+    </div>
+  );
+};
 
 export function getToolbarPopoverPosition(anchor: { left: number; width: number; bottom: number; top?: number }, panelWidth: number, viewportWidth: number, viewportHeight: number, above = false) {
   const width = Math.min(panelWidth, Math.max(0, viewportWidth - 24));
