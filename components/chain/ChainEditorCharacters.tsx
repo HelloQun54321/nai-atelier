@@ -7,6 +7,7 @@ import { CharacterParams, NAIParams, PromptChain } from '../../types';
 import { LabPageLayout } from '../../services/appearancePreferences';
 import { LabModuleSection } from '../LabModuleSection';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
+import type { PromptTidyOptions } from '../PromptTidyActions';
 import { PromptLibraryChooser, PromptLibraryRandomButton } from '../PromptLibraryAccess';
 import { PresetSection, PresetSource, PresetSourceBadges } from './PresetSourceBadges';
 import { mergePromptFields } from '../../services/promptUtils';
@@ -49,6 +50,7 @@ export interface ChainEditorCharactersProps {
     canSaveCharacter?: boolean;
     onSaveCharacter?: (character: CharacterParams, name: string) => Promise<void>;
     notify?: (message: string, type?: 'success' | 'error') => void;
+    sample?: PromptTidyOptions['sample'];
 }
 
 export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
@@ -75,6 +77,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     canSaveCharacter = false,
     onSaveCharacter,
     notify,
+    sample,
 }) => {
   useLanguage();
     const legacyNegatives = (params as NAIParams & { _characterSectionsNegatives?: Record<string, unknown> })._characterSectionsNegatives;
@@ -253,6 +256,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                         clearActionSlotRef={positiveSlotRef}
                                         libraryField={{ roleId: char.id }}
                                         promptLibraryActions="save"
+                                        promptTidy={notify ? { notify, sample } : undefined}
                                         reverseTag={{ onReverse: () => openTagger(char.id) }}
                                         tagAssistEnabled={tagAssistEnabled}
                                         disabled={!canEdit}

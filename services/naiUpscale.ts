@@ -80,12 +80,16 @@ export const downloadUpscaledImage = async (
   target: ReturnType<typeof beginExportTarget> = beginExportTarget(),
 ): Promise<ExportReceipt> => saveExportBlob(result.blob, result.filename, target);
 
-/** 供确认弹窗使用：按源图面积给出实测公式算出的点数，实际扣费以官方为准。 */
+/** 供确认弹窗与悬停提示使用：按源图面积给出实测 Anlas 点数。 */
 export const upscaleCostHint = (width?: number, height?: number) => {
-  if (!width || !height) return '官方按源图面积扣费：108 万像素以内 1 点，之后每多约 70 万像素加 1 点，最多 4 点。';
-  if (!upscaleSupported(width, height)) return `源图 ${width}×${height} 超过官方上限 ${UPSCALE_MAX_AREA} 像素，无法放大。`;
-  return `预计 ${upscaleCost(width, height)} 点（源图 ${width}×${height}，官方按面积分档）。`;
+  if (!width || !height) return '预计消耗 1～4 Anlas';
+  if (!upscaleSupported(width, height)) return `源图 ${width}×${height} 超过官方上限 ${UPSCALE_MAX_AREA} 像素，无法放大`;
+  return `预计消耗 ${upscaleCost(width, height)} Anlas（源图 ${width}×${height}）`;
 };
+
+/** 官方放大确认框共用正文。 */
+export const upscaleConfirmMessage = (width?: number, height?: number) =>
+  `放大至 ${NAI_UPSCALE_FACTOR}×，完成后自动保存。${upscaleCostHint(width, height)}。`;
 
 export const upscaleCacheKey = (historyId: string) => `nai-upscale:${historyId}`;
 

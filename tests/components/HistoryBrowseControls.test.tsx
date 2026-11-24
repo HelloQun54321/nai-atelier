@@ -53,7 +53,7 @@ describe('历史筛选弹层', () => {
     openFilters();
     const dialog = within(screen.getByRole('dialog', { name: '筛选' }));
     expect(dialog.getByLabelText('开始日期')).toBeTruthy();
-    expect(dialog.getByRole('checkbox', { name: '只看收藏' })).toBeTruthy();
+    expect(dialog.getByRole('button', { name: '只看收藏' }).getAttribute('aria-pressed')).toBe('false');
     expect(dialog.getByRole('combobox', { name: '历史模型' })).toBeTruthy();
     expect(dialog.getByRole('combobox', { name: '历史生成方式' })).toBeTruthy();
     expect(dialog.getByRole('combobox', { name: '历史来源' })).toBeTruthy();
@@ -87,7 +87,9 @@ describe('历史筛选弹层', () => {
     const { onApply } = setup({ sort: 'favorite', model: 'model-a', from: 123, favoriteOnly: true });
     openFilters();
     expect((screen.getByRole('combobox', { name: '历史排序' }) as HTMLSelectElement).value).toBe('favorite');
-    fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' }));
+    const favButton = screen.getByRole('button', { name: '只看收藏' });
+    expect(favButton.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(favButton);
     expect(onApply).toHaveBeenLastCalledWith(expect.objectContaining({ favoriteOnly: false, sort: 'newest', model: 'model-a', from: 123 }));
   });
 

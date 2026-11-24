@@ -335,7 +335,7 @@ export function PromptLibrarySaveDialog({ text, field = {}, onClose, initialPara
   const [name, setName] = useState('');
   const [tags, setTags] = useState('');
   const [purposes, setPurposes] = useState<PromptPurposeId[]>(field.purposeId ? [field.purposeId] : []);
-  const [category, setCategory] = useState<string>(field.negative ? '' : field.kind || field.directoryId || field.purposeId ? library?.directories ? 'general' : field.kind || 'general' : '');
+  const [category, setCategory] = useState<string>(field.negative ? '' : library?.directories ? 'general' : field.kind || 'general');
   const [roleId, setRoleId] = useState(field.roleId || '');
   const [directoryIds, setDirectoryIds] = useState<string[]>(field.directoryId ? [field.directoryId] : []);
   const [busy, setBusy] = useState(false);
@@ -356,7 +356,7 @@ export function PromptLibrarySaveDialog({ text, field = {}, onClose, initialPara
     finally { pending.current = false; setBusy(false); }
   };
   if (!params && !field.negative && library?.reloadDirectories && !library.directories && !library.directoriesError) return <LibraryDialog title="收录到提示词库" onClose={onClose}><DirectoryStatus /></LibraryDialog>;
-  if (!params && !field.negative) return <ImagePreviewPortal><div className="fixed inset-0 z-[2000]"><PromptCaptureDialog open initialText={text} initialPurposes={purposes} initialCategory={field.kind || (field.directoryId || field.purposeId ? 'general' : '')} directories={library?.directories} directoriesError={library?.directoriesError} reloadDirectories={library?.reloadDirectories} initialDirectoryIds={field.directoryId ? [field.directoryId] : undefined} onClose={onClose}
+  if (!params && !field.negative) return <ImagePreviewPortal><div className="fixed inset-0 z-[2000]"><PromptCaptureDialog open initialText={text} initialPurposes={purposes} initialCategory={field.kind || 'general'} directories={library?.directories} directoriesError={library?.directoriesError} reloadDirectories={library?.reloadDirectories} initialDirectoryIds={field.directoryId ? [field.directoryId] : undefined} onClose={onClose}
     onSave={async (text, name, category, tags, ids, purposes) => {
       if (!library) throw new Error('提示词库尚未就绪');
       await library.save({ ...prepareCollectedPrompt(text, name, category), tags, params: { ...prepareCollectedPrompt(text, name, category).params, _promptLibraryPurposes: purposes || [], ...(ids ? { _promptLibraryDirectoryIds: ids } : {}) } as NAIParams });

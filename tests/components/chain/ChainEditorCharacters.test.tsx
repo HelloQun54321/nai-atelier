@@ -13,7 +13,7 @@ const initial: NAIParams = { width: 832, height: 1216, steps: 28, scale: 5, samp
   { id: 'b', prompt: 'red hair', negativePrompt: 'blue hair', x: 0.7, y: 0.3 },
 ] };
 const mark = vi.fn();
-type LibraryProps = Pick<ChainEditorCharactersProps, 'allChains' | 'chainsLoading' | 'chainsError' | 'onRetryChains' | 'showCharacterReference' | 'canSaveCharacter' | 'onSaveCharacter'>;
+type LibraryProps = Pick<ChainEditorCharactersProps, 'allChains' | 'chainsLoading' | 'chainsError' | 'onRetryChains' | 'showCharacterReference' | 'canSaveCharacter' | 'onSaveCharacter' | 'notify'>;
 const Harness = ({ freeform = false, canEdit = true, model, initialParams = initial, onContentRollForRole, library = {}, tagAssistEnabled = false }: { freeform?: boolean; canEdit?: boolean; model?: string; initialParams?: NAIParams; onContentRollForRole?: (index: number) => void; library?: LibraryProps; tagAssistEnabled?: boolean }) => {
   const [params, setParams] = useState(initialParams);
   return <PromptLibraryContext.Provider value={{ chains: library.allChains ?? [], chainsLoading: library.chainsLoading, chainsError: library.chainsError, onRetryChains: library.onRetryChains, save: vi.fn() }}>
@@ -254,6 +254,12 @@ describe('共用角色编辑器', () => {
     expect(negative.value).toBe('red hair');
   });
 
+  it('角色正面提示词在提供 notify 时显示整理与校对 Tag 工具', () => {
+    render(<Harness library={{ notify: vi.fn() }} />);
+    const positiveHeader = screen.getByText('角色提示词').parentElement as HTMLElement;
+    expect(within(positiveHeader).getByRole('button', { name: '校对 Tag' })).toBeTruthy();
+    expect(within(positiveHeader).getByRole('button', { name: '整理提示词' })).toBeTruthy();
+  });
   it('定位区数字框清空／越界归一化，模型切换不改存量草稿', () => {
     const { rerender } = render(<Harness />);
     expect(screen.getByRole('button', { name: '自动构图' }).getAttribute('aria-pressed')).toBe('true');

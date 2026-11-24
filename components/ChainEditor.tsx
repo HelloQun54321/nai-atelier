@@ -2418,6 +2418,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                             canSaveCharacter
                             onSaveCharacter={saveCharacterToLibrary}
                             notify={notify}
+                            sample={promptSample}
                             markPresetSectionModified={markPresetSectionModified}
                             markChange={markChange}
                             onContentRollForRole={onContentRollForRole}

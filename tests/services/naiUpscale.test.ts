@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { NAI_UPSCALE_FACTOR, downloadUpscaledImage, upscaleCost, upscaleCostHint, upscaleHistoryImage, upscaleSupported } from '../../services/naiUpscale';
+import { NAI_UPSCALE_FACTOR, downloadUpscaledImage, upscaleConfirmMessage, upscaleCost, upscaleCostHint, upscaleHistoryImage, upscaleSupported } from '../../services/naiUpscale';
 import { saveExportBlob } from '../../services/exportLocation';
 
 vi.mock('../../services/exportLocation', () => ({
@@ -48,6 +48,7 @@ it('超过官方 3,145,728 像素上限时提前拒绝', () => {
   // 缺少尺寸时不阻止调用，交由官方判定。
   expect(upscaleSupported(undefined, undefined)).toBe(true);
   expect(upscaleCostHint(2048, 1537)).toContain('超过官方上限');
+  expect(upscaleConfirmMessage(832, 1216)).toContain('1 Anlas');
 });
 
 it('放大结果走项目统一的导出通道，不用浏览器默认下载', async () => {

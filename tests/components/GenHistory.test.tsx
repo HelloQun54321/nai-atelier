@@ -601,7 +601,7 @@ describe('历史连续浏览会话', () => {
     it('收藏中取消当前收藏继续下一张，但仍收藏的图片移动会保护跳过', async () => {
         const data = browseFixture(3, true); const { container } = await setup(1280, 3);
         fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-        fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' }));
+        fireEvent.click(screen.getByRole('button', { name: '只看收藏' }));
         fireEvent.keyDown(window, { key: 'Escape' });
         await waitFor(() => expect(localHistory.getBrowseOrder).toHaveBeenLastCalledWith(expect.objectContaining({ favoriteOnly: true })));
         await waitFor(() => expect(cardById(container, data[0].id)).toBeTruthy());

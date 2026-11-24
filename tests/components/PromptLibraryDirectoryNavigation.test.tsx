@@ -53,20 +53,20 @@ it('目录导航沿用文件夹布局，父目录含后代计数去重，全部�
   expect(header?.parentElement).toBe(aside);
   expect(viewport.contains(header)).toBe(false);
   expect(describedCount(screen.getByRole('button', { name: '全部' }))).toBe('6');
-  expect(describedCount(screen.getByRole('button', { name: '未归类' }))).toBe('2');
+  expect(describedCount(screen.getByRole('button', { name: '未归类' }))).toBe('3');
   expect(describedCount(screen.getByRole('button', { name: '人物' }))).toBe('2');
   expect(describedCount(screen.getByRole('button', { name: '人物 / 服装' }))).toBe('1');
   expect(describedCount(screen.getByRole('button', { name: '场景' }))).toBe('0');
 });
 
-it('全部统计真实原文和组合，混入风格串与角色资产不进入提示词库计数', () => {
+it('全部统计真实原文和组合，原文归入未归类，混入风格串与角色资产不进入提示词库计数', () => {
   expect(librarySectionOf(original)).toBe('originals');
   expect(librarySectionOf(combination)).toBe('saved');
   const assets = [{ id: 'style', type: 'style', params: {} }, { id: 'character', type: 'character', params: {} }] as PromptChain[];
   render(<PromptLibraryDirectoryNavigation {...props()} entries={[...entries, ...assets]} />);
   expect(screen.getByText('提示词目录')).toBeTruthy();
   expect(describedCount(screen.getByRole('button', { name: '全部' }))).toBe('6');
-  expect(describedCount(screen.getByRole('button', { name: '未归类' }))).toBe('2');
+  expect(describedCount(screen.getByRole('button', { name: '未归类' }))).toBe('3');
   expect(describedCount(screen.getByRole('button', { name: '人物' }))).toBe('2');
   expect(openDirectoryPicker('选择提示词目录').getByRole('option', { name: '全部 (6)' })).toBeTruthy();
 });

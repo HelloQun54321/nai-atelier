@@ -35,8 +35,10 @@ export function PromptLibraryDirectoryNavigation({ id, state, entries, selectedI
   const counts = useMemo(() => {
     const values = new Map<string, Set<string>>([['*', new Set()], ['', new Set()], ...state.nodes.map(node => [node.id, new Set<string>()] as [string, Set<string>])]);
     for (const entry of entries) {
-      if (!librarySectionOf(entry)) continue;
+      const section = librarySectionOf(entry);
+      if (!section) continue;
       values.get('*')!.add(entry.id);
+      if (section === 'originals') { values.get('')!.add(entry.id); continue; }
       if (!isPromptLibraryFragmentEntry(entry)) continue;
       const directoryIds = getPromptLibraryEntryDirectoryIds(entry, state);
       if (!directoryIds.length) values.get('')!.add(entry.id);

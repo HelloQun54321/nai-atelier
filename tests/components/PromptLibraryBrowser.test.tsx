@@ -59,14 +59,14 @@ it('已选详情遇到主动搜索从顶部显示，旧作品锚点不抢回位�
   expect(screen.getByRole('complementary', { name: '礼服' })).toBeTruthy();
 });
 
-it('默认片段，只保留片段组合两项，切范围保留查询并正确取用', () => {
+it('默认片段，只保留片段组合两项，旧原文在片段页可见，切范围保留查询并正确取用', () => {
   const combo = { id: 'combo', ...createCombinationData('夜间组合', { scene: { kind: 'scene', filled: true, text: 'night sky' } }) } as PromptChain;
   render(<Harness chains={[...entries, combo]} />);
   const scope = screen.getByRole('combobox', { name: '提示词库范围' }) as HTMLSelectElement;
   expect(scope.value).toBe('items'); expect(Array.from(scope.options).map(option => option.value)).toEqual(['items', 'saved']);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'night' } });
-  expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(1);
-  expect(document.querySelector('[data-prompt-library-entry="raw"]')).toBeNull();
+  expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(2);
+  expect(document.querySelector('[data-prompt-library-entry="raw"]')).not.toBeNull();
   fireEvent.change(scope, { target: { value: 'saved' } });
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('night');
   fireEvent.click(screen.getByRole('button', { name: '查看夜间组合' }));
@@ -655,19 +655,23 @@ it('目录全部仅统计和展示片段，排除组合原文与风格串角色'
   render(<Harness chains={[...entries, combo, style, character]} />);
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   const nav = screen.getByRole('complementary', { name: '提示词目录导航' });
-  expect(within(nav).getByRole('button', { name: '全部' }).textContent).toBe('全部1');
+  expect(within(nav).getByRole('button', { name: '全部' }).textContent).toBe('全部2');
+  expect(within(nav).getByRole('button', { name: '未归类' }).textContent).toBe('未归类1');
   fireEvent.click(within(nav).getByRole('button', { name: '人物 / 服饰与配件' }));
+  expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(1);
+  fireEvent.click(within(nav).getByRole('button', { name: '未归类' }));
+  expect(document.querySelector('[data-prompt-library-entry="raw"]')).not.toBeNull();
   fireEvent.click(within(nav).getByRole('button', { name: '全部' }));
   expect((screen.getByRole('combobox', { name: '提示词库范围' }) as HTMLSelectElement).value).toBe('items');
-  expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(1);
+  expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(2);
 });
 
-it.each(['all', 'originals'])('旧范围%s只读回落片段，保留原文资料与旧本端偏好', scope => {
+it.each(['all', 'originals'])('旧范围%s只读回落片段，旧原文条目可见且不改原资料与旧本端偏好', scope => {
   const memory = JSON.stringify({ scope, sort: 'name' }), before = JSON.stringify(entries);
   localStorage.setItem('nai-prompt-library-browse', memory);
   render(<Harness />);
   expect((screen.getByRole('combobox', { name: '提示词库范围' }) as HTMLSelectElement).value).toBe('items');
-  expect(document.querySelector('[data-prompt-library-entry="raw"]')).toBeNull();
+  expect(document.querySelector('[data-prompt-library-entry="raw"]')).not.toBeNull();
   expect(localStorage.getItem('nai-prompt-library-browse')).toBe(memory); expect(JSON.stringify(entries)).toBe(before);
 });
 

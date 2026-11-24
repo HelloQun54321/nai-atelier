@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useRef, useState } from 'react';
-import { Filter, Shuffle } from 'lucide-react';
+import { Filter, Heart, Shuffle } from 'lucide-react';
 import { HISTORY_SORT_LABELS, type HistoryBrowseOrder, type HistoryBrowseQuery, type HistorySort } from '../services/historyBrowse';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
 import { createUuid } from '../services/id';
@@ -81,6 +81,17 @@ export const HistoryBrowseControls: React.FC<Props> = ({ query, options, mobile,
     + Number(Boolean(query.source));
   const chronologicalSort = query.sort === 'favorite' && !query.favoriteOnly ? 'newest' : query.sort || 'newest';
   const form = <form onSubmit={apply} className="space-y-4">
+    <button
+      type="button"
+      aria-pressed={Boolean(query.favoriteOnly)}
+      onClick={() => {
+        const favoriteOnly = !query.favoriteOnly;
+        onApply({ ...query, favoriteOnly, sort: !favoriteOnly && query.sort === 'favorite' ? 'newest' : query.sort });
+      }}
+      className={`mobile-touch flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${query.favoriteOnly ? 'border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-700/70 dark:bg-rose-950/40 dark:text-rose-300' : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}`}
+    >
+      <Heart className={`h-3.5 w-3.5 ${query.favoriteOnly ? 'fill-current' : ''}`} />{t("只看收藏")}
+    </button>
     <fieldset className="space-y-2">
       <legend className="text-xs font-semibold">{t("时间范围 · {0}", [getDateLabel(query)])}</legend>
       <div className="flex gap-2">
@@ -93,12 +104,6 @@ export const HistoryBrowseControls: React.FC<Props> = ({ query, options, mobile,
         <label className="text-xs font-semibold">{t("结束日期")}<input type="date" aria-label={t("结束日期")} className={TOOLBAR_FIELD_CLASS} value={dates.to} onChange={event => setDates(value => ({ ...value, to: event.target.value }))} /></label>
       </div>
     </fieldset>
-    <label className="flex items-center gap-2 text-sm font-semibold">
-      <input type="checkbox" checked={Boolean(query.favoriteOnly)} onChange={event => {
-        const favoriteOnly = event.target.checked;
-        onApply({ ...query, favoriteOnly, sort: !favoriteOnly && query.sort === 'favorite' ? 'newest' : query.sort });
-      }} />{t("只看收藏")}
-    </label>
     <div className="grid grid-cols-2 gap-3">
       <label className="text-xs font-semibold">{t("模型")}<select aria-label={t("历史模型")} className={TOOLBAR_FIELD_CLASS} value={draft.model} onChange={event => setDraft(value => ({ ...value, model: event.target.value }))}><option value="">{t("全部模型")}</option>{options.models.map(model => <option key={model} value={model}>{getNaiModelDisplayLabel(model)}</option>)}</select></label>
       <label className="text-xs font-semibold">{t("生成方式")}<select aria-label={t("历史生成方式")} className={TOOLBAR_FIELD_CLASS} value={draft.operation} onChange={event => setDraft(value => ({ ...value, operation: event.target.value }))}>{[['', '全部方式'], ['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']].map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label>

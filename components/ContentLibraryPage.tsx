@@ -138,7 +138,7 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
       {saved && pane('saved', () => saved(section === 'saved' ? toolbarSlot : null))}</>}
     </div>
     {rollMounted && <ImagePreviewPortal><RollDialog title={rollLabel} open={active && rollOpen} onClose={() => onRollOpenChange(false)}>{roll}</RollDialog></ImagePreviewPortal>}
-    {onCapture && <ImagePreviewPortal><PromptCaptureDialog directories={directories} open={active && captureOpen} onClose={() => setCaptureOpen(false)} onSave={onCapture} onSaved={id => { setCaptured({ id }); onCaptureSaved?.(id); }} /></ImagePreviewPortal>}
+    {onCapture && <ImagePreviewPortal><PromptCaptureDialog directories={directories} initialCategory="general" open={active && captureOpen} onClose={() => setCaptureOpen(false)} onSave={onCapture} onSaved={id => { setCaptured({ id }); onCaptureSaved?.(id); }} /></ImagePreviewPortal>}
     {onExtractSave && <ImagePreviewPortal><PromptExtractDialog directories={directories} open={active && extractOpen} onClose={() => setExtractOpen(false)} notify={notify ?? (() => {})} onSave={onExtractSave} /></ImagePreviewPortal>}
     {onCapture && reverseOpen && <ImagePreviewPortal><ImageTaggerPanel
       contextual

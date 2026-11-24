@@ -3,7 +3,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { ArrowLeft, Check, Image, ImageMinus, ImagePlus, ListX, LoaderCircle, Maximize2, Palette } from 'lucide-react';
 import { IMAGE_CARD_ACTION_CLASS, IMAGE_CARD_ACTION_TONE, ImageShareActions } from './ImageShareActions';
 import { useConfirmDialog } from './ConfirmDialog';
-import { NAI_UPSCALE_FACTOR, downloadUpscaledImage, upscaleCostHint, upscaleHistoryImage, upscaleSupported } from '../services/naiUpscale';
+import { NAI_UPSCALE_FACTOR, downloadUpscaledImage, upscaleConfirmMessage, upscaleCostHint, upscaleHistoryImage, upscaleSupported } from '../services/naiUpscale';
 import { beginExportTarget } from '../services/exportLocation';
 import type { CollectionTarget } from '../services/collectionFavorites';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
@@ -67,7 +67,7 @@ export const ImagePreviewActions: React.FC<Props> = ({
     const target = beginExportTarget();
     if (!await confirmAction({
       title: `用官方放大器把这张图放大 ${NAI_UPSCALE_FACTOR} 倍？`,
-      message: `放大结果是原图的 ${NAI_UPSCALE_FACTOR} 倍边长（像素面积 4 倍），不覆盖原图、不写入历史，完成后按导出设置保存。${upscaleCostHint(generationData?.params?.width, generationData?.params?.height)}`,
+      message: upscaleConfirmMessage(generationData?.params?.width, generationData?.params?.height),
       confirmLabel: '放大并保存',
     })) return;
     setUpscaling(true);

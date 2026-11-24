@@ -148,20 +148,23 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   }, [chains, characterProjections]);
   const favorites = usePromptLibraryFavorites(chains);
   const favoritesSelected = memory.scope === 'saved' ? memory.combinationFavorites : memory.favorites;
-  const libraryChains = useMemo(() => entries.filter(entry => entry.section === 'items').map(entry => entry.chain), [entries]);
+  const isFragmentScope = (entry: { section: string }) => entry.section === 'items' || entry.section === 'originals';
+  const libraryChains = useMemo(() => entries.filter(isFragmentScope).map(entry => entry.chain), [entries]);
   const combinationChains = useMemo(() => entries.filter(entry => entry.section === 'saved').map(entry => entry.chain), [entries]);
   const customCharacters = useMemo(() => listPromptLibraryCustomCharacters(chains), [chains]);
   const categoryTree = useMemo(() => projectPromptLibraryCategoryTree(combinationChains, categoryNames, suppliedCategoryTree || emptyPromptLibraryCategoryTree(), customCharacters), [combinationChains, categoryNames, suppliedCategoryTree, customCharacters]);
   const selectedCategoryIds = useMemo(() => memory.combinationCategory === null ? null : getDirectoryDescendantIds(categoryTree.nodes, memory.combinationCategory), [categoryTree, memory.combinationCategory]);
   const folderIds = useMemo(() => new Set(categoryTree.nodes.map(node => node.id)), [categoryTree]);
   const categoryLabel = (name: string) => promptLibraryCategoryLabel(categoryTree, name);
-  const scopeTotal = useMemo(() => entries.filter(entry => entry.section === memory.scope).length, [entries, memory.scope]);
+  const scopeTotal = useMemo(() => entries.filter(entry => memory.scope === 'items' ? isFragmentScope(entry) : entry.section === memory.scope).length, [entries, memory.scope]);
   const directoryEntries = useMemo(() => memory.scope !== 'items' ? entries : (() => {
     const fragments = entries.filter(entry => isPromptLibraryFragmentEntry(entry.chain));
     const included = new Set((memory.allDirectories ? fragments.map(entry => entry.chain) : selectPromptLibraryDirectoryEntries(fragments.map(entry => entry.chain), directories, memory.directoryIds)).map(chain => chain.id));
     return entries.filter(entry => {
-      if (entry.section !== 'items') return true;
-      const inDirectory = included.has(entry.chain.id) || (memory.unclassified && !getPromptLibraryEntryDirectoryIds(entry.chain, directories).length);
+      if (!isFragmentScope(entry)) return false;
+      const inDirectory = entry.section === 'originals'
+        ? (memory.allDirectories || memory.unclassified)
+        : (included.has(entry.chain.id) || (memory.unclassified && !getPromptLibraryEntryDirectoryIds(entry.chain, directories).length));
       return inDirectory && (!memory.favorites || !!favorites.ids?.has(entry.chain.id));
     });
   })(), [entries, memory.scope, memory.allDirectories, memory.directoryIds, memory.unclassified, memory.favorites, favorites.ids, directories]);
@@ -172,7 +175,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     if (!memory.combinationUnclassified) return true;
     return !tags.some(tag => folderIds.has(tag));
   }), [directoryEntries, memory.scope, memory.combinationCategory, memory.combinationUnclassified, memory.combinationFavorites, favorites.ids, selectedCategoryIds, folderIds]);
-  const shown = useMemo(() => filterPromptBrowseEntries(folderEntries, { ...memory, kind: '', query, tags: memory.scope === 'saved' ? tags : [], purposes: memory.scope === 'items' ? tags : [] }), [folderEntries, memory, query, tags]);
+  const shown = useMemo(() => filterPromptBrowseEntries(folderEntries, { ...memory, scope: memory.scope === 'items' ? 'all' : 'saved', kind: '', query, tags: memory.scope === 'saved' ? tags : [], purposes: memory.scope === 'items' ? tags : [] }), [folderEntries, memory, query, tags]);
   const combinationTags = useMemo(() => categoryTree.nodes.map(node => node.name), [categoryTree]);
   const selected = entries.find(entry => entry.chain.id === selectedId);
   const selectedRead = selected?.section === 'saved' ? contentRead((selected.chain.params as unknown as Record<string, unknown>)?._rollContentSnapshot) : null;
@@ -313,7 +316,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
         return <PromptLibraryCard chain={chain} label={promptLibraryEntryLabel(chain, directories)} selected={selectedId === chain.id}
           dimmed={selectionFocusEnabled && !!selectedId && selectedId !== chain.id} busy={deletingId === chain.id} deleteDisabled={!!deletingId}
           title={<PromptBrowseHighlight text={name} query={query} />} summary={<PromptBrowseHighlight text={summary || t('还没有提示词')} query={query} />}
-          tagContent={(entry.section === 'items' ? getEntryPurposes(chain).map(id => t(promptPurposeLabel(id))) : getCustomChainTags(chain.tags)).slice(0, 3).map(tag => <span key={tag} className="gallery-card-badge max-w-24 truncate rounded bg-gray-100 px-1.5 py-0.5 text-micro text-gray-500 dark:bg-gray-800 dark:text-gray-400"><PromptBrowseHighlight text={tag} query={query} /></span>)}
+          tagContent={(entry.section !== 'saved' ? getEntryPurposes(chain).map(id => t(promptPurposeLabel(id))) : getCustomChainTags(chain.tags)).slice(0, 3).map(tag => <span key={tag} className="gallery-card-badge max-w-24 truncate rounded bg-gray-100 px-1.5 py-0.5 text-micro text-gray-500 dark:bg-gray-800 dark:text-gray-400"><PromptBrowseHighlight text={tag} query={query} /></span>)}
           onOpen={() => void selectEntry(chain)}
           onDelete={onDelete ? () => void remove(chain) : undefined}
           onClearCover={onClearCover && chain.previewImage ? () => onClearCover(chain) : undefined} notify={notify}

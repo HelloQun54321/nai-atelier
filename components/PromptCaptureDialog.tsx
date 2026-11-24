@@ -88,7 +88,7 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
     setText(''); setName('');
     // 保存并继续：保留目录分类与自由标签，清空用途 Tag，方便连续收录不同用途。
     if (keepOpen) { setPurposes([]); return true; }
-    setCategory(''); setTags(''); setPurposes([]); onClose();
+    setCategory(initialCategory); setTags(''); setPurposes([]); onClose();
     return true;
   };
   if (!open) return null;
