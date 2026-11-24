@@ -103,6 +103,10 @@ export interface ComicPanel {
   borderColor: string;
   borderWidth: number;
   backgroundColor: string;
+  /** 出血格标记（用于模板转 AI 引导格与导出提示）。 */
+  bleed?: boolean;
+  /** 画中画叠框标记（叠在常规格上层，AI 硬锁时自动描白外边 + 黑内框）。 */
+  inset?: boolean;
   prompt: string;
   negativePrompt: string;
   anchors: ComicAnchor[];
@@ -284,6 +288,8 @@ export interface ComicAiGuidePanel {
   bleed?: boolean;
   /** 画中画叠框：叠在普通格上层，先描 14px 白外边再描 5px 黑内框。 */
   inset?: boolean;
+  /** 无框区域：手动与 AI 锁框底图均不描黑边框，仅留格缝与构图区。 */
+  borderless?: boolean;
   /** 格内预埋半透明放射速度线（#5c606b, opacity 0.55）。 */
   speedlines?: boolean;
   /** 可选格内自定义氛围底色；缺省使用中性灰 #b6b9c0（黑底回忆杀用 #6d7380）。 */

@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.235.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.236.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -354,6 +354,7 @@ flowchart TD
 - 感谢 [@sdnwls](https://github.com/sdnwls) 的 [nai-style-lab](https://github.com/sdnwls/nai-style-lab)：Roll 串的随机抽卡与画风探索体验受该项目启发并结合工坊独立实现；
 - 感谢 [@yexi-by](https://github.com/yexi-by) 的 [dsh-unrestricted](https://github.com/yexi-by/dsh-unrestricted)：创作助手「破限模式」的交付契约设计参考了该项目；
 - 感谢 [@clanso](https://github.com/clanso) 在 [#21](https://github.com/HelloQun54321/nai-atelier/pull/21) 中贡献的画师统计解析与收藏状态修复；
+- 感谢 [@jonigata](https://github.com/jonigata) 的 [FramePlanner2](https://github.com/jonigata/FramePlanner2)（MIT）、[@YILING0013](https://github.com/YILING0013) 的 [novelai_local_web](https://github.com/YILING0013/novelai_local_web)（AGPL-3.0）与 [@new-sankaku](https://github.com/new-sankaku) 的 [manga-editor-desu](https://github.com/new-sankaku/manga-editor-desu)（GPL-3.0）：漫画模式的日漫气泡引擎与 45 款竖版分镜预设模板参考或适配自上述项目；
 - 本地反推模型基于 [SmilingWolf WD ViT Tagger V3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3)（Apache-2.0）。
 
 ---

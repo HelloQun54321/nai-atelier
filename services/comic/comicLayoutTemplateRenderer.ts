@@ -459,17 +459,19 @@ export const renderComicZoneLayoutTemplate = (
       ctx.restore();
     }
 
-    // 边框描边
-    tracePolygon(ctx, pxPts);
-    ctx.lineJoin = 'miter';
-    if (isInset) {
-      ctx.lineWidth = LAYOUT_LOCK_DEFAULTS.insetInnerBorderWidth;
-      ctx.strokeStyle = LAYOUT_LOCK_COLORS.insetInnerBorderColor;
-    } else {
-      ctx.lineWidth = panelBorderWidth;
-      ctx.strokeStyle = panelBorderColor;
+    // 边框描边（无框引导区不描黑边框，仅保留填充区与格缝）
+    if (isInset || !gp.borderless) {
+      tracePolygon(ctx, pxPts);
+      ctx.lineJoin = 'miter';
+      if (isInset) {
+        ctx.lineWidth = LAYOUT_LOCK_DEFAULTS.insetInnerBorderWidth;
+        ctx.strokeStyle = LAYOUT_LOCK_COLORS.insetInnerBorderColor;
+      } else {
+        ctx.lineWidth = panelBorderWidth;
+        ctx.strokeStyle = panelBorderColor;
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
     ctx.restore();
     return true;
   };

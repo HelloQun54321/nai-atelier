@@ -1368,9 +1368,9 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                           points={pointsAttr}
                                           fill={baseFill}
                                           stroke={strokeColor}
-                                          strokeOpacity={isSliceHit ? 0.95 : (hasGenerated ? 0.72 : 0.78)}
-                                          strokeWidth={isSliceHit ? 4 : (aiPage.layoutLockMode !== 'txt2img' ? 4 : 2.5)}
-                                          strokeDasharray={aiPage.layoutLockMode !== 'txt2img' && !hasGenerated ? undefined : '10 6'}
+                                          strokeOpacity={isSliceHit ? 0.95 : (hasGenerated ? 0.72 : (gp.borderless ? 0.55 : 0.78))}
+                                          strokeWidth={isSliceHit ? 4 : (aiPage.layoutLockMode !== 'txt2img' && !gp.borderless ? 4 : 2.5)}
+                                          strokeDasharray={!isSliceHit && gp.borderless ? '8 6' : (aiPage.layoutLockMode !== 'txt2img' && !hasGenerated ? undefined : '10 6')}
                                         />
                                         {gp.speedlines && !hasGenerated && (
                                           <g opacity={0.35} stroke="#475569" strokeWidth={1.4}>
@@ -1422,6 +1422,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                               {gp.label}
                                               {gp.bleed ? ` · ${t('出血')}` : ''}
                                               {gp.inset ? ` · ${t('叠框')}` : ''}
+                                              {gp.borderless ? ` · ${t('无框')}` : ''}
                                               {gp.speedlines ? ` · ${t('速度线')}` : ''}
                                             </text>
                                             {gp.summary && (
@@ -1667,14 +1668,19 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                 </text>
                               </g>
                             )}
-                            <polygon
-                              points={panel.points.map(p => `${p.x * pageW},${p.y * pageH}`).join(' ')}
-                              fill={isSliceTarget ? 'rgba(239,68,68,0.08)' : 'none'}
-                              stroke={isSliceTarget ? '#ef4444' : isSelected ? '#4f46e5' : (panel.borderColor || '#111827')}
-                              strokeWidth={isSliceTarget || isSelected ? Math.max(panel.borderWidth, 4) : panel.borderWidth}
-                              strokeDasharray={isSliceTarget ? '10 6' : undefined}
-                              strokeLinejoin="miter"
-                            />
+                            {(() => {
+                              const isBorderlessUnfilled = panel.borderWidth === 0 && !isSelected && !isSliceTarget && !panel.image?.url;
+                              return (
+                                <polygon
+                                  points={panel.points.map(p => `${p.x * pageW},${p.y * pageH}`).join(' ')}
+                                  fill={isSliceTarget ? 'rgba(239,68,68,0.08)' : 'none'}
+                                  stroke={isSliceTarget ? '#ef4444' : isSelected ? '#4f46e5' : isBorderlessUnfilled ? '#94a3b8' : (panel.borderColor || '#111827')}
+                                  strokeWidth={isSliceTarget || isSelected ? Math.max(panel.borderWidth, 4) : isBorderlessUnfilled ? 1.5 : panel.borderWidth}
+                                  strokeDasharray={isSliceTarget ? '10 6' : isBorderlessUnfilled ? '8 6' : undefined}
+                                  strokeLinejoin="miter"
+                                />
+                              );
+                            })()}
                             {isGeneratingThis && (
                               <g clipPath={`url(#comic-clip-${panel.id})`}>
                                 <rect x={bounds.minX} y={bounds.minY} width={bounds.width} height={bounds.height} fill="rgba(79,70,229,0.12)" />

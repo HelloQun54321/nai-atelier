@@ -18,10 +18,20 @@ import {
 } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import { COMIC_BUBBLE_SHAPES } from '../../services/comic/comicArtwork';
-import { COMIC_LAYOUT_TEMPLATES, COMIC_PAPER_PRESETS } from '../../services/comic/comicGeometry';
+import {
+  COMIC_LAYOUT_TEMPLATES,
+  COMIC_LAYOUT_TEMPLATE_CATEGORIES,
+  COMIC_PAPER_PRESETS,
+  type ComicLayoutTemplateCategory,
+} from '../../services/comic/comicGeometry';
 import type { ComicCustomTemplate } from '../../services/comic/comicCustomTemplates';
 import { COMIC_V5_MODELS } from '../../services/comic/comicPromptBuilder';
 import { ComicBubbleShapeIcon } from './ComicBubbleShapeIcon';
+import {
+  ComicTemplatePreview,
+  getBuiltinTemplatePreviewPanels,
+  toPreviewPanelsFromCustom,
+} from './ComicTemplatePreview';
 import type {
   ComicBubbleShape,
   ComicColorMode,
@@ -140,6 +150,7 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
   const [customW, setCustomW] = useState(String(draft.width));
   const [customH, setCustomH] = useState(String(draft.height));
   const [newTemplateName, setNewTemplateName] = useState('');
+  const [templateCategory, setTemplateCategory] = useState<'all' | ComicLayoutTemplateCategory>('all');
   const pageMenuBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -454,7 +465,7 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
             title={t('页面规格与分镜模板')}
             anchorRef={pageMenuBtnRef}
             onClose={() => setPageMenuOpen(false)}
-            width={360}
+            width={416}
           >
             <div className="space-y-3 p-1 text-xs">
               <div className="space-y-2 rounded-xl border border-gray-200/80 bg-gray-50/70 p-2.5 dark:border-gray-700/80 dark:bg-gray-800/50">
@@ -585,15 +596,40 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
                   </button>
                 </div>
 
-                <div className="max-h-52 space-y-1 overflow-y-auto pr-0.5">
+                {/* 分镜分类切换 */}
+                <div className="mb-2 flex flex-wrap items-center gap-1">
+                  {([
+                    { id: 'all', label: '全部', count: COMIC_LAYOUT_TEMPLATES.length },
+                    ...COMIC_LAYOUT_TEMPLATE_CATEGORIES.map(cat => ({
+                      id: cat.id,
+                      label: cat.label,
+                      count: COMIC_LAYOUT_TEMPLATES.filter(tpl => tpl.category === cat.id).length,
+                    })),
+                  ] as Array<{ id: 'all' | ComicLayoutTemplateCategory; label: string; count: number }>).map(cat => {
+                    const active = templateCategory === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setTemplateCategory(cat.id)}
+                        className={`rounded-md border px-2 py-0.5 text-[11px] font-medium transition ${active ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+                      >
+                        {t(cat.label)} ({cat.count})
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="max-h-72 space-y-2 overflow-y-auto pr-0.5">
                   {customTemplates.length > 0 && (
-                    <div className="mb-1.5 space-y-1">
+                    <div className="space-y-1">
                       <div className="px-1 text-[10px] font-semibold text-indigo-500">{t('我的自定义模板')} ({customTemplates.length})</div>
                       {customTemplates.map(tpl => (
                         <div
                           key={tpl.id}
-                          className="flex items-center gap-1 rounded-lg border border-indigo-200/80 bg-indigo-50/30 px-2 py-1 dark:border-indigo-900/60 dark:bg-indigo-950/20"
+                          className="flex items-center gap-2 rounded-lg border border-indigo-200/80 bg-indigo-50/30 px-2 py-1 dark:border-indigo-900/60 dark:bg-indigo-950/20"
                         >
+                          <ComicTemplatePreview panels={toPreviewPanelsFromCustom(tpl.panels)} className="h-9 w-auto" />
                           <button
                             type="button"
                             onClick={() => { onApplyCustomTemplate(tpl.id); setPageMenuOpen(false); }}
@@ -614,17 +650,23 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
                       ))}
                     </div>
                   )}
-                  {COMIC_LAYOUT_TEMPLATES.map(tpl => (
-                    <button
-                      key={tpl.id}
-                      type="button"
-                      onClick={() => { onApplyTemplate(tpl.id); setPageMenuOpen(false); }}
-                      className="flex w-full flex-col rounded-lg border border-gray-200/80 bg-white px-2.5 py-1.5 text-left transition hover:border-indigo-400 hover:bg-indigo-50/50 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/30"
-                    >
-                      <span className="font-semibold text-gray-800 dark:text-gray-100">{t(tpl.label)}</span>
-                      <span className="text-[11px] text-gray-500 dark:text-gray-400">{t(tpl.description)}</span>
-                    </button>
-                  ))}
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {COMIC_LAYOUT_TEMPLATES
+                      .filter(tpl => templateCategory === 'all' || tpl.category === templateCategory)
+                      .map(tpl => (
+                        <button
+                          key={tpl.id}
+                          type="button"
+                          title={t(tpl.description)}
+                          onClick={() => { onApplyTemplate(tpl.id); setPageMenuOpen(false); }}
+                          className="flex flex-col items-center gap-1 rounded-lg border border-gray-200/80 bg-white p-1.5 text-center transition hover:border-indigo-400 hover:bg-indigo-50/50 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/30"
+                        >
+                          <ComicTemplatePreview panels={getBuiltinTemplatePreviewPanels(tpl)} className="h-14 w-auto" />
+                          <span className="w-full truncate text-[11px] font-semibold text-gray-800 dark:text-gray-100">{t(tpl.label)}</span>
+                          <span className="text-[10px] text-gray-500 dark:text-gray-400">{t('{0} 格', [tpl.panelCount])}</span>
+                        </button>
+                      ))}
+                  </div>
                 </div>
               </div>
             </div>

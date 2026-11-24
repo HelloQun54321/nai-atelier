@@ -2,10 +2,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { OPUS_FREE_PIXEL_LIMIT } from '../../services/aspectRatio';
 import {
+  COMIC_LAYOUT_TEMPLATES,
+  COMIC_LAYOUT_TEMPLATE_CATEGORIES,
   createGuidePanelsFromTemplate,
   createInitialComicDraft,
   getPanelBoundingBox,
   matchFreeOpusResolution,
+  polygonArea,
   rectToPolygon,
   slicePolygonByLine,
   snapComicPoint,
@@ -924,5 +927,108 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     expect(migrated.aiPage.guidePanels[0].points).toBeUndefined();
     // 即使旧矩形无 points，底图渲染器也能无缝转成 4 点多边形
     expect(getGuidePanelPolygon(migrated.aiPage.guidePanels[0])).toHaveLength(4);
+  });
+
+  it('provides 45 unique categorized vertical layout presets with valid geometry and legacy ID preservation', () => {
+    expect(COMIC_LAYOUT_TEMPLATES).toHaveLength(45);
+    const ids = new Set(COMIC_LAYOUT_TEMPLATES.map(tpl => tpl.id));
+    expect(ids.size).toBe(45);
+
+    const legacyIds = [
+      'classic-4-121',
+      'grid-2x2',
+      'yonkoma-vertical',
+      'dynamic-l-shape',
+      'slanted-action-5',
+      'inset-overlay',
+      'single-splash',
+    ];
+    for (const legacyId of legacyIds) {
+      expect(ids.has(legacyId)).toBe(true);
+    }
+
+    const validCategories = new Set(COMIC_LAYOUT_TEMPLATE_CATEGORIES.map(c => c.id));
+    const gx = 14 / 832;
+    const gy = 14 / 1216;
+    for (const tpl of COMIC_LAYOUT_TEMPLATES) {
+      expect(validCategories.has(tpl.category)).toBe(true);
+      const panels = tpl.buildPanels(gx, gy);
+      expect(panels).toHaveLength(tpl.panelCount);
+      for (const panel of panels) {
+        expect(panel.points.length).toBeGreaterThanOrEqual(3);
+        expect(polygonArea(panel.points)).toBeGreaterThan(0.005);
+        for (const pt of panel.points) {
+          expect(Number.isFinite(pt.x)).toBe(true);
+          expect(Number.isFinite(pt.y)).toBe(true);
+          expect(pt.x).toBeGreaterThanOrEqual(-0.001);
+          expect(pt.x).toBeLessThanOrEqual(1.001);
+          expect(pt.y).toBeGreaterThanOrEqual(-0.001);
+          expect(pt.y).toBeLessThanOrEqual(1.001);
+        }
+      }
+    }
+  });
+
+  it('propagates inset, bleed, and borderless flags to AI guide panels and skips borderless strokes in img2img lock templates', () => {
+    const insetGuides = createGuidePanelsFromTemplate('inset-overlay', 832, 1216, 14);
+    expect(insetGuides).toHaveLength(3);
+    expect(insetGuides[0].inset).toBeUndefined();
+    expect(insetGuides[1].inset).toBe(true);
+    expect(insetGuides[2].inset).toBe(true);
+
+    const bleedGuides = createGuidePanelsFromTemplate('fp-single-bleed', 832, 1216, 14);
+    expect(bleedGuides).toHaveLength(1);
+    expect(bleedGuides[0].bleed).toBe(true);
+    expect(bleedGuides[0].borderless).toBe(true);
+
+    const openHeroGuides = createGuidePanelsFromTemplate('open-hero', 832, 1216, 14);
+    expect(openHeroGuides).toHaveLength(3);
+    expect(openHeroGuides[0].borderless).toBe(true);
+    expect(openHeroGuides[1].borderless).toBeUndefined();
+    expect(openHeroGuides[2].borderless).toBeUndefined();
+
+    const makeMockCanvas = () => {
+      const ops: Array<{ op: string; style?: string; width?: number }> = [];
+      const mockCtx = {
+        fillStyle: '',
+        strokeStyle: '',
+        lineWidth: 0,
+        lineJoin: 'miter',
+        save: () => {},
+        restore: () => {},
+        beginPath: () => {},
+        closePath: () => {},
+        moveTo: () => {},
+        lineTo: () => {},
+        fillRect: () => ops.push({ op: 'fillRect', style: mockCtx.fillStyle }),
+        fill: () => ops.push({ op: 'fill', style: mockCtx.fillStyle }),
+        stroke: () => ops.push({ op: 'stroke', style: mockCtx.strokeStyle, width: mockCtx.lineWidth }),
+      };
+      const canvas = {
+        width: 0,
+        height: 0,
+        getContext: () => mockCtx,
+        toDataURL: () => 'data:image/png;base64,MOCK',
+      } as unknown as HTMLCanvasElement;
+      return { ops, canvas };
+    };
+
+    const borderlessDraft = createInitialComicDraft('classic-4-121');
+    borderlessDraft.creationMode = 'ai-page';
+    borderlessDraft.aiPage.guidePanels = createGuidePanelsFromTemplate('borderless-pair', 832, 1216, 14);
+    const borderlessPlan = planComicAiZones(borderlessDraft);
+    const mock1 = makeMockCanvas();
+    const res1 = renderComicZoneLayoutTemplate(borderlessDraft, borderlessPlan.zones[0], { canvas: mock1.canvas, seed: 11 });
+    expect(res1.panelCount).toBe(2);
+    expect(mock1.ops.filter(o => o.op === 'stroke')).toHaveLength(0);
+
+    const openDraft = createInitialComicDraft('classic-4-121');
+    openDraft.creationMode = 'ai-page';
+    openDraft.aiPage.guidePanels = openHeroGuides;
+    const openPlan = planComicAiZones(openDraft);
+    const mock2 = makeMockCanvas();
+    const res2 = renderComicZoneLayoutTemplate(openDraft, openPlan.zones[0], { canvas: mock2.canvas, seed: 11 });
+    expect(res2.panelCount).toBe(3);
+    expect(mock2.ops.filter(o => o.op === 'stroke')).toHaveLength(2);
   });
 });

@@ -13,6 +13,8 @@ export interface ComicCustomTemplate {
     rotation: number;
     zIndex: number;
     borderWidth: number;
+    bleed?: boolean;
+    inset?: boolean;
   }>;
 }
 
@@ -44,6 +46,8 @@ export const saveCustomComicTemplate = (
       rotation: p.rotation || 0,
       zIndex: p.zIndex || 1,
       borderWidth: p.borderWidth ?? 3,
+      ...(p.bleed ? { bleed: true } : {}),
+      ...(p.inset ? { inset: true } : {}),
     })),
   };
   const updated = [next, ...existing].slice(0, 30);
@@ -79,6 +83,8 @@ export const instantiateCustomTemplatePanels = (template: ComicCustomTemplate): 
     borderColor: '#111827',
     borderWidth: item.borderWidth ?? 3,
     backgroundColor: '#f8fafc',
+    ...(item.bleed ? { bleed: true } : {}),
+    ...(item.inset ? { inset: true } : {}),
     prompt: '',
     negativePrompt: '',
     anchors: [],

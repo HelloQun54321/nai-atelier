@@ -749,11 +749,15 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       ? draft.aiPage.guidePanels.map((gp, idx) => ({
         id: gp.id,
         name: gp.label || `第 ${idx + 1} 格`,
-        points: rectToPolygon(gp.x, gp.y, gp.width, gp.height),
+        points: gp.points && gp.points.length >= 3
+          ? gp.points.map(pt => ({ x: pt.x, y: pt.y }))
+          : rectToPolygon(gp.x, gp.y, gp.width, gp.height),
         rotation: 0,
         borderColor: '#111827',
-        borderWidth: 4,
+        borderWidth: gp.borderless ? 0 : 3,
         backgroundColor: '#f8fafc',
+        ...(gp.bleed ? { bleed: true } : {}),
+        ...(gp.inset ? { inset: true } : {}),
         prompt: '',
         negativePrompt: '',
         anchors: [],
@@ -784,6 +788,10 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
           y: box.minY,
           width: box.width,
           height: box.height,
+          points: p.points.map(pt => ({ x: pt.x, y: pt.y })),
+          ...(p.bleed ? { bleed: true } : {}),
+          ...(p.inset ? { inset: true } : {}),
+          ...(p.borderWidth === 0 ? { borderless: true } : {}),
         };
       });
       applyDraftChange(current => ({

@@ -5,6 +5,14 @@ import {
   RESOLUTION_STEP,
 } from '../aspectRatio';
 import { createUuid } from '../id';
+import {
+  COMIC_LAYOUT_TEMPLATES,
+  COMIC_LAYOUT_TEMPLATE_CATEGORIES,
+  rectToPolygon,
+  type ComicLayoutTemplate,
+  type ComicLayoutTemplateCategory,
+  type ComicLayoutTemplateCategoryMeta,
+} from './comicLayoutTemplates';
 import type {
   ComicAiGuidePanel,
   ComicAiPagePlan,
@@ -15,6 +23,15 @@ import type {
   ComicPoint,
 } from './comicTypes';
 
+export {
+  COMIC_LAYOUT_TEMPLATES,
+  COMIC_LAYOUT_TEMPLATE_CATEGORIES,
+  rectToPolygon,
+  type ComicLayoutTemplate,
+  type ComicLayoutTemplateCategory,
+  type ComicLayoutTemplateCategoryMeta,
+};
+
 export const COMIC_PANEL_SOFT_MAX = 24;
 
 export const COMIC_PAPER_PRESETS: ComicPaperPreset[] = [
@@ -24,170 +41,12 @@ export const COMIC_PAPER_PRESETS: ComicPaperPreset[] = [
   { id: 'square-page', label: '方形画幅', description: '四格/绘本 1:1（1024×1024）', width: 1024, height: 1024 },
 ];
 
-export interface ComicLayoutTemplate {
-  id: string;
-  label: string;
-  description: string;
-  buildPanels: (gutterX: number, gutterY: number) => ComicPanel[];
-}
-
-const makePanel = (
-  name: string,
-  points: ComicPoint[],
-  zIndex: number,
-  extra: Partial<ComicPanel> = {},
-): ComicPanel => ({
-  id: createUuid(),
-  name,
-  points,
-  rotation: 0,
-  zIndex,
-  borderColor: '#111827',
-  borderWidth: 3,
-  backgroundColor: '#f8fafc',
-  prompt: '',
-  negativePrompt: '',
-  anchors: [],
-  useCoords: true,
-  ...extra,
-});
-
-export const rectToPolygon = (x: number, y: number, w: number, h: number): ComicPoint[] => [
-  { x, y },
-  { x: x + w, y },
-  { x: x + w, y: y + h },
-  { x, y: y + h },
-];
-
 export const createDefaultLayers = (): ComicLayerState => ({
   panels: { visible: true, locked: false, order: 0 },
   drawing: { visible: true, locked: false, order: 1 },
   bubbles: { visible: true, locked: false, order: 2 },
   stickers: { visible: true, locked: false, order: 3 },
 });
-
-export const COMIC_LAYOUT_TEMPLATES: ComicLayoutTemplate[] = [
-  {
-    id: 'classic-4-121',
-    label: '经典 4 格（1-2-1）',
-    description: '上宽格引入、中双格对切、下宽格收尾',
-    buildPanels: (gx, gy) => {
-      const m = 0.04;
-      const usableW = 1 - m * 2;
-      const usableH = 1 - m * 2;
-      const h1 = (usableH - gy * 2) * 0.30;
-      const h2 = (usableH - gy * 2) * 0.36;
-      const h3 = usableH - gy * 2 - h1 - h2;
-      const wHalf = (usableW - gx) / 2;
-      return [
-        makePanel('第 1 格', rectToPolygon(m, m, usableW, h1), 1),
-        makePanel('第 2 格', rectToPolygon(m, m + h1 + gy, wHalf, h2), 2),
-        makePanel('第 3 格', rectToPolygon(m + wHalf + gx, m + h1 + gy, wHalf, h2), 3),
-        makePanel('第 4 格', rectToPolygon(m, m + h1 + h2 + gy * 2, usableW, h3), 4),
-      ];
-    },
-  },
-  {
-    id: 'grid-2x2',
-    label: '均衡 2×2 四格',
-    description: '四等分叙事页，节奏平稳',
-    buildPanels: (gx, gy) => {
-      const m = 0.04;
-      const w = (1 - m * 2 - gx) / 2;
-      const h = (1 - m * 2 - gy) / 2;
-      return [
-        makePanel('第 1 格', rectToPolygon(m, m, w, h), 1),
-        makePanel('第 2 格', rectToPolygon(m + w + gx, m, w, h), 2),
-        makePanel('第 3 格', rectToPolygon(m, m + h + gy, w, h), 3),
-        makePanel('第 4 格', rectToPolygon(m + w + gx, m + h + gy, w, h), 4),
-      ];
-    },
-  },
-  {
-    id: 'yonkoma-vertical',
-    label: '竖排四格漫',
-    description: '起承转合经典四格长条',
-    buildPanels: (_gx, gy) => {
-      const mx = 0.08;
-      const my = 0.035;
-      const w = 1 - mx * 2;
-      const h = (1 - my * 2 - gy * 3) / 4;
-      return [0, 1, 2, 3].map(idx =>
-        makePanel(`第 ${idx + 1} 格`, rectToPolygon(mx, my + idx * (h + gy), w, h), idx + 1),
-      );
-    },
-  },
-  {
-    id: 'dynamic-l-shape',
-    label: '动感 L 型 4 格',
-    description: '左高立绘格 + 右侧三连特写',
-    buildPanels: (gx, gy) => {
-      const m = 0.04;
-      const usableW = 1 - m * 2;
-      const usableH = 1 - m * 2;
-      const leftW = (usableW - gx) * 0.44;
-      const rightW = usableW - gx - leftW;
-      const rightH = (usableH - gy * 2) / 3;
-      return [
-        makePanel('主立绘格', rectToPolygon(m, m, leftW, usableH), 1),
-        makePanel('右上格', rectToPolygon(m + leftW + gx, m, rightW, rightH), 2),
-        makePanel('右中格', rectToPolygon(m + leftW + gx, m + rightH + gy, rightW, rightH), 3),
-        makePanel('右下格', rectToPolygon(m + leftW + gx, m + (rightH + gy) * 2, rightW, rightH), 4),
-      ];
-    },
-  },
-  {
-    id: 'slanted-action-5',
-    label: '斜切动作 5 格',
-    description: '带斜角分镜线的戏剧冲突构图',
-    buildPanels: (gx, gy) => {
-      const m = 0.04;
-      const r = 1 - m;
-      const y1 = 0.30;
-      const y2 = 0.65;
-      const skew = 0.045;
-      const midX = 0.5;
-      return [
-        makePanel('开场宽格', [
-          { x: m, y: m },
-          { x: r, y: m },
-          { x: r, y: y1 - skew },
-          { x: m, y: y1 + skew },
-        ], 1),
-        makePanel('中左斜格', [
-          { x: m, y: y1 + skew + gy },
-          { x: midX - gx * 0.5 + 0.03, y: y1 + gy },
-          { x: midX - gx * 0.5 - 0.03, y: y2 - gy },
-          { x: m, y: y2 - gy },
-        ], 2),
-        makePanel('中右斜格', [
-          { x: midX + gx * 0.5 + 0.03, y: y1 + gy - skew * 0.5 },
-          { x: r, y: y1 - skew + gy },
-          { x: r, y: y2 - gy },
-          { x: midX + gx * 0.5 - 0.03, y: y2 - gy },
-        ], 3),
-        makePanel('下左格', rectToPolygon(m, y2, (r - m - gx) * 0.42, r - y2), 4),
-        makePanel('下右格', rectToPolygon(m + (r - m - gx) * 0.42 + gx, y2, (r - m - gx) * 0.58, r - y2), 5),
-      ];
-    },
-  },
-  {
-    id: 'inset-overlay',
-    label: '主格 + 双特写叠框',
-    description: '满页主画面配右上、右下特写画中画',
-    buildPanels: () => [
-      makePanel('主画面格', rectToPolygon(0.04, 0.04, 0.92, 0.92), 1),
-      makePanel('特写叠框 1', rectToPolygon(0.56, 0.08, 0.36, 0.24), 2, { borderWidth: 4 }),
-      makePanel('特写叠框 2', rectToPolygon(0.58, 0.66, 0.34, 0.24), 3, { borderWidth: 4 }),
-    ],
-  },
-  {
-    id: 'single-splash',
-    label: '单格满页跨幅',
-    description: '空白单格，适合自由一刀切分',
-    buildPanels: () => [makePanel('第 1 格', rectToPolygon(0.04, 0.04, 0.92, 0.92), 1)],
-  },
-];
 
 export const createGuidePanelsFromTemplate = (
   templateId = 'classic-4-121',
@@ -213,6 +72,9 @@ export const createGuidePanelsFromTemplate = (
       width: Math.round(b.width * 1000) / 1000,
       height: Math.round(b.height * 1000) / 1000,
       points: roundedPoints,
+      ...(panel.bleed ? { bleed: true } : {}),
+      ...(panel.inset ? { inset: true } : {}),
+      ...(panel.borderWidth === 0 ? { borderless: true } : {}),
     };
   });
 };
