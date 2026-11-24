@@ -43,8 +43,10 @@ Additional Third-Party Notices
 
 - Manga speech bubble geometry algorithms and selected manga frame layout presets adapted from jonigata/FramePlanner2
   (https://github.com/jonigata/FramePlanner2), MIT License.
-- Selected comic panel layout presets adapted from YILING0013/novelai_local_web
-  (https://github.com/YILING0013/novelai_local_web), GNU AGPL-3.0.
+- Selected comic panel layout presets, polyline/edge panel cutting & manipulation geometry,
+  smart panel snapping (equal-gutter measurement, symmetry & orthogonal projection),
+  concave badge placement, overlay frame workflow, and touch gesture algorithms adapted from
+  YILING0013/novelai_local_web (https://github.com/YILING0013/novelai_local_web), GNU AGPL-3.0.
 - Selected vertical manga panel layout geometries converted and adapted from new-sankaku/manga-editor-desu
   (https://github.com/new-sankaku/manga-editor-desu), GNU GPL-3.0 (combined under GNU AGPL-3.0 Section 13 compatibility).
 - Additional third-party asset notices are documented in

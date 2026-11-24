@@ -48,6 +48,7 @@ import {
   type ComicInpaintRect,
 } from '../../services/comic/comicInpaintEngine';
 import {
+  buildTemplatePanelsForScope,
   COMIC_LAYOUT_TEMPLATES,
   COMIC_PANEL_SOFT_MAX,
   COMIC_PAPER_PRESETS,
@@ -55,9 +56,16 @@ import {
   createInitialComicDraft,
   getPanelBoundingBox,
   rectToPolygon,
+  remapNormalizedPointsToScope,
   rotatePointAround,
-  slicePolygonByLine,
+  type ComicTemplateScope,
 } from '../../services/comic/comicGeometry';
+import {
+  preservePanelImageAfterSplit,
+  rescaleNormalizedPointsOnCanvasResize,
+  sliceAnyPolygonByLine,
+  splitNormalizedPolygonAlongPath,
+} from '../../services/comic/comicSnapping';
 import {
   deleteCustomComicTemplate,
   instantiateCustomTemplatePanels,
@@ -248,6 +256,8 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const [undoStack, setUndoStack] = useState<ComicPageDraft[]>([]);
   const [redoStack, setRedoStack] = useState<ComicPageDraft[]>([]);
   const [activeTool, setActiveTool] = useState<ComicTool>('select');
+  const [drawPanelAsOverlay, setDrawPanelAsOverlay] = useState(false);
+  const [panelHistoryRequestToken, setPanelHistoryRequestToken] = useState(0);
   const [selection, setSelection] = useState<ComicSelection>(() => (
     draft.panels[0] ? { kind: 'panel', id: draft.panels[0].id } : null
   ));
@@ -290,7 +300,13 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const handleSelectWithTab = useCallback((next: ComicSelection) => {
     setSelection(next);
     if (!next) return;
-    if (next.kind === 'panel' || next.kind === 'ai-anchor' || next.kind === 'panel-anchor' || next.kind === 'breakout-zone') {
+    if (
+      next.kind === 'panel'
+      || next.kind === 'guide-panel'
+      || next.kind === 'ai-anchor'
+      || next.kind === 'panel-anchor'
+      || next.kind === 'breakout-zone'
+    ) {
       setInspectorTab('panel');
     } else if (next.kind === 'bubble' || next.kind === 'text' || next.kind === 'sticker' || next.kind === 'image') {
       setInspectorTab('layers');
@@ -431,10 +447,76 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     setSelection(cur => (cur?.kind === 'panel' && cur.id === panelId ? null : cur));
   }, [applyDraftChange]);
 
+  const handleDeleteGuidePanel = useCallback((guideId: string) => {
+    applyDraftChange(current => {
+      const nextGuides = current.aiPage.guidePanels.filter(gp => gp.id !== guideId);
+      return {
+        ...current,
+        aiPage: {
+          ...current.aiPage,
+          targetPanelCount: Math.max(1, nextGuides.length),
+          guidePanels: nextGuides,
+        },
+      };
+    }, true);
+    setSelection(cur => (cur?.kind === 'guide-panel' && cur.id === guideId ? null : cur));
+  }, [applyDraftChange]);
+
+  const handleDuplicateGuidePanel = useCallback((guideId: string) => {
+    if (draft.aiPage.guidePanels.length >= COMIC_PANEL_SOFT_MAX) {
+      notify(t('已达单页分镜格上限'), 'error');
+      return;
+    }
+    const target = draft.aiPage.guidePanels.find(gp => gp.id === guideId);
+    if (!target) return;
+    const pts = getGuidePanelPolygon(target).map(pt => ({
+      x: Math.round(Math.min(0.98, pt.x + 0.03) * 1000) / 1000,
+      y: Math.round(Math.min(0.98, pt.y + 0.03) * 1000) / 1000,
+    }));
+    const b = getPanelBoundingBox(pts, 1, 1);
+    const clone: ComicAiGuidePanel = {
+      ...structuredClone(target),
+      id: createUuid(),
+      label: `${target.label} 副本`,
+      x: Math.round(b.minX * 1000) / 1000,
+      y: Math.round(b.minY * 1000) / 1000,
+      width: Math.round(b.width * 1000) / 1000,
+      height: Math.round(b.height * 1000) / 1000,
+      points: pts,
+    };
+    applyDraftChange(current => {
+      const nextGuides = [...current.aiPage.guidePanels, clone];
+      return {
+        ...current,
+        aiPage: {
+          ...current.aiPage,
+          targetPanelCount: Math.max(1, nextGuides.length),
+          guidePanels: nextGuides,
+          showGuideOverlay: true,
+        },
+      };
+    }, true);
+    setSelection({ kind: 'guide-panel', id: clone.id });
+  }, [applyDraftChange, draft.aiPage.guidePanels, notify]);
+
+  const handleToggleGuidePanelFlag = useCallback((guideId: string, flag: 'inset' | 'borderless' | 'bleed') => {
+    applyDraftChange(current => ({
+      ...current,
+      aiPage: {
+        ...current.aiPage,
+        guidePanels: current.aiPage.guidePanels.map(gp => (
+          gp.id === guideId ? { ...gp, [flag]: !gp[flag] } : gp
+        )),
+      },
+    }), true);
+  }, [applyDraftChange]);
+
   const handleDeleteSelection = useCallback(() => {
     if (!selection) return;
     if (selection.kind === 'panel') {
       handleDeletePanel(selection.id);
+    } else if (selection.kind === 'guide-panel') {
+      handleDeleteGuidePanel(selection.id);
     } else if (selection.kind === 'ai-anchor') {
       applyDraftChange(cur => ({
         ...cur,
@@ -478,61 +560,6 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     }
   }, [applyDraftChange, handleDeletePanel, selection]);
 
-  // 键盘快捷键：Undo/Redo、Delete/Backspace 删除、Esc 切回选择、PS 单键工具快切
-  useEffect(() => {
-    const toolShortcutMap: Record<string, ComicTool> = {
-      v: 'select',
-      h: 'hand',
-      z: 'zoom',
-      r: 'draw-panel',
-      c: 'slice',
-      m: 'frame-image',
-      b: 'bubble',
-      t: 'text',
-      s: 'sticker',
-      p: 'brush',
-      e: 'eraser',
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const isEditingText = Boolean(target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable));
-      if (isEditingText) return;
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
-        event.preventDefault();
-        if (event.shiftKey) handleRedo();
-        else handleUndo();
-        return;
-      }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') {
-        event.preventDefault();
-        handleRedo();
-        return;
-      }
-      if (event.key === 'Delete' || event.key === 'Backspace') {
-        if (selection) {
-          event.preventDefault();
-          handleDeleteSelection();
-        }
-        return;
-      }
-      if (event.key === 'Escape') {
-        setActiveTool('select');
-        setSelection(null);
-        setInpaintDraft(null);
-        return;
-      }
-      if (!event.ctrlKey && !event.metaKey && !event.altKey) {
-        const mapped = toolShortcutMap[event.key.toLowerCase()];
-        if (mapped) {
-          event.preventDefault();
-          setActiveTool(mapped);
-        }
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleUndo, handleRedo, handleDeleteSelection, selection]);
-
   const handleUpdatePanel = useCallback((panelId: string, updater: (panel: ComicPanel) => ComicPanel, commit = true) => {
     applyDraftChange(current => ({
       ...current,
@@ -540,7 +567,43 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     }), commit);
   }, [applyDraftChange]);
 
-  const handleAddPanel = useCallback((points: ComicPoint[]) => {
+  const handleAddPanel = useCallback((points: ComicPoint[], asOverlay?: boolean) => {
+    const useOverlay = asOverlay ?? drawPanelAsOverlay;
+    if (draft.creationMode === 'ai-page') {
+      if (draft.aiPage.guidePanels.length >= COMIC_PANEL_SOFT_MAX) {
+        notify(t('单页最多添加 {0} 个分镜格，以免画布过于拥挤', [COMIC_PANEL_SOFT_MAX]), 'error');
+        return;
+      }
+      const b = getPanelBoundingBox(points, 1, 1);
+      const created: ComicAiGuidePanel = {
+        id: createUuid(),
+        label: useOverlay ? `叠框 ${draft.aiPage.guidePanels.length + 1}` : `第 ${draft.aiPage.guidePanels.length + 1} 格`,
+        summary: '',
+        x: Math.round(b.minX * 1000) / 1000,
+        y: Math.round(b.minY * 1000) / 1000,
+        width: Math.round(b.width * 1000) / 1000,
+        height: Math.round(b.height * 1000) / 1000,
+        points: points.map(pt => ({ x: Math.round(pt.x * 1000) / 1000, y: Math.round(pt.y * 1000) / 1000 })),
+        ...(useOverlay ? { inset: true } : {}),
+      };
+      applyDraftChange(current => {
+        const nextGuides = [...current.aiPage.guidePanels, created];
+        return {
+          ...current,
+          aiPage: {
+            ...current.aiPage,
+            targetPanelCount: Math.max(1, nextGuides.length),
+            guidePanels: nextGuides,
+            showGuideOverlay: true,
+          },
+        };
+      }, true);
+      setSelection({ kind: 'guide-panel', id: created.id });
+      setDrawPanelAsOverlay(false);
+      setActiveTool('select');
+      return;
+    }
+
     if (draft.panels.length >= COMIC_PANEL_SOFT_MAX) {
       notify(t('单页最多添加 {0} 个分镜格，以免画布过于拥挤', [COMIC_PANEL_SOFT_MAX]), 'error');
       return;
@@ -548,13 +611,14 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     const maxZ = draft.panels.reduce((acc, p) => Math.max(acc, p.zIndex), 0);
     const created: ComicPanel = {
       id: createUuid(),
-      name: `第 ${draft.panels.length + 1} 格`,
+      name: useOverlay ? `叠加画框 ${draft.panels.length + 1}` : `第 ${draft.panels.length + 1} 格`,
       points,
       rotation: 0,
       zIndex: maxZ + 1,
       borderColor: '#111827',
-      borderWidth: 3,
+      borderWidth: useOverlay ? 0 : 3,
       backgroundColor: '#f8fafc',
+      ...(useOverlay ? { inset: true } : {}),
       prompt: '',
       negativePrompt: '',
       anchors: [],
@@ -562,18 +626,176 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     };
     applyDraftChange(current => ({ ...current, panels: [...current.panels, created] }), true);
     setSelection({ kind: 'panel', id: created.id });
+    setDrawPanelAsOverlay(false);
     setActiveTool('select');
-  }, [applyDraftChange, draft.panels, notify]);
+  }, [applyDraftChange, draft.aiPage.guidePanels.length, draft.creationMode, draft.panels, drawPanelAsOverlay, notify]);
+
+  const handleTogglePanelOverlay = useCallback((panelId: string) => {
+    applyDraftChange(current => {
+      const maxZ = current.panels.reduce((acc, p) => Math.max(acc, p.zIndex), 0);
+      return {
+        ...current,
+        panels: current.panels.map(p => {
+          if (p.id !== panelId) return p;
+          const nextInset = !p.inset;
+          return {
+            ...p,
+            inset: nextInset,
+            zIndex: nextInset ? maxZ + 1 : p.zIndex,
+            borderWidth: nextInset ? 0 : (p.borderWidth === 0 ? 3 : p.borderWidth),
+          };
+        }),
+      };
+    }, true);
+  }, [applyDraftChange]);
+
+  const handleTogglePanelBorderless = useCallback((panelId: string) => {
+    applyDraftChange(current => ({
+      ...current,
+      panels: current.panels.map(p => (
+        p.id === panelId ? { ...p, borderWidth: p.borderWidth === 0 ? 3 : 0 } : p
+      )),
+    }), true);
+  }, [applyDraftChange]);
+
+  const handleUploadImageToPanel = useCallback(async (panelId: string, file: File) => {
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error(t('读取图片文件失败')));
+        reader.readAsDataURL(file);
+      });
+      if (!dataUrl) return;
+      let width = 832;
+      let height = 1216;
+      try {
+        const dims = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve({ w: img.naturalWidth || 832, h: img.naturalHeight || 1216 });
+          img.onerror = () => reject(new Error('load failed'));
+          img.src = dataUrl;
+        });
+        width = dims.w;
+        height = dims.h;
+      } catch {
+        // 回退默认像素维度
+      }
+      handleUpdatePanel(panelId, p => ({
+        ...p,
+        image: { url: dataUrl, width, height, offsetX: 0, offsetY: 0, scale: 1 },
+      }), true);
+      notify(t('已载入图片到分镜格'));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('读取图片文件失败'), 'error');
+    }
+  }, [handleUpdatePanel, notify]);
+
+  const handleSlicePolygonPath = useCallback((panelId: string, path: ComicPoint[]) => {
+    if (draft.creationMode === 'ai-page') {
+      const gp = draft.aiPage.guidePanels.find(item => item.id === panelId);
+      if (!gp) return;
+      if (draft.aiPage.guidePanels.length >= COMIC_PANEL_SOFT_MAX) {
+        notify(t('已达单页分镜格上限'), 'error');
+        return;
+      }
+      const poly = getGuidePanelPolygon(gp);
+      const split = splitNormalizedPolygonAlongPath(poly, path, draft.gutterPx, draft.width, draft.height);
+      if (!split) {
+        notify(t('切线需从同一画框边进入并在框内拐弯后穿出另一边'), 'error');
+        return;
+      }
+      const b0 = getPanelBoundingBox(split[0], 1, 1);
+      const b1 = getPanelBoundingBox(split[1], 1, 1);
+      const part0: ComicAiGuidePanel = {
+        ...gp,
+        x: Math.round(b0.minX * 1000) / 1000,
+        y: Math.round(b0.minY * 1000) / 1000,
+        width: Math.round(b0.width * 1000) / 1000,
+        height: Math.round(b0.height * 1000) / 1000,
+        points: split[0].map(pt => ({ x: Math.round(pt.x * 1000) / 1000, y: Math.round(pt.y * 1000) / 1000 })),
+      };
+      const part1: ComicAiGuidePanel = {
+        ...gp,
+        id: createUuid(),
+        label: `${gp.label}-分格`,
+        x: Math.round(b1.minX * 1000) / 1000,
+        y: Math.round(b1.minY * 1000) / 1000,
+        width: Math.round(b1.width * 1000) / 1000,
+        height: Math.round(b1.height * 1000) / 1000,
+        points: split[1].map(pt => ({ x: Math.round(pt.x * 1000) / 1000, y: Math.round(pt.y * 1000) / 1000 })),
+      };
+      applyDraftChange(current => {
+        const nextGuides = current.aiPage.guidePanels.flatMap(item => (item.id === gp.id ? [part0, part1] : [item]));
+        return {
+          ...current,
+          aiPage: {
+            ...current.aiPage,
+            targetPanelCount: Math.max(1, nextGuides.length),
+            guidePanels: nextGuides,
+            showGuideOverlay: true,
+          },
+        };
+      }, true);
+      setSelection({ kind: 'guide-panel', id: part0.id });
+      notify(t('已沿切线切分 AI 分镜引导格'));
+      return;
+    }
+
+    const panel = draft.panels.find(item => item.id === panelId);
+    if (!panel || panel.locked) return;
+    if (draft.panels.length >= COMIC_PANEL_SOFT_MAX) {
+      notify(t('已达单页分镜格上限'), 'error');
+      return;
+    }
+    const aspect = draft.width / Math.max(1, draft.height);
+    // 旋转过的画格：先将顶点烘焙到世界坐标再按切线切分，两半清零 rotation 防止重算中心时位移跳变
+    const worldPoints = panel.rotation
+      ? (() => {
+          const b = getPanelBoundingBox(panel.points, 1, 1);
+          const center = { x: b.cx, y: b.cy };
+          return panel.points.map(pt => rotatePointAround(pt, center, panel.rotation, aspect));
+        })()
+      : panel.points;
+    const split = splitNormalizedPolygonAlongPath(worldPoints, path, draft.gutterPx, draft.width, draft.height);
+    if (!split) {
+      notify(t('切线需从同一画框边进入并在框内拐弯后穿出另一边'), 'error');
+      return;
+    }
+    const part0: ComicPanel = {
+      ...panel,
+      points: split[0],
+      rotation: 0,
+      image: panel.image
+        ? preservePanelImageAfterSplit(panel.image, worldPoints, split[0], draft.width, draft.height)
+        : undefined,
+    };
+    const part1: ComicPanel = {
+      ...panel,
+      id: createUuid(),
+      name: `${panel.name}-分格`,
+      points: split[1],
+      rotation: 0,
+      zIndex: panel.zIndex + 1,
+      image: panel.image
+        ? preservePanelImageAfterSplit(panel.image, worldPoints, split[1], draft.width, draft.height)
+        : undefined,
+    };
+    applyDraftChange(current => ({
+      ...current,
+      panels: current.panels.flatMap(item => (item.id === panel.id ? [part0, part1] : [item])),
+    }), true);
+    setSelection({ kind: 'panel', id: part0.id });
+    notify(t('已沿切线切分分镜格'));
+  }, [applyDraftChange, draft.aiPage.guidePanels, draft.creationMode, draft.gutterPx, draft.height, draft.panels, draft.width, notify]);
 
   const handleSliceAtLine = useCallback((start: ComicPoint, end: ComicPoint) => {
-    const gx = draft.gutterPx / draft.width;
-    const gy = draft.gutterPx / draft.height;
     if (draft.creationMode === 'ai-page') {
       let slicedCount = 0;
       const nextGuides: ComicAiGuidePanel[] = [];
       for (const gp of draft.aiPage.guidePanels) {
         const poly = getGuidePanelPolygon(gp);
-        const split = slicePolygonByLine(poly, start, end, gx, gy);
+        const split = sliceAnyPolygonByLine(poly, start, end, draft.gutterPx, draft.width, draft.height);
         if (split && nextGuides.length + 2 <= COMIC_PANEL_SOFT_MAX) {
           slicedCount += 1;
           const b0 = getPanelBoundingBox(split[0], 1, 1);
@@ -625,26 +847,35 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         nextPanels.push(panel);
         continue;
       }
-      // 旋转过的画格：把切线两端点逆旋转进该格局部坐标空间再切分，两半继承原角度
-      let localStart = start;
-      let localEnd = end;
-      if (panel.rotation) {
-        const b = getPanelBoundingBox(panel.points, 1, 1);
-        const center = { x: b.cx, y: b.cy };
-        localStart = rotatePointAround(start, center, -panel.rotation, aspect);
-        localEnd = rotatePointAround(end, center, -panel.rotation, aspect);
-      }
-      const split = slicePolygonByLine(panel.points, localStart, localEnd, gx, gy);
+      // 旋转过的画格：先将顶点烘焙到世界坐标再按切线切分，两半清零 rotation 防止重算中心时位移跳变
+      const worldPoints = panel.rotation
+        ? (() => {
+            const b = getPanelBoundingBox(panel.points, 1, 1);
+            const center = { x: b.cx, y: b.cy };
+            return panel.points.map(pt => rotatePointAround(pt, center, panel.rotation, aspect));
+          })()
+        : panel.points;
+      const split = sliceAnyPolygonByLine(worldPoints, start, end, draft.gutterPx, draft.width, draft.height);
       if (split && nextPanels.length + 2 <= COMIC_PANEL_SOFT_MAX) {
         slicedCount += 1;
-        nextPanels.push({ ...panel, points: split[0] });
+        nextPanels.push({
+          ...panel,
+          points: split[0],
+          rotation: 0,
+          image: panel.image
+            ? preservePanelImageAfterSplit(panel.image, worldPoints, split[0], draft.width, draft.height)
+            : undefined,
+        });
         nextPanels.push({
           ...panel,
           id: createUuid(),
           name: `${panel.name}-分格`,
           points: split[1],
+          rotation: 0,
           zIndex: panel.zIndex + 1,
-          image: undefined,
+          image: panel.image
+            ? preservePanelImageAfterSplit(panel.image, worldPoints, split[1], draft.width, draft.height)
+            : undefined,
         });
       } else {
         nextPanels.push(panel);
@@ -677,13 +908,92 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     setSelection({ kind: 'panel', id: clone.id });
   }, [applyDraftChange, draft.panels, notify]);
 
-  const handleSetCustomPaperSize = useCallback((width: number, height: number) => {
-    applyDraftChange(current => ({
+  const rescalePageForNewDimensions = (current: ComicPageDraft, nextW: number, nextH: number, presetId: string): ComicPageDraft => {
+    const oldW = Math.max(1, current.width);
+    const oldH = Math.max(1, current.height);
+    if (oldW === nextW && oldH === nextH) {
+      return { ...current, paperPresetId: presetId };
+    }
+    const hasCustomLayoutOrContent = (
+      current.panels.some(p => Boolean(p.image?.url) || p.rotation !== 0)
+      || Boolean(current.aiPage.generatedPageImage?.url)
+      || Boolean(current.aiPage.originalGeneratedPageImage?.url)
+      || current.bubbles.length > 0
+      || current.texts.length > 0
+      || current.stickers.length > 0
+      || current.strokes.length > 0
+      || (current.drawingLayers?.some(d => d.strokes.length > 0) ?? false)
+      || (current.imageLayers?.length ?? 0) > 0
+    );
+    if (!hasCustomLayoutOrContent) {
+      return { ...current, paperPresetId: presetId, width: nextW, height: nextH };
+    }
+    const sx = oldW / nextW;
+    const sy = oldH / nextH;
+    const scalePtList = (pts: ComicPoint[]) => rescaleNormalizedPointsOnCanvasResize(pts, oldW, oldH, nextW, nextH);
+    const scaleStrokes = (list: ComicStroke[]) => list.map(s => ({ ...s, points: scalePtList(s.points) }));
+    return {
       ...current,
-      paperPresetId: 'custom',
-      width,
-      height,
-    }), true);
+      paperPresetId: presetId,
+      width: nextW,
+      height: nextH,
+      panels: current.panels.map(p => ({ ...p, points: scalePtList(p.points) })),
+      bubbles: current.bubbles.map(b => ({
+        ...b,
+        x: b.x * sx,
+        y: b.y * sy,
+        width: b.width * sx,
+        height: b.height * sy,
+        tailX: b.tailX * sx,
+        tailY: b.tailY * sy,
+      })),
+      texts: current.texts.map(item => ({ ...item, x: item.x * sx, y: item.y * sy })),
+      stickers: current.stickers.map(item => ({
+        ...item,
+        x: item.x * sx,
+        y: item.y * sy,
+        width: item.width * sx,
+        height: item.height * sy,
+      })),
+      imageLayers: current.imageLayers?.map(item => ({
+        ...item,
+        x: item.x * sx,
+        y: item.y * sy,
+        width: item.width * sx,
+        height: item.height * sy,
+      })),
+      strokes: scaleStrokes(current.strokes),
+      drawingLayers: current.drawingLayers?.map(d => ({ ...d, strokes: scaleStrokes(d.strokes) })),
+      aiPage: {
+        ...current.aiPage,
+        guidePanels: current.aiPage.guidePanels.map(gp => ({
+          ...gp,
+          x: gp.x * sx,
+          y: gp.y * sy,
+          width: gp.width * sx,
+          height: gp.height * sy,
+          ...(gp.points ? { points: scalePtList(gp.points) } : {}),
+        })),
+        anchors: current.aiPage.anchors.map(a => ({
+          ...a,
+          x: a.x * sx,
+          y: a.y * sy,
+          ...(a.bubbleWidth !== undefined ? { bubbleWidth: a.bubbleWidth * sx } : {}),
+          ...(a.bubbleHeight !== undefined ? { bubbleHeight: a.bubbleHeight * sy } : {}),
+        })),
+        breakoutZones: current.aiPage.breakoutZones?.map(bz => ({
+          ...bz,
+          x: bz.x * sx,
+          y: bz.y * sy,
+          width: bz.width * sx,
+          height: bz.height * sy,
+        })),
+      },
+    };
+  };
+
+  const handleSetCustomPaperSize = useCallback((width: number, height: number) => {
+    applyDraftChange(current => rescalePageForNewDimensions(current, width, height, 'custom'), true);
     fitCanvasToViewport(width, height);
   }, [applyDraftChange, fitCanvasToViewport]);
 
@@ -701,34 +1011,40 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const handleSelectPaperPreset = useCallback((presetId: string) => {
     const preset = COMIC_PAPER_PRESETS.find(p => p.id === presetId);
     if (!preset) return;
-    applyDraftChange(current => ({
-      ...current,
-      paperPresetId: preset.id,
-      width: preset.width,
-      height: preset.height,
-    }), true);
+    applyDraftChange(current => rescalePageForNewDimensions(current, preset.width, preset.height, preset.id), true);
     fitCanvasToViewport(preset.width, preset.height);
   }, [applyDraftChange, fitCanvasToViewport]);
 
-  const handleApplyTemplate = useCallback(async (templateId: string) => {
+  const handleApplyTemplate = useCallback(async (templateId: string, scope: ComicTemplateScope = 'full') => {
     const template = COMIC_LAYOUT_TEMPLATES.find(item => item.id === templateId);
     if (!template) return;
+    const isInScopeX = (cx: number) => (scope === 'full' ? true : scope === 'left' ? cx < 0.5 : cx >= 0.5);
     if (draft.creationMode === 'ai-page') {
-      const nextGuides = createGuidePanelsFromTemplate(templateId, draft.width, draft.height, draft.gutterPx);
-      applyDraftChange(current => ({
-        ...current,
-        aiPage: {
-          ...current.aiPage,
-          targetPanelCount: nextGuides.length,
-          guidePanels: nextGuides,
-          showGuideOverlay: true,
-        },
-      }), true);
+      const fresh = createGuidePanelsFromTemplate(templateId, draft.width, draft.height, draft.gutterPx, scope);
+      applyDraftChange(current => {
+        const preserved = scope === 'full'
+          ? []
+          : current.aiPage.guidePanels.filter(gp => !isInScopeX(gp.x + gp.width / 2));
+        const nextGuides = scope === 'left' ? [...fresh, ...preserved] : [...preserved, ...fresh];
+        return {
+          ...current,
+          aiPage: {
+            ...current.aiPage,
+            targetPanelCount: Math.max(1, nextGuides.length),
+            guidePanels: nextGuides,
+            showGuideOverlay: true,
+          },
+        };
+      }, true);
       notify(t('已套用「{0}」为 AI 整页构图引导区', [template.label]));
       return;
     }
-    const hasImages = draft.panels.some(p => Boolean(p.image?.url));
-    if (hasImages) {
+    const affectedHasImages = draft.panels.some(p => {
+      if (!p.image?.url) return false;
+      const b = getPanelBoundingBox(p.points, 1, 1);
+      return isInScopeX(b.cx);
+    });
+    if (affectedHasImages) {
       const ok = await confirmAction({
         title: t('套用新分镜模板？'),
         message: t('套用模板会替换当前页面的分镜格布局（已生成的单格原图仍保留在生成历史中，也可随时撤销）。'),
@@ -736,12 +1052,14 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       });
       if (!ok) return;
     }
-    const gx = draft.gutterPx / draft.width;
-    const gy = draft.gutterPx / draft.height;
-    applyDraftChange(current => ({
-      ...current,
-      panels: template.buildPanels(gx, gy),
-    }), true);
+    const freshPanels = buildTemplatePanelsForScope(templateId, draft.width, draft.height, draft.gutterPx, scope);
+    applyDraftChange(current => {
+      const preserved = scope === 'full'
+        ? []
+        : current.panels.filter(p => !isInScopeX(getPanelBoundingBox(p.points, 1, 1).cx));
+      const nextPanels = scope === 'left' ? [...freshPanels, ...preserved] : [...preserved, ...freshPanels];
+      return { ...current, panels: nextPanels };
+    }, true);
     setSelection(null);
   }, [applyDraftChange, confirmAction, draft.creationMode, draft.gutterPx, draft.height, draft.panels, draft.width, notify]);
 
@@ -775,12 +1093,15 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     notify(t('已保存自定义模板「{0}」', [label]));
   }, [draft.aiPage.guidePanels, draft.creationMode, draft.panels, notify]);
 
-  const handleApplyCustomTemplate = useCallback(async (templateId: string) => {
+  const handleApplyCustomTemplate = useCallback(async (templateId: string, scope: ComicTemplateScope = 'full') => {
     const template = customTemplates.find(item => item.id === templateId);
     if (!template) return;
+    const gx = draft.gutterPx / Math.max(1, draft.width);
+    const isInScopeX = (cx: number) => (scope === 'full' ? true : scope === 'left' ? cx < 0.5 : cx >= 0.5);
     if (draft.creationMode === 'ai-page') {
-      const nextGuides: ComicAiGuidePanel[] = template.panels.map((p, idx) => {
-        const box = getPanelBoundingBox(p.points, 1, 1);
+      const fresh: ComicAiGuidePanel[] = template.panels.map((p, idx) => {
+        const pts = remapNormalizedPointsToScope(p.points, scope, gx);
+        const box = getPanelBoundingBox(pts, 1, 1);
         return {
           id: createUuid(),
           label: p.name || `第 ${idx + 1} 格`,
@@ -789,26 +1110,35 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
           y: box.minY,
           width: box.width,
           height: box.height,
-          points: p.points.map(pt => ({ x: pt.x, y: pt.y })),
+          points: pts,
           ...(p.bleed ? { bleed: true } : {}),
           ...(p.inset ? { inset: true } : {}),
           ...(p.borderWidth === 0 ? { borderless: true } : {}),
         };
       });
-      applyDraftChange(current => ({
-        ...current,
-        aiPage: {
-          ...current.aiPage,
-          targetPanelCount: Math.max(2, Math.min(8, nextGuides.length)),
-          guidePanels: nextGuides,
-          showGuideOverlay: true,
-        },
-      }), true);
+      applyDraftChange(current => {
+        const preserved = scope === 'full'
+          ? []
+          : current.aiPage.guidePanels.filter(gp => !isInScopeX(gp.x + gp.width / 2));
+        const nextGuides = scope === 'left' ? [...fresh, ...preserved] : [...preserved, ...fresh];
+        return {
+          ...current,
+          aiPage: {
+            ...current.aiPage,
+            targetPanelCount: Math.max(2, Math.min(COMIC_PANEL_SOFT_MAX, nextGuides.length)),
+            guidePanels: nextGuides,
+            showGuideOverlay: true,
+          },
+        };
+      }, true);
       notify(t('已套用自定义模板「{0}」为 AI 参考分镜格', [template.label]));
       return;
     }
-    const hasImages = draft.panels.some(p => Boolean(p.image?.url));
-    if (hasImages) {
+    const affectedHasImages = draft.panels.some(p => {
+      if (!p.image?.url) return false;
+      return isInScopeX(getPanelBoundingBox(p.points, 1, 1).cx);
+    });
+    if (affectedHasImages) {
       const ok = await confirmAction({
         title: t('套用自定义模板「{0}」？', [template.label]),
         message: t('切换模板将重置当前页面的分镜框与格内图片（可随时撤销 Ctrl+Z）。'),
@@ -816,12 +1146,19 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       });
       if (!ok) return;
     }
-    applyDraftChange(current => ({
-      ...current,
-      panels: instantiateCustomTemplatePanels(template),
-    }), true);
+    const freshPanels = instantiateCustomTemplatePanels(template).map(p => ({
+      ...p,
+      points: remapNormalizedPointsToScope(p.points, scope, gx),
+    }));
+    applyDraftChange(current => {
+      const preserved = scope === 'full'
+        ? []
+        : current.panels.filter(p => !isInScopeX(getPanelBoundingBox(p.points, 1, 1).cx));
+      const nextPanels = scope === 'left' ? [...freshPanels, ...preserved] : [...preserved, ...freshPanels];
+      return { ...current, panels: nextPanels };
+    }, true);
     setSelection(null);
-  }, [applyDraftChange, confirmAction, customTemplates, draft.creationMode, draft.panels, notify]);
+  }, [applyDraftChange, confirmAction, customTemplates, draft.creationMode, draft.gutterPx, draft.panels, draft.width, notify]);
 
   const handleDeleteCustomTemplate = useCallback((templateId: string) => {
     setCustomTemplates(deleteCustomComicTemplate(templateId));
@@ -986,6 +1323,116 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     applyDraftChange(cur => ({ ...cur, bubbles: [...cur.bubbles, clone] }), true);
     handleSelectWithTab({ kind: 'bubble', id: clone.id });
   }, [applyDraftChange, draft.bubbles, handleSelectWithTab]);
+
+  const handleDuplicateSelection = useCallback(() => {
+    if (!selection) return;
+    if (selection.kind === 'panel') {
+      handleDuplicatePanel(selection.id);
+    } else if (selection.kind === 'guide-panel') {
+      handleDuplicateGuidePanel(selection.id);
+    } else if (selection.kind === 'bubble') {
+      handleDuplicateBubble(selection.id);
+    } else if (selection.kind === 'text') {
+      const source = draft.texts.find(item => item.id === selection.id);
+      if (!source) return;
+      const clone: ComicTextItem = {
+        ...structuredClone(source),
+        id: createUuid(),
+        x: Math.min(0.95, source.x + 0.03),
+        y: Math.min(0.95, source.y + 0.03),
+      };
+      applyDraftChange(cur => ({ ...cur, texts: [...cur.texts, clone] }), true);
+      handleSelectWithTab({ kind: 'text', id: clone.id });
+    } else if (selection.kind === 'sticker') {
+      const source = draft.stickers.find(item => item.id === selection.id);
+      if (!source) return;
+      const clone: ComicStickerItem = {
+        ...structuredClone(source),
+        id: createUuid(),
+        x: Math.min(0.95, source.x + 0.03),
+        y: Math.min(0.95, source.y + 0.03),
+      };
+      applyDraftChange(cur => ({ ...cur, stickers: [...cur.stickers, clone] }), true);
+      handleSelectWithTab({ kind: 'sticker', id: clone.id });
+    }
+  }, [applyDraftChange, draft.stickers, draft.texts, handleDuplicateBubble, handleDuplicateGuidePanel, handleDuplicatePanel, handleSelectWithTab, selection]);
+
+  // 键盘快捷键：Undo/Redo、Ctrl+J 复制、Ctrl+0 适应屏幕、Delete 删除、Esc 退出、Shift+R 叠框、单键工具快切
+  useEffect(() => {
+    const toolShortcutMap: Record<string, ComicTool> = {
+      v: 'select',
+      h: 'hand',
+      z: 'zoom',
+      r: 'draw-panel',
+      c: 'slice',
+      m: 'frame-image',
+      b: 'bubble',
+      t: 'text',
+      s: 'sticker',
+      p: 'brush',
+      e: 'eraser',
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isEditingText = Boolean(target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable));
+      if (isEditingText) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) handleRedo();
+        else handleUndo();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') {
+        event.preventDefault();
+        handleRedo();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'j') {
+        if (selection) {
+          event.preventDefault();
+          handleDuplicateSelection();
+        }
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key === '0') {
+        event.preventDefault();
+        fitCanvasToViewport();
+        return;
+      }
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        if (selection) {
+          event.preventDefault();
+          handleDeleteSelection();
+        }
+        return;
+      }
+      if (event.key === 'Escape') {
+        setDrawPanelAsOverlay(false);
+        setActiveTool('select');
+        setSelection(null);
+        setInpaintDraft(null);
+        return;
+      }
+      if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (event.shiftKey && event.key.toLowerCase() === 'r') {
+          event.preventDefault();
+          setDrawPanelAsOverlay(true);
+          setActiveTool('draw-panel');
+          return;
+        }
+        if (!event.shiftKey) {
+          const mapped = toolShortcutMap[event.key.toLowerCase()];
+          if (mapped) {
+            event.preventDefault();
+            if (mapped === 'draw-panel') setDrawPanelAsOverlay(false);
+            setActiveTool(mapped);
+          }
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [fitCanvasToViewport, handleDeleteSelection, handleDuplicateSelection, handleRedo, handleUndo, selection]);
 
   const handleUpdateImageLayer = useCallback((id: string, updater: (item: ComicImageLayerItem) => ComicImageLayerItem, commit = true) => {
     applyDraftChange(cur => ({
@@ -1223,6 +1670,33 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     }), commit);
   }, [handleUpdateAiPage]);
 
+  const handleUpdateGuidePanelPoints = useCallback((
+    guideId: string,
+    points: ComicPoint[],
+    commit = false,
+  ) => {
+    const b = getPanelBoundingBox(points, 1, 1);
+    const roundedPts = points.map(pt => ({
+      x: Math.round(pt.x * 10000) / 10000,
+      y: Math.round(pt.y * 10000) / 10000,
+    }));
+    handleUpdateAiPage(cur => ({
+      ...cur,
+      guidePanels: cur.guidePanels.map(gp => (
+        gp.id === guideId
+          ? {
+            ...gp,
+            x: Math.round(b.minX * 1000) / 1000,
+            y: Math.round(b.minY * 1000) / 1000,
+            width: Math.round(b.width * 1000) / 1000,
+            height: Math.round(b.height * 1000) / 1000,
+            points: roundedPts,
+          }
+          : gp
+      )),
+    }), commit);
+  }, [handleUpdateAiPage]);
+
   const handleUpdateBreakoutZone = useCallback((
     zoneId: string,
     patch: { x: number; y: number; width: number; height: number },
@@ -1237,7 +1711,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const handleWheelScalePanelImage = useCallback((panelId: string, delta: number) => {
     handleUpdatePanel(panelId, panel => {
       if (!panel.image) return panel;
-      const nextScale = Math.max(1, Math.min(2.5, Number(((panel.image.scale || 1) + delta).toFixed(2))));
+      const nextScale = Math.max(0.5, Math.min(4, Number(((panel.image.scale || 1) + delta).toFixed(2))));
       return { ...panel, image: { ...panel.image, scale: nextScale } };
     }, false);
   }, [handleUpdatePanel]);
@@ -2739,6 +3213,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         pageIndex={activePageIndex}
         pageTotal={activeBook?.pages.length || 1}
         activeTool={activeTool}
+        drawPanelAsOverlay={drawPanelAsOverlay}
         activePanel={selectedPanelForCost}
         brushColor={brushColor}
         brushSize={brushSize}
@@ -2756,11 +3231,12 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         onChangeTitle={title => applyDraftChange(cur => ({ ...cur, title }), false)}
         onSelectPaperPreset={handleSelectPaperPreset}
         onSetCustomPaperSize={handleSetCustomPaperSize}
-        onApplyTemplate={tplId => void handleApplyTemplate(tplId)}
+        onApplyTemplate={(tplId, scope) => void handleApplyTemplate(tplId, scope)}
         customTemplates={customTemplates}
         onSaveCustomTemplate={handleSaveCustomTemplate}
-        onApplyCustomTemplate={tplId => void handleApplyCustomTemplate(tplId)}
+        onApplyCustomTemplate={(tplId, scope) => void handleApplyCustomTemplate(tplId, scope)}
         onDeleteCustomTemplate={handleDeleteCustomTemplate}
+        onChangeDrawPanelAsOverlay={setDrawPanelAsOverlay}
         onUpdatePageSettings={patch => applyDraftChange(cur => ({ ...cur, ...patch }), true)}
         onChangeBrush={patch => {
           if (patch.color !== undefined) setBrushColor(patch.color);
@@ -2812,6 +3288,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             bubbleCandidates={bubbleCandidates}
             comparingOriginalAiImage={comparingOriginalAiImage}
             activeTool={activeTool}
+            drawPanelAsOverlay={drawPanelAsOverlay}
             selection={selection}
             zoom={zoom}
             brushColor={brushColor}
@@ -2821,16 +3298,41 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             generatingAiPage={generatingAiPage}
             generatingAiZoneIndex={generatingAiZoneIndex}
             livePreviewImage={activeSession?.preview?.image || null}
+            canUndo={undoStack.length > 0}
+            canRedo={redoStack.length > 0}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            onSelectTool={tool => {
+              if (tool === 'draw-panel') setDrawPanelAsOverlay(false);
+              setActiveTool(tool);
+            }}
+            onToggleLayersDrawer={() => setLayersDrawerOpen(open => !open)}
             onSelect={handleSelectWithTab}
             onZoomChange={setZoom}
             onZoomFit={() => fitCanvasToViewport()}
             onToggleSnap={() => applyDraftChange(cur => ({ ...cur, snapEnabled: !cur.snapEnabled }), true)}
             onUpdatePanel={handleUpdatePanel}
+            onTogglePanelOverlay={handleTogglePanelOverlay}
+            onTogglePanelBorderless={handleTogglePanelBorderless}
+            onBringPanelOrder={handleBringPanelOrder}
+            onDuplicatePanel={handleDuplicatePanel}
+            onDeletePanel={handleDeletePanel}
+            onUploadImageToPanel={(panelId, file) => void handleUploadImageToPanel(panelId, file)}
+            onOpenPanelHistoryPicker={panelId => {
+              setSelection({ kind: 'panel', id: panelId });
+              setInspectorTab('panel');
+              setInspectorOpen(true);
+              setPanelHistoryRequestToken(v => v + 1);
+            }}
             onMoveAiAnchor={handleMoveAiAnchor}
             onUpdateAiAnchor={handleUpdateAiAnchor}
             onDeleteAiAnchor={handleDeleteAiAnchor}
             onConvertAnchorBubbleToVector={handleConvertSingleAnchorBubbleToVector}
             onUpdateGuidePanel={handleUpdateGuidePanel}
+            onUpdateGuidePanelPoints={handleUpdateGuidePanelPoints}
+            onToggleGuidePanelFlag={handleToggleGuidePanelFlag}
+            onDuplicateGuidePanel={handleDuplicateGuidePanel}
+            onDeleteGuidePanel={handleDeleteGuidePanel}
             onUpdateBreakoutZone={handleUpdateBreakoutZone}
             onToggleBubbleCandidate={id => setBubbleCandidates(cur => cur ? cur.map(c => c.id === id ? { ...c, selected: !c.selected } : c) : cur)}
             onWheelScalePanelImage={handleWheelScalePanelImage}
@@ -2841,6 +3343,9 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             } : cur)}
             onAddPanel={handleAddPanel}
             onSliceAtLine={handleSliceAtLine}
+            onSlicePolygonPath={handleSlicePolygonPath}
+            onDuplicateSelection={handleDuplicateSelection}
+            onDeleteSelection={handleDeleteSelection}
             onCommitStroke={(stroke: ComicStroke, drawingLayerId?: string) => applyDraftChange(
               cur => appendStrokeToDrawingLayer(
                 cur,
@@ -2903,7 +3408,10 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
               foregroundColor={brushColor}
               layerCount={draft.layerStack?.length ?? 2}
               layersDrawerOpen={layersDrawerOpen}
-              onSelectTool={setActiveTool}
+              onSelectTool={tool => {
+                if (tool === 'draw-panel') setDrawPanelAsOverlay(false);
+                setActiveTool(tool);
+              }}
               onChangeForegroundColor={setBrushColor}
               onToggleLayersDrawer={() => setLayersDrawerOpen(open => !open)}
             />
@@ -3040,6 +3548,10 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
                   onDuplicatePanel={handleDuplicatePanel}
                   onDeletePanel={handleDeletePanel}
                   onBringPanelOrder={handleBringPanelOrder}
+                  onTogglePanelOverlay={handleTogglePanelOverlay}
+                  onTogglePanelBorderless={handleTogglePanelBorderless}
+                  onUploadImageToPanel={(panelId, file) => void handleUploadImageToPanel(panelId, file)}
+                  panelHistoryRequestToken={panelHistoryRequestToken}
                   onGeneratePanel={id => void handleGeneratePanel(id)}
                   onGenerateAllPanels={() => void handleGenerateAllPanels()}
                   onCancelGeneration={handleCancelGeneration}

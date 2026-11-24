@@ -48,16 +48,47 @@ export const createDefaultLayers = (): ComicLayerState => ({
   stickers: { visible: true, locked: false, order: 3 },
 });
 
+export type ComicTemplateScope = 'full' | 'left' | 'right';
+
+export const remapNormalizedPointsToScope = (
+  points: ComicPoint[],
+  scope: ComicTemplateScope = 'full',
+  gutterX = 0.012,
+): ComicPoint[] => {
+  if (scope === 'full') return points.map(pt => ({ ...pt }));
+  const halfSpan = Math.max(0.2, 0.5 - gutterX * 0.6);
+  const startX = scope === 'left' ? 0 : 1 - halfSpan;
+  return points.map(pt => ({
+    x: Math.round((startX + pt.x * halfSpan) * 10000) / 10000,
+    y: pt.y,
+  }));
+};
+
+export const buildTemplatePanelsForScope = (
+  templateId = 'classic-4-121',
+  pageWidth = 832,
+  pageHeight = 1216,
+  gutterPx = 14,
+  scope: ComicTemplateScope = 'full',
+): ComicPanel[] => {
+  const gx = gutterPx / Math.max(1, pageWidth);
+  const gy = gutterPx / Math.max(1, pageHeight);
+  const template = COMIC_LAYOUT_TEMPLATES.find(item => item.id === templateId) || COMIC_LAYOUT_TEMPLATES[0];
+  const localGx = scope === 'full' ? gx : gx * 2;
+  return template.buildPanels(localGx, gy).map(panel => ({
+    ...panel,
+    points: remapNormalizedPointsToScope(panel.points, scope, gx),
+  }));
+};
+
 export const createGuidePanelsFromTemplate = (
   templateId = 'classic-4-121',
   pageWidth = 832,
   pageHeight = 1216,
   gutterPx = 14,
+  scope: ComicTemplateScope = 'full',
 ): ComicAiGuidePanel[] => {
-  const gx = gutterPx / Math.max(1, pageWidth);
-  const gy = gutterPx / Math.max(1, pageHeight);
-  const template = COMIC_LAYOUT_TEMPLATES.find(item => item.id === templateId) || COMIC_LAYOUT_TEMPLATES[0];
-  return template.buildPanels(gx, gy).map((panel, idx) => {
+  return buildTemplatePanelsForScope(templateId, pageWidth, pageHeight, gutterPx, scope).map((panel, idx) => {
     const b = getPanelBoundingBox(panel.points, 1, 1);
     const roundedPoints = panel.points.map(pt => ({
       x: Math.round(pt.x * 1000) / 1000,

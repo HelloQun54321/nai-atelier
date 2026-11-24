@@ -382,6 +382,7 @@ export interface ComicPageDraft {
 
 export type ComicSelection =
   | { kind: 'panel'; id: string }
+  | { kind: 'guide-panel'; id: string }
   | { kind: 'ai-anchor'; id: string }
   | { kind: 'panel-anchor'; panelId: string; id: string }
   | { kind: 'breakout-zone'; id: string }

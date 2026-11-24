@@ -142,6 +142,10 @@ interface ComicInspectorProps {
   onDuplicatePanel: (panelId: string) => void;
   onDeletePanel: (panelId: string) => void;
   onBringPanelOrder: (panelId: string, mode: 'front' | 'back') => void;
+  onTogglePanelOverlay?: (panelId: string) => void;
+  onTogglePanelBorderless?: (panelId: string) => void;
+  onUploadImageToPanel?: (panelId: string, file: File) => void;
+  panelHistoryRequestToken?: number;
   onGeneratePanel: (panelId: string) => void;
   onGenerateAllPanels: () => void;
   onCancelGeneration: () => void;
@@ -313,6 +317,10 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   onDuplicatePanel,
   onDeletePanel,
   onBringPanelOrder,
+  onTogglePanelOverlay,
+  onTogglePanelBorderless,
+  onUploadImageToPanel,
+  panelHistoryRequestToken,
   onGeneratePanel,
   onGenerateAllPanels,
   onCancelGeneration,
@@ -357,6 +365,13 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   const [charDictLoading, setCharDictLoading] = useState(false);
   const [fontManagerOpen, setFontManagerOpen] = useState(false);
   const fontFileInputRef = useRef<HTMLInputElement>(null);
+  const panelFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (panelHistoryRequestToken && panelHistoryRequestToken > 0) {
+      setHistoryPickerOpen(true);
+    }
+  }, [panelHistoryRequestToken]);
   const [selectedAnchorId, setSelectedAnchorId] = useState<string>('');
   const anchorStageRef = useRef<HTMLDivElement>(null);
   const draggingAnchorRef = useRef<string | null>(null);
@@ -1769,6 +1784,17 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                           >
                             {t('预埋速度线')}
                           </button>
+                          <button
+                            type="button"
+                            aria-pressed={Boolean(gp.borderless)}
+                            onClick={() => onUpdateAiPage(cur => ({
+                              ...cur,
+                              guidePanels: cur.guidePanels.map(item => item.id === gp.id ? { ...item, borderless: !item.borderless } : item),
+                            }), true)}
+                            className={`rounded border px-1.5 py-0.5 font-medium transition ${gp.borderless ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200' : 'border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400'}`}
+                          >
+                            {t('无框')}
+                          </button>
                           <label className="ml-auto inline-flex items-center gap-1 text-gray-500 dark:text-gray-400" title={t('可选格内氛围底色（默认中性灰不偏色）')}>
                             <span>{t('氛围底色')}</span>
                             <input
@@ -1912,6 +1938,31 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-sm font-bold text-gray-800 outline-none hover:border-gray-200 focus:border-indigo-400 focus:bg-white dark:text-gray-100 dark:hover:border-gray-700 dark:focus:bg-gray-800"
                     />
                     <div className="flex flex-none items-center gap-0.5">
+                      {onUploadImageToPanel && (
+                        <>
+                          <input
+                            ref={panelFileInputRef}
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp,image/gif"
+                            aria-hidden="true"
+                            className="hidden"
+                            onChange={e => {
+                              const file = e.target.files?.[0];
+                              e.target.value = '';
+                              if (file) onUploadImageToPanel(activePanel.id, file);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => panelFileInputRef.current?.click()}
+                            title={t('上传本地图片填入')}
+                            aria-label={t('上传本地图片填入')}
+                            className="inline-flex h-7 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                          >
+                            <Upload className="h-3 w-3" /> {t('上传')}
+                          </button>
+                        </>
+                      )}
                       <button
                         type="button"
                         onClick={() => setHistoryPickerOpen(true)}
@@ -2285,8 +2336,8 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                           </div>
                           <input
                             type="range"
-                            min={100}
-                            max={250}
+                            min={50}
+                            max={400}
                             value={Math.round((activePanel.image.scale || 1) * 100)}
                             onChange={e => onUpdatePanel(activePanel.id, p => p.image ? ({ ...p, image: { ...p.image, scale: Number(e.target.value) / 100 } }) : p, false)}
                             className="w-full accent-indigo-600"
@@ -2317,7 +2368,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                           />
                         </label>
                       </div>
-                      <div className="flex items-center gap-4 text-[11px] text-gray-600 dark:text-gray-300">
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-600 dark:text-gray-300">
                         <label className="flex items-center gap-1.5">
                           <span>{t('边框色')}</span>
                           <input
@@ -2338,6 +2389,30 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                             className="h-5 w-7 cursor-pointer rounded border border-gray-300 bg-transparent"
                           />
                         </label>
+                        {(onTogglePanelOverlay || onTogglePanelBorderless) && (
+                          <div className="ml-auto flex items-center gap-1">
+                            {onTogglePanelOverlay && (
+                              <button
+                                type="button"
+                                aria-pressed={Boolean(activePanel.inset)}
+                                onClick={() => onTogglePanelOverlay(activePanel.id)}
+                                className={`rounded border px-2 py-0.5 text-[11px] font-medium transition ${activePanel.inset ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                              >
+                                {t('叠加画框')}
+                              </button>
+                            )}
+                            {onTogglePanelBorderless && (
+                              <button
+                                type="button"
+                                aria-pressed={activePanel.borderWidth === 0}
+                                onClick={() => onTogglePanelBorderless(activePanel.id)}
+                                className={`rounded border px-2 py-0.5 text-[11px] font-medium transition ${activePanel.borderWidth === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                              >
+                                {t('无边框')}
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </details>

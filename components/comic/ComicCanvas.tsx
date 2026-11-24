@@ -1,15 +1,30 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, Magnet, Maximize2, MessageCircle, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Copy, Image as ImageIcon, Layers, Magnet, Maximize2, MessageCircle, Move, RotateCcw, Scissors, Trash2, Upload, ZoomIn, ZoomOut } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import {
   clampAnchorCoord,
   doesSegmentIntersectPolygon,
   getPanelBoundingBox,
   hitTestPanel,
+  pointInPolygon,
   rectToPolygon,
   rotatePointAround,
   snapComicPoint,
 } from '../../services/comic/comicGeometry';
+import {
+  findCutIntersectionsWithPanel,
+  isPointStrictlyInsidePolygonPx,
+  moveNormalizedPolygon,
+  moveNormalizedPolygonEdge,
+  moveNormalizedPolygonVertex,
+  placeComicPanelBadgePx,
+  rotateNormalizedPolygonPoints,
+  snapComicPanelAngle,
+  snapComicPanelDrag,
+  snapCutPointToPanels,
+  type ComicCutSnapHit,
+  type ComicSnapGuide,
+} from '../../services/comic/comicSnapping';
 import {
   buildComicBubbleRenderModel,
   COMIC_BUBBLE_SHAPES,
@@ -50,6 +65,7 @@ interface ComicCanvasProps {
   bubbleCandidates?: ComicBubbleCandidate[] | null;
   comparingOriginalAiImage?: boolean;
   activeTool: ComicTool;
+  drawPanelAsOverlay?: boolean;
   selection: ComicSelection;
   zoom: number;
   brushColor: string;
@@ -59,23 +75,43 @@ interface ComicCanvasProps {
   generatingAiPage?: boolean;
   generatingAiZoneIndex?: 0 | 1 | null;
   livePreviewImage?: string | null;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  onSelectTool?: (tool: ComicTool) => void;
+  onToggleLayersDrawer?: () => void;
   onSelect: (selection: ComicSelection) => void;
   onZoomChange: (nextZoom: number) => void;
   onZoomFit: () => void;
   onToggleSnap: () => void;
   onUpdatePanel: (panelId: string, updater: (panel: ComicPanel) => ComicPanel, commit?: boolean) => void;
+  onTogglePanelOverlay?: (panelId: string) => void;
+  onTogglePanelBorderless?: (panelId: string) => void;
+  onBringPanelOrder?: (panelId: string, mode: 'front' | 'back') => void;
+  onDuplicatePanel?: (panelId: string) => void;
+  onDeletePanel?: (panelId: string) => void;
+  onUploadImageToPanel?: (panelId: string, file: File) => void;
+  onOpenPanelHistoryPicker?: (panelId: string) => void;
   onMoveAiAnchor?: (anchorId: string, x: number, y: number, commit?: boolean) => void;
   onUpdateAiAnchor?: (anchorId: string, updater: (anchor: ComicAnchor) => ComicAnchor, commit?: boolean) => void;
   onDeleteAiAnchor?: (anchorId: string) => void;
   onConvertAnchorBubbleToVector?: (source: { kind: 'ai-anchor'; anchorId: string } | { kind: 'panel-anchor'; panelId: string; anchorId: string }) => void;
   onUpdateGuidePanel?: (guideId: string, patch: { x: number; y: number; width: number; height: number }, commit?: boolean) => void;
+  onUpdateGuidePanelPoints?: (guideId: string, points: ComicPoint[], commit?: boolean) => void;
+  onToggleGuidePanelFlag?: (guideId: string, flag: 'inset' | 'borderless' | 'bleed') => void;
+  onDuplicateGuidePanel?: (guideId: string) => void;
+  onDeleteGuidePanel?: (guideId: string) => void;
   onUpdateBreakoutZone?: (zoneId: string, patch: { x: number; y: number; width: number; height: number }, commit?: boolean) => void;
   onToggleBubbleCandidate?: (candidateId: string) => void;
   onWheelScalePanelImage?: (panelId: string, delta: number) => void;
   onChangeInpaintRect?: (rect: ComicInpaintRect) => void;
   onMoveInpaintAnchor?: (anchorId: string, x: number, y: number) => void;
-  onAddPanel: (points: ComicPoint[]) => void;
+  onAddPanel: (points: ComicPoint[], asOverlay?: boolean) => void;
   onSliceAtLine: (start: ComicPoint, end: ComicPoint) => void;
+  onSlicePolygonPath?: (panelId: string, path: ComicPoint[]) => void;
+  onDuplicateSelection?: () => void;
+  onDeleteSelection?: () => void;
   onCommitStroke: (stroke: ComicStroke, drawingLayerId?: string) => void;
   onAddBubbleAt: (point: ComicPoint) => void;
   onAddTextAt: (point: ComicPoint) => void;
@@ -98,16 +134,21 @@ type ResizeHandleDir = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 type DragAction =
   | { kind: 'pan-viewport'; startClientX: number; startClientY: number; startScrollLeft: number; startScrollTop: number }
-  | { kind: 'move-panel'; panelId: string; startPoint: ComicPoint; origPoints: ComicPoint[] }
+  | { kind: 'move-panel'; panelId: string; startPoint: ComicPoint; origPoints: ComicPoint[]; origRotation: number }
   | { kind: 'pan-image'; panelId: string; startPoint: ComicPoint; origOffsetX: number; origOffsetY: number }
-  | { kind: 'vertex'; panelId: string; vertexIndex: number }
+  | { kind: 'vertex'; panelId: string; vertexIndex: number; startPoint: ComicPoint; origPoints: ComicPoint[]; rotation: number }
+  | { kind: 'edge'; panelId: string; edgeIndex: number; startPoint: ComicPoint; origPoints: ComicPoint[]; rotation: number }
   | { kind: 'rotate-panel'; panelId: string; cx: number; cy: number; startAngle: number; origRotation: number }
+  | { kind: 'gesture-panel'; panelId: string; origPoints: ComicPoint[]; origRotation: number; startCenter: ComicPoint; startAngle: number }
   | { kind: 'move-anchor'; panelId: string; anchorId: string }
   | { kind: 'resize-panel-anchor-bubble'; panelId: string; anchorId: string; cx: number; cy: number }
   | { kind: 'move-ai-anchor'; anchorId: string }
   | { kind: 'resize-ai-anchor-bubble'; anchorId: string; cx: number; cy: number }
-  | { kind: 'move-guide-panel'; guideId: string; dx: number; dy: number; width: number; height: number }
-  | { kind: 'resize-guide-panel'; guideId: string; origX: number; origY: number }
+  | { kind: 'move-guide-panel'; guideId: string; startPoint: ComicPoint; origPoints: ComicPoint[] }
+  | { kind: 'guide-vertex'; guideId: string; vertexIndex: number; startPoint: ComicPoint; origPoints: ComicPoint[] }
+  | { kind: 'guide-edge'; guideId: string; edgeIndex: number; startPoint: ComicPoint; origPoints: ComicPoint[] }
+  | { kind: 'rotate-guide-panel'; guideId: string; cx: number; cy: number; startAngle: number; baseOrientation: number; origPoints: ComicPoint[] }
+  | { kind: 'gesture-guide-panel'; guideId: string; origPoints: ComicPoint[]; baseOrientation: number; startCenter: ComicPoint; startAngle: number }
   | { kind: 'move-breakout'; zoneId: string; dx: number; dy: number; width: number; height: number }
   | { kind: 'resize-breakout'; zoneId: string; origX: number; origY: number }
   | { kind: 'draw-inpaint'; startPoint: ComicPoint; currentPoint: ComicPoint }
@@ -115,10 +156,11 @@ type DragAction =
   | { kind: 'resize-inpaint'; origX: number; origY: number }
   | { kind: 'move-inpaint-anchor'; anchorId: string }
   | { kind: 'draw-panel'; startPoint: ComicPoint; currentPoint: ComicPoint }
-  | { kind: 'slice'; startPoint: ComicPoint; currentPoint: ComicPoint }
-  | { kind: 'move-bubble'; id: string; dx: number; dy: number }
+  | { kind: 'slice'; startPoint: ComicPoint; currentPoint: ComicPoint; snapPanelId?: string; snapStartPoint?: ComicPoint; crossedEnd?: ComicPoint; moved?: boolean }
+  | { kind: 'move-bubble'; id: string; dx: number; dy: number; origX: number; origY: number; origRotation: number }
   | { kind: 'resize-bubble'; id: string; handle: ResizeHandleDir; startPoint: ComicPoint; origX: number; origY: number; origW: number; origH: number }
   | { kind: 'rotate-bubble'; id: string; cx: number; cy: number; startAngle: number; origRotation: number }
+  | { kind: 'gesture-bubble'; id: string; origX: number; origY: number; origRotation: number; startCenter: ComicPoint; startAngle: number }
   | { kind: 'move-bubble-tail'; id: string }
   | { kind: 'move-text'; id: string; dx: number; dy: number }
   | { kind: 'move-sticker'; id: string; dx: number; dy: number }
@@ -349,6 +391,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   bubbleCandidates,
   comparingOriginalAiImage,
   activeTool,
+  drawPanelAsOverlay = false,
   selection,
   zoom,
   brushColor,
@@ -358,16 +401,33 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   generatingAiPage,
   generatingAiZoneIndex,
   livePreviewImage,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  onSelectTool,
+  onToggleLayersDrawer,
   onSelect,
   onZoomChange,
   onZoomFit,
   onToggleSnap,
   onUpdatePanel,
+  onTogglePanelOverlay,
+  onTogglePanelBorderless,
+  onBringPanelOrder,
+  onDuplicatePanel,
+  onDeletePanel,
+  onUploadImageToPanel,
+  onOpenPanelHistoryPicker,
   onMoveAiAnchor,
   onUpdateAiAnchor,
   onDeleteAiAnchor,
   onConvertAnchorBubbleToVector,
   onUpdateGuidePanel,
+  onUpdateGuidePanelPoints,
+  onToggleGuidePanelFlag,
+  onDuplicateGuidePanel,
+  onDeleteGuidePanel,
   onUpdateBreakoutZone,
   onToggleBubbleCandidate,
   onWheelScalePanelImage,
@@ -375,6 +435,9 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   onMoveInpaintAnchor,
   onAddPanel,
   onSliceAtLine,
+  onSlicePolygonPath,
+  onDuplicateSelection,
+  onDeleteSelection,
   onCommitStroke,
   onAddBubbleAt,
   onAddTextAt,
@@ -397,11 +460,40 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   const stageRef = useRef<HTMLDivElement>(null);
   const inlineTextareaRef = useRef<HTMLTextAreaElement>(null);
   const lastTapRef = useRef<{ key: string; time: number; x: number; y: number } | null>(null);
+  const touchPointsRef = useRef<Map<number, ComicPoint>>(new Map());
+  const panelUploadInputRef = useRef<HTMLInputElement>(null);
+  const panelUploadTargetRef = useRef<string | null>(null);
   const [drag, setDrag] = useState<DragAction | null>(null);
   const [snapGuide, setSnapGuide] = useState<{ x?: number; y?: number }>({});
+  const [snapGuides, setSnapGuides] = useState<ComicSnapGuide[]>([]);
+  const [rotationBadge, setRotationBadge] = useState<{ cx: number; cy: number; angle: number } | null>(null);
+  const [activeCut, setActiveCut] = useState<{ panelId: string; points: ComicPoint[] } | null>(null);
+  const [cutHover, setCutHover] = useState<ComicCutSnapHit | null>(null);
+  const [cutCursor, setCutCursor] = useState<ComicPoint | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [spacePressed, setSpacePressed] = useState(false);
   const [inlineEdit, setInlineEdit] = useState<InlineEditState>(null);
   const [shapePopoverOpen, setShapePopoverOpen] = useState(false);
+
+  useEffect(() => {
+    setActiveCut(null);
+    setCutHover(null);
+    setCutCursor(null);
+    setSnapGuides([]);
+    setRotationBadge(null);
+  }, [activeTool, draft.creationMode]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setContextMenu(null); };
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [contextMenu]);
 
   const openInlineEdit = (next: Exclude<InlineEditState, null>) => {
     setDrag(null);
@@ -531,6 +623,37 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     setInlineEdit(null);
   };
 
+  const getEffectiveManualPoly = (panel: ComicPanel): ComicPoint[] => {
+    if (!panel.rotation) return panel.points;
+    const b = getPanelBoundingBox(panel.points, 1, 1);
+    const center = { x: b.cx, y: b.cy };
+    const aspect = pageW / Math.max(1, pageH);
+    return panel.points.map(pt => rotatePointAround(pt, center, panel.rotation, aspect));
+  };
+
+  const editableCutPanels = useMemo(() => {
+    if (draft.creationMode === 'ai-page') {
+      const ordered = [
+        ...draft.aiPage.guidePanels.filter(gp => gp.inset),
+        ...draft.aiPage.guidePanels.filter(gp => !gp.inset),
+      ];
+      return ordered.map(gp => ({
+        id: gp.id,
+        points: getGuidePanelPolygon(gp),
+        rotation: 0,
+      }));
+    }
+    return [...sortedPanels]
+      .reverse()
+      .filter(panel => !panel.locked)
+      .map(panel => ({
+        id: panel.id,
+        points: getEffectiveManualPoly(panel),
+        rotation: panel.rotation,
+      }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.aiPage.guidePanels, draft.creationMode, pageH, pageW, sortedPanels]);
+
   const isPanningMode = spacePressed || activeTool === 'hand';
 
   const handleViewportPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -566,6 +689,67 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   };
 
   const handleStagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    setContextMenu(null);
+    if (event.pointerType === 'touch') {
+      touchPointsRef.current.set(event.pointerId, toNormalizedPoint(event.clientX, event.clientY));
+      if (touchPointsRef.current.size === 2 && drag) {
+        const [a, b] = [...touchPointsRef.current.values()];
+        const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const angle = (Math.atan2((b.y - a.y) * pageH, (b.x - a.x) * pageW) * 180) / Math.PI;
+        if (drag.kind === 'move-panel' || drag.kind === 'rotate-panel') {
+          const panel = draft.panels.find(p => p.id === drag.panelId);
+          if (panel) {
+            event.preventDefault();
+            stageRef.current?.setPointerCapture?.(event.pointerId);
+            setSnapGuides([]);
+            setDrag({
+              kind: 'gesture-panel',
+              panelId: panel.id,
+              origPoints: panel.points.map(pt => ({ ...pt })),
+              origRotation: panel.rotation || 0,
+              startCenter: center,
+              startAngle: angle,
+            });
+            return;
+          }
+        } else if (drag.kind === 'move-guide-panel' || drag.kind === 'rotate-guide-panel') {
+          const gp = draft.aiPage.guidePanels.find(g => g.id === drag.guideId);
+          if (gp) {
+            const poly = getGuidePanelPolygon(gp);
+            const orientation = (Math.atan2((poly[1].y - poly[0].y) * pageH, (poly[1].x - poly[0].x) * pageW) * 180) / Math.PI;
+            event.preventDefault();
+            stageRef.current?.setPointerCapture?.(event.pointerId);
+            setSnapGuides([]);
+            setDrag({
+              kind: 'gesture-guide-panel',
+              guideId: gp.id,
+              origPoints: poly,
+              baseOrientation: orientation,
+              startCenter: center,
+              startAngle: angle,
+            });
+            return;
+          }
+        } else if (drag.kind === 'move-bubble' || drag.kind === 'rotate-bubble') {
+          const bubble = draft.bubbles.find(item => item.id === drag.id);
+          if (bubble) {
+            event.preventDefault();
+            stageRef.current?.setPointerCapture?.(event.pointerId);
+            setDrag({
+              kind: 'gesture-bubble',
+              id: bubble.id,
+              origX: bubble.x,
+              origY: bubble.y,
+              origRotation: bubble.rotation || 0,
+              startCenter: center,
+              startAngle: angle,
+            });
+            return;
+          }
+        }
+      }
+    }
+
     if (isPanningMode || activeTool === 'zoom' || event.button === 1) return;
     if (event.button !== 0) return;
     if (inlineEdit) commitInlineEdit();
@@ -598,19 +782,41 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     }
 
     if (activeTool === 'draw-panel') {
-      if (draft.creationMode !== 'manual' || panelsLayerProps.locked) return;
+      if (panelsLayerProps.locked) return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
-      const snapped = snapComicPoint(pt, draft.panels, draft.snapEnabled);
+      const siblingPolys = draft.creationMode === 'ai-page'
+        ? draft.aiPage.guidePanels.map(getGuidePanelPolygon)
+        : draft.panels.map(getEffectiveManualPoly);
+      const snapPts = siblingPolys.map((pts, idx) => ({ id: String(idx), points: pts }) as ComicPanel);
+      const snapped = snapComicPoint(pt, snapPts, draft.snapEnabled);
       setSnapGuide({ x: snapped.guideX, y: snapped.guideY });
       setDrag({ kind: 'draw-panel', startPoint: snapped.point, currentPoint: snapped.point });
       return;
     }
 
     if (activeTool === 'slice') {
-      // 同时支持手动逐格与 AI 整页模式的两点一刀斜切分镜
       if (panelsLayerProps.locked) return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
-      setDrag({ kind: 'slice', startPoint: pt, currentPoint: pt });
+      const thresholdPx = (event.pointerType === 'touch' ? 22 : 14) / Math.max(0.25, zoom);
+      const candidates = activeCut
+        ? editableCutPanels.filter(item => item.id === activeCut.panelId)
+        : editableCutPanels;
+      const near = snapCutPointToPanels(candidates, pt, pageW, pageH, thresholdPx);
+      if (near && !activeCut) {
+        onSelect(draft.creationMode === 'ai-page'
+          ? { kind: 'guide-panel', id: near.panelId }
+          : { kind: 'panel', id: near.panelId });
+      }
+      setCutHover(near);
+      setCutCursor(near?.point || pt);
+      setDrag({
+        kind: 'slice',
+        startPoint: near?.point || pt,
+        currentPoint: near?.point || pt,
+        snapPanelId: activeCut?.panelId || near?.panelId,
+        snapStartPoint: activeCut ? undefined : near?.point,
+        moved: false,
+      });
       return;
     }
 
@@ -627,6 +833,29 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     if (activeTool === 'sticker') {
       onAddStickerAt(pt);
       return;
+    }
+
+    if (draft.creationMode === 'ai-page' && panelsLayerProps.visible && !inpaintDraft) {
+      const orderedGuides = [
+        ...draft.aiPage.guidePanels.filter(gp => gp.inset),
+        ...draft.aiPage.guidePanels.filter(gp => !gp.inset),
+      ];
+      for (const gp of orderedGuides) {
+        const poly = getGuidePanelPolygon(gp);
+        if (pointInPolygon(pt, poly)) {
+          onSelect({ kind: 'guide-panel', id: gp.id });
+          if (!panelsLayerProps.locked && activeTool === 'select') {
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+            setDrag({
+              kind: 'move-guide-panel',
+              guideId: gp.id,
+              startPoint: pt,
+              origPoints: poly.map(p => ({ ...p })),
+            });
+          }
+          return;
+        }
+      }
     }
 
     if (draft.creationMode === 'manual' && panelsLayerProps.visible) {
@@ -651,6 +880,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                 panelId: panel.id,
                 startPoint: pt,
                 origPoints: panel.points.map(p => ({ ...p })),
+                origRotation: panel.rotation || 0,
               });
             }
           }
@@ -662,8 +892,33 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   };
 
   const handleStagePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!drag || drag.kind === 'pan-viewport') return;
     const pt = toNormalizedPoint(event.clientX, event.clientY);
+    if (event.pointerType === 'touch' && touchPointsRef.current.has(event.pointerId)) {
+      touchPointsRef.current.set(event.pointerId, pt);
+    }
+
+    // 切割工具悬停预演：边界高亮 + 磁吸圆点 + 拐弯虚线与实时格缝带宽
+    if (!drag && activeTool === 'slice') {
+      const thresholdPx = (event.pointerType === 'touch' ? 22 : 14) / Math.max(0.25, zoom);
+      const candidates = activeCut
+        ? editableCutPanels.filter(item => item.id === activeCut.panelId)
+        : editableCutPanels;
+      let next = pt;
+      if (activeCut && event.shiftKey) {
+        const prev = activeCut.points[activeCut.points.length - 1];
+        const dx = pt.x - prev.x;
+        const dy = pt.y - prev.y;
+        const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+        const dist = Math.hypot(dx, dy);
+        next = { x: prev.x + Math.cos(angle) * dist, y: prev.y + Math.sin(angle) * dist };
+      }
+      const near = snapCutPointToPanels(candidates, next, pageW, pageH, thresholdPx);
+      setCutHover(near);
+      setCutCursor(near?.point || (activeCut ? next : null));
+      return;
+    }
+
+    if (!drag || drag.kind === 'pan-viewport') return;
 
     if (drag.kind === 'stroke') {
       setDrag({ ...drag, stroke: { ...drag.stroke, points: [...drag.stroke.points, pt] } });
@@ -671,39 +926,148 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     }
 
     if (drag.kind === 'draw-panel') {
-      const snapped = snapComicPoint(pt, draft.panels, draft.snapEnabled);
+      const siblingPolys = draft.creationMode === 'ai-page'
+        ? draft.aiPage.guidePanels.map(getGuidePanelPolygon)
+        : draft.panels.map(getEffectiveManualPoly);
+      const snapPts = siblingPolys.map((pts, idx) => ({ id: String(idx), points: pts }) as ComicPanel);
+      const snapped = snapComicPoint(pt, snapPts, draft.snapEnabled);
       setSnapGuide({ x: snapped.guideX, y: snapped.guideY });
       setDrag({ ...drag, currentPoint: snapped.point });
       return;
     }
 
     if (drag.kind === 'slice') {
+      const origin = activeCut ? activeCut.points[activeCut.points.length - 1] : drag.startPoint;
       let next = pt;
       if (event.shiftKey) {
-        const dx = pt.x - drag.startPoint.x;
-        const dy = pt.y - drag.startPoint.y;
+        const dx = pt.x - origin.x;
+        const dy = pt.y - origin.y;
         const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
         const dist = Math.hypot(dx, dy);
-        next = { x: drag.startPoint.x + Math.cos(angle) * dist, y: drag.startPoint.y + Math.sin(angle) * dist };
+        next = { x: origin.x + Math.cos(angle) * dist, y: origin.y + Math.sin(angle) * dist };
       }
-      setDrag({ ...drag, currentPoint: next });
+      const thresholdPx = (event.pointerType === 'touch' ? 22 : 14) / Math.max(0.25, zoom);
+      const candidates = drag.snapPanelId
+        ? editableCutPanels.filter(item => item.id === drag.snapPanelId)
+        : editableCutPanels;
+      const near = snapCutPointToPanels(candidates, next, pageW, pageH, thresholdPx);
+      let crossedEnd = drag.crossedEnd;
+      if (!activeCut && drag.snapPanelId && drag.snapStartPoint && !crossedEnd) {
+        const target = editableCutPanels.find(item => item.id === drag.snapPanelId);
+        if (target) {
+          const hits = findCutIntersectionsWithPanel(target.id, target.points, drag.snapStartPoint, next, pageW, pageH);
+          const farHit = hits.find(h => (
+            Math.hypot((h.point.x - drag.snapStartPoint!.x) * pageW, (h.point.y - drag.snapStartPoint!.y) * pageH) >= 12
+          ));
+          if (farHit) crossedEnd = farHit.point;
+        }
+      }
+      const moved = drag.moved || Math.hypot((pt.x - drag.startPoint.x) * pageW, (pt.y - drag.startPoint.y) * pageH) >= 5;
+      setCutHover(near);
+      setCutCursor(crossedEnd || near?.point || next);
+      setDrag({ ...drag, currentPoint: near?.point || next, crossedEnd, moved });
       return;
     }
 
-    if (drag.kind === 'vertex') {
-      const targetPanel = draft.panels.find(p => p.id === drag.panelId);
-      const siblings = draft.panels.filter(p => p.id !== drag.panelId);
-      let localPt = pt;
-      if (targetPanel?.rotation) {
-        const bounds = getPanelBoundingBox(targetPanel.points, 1, 1);
-        localPt = rotatePointAround(pt, { x: bounds.cx, y: bounds.cy }, -targetPanel.rotation, pageW / pageH);
-      }
-      const snapped = snapComicPoint(localPt, siblings, draft.snapEnabled);
-      setSnapGuide({ x: snapped.guideX, y: snapped.guideY });
+    if (drag.kind === 'gesture-panel' && touchPointsRef.current.size >= 2) {
+      const [a, b] = [...touchPointsRef.current.values()];
+      const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const angle = (Math.atan2((b.y - a.y) * pageH, (b.x - a.x) * pageW) * 180) / Math.PI;
+      const dx = center.x - drag.startCenter.x;
+      const dy = center.y - drag.startCenter.y;
+      const siblings = draft.panels.filter(p => p.id !== drag.panelId).map(getEffectiveManualPoly);
+      const snapped = snapComicPanelAngle(drag.origRotation + (angle - drag.startAngle), siblings, pageW, pageH, false, draft.snapEnabled);
+      const nextPts = moveNormalizedPolygon(drag.origPoints, { x: dx, y: dy }, pageW, pageH);
+      const box = getPanelBoundingBox(nextPts, pageW, pageH);
+      setRotationBadge({ cx: box.cx, cy: box.cy, angle: snapped.angle });
       onUpdatePanel(drag.panelId, panel => ({
         ...panel,
-        points: panel.points.map((v, idx) => (idx === drag.vertexIndex ? snapped.point : v)),
+        points: nextPts,
+        rotation: Number(snapped.angle.toFixed(1)),
       }), false);
+      return;
+    }
+
+    if (drag.kind === 'gesture-guide-panel' && touchPointsRef.current.size >= 2) {
+      const [a, b] = [...touchPointsRef.current.values()];
+      const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const angle = (Math.atan2((b.y - a.y) * pageH, (b.x - a.x) * pageW) * 180) / Math.PI;
+      const dx = center.x - drag.startCenter.x;
+      const dy = center.y - drag.startCenter.y;
+      const siblings = draft.aiPage.guidePanels.filter(g => g.id !== drag.guideId).map(getGuidePanelPolygon);
+      const snapped = snapComicPanelAngle(drag.baseOrientation + (angle - drag.startAngle), siblings, pageW, pageH, false, draft.snapEnabled);
+      const rotated = rotateNormalizedPolygonPoints(drag.origPoints, snapped.angle - drag.baseOrientation, { x: dx, y: dy }, pageW, pageH);
+      if (rotated) {
+        const box = getPanelBoundingBox(rotated, pageW, pageH);
+        setRotationBadge({ cx: box.cx, cy: box.cy, angle: snapped.angle });
+        onUpdateGuidePanelPoints?.(drag.guideId, rotated, false);
+      }
+      return;
+    }
+
+    if (drag.kind === 'gesture-bubble' && touchPointsRef.current.size >= 2) {
+      const [a, b] = [...touchPointsRef.current.values()];
+      const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const angle = (Math.atan2((b.y - a.y) * pageH, (b.x - a.x) * pageW) * 180) / Math.PI;
+      const nextRot = Math.max(-45, Math.min(45, Math.round(drag.origRotation + (angle - drag.startAngle))));
+      const nx = Math.min(0.98, Math.max(0.02, drag.origX + (center.x - drag.startCenter.x)));
+      const ny = Math.min(0.98, Math.max(0.02, drag.origY + (center.y - drag.startCenter.y)));
+      onUpdateBubble?.(drag.id, cur => ({
+        ...cur,
+        x: nx,
+        y: ny,
+        tailX: cur.tailX + (nx - cur.x),
+        tailY: cur.tailY + (ny - cur.y),
+        rotation: nextRot,
+      }), false);
+      return;
+    }
+
+    if (drag.kind === 'vertex' || drag.kind === 'edge') {
+      const thresholdPx = (event.pointerType === 'touch' ? 10 : 7) / Math.max(0.25, zoom);
+      const snapEnabled = !event.altKey && draft.snapEnabled;
+      const siblings = draft.panels.filter(p => p.id !== drag.panelId).map(getEffectiveManualPoly);
+      let startNorm = drag.startPoint;
+      let curNorm = pt;
+      if (drag.rotation) {
+        const origB = getPanelBoundingBox(drag.origPoints, 1, 1);
+        const center = { x: origB.cx, y: origB.cy };
+        const aspect = pageW / Math.max(1, pageH);
+        startNorm = rotatePointAround(drag.startPoint, center, -drag.rotation, aspect);
+        curNorm = rotatePointAround(pt, center, -drag.rotation, aspect);
+      }
+      const rawDelta = { x: curNorm.x - startNorm.x, y: curNorm.y - startNorm.y };
+      const kind = drag.kind === 'vertex' ? 'vertex' : 'edge';
+      const idx = drag.kind === 'vertex' ? drag.vertexIndex : drag.edgeIndex;
+      const snapped = drag.rotation
+        ? { delta: rawDelta, guides: [] as ComicSnapGuide[] }
+        : snapComicPanelDrag({
+          points: drag.origPoints,
+          kind,
+          index: idx,
+          deltaNorm: rawDelta,
+          siblingPolygons: siblings,
+          pageW,
+          pageH,
+          thresholdPx,
+          shift: event.shiftKey,
+          enabled: snapEnabled,
+        });
+      const movedPts = drag.kind === 'vertex'
+        ? moveNormalizedPolygonVertex(
+          drag.origPoints,
+          drag.vertexIndex,
+          { x: drag.origPoints[drag.vertexIndex].x + snapped.delta.x, y: drag.origPoints[drag.vertexIndex].y + snapped.delta.y },
+          pageW,
+          pageH,
+        )
+        : moveNormalizedPolygonEdge(drag.origPoints, drag.edgeIndex, snapped.delta, pageW, pageH);
+      if (movedPts) {
+        setSnapGuides(snapped.guides);
+        onUpdatePanel(drag.panelId, panel => ({ ...panel, points: movedPts }), false);
+      } else {
+        setSnapGuides([]);
+      }
       return;
     }
 
@@ -728,27 +1092,63 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       return;
     }
 
-    if (drag.kind === 'move-guide-panel') {
-      const x = Math.max(0.02, Math.min(0.98 - drag.width, pt.x - drag.dx));
-      const y = Math.max(0.02, Math.min(0.98 - drag.height, pt.y - drag.dy));
-      onUpdateGuidePanel?.(drag.guideId, {
-        x: Math.round(x * 1000) / 1000,
-        y: Math.round(y * 1000) / 1000,
-        width: drag.width,
-        height: drag.height,
-      }, false);
+    if (drag.kind === 'move-guide-panel' || drag.kind === 'guide-vertex' || drag.kind === 'guide-edge') {
+      const thresholdPx = (event.pointerType === 'touch' ? 10 : 7) / Math.max(0.25, zoom);
+      const snapEnabled = !event.altKey && draft.snapEnabled;
+      const siblings = draft.aiPage.guidePanels.filter(g => g.id !== drag.guideId).map(getGuidePanelPolygon);
+      const rawDelta = { x: pt.x - drag.startPoint.x, y: pt.y - drag.startPoint.y };
+      const snapKind = drag.kind === 'move-guide-panel' ? 'move' : drag.kind === 'guide-vertex' ? 'vertex' : 'edge';
+      const idx = drag.kind === 'guide-vertex' ? drag.vertexIndex : drag.kind === 'guide-edge' ? drag.edgeIndex : 0;
+      const snapped = snapComicPanelDrag({
+        points: drag.origPoints,
+        kind: snapKind,
+        index: idx,
+        deltaNorm: rawDelta,
+        siblingPolygons: siblings,
+        pageW,
+        pageH,
+        thresholdPx,
+        shift: event.shiftKey,
+        enabled: snapEnabled,
+      });
+      let nextPts: ComicPoint[] | null = null;
+      if (drag.kind === 'move-guide-panel') {
+        nextPts = moveNormalizedPolygon(drag.origPoints, snapped.delta, pageW, pageH);
+      } else if (drag.kind === 'guide-vertex') {
+        nextPts = moveNormalizedPolygonVertex(
+          drag.origPoints,
+          drag.vertexIndex,
+          { x: drag.origPoints[drag.vertexIndex].x + snapped.delta.x, y: drag.origPoints[drag.vertexIndex].y + snapped.delta.y },
+          pageW,
+          pageH,
+        );
+      } else {
+        nextPts = moveNormalizedPolygonEdge(drag.origPoints, drag.edgeIndex, snapped.delta, pageW, pageH);
+      }
+      if (nextPts) {
+        setSnapGuides(snapped.guides);
+        if (onUpdateGuidePanelPoints) {
+          onUpdateGuidePanelPoints(drag.guideId, nextPts, false);
+        } else {
+          const b = getPanelBoundingBox(nextPts, 1, 1);
+          onUpdateGuidePanel?.(drag.guideId, { x: b.minX, y: b.minY, width: b.width, height: b.height }, false);
+        }
+      } else {
+        setSnapGuides([]);
+      }
       return;
     }
 
-    if (drag.kind === 'resize-guide-panel') {
-      const width = Math.max(0.12, Math.min(0.98 - drag.origX, pt.x - drag.origX));
-      const height = Math.max(0.10, Math.min(0.98 - drag.origY, pt.y - drag.origY));
-      onUpdateGuidePanel?.(drag.guideId, {
-        x: drag.origX,
-        y: drag.origY,
-        width: Math.round(width * 1000) / 1000,
-        height: Math.round(height * 1000) / 1000,
-      }, false);
+    if (drag.kind === 'rotate-guide-panel') {
+      const curAngle = (Math.atan2((pt.y - drag.cy) * pageH, (pt.x - drag.cx) * pageW) * 180) / Math.PI;
+      const siblings = draft.aiPage.guidePanels.filter(g => g.id !== drag.guideId).map(getGuidePanelPolygon);
+      const rawOrientation = drag.baseOrientation + (curAngle - drag.startAngle);
+      const snapped = snapComicPanelAngle(rawOrientation, siblings, pageW, pageH, event.shiftKey, !event.altKey && draft.snapEnabled);
+      const rotated = rotateNormalizedPolygonPoints(drag.origPoints, snapped.angle - drag.baseOrientation, { x: 0, y: 0 }, pageW, pageH);
+      if (rotated) {
+        setRotationBadge({ cx: drag.cx * pageW, cy: drag.cy * pageH, angle: snapped.angle });
+        onUpdateGuidePanelPoints?.(drag.guideId, rotated, false);
+      }
       return;
     }
 
@@ -819,21 +1219,23 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     }
 
     if (drag.kind === 'move-panel') {
-      const dx = pt.x - drag.startPoint.x;
-      const dy = pt.y - drag.startPoint.y;
-      const siblings = draft.panels.filter(p => p.id !== drag.panelId);
-      const firstMoved = { x: drag.origPoints[0].x + dx, y: drag.origPoints[0].y + dy };
-      const snapped = snapComicPoint(firstMoved, siblings, draft.snapEnabled);
-      const adjDx = snapped.point.x - drag.origPoints[0].x;
-      const adjDy = snapped.point.y - drag.origPoints[0].y;
-      setSnapGuide({ x: snapped.guideX, y: snapped.guideY });
-      onUpdatePanel(drag.panelId, panel => ({
-        ...panel,
-        points: drag.origPoints.map(v => ({
-          x: Math.min(0.99, Math.max(0.01, v.x + adjDx)),
-          y: Math.min(0.99, Math.max(0.01, v.y + adjDy)),
-        })),
-      }), false);
+      const thresholdPx = (event.pointerType === 'touch' ? 10 : 7) / Math.max(0.25, zoom);
+      const siblings = draft.panels.filter(p => p.id !== drag.panelId).map(getEffectiveManualPoly);
+      const rawDelta = { x: pt.x - drag.startPoint.x, y: pt.y - drag.startPoint.y };
+      const snapped = snapComicPanelDrag({
+        points: drag.origPoints,
+        kind: 'move',
+        deltaNorm: rawDelta,
+        siblingPolygons: siblings,
+        pageW,
+        pageH,
+        thresholdPx,
+        shift: event.shiftKey,
+        enabled: !event.altKey && draft.snapEnabled,
+      });
+      const movedPts = moveNormalizedPolygon(drag.origPoints, snapped.delta, pageW, pageH);
+      setSnapGuides(snapped.guides);
+      onUpdatePanel(drag.panelId, panel => ({ ...panel, points: movedPts }), false);
       return;
     }
 
@@ -856,9 +1258,12 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
 
     if (drag.kind === 'rotate-panel') {
       const angle = (Math.atan2((pt.y - drag.cy) * pageH, (pt.x - drag.cx) * pageW) * 180) / Math.PI;
-      let nextRot = drag.origRotation + (angle - drag.startAngle);
-      if (Math.abs(nextRot % 15) < 2) nextRot = Math.round(nextRot / 15) * 15;
-      onUpdatePanel(drag.panelId, panel => ({ ...panel, rotation: Math.round(nextRot) }), false);
+      const siblings = draft.panels.filter(p => p.id !== drag.panelId).map(getEffectiveManualPoly);
+      const rawRot = drag.origRotation + (angle - drag.startAngle);
+      const snapped = snapComicPanelAngle(rawRot, siblings, pageW, pageH, event.shiftKey, !event.altKey && draft.snapEnabled);
+      const nextRot = Number(snapped.angle.toFixed(1));
+      setRotationBadge({ cx: drag.cx * pageW, cy: drag.cy * pageH, angle: nextRot });
+      onUpdatePanel(drag.panelId, panel => ({ ...panel, rotation: nextRot }), false);
       return;
     }
 
@@ -885,6 +1290,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       let nextRot = drag.origRotation + (angle - drag.startAngle);
       if (Math.abs(nextRot % 15) < 2.5) nextRot = Math.round(nextRot / 15) * 15;
       nextRot = Math.max(-45, Math.min(45, Math.round(nextRot)));
+      setRotationBadge({ cx: drag.cx * pageW, cy: drag.cy * pageH, angle: nextRot });
       onUpdateBubble?.(drag.id, cur => ({ ...cur, rotation: nextRot }), false);
       return;
     }
@@ -943,7 +1349,28 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     }
   };
 
-  const finishDrag = () => {
+  const finishDrag = (event?: React.PointerEvent<HTMLDivElement>) => {
+    if (event?.pointerType === 'touch') {
+      touchPointsRef.current.delete(event.pointerId);
+      if (touchPointsRef.current.size === 1 && drag && (drag.kind === 'gesture-panel' || drag.kind === 'gesture-guide-panel' || drag.kind === 'gesture-bubble')) {
+        const [, remaining] = [...touchPointsRef.current.entries()][0];
+        if (drag.kind === 'gesture-panel') {
+          const panel = draft.panels.find(p => p.id === drag.panelId);
+          if (panel) {
+            setRotationBadge(null);
+            setDrag({ kind: 'move-panel', panelId: panel.id, startPoint: remaining, origPoints: panel.points.map(p => ({ ...p })), origRotation: panel.rotation });
+            return;
+          }
+        } else if (drag.kind === 'gesture-guide-panel') {
+          const gp = draft.aiPage.guidePanels.find(g => g.id === drag.guideId);
+          if (gp) {
+            setRotationBadge(null);
+            setDrag({ kind: 'move-guide-panel', guideId: gp.id, startPoint: remaining, origPoints: getGuidePanelPolygon(gp) });
+            return;
+          }
+        }
+      }
+    }
     if (!drag) return;
     if (drag.kind === 'stroke' && drag.stroke.points.length > 0) {
       onCommitStroke(drag.stroke, drag.drawingLayerId);
@@ -953,26 +1380,106 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       const w = Math.abs(drag.currentPoint.x - drag.startPoint.x);
       const h = Math.abs(drag.currentPoint.y - drag.startPoint.y);
       if (w > 0.04 && h > 0.04) {
-        onAddPanel(rectToPolygon(minX, minY, w, h));
+        onAddPanel(rectToPolygon(minX, minY, w, h), drawPanelAsOverlay);
       }
     } else if (drag.kind === 'slice') {
-      if (Math.hypot(drag.currentPoint.x - drag.startPoint.x, drag.currentPoint.y - drag.startPoint.y) > 0.04) {
-        onSliceAtLine(drag.startPoint, drag.currentPoint);
+      const thresholdPx = 14 / Math.max(0.25, zoom);
+      const curPt = drag.currentPoint;
+      if (activeCut) {
+        const target = editableCutPanels.find(item => item.id === activeCut.panelId);
+        if (target) {
+          const nearEnd = snapCutPointToPanels([target], curPt, pageW, pageH, thresholdPx);
+          const prevPt = activeCut.points[activeCut.points.length - 1];
+          const hits = findCutIntersectionsWithPanel(target.id, target.points, prevPt, curPt, pageW, pageH);
+          const boundaryEnd = hits[0]?.point || nearEnd?.point;
+          const distFromStart = Math.hypot((curPt.x - activeCut.points[0].x) * pageW, (curPt.y - activeCut.points[0].y) * pageH);
+          if (boundaryEnd && distFromStart >= 10 && onSlicePolygonPath) {
+            onSlicePolygonPath(target.id, [...activeCut.points, boundaryEnd]);
+            setActiveCut(null);
+            setCutHover(null);
+            setCutCursor(null);
+          } else {
+            const targetPx = target.points.map(p => ({ x: p.x * pageW, y: p.y * pageH }));
+            if (isPointStrictlyInsidePolygonPx(targetPx, { x: curPt.x * pageW, y: curPt.y * pageH })) {
+              const distFromPrev = Math.hypot((curPt.x - prevPt.x) * pageW, (curPt.y - prevPt.y) * pageH);
+              if (distFromPrev >= 6) {
+                setActiveCut({ ...activeCut, points: [...activeCut.points, curPt] });
+                setCutHover(null);
+                setCutCursor(curPt);
+              }
+            } else {
+              setActiveCut(null);
+              setCutHover(null);
+              setCutCursor(null);
+            }
+          }
+        } else {
+          setActiveCut(null);
+        }
+      } else if (drag.snapPanelId && drag.snapStartPoint) {
+        const target = editableCutPanels.find(item => item.id === drag.snapPanelId);
+        if (target) {
+          const nearEnd = snapCutPointToPanels([target], curPt, pageW, pageH, thresholdPx);
+          const endPt = drag.crossedEnd || (
+            nearEnd && Math.hypot((nearEnd.point.x - drag.snapStartPoint.x) * pageW, (nearEnd.point.y - drag.snapStartPoint.y) * pageH) >= 12
+              ? nearEnd.point
+              : undefined
+          );
+          if (endPt && onSlicePolygonPath) {
+            onSlicePolygonPath(target.id, [drag.snapStartPoint, endPt]);
+            setCutHover(null);
+            setCutCursor(null);
+          } else if (!drag.moved) {
+            setActiveCut({ panelId: target.id, points: [drag.snapStartPoint] });
+            setCutHover(null);
+          } else {
+            const targetPx = target.points.map(p => ({ x: p.x * pageW, y: p.y * pageH }));
+            if (isPointStrictlyInsidePolygonPx(targetPx, { x: curPt.x * pageW, y: curPt.y * pageH })) {
+              setActiveCut({ panelId: target.id, points: [drag.snapStartPoint, curPt] });
+              setCutHover(null);
+            } else if (Math.hypot(curPt.x - drag.startPoint.x, curPt.y - drag.startPoint.y) > 0.04) {
+              onSliceAtLine(drag.startPoint, curPt);
+            }
+          }
+        }
+      } else if (Math.hypot(curPt.x - drag.startPoint.x, curPt.y - drag.startPoint.y) > 0.04) {
+        onSliceAtLine(drag.startPoint, curPt);
       }
-    } else if (drag.kind === 'move-panel' || drag.kind === 'vertex' || drag.kind === 'rotate-panel' || drag.kind === 'pan-image' || drag.kind === 'move-anchor' || drag.kind === 'resize-panel-anchor-bubble') {
+    } else if (
+      drag.kind === 'move-panel'
+      || drag.kind === 'vertex'
+      || drag.kind === 'edge'
+      || drag.kind === 'rotate-panel'
+      || drag.kind === 'gesture-panel'
+      || drag.kind === 'pan-image'
+      || drag.kind === 'move-anchor'
+      || drag.kind === 'resize-panel-anchor-bubble'
+    ) {
       onUpdatePanel(drag.panelId, panel => panel, true);
     } else if (drag.kind === 'move-ai-anchor') {
       const anchor = draft.aiPage.anchors.find(item => item.id === drag.anchorId);
       if (anchor) onMoveAiAnchor?.(anchor.id, anchor.x, anchor.y, true);
     } else if (drag.kind === 'resize-ai-anchor-bubble') {
       onUpdateAiAnchor?.(drag.anchorId, cur => cur, true);
-    } else if (drag.kind === 'move-guide-panel' || drag.kind === 'resize-guide-panel') {
+    } else if (
+      drag.kind === 'move-guide-panel'
+      || drag.kind === 'guide-vertex'
+      || drag.kind === 'guide-edge'
+      || drag.kind === 'rotate-guide-panel'
+      || drag.kind === 'gesture-guide-panel'
+    ) {
       const gp = draft.aiPage.guidePanels.find(item => item.id === drag.guideId);
-      if (gp) onUpdateGuidePanel?.(gp.id, { x: gp.x, y: gp.y, width: gp.width, height: gp.height }, true);
+      if (gp) {
+        if (onUpdateGuidePanelPoints) {
+          onUpdateGuidePanelPoints(gp.id, getGuidePanelPolygon(gp), true);
+        } else {
+          onUpdateGuidePanel?.(gp.id, { x: gp.x, y: gp.y, width: gp.width, height: gp.height }, true);
+        }
+      }
     } else if (drag.kind === 'move-breakout' || drag.kind === 'resize-breakout') {
       const bz = (draft.aiPage.breakoutZones || []).find(item => item.id === drag.zoneId);
       if (bz) onUpdateBreakoutZone?.(bz.id, { x: bz.x, y: bz.y, width: bz.width, height: bz.height }, true);
-    } else if (drag.kind === 'move-bubble') {
+    } else if (drag.kind === 'move-bubble' || drag.kind === 'gesture-bubble') {
       const b = draft.bubbles.find(item => item.id === drag.id);
       if (b) onMoveBubble(b.id, b.x, b.y, true);
     } else if (drag.kind === 'resize-bubble') {
@@ -997,6 +1504,8 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     }
     setDrag(null);
     setSnapGuide({});
+    setSnapGuides([]);
+    setRotationBadge(null);
   };
 
   const selectedPanel = selection?.kind === 'panel'
@@ -1005,35 +1514,25 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       ? draft.panels.find(p => p.id === selection.panelId)
       : undefined;
 
+  const selectedGuidePanel = draft.creationMode === 'ai-page' && selection?.kind === 'guide-panel'
+    ? draft.aiPage.guidePanels.find(gp => gp.id === selection.id)
+    : undefined;
+
   const sliceTargetIds = useMemo(() => {
-    if (drag?.kind !== 'slice') return new Set<string>();
     const ids = new Set<string>();
-    if (draft.creationMode === 'ai-page') {
-      for (const gp of draft.aiPage.guidePanels) {
-        const poly = getGuidePanelPolygon(gp);
-        if (doesSegmentIntersectPolygon(drag.startPoint, drag.currentPoint, poly)) {
-          ids.add(gp.id);
-        }
-      }
+    if (activeCut) {
+      ids.add(activeCut.panelId);
       return ids;
     }
-    const aspect = pageW / Math.max(1, pageH);
-    for (const panel of draft.panels) {
-      if (panel.locked) continue;
-      let s = drag.startPoint;
-      let e = drag.currentPoint;
-      if (panel.rotation) {
-        const b = getPanelBoundingBox(panel.points, 1, 1);
-        const c = { x: b.cx, y: b.cy };
-        s = rotatePointAround(s, c, -panel.rotation, aspect);
-        e = rotatePointAround(e, c, -panel.rotation, aspect);
-      }
-      if (doesSegmentIntersectPolygon(s, e, panel.points)) {
-        ids.add(panel.id);
+    if (cutHover) ids.add(cutHover.panelId);
+    if (drag?.kind !== 'slice') return ids;
+    for (const item of editableCutPanels) {
+      if (doesSegmentIntersectPolygon(drag.startPoint, drag.currentPoint, item.points)) {
+        ids.add(item.id);
       }
     }
     return ids;
-  }, [drag, draft.aiPage.guidePanels, draft.creationMode, draft.panels, pageW, pageH]);
+  }, [activeCut, cutHover, drag, editableCutPanels]);
 
   const cursorClass = isPanningMode
     ? (drag?.kind === 'pan-viewport' ? 'cursor-grabbing' : 'cursor-grab')
@@ -1219,8 +1718,8 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
         ref={scrollRef}
         onPointerDown={handleViewportPointerDown}
         onPointerMove={handleViewportPointerMove}
-        onPointerUp={finishDrag}
-        onPointerCancel={finishDrag}
+        onPointerUp={e => finishDrag(e)}
+        onPointerCancel={e => finishDrag(e)}
         className={`relative min-h-0 flex-1 overflow-auto ${isPanningMode ? (drag?.kind === 'pan-viewport' ? 'cursor-grabbing' : 'cursor-grab') : activeTool === 'zoom' ? 'cursor-zoom-in' : ''}`}
       >
         <div className="flex h-max min-h-full w-max min-w-full items-center justify-center px-6 pt-5 pb-20 md:px-8 md:pt-6 md:pb-20">
@@ -1231,8 +1730,34 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
             data-safe-mode-canvas={hasRenderedImages ? 'true' : undefined}
             onPointerDown={handleStagePointerDown}
             onPointerMove={handleStagePointerMove}
-            onPointerUp={finishDrag}
-            onPointerCancel={finishDrag}
+            onPointerUp={e => finishDrag(e)}
+            onPointerCancel={e => finishDrag(e)}
+            onContextMenu={event => {
+              event.preventDefault();
+              event.stopPropagation();
+              const pt = toNormalizedPoint(event.clientX, event.clientY);
+              if (draft.creationMode === 'ai-page' && !inpaintDraft) {
+                const ordered = [
+                  ...draft.aiPage.guidePanels.filter(g => g.inset),
+                  ...draft.aiPage.guidePanels.filter(g => !g.inset),
+                ];
+                const hit = ordered.find(g => pointInPolygon(pt, getGuidePanelPolygon(g)));
+                if (hit) onSelect({ kind: 'guide-panel', id: hit.id });
+              } else if (draft.creationMode === 'manual') {
+                for (let i = sortedPanels.length - 1; i >= 0; i--) {
+                  if (hitTestPanel(pt, sortedPanels[i], pageW, pageH)) {
+                    onSelect({ kind: 'panel', id: sortedPanels[i].id });
+                    break;
+                  }
+                }
+              }
+              const maxX = typeof window !== 'undefined' ? window.innerWidth - 220 : event.clientX;
+              const maxY = typeof window !== 'undefined' ? window.innerHeight - 320 : event.clientY;
+              setContextMenu({
+                x: Math.max(8, Math.min(maxX, event.clientX)),
+                y: Math.max(8, Math.min(maxY, event.clientY)),
+              });
+            }}
             style={{
               width: displayW,
               height: displayH,
@@ -1256,6 +1781,19 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                   </clipPath>
                 ))}
               </defs>
+
+              {draft.paperPresetId === 'manga-spread' && (
+                <line
+                  x1={pageW / 2}
+                  y1={0}
+                  x2={pageW / 2}
+                  y2={pageH}
+                  stroke="#94a3b8"
+                  strokeWidth={2}
+                  strokeDasharray="10 8"
+                  opacity={0.55}
+                />
+              )}
 
               {layerStack.map(layerNode => {
                 if (layerNode.kind === 'group') return null;
@@ -1342,17 +1880,21 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                   {orderedGuides.map(({ gp, idx }) => {
                                     const poly = getGuidePanelPolygon(gp);
                                     const b = getPanelBoundingBox(poly, pageW, pageH);
+                                    const badgePos = placeComicPanelBadgePx(poly, pageW, pageH, 30, 20) || { x: b.minX + 10, y: b.minY + 10, scale: 1 };
                                     const pointsAttr = poly.map(pt => `${(pt.x * pageW).toFixed(1)},${(pt.y * pageH).toFixed(1)}`).join(' ');
                                     const badgeNum = String(idx + 1).padStart(2, '0');
                                     const isSliceHit = sliceTargetIds.has(gp.id);
+                                    const isGuideSel = selection?.kind === 'guide-panel' && selection.id === gp.id;
                                     const baseFill = hasGenerated
-                                      ? 'rgba(99, 102, 241, 0.06)'
+                                      ? (isGuideSel ? 'rgba(99, 102, 241, 0.14)' : 'rgba(99, 102, 241, 0.06)')
                                       : (gp.fillColor?.trim() || (isFlashback ? '#3f4552' : '#eef1f6'));
                                     const strokeColor = isSliceHit
                                       ? '#ef4444'
-                                      : gp.inset
-                                        ? '#0a0a0a'
-                                        : (isFlashback ? '#e2e8f0' : '#4f46e5');
+                                      : isGuideSel
+                                        ? '#4f46e5'
+                                        : gp.inset
+                                          ? '#d97706'
+                                          : (isFlashback ? '#e2e8f0' : '#4f46e5');
                                     return (
                                       <g key={gp.id}>
                                         {gp.inset && !hasGenerated && (
@@ -1368,8 +1910,8 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                           points={pointsAttr}
                                           fill={baseFill}
                                           stroke={strokeColor}
-                                          strokeOpacity={isSliceHit ? 0.95 : (hasGenerated ? 0.72 : (gp.borderless ? 0.55 : 0.78))}
-                                          strokeWidth={isSliceHit ? 4 : (aiPage.layoutLockMode !== 'txt2img' && !gp.borderless ? 4 : 2.5)}
+                                          strokeOpacity={isSliceHit || isGuideSel ? 0.95 : (hasGenerated ? 0.72 : (gp.borderless ? 0.55 : 0.78))}
+                                          strokeWidth={isSliceHit || isGuideSel ? 4.5 : (aiPage.layoutLockMode !== 'txt2img' && !gp.borderless ? 4 : 2.5)}
                                           strokeDasharray={!isSliceHit && gp.borderless ? '8 6' : (aiPage.layoutLockMode !== 'txt2img' && !hasGenerated ? undefined : '10 6')}
                                         />
                                         {gp.speedlines && !hasGenerated && (
@@ -1390,30 +1932,32 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                             })}
                                           </g>
                                         )}
-                                        <rect
-                                          x={b.minX + 10}
-                                          y={b.minY + 10}
-                                          width={30}
-                                          height={20}
-                                          rx={4}
-                                          fill={gp.inset ? 'rgba(147, 51, 234, 0.9)' : 'rgba(79, 70, 229, 0.88)'}
-                                        />
-                                        <text
-                                          x={b.minX + 25}
-                                          y={b.minY + 20}
-                                          textAnchor="middle"
-                                          dominantBaseline="central"
-                                          fontSize={11}
-                                          fontWeight={700}
-                                          fill="#ffffff"
-                                        >
-                                          {badgeNum}
-                                        </text>
+                                        <g transform={`translate(${badgePos.x} ${badgePos.y}) scale(${badgePos.scale})`}>
+                                          <rect
+                                            x={0}
+                                            y={0}
+                                            width={30}
+                                            height={20}
+                                            rx={4}
+                                            fill={gp.inset ? 'rgba(217, 119, 6, 0.92)' : isGuideSel ? 'rgba(79, 70, 229, 0.98)' : 'rgba(79, 70, 229, 0.88)'}
+                                          />
+                                          <text
+                                            x={15}
+                                            y={10}
+                                            textAnchor="middle"
+                                            dominantBaseline="central"
+                                            fontSize={11}
+                                            fontWeight={700}
+                                            fill="#ffffff"
+                                          >
+                                            {badgeNum}
+                                          </text>
+                                        </g>
                                         {!hasGenerated && (
                                           <>
                                             <text
-                                              x={b.minX + 48}
-                                              y={b.minY + 20}
+                                              x={badgePos.x + 36 * badgePos.scale}
+                                              y={badgePos.y + 10 * badgePos.scale}
                                               dominantBaseline="central"
                                               fontSize={13}
                                               fontWeight={700}
@@ -1426,7 +1970,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                               {gp.speedlines ? ` · ${t('速度线')}` : ''}
                                             </text>
                                             {gp.summary && (
-                                              <foreignObject x={b.minX + 14} y={b.minY + 38} width={Math.max(40, b.width - 28)} height={Math.max(24, b.height - 48)}>
+                                              <foreignObject x={b.minX + 14} y={badgePos.y + 26 * badgePos.scale} width={Math.max(40, b.width - 28)} height={Math.max(24, b.height - 48)}>
                                                 <div
                                                   style={{
                                                     color: isFlashback ? '#cbd5e1' : '#64748b',
@@ -1633,48 +2177,53 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                                 />
                               </g>
                             )}
-                            {/* 空格分镜稿质感：左上角精致格号角标 + 居中画格名 */}
-                            {!previewUrl && (
-                              <g clipPath={`url(#comic-clip-${panel.id})`}>
-                                <rect
-                                  x={bounds.minX + 10}
-                                  y={bounds.minY + 10}
-                                  width={30}
-                                  height={20}
-                                  rx={4}
-                                  fill={isSelected ? '#4f46e5' : '#e2e8f0'}
-                                />
-                                <text
-                                  x={bounds.minX + 25}
-                                  y={bounds.minY + 20}
-                                  textAnchor="middle"
-                                  dominantBaseline="central"
-                                  fontSize={11}
-                                  fontWeight={700}
-                                  fill={isSelected ? '#ffffff' : '#64748b'}
-                                >
-                                  {badgeNum}
-                                </text>
-                                <text
-                                  x={bounds.cx}
-                                  y={bounds.cy}
-                                  textAnchor="middle"
-                                  dominantBaseline="central"
-                                  fontSize={Math.max(12, Math.min(26, Math.min(bounds.width, bounds.height) * 0.12))}
-                                  fontWeight={600}
-                                  fill="#94a3b8"
-                                >
-                                  {panel.name}
-                                </text>
-                              </g>
-                            )}
+                            {/* 空格分镜稿质感：凹多边形安全定位格号角标 + 居中画格名 */}
+                            {!previewUrl && (() => {
+                              const badgePos = placeComicPanelBadgePx(panel.points, pageW, pageH, 30, 20) || { x: bounds.minX + 10, y: bounds.minY + 10, scale: 1 };
+                              return (
+                                <g clipPath={`url(#comic-clip-${panel.id})`}>
+                                  <g transform={`translate(${badgePos.x} ${badgePos.y}) scale(${badgePos.scale})`}>
+                                    <rect
+                                      x={0}
+                                      y={0}
+                                      width={30}
+                                      height={20}
+                                      rx={4}
+                                      fill={panel.inset ? '#d97706' : isSelected ? '#4f46e5' : '#e2e8f0'}
+                                    />
+                                    <text
+                                      x={15}
+                                      y={10}
+                                      textAnchor="middle"
+                                      dominantBaseline="central"
+                                      fontSize={11}
+                                      fontWeight={700}
+                                      fill={panel.inset || isSelected ? '#ffffff' : '#64748b'}
+                                    >
+                                      {badgeNum}
+                                    </text>
+                                  </g>
+                                  <text
+                                    x={bounds.cx}
+                                    y={bounds.cy}
+                                    textAnchor="middle"
+                                    dominantBaseline="central"
+                                    fontSize={Math.max(12, Math.min(26, Math.min(bounds.width, bounds.height) * 0.12))}
+                                    fontWeight={600}
+                                    fill="#94a3b8"
+                                  >
+                                    {panel.name}
+                                  </text>
+                                </g>
+                              );
+                            })()}
                             {(() => {
-                              const isBorderlessUnfilled = panel.borderWidth === 0 && !isSelected && !isSliceTarget && !panel.image?.url;
+                              const isBorderlessUnfilled = panel.borderWidth === 0 && !isSelected && !isSliceTarget && (!panel.image?.url || panel.inset);
                               return (
                                 <polygon
                                   points={panel.points.map(p => `${p.x * pageW},${p.y * pageH}`).join(' ')}
                                   fill={isSliceTarget ? 'rgba(239,68,68,0.08)' : 'none'}
-                                  stroke={isSliceTarget ? '#ef4444' : isSelected ? '#4f46e5' : isBorderlessUnfilled ? '#94a3b8' : (panel.borderColor || '#111827')}
+                                  stroke={isSliceTarget ? '#ef4444' : isSelected ? (panel.inset ? '#d97706' : '#4f46e5') : panel.inset ? '#d97706' : isBorderlessUnfilled ? '#94a3b8' : (panel.borderColor || '#111827')}
                                   strokeWidth={isSliceTarget || isSelected ? Math.max(panel.borderWidth, 4) : isBorderlessUnfilled ? 1.5 : panel.borderWidth}
                                   strokeDasharray={isSliceTarget ? '10 6' : isBorderlessUnfilled ? '8 6' : undefined}
                                   strokeLinejoin="miter"
@@ -1847,7 +2396,15 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                           return;
                         }
                         const pt = toNormalizedPoint(event.clientX, event.clientY);
-                        setDrag({ kind: 'move-bubble', id: bubble.id, dx: pt.x - bubble.x, dy: pt.y - bubble.y });
+                        setDrag({
+                          kind: 'move-bubble',
+                          id: bubble.id,
+                          dx: pt.x - bubble.x,
+                          dy: pt.y - bubble.y,
+                          origX: bubble.x,
+                          origY: bubble.y,
+                          origRotation: bubble.rotation || 0,
+                        });
                       }}
                     >
                       <g transform={bubble.rotation ? `rotate(${bubble.rotation} ${cx} ${cy})` : undefined}>
@@ -2367,34 +2924,108 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                 <line x1={0} y1={snapGuide.y * pageH} x2={pageW} y2={snapGuide.y * pageH} stroke="#6366f1" strokeWidth={1.5} strokeDasharray="6 4" />
               )}
 
+              {/* Figma 级紫色智能吸附线与等距格缝测量标尺 */}
+              {snapGuides.map((g, idx) => {
+                const x1 = g.a.x * pageW;
+                const y1 = g.a.y * pageH;
+                const x2 = g.b.x * pageW;
+                const y2 = g.b.y * pageH;
+                const isVert = Math.abs(x1 - x2) < 0.5;
+                return (
+                  <g key={`sg-${idx}`} stroke="#a855f7" strokeWidth={1.75} fill="none">
+                    <line x1={x1} y1={y1} x2={x2} y2={y2} strokeDasharray={g.measure ? undefined : '5 4'} />
+                    {g.measure && (
+                      <>
+                        <line x1={x1 - (isVert ? 4 : 0)} y1={y1 - (isVert ? 0 : 4)} x2={x1 + (isVert ? 4 : 0)} y2={y1 + (isVert ? 0 : 4)} />
+                        <line x1={x2 - (isVert ? 4 : 0)} y1={y2 - (isVert ? 0 : 4)} x2={x2 + (isVert ? 4 : 0)} y2={y2 + (isVert ? 0 : 4)} />
+                      </>
+                    )}
+                  </g>
+                );
+              })}
+
+              {/* 旋转时居中显示实时度数标尺 */}
+              {rotationBadge && (
+                <g transform={`translate(${rotationBadge.cx} ${rotationBadge.cy})`}>
+                  <rect x={-26} y={-13} width={52} height={26} rx={6} fill="rgba(15, 23, 42, 0.88)" stroke="#a5b4fc" strokeWidth={1.5} />
+                  <text x={0} y={0} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="#ffffff">
+                    {Math.round(((rotationBadge.angle % 360) + 360) % 360)}°
+                  </text>
+                </g>
+              )}
+
               {drag?.kind === 'draw-panel' && (
                 <rect
                   x={Math.min(drag.startPoint.x, drag.currentPoint.x) * pageW}
                   y={Math.min(drag.startPoint.y, drag.currentPoint.y) * pageH}
                   width={Math.abs(drag.currentPoint.x - drag.startPoint.x) * pageW}
                   height={Math.abs(drag.currentPoint.y - drag.startPoint.y) * pageH}
-                  fill="rgba(79,70,229,0.12)"
-                  stroke="#4f46e5"
+                  fill={drawPanelAsOverlay ? 'rgba(217, 119, 6, 0.14)' : 'rgba(79,70,229,0.12)'}
+                  stroke={drawPanelAsOverlay ? '#d97706' : '#4f46e5'}
                   strokeWidth={3}
                   strokeDasharray="8 5"
                 />
               )}
 
-              {drag?.kind === 'slice' && (
-                <g>
-                  <line
-                    x1={drag.startPoint.x * pageW}
-                    y1={drag.startPoint.y * pageH}
-                    x2={drag.currentPoint.x * pageW}
-                    y2={drag.currentPoint.y * pageH}
-                    stroke="#ef4444"
-                    strokeWidth={3.5}
-                    strokeDasharray="10 6"
-                  />
-                  <circle cx={drag.startPoint.x * pageW} cy={drag.startPoint.y * pageH} r={6} fill="#ef4444" />
-                  <circle cx={drag.currentPoint.x * pageW} cy={drag.currentPoint.y * pageH} r={6} fill="#ef4444" />
-                </g>
-              )}
+              {/* 切割工具边界高亮 + 折线拐弯轨迹 + 真实格缝宽带预演 */}
+              {activeTool === 'slice' && (() => {
+                const hoverPanel = cutHover ? editableCutPanels.find(item => item.id === cutHover.panelId) : undefined;
+                const polyVertices = activeCut ? activeCut.points : [];
+                const previewLine: ComicPoint[] = polyVertices.length > 0
+                  ? (cutCursor ? [...polyVertices, cutCursor] : polyVertices)
+                  : (drag?.kind === 'slice' ? [drag.startPoint, drag.currentPoint] : []);
+                return (
+                  <g>
+                    {hoverPanel && cutHover && (() => {
+                      const edgeA = hoverPanel.points[cutHover.edgeIndex];
+                      const edgeB = hoverPanel.points[(cutHover.edgeIndex + 1) % hoverPanel.points.length];
+                      if (!edgeA || !edgeB) return null;
+                      return (
+                        <line
+                          x1={edgeA.x * pageW}
+                          y1={edgeA.y * pageH}
+                          x2={edgeB.x * pageW}
+                          y2={edgeB.y * pageH}
+                          stroke="#ef4444"
+                          strokeWidth={4}
+                          opacity={0.72}
+                          strokeLinecap="round"
+                        />
+                      );
+                    })()}
+                    {previewLine.length > 1 && (
+                      <g fill="none" strokeLinejoin="round" strokeLinecap="round">
+                        {draft.gutterPx > 0 && (
+                          <polyline
+                            points={previewLine.map(pt => `${pt.x * pageW},${pt.y * pageH}`).join(' ')}
+                            stroke="#ef4444"
+                            strokeWidth={draft.gutterPx}
+                            opacity={0.18}
+                          />
+                        )}
+                        <polyline
+                          points={previewLine.map(pt => `${pt.x * pageW},${pt.y * pageH}`).join(' ')}
+                          stroke="#ef4444"
+                          strokeWidth={3}
+                          strokeDasharray="8 5"
+                        />
+                      </g>
+                    )}
+                    {polyVertices.map((pt, idx) => (
+                      <circle key={`cut-pt-${idx}`} cx={pt.x * pageW} cy={pt.y * pageH} r={5.5} fill="#ef4444" stroke="#ffffff" strokeWidth={2} />
+                    ))}
+                    {drag?.kind === 'slice' && !activeCut && (
+                      <>
+                        <circle cx={drag.startPoint.x * pageW} cy={drag.startPoint.y * pageH} r={5.5} fill="#ef4444" stroke="#ffffff" strokeWidth={1.5} />
+                        <circle cx={drag.currentPoint.x * pageW} cy={drag.currentPoint.y * pageH} r={5.5} fill="#ef4444" stroke="#ffffff" strokeWidth={1.5} />
+                      </>
+                    )}
+                    {cutHover && (
+                      <circle cx={cutHover.point.x * pageW} cy={cutHover.point.y * pageH} r={6.5} fill="#ffffff" stroke="#ef4444" strokeWidth={2.5} />
+                    )}
+                  </g>
+                );
+              })()}
             </svg>
 
             {draft.creationMode === 'ai-page' && inpaintDraft && (
@@ -2498,52 +3129,96 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
 
             {draft.creationMode === 'ai-page' && !inpaintDraft && !(bubbleCandidates && bubbleCandidates.length > 0) && (draft.aiPage.showGuideOverlay || !draft.aiPage.generatedPageImage?.url) && (
               <div className="pointer-events-none absolute inset-0 z-20">
-                {/* 引导格拖拽移动与右下角缩放把手：引导框不再是只能看的摆设 */}
-                {activeTool === 'select' && onUpdateGuidePanel && draft.aiPage.guidePanels.map((gp, idx) => (
-                  <div
-                    key={`guide-ctrl-${gp.id}`}
-                    style={{
-                      left: `${gp.x * 100}%`,
-                      top: `${gp.y * 100}%`,
-                      width: `${gp.width * 100}%`,
-                      height: `${gp.height * 100}%`,
-                    }}
-                    className="pointer-events-none absolute"
-                  >
-                    <button
-                      type="button"
-                      aria-label={t('移动引导格 {0}', [gp.label || `第 ${idx + 1} 格`])}
-                      title={t('拖拽移动引导格位置')}
-                      onPointerDown={event => {
-                        if (isPanningMode) return;
-                        event.stopPropagation();
-                        const pt = toNormalizedPoint(event.clientX, event.clientY);
-                        stageRef.current?.setPointerCapture?.(event.pointerId);
-                        setDrag({
-                          kind: 'move-guide-panel',
-                          guideId: gp.id,
-                          dx: pt.x - gp.x,
-                          dy: pt.y - gp.y,
-                          width: gp.width,
-                          height: gp.height,
-                        });
-                      }}
-                      className="pointer-events-auto absolute top-1.5 left-1.5 h-6 w-20 cursor-move rounded bg-transparent hover:bg-indigo-500/15"
-                    />
-                    <button
-                      type="button"
-                      aria-label={t('调整引导格 {0} 大小', [gp.label || `第 ${idx + 1} 格`])}
-                      title={t('拖拽调整引导格宽高')}
-                      onPointerDown={event => {
-                        if (isPanningMode) return;
-                        event.stopPropagation();
-                        stageRef.current?.setPointerCapture?.(event.pointerId);
-                        setDrag({ kind: 'resize-guide-panel', guideId: gp.id, origX: gp.x, origY: gp.y });
-                      }}
-                      className="pointer-events-auto absolute -right-1.5 -bottom-1.5 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border-2 border-white bg-indigo-500 shadow hover:scale-125"
-                    />
-                  </div>
-                ))}
+                {/* 统一引导格四边中点拖边手柄 + 顶点斜角手柄 + 顶部旋转柄 */}
+                {activeTool === 'select' && selectedGuidePanel && !panelsLayerProps.locked && (() => {
+                  const gpPoly = getGuidePanelPolygon(selectedGuidePanel);
+                  const normBounds = getPanelBoundingBox(gpPoly, 1, 1);
+                  const accentBorder = selectedGuidePanel.inset ? 'border-amber-600' : 'border-indigo-600';
+                  const accentRot = selectedGuidePanel.inset ? 'border-amber-600 bg-amber-50 text-amber-700' : 'border-indigo-600 bg-indigo-50 text-indigo-700';
+                  return (
+                    <>
+                      {gpPoly.map((vertex, idx) => {
+                        const next = gpPoly[(idx + 1) % gpPoly.length];
+                        const mid = { x: (vertex.x + next.x) / 2, y: (vertex.y + next.y) / 2 };
+                        return (
+                          <button
+                            key={`gp-edge-${idx}`}
+                            type="button"
+                            aria-label={t('拖动第 {0} 条引导格边调大小', [idx + 1])}
+                            title={t('拖动整条边调整宽窄')}
+                            onPointerDown={event => {
+                              event.stopPropagation();
+                              const pt = toNormalizedPoint(event.clientX, event.clientY);
+                              stageRef.current?.setPointerCapture?.(event.pointerId);
+                              setDrag({
+                                kind: 'guide-edge',
+                                guideId: selectedGuidePanel.id,
+                                edgeIndex: idx,
+                                startPoint: pt,
+                                origPoints: gpPoly.map(p => ({ ...p })),
+                              });
+                            }}
+                            style={{ left: `${mid.x * 100}%`, top: `${mid.y * 100}%` }}
+                            className="group pointer-events-auto absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 cursor-move items-center justify-center bg-transparent"
+                          >
+                            <span className={`h-2.5 w-2.5 rounded-[2px] border-2 ${accentBorder} bg-white shadow-sm transition group-hover:scale-125`} />
+                          </button>
+                        );
+                      })}
+                      {gpPoly.map((vertex, idx) => (
+                        <button
+                          key={`gp-vertex-${idx}`}
+                          type="button"
+                          aria-label={t('拖动第 {0} 个引导格顶点', [idx + 1])}
+                          title={t('拖动调整引导格斜角顶点（Alt 临时关闭吸附）')}
+                          onPointerDown={event => {
+                            event.stopPropagation();
+                            const pt = toNormalizedPoint(event.clientX, event.clientY);
+                            stageRef.current?.setPointerCapture?.(event.pointerId);
+                            setDrag({
+                              kind: 'guide-vertex',
+                              guideId: selectedGuidePanel.id,
+                              vertexIndex: idx,
+                              startPoint: pt,
+                              origPoints: gpPoly.map(p => ({ ...p })),
+                            });
+                          }}
+                          style={{ left: `${vertex.x * 100}%`, top: `${vertex.y * 100}%` }}
+                          className="group pointer-events-auto absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full bg-transparent"
+                        >
+                          <span className={`h-3.5 w-3.5 rounded-full border-2 ${accentBorder} bg-white shadow-sm transition group-hover:scale-125`} />
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        aria-label={t('旋转引导格')}
+                        title={t('拖动旋转引导格（Shift 按 15° 吸附）')}
+                        onPointerDown={event => {
+                          event.stopPropagation();
+                          const pt = toNormalizedPoint(event.clientX, event.clientY);
+                          const startAngle = (Math.atan2((pt.y - normBounds.cy) * pageH, (pt.x - normBounds.cx) * pageW) * 180) / Math.PI;
+                          const orientation = (Math.atan2((gpPoly[1].y - gpPoly[0].y) * pageH, (gpPoly[1].x - gpPoly[0].x) * pageW) * 180) / Math.PI;
+                          stageRef.current?.setPointerCapture?.(event.pointerId);
+                          setDrag({
+                            kind: 'rotate-guide-panel',
+                            guideId: selectedGuidePanel.id,
+                            cx: normBounds.cx,
+                            cy: normBounds.cy,
+                            startAngle,
+                            baseOrientation: orientation,
+                            origPoints: gpPoly.map(p => ({ ...p })),
+                          });
+                        }}
+                        style={{ left: `${normBounds.cx * 100}%`, top: `${Math.max(0.015, normBounds.minY - 26 / pageH) * 100}%` }}
+                        className="group pointer-events-auto absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full bg-transparent"
+                      >
+                        <span className={`flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] font-bold shadow-sm transition group-hover:scale-110 ${accentRot}`}>
+                          ↻
+                        </span>
+                      </button>
+                    </>
+                  );
+                })()}
 
                 {/* 破格前景块画布拖拽与右下角缩放把手 */}
                 {activeTool === 'select' && onUpdateBreakoutZone && (draft.aiPage.breakoutZones || []).map((bz, idx) => (
@@ -2668,28 +3343,73 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                   })}
 
                   {selectedPanel.points.map((vertex, idx) => {
+                    const next = selectedPanel.points[(idx + 1) % selectedPanel.points.length];
+                    const rotatedMid = rotatePointAround(
+                      { x: (vertex.x + next.x) / 2, y: (vertex.y + next.y) / 2 },
+                      center,
+                      selectedPanel.rotation,
+                      aspect,
+                    );
+                    return (
+                      <button
+                        key={`edge-${idx}`}
+                        type="button"
+                        aria-label={t('拖动第 {0} 条边调大小', [idx + 1])}
+                        title={t('拖动整条边调整画格宽窄')}
+                        onPointerDown={event => {
+                          event.stopPropagation();
+                          const pt = toNormalizedPoint(event.clientX, event.clientY);
+                          stageRef.current?.setPointerCapture?.(event.pointerId);
+                          setDrag({
+                            kind: 'edge',
+                            panelId: selectedPanel.id,
+                            edgeIndex: idx,
+                            startPoint: pt,
+                            origPoints: selectedPanel.points.map(p => ({ ...p })),
+                            rotation: selectedPanel.rotation || 0,
+                          });
+                        }}
+                        style={{ left: `${rotatedMid.x * 100}%`, top: `${rotatedMid.y * 100}%` }}
+                        className="group pointer-events-auto absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 cursor-move items-center justify-center bg-transparent"
+                      >
+                        <span className="h-2.5 w-2.5 rounded-[2px] border-2 border-indigo-600 bg-white shadow-sm transition group-hover:scale-125" />
+                      </button>
+                    );
+                  })}
+
+                  {selectedPanel.points.map((vertex, idx) => {
                     const rotated = rotatePointAround(vertex, center, selectedPanel.rotation, aspect);
                     return (
                       <button
-                        key={idx}
+                        key={`vertex-${idx}`}
                         type="button"
                         aria-label={t('拖动第 {0} 个顶点调斜角', [idx + 1])}
-                        title={t('拖动调整画格斜角顶点')}
+                        title={t('拖动调整画格斜角顶点（Alt 临时关闭吸附）')}
                         onPointerDown={event => {
                           event.stopPropagation();
+                          const pt = toNormalizedPoint(event.clientX, event.clientY);
                           stageRef.current?.setPointerCapture?.(event.pointerId);
-                          setDrag({ kind: 'vertex', panelId: selectedPanel.id, vertexIndex: idx });
+                          setDrag({
+                            kind: 'vertex',
+                            panelId: selectedPanel.id,
+                            vertexIndex: idx,
+                            startPoint: pt,
+                            origPoints: selectedPanel.points.map(p => ({ ...p })),
+                            rotation: selectedPanel.rotation || 0,
+                          });
                         }}
                         style={{ left: `${rotated.x * 100}%`, top: `${rotated.y * 100}%` }}
-                        className="pointer-events-auto absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-indigo-600 bg-white shadow-sm hover:scale-125"
-                      />
+                        className="group pointer-events-auto absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full bg-transparent"
+                      >
+                        <span className="h-3.5 w-3.5 rounded-full border-2 border-indigo-600 bg-white shadow-sm transition group-hover:scale-125" />
+                      </button>
                     );
                   })}
 
                   <button
                     type="button"
                     aria-label={t('旋转分镜格')}
-                    title={t('拖动旋转分镜格')}
+                    title={t('拖动旋转分镜格（Shift 按 15° 吸附）')}
                     onPointerDown={event => {
                       event.stopPropagation();
                       const pt = toNormalizedPoint(event.clientX, event.clientY);
@@ -2705,10 +3425,161 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                       });
                     }}
                     style={{ left: `${rotHandleNorm.x * 100}%`, top: `${rotHandleNorm.y * 100}%` }}
-                    className="pointer-events-auto absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full border-2 border-indigo-600 bg-indigo-50 text-[10px] font-bold text-indigo-700 shadow-sm hover:scale-110"
+                    className="group pointer-events-auto absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full bg-transparent"
                   >
-                    ↻
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-indigo-600 bg-indigo-50 text-[10px] font-bold text-indigo-700 shadow-sm transition group-hover:scale-110">
+                      ↻
+                    </span>
                   </button>
+                </div>
+              );
+            })()}
+
+            {/* 选格极简悬浮快捷条（手动格：上传/历史选图/叠框/移图/清图；AI 引导格：叠框/无框/出血/复制/删除） */}
+            {activeTool === 'select' && !drag && !inlineEdit && !activeFloatingBubble && (() => {
+              const targetManual = selection?.kind === 'panel' && selectedPanel && !selectedPanel.locked && !panelsLayerProps.locked ? selectedPanel : null;
+              const targetGuide = draft.creationMode === 'ai-page' && !inpaintDraft && !(bubbleCandidates && bubbleCandidates.length > 0) && (draft.aiPage.showGuideOverlay || !draft.aiPage.generatedPageImage?.url) && selectedGuidePanel && !panelsLayerProps.locked ? selectedGuidePanel : null;
+              if (!targetManual && !targetGuide) return null;
+              const poly = targetManual ? getEffectiveManualPoly(targetManual) : getGuidePanelPolygon(targetGuide!);
+              const b = getPanelBoundingBox(poly, 1, 1);
+              const showBelow = b.minY < 0.14;
+              const alignMode = b.cx < 0.34 ? 'left' : b.cx > 0.66 ? 'right' : 'center';
+              const style: React.CSSProperties = {
+                top: `${(showBelow ? Math.min(0.95, b.maxY) : Math.max(0.03, b.minY)) * 100}%`,
+                ...(alignMode === 'left' ? { left: '6px' } : alignMode === 'right' ? { right: '6px' } : { left: `${b.cx * 100}%` }),
+                transform: `translate(${alignMode === 'center' ? '-50%' : '0%'}, ${showBelow ? '12px' : 'calc(-100% - 34px)'})`,
+              };
+              if (targetManual) {
+                return (
+                  <div
+                    role="toolbar"
+                    aria-label={t('分镜格快捷操作')}
+                    style={style}
+                    onPointerDown={e => e.stopPropagation()}
+                    className="appearance-panel absolute z-30 flex w-max items-center gap-1 whitespace-nowrap rounded-xl border border-gray-200/95 bg-white/95 px-1.5 py-1 text-[11px] shadow-lg backdrop-blur dark:border-gray-700/90 dark:bg-gray-900/95"
+                  >
+                    {onUploadImageToPanel && (
+                      <button
+                        type="button"
+                        aria-label={t('上传图片填入该格')}
+                        title={t('上传图片填入该格')}
+                        onClick={() => {
+                          panelUploadTargetRef.current = targetManual.id;
+                          panelUploadInputRef.current?.click();
+                        }}
+                        className="inline-flex h-6 items-center gap-1 rounded-lg px-2 font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                      >
+                        <Upload className="h-3 w-3 text-indigo-500" />
+                        <span>{t('上传')}</span>
+                      </button>
+                    )}
+                    {onOpenPanelHistoryPicker && (
+                      <button
+                        type="button"
+                        aria-label={t('从历史选图填入该格')}
+                        title={t('从生成历史选图填入该格')}
+                        onClick={() => onOpenPanelHistoryPicker(targetManual.id)}
+                        className="inline-flex h-6 items-center gap-1 rounded-lg px-2 font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                      >
+                        <ImageIcon className="h-3 w-3 text-indigo-500" />
+                        <span>{t('选图')}</span>
+                      </button>
+                    )}
+                    {onTogglePanelOverlay && (
+                      <button
+                        type="button"
+                        aria-label={t('切换叠加画框')}
+                        aria-pressed={Boolean(targetManual.inset)}
+                        title={t('切换上层叠加画框（支持透明立绘压在普通框之上）')}
+                        onClick={() => onTogglePanelOverlay(targetManual.id)}
+                        className={`inline-flex h-6 items-center gap-1 rounded-lg px-2 font-semibold transition ${targetManual.inset ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-200' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}
+                      >
+                        <Layers className="h-3 w-3" />
+                        <span>{t('叠框')}</span>
+                      </button>
+                    )}
+                    {targetManual.image?.url && onSelectTool && (
+                      <button
+                        type="button"
+                        aria-label={t('格内移图位置')}
+                        title={t('调整格内构图与缩放 (M)')}
+                        onClick={() => onSelectTool('frame-image')}
+                        className="inline-flex h-6 items-center gap-1 rounded-lg px-2 font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                      >
+                        <Move className="h-3 w-3 text-indigo-500" />
+                        <span>{t('移图')}</span>
+                      </button>
+                    )}
+                    {targetManual.image?.url && (
+                      <button
+                        type="button"
+                        aria-label={t('清除当前格图片')}
+                        title={t('清除当前格图片')}
+                        onClick={() => onUpdatePanel(targetManual.id, p => ({ ...p, image: undefined }), true)}
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <div
+                  role="toolbar"
+                  aria-label={t('引导格快捷操作')}
+                  style={style}
+                  onPointerDown={e => e.stopPropagation()}
+                  className="appearance-panel absolute z-30 flex w-max items-center gap-1 whitespace-nowrap rounded-xl border border-gray-200/95 bg-white/95 px-1.5 py-1 text-[11px] shadow-lg backdrop-blur dark:border-gray-700/90 dark:bg-gray-900/95"
+                >
+                  {onToggleGuidePanelFlag && (
+                    <>
+                      <button
+                        type="button"
+                        aria-pressed={Boolean(targetGuide!.inset)}
+                        onClick={() => onToggleGuidePanelFlag(targetGuide!.id, 'inset')}
+                        className={`inline-flex h-6 items-center rounded-lg px-2 font-semibold transition ${targetGuide!.inset ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-200' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}
+                      >
+                        {t('叠框')}
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={Boolean(targetGuide!.borderless)}
+                        onClick={() => onToggleGuidePanelFlag(targetGuide!.id, 'borderless')}
+                        className={`inline-flex h-6 items-center rounded-lg px-2 font-semibold transition ${targetGuide!.borderless ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-200' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}
+                      >
+                        {t('无框')}
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={Boolean(targetGuide!.bleed)}
+                        onClick={() => onToggleGuidePanelFlag(targetGuide!.id, 'bleed')}
+                        className={`inline-flex h-6 items-center rounded-lg px-2 font-semibold transition ${targetGuide!.bleed ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-200' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}
+                      >
+                        {t('出血')}
+                      </button>
+                    </>
+                  )}
+                  {onDuplicateGuidePanel && (
+                    <button
+                      type="button"
+                      aria-label={t('复制引导格')}
+                      onClick={() => onDuplicateGuidePanel(targetGuide!.id)}
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </button>
+                  )}
+                  {onDeleteGuidePanel && (
+                    <button
+                      type="button"
+                      aria-label={t('删除引导格')}
+                      onClick={() => onDeleteGuidePanel(targetGuide!.id)}
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
               );
             })()}
@@ -3003,6 +3874,337 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
           <Maximize2 className="h-3 w-3" />
         </button>
       </div>
+
+      {/* 隐藏的单格直接上传图片选择器（右键菜单与格上快捷条共用） */}
+      <input
+        ref={panelUploadInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        aria-hidden="true"
+        className="hidden"
+        onChange={event => {
+          const file = event.target.files?.[0];
+          const targetId = panelUploadTargetRef.current;
+          panelUploadTargetRef.current = null;
+          event.target.value = '';
+          if (file && targetId) {
+            onUploadImageToPanel?.(targetId, file);
+          }
+        }}
+      />
+
+      {/* 轻量化右键快捷菜单：围绕选定画格/引导格与高频画布操作提供就手动作，不常驻额外面板 */}
+      {contextMenu && (
+        <div
+          role="menu"
+          aria-label={t('画布快捷菜单')}
+          onPointerDown={e => e.stopPropagation()}
+          onContextMenu={e => e.preventDefault()}
+          style={{
+            left: `${Math.min(contextMenu.x, Math.max(8, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 216))}px`,
+            top: `${Math.min(contextMenu.y, Math.max(8, (typeof window !== 'undefined' ? window.innerHeight : 800) - 320))}px`,
+          }}
+          className="appearance-panel fixed z-50 min-w-48 rounded-xl border border-gray-200/95 bg-white/96 p-1.5 text-xs shadow-2xl backdrop-blur-md dark:border-gray-700/90 dark:bg-gray-900/96"
+        >
+          {draft.creationMode === 'manual' && selection?.kind === 'panel' && selectedPanel && (
+            <>
+              <div className="px-2 py-1 text-[10px] font-semibold text-gray-400">
+                {selectedPanel.name}
+              </div>
+              {onUploadImageToPanel && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    panelUploadTargetRef.current = selectedPanel.id;
+                    panelUploadInputRef.current?.click();
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+                >
+                  <Upload className="h-3.5 w-3.5 text-indigo-500" />
+                  <span>{t('上传图片填入该格')}</span>
+                </button>
+              )}
+              {onOpenPanelHistoryPicker && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onOpenPanelHistoryPicker(selectedPanel.id);
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+                >
+                  <ImageIcon className="h-3.5 w-3.5 text-indigo-500" />
+                  <span>{t('从历史选图填入该格')}</span>
+                </button>
+              )}
+              {onTogglePanelOverlay && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onTogglePanelOverlay(selectedPanel.id);
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+                >
+                  <Layers className="h-3.5 w-3.5 text-amber-500" />
+                  <span>{selectedPanel.inset ? t('恢复为普通分镜格') : t('转为上层叠加画框')}</span>
+                </button>
+              )}
+              {onTogglePanelBorderless && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onTogglePanelBorderless(selectedPanel.id);
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+                >
+                  <Maximize2 className="h-3.5 w-3.5 text-indigo-500" />
+                  <span>{selectedPanel.borderWidth === 0 ? t('恢复黑色边框') : t('切换无边框效果')}</span>
+                </button>
+              )}
+              {onSelectTool && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onSelectTool('slice');
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+                >
+                  <Scissors className="h-3.5 w-3.5 text-indigo-500" />
+                  <span>{t('切分分镜格')}</span>
+                </button>
+              )}
+              {onBringPanelOrder && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onBringPanelOrder(selectedPanel.id, 'front');
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+                >
+                  <Layers className="h-3.5 w-3.5 text-gray-500" />
+                  <span>{t('置顶叠框')}</span>
+                </button>
+              )}
+              {onDuplicatePanel && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onDuplicatePanel(selectedPanel.id);
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+                >
+                  <Copy className="h-3.5 w-3.5 text-gray-500" />
+                  <span>{t('复制分镜格')}</span>
+                </button>
+              )}
+              {onDeletePanel && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onDeletePanel(selectedPanel.id);
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>{t('删除分镜格')}</span>
+                </button>
+              )}
+              <div className="my-1 border-t border-gray-200/80 dark:border-gray-800/80" />
+            </>
+          )}
+
+          {draft.creationMode === 'ai-page' && selectedGuidePanel && (
+            <>
+              <div className="px-2 py-1 text-[10px] font-semibold text-gray-400">
+                {selectedGuidePanel.label}
+              </div>
+              {onToggleGuidePanelFlag && (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onToggleGuidePanelFlag(selectedGuidePanel.id, 'inset');
+                      setContextMenu(null);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+                  >
+                    <Layers className="h-3.5 w-3.5 text-amber-500" />
+                    <span>{selectedGuidePanel.inset ? t('取消叠加画框') : t('转为叠加画框')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onToggleGuidePanelFlag(selectedGuidePanel.id, 'borderless');
+                      setContextMenu(null);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+                  >
+                    <Maximize2 className="h-3.5 w-3.5 text-indigo-500" />
+                    <span>{selectedGuidePanel.borderless ? t('恢复引导黑边框') : t('切换无边框引导格')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onToggleGuidePanelFlag(selectedGuidePanel.id, 'bleed');
+                      setContextMenu(null);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+                  >
+                    <Maximize2 className="h-3.5 w-3.5 text-gray-500" />
+                    <span>{selectedGuidePanel.bleed ? t('取消出血格') : t('设为出血格')}</span>
+                  </button>
+                </>
+              )}
+              {onSelectTool && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onSelectTool('slice');
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+                >
+                  <Scissors className="h-3.5 w-3.5 text-indigo-500" />
+                  <span>{t('切分引导格')}</span>
+                </button>
+              )}
+              {onDuplicateGuidePanel && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onDuplicateGuidePanel(selectedGuidePanel.id);
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+                >
+                  <Copy className="h-3.5 w-3.5 text-gray-500" />
+                  <span>{t('复制引导格')}</span>
+                </button>
+              )}
+              {onDeleteGuidePanel && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onDeleteGuidePanel(selectedGuidePanel.id);
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>{t('删除引导格')}</span>
+                </button>
+              )}
+              <div className="my-1 border-t border-gray-200/80 dark:border-gray-800/80" />
+            </>
+          )}
+
+          {onSelectTool && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onSelectTool('bubble');
+                setContextMenu(null);
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+            >
+              <MessageCircle className="h-3.5 w-3.5 text-indigo-500" />
+              <span>{t('添加气泡')}</span>
+            </button>
+          )}
+          {onToggleLayersDrawer && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onToggleLayersDrawer();
+                setContextMenu(null);
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+            >
+              <Layers className="h-3.5 w-3.5 text-gray-500" />
+              <span>{t('图层与叠图')}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onZoomFit();
+              setContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+          >
+            <Maximize2 className="h-3.5 w-3.5 text-gray-500" />
+            <span>{t('适应屏幕')}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onZoomChange(1);
+              setContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
+          >
+            <RotateCcw className="h-3.5 w-3.5 text-gray-500" />
+            <span>{t('重置 100% 缩放')}</span>
+          </button>
+          {(onUndo || onRedo) && (
+            <div className="mt-1 grid grid-cols-2 gap-1 border-t border-gray-200/80 pt-1 dark:border-gray-800/80">
+              {onUndo && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!canUndo}
+                  onClick={() => {
+                    onUndo();
+                    setContextMenu(null);
+                  }}
+                  className="rounded-lg px-2 py-1.5 text-center font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"
+                >
+                  {t('撤销')}
+                </button>
+              )}
+              {onRedo && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!canRedo}
+                  onClick={() => {
+                    onRedo();
+                    setContextMenu(null);
+                  }}
+                  className="rounded-lg px-2 py-1.5 text-center font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"
+                >
+                  {t('重做')}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

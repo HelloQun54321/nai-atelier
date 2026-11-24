@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { OPUS_FREE_PIXEL_LIMIT } from '../../services/aspectRatio';
 import {
+  buildTemplatePanelsForScope,
   COMIC_LAYOUT_TEMPLATES,
   COMIC_LAYOUT_TEMPLATE_CATEGORIES,
   createGuidePanelsFromTemplate,
@@ -13,6 +14,19 @@ import {
   slicePolygonByLine,
   snapComicPoint,
 } from '../../services/comic/comicGeometry';
+import {
+  isPointStrictlyInsidePolygonPx,
+  isUsablePolygonPx,
+  moveNormalizedPolygonEdge,
+  moveNormalizedPolygonVertex,
+  placeComicPanelBadgePx,
+  preservePanelImageAfterSplit,
+  rescaleNormalizedPointsOnCanvasResize,
+  sliceAnyPolygonByLine,
+  snapComicPanelAngle,
+  snapComicPanelDrag,
+  splitNormalizedPolygonAlongPath,
+} from '../../services/comic/comicSnapping';
 import {
   assembleV5TextSafePrompt,
   buildComicPanelGenerationInput,
@@ -1258,5 +1272,201 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
       HTMLCanvasElement.prototype.toDataURL = origToDataUrl;
       void origCreateElement;
     }
+  });
+});
+
+describe('comicSnapping geometry, polyline slicing, smart snapping, and spread scoping', () => {
+  it('validates polygon usability, rejects self-intersection / collapse on vertex & edge drag, and keeps pixel size on canvas resize', () => {
+    // 非退化矩形可用，微小边/自交多边形不可用
+    expect(isUsablePolygonPx([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }])).toBe(true);
+    expect(isUsablePolygonPx([{ x: 0, y: 0 }, { x: 100, y: 100 }, { x: 100, y: 0 }, { x: 0, y: 100 }])).toBe(false);
+
+    const rect = rectToPolygon(0.1, 0.1, 0.4, 0.4);
+    // 把左上角拖拽跨过底边造成自交 -> 返回 null 拒绝
+    expect(moveNormalizedPolygonVertex(rect, 0, { x: 0.4, y: 0.7 }, 1000, 1000)).toBeNull();
+    // 合法斜角拖拽 -> 成功更新第 0 点
+    const validVertex = moveNormalizedPolygonVertex(rect, 0, { x: 0.15, y: 0.08 }, 1000, 1000);
+    expect(validVertex).not.toBeNull();
+    expect(validVertex![0].x).toBeCloseTo(0.15, 2);
+
+    // 整边向外推移 -> 扩大高度；向内推穿对边 -> 返回 null
+    const movedEdge = moveNormalizedPolygonEdge(rect, 2, { x: 0, y: 0.1 }, 1000, 1000);
+    expect(movedEdge).not.toBeNull();
+    expect(movedEdge![2].y).toBeCloseTo(0.6, 2);
+    expect(moveNormalizedPolygonEdge(rect, 0, { x: 0, y: 0.4 }, 1000, 1000)).toBeNull();
+    expect(moveNormalizedPolygonEdge(rect, 0, { x: 0, y: 0.5 }, 1000, 1000)).toBeNull();
+
+    // 画幅扩大为 2 倍时保持原像素尺寸（归一化坐标减半）
+    const rescaled = rescaleNormalizedPointsOnCanvasResize(
+      [{ x: 0.5, y: 0.5 }],
+      800,
+      1000,
+      1600,
+      1000,
+    );
+    expect(rescaled[0].x).toBeCloseTo(0.25, 3);
+    expect(rescaled[0].y).toBeCloseTo(0.5, 3);
+  });
+
+  it('supports polyline L-bend cutting, concave polygon slicing, and concave-safe badge placement', () => {
+    const pageW = 1000;
+    const pageH = 1000;
+    const square = rectToPolygon(0.1, 0.1, 0.8, 0.8);
+
+    // 1. 直线两刀点折线切分（沿边框进出，带 20px 格缝）
+    const straight = splitNormalizedPolygonAlongPath(
+      square,
+      [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }],
+      20,
+      pageW,
+      pageH,
+    );
+    expect(straight).not.toBeNull();
+    const boxA = getPanelBoundingBox(straight![0], pageW, pageH);
+    const boxB = getPanelBoundingBox(straight![1], pageW, pageH);
+    expect(Math.abs(Math.min(boxA.maxY, boxB.maxY) - Math.max(boxA.minY, boxB.minY))).toBeGreaterThan(18);
+
+    // 2. 格内拐一次弯的 L 形折线切分（顶边 -> 中心折点 -> 右边）
+    const bent = splitNormalizedPolygonAlongPath(
+      square,
+      [{ x: 0.4, y: 0.1 }, { x: 0.5, y: 0.5 }, { x: 0.9, y: 0.6 }],
+      16,
+      pageW,
+      pageH,
+    );
+    expect(bent).not.toBeNull();
+    expect(bent!.some(poly => poly.length >= 4)).toBe(true);
+
+    // 穿出画框到框外拐点后再穿回 -> 必须返回 null
+    const invalidBent = splitNormalizedPolygonAlongPath(
+      square,
+      [{ x: 0.4, y: 0.1 }, { x: 0.02, y: 0.5 }, { x: 0.9, y: 0.6 }],
+      16,
+      pageW,
+      pageH,
+    );
+    expect(invalidBent).toBeNull();
+
+    // 3. 凹 L 形多边形：左上缺口 [0.1..0.5, 0.1..0.5]
+    const concaveL = [
+      { x: 0.5, y: 0.1 },
+      { x: 0.9, y: 0.1 },
+      { x: 0.9, y: 0.9 },
+      { x: 0.1, y: 0.9 },
+      { x: 0.1, y: 0.5 },
+      { x: 0.5, y: 0.5 },
+    ];
+    // 角标定位必须避开外框左上角空洞，严格落入凹多边形实体像素内部
+    const badge = placeComicPanelBadgePx(concaveL, pageW, pageH, 30, 20);
+    expect(badge).not.toBeNull();
+    const badgeCenterPx = {
+      x: badge!.x + 15 * badge!.scale,
+      y: badge!.y + 10 * badge!.scale,
+    };
+    expect(isPointStrictlyInsidePolygonPx(concaveL.map(p => ({ x: p.x * pageW, y: p.y * pageH })), badgeCenterPx)).toBe(true);
+
+    // 凹多边形直线斜切仍成功产出两块合法分镜（上半保留 6 顶点凹 L 形，下半为梯形）
+    const concaveSplit = sliceAnyPolygonByLine(
+      concaveL,
+      { x: 0.05, y: 0.75 },
+      { x: 0.95, y: 0.55 },
+      12,
+      pageW,
+      pageH,
+    );
+    expect(concaveSplit).not.toBeNull();
+    expect(concaveSplit!.some(poly => poly.length === 6)).toBe(true);
+  });
+
+  it('provides equal-gutter measure guides, parallelogram symmetry snap, oblique snap, Shift axis lock, and angle snap', () => {
+    const pageW = 1000;
+    const pageH = 1000;
+    const leftSibling = rectToPolygon(0.1, 0.2, 0.2, 0.4); // x: [100..300]
+    const rightSibling = rectToPolygon(0.7, 0.2, 0.2, 0.4); // x: [700..900]
+    const middleBox = rectToPolygon(0.396, 0.2, 0.2, 0.4); // center=496px, 居中应到 400..600 -> dx=+0.004 (4px)
+
+    const equalGapSnap = snapComicPanelDrag({
+      points: middleBox,
+      kind: 'move',
+      deltaNorm: { x: 0, y: 0 },
+      siblingPolygons: [leftSibling, rightSibling],
+      pageW,
+      pageH,
+      thresholdPx: 8,
+    });
+    expect(equalGapSnap.delta.x * pageW).toBeCloseTo(4, 1);
+    expect(equalGapSnap.guides.some(g => g.measure)).toBe(true);
+
+    // 平行四边形对称第 4 点吸附：顶边 (100,100)->(300,100), 右下 (340,300), 左下原 (100,300) 拖向 (143,302) 吸附到 (140,300)
+    const almostParallelogram = [
+      { x: 0.1, y: 0.1 },
+      { x: 0.3, y: 0.1 },
+      { x: 0.34, y: 0.3 },
+      { x: 0.143, y: 0.302 },
+    ];
+    const paraSnap = snapComicPanelDrag({
+      points: almostParallelogram,
+      kind: 'vertex',
+      index: 3,
+      deltaNorm: { x: 0, y: 0 },
+      siblingPolygons: [],
+      pageW,
+      pageH,
+      thresholdPx: 7,
+    });
+    expect((almostParallelogram[3].x + paraSnap.delta.x) * pageW).toBeCloseTo(140, 1);
+    expect((almostParallelogram[3].y + paraSnap.delta.y) * pageH).toBeCloseTo(300, 1);
+
+    // Shift 轴锁定
+    const shiftLocked = snapComicPanelDrag({
+      points: middleBox,
+      kind: 'move',
+      deltaNorm: { x: 0.05, y: 0.01 },
+      siblingPolygons: [],
+      pageW,
+      pageH,
+      shift: true,
+      enabled: false,
+    });
+    expect(shiftLocked.delta.y).toBe(0);
+
+    // Shift 旋转 15° 吸附 & 邻框斜边角度对齐吸附
+    expect(snapComicPanelAngle(14, [], pageW, pageH, true)).toEqual({ angle: 15, snapped: true });
+    const diagSibling = [
+      { x: 0.1, y: 0.1 },
+      { x: 0.5, y: 0.5 }, // 45 deg
+      { x: 0.5, y: 0.9 },
+      { x: 0.1, y: 0.9 },
+    ];
+    const angleSnap = snapComicPanelAngle(43.5, [diagSibling], pageW, pageH, false, true);
+    expect(angleSnap.snapped).toBe(true);
+    expect(angleSnap.angle).toBeCloseTo(45, 1);
+  });
+
+  it('preserves image continuity after splitting and remaps spread half-page templates to left/right bounds', () => {
+    const parent = rectToPolygon(0.1, 0.1, 0.8, 0.8);
+    const upper = rectToPolygon(0.1, 0.1, 0.8, 0.38);
+    const lower = rectToPolygon(0.1, 0.52, 0.8, 0.38);
+    const origImg = {
+      url: 'data:image/png;base64,AAA',
+      width: 800,
+      height: 800,
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+    };
+
+    const topImg = preservePanelImageAfterSplit(origImg, parent, upper, 1000, 1000);
+    const bottomImg = preservePanelImageAfterSplit(origImg, parent, lower, 1000, 1000);
+    // 原图中心在 (500,500)，上半格中心 (500,290) -> offsetY > 0；下半格中心 (500,710) -> offsetY < 0
+    expect(topImg.offsetY).toBeGreaterThan(0.4);
+    expect(bottomImg.offsetY).toBeLessThan(-0.4);
+    expect(topImg.scale).toBeCloseTo(1, 2);
+
+    // 对开页左/右半页模板映射：所有顶点严格留在各自半区不跨中缝
+    const leftPanels = buildTemplatePanelsForScope('classic-4-121', 1216, 832, 16, 'left');
+    const rightPanels = buildTemplatePanelsForScope('classic-4-121', 1216, 832, 16, 'right');
+    expect(leftPanels.every(p => p.points.every(pt => pt.x < 0.5))).toBe(true);
+    expect(rightPanels.every(p => p.points.every(pt => pt.x > 0.5))).toBe(true);
   });
 });
