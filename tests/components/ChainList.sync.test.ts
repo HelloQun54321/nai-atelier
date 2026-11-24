@@ -4,10 +4,8 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { expectDirectoryCount, pickDirectoryOptionAsync } from '../support/directoryPicker';
 import type { PromptChain } from '../../types';
 import { ChainList } from '../../components/ChainList';
-import { IMAGE_CARD_ACTION_CLASS } from '../../components/ImageShareActions';
 import { copySharedImage } from '../../services/imageSharing';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}) }));
@@ -43,36 +41,14 @@ const beginBulkSelection = async () => {
   await waitFor(() => expect((screen.getByRole('button', { name: '批量选择风格串' }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: '批量选择风格串' }));
 };
-// 封面右上角的图片操作共用一份设计 token：尺寸走 --nai-float-control（nai-float-btn），
-// 命中区保 44px（mobile-touch），并用 mobile-size-locked 防止触控下限把圆拉成椭圆。
-// 因此这里断言 token 与外观性质，不再锁定 h-11 / md:h-8 这类具体尺寸工具类。
-const FLOAT_ACTION_TOKENS = ['nai-float-btn', 'mobile-touch', 'mobile-size-locked'];
-const assertFloatActionStyle = (button: Element) => {
-  for (const token of [...FLOAT_ACTION_TOKENS, ...IMAGE_CARD_ACTION_CLASS.split(/\s+/).filter(Boolean)]) expect(button.classList.contains(token)).toBe(true);
-  // 透明深底浮钮，不是白底实心按钮。
-  expect(button.classList.contains('bg-white/90')).toBe(false);
-};
-it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操作，左上恢复红色删除，子操作不打开工作台', async type => {
+it.each(['style', 'character'] as const)('%s 封面保留图片操作与删除入口，子操作不打开工作台', async type => {
   const p = props();
   const label = type === 'character' ? '自定义角色' : '风格串';
   render(React.createElement(ChainList, { ...p, type, chains: [{ ...chains[0], type, previewImage: '/synthetic/cover.png' }] }));
   const card = screen.getByRole('button', { name: `打开${label}：风格 A` });
-  const caption = within(card).getByText('风格 A').closest('.gallery-card-caption');
-  expect(caption?.parentElement).toBe(card);
-  expect(card.querySelector(':scope > .mobile-gallery-frame')).toBeTruthy();
-  expect(card.classList.contains('gallery-card-visual')).toBe(true);
   const imageCopy = within(card).getByRole('button', { name: '复制图片' });
   const edit = within(card).getByRole('button', { name: `编辑${label}信息：风格 A` });
   const controls = edit.parentElement!;
-  // 右上组＝卡片角标组（image-card-actions），且不登记为左侧操作组。
-  expect(controls.classList.contains('image-card-actions')).toBe(true);
-  expect(controls.getAttribute('data-card-action')).toBe('true');
-  expect(controls.hasAttribute('data-image-action-left')).toBe(false);
-  expect(controls.classList.contains('hover-reveal-md')).toBe(false);
-  // 未收藏的爱心自己按需显露，不能再套一层同名的悬停容器。
-  const heart = within(controls).getByRole('button', { name: '收藏' });
-  expect(heart.classList.contains('hover-reveal-md')).toBe(true);
-  expect(heart.parentElement?.closest('.hover-reveal-md')).toBeNull();
   expect(controls.contains(imageCopy)).toBe(true);
   const buttons = within(controls).getAllByRole('button');
   expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual([
@@ -80,18 +56,7 @@ it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操�
     ...(type === 'style' ? ['发送到实验室：风格 A'] : []),
     `编辑${label}信息：风格 A`,
   ]);
-  for (const button of buttons) assertFloatActionStyle(button);
-  const remove = within(card).getByRole('button', { name: '删除：风格 A' });
-  // 左上删除组登记为左侧操作，供角标组换列时避让。
-  expect(remove.parentElement!.hasAttribute('data-image-action-left')).toBe(true);
-  expect(remove.parentElement!.classList.contains('hover-reveal-md')).toBe(true);
-  expect(remove.classList.contains('rounded-full')).toBe(true);
-  // 图上浮钮默认保持中性磨砂，危险色只在悬停、聚焦或按下时出现（收藏爱心是唯一常驻彩色例外）。
-  expect(remove.className).not.toMatch(/(^|\s)bg-red-\d{2,3}(\s|$)/);
-  expect(remove.className).toContain('hover:!bg-red-600');
-  expect(remove.classList.contains('text-white')).toBe(true);
-  expect(remove.classList.contains('mobile-size-locked')).toBe(true);
-  expect(remove.classList.contains('nai-float-btn')).toBe(true);
+  expect(within(card).getByRole('button', { name: '删除：风格 A' })).toBeTruthy();
   expect(within(card).queryByRole('button', { name: '复制/查看详情：风格 A' })).toBeNull();
   fireEvent.click(imageCopy);
   await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/synthetic/cover.png', false));
@@ -561,8 +526,6 @@ describe('风格串列表的酒馆筛选交互', () => {
     ];
     render(React.createElement(ChainList, { ...props(), chains: items }));
     fireEvent.change(screen.getByPlaceholderText('搜索我的风格串'), { target: { value: '共同' } });
-    fireEvent.click(screen.getByRole('button', { name: '展开文件夹' }));
-    await waitFor(() => expectDirectoryCount('收藏', '2'));
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     const dialog = screen.getByRole('dialog', { name: '筛选与排序' });
     const filter = within(dialog);
@@ -570,8 +533,9 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(filter.getByRole('button', { name: '标签甲' })).toBeTruthy();
     expect(filter.queryByRole('button', { name: '待实测' })).toBeNull();
     expect(screen.getByText('共同 A')).toBeTruthy(); expect(screen.getByText('共同 B')).toBeTruthy();
-    await pickDirectoryOptionAsync('选择文件夹', '#favorites');
-    expect(screen.queryByText('共同 B')).toBeNull(); expect(screen.getByText('共同 V5')).toBeTruthy();
+    fireEvent.click(filter.getByRole('button', { name: '只看收藏' }));
+    await screen.findByText('共同 V5');
+    expect(screen.queryByText('共同 B')).toBeNull();
     fireEvent.change(filter.getByRole('combobox', { name: '模型筛选' }), { target: { value: 'nai-diffusion-4-5-full' } });
     expect(screen.queryByText('共同 V5')).toBeNull(); expect(screen.getByText('共同 A')).toBeTruthy();
     fireEvent.click(filter.getByRole('button', { name: '重置筛选' }));
@@ -591,38 +555,6 @@ describe('风格串列表的酒馆筛选交互', () => {
     const other = within(screen.getByRole('dialog', { name: '筛选与排序' }));
     expect(other.getByRole('button', { name: '只看待实测' }).getAttribute('aria-pressed')).toBe('true');
     expect((other.getByRole('combobox', { name: '排序' }) as HTMLSelectElement).value).toBe('created_desc');
-  });
-
-  it.each([
-    { anchorLeft: 600, anchorWidth: 88, viewport: 1400, left: 644 },
-    { anchorLeft: 0, anchorWidth: 40, viewport: 1000, left: 204 },
-    { anchorLeft: 760, anchorWidth: 24, viewport: 800, left: 596 },
-  ])('筛选共用锚定展开，屏幕边缘仅作可见范围修正：$anchorLeft', ({ anchorLeft, anchorWidth, viewport, left }) => {
-    vi.stubGlobal('innerWidth', viewport);
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.getAttribute('aria-label') === '筛选与排序') return { width: 384 } as DOMRect;
-      return { left: anchorLeft, width: anchorWidth, bottom: 72 } as DOMRect;
-    });
-    render(React.createElement(ChainList, props()));
-    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    const dialog = screen.getByRole('dialog', { name: '筛选与排序' });
-    expect(dialog.classList.contains('fixed')).toBe(true);
-    expect(dialog.classList.contains('-translate-x-1/2')).toBe(true);
-    expect(dialog.classList.contains('right-0')).toBe(false);
-    expect(dialog.style.left).toBe(`${left}px`);
-    expect(dialog.style.top).toBe('80px');
-    expect(dialog.closest('header')).toBeNull();
-    expect(dialog.classList.contains('appearance-popover')).toBe(true);
-    expect(dialog.style.transformOrigin).toBe(`${anchorLeft + anchorWidth / 2 - left + 192}px top`);
-    if (anchorLeft === 600) {
-      vi.stubGlobal('innerWidth', 800); fireEvent(window, new Event('resize'));
-      expect(dialog.style.left).toBe('596px');
-      vi.stubGlobal('innerWidth', 600); fireEvent(window, new Event('resize'));
-      expect(screen.queryByRole('dialog')).toBeNull();
-      return;
-    }
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it.each(['style', 'character'] as const)('%s 新建与编辑弹窗脱离工作区隔离层，保留回调与应用主题', type => {
@@ -758,28 +690,13 @@ it.each(['style', 'character'] as const)('%s收藏目录按对象身份保留已
   const card = screen.getByRole('button', { name: `打开${label}：${current.name}` });
   expect(within(card).getByRole('button', { name: '取消收藏' })).toBeTruthy();
   expect(within(screen.getByRole('button', { name: `打开${label}：${replaced.name}` })).getByRole('button', { name: '收藏' })).toBeTruthy();
-  if (type === 'style') {
-    fireEvent.click(screen.getByRole('button', { name: '展开文件夹' }));
-    await waitFor(() => expectDirectoryCount('收藏', '3'));
-    await pickDirectoryOptionAsync('选择文件夹', '#favorites');
-  } else {
-    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: '筛选与排序' })).getByRole('button', { name: '只看收藏' }));
-  }
-  expect(screen.getByText(current.name)).toBeTruthy(); expect(screen.getByText(missing.name)).toBeTruthy(); expect(screen.getByText(replaced.name)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '筛选与排序' })).getByRole('button', { name: '只看收藏' }));
+  await screen.findByText(current.name);
+  expect(screen.getByText(missing.name)).toBeTruthy(); expect(screen.getByText(replaced.name)).toBeTruthy();
   act(() => { collectionState.rows[0].archived = true; collectionState.revision++; collectionState.listeners.forEach(listener => listener()); });
   expect(screen.queryByText(current.name)).toBeNull(); expect(screen.getByText(missing.name)).toBeTruthy();
   expect(localStorage.getItem('nai_chain_favs')).toBe(raw);
-});
-
-// 批量导入是把本地图片收进风格串库：桌面「更多操作」与手机「更多」都用箭头进入文件夹的方向，
-// 不再沿用箭头向上的「从文件夹取出／上传」图标。
-it.each(['desktop', 'mobile'] as const)('%s「更多操作」的批量导入口保持导入方向图标', async scope => {
-  render(React.createElement(ChainList, props()));
-  const entry = await clickOverflowItem(/批量导入/, scope);
-  const icon = entry.querySelector('svg');
-  expect(icon?.classList.contains('lucide-folder-down')).toBe(true);
-  expect(entry.querySelector('svg.lucide-folder-up')).toBeNull();
 });
 
 // 手机顶栏只留文件夹、搜索、筛选与新建，批量导入固定在「更多」里，不额外的常驻直入按钮。

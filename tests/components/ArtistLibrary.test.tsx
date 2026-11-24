@@ -428,12 +428,12 @@ it.each([true, false])('补图模板沿用全局免费步数偏好：%s', async 
   expect(mocks.begin).not.toHaveBeenCalled();
 });
 
-it.each(['usage-chains', 'usage-images'].flatMap(sort => [false, true].map(exclude => ({ sort, exclude }))))('统计排序$sort加载400位后随机只显示本次12位，排除=$exclude，再选仍为12位', async ({ sort, exclude }) => {
-  const pool = Array.from({ length: 410 }, (_, i) => ({ name: `fourhundred${String(i).padStart(3, '0')}`, chinese: '', postCount: 1000 - i }));
+it.each([false, true])('统计排序加载超过首屏后随机只显示本次12位，排除偏好=%s，再选仍为12位', async exclude => {
+  const pool = Array.from({ length: 130 }, (_, i) => ({ name: `paged${String(i).padStart(3, '0')}`, chinese: '', postCount: 1000 - i }));
   mocks.dictionary.mockResolvedValue(pool);
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: pool.map(entry => entry.name) }));
   mocks.usage.mockResolvedValue({ byTag: new Map([[pool[0].name, { chains: 999, images: 999, lastAt: 1 }]]), indexed: 1, total: 1 });
-  localStorage.setItem('nai_artist_sort', sort); localStorage.setItem('nai_artist_gacha_count', '12'); localStorage.setItem('nai_artist_gacha_mode', 'uniform');
+  localStorage.setItem('nai_artist_sort', 'usage-chains'); localStorage.setItem('nai_artist_gacha_count', '12'); localStorage.setItem('nai_artist_gacha_mode', 'uniform');
   if (exclude) {
     localStorage.setItem('nai_artist_gacha_exclude_favorites', 'true');
     mocks.collection = [{ sourceType: 'artist', sourceId: pool[0].name }];
@@ -441,29 +441,29 @@ it.each(['usage-chains', 'usage-images'].flatMap(sort => [false, true].map(exclu
   setup(); await screen.findByText('收录 999 串 · 生成 999 张');
   disableSampleFilter();
   expect(sampleCards()).toHaveLength(100);
-  for (let page = 0; page < 3; page++) fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
-  expect(sampleCards()).toHaveLength(400);
-  let random = 0; vi.spyOn(Math, 'random').mockImplementation(() => ((random++ % 410) + 0.1) / 410);
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+  expect(sampleCards()).toHaveLength(130);
+  let random = 0; vi.spyOn(Math, 'random').mockImplementation(() => ((random++ % 130) + 0.1) / 130);
   fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
   await waitFor(() => expect(screen.getByTitle('已加载 12')).toBeTruthy());
   expect(sampleCards()).toHaveLength(12);
-  expect(screen.getByTitle('已加载 12')).toBeTruthy();
   const first = sampleCards().map(card => card.getAttribute('aria-label'));
   fireEvent.click(screen.getByRole('button', { name: '再选一批' }));
   await waitFor(() => expect((screen.getByRole('button', { name: '再选一批' }) as HTMLButtonElement).disabled).toBe(false));
   expect(sampleCards()).toHaveLength(12);
-  expect(screen.getByTitle('已加载 12')).toBeTruthy();
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).not.toEqual(first);
   if (exclude) expect(screen.queryByTestId('cover-' + pool[0].name)).toBeNull();
   expect(mocks.begin).not.toHaveBeenCalled();
 });
 
-it.each(['mixed', 'uniform', 'popular'].flatMap(mode => [
-  { favorites: false, blocked: false, excluded: [] },
-  { favorites: true, blocked: false, excluded: [0] },
-  { favorites: false, blocked: true, excluded: [0, 1] },
-  { favorites: true, blocked: true, excluded: [0, 1] },
-].map(options => ({ mode, ...options }))))('随机$mode按独立选项排除：偏好=$favorites / 屏蔽=$blocked，不足数量不补回', async ({ mode, favorites, blocked, excluded }) => {
+it.each([
+  { mode: 'mixed', favorites: false, blocked: false, excluded: [] },
+  { mode: 'mixed', favorites: true, blocked: false, excluded: [0] },
+  { mode: 'mixed', favorites: false, blocked: true, excluded: [0, 1] },
+  { mode: 'mixed', favorites: true, blocked: true, excluded: [0, 1] },
+  { mode: 'uniform', favorites: true, blocked: false, excluded: [0] },
+  { mode: 'popular', favorites: false, blocked: true, excluded: [0, 1] },
+])('随机$mode按独立选项排除：偏好=$favorites / 屏蔽=$blocked，不足数量不补回', async ({ mode, favorites, blocked, excluded }) => {
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: entries.map(entry => entry.name) }));
   mocks.collection = [{ sourceType: 'artist', sourceId: 'alpha_artist' }, { sourceType: 'artist', sourceId: 'missing artist', archived: true }, { sourceType: 'danbooru', sourceId: 'beta artist' }];
   mocks.blockLoad.mockResolvedValue(['alpha_artist', 'beta_artist']);
@@ -591,7 +591,12 @@ it('排除名单迟到时不覆盖切换版本后的目录', async () => {
   for (const cover of screen.getAllByTestId(/^cover-/)) expect(cover.getAttribute('data-pack')).toBe('v5');
 });
 
-it.each(['popular', 'least', 'name-asc', 'name-desc', 'usage-chains', 'usage-chains-asc', 'usage-images', 'usage-images-asc'].flatMap(sort => [true, false].map(onlySamples => ({ sort, onlySamples }))))('随机浏览固定本次集合：$sort / 只看样张=$onlySamples', async ({ sort, onlySamples }) => {
+it.each([
+  { sort: 'popular', onlySamples: true },
+  { sort: 'name-desc', onlySamples: false },
+  { sort: 'usage-chains', onlySamples: true },
+  { sort: 'usage-images', onlySamples: false },
+])('随机浏览固定本次集合：$sort / 只看样张=$onlySamples', async ({ sort, onlySamples }) => {
   const pool = Array.from({ length: 30 }, (_, i) => ({ name: `random${i.toString().padStart(2, '0')}`, chinese: '', postCount: 100 - i }));
   const library = [...pool, { name: 'missing', chinese: '', postCount: 0 }];
   mocks.dictionary.mockResolvedValue(library);

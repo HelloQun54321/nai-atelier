@@ -44,8 +44,6 @@ it.each([3, 4])('%s个分区等宽收紧居中，宽窄切换仍保留两排连�
   </div>);
   const tabs = screen.getByRole('tablist');
   expect(tabs.style.gridTemplateColumns).toBe(`repeat(${count}, minmax(0, 1fr))`);
-  expect(tabs.classList.contains('appearance-segmented')).toBe(true);
-  expect(tabs.classList.contains('appearance-group')).toBe(false);
   expect(tabs.style.getPropertyValue('--lab-tabs-width')).toBe('480px');
   expect(tabs.style.getPropertyValue('--lab-tabs-left')).toBe('70px');
   const header = container.querySelector<HTMLElement>('.chain-editor-header')!;

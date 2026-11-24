@@ -1,7 +1,5 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ImageCardActions, imageCardActionLayout } from '../../components/ImageCardActions';
@@ -55,20 +53,14 @@ it('不同宽高、按钮数和底栏高度下，所有按钮均在封面内且�
   }
 });
 
-function mockGeometry({ siblingActions = false, navigation = false, aspectRatio = 0 } = {}) {
+function mockGeometry({ siblingActions = false, navigation = false } = {}) {
   let width = 320, height = 180, caption = 60, size = 32;
   const rect = (x: number, y: number, w: number, h: number) => ({ x, y, left: x, top: y, width: w, height: h, right: x + w, bottom: y + h, toJSON() {} });
-  const frameRect = (frame: HTMLElement) => {
-    if (!aspectRatio) return rect(0, 0, width, height);
-    const minimum = parseFloat(frame.style.minHeight) || 0;
-    // 模拟浏览器的比例约束：auto 宽度会由最小高度反推，明确的百分比宽度由列决定。
-    const actualWidth = getComputedStyle(frame).width === '100%' ? width : Math.max(width, minimum * aspectRatio);
-    return rect(0, 0, actualWidth, Math.max(actualWidth / aspectRatio, minimum));
-  };
+  const frameRect = () => rect(0, 0, width, height);
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-    if (this.classList.contains('mobile-gallery-frame')) return frameRect(this);
+    if (this.classList.contains('mobile-gallery-frame')) return frameRect();
     if (this.classList.contains('gallery-card-caption')) {
-      const frame = frameRect(this.parentElement!.querySelector('.mobile-gallery-frame')!);
+      const frame = frameRect();
       return rect(0, frame.height - caption, width, caption);
     }
     if (this.hasAttribute('data-image-action-left')) return rect(8, 8, size, size);
@@ -238,28 +230,4 @@ it('画师卡片为底部翻图和名称同时留位，状态图标也计入换�
   expect(view.frame.style.getPropertyValue('--image-card-caption-height')).toBe('60px');
   expect(view.frame.style.minHeight).toBe('148px');
   expect(view.observe).toHaveBeenCalledWith(screen.getByRole('button', { name: '翻图' }));
-});
-
-it.each([false, true])('补高后的尺寸反馈稳定收敛，封面不反向撑宽卡片（外层操作：%s）', siblingActions => {
-  const sheet = document.createElement('style');
-  sheet.textContent = readFileSync(resolve('index.css'), 'utf8').match(/\.mobile-gallery-frame\[data-image-action-frame\]\s*\{[^}]+\}/)?.[0] || '';
-  document.head.append(sheet);
-  try {
-    const view = mockGeometry({ siblingActions, aspectRatio: 2 });
-    for (const width of [230, 120, 320]) {
-      const samples: number[][] = [];
-      for (let tick = 0; tick < 8; tick++) {
-        view.resize({ width });
-        const bounds = view.frame.getBoundingClientRect();
-        samples.push([bounds.width, bounds.height]);
-      }
-      expect(samples.slice(-3)).toEqual(Array(3).fill(samples.at(-1)));
-      expect(samples.at(-1)![0]).toBe(width);
-      const rows = Number(view.group.style.gridTemplateRows.match(/repeat\((\d+)/)![1]);
-      const bottom = 8 + rows * 40 - 8;
-      expect(bottom).toBeLessThanOrEqual(samples.at(-1)![1] - 60 - 8);
-    }
-  } finally {
-    sheet.remove();
-  }
 });

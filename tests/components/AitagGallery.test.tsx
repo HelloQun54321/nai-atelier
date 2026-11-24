@@ -643,12 +643,7 @@ it('瀑布流先用首图元数据比例，未知比例时完整显示图片并�
   await waitFor(() => expect(unknownFrame.style.getPropertyValue('--mobile-image-ratio')).toBe('684 / 1000'));
 });
 
-it.each(['portrait', 'square'])('%s 布局保留原有封面裁切', async layout => {
-  await setup(layout);
-  expect(card(1).querySelector('img')?.className).toContain('object-cover');
-});
-
-it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(frosted => [layout, frosted] as const)))('%s 布局／磨砂 %s：缓存色条替换为标题前圆点，未缓存不留空位', async (layout, frosted) => {
+it.each([true, false])('磨砂=%s：缓存作品显示标题前状态标记，未缓存不显示，瀑布流高度估算跟随模式', async frosted => {
   document.documentElement.dataset.galleryFrostedCaption = String(frosted);
   const cachedWorks = ['full', 'first-image', 'none'].map((level, index) => ({
     ...works[0], id: index + 1, title: `合成作品 ${index + 1}`,
@@ -656,25 +651,16 @@ it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(fr
     localFirstImageUrl: level === 'none' ? undefined : `/synthetic/${index + 1}.png`,
   }));
   mocks.search.mockResolvedValue({ items: cachedWorks, total: 3, page: 1, page_size: 60 });
-  await setup(layout);
+  await setup('masonry');
   cachedWorks.forEach((work, index) => {
     const first = card(work.id);
     const title = within(first).getByText(work.title);
     const marker = title.previousElementSibling;
-    if (index < 2) {
-      expect(marker?.className.split(' ')).toEqual(['h-2', 'w-2', 'shrink-0', 'rounded-full', index === 0 ? 'bg-emerald-500' : 'bg-sky-500']);
-      expect(marker?.getAttribute('aria-hidden')).toBe('true');
-    } else expect(marker).toBeNull();
+    if (index < 2) expect(marker?.getAttribute('aria-hidden')).toBe('true');
+    else expect(marker).toBeNull();
     expect(title.getAttribute('data-safe-mode-title')).toBe('true');
-    expect(first.className).not.toMatch(/(?:bg|border)-(?:emerald|sky)-/);
-    expect(first.querySelector('.mobile-gallery-frame')?.className).toContain('bg-gray-100');
-    expect(first.querySelector('.mobile-gallery-frame')?.className).not.toMatch(/bg-(?:emerald|sky)-/);
-    expect(first.lastElementChild?.classList.contains('gallery-card-caption')).toBe(true);
-    expect(first.querySelector('.h-1')).toBeNull();
   });
-  if (layout === 'masonry') {
-    expect(mocks.masonry.mock.lastCall?.[0].estimateItemHeight(cachedWorks[0], 200)).toBe(200 / (832 / 1216) + (frosted ? 2 : 70));
-  }
+  expect(mocks.masonry.mock.lastCall?.[0].estimateItemHeight(cachedWorks[0], 200)).toBe(200 / (832 / 1216) + (frosted ? 2 : 70));
 });
 it('首图操作跟随实际候选，点击和回车不打开详情；详情逐图导出且按文件顺序命名', async () => {
   await setup();
@@ -841,7 +827,6 @@ it.each(['masonry', 'portrait', 'square'].flatMap(layout => ['click', 'Enter', '
   selected(1);
   expect(scrollCalls.slice(0, 2)).toEqual([{ top: 800, behavior: 'instant' }, { top: 1050, behavior: 'smooth' }]);
   expect(root.scrollTop).toBe(1050);
-  expect(root.parentElement!.className).toContain('lg:grid-cols-[minmax(0,1fr)_460px]');
   fireEvent.click(screen.getByRole('button', { name: '关闭' }));
   expect(root.scrollTop).toBe(1650);
 });

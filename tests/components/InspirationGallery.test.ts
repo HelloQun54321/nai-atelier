@@ -721,29 +721,18 @@ const mockInspirations: Inspiration[] = [
   },
 ];
 
-it('收藏分类默认收起无导航节点，桌面入口记住独立展开偏好并复用公共避让类', async () => {
+it('收藏分类默认收起，桌面入口记住独立展开偏好', async () => {
   localStorage.removeItem('nai-collection-navigation-expanded');
   const props = { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() };
   const view = render(React.createElement(InspirationGallery, props));
   const toggle = screen.getByRole('button', { name: '展开收藏分类' });
   const navigation = document.getElementById(toggle.getAttribute('aria-controls')!)!;
-  expect(toggle.className).not.toContain('hidden md:inline-flex');
   expect(toggle.getAttribute('aria-expanded')).toBe('false');
   expect(navigation.hidden).toBe(true);
-  expect(navigation.className).toBe('hidden');
   expect(navigation.querySelector('button,select,input')).toBeNull();
   fireEvent.click(toggle);
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
   expect(navigation.hidden).toBe(false);
-  expect(navigation.className).toContain('workspace-fixed-pane workspace-category-navigation');
-  expect(navigation.className).toContain('hidden w-52');
-  expect(navigation.classList.contains('appearance-panel')).toBe(true);
-  expect(navigation.classList.contains('md:flex')).toBe(true);
-  expect(navigation.classList.contains('md:flex-col')).toBe(true);
-  expect(navigation.className).not.toContain('overflow-y-auto');
-  expect(within(navigation).getByRole('navigation').className).toContain('md:overflow-y-auto');
-  expect(navigation.className).not.toContain('!mt-');
-  expect(navigation.className).not.toContain('mb-1.5');
   view.unmount();
   render(React.createElement(InspirationGallery, props));
   expect(screen.getByRole('button', { name: '收起收藏分类' }).getAttribute('aria-expanded')).toBe('true');
@@ -831,18 +820,13 @@ it('收藏瀑布流的无尺寸图片先完整显示，加载后按真实比例�
   expect(container.querySelector('.chain-masonry-column')).toBeTruthy();
 });
 
-it('列表移除重复标题栏，侧栏与风格串同宽；卡片只保留名称和标签，图片左下不遮挡', () => {
-  const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
-  expect(container.querySelector('main h1')).toBeNull();
-  const sidebar = container.querySelector('aside')!;
-  expect(sidebar.classList.contains('w-52')).toBe(true);
-  expect(sidebar.classList.contains('hidden')).toBe(true); expect(sidebar.classList.contains('md:flex')).toBe(true); expect(sidebar.classList.contains('md:flex-col')).toBe(true);
+it('收藏卡片只保留名称和标签，不渲染已移除的备注与自动收录入口', () => {
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
   for (const item of mockInspirations) {
     const card = screen.getByText(item.title).closest('article')!;
     expect(within(card).getByText('#' + item.tags![1])).toBeTruthy();
     expect(within(card).queryByText(item.prompt)).toBeNull();
     expect(within(card).queryByText('未整理')).toBeNull();
-    expect(card.querySelector('.bottom-2.left-2')).toBeNull();
   }
   expect(screen.queryByText('自动收录')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));

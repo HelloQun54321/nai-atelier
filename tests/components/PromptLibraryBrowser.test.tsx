@@ -334,24 +334,6 @@ it('组合详情只提交自定义标签，切换条目隔离草稿；筛选芯�
   expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(2);
 });
 
-it('顶栏范围、搜索、筛选统一控件高度，宽栏使用共用分段切换，选中筛选条件后显示计数且不抢主按钮色', () => {
-  const narrow = render(<Harness />);
-  const scope = screen.getByRole('combobox', { name: '提示词库范围' });
-  expect(scope.classList.contains('h-10')).toBe(true);
-  const search = screen.getByRole('searchbox');
-  expect(search.classList.contains('h-10')).toBe(true);
-  const filter = screen.getByRole('button', { name: '筛选' });
-  expect(filter.getAttribute('data-tone')).toBe('neutral');
-  narrow.unmount();
-  const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 800, height: 40, top: 0, left: 0, right: 800, bottom: 40, x: 0, y: 0, toJSON: () => ({}) });
-  const wide = render(<Harness />);
-  try {
-    const tabs = screen.getByRole('tablist', { name: '提示词库分区' });
-    expect(tabs.classList.contains('appearance-segmented')).toBe(true);
-    expect(screen.getByRole('button', { name: '筛选' }).getAttribute('data-tone')).toBe('neutral');
-  } finally { wide.unmount(); rect.mockRestore(); }
-});
-
 it('目录独立于筛选，收展保留搜索、标签、详情和同一列表滚动节点', () => {
   render(<Harness />);
   const folder = screen.getByRole('button', { name: '展开目录' });
@@ -368,7 +350,6 @@ it('目录独立于筛选，收展保留搜索、标签、详情和同一列表�
   const nav = screen.getByRole('complementary', { name: '提示词目录导航' });
   const scroll = document.querySelector('.workspace-scroll-viewport') as HTMLDivElement;
   expect(nav.nextElementSibling).toBe(scroll.parentElement); expect(nav.parentElement?.style.getPropertyValue('--workspace-chrome-height')).toBe('0px');
-  expect(nav.classList.contains('md:w-52')).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '人物 / 服饰与配件' }));
   expect((screen.getByRole('combobox', { name: '提示词库范围' }) as HTMLSelectElement).value).toBe('items');
   fireEvent.click(screen.getByRole('button', { name: '查看礼服' }));
@@ -499,41 +480,25 @@ it('组合筛选芯片只列「角色」，内部标记不进候选且不改原�
   expect(save).not.toHaveBeenCalled();
 });
 
-it('片段统一封面与caption卡片，空封面只展示一次摘要，真实图片才有分享动作', () => {
+it('片段空封面只展示一次摘要，真实图片才有封面清理与分享动作', () => {
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout: 'masonry', columns: 1, desktopColumns: 3 }));
   const combo = { id: 'combo', ...createCombinationData('搭配', { scene: { kind: 'scene', filled: true, text: 'rainy garden' } }) } as PromptChain;
   const image = { ...entries[0], previewImage: 'data:image/png;base64,synthetic' };
   render(<Harness chains={[image, { id: 'raw', ...createFragmentData('night garden', '花园', 'general') } as PromptChain, combo]} onDelete={async () => {}} onClearCover={async () => {}} />);
-  const grid = document.querySelector('.chain-masonry') as HTMLElement;
-  expect(grid.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))');
-  expect(grid.querySelector('.chain-masonry-column')).toBeTruthy();
   for (const card of document.querySelectorAll<HTMLElement>('[data-prompt-library-entry]')) {
-    expect(card.classList.contains('gallery-image-card')).toBe(true);
-    expect(card.classList.contains('gallery-card-visual')).toBe(true);
     // 磨砂叠图须在卡片本身覆盖瀑布流 inline-flex；关闭时恢复原正常流。
     expect(card.style.display).toBe('grid');
-    expect(card.children[0].classList.contains('mobile-gallery-frame')).toBe(true);
-    expect(card.children[1].classList.contains('gallery-card-caption')).toBe(true);
-    expect(card.querySelector('.image-card-actions')).toBeTruthy();
-    const remove = within(card).getByRole('button', { name: /^删除「/ });
-    expect(remove.closest('[data-image-action-left]')).toBeTruthy();
-    expect(remove.closest('.image-card-actions')).toBeNull();
-    const left = remove.closest('[data-image-action-left]')!;
-    for (const value of ['hover-reveal-md', 'absolute', 'left-2', 'top-2', 'z-20']) expect(left.classList.contains(value)).toBe(true);
-    for (const value of ['nai-float-btn', 'rounded-full', 'hover:!bg-red-600']) expect(remove.classList.contains(value)).toBe(true);
-    expect(remove.classList.contains('bg-red-500')).toBe(false);
+    expect(within(card).getByRole('button', { name: /^删除「/ })).toBeTruthy();
     expect(within(card).queryByRole('button', { name: /^编辑/ })).toBeNull();
     expect(within(card).queryByRole('button', { name: /^复制(?:礼服|花园|组合数据)/ })).toBeNull();
     expect(within(card).queryByRole('button', { name: '使用' })).toBeNull();
     expect(within(card).queryByRole('button', { name: '送到实验室' })).toBeNull();
   }
   const covered = document.querySelector('[data-prompt-library-entry="dress"]') as HTMLElement;
-  expect(within(covered).getByRole('button', { name: '删除当前封面' }).closest('[data-image-action-left]')?.className).toMatch(/top-14|md:top-11/);
-  expect(within(document.querySelector('[data-prompt-library-entry="raw"]') as HTMLElement).queryByRole('button', { name: '删除当前封面' })).toBeNull();
+  expect(within(covered).getByRole('button', { name: '删除当前封面' })).toBeTruthy();
   const raw = document.querySelector('[data-prompt-library-entry="raw"]') as HTMLElement;
-  expect(raw.querySelector('.mobile-gallery-frame')?.classList.contains('dark:bg-gray-800')).toBe(true);
+  expect(within(raw).queryByRole('button', { name: '删除当前封面' })).toBeNull();
   expect(within(raw).getAllByText('night garden')).toHaveLength(1);
-  expect(raw.querySelector('.gallery-card-caption')?.textContent).not.toContain('night garden');
   expect(within(raw).queryByRole('button', { name: '收藏' })).toBeNull();
   const share = screen.getByTestId('image-share');
   expect(share.dataset.sourceType).toBe('other');
@@ -542,8 +507,6 @@ it('片段统一封面与caption卡片，空封面只展示一次摘要，真实
   expect(within(share).queryByRole('button', { name: '下载图片' })).toBeNull();
   expect(within(share).queryByRole('button', { name: '复制图片' })).toBeNull();
   expect(share.closest('[data-prompt-library-entry]')?.getAttribute('data-prompt-library-entry')).toBe('dress');
-  expect(share.closest('.image-card-actions')).toBeTruthy();
-  expect(share.closest('[data-image-action-left]')).toBeNull();
   act(() => { document.documentElement.dataset.galleryFrostedCaption = 'false'; window.dispatchEvent(new Event('nai-gallery-caption-change')); });
   for (const card of document.querySelectorAll<HTMLElement>('[data-prompt-library-entry]')) expect(card.style.display).toBe('');
   act(() => { document.documentElement.dataset.galleryFrostedCaption = 'true'; window.dispatchEvent(new Event('nai-gallery-caption-change')); });

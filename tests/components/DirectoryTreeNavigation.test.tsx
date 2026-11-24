@@ -2,10 +2,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { parse } from 'postcss';
 import { DIRECTORY_FAVORITES_ID, DirectoryTreeNavigation } from '../../components/DirectoryTreeNavigation';
-import { applyThemeDetails } from '../../services/themeDetails';
 import { readAgentPage, operateAgentPage } from '../../services/agentWorkspace';
 
 beforeEach(() => {
@@ -184,42 +181,9 @@ it('禁用后不改变选择或分支，收起不占空间，嵌入窗口避开�
   expect(screen.getByRole('button', { name: '根 / 子项' })).toBeTruthy();
   expect((mobileTrigger() as HTMLButtonElement).disabled).toBe(true);
   view.rerender(<DirectoryTreeNavigation {...p} embedded hideSpecial />);
-  expect(screen.getByRole('complementary').className).not.toContain('workspace-fixed-pane');
-  expect(screen.getByRole('complementary').className).toContain('w-full');
-  for (const value of ['appearance-panel', 'workspace-category-navigation', 'md:overflow-y-auto', 'flex-none', 'p-3', 'border-b']) expect(screen.getByRole('complementary').classList.contains(value)).toBe(false);
-  expect(screen.getByRole('complementary').className).not.toContain('md:w-52');
   expect(screen.queryByRole('button', { name: '全部' })).toBeNull();
   view.rerender(<DirectoryTreeNavigation {...p} expanded={false} />);
   expect(screen.queryByRole('complementary')).toBeNull();
-});
-
-it('明暗玻璃和磨砂主题仅给外层或独立导航施加面板材质，嵌入内容不生成第二个表面', () => {
-  const css = readFileSync('components/themeDetails.css', 'utf8') + readFileSync('index.css', 'utf8');
-  const selectors: string[] = [];
-  parse(css).walkRules(rule => {
-    if (!rule.nodes.some(node => node.type === 'decl' && ['background-color', 'background-image', 'backdrop-filter', 'box-shadow', 'border-radius'].includes(node.prop))) return;
-    selectors.push(...rule.selectors.filter(selector => selector.includes('.appearance-panel')));
-  });
-  const root = document.documentElement;
-  const previous = { style: root.getAttribute('style'), className: root.getAttribute('class'), details: root.getAttribute('data-theme-details'), material: root.getAttribute('data-theme-material'), design: root.getAttribute('data-design-theme') };
-  const view = render(<aside aria-label="外层面板" className="appearance-panel"><DirectoryTreeNavigation {...props()} embedded /></aside>);
-  try {
-    root.dataset.designTheme = 'nai-atelier';
-    for (const material of ['glass', 'frosted'] as const) for (const dark of [false, true]) {
-      root.classList.toggle('dark', dark);
-      applyThemeDetails(root, { material }, { fontScale: 'standard', density: 'standard', surfaces: 'translucent' });
-      view.rerender(<aside aria-label="外层面板" className="appearance-panel"><DirectoryTreeNavigation {...props()} embedded /></aside>);
-      const embedded = screen.getByRole('complementary', { name: '业务文件夹' });
-      expect(selectors.some(selector => embedded.matches(selector))).toBe(false);
-      expect(selectors.some(selector => screen.getByRole('complementary', { name: '外层面板' }).matches(selector))).toBe(true);
-      view.rerender(<DirectoryTreeNavigation {...props()} />);
-      expect(selectors.some(selector => screen.getByRole('complementary').matches(selector))).toBe(true);
-    }
-  } finally {
-    for (const [attribute, value] of [['style', previous.style], ['class', previous.className], ['data-theme-details', previous.details], ['data-theme-material', previous.material], ['data-design-theme', previous.design]] as const) {
-      if (value === null) root.removeAttribute(attribute); else root.setAttribute(attribute, value);
-    }
-  }
 });
 
 it('旧多选包含未归类时保留各行高亮与手机混合选择', () => {

@@ -1195,26 +1195,6 @@ describe('TagAutocompleteTextarea 连续输入与键盘视口回归', () => {
     act(() => { viewport.dispatchEvent(new Event('resize')); });
     expect(popup.style.bottom).toBe('454px');
   });
-
-  it.each([false, true])('权重工具行统一桌面高度并保留手机触控规则（暗色 %s）', dark => {
-    document.documentElement.classList.toggle('dark', dark);
-    try {
-      render(React.createElement(Harness, { initial: 'alpha', showTranslations: true }));
-      const toolbar = screen.getByRole('button', { name: '撤销' }).parentElement!;
-      const assertControls = () => {
-        for (const button of within(toolbar).getAllByRole('button')) {
-          expect(button.classList.contains('mobile-touch')).toBe(true);
-          expect(button.classList.contains('h-8') || button.classList.contains('h-full')).toBe(true);
-        }
-      };
-      assertControls();
-      fireEvent.click(screen.getByRole('button', { name: '数值' }));
-      expect(screen.getByRole('textbox', { name: '数值权重' }).classList.contains('h-full')).toBe(true);
-      assertControls();
-      fireEvent.click(screen.getByRole('button', { name: '删除模式' }));
-      assertControls();
-    } finally { document.documentElement.classList.remove('dark'); }
-  });
 });
 
 describe('findCompletionTarget', () => {

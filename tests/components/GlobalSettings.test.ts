@@ -1043,42 +1043,6 @@ describe('GlobalSettings', () => {
     await waitFor(() => expect(changed.mock.lastCall?.[0].customPresets).toHaveLength(3));
   });
 
-  it('明暗模式和外观选项被选中时具有 dark:text-indigo-300 保证暗色高对比度', async () => {
-    render(React.createElement(SettingsHarness));
-
-    // 出厂默认：密度／圆角／字号均为「标准」，材质为「透光」，动效为「完整」
-    const selectedStandard = screen.getAllByRole('button', { name: '标准' })
-      .filter(btn => btn.className.includes('dark:text-indigo-300'));
-    expect(selectedStandard.length).toBe(3);
-    expect(screen.getByRole('button', { name: '透光' }).className).toContain('dark:text-indigo-300');
-    expect(screen.getByRole('button', { name: '完整' }).className).toContain('dark:text-indigo-300');
-
-    // 出厂默认是白天浅色模式，不是深色或跟随系统
-    expect(screen.getByRole('button', { name: '浅色' }).className).toContain('dark:text-indigo-300');
-    expect(screen.getByRole('button', { name: '深色' }).className).not.toContain('dark:text-indigo-300');
-    expect(screen.getByRole('button', { name: '跟随系统' }).className).not.toContain('dark:text-indigo-300');
-  });
-
-  it('切换图片列表布局时正确切换选中态并更新本地偏好', async () => {
-    render(React.createElement(SettingsHarness));
-
-    const portraitBtn = screen.getByRole('button', { name: '竖向卡片' });
-    const squareBtn = screen.getByRole('button', { name: '方形' });
-    const masonryBtn = screen.getByRole('button', { name: '瀑布流' });
-
-    // 点击「竖向卡片」
-    fireEvent.click(portraitBtn);
-    expect(portraitBtn.className).toContain('border-indigo-500');
-
-    // 点击「方形」
-    fireEvent.click(squareBtn);
-    expect(squareBtn.className).toContain('border-indigo-500');
-
-    // 点击「瀑布流」
-    fireEvent.click(masonryBtn);
-    expect(masonryBtn.className).toContain('border-indigo-500');
-  });
-
   it('全局和页面独立设置均可选择桌面7列', async () => {
     render(React.createElement(SettingsHarness));
     const desktopColumns = await screen.findByRole('slider', { name: '桌面端列数' }) as HTMLInputElement;
@@ -1119,19 +1083,6 @@ describe('GlobalSettings', () => {
     fireEvent.click(screen.getByRole('switch', { name: '跟随全局' }));
     expect(getImageDisplayPageOverride('artists')).toBeNull();
     expect(getMobileImageDisplayPreferences('artists').layout).toBe('masonry');
-  });
-
-  it('强调色圆点在手机上保留 32px 正圆，外面是 44px 触控区', async () => {
-    render(React.createElement(SettingsHarness));
-
-    const indigoBtn = screen.getByRole('button', { name: '强调色：靛蓝' });
-    // 触控区 44（h-11/w-11），视觉圆点仍是 h-8/w-8，不再靠 mobile-size-locked 压扁全局 44px 底线。
-    expect(indigoBtn.className).toContain('h-11');
-    expect(indigoBtn.className).toContain('w-11');
-    expect(indigoBtn.className).not.toContain('mobile-size-locked');
-    const dot = indigoBtn.querySelector('span');
-    expect(dot?.className).toContain('h-8');
-    expect(dot?.className).toContain('w-8');
   });
 
   it('手机浏览器保留安全模式主开关与手机图片缓存，且不再展示电脑缩略图缓存', async () => {

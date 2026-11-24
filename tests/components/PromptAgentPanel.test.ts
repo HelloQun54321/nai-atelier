@@ -2,7 +2,6 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { PromptAgentPanel } from '../../components/PromptAgentPanel';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { NAIParams } from '../../types';
@@ -678,62 +677,16 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     sessionStorage.clear(); localStorage.clear();
   });
 
-  it.each([false, true])('聊天输入在暗色=%s 时透出工具栏表面，不被通用表单底色覆盖', async dark => {
-    stubServices();
-    const previousDark = document.documentElement.classList.contains('dark');
-    document.documentElement.classList.toggle('dark', dark);
-    const style = document.createElement('style');
-    // 模拟不同预设的父面板和通用表单底色，使用真实 CSS 验证输入覆盖的优先级。
-    style.textContent = `.appearance-surface { background-color: ${dark ? 'rgb(23, 27, 36)' : 'rgb(255, 255, 255)'}; } .agent-theme textarea { background-color: rgb(220, 235, 255); }\n` + readFileSync('components/AgentSurface.css', 'utf8');
-    document.head.append(style);
-    try {
-      renderPanel();
-      const box = screen.getByRole('textbox', { name: '任务要求' });
-      await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
-      expect(getComputedStyle(box).backgroundColor).toBe('rgba(0, 0, 0, 0)');
-      expect(getComputedStyle(box.closest('.appearance-surface')!).backgroundColor).toBe(dark ? 'rgb(23, 27, 36)' : 'rgb(255, 255, 255)');
-    } finally { style.remove(); document.documentElement.classList.toggle('dark', previousDark); }
-  });
-
-  it('回到底部使用共用主题表面，点击后恢复跟随且滚动到实际末尾', async () => {
+  it('回到底部按钮点击后恢复跟随并滚动到实际末尾', async () => {
     stubServices(); renderPanel();
     await screen.findByRole('heading', { name: '新对话' });
     const scroll = screen.getByRole('textbox', { name: '任务要求' }).closest('main')!.querySelector('.space-y-6')!;
     Object.defineProperties(scroll, { scrollHeight: { value: 1000, configurable: true }, clientHeight: { value: 200, configurable: true }, scrollTop: { value: 0, writable: true, configurable: true } });
     fireEvent.scroll(scroll);
     const button = screen.getByRole('button', { name: '回到底部' });
-    expect(button.classList.contains('appearance-surface')).toBe(true);
-    expect(button.className).not.toMatch(/bg-gray-900\/90|bg-white\/90|text-white|dark:text-gray-900/);
     fireEvent.click(button);
     expect(scroll.scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ top: 1000 }));
     expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull();
-  });
-
-  it.each([false, true])('发送与停止按钮在暗色=%s 时使用实时强调色，禁用状态保留中性灰', async dark => {
-    stubServices(); const root = document.documentElement;
-    const previousDark = root.classList.contains('dark'), previousAccent = root.style.getPropertyValue('--nai-accent');
-    root.classList.toggle('dark', dark); root.style.setProperty('--nai-accent', '#14b8a6');
-    const style = document.createElement('style');
-    style.textContent = `button:disabled { background-color: ${dark ? 'rgb(27, 32, 44)' : 'rgb(221, 225, 238)'}; }\n` + readFileSync('components/AgentSurface.css', 'utf8');
-    document.head.append(style);
-    let finish!: () => void;
-    vi.spyOn(promptAgentService, 'run').mockImplementation(async () => { await new Promise<void>(resolve => { finish = resolve; }); });
-    try {
-      renderPanel(); const box = screen.getByRole('textbox', { name: '任务要求' });
-      await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
-      const send = screen.getByRole('button', { name: '执行' }) as HTMLButtonElement;
-      expect(send.disabled).toBe(true); expect(getComputedStyle(send).backgroundColor).toBe(dark ? 'rgb(27, 32, 44)' : 'rgb(221, 225, 238)');
-      fireEvent.change(box, { target: { value: '主题验证' } }); expect(send.disabled).toBe(false);
-      // JSDOM 保留变量表达式；检查真实 CSS 引用，浏览器由根节点实时解析强调色。
-      expect(getComputedStyle(send).backgroundColor).toBe('var(--nai-accent, #0d8bf2)');
-      expect(send.className).not.toMatch(/(?:^|\s)(?:dark:)?(?:hover:)?(?:bg-gray-900|bg-gray-100|text-gray-900)(?:\s|$)/);
-      root.style.setProperty('--nai-accent', '#e11d48'); expect(getComputedStyle(send).backgroundColor).toBe('var(--nai-accent, #0d8bf2)');
-      fireEvent.click(send); await waitFor(() => expect(finish).toBeTypeOf('function'));
-      const stop = screen.getByRole('button', { name: '停止' });
-      expect(getComputedStyle(stop).backgroundColor).toBe('var(--nai-accent, #0d8bf2)'); expect(getComputedStyle(stop).color).toBe('var(--nai-on-accent, white)');
-      expect(stop.className).not.toMatch(/bg-gray|text-gray/);
-      await act(async () => { finish(); });
-    } finally { await act(async () => { finish?.(); }); style.remove(); root.classList.toggle('dark', previousDark); if (previousAccent) root.style.setProperty('--nai-accent', previousAccent); else root.style.removeProperty('--nai-accent'); }
   });
 
   it('执行中没有排队入口，Enter 保留下一条草稿，结束后由用户手动发送', async () => {

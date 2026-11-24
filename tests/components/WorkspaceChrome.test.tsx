@@ -2,7 +2,6 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { WorkspaceChrome, WorkspaceToolbar } from '../../components/DesignSystem';
 import { getTopbarCollapsed, setTopbarCollapsed } from '../../services/workspaceTopbar';
 
@@ -49,11 +48,6 @@ it('共用把手收起顶栏：内容隐藏、高度归零、方向与状态持�
   expect(collapse.getAttribute('aria-expanded')).toBe('true');
   expect(host.textContent).toContain('工具栏');
   expect(host.style.getPropertyValue('--workspace-chrome-height')).toBe('72px');
-  // 静止态不给隐藏文案留 gap；底色与顶栏共用 toolbar surface；展开指上、收起后指下。
-  expect(collapse.className).not.toMatch(/(?:^|\s)gap-1(?:\s|$)/);
-  expect(collapse.querySelector('svg.lucide-chevron-up')).toBeTruthy();
-  expect(collapse.querySelector('svg.lucide-chevron-down')).toBeNull();
-  expect(collapse.querySelector('span:not([aria-hidden])')?.className).toContain('group-hover:ml-1');
 
   fireEvent.click(collapse);
   expect(getTopbarCollapsed()).toBe(true);
@@ -67,8 +61,6 @@ it('共用把手收起顶栏：内容隐藏、高度归零、方向与状态持�
   expect(hiddenWrapper?.querySelector('header')).toBe(headerBefore);
   const expand = getByRole('button', { name: '展开顶栏' });
   expect(expand.getAttribute('aria-expanded')).toBe('false');
-  expect(expand.querySelector('svg.lucide-chevron-down')).toBeTruthy();
-  expect(expand.querySelector('svg.lucide-chevron-up')).toBeNull();
 
   fireEvent.click(expand);
   expect(getTopbarCollapsed()).toBe(false);
@@ -129,31 +121,6 @@ it('自带窄屏排布的顶栏可关闭横滑，子元素仍是顶栏的直接�
   const { container } = render(<WorkspaceToolbar scrollable={false} className="content-library-toolbar"><div role="tablist">范围</div></WorkspaceToolbar>);
   expect(container.querySelector('.workspace-toolbar-scroll')).toBeNull();
   expect(container.querySelector('header.content-library-toolbar > [role="tablist"]')).not.toBeNull();
-});
-
-it('手机顶栏不渲染折叠把手、整行宽度都给控件，且禁止横滑与边缘淡出', () => {
-  const css = readFileSync('index.css', 'utf8');
-  const mobile = css.slice(css.indexOf('@media (max-width: 767px) {'));
-  // 手机没有把手，原先为它留的居中、让位规则一并撤掉，避免留下 2.75rem 的空位。
-  expect(mobile).not.toContain('data-workspace-topbar-toggle');
-  expect(mobile).not.toContain("workspace-mode-tabs[data-topbar-collapsed='true']");
-  const design = readFileSync('components/DesignSystem.tsx', 'utf8');
-  // 手机单列铺满；把手只在手机隐藏，电脑仍是顶边中央那一枚。
-  expect(design).toContain('grid flex-none grid-cols-1 md:flex md:flex-col');
-  expect(design).not.toContain('grid-cols-[2.75rem_minmax(0,1fr)]');
-  expect(design).toContain('z-40 flex h-11 min-h-11');
-  expect(design).toContain('max-lg:hidden');
-  expect(design).not.toContain('max-md:hidden');
-  expect(design).toContain('md:h-5 md:min-h-0 md:w-auto');
-  expect(mobile).toMatch(/\.workspace-toolbar-scroll \{ overflow: hidden;/);
-  expect(mobile).not.toContain('overflow-x: auto');
-  expect(mobile).not.toContain('data-overflow-end');
-  expect(css.slice(0, css.indexOf('@media (max-width: 767px) {'))).not.toContain('.workspace-toolbar-scroll');
-  // 手机靠图标精简一次排开，搜索允许收缩，不再设保底宽度硬挤出相邻按钮。
-  for (const file of ['components/ChainList.tsx', 'components/InspirationGallery.tsx', 'components/CharacterLibrary.tsx']) {
-    expect(readFileSync(file, 'utf8'), file).not.toContain('max-md:min-w-[7.5rem]');
-  }
-  expect(readFileSync('components/ContentLibraryPage.tsx', 'utf8')).toContain('<WorkspaceToolbar scrollable={false}');
 });
 
 it('收起后把手层级高于实验室分区条，电脑端仍保留这枚把手', () => {

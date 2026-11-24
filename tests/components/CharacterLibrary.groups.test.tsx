@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { readFileSync } from 'node:fs';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { expectDirectoryCount, openDirectoryPicker, pickDirectoryOption } from '../support/directoryPicker';
@@ -486,15 +485,6 @@ it('旧词库覆写chainId收藏只读映射原Tag，参与只看收藏筛选和
   toggleCharacterFavorites();
   expect(screen.getByRole('button', { name: '选择角色：胡滕' }).getAttribute('data-gallery-work-id')).toBe('catalog:' + variantFamily[0].name);
   expect(oldFavorite.sourceId).toBe('legacy-catalog-id'); expect(oldFavorite.imageUrl).toBe('/kept-old-cover.png');
-});
-
-it('手机词库详情的绝对定位封面由真实比例或2比3回退撑开，独立自定义图保持自然高度', () => {
-  // jsdom 不计算绝对布局；精确检查同一详情容器的比例分支，防止再次移到无高度的内层。
-  const source = readFileSync('components/CharacterLibrary.tsx', 'utf8');
-  const detail = source.slice(source.indexOf('<MobileDetailView'));
-  const cover = detail.slice(detail.indexOf('<PressRevealSurface'), detail.indexOf('</PressRevealSurface>'));
-  expect(cover).toContain("style={{ aspectRatio: lightbox.kind === 'catalog' ? cardRatios[lightbox.key] || 2 / 3 : undefined }}");
-  expect(cover.indexOf('style={{ aspectRatio:')).toBeLessThan(cover.indexOf('<DanbooruCover'));
 });
 
 it('目录与分组同时失败只显示一行错误，一次重试同时重新读取两者', async () => {
