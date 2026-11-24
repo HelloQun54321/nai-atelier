@@ -227,6 +227,26 @@ export interface CompiledComicPanelRequest {
 }
 
 /**
+ * 当分格或整页启用 `ai-text` 直出短台词/拟声词时，剥离默认质量预设里的 `no text`
+ * （保留原本美感质量词），防止全局 `no text` 与 `Text:` 锚点互相打架。
+ */
+export const resolveComicQualityPreset = (
+  requestedQualityId: string | undefined,
+  dialogueMode: ComicDialogueMode,
+): { qualityPresetId: string; extraQualityTags: string } => {
+  const id = (requestedQualityId || '').trim() || 'standard';
+  if (dialogueMode === 'ai-text') {
+    if (id === 'standard') {
+      return { qualityPresetId: 'none', extraQualityTags: 'very aesthetic, masterpiece' };
+    }
+    if (id === 'light') {
+      return { qualityPresetId: 'none', extraQualityTags: 'very aesthetic, amazing quality' };
+    }
+  }
+  return { qualityPresetId: id, extraQualityTags: '' };
+};
+
+/**
  * 编译单格手动精控 V5 生成请求（应用全部实测避坑铁律，绝不改写原草稿或角色库）。
  */
 export const buildComicPanelGenerationInput = (
@@ -270,9 +290,12 @@ export const buildComicPanelGenerationInput = (
     modeFramingTags.push('no speech bubbles, no text');
   }
 
+  const quality = resolveComicQualityPreset(page.qualityPresetId, page.dialogueMode);
+
   const promptParts = [
     page.globalBasePrompt,
     ...modeFramingTags,
+    quality.extraQualityTags,
     panel.prompt,
     ...mergedSceneNotes,
   ];
@@ -313,7 +336,7 @@ export const buildComicPanelGenerationInput = (
     noiseSchedule: page.noiseSchedule || 'karras',
     cfgRescale: isMedium ? 0 : (page.cfgRescale ?? 0),
     variety: page.variety === true,
-    qualityPresetId: page.qualityPresetId || 'standard',
+    qualityPresetId: quality.qualityPresetId,
     ucPresetId: isMedium ? 'heavy' : (page.ucPresetId || 'light'),
     ...(page.seed !== undefined ? { seed: page.seed } : {}),
     useCoords: panel.useCoords && characters.length > 0,

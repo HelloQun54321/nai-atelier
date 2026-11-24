@@ -21,23 +21,55 @@ export const LAYOUT_LOCK_COLORS = {
   insetOuterBorderColor: '#ffffff',
   insetInnerBorderColor: '#0a0a0a',
   breakoutBorderColor: '#ffffff',
+  breakoutFillWhite: '#dec6b4',
+  breakoutFillMono: '#8e96a6',
+  breakoutFillFlashback: '#9ca4b3',
   speedlineColor: '#5c606b',
   sfxFillColor: '#3f4450',
   sfxStrokeColor: '#ffffff',
 } as const;
 
+/** 相邻分镜分区渐变色板：打破潜空间同色平灰粘连，同时跳过纯白(>246)与纯黑(<24)。 */
+export const LAYOUT_LOCK_PANEL_GRADIENTS = {
+  color: [
+    ['#7a9ec2', '#d7e5f2'],
+    ['#e3a69d', '#f7dfd9'],
+    ['#bfa57e', '#efe0c8'],
+    ['#7f8ea8', '#c6d0de'],
+    ['#80ad9a', '#d0e6dc'],
+    ['#9b87a8', '#ddd2e6'],
+  ] as ReadonlyArray<readonly [string, string]>,
+  monochrome: [
+    ['#4a5161', '#788091'],
+    ['#d5dbe6', '#f0f3f7'],
+    ['#687182', '#9ca5b6'],
+    ['#c8d0de', '#eaeef5'],
+  ] as ReadonlyArray<readonly [string, string]>,
+  flashback: [
+    ['#4b5160', '#70788a'],
+    ['#7d8596', '#a8b0c0'],
+    ['#5a6273', '#848ca0'],
+    ['#6c7486', '#98a0b2'],
+  ] as ReadonlyArray<readonly [string, string]>,
+  insetColor: ['#f0c9ad', '#faebd7'] as readonly [string, string],
+  insetMono: ['#dde2eb', '#f3f5f9'] as readonly [string, string],
+  insetFlashback: ['#98a1b2', '#cfd6e3'] as readonly [string, string],
+} as const;
+
 export const LAYOUT_LOCK_DEFAULTS = {
   strengthColor: 0.85,
   strengthMonochrome: 0.82,
+  strengthDiagonal: 0.80,
   strengthBreakout: 0.86,
   noiseColor: 0.05,
   noiseMonochrome: 0.04,
   borderWidthColor: 6,
   borderWidthMonochrome: 7,
   borderWidthFlashback: 5,
-  insetOuterBorderWidth: 14,
+  insetOuterBorderWidth: 16,
   insetInnerBorderWidth: 5,
-  breakoutBorderWidth: 11,
+  breakoutBorderWidth: 12,
+  minLockGutterPx: 24,
   speedlineAlpha: 0.55,
   grainAmplitude: 13,
   grainSkipWhiteAbove: 246,
@@ -54,11 +86,61 @@ export interface ResolvedLayoutLockConfig {
   gutterStyle: ComicAiGutterStyle;
 }
 
+/** 判定引导格是否包含三角形或大角度斜切边界（>18°），用于自动收紧锁框重绘强度。 */
+export const hasSteepDiagonalPanels = (panels: ComicAiGuidePanel[]): boolean => {
+  for (const panel of panels) {
+    if (panel.inset) continue;
+    const poly = getGuidePanelPolygon(panel);
+    if (poly.length === 3) return true;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      const dx = Math.abs(b.x - a.x);
+      const dy = Math.abs(b.y - a.y);
+      const len = Math.hypot(dx, dy);
+      if (len >= 0.12 && Math.min(dx, dy) / Math.max(dx, dy) > 0.32) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
+/** 判定引导格是否包含任意可察觉的斜边（>2.3°），供提示词引擎避开相互冲突的横平竖直网格词。 */
+export const hasAnySlantedEdge = (panels: ComicAiGuidePanel[]): boolean => {
+  for (const panel of panels) {
+    const poly = getGuidePanelPolygon(panel);
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      const dx = Math.abs(b.x - a.x);
+      const dy = Math.abs(b.y - a.y);
+      const len = Math.hypot(dx, dy);
+      if (len >= 0.08 && Math.min(dx, dy) / Math.max(dx, dy) > 0.04) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
+/**
+ * 统一面板匹配优先级：画中画叠框（inset）优先，其次按外接面积从小到大，
+ * 避免叠框里的角色/气泡锚点误匹配到底层整页背景格。
+ */
+export const sortGuidePanelsByPriority = (panels: ComicAiGuidePanel[]): ComicAiGuidePanel[] =>
+  [...panels].sort((a, b) => {
+    const insetDiff = Number(Boolean(b.inset)) - Number(Boolean(a.inset));
+    if (insetDiff !== 0) return insetDiff;
+    return (a.width * a.height) - (b.width * b.height);
+  });
+
 /**
  * 解析当前页面实测甜点参数：
- * - 全彩模式：strength = 0.85, noise = 0.05
+ * - 含破格前景块：strength = 0.86
+ * - 三角/大斜切分镜：strength = 0.80（压低重绘避免锐角斜线被拉平）
  * - 黑白网点漫：strength = 0.82, noise = 0.04
- * - 含破格前景块：strength = 0.86, noise = 0.05（黑白取 0.04）
+ * - 常规全彩模式：strength = 0.85, noise = 0.05
  */
 export const resolveLayoutLockConfig = (page: ComicPageDraft): ResolvedLayoutLockConfig => {
   const aiPage = page.aiPage;
@@ -67,9 +149,11 @@ export const resolveLayoutLockConfig = (page: ComicPageDraft): ResolvedLayoutLoc
   const isMono = page.colorMode === 'monochrome';
   const defaultStrength = hasBreakout
     ? LAYOUT_LOCK_DEFAULTS.strengthBreakout
-    : isMono
-      ? LAYOUT_LOCK_DEFAULTS.strengthMonochrome
-      : LAYOUT_LOCK_DEFAULTS.strengthColor;
+    : hasSteepDiagonalPanels(aiPage.guidePanels)
+      ? LAYOUT_LOCK_DEFAULTS.strengthDiagonal
+      : isMono
+        ? LAYOUT_LOCK_DEFAULTS.strengthMonochrome
+        : LAYOUT_LOCK_DEFAULTS.strengthColor;
   const rawStrength = aiPage.layoutLockStrength;
   const strength = typeof rawStrength === 'number' && Number.isFinite(rawStrength)
     ? Math.round(Math.min(0.94, Math.max(0.72, rawStrength)) * 100) / 100
@@ -143,9 +227,10 @@ export const computeSafeBubbleHoleEllipse = (
     return null;
   }
 
-  // 查找所属分镜格（优先多边形精确命中，再按包围盒兜底）
+  // 查找所属分镜格（画中画叠框与小格优先，多边形精确命中后按包围盒兜底）
+  const orderedPanels = sortGuidePanelsByPriority(guidePanels);
   let host: ComicAiGuidePanel | undefined;
-  for (const panel of guidePanels) {
+  for (const panel of orderedPanels) {
     const poly = getGuidePanelPolygon(panel);
     if (pointInPolygon({ x: anchor.x, y: anchor.y }, poly)) {
       host = panel;
@@ -153,7 +238,7 @@ export const computeSafeBubbleHoleEllipse = (
     }
   }
   if (!host) {
-    host = guidePanels.find(p =>
+    host = orderedPanels.find(p =>
       anchor.x >= p.x - 0.01 && anchor.x <= p.x + p.width + 0.01
       && anchor.y >= p.y - 0.01 && anchor.y <= p.y + p.height + 0.01,
     );
@@ -299,6 +384,158 @@ const drawSketchStrokesInZone = (
   }
 };
 
+const signedPolygonArea = (pts: Array<{ x: number; y: number }>): number => {
+  let area2 = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    area2 += a.x * b.y - b.x * a.y;
+  }
+  return area2 / 2;
+};
+
+/**
+ * 仅向内收缩非页面外缘的内部切缝边界，将细窄分镜缝扩宽至 ≥24px 安全净宽，
+ * 避免潜空间 8× 下采样吞掉细白缝或斜切分界线。
+ */
+export const insetLockPolygonForWideGutter = (
+  pts: Array<{ x: number; y: number }>,
+  extraInsetPerSide: number,
+  width: number,
+  height: number,
+  isBleed = false,
+): Array<{ x: number; y: number }> => {
+  if (extraInsetPerSide <= 0.25 || pts.length < 3) return pts;
+  const origArea = signedPolygonArea(pts);
+  if (Math.abs(origArea) < 1) return pts;
+  const inwardSign = origArea >= 0 ? 1 : -1;
+
+  const marginX = width * 0.055;
+  const marginY = height * 0.055;
+  const touchesCanvasEdge = (p: { x: number; y: number }) =>
+    p.x <= 2 || p.x >= width - 2 || p.y <= 2 || p.y >= height - 2;
+
+  const isOuterEdge = (a: { x: number; y: number }, b: { x: number; y: number }): boolean => {
+    if (isBleed && (touchesCanvasEdge(a) || touchesCanvasEdge(b))) return true;
+    return (
+      (a.x <= marginX && b.x <= marginX)
+      || (a.x >= width - marginX && b.x >= width - marginX)
+      || (a.y <= marginY && b.y <= marginY)
+      || (a.y >= height - marginY && b.y >= height - marginY)
+    );
+  };
+
+  interface ShiftedEdgeLine {
+    nx: number;
+    ny: number;
+    c: number;
+    inset: number;
+  }
+
+  const lines: ShiftedEdgeLine[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    const tx = b.x - a.x;
+    const ty = b.y - a.y;
+    const len = Math.hypot(tx, ty);
+    if (len < 1e-4) return pts;
+    const nx = inwardSign * (-ty / len);
+    const ny = inwardSign * (tx / len);
+    const inset = isOuterEdge(a, b) ? 0 : extraInsetPerSide;
+    lines.push({
+      nx,
+      ny,
+      c: nx * a.x + ny * a.y + inset,
+      inset,
+    });
+  }
+
+  const maxMiterOffset = extraInsetPerSide * 3.2;
+  const result: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < pts.length; i++) {
+    const prev = lines[(i - 1 + pts.length) % pts.length];
+    const curr = lines[i];
+    const orig = pts[i];
+    const det = prev.nx * curr.ny - prev.ny * curr.nx;
+    if (Math.abs(det) < 1e-4) {
+      result.push({
+        x: orig.x + ((prev.nx * prev.inset + curr.nx * curr.inset) / 2),
+        y: orig.y + ((prev.ny * prev.inset + curr.ny * curr.inset) / 2),
+      });
+      continue;
+    }
+    const ix = (prev.c * curr.ny - prev.ny * curr.c) / det;
+    const iy = (prev.nx * curr.c - prev.c * curr.nx) / det;
+    if (!Number.isFinite(ix) || !Number.isFinite(iy)) return pts;
+    const dx = ix - orig.x;
+    const dy = iy - orig.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > maxMiterOffset && maxMiterOffset > 0) {
+      const ratio = maxMiterOffset / dist;
+      result.push({ x: orig.x + dx * ratio, y: orig.y + dy * ratio });
+    } else {
+      result.push({ x: ix, y: iy });
+    }
+  }
+
+  const newArea = signedPolygonArea(result);
+  if (newArea * origArea <= 0 || Math.abs(newArea) < Math.abs(origArea) * 0.35) {
+    return pts;
+  }
+  return result;
+};
+
+const pickPanelGradientPair = (
+  panelIndex: number,
+  isInset: boolean,
+  isFlashback: boolean,
+  isMono: boolean,
+): readonly [string, string] => {
+  if (isInset) {
+    return isFlashback
+      ? LAYOUT_LOCK_PANEL_GRADIENTS.insetFlashback
+      : isMono
+        ? LAYOUT_LOCK_PANEL_GRADIENTS.insetMono
+        : LAYOUT_LOCK_PANEL_GRADIENTS.insetColor;
+  }
+  const palette = isFlashback
+    ? LAYOUT_LOCK_PANEL_GRADIENTS.flashback
+    : isMono
+      ? LAYOUT_LOCK_PANEL_GRADIENTS.monochrome
+      : LAYOUT_LOCK_PANEL_GRADIENTS.color;
+  return palette[panelIndex % palette.length];
+};
+
+const resolveLockPanelFillStyle = (
+  ctx: CanvasRenderingContext2D,
+  pts: Array<{ x: number; y: number }>,
+  explicitFillColor: string | undefined,
+  panelIndex: number,
+  isInset: boolean,
+  isFlashback: boolean,
+  isMono: boolean,
+): string | CanvasGradient => {
+  if (explicitFillColor?.trim()) return explicitFillColor.trim();
+  const [startHex, endHex] = pickPanelGradientPair(panelIndex, isInset, isFlashback, isMono);
+  if (typeof ctx.createLinearGradient !== 'function' || pts.length < 3) return startHex;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  if (Math.hypot(maxX - minX, maxY - minY) < 4) return startHex;
+  const gradient = ctx.createLinearGradient(minX, minY, maxX, maxY);
+  gradient.addColorStop(0, startHex);
+  gradient.addColorStop(1, endHex);
+  return gradient;
+};
+
 const drawRoundedRectPath = (
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -364,9 +601,9 @@ export interface RenderedComicLayoutTemplate {
  * 1. 纸张格缝底色（纯白 #ffffff / 黑底回忆杀 #08080a）
  * 2. 常规分镜格（含出血格、自定义氛围底色、粗黑框或回忆杀白框）
  * 3. 格内可选增强层（放射速度线 / 手绘层粗色块引导，严格裁剪在分镜多边形内）
- * 4. 画中画叠框（14px 白外边 + 5px 黑内框）
+ * 4. 画中画叠框（16px 白外边 + 5px 黑内框）
  * 5. 可选气泡纯白避让椭圆（严格内缩 ≥ 3% 远离黑框）
- * 6. 破格前景块（最顶层，11px 圆角白外边）
+ * 6. 破格前景块（最顶层，高反差默认底色 + 12px 圆角白外边）
  * 7. 可选 SFX 手绘底字轻压
  * 8. 确定性选择性像素颗粒（严格跳过纯白 >246 与纯黑 <24，保证格缝与黑框锐利）
  */
@@ -386,13 +623,22 @@ export const renderComicZoneLayoutTemplate = (
   const aiPage = page.aiPage;
   const isFlashback = aiPage.gutterStyle === 'black-flashback';
   const isMono = page.colorMode === 'monochrome';
-  const defaultPanelFill = isFlashback ? LAYOUT_LOCK_COLORS.panelFillFlashback : LAYOUT_LOCK_COLORS.panelFillWhite;
+  const defaultBreakoutFill = isFlashback
+    ? LAYOUT_LOCK_COLORS.breakoutFillFlashback
+    : isMono
+      ? LAYOUT_LOCK_COLORS.breakoutFillMono
+      : LAYOUT_LOCK_COLORS.breakoutFillWhite;
   const panelBorderColor = isFlashback ? LAYOUT_LOCK_COLORS.borderColorFlashback : LAYOUT_LOCK_COLORS.borderColorWhite;
   const panelBorderWidth = isFlashback
     ? LAYOUT_LOCK_DEFAULTS.borderWidthFlashback
     : isMono
       ? LAYOUT_LOCK_DEFAULTS.borderWidthMonochrome
       : LAYOUT_LOCK_DEFAULTS.borderWidthColor;
+  const zoneScale = Math.min(
+    width / Math.max(1, page.width * zone.rect.width),
+    height / Math.max(1, page.height * zone.rect.height),
+  );
+  const extraInsetPerSide = Math.max(0, (LAYOUT_LOCK_DEFAULTS.minLockGutterPx - (page.gutterPx || 14)) / 2) * zoneScale;
 
   // 收集可见手绘草图笔画（仅当开启「手绘草图引导」时）
   const sketchStrokes: ComicStroke[] = [];
@@ -420,17 +666,22 @@ export const renderComicZoneLayoutTemplate = (
   const allGuides = aiPage.guidePanels;
   const regularGuides = allGuides.filter(g => !g.inset);
   const insetGuides = allGuides.filter(g => g.inset);
+  const shouldWidenInternalGutters = regularGuides.length > 1 && extraInsetPerSide > 0.25;
 
-  const renderPanel = (gp: ComicAiGuidePanel, isInset: boolean): boolean => {
+  const renderPanel = (gp: ComicAiGuidePanel, isInset: boolean, colorIdx: number): boolean => {
     const poly = getGuidePanelPolygon(gp);
-    const pxPts = poly.map(pt => mapPagePointToZonePixels(pt, zone.rect, width, height));
-    const xs = pxPts.map(p => p.x);
-    const ys = pxPts.map(p => p.y);
+    const rawPxPts = poly.map(pt => mapPagePointToZonePixels(pt, zone.rect, width, height));
+    const xs = rawPxPts.map(p => p.x);
+    const ys = rawPxPts.map(p => p.y);
     if (Math.max(...xs) < -2 || Math.min(...xs) > width + 2 || Math.max(...ys) < -2 || Math.min(...ys) > height + 2) {
       return false;
     }
 
-    // 4a. 画中画叠框先描 14px 纯白外边
+    const pxPts = !isInset && shouldWidenInternalGutters
+      ? insetLockPolygonForWideGutter(rawPxPts, extraInsetPerSide, width, height, Boolean(gp.bleed))
+      : rawPxPts;
+
+    // 4a. 画中画叠框先描 16px 纯白外边
     if (isInset) {
       ctx.save();
       tracePolygon(ctx, pxPts);
@@ -441,10 +692,10 @@ export const renderComicZoneLayoutTemplate = (
       ctx.restore();
     }
 
-    // 2. 格内填充中性灰或自定义氛围底色
+    // 2. 格内填充分区渐变色阶（相邻格冷暖/明暗拉开反差）或自定义氛围底色
     ctx.save();
     tracePolygon(ctx, pxPts);
-    ctx.fillStyle = gp.fillColor?.trim() || defaultPanelFill;
+    ctx.fillStyle = resolveLockPanelFillStyle(ctx, pxPts, gp.fillColor, colorIdx, isInset, isFlashback, isMono);
     ctx.fill();
 
     // 3. 格内可选增强层（裁剪在对应分镜多边形内）
@@ -477,13 +728,13 @@ export const renderComicZoneLayoutTemplate = (
   };
 
   let panelCount = 0;
-  for (const gp of regularGuides) {
-    if (renderPanel(gp, false)) panelCount += 1;
+  for (let i = 0; i < regularGuides.length; i++) {
+    if (renderPanel(regularGuides[i], false, i)) panelCount += 1;
   }
 
   let insetCount = 0;
-  for (const gp of insetGuides) {
-    if (renderPanel(gp, true)) insetCount += 1;
+  for (let i = 0; i < insetGuides.length; i++) {
+    if (renderPanel(insetGuides[i], true, i)) insetCount += 1;
   }
 
   // 5. 气泡纯白无噪点避让椭圆（严格内缩 ≥ 3%，禁止贴死或跨过黑边框）
@@ -502,10 +753,10 @@ export const renderComicZoneLayoutTemplate = (
     }
   }
 
-  // 6. 破格前景块（叠在所有分镜边框最上层，11px 圆角白外边）
+  // 6. 破格前景块（叠在所有分镜边框最上层，高反差默认底色 + 12px 圆角白外边）
   let breakoutCount = 0;
   for (const bz of aiPage.breakoutZones || []) {
-    if (drawBreakoutZone(ctx, bz, zone.rect, width, height, defaultPanelFill)) {
+    if (drawBreakoutZone(ctx, bz, zone.rect, width, height, defaultBreakoutFill)) {
       breakoutCount += 1;
     }
   }

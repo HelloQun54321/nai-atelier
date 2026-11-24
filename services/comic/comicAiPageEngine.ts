@@ -3,13 +3,17 @@ import { getDefaultStepsForModel, isNaiMediumModel } from '../naiModels';
 import { clampAnchorCoord, matchFreeOpusResolution, pointInPolygon } from './comicGeometry';
 import {
   getGuidePanelPolygon,
+  hasAnySlantedEdge,
+  hasSteepDiagonalPanels,
   resolveLayoutLockConfig,
+  sortGuidePanelsByPriority,
   type ResolvedLayoutLockConfig,
 } from './comicLayoutTemplateRenderer';
 import {
   assembleV5TextSafePrompt,
   COMIC_ANCHOR_HARD_LIMIT,
   COMIC_ANCHOR_SOFT_LIMIT,
+  resolveComicQualityPreset,
   sanitizeComicNegativeConflicts,
 } from './comicPromptBuilder';
 import type {
@@ -115,14 +119,15 @@ const findContainingGuidePanelId = (
   anchor: ComicAnchor,
   panels: ComicAiGuidePanel[],
 ): string | null => {
-  for (const panel of panels) {
+  const ordered = sortGuidePanelsByPriority(panels);
+  for (const panel of ordered) {
     if (panel.points && panel.points.length >= 3) {
       if (pointInPolygon({ x: anchor.x, y: anchor.y }, panel.points)) {
         return panel.id;
       }
     }
   }
-  for (const panel of panels) {
+  for (const panel of ordered) {
     if (
       anchor.x >= panel.x - 0.01
       && anchor.x <= panel.x + panel.width + 0.01
@@ -315,13 +320,31 @@ export interface CompiledAiZoneRequest {
   layoutLock: ResolvedLayoutLockConfig;
 }
 
-/** 根据本区引导格的相对位置生成不含人物剧透的结构化版式描述（如 top wide panel, middle split panels）。 */
+/**
+ * 根据本区引导格的相对位置生成结构化版式描述。
+ * 对斜切、三角、悬浮画中画、无框与含破格页面故意不拼 `3-1 / 2-1 panel arrangement` 行列网格词，
+ * 避免模型用平直正交网格理解推翻图生图底图上的非规整几何边界。
+ */
 const describeZoneLayoutGeometry = (
   localPanels: ComicAiGuidePanel[],
   isFlashback: boolean,
+  hasBreakout = false,
 ): string => {
   if (!localPanels.length) return '';
   if (localPanels.length === 1) return 'single full-bleed comic panel';
+  const borderCue = isFlashback
+    ? 'crisp white panel borders, black gutters, flashback manga page'
+    : 'crisp panel borders, clean wide white gutters';
+  const hasInset = localPanels.some(p => Boolean(p.inset));
+  const hasBorderless = localPanels.some(p => Boolean(p.borderless));
+  const hasDiagonal = hasSteepDiagonalPanels(localPanels) || hasAnySlantedEdge(localPanels);
+
+  if (hasInset || hasBorderless || hasBreakout || hasDiagonal) {
+    if (hasInset) return `manga page with floating inset panel, ${borderCue}`;
+    if (hasDiagonal) return `${localPanels.length}-panel dynamic diagonal manga page, ${borderCue}`;
+    return `${localPanels.length}-panel manga page, ${borderCue}`;
+  }
+
   const sorted = [...localPanels].sort((a, b) => (Math.abs(a.y - b.y) > 0.08 ? a.y - b.y : a.x - b.x));
   const rowCounts: number[] = [];
   let lastY = sorted[0].y;
@@ -336,9 +359,7 @@ const describeZoneLayoutGeometry = (
   }
   if (currentCount > 0) rowCounts.push(currentCount);
   const pattern = rowCounts.length >= 2 ? `${rowCounts.join('-')} panel arrangement` : `${localPanels.length}-panel layout`;
-  return isFlashback
-    ? `${pattern}, crisp white panel borders, black gutters, flashback manga page`
-    : `${pattern}, crisp panel borders, clean white gutters`;
+  return `${pattern}, ${borderCue}`;
 };
 
 const extractEnglishVisualCue = (panel: ComicAiGuidePanel): string => {
@@ -420,7 +441,8 @@ export const buildAiPageZoneRequest = (
   const capped = kept.slice(0, COMIC_ANCHOR_HARD_LIMIT);
 
   const panelCountInZone = Math.max(1, zone.guidePanels.length);
-  const geometryCue = describeZoneLayoutGeometry(localPanels, isFlashback);
+  const hasBreakout = (page.aiPage.breakoutZones?.length ?? 0) > 0;
+  const geometryCue = describeZoneLayoutGeometry(localPanels, isFlashback, hasBreakout);
   const rawLayoutHint = page.aiPage.layoutHint.trim();
   const normalizedLayoutHint = isFlashback
     ? rawLayoutHint.replace(/\b(?:clean\s+)?white\s+gutters?\b/gi, 'black gutters')
@@ -429,11 +451,14 @@ export const buildAiPageZoneRequest = (
     ? cleanCommaList([normalizedLayoutHint || `${panelCountInZone}-panel manga page`, geometryCue].filter(Boolean).join(', '))
     : cleanCommaList([`${panelCountInZone}-panel comic strip section`, geometryCue].filter(Boolean).join(', '));
 
+  const quality = resolveComicQualityPreset(page.qualityPresetId, page.dialogueMode);
+
   const framingTags: string[] = [layoutShell];
   if (isFlashback) framingTags.push('black background page, dark flashback framing');
   if (monochrome) framingTags.push('monochrome, greyscale, manga, screentone, crisp black ink lineart');
   if (page.dialogueMode === 'clean-vector') framingTags.push('no speech bubbles, no text');
   if (page.dialogueMode === 'empty-bubble') framingTags.push('blank speech bubbles, no text');
+  if (quality.extraQualityTags) framingTags.push(quality.extraQualityTags);
 
   const globalNeg = sanitizeComicNegativeConflicts(page.globalNegativePrompt, monochrome);
   const negParts = [globalNeg];
@@ -550,7 +575,7 @@ export const buildAiPageZoneRequest = (
     noiseSchedule: page.noiseSchedule || 'karras',
     cfgRescale: isMedium ? 0 : (page.cfgRescale ?? 0),
     variety: page.variety === true,
-    qualityPresetId: page.qualityPresetId || 'standard',
+    qualityPresetId: quality.qualityPresetId,
     ucPresetId: isMedium ? 'heavy' : (page.ucPresetId || 'light'),
     ...(effectiveSeed !== undefined ? { seed: effectiveSeed } : {}),
     useCoords: characters.length > 0,

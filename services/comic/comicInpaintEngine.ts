@@ -3,6 +3,7 @@ import { getDefaultStepsForModel, isNaiMediumModel } from '../naiModels';
 import { clampAnchorCoord, matchFreeOpusResolution } from './comicGeometry';
 import {
   COMIC_ANCHOR_HARD_LIMIT,
+  resolveComicQualityPreset,
   sanitizeComicNegativeConflicts,
   stripColorTagsForMonochrome,
 } from './comicPromptBuilder';
@@ -131,10 +132,13 @@ export const buildComicInpaintRequest = (
   const regionPrompt = monochrome ? stripColorTagsForMonochrome(inpaint.prompt) : inpaint.prompt.trim();
   const mergedBg = monochrome ? stripColorTagsForMonochrome(mergedBgNotes.join(', ')) : mergedBgNotes.join(', ');
 
+  const quality = resolveComicQualityPreset(page.qualityPresetId, page.dialogueMode);
+
   const framingTags: string[] = [];
   if (monochrome) framingTags.push('monochrome, greyscale, manga, screentone, crisp black ink lineart');
   if (page.dialogueMode === 'clean-vector') framingTags.push('no speech bubbles, no text');
   if (page.dialogueMode === 'empty-bubble') framingTags.push('blank speech bubbles, no text');
+  if (quality.extraQualityTags) framingTags.push(quality.extraQualityTags);
 
   const characters: CharacterParams[] = kept
     .slice(0, COMIC_ANCHOR_HARD_LIMIT)
@@ -195,7 +199,7 @@ export const buildComicInpaintRequest = (
     noiseSchedule: page.noiseSchedule || 'karras',
     cfgRescale: isMedium ? 0 : (page.cfgRescale ?? 0),
     variety: page.variety === true,
-    qualityPresetId: page.qualityPresetId || 'standard',
+    qualityPresetId: quality.qualityPresetId,
     ucPresetId: isMedium ? 'heavy' : (page.ucPresetId || 'light'),
     useCoords: characters.length > 0,
     characters,

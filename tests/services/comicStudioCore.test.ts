@@ -21,6 +21,7 @@ import {
   encodeDanbooruCastId,
   evaluateAnchorGuard,
   parseDanbooruCastId,
+  resolveComicQualityPreset,
   stripColorTagsForMonochrome,
 } from '../../services/comic/comicPromptBuilder';
 import {
@@ -31,8 +32,12 @@ import {
   applyDeterministicSelectiveGrain,
   computeSafeBubbleHoleEllipse,
   getGuidePanelPolygon,
+  hasAnySlantedEdge,
+  hasSteepDiagonalPanels,
+  insetLockPolygonForWideGutter,
   LAYOUT_LOCK_COLORS,
   LAYOUT_LOCK_DEFAULTS,
+  LAYOUT_LOCK_PANEL_GRADIENTS,
   mapPagePointToZonePixels,
   renderComicZoneLayoutTemplate,
   resolveLayoutLockConfig,
@@ -1030,5 +1035,113 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     const res2 = renderComicZoneLayoutTemplate(openDraft, openPlan.zones[0], { canvas: mock2.canvas, seed: 11 });
     expect(res2.panelCount).toBe(3);
     expect(mock2.ops.filter(o => o.op === 'stroke')).toHaveLength(2);
+  });
+
+  it('uses distinct per-panel gradients, widens narrow internal lock gutters, drops diagonal strength to 0.80, and keeps ai-text/inset prompt integrity', () => {
+    // 1. 内缩扩缝算法：外页边距 (x=0.04) 纹丝不动，内部细切边向内收缩并保住安全面积
+    const topLeftPanel = [
+      { x: 0.04 * 832, y: 0.04 * 1216 },
+      { x: 0.49 * 832, y: 0.04 * 1216 },
+      { x: 0.49 * 832, y: 0.48 * 1216 },
+      { x: 0.04 * 832, y: 0.48 * 1216 },
+    ];
+    const widened = insetLockPolygonForWideGutter(topLeftPanel, 5, 832, 1216, false);
+    expect(widened[0].x).toBeCloseTo(topLeftPanel[0].x, 4);
+    expect(widened[0].y).toBeCloseTo(topLeftPanel[0].y, 4);
+    expect(widened[2].x).toBeCloseTo(topLeftPanel[2].x - 5, 3);
+    expect(widened[2].y).toBeCloseTo(topLeftPanel[2].y - 5, 3);
+
+    // 2. 分区渐变色阶与高反差破格填充
+    const gradientsCreated: Array<Array<{ offset: number; color: string }>> = [];
+    const fillStylesUsed: unknown[] = [];
+    const gradCtx = {
+      fillStyle: '' as unknown,
+      strokeStyle: '',
+      lineWidth: 0,
+      lineJoin: 'miter',
+      save: () => {},
+      restore: () => {},
+      beginPath: () => {},
+      closePath: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      quadraticCurveTo: () => {},
+      createLinearGradient: () => {
+        const stops: Array<{ offset: number; color: string }> = [];
+        gradientsCreated.push(stops);
+        return { addColorStop: (offset: number, color: string) => stops.push({ offset, color }) };
+      },
+      fillRect: () => {},
+      fill: () => fillStylesUsed.push(gradCtx.fillStyle),
+      stroke: () => {},
+    };
+    const gradCanvas = {
+      width: 0,
+      height: 0,
+      getContext: () => gradCtx,
+      toDataURL: () => 'data:image/png;base64,MOCK',
+    } as unknown as HTMLCanvasElement;
+
+    const gradDraft = createInitialComicDraft('classic-4-121');
+    gradDraft.creationMode = 'ai-page';
+    gradDraft.aiPage.splitMode = 'single';
+    gradDraft.aiPage.guidePanels = createGuidePanelsFromTemplate('classic-4-121', 832, 1216, 14);
+    gradDraft.aiPage.breakoutZones = [{ id: 'bz', label: '破格', x: 0.2, y: 0.2, width: 0.3, height: 0.5 }];
+    const gradPlan = planComicAiZones(gradDraft);
+    renderComicZoneLayoutTemplate(gradDraft, gradPlan.zones[0], { canvas: gradCanvas, seed: 77 });
+    // 4 个分格应使用彼此区分的相邻渐变色带，而非全页同色平灰
+    expect(gradientsCreated).toHaveLength(4);
+    expect(gradientsCreated[0]).toEqual([
+      { offset: 0, color: LAYOUT_LOCK_PANEL_GRADIENTS.color[0][0] },
+      { offset: 1, color: LAYOUT_LOCK_PANEL_GRADIENTS.color[0][1] },
+    ]);
+    expect(gradientsCreated[1]).toEqual([
+      { offset: 0, color: LAYOUT_LOCK_PANEL_GRADIENTS.color[1][0] },
+      { offset: 1, color: LAYOUT_LOCK_PANEL_GRADIENTS.color[1][1] },
+    ]);
+    expect(fillStylesUsed).toContain(LAYOUT_LOCK_COLORS.breakoutFillWhite);
+
+    // 3. 大角度交叉三角模板：自动压低至 0.80 锁框强度 + 不发相互打架的 `3-1 panel arrangement`
+    const triDraft = createInitialComicDraft('triangle-impact');
+    triDraft.creationMode = 'ai-page';
+    triDraft.colorMode = 'monochrome';
+    triDraft.aiPage.splitMode = 'single';
+    triDraft.aiPage.guidePanels = createGuidePanelsFromTemplate('triangle-impact', 832, 1216, 14);
+    expect(hasSteepDiagonalPanels(triDraft.aiPage.guidePanels)).toBe(true);
+    expect(hasAnySlantedEdge(triDraft.aiPage.guidePanels)).toBe(true);
+    expect(resolveLayoutLockConfig(triDraft).strength).toBe(LAYOUT_LOCK_DEFAULTS.strengthDiagonal);
+
+    const triPlan = planComicAiZones(triDraft);
+    const triReq = buildAiPageZoneRequest(triDraft, triPlan.zones[0], 1);
+    expect(triReq.prompt).toContain('dynamic diagonal manga page');
+    expect(triReq.prompt).not.toMatch(/3-1 panel arrangement/i);
+
+    // 4. 画中画叠框优先级 + ai-text 自动避开质量词中的 `no text`
+    const insetDraft = createInitialComicDraft('inset-overlay');
+    insetDraft.creationMode = 'ai-page';
+    insetDraft.dialogueMode = 'ai-text';
+    insetDraft.aiPage.splitMode = 'single';
+    insetDraft.aiPage.guidePanels = createGuidePanelsFromTemplate('inset-overlay', 832, 1216, 14);
+    insetDraft.aiPage.guidePanels[1].visualNote = 'warm reaction close-up inside inset';
+    insetDraft.aiPage.anchors = [
+      { id: 'hero', kind: 'character', label: '主角', prompt: '1boy, swinging sword', negativePrompt: '', x: 0.25, y: 0.5, enabled: true },
+      { id: 'in1', kind: 'character', label: '右上叠框女主', prompt: '1girl, surprised portrait', negativePrompt: '', x: 0.74, y: 0.2, enabled: true },
+      { id: 'b1', kind: 'bubble', label: '台词', prompt: 'shout bubble', negativePrompt: '', x: 0.55, y: 0.14, enabled: true, bubbleShape: 'shout', bubbleText: 'HEY!!' },
+    ];
+    const insetPlan = planComicAiZones(insetDraft);
+    const insetReq = buildAiPageZoneRequest(insetDraft, insetPlan.zones[0], 1);
+    expect(insetReq.prompt).toContain('floating inset panel');
+    expect(insetReq.prompt).not.toMatch(/2-1 panel arrangement/i);
+    // 右上叠框锚点直接归属于叠框 1（吸收 visualNote 且不再重复生成幽灵兜底槽）
+    const charPrompts = insetReq.params.characters || [];
+    expect(charPrompts.some(c => c.id === 'in1' && c.prompt.includes('warm reaction close-up inside inset'))).toBe(true);
+    expect(charPrompts.some(c => c.id.startsWith('guide-cue-') && c.prompt.includes('warm reaction close-up inside inset'))).toBe(false);
+    // ai-text 模式不再把 default quality preset 的 `no text` 塞给生图接口
+    expect(resolveComicQualityPreset('standard', 'ai-text')).toEqual({
+      qualityPresetId: 'none',
+      extraQualityTags: 'very aesthetic, masterpiece',
+    });
+    expect(insetReq.params.qualityPresetId).toBe('none');
+    expect(insetReq.prompt).toContain('very aesthetic, masterpiece');
   });
 });
