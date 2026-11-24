@@ -28,7 +28,6 @@ import {
   type ComicTemplateScope,
 } from '../../services/comic/comicGeometry';
 import type { ComicCustomTemplate } from '../../services/comic/comicCustomTemplates';
-import { COMIC_V5_MODELS } from '../../services/comic/comicPromptBuilder';
 import { ComicBubbleShapeIcon } from './ComicBubbleShapeIcon';
 import {
   ComicTemplatePreview,
@@ -37,8 +36,6 @@ import {
 } from './ComicTemplatePreview';
 import type {
   ComicBubbleShape,
-  ComicColorMode,
-  ComicDialogueMode,
   ComicPageDraft,
   ComicPanel,
   ComicStickerKind,
@@ -509,52 +506,6 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
             width={416}
           >
             <div className="space-y-3 p-1 text-xs">
-              <div className="space-y-2 rounded-xl border border-gray-200/80 bg-gray-50/70 p-2.5 dark:border-gray-700/80 dark:bg-gray-800/50">
-                <div className="grid grid-cols-3 gap-1">
-                  {COMIC_V5_MODELS.map(model => {
-                    const active = draft.v5Model === model.id;
-                    return (
-                      <button
-                        key={model.id}
-                        type="button"
-                        onClick={() => onUpdatePageSettings({
-                          v5Model: model.id,
-                          steps: model.id === 'nai-diffusion-5-full-medium' ? 14 : 23,
-                        })}
-                        className={`rounded-lg border px-1.5 py-1.5 text-center text-[11px] font-semibold transition ${active ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}
-                      >
-                        {shortModelLabel(model.id)}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {([
-                    { id: 'color', label: '全彩漫画' },
-                    { id: 'monochrome', label: '黑白网点漫' },
-                  ] as Array<{ id: ComicColorMode; label: string }>).map(item => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => onUpdatePageSettings({ colorMode: item.id })}
-                      className={`rounded-lg border px-2 py-1 font-semibold transition ${draft.colorMode === item.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}
-                    >
-                      {t(item.label)}
-                    </button>
-                  ))}
-                </div>
-                <select
-                  aria-label={t('对白与气泡策略')}
-                  value={draft.dialogueMode}
-                  onChange={e => onUpdatePageSettings({ dialogueMode: e.target.value as ComicDialogueMode })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                >
-                  <option value="clean-vector">{t('对白：无气泡纯画面 + 画布矢量气泡')}</option>
-                  <option value="empty-bubble">{t('对白：空白气泡直出 + 后期嵌字')}</option>
-                  <option value="ai-text">{t('对白：AI 锚点直出短字 / 拟声词')}</option>
-                </select>
-              </div>
-
               <div>
                 <div className="mb-1.5 flex items-center gap-1.5 font-bold text-gray-700 dark:text-gray-200">
                   <Grid className="h-3.5 w-3.5 text-indigo-500" />

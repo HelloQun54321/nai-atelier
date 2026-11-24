@@ -3564,6 +3564,18 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
                     applyDraftChange(cur => ({ ...cur, stickers: cur.stickers.filter(item => item.id !== id) }), true);
                     setSelection(null);
                   }}
+                  onQuickAddBubble={() => handleAddBubbleAt({
+                    x: 0.45 + (draft.bubbles.length % 3) * 0.06,
+                    y: 0.30 + (draft.bubbles.length % 3) * 0.08,
+                  })}
+                  onQuickAddText={() => handleAddTextAt({
+                    x: 0.50 + (draft.texts.length % 3) * 0.05,
+                    y: 0.48 + (draft.texts.length % 3) * 0.06,
+                  })}
+                  onQuickAddSticker={() => handleAddStickerAt({
+                    x: 0.50 + (draft.stickers.length % 3) * 0.05,
+                    y: 0.50 + (draft.stickers.length % 3) * 0.06,
+                  })}
                   onUpdateImageLayer={handleUpdateImageLayer}
                   onDeleteImageLayer={handleDeleteImageLayer}
                   onConvertSingleAnchorBubbleToVector={handleConvertSingleAnchorBubbleToVector}

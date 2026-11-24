@@ -78,28 +78,29 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     fireEvent.click(within(pageStrip).getByRole('button', { name: /新建一页/ }));
     expect(within(pageStrip).getByText('P02')).toBeTruthy();
 
-    // 切到步骤 2「分镜生图」
-    fireEvent.click(screen.getByRole('tab', { name: /分镜生图/ }));
+    // Tab 1「全页公共负面词（选填）」默认折叠；通过底部下一步按钮推进到「分镜生图」
+    const negSummary = screen.getByText('全页公共负面词（选填）');
+    expect((negSummary.closest('details') as HTMLDetailsElement).open).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /下一步：分镜生图/ }));
     expect(screen.getByRole('tab', { name: /分镜生图/ }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('button', { name: /手动逐格/ }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: /生成当前格/ })).toBeTruthy();
-    expect(screen.getByText(/0\/12（上限 24）/)).toBeTruthy();
-    // 复用 Atelier 提示词框外操作与常驻翻译权重栏
-    expect(screen.getAllByLabelText('提示词中文翻译').length).toBeGreaterThanOrEqual(2);
+    // 复用 Atelier 提示词框外操作与常驻翻译权重栏（负面词默认折叠，展开前至少有正向提示词框）
+    expect(screen.getAllByLabelText('提示词中文翻译').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByTitle('复制本格画面描述')).toBeTruthy();
 
-    // 从角色库直接加入角色锚点并追加空镜/道具点，且画布锚点必须落在第 1 格高度内（绝不能飘到第 2 格）
-    fireEvent.click(screen.getByRole('button', { name: /角色库/ }));
+    // 通过「+ 角色」统一选择面板从角色库加入角色锚点并追加「+ 场景/道具」点，且画布锚点落在第 1 格高度内
+    fireEvent.click(screen.getByRole('button', { name: '角色' }));
     fireEvent.click(screen.getByRole('button', { name: /银发女主/ }));
-    expect(screen.getByText(/1\/12（上限 24）/)).toBeTruthy();
+    expect(screen.getByText('1/12')).toBeTruthy();
     expect(screen.getByRole('button', { name: '定位锚点 银发女主' })).toBeTruthy();
     const canvasPin = screen.getByRole('button', { name: '画布锚点 银发女主' });
     const pinTopPercent = parseFloat(canvasPin.style.top);
     expect(pinTopPercent).toBeGreaterThan(5);
     expect(pinTopPercent).toBeLessThan(30);
 
-    fireEvent.click(screen.getByRole('button', { name: /空镜\/道具/ }));
-    expect(screen.getByText(/2\/12（上限 24）/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '场景/道具' }));
+    expect(screen.getByText('2/12')).toBeTruthy();
 
     // 点击格号条切换到第 2 格，Delete 键删除，撤销恢复
     fireEvent.click(screen.getByRole('button', { name: '2' }));
@@ -165,10 +166,11 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
 
     const { notify } = renderStudio();
 
-    // 进入步骤 2「分镜生图」并切换到 AI 整页模式
+    // 进入步骤 2「分镜生图」并切换到 AI 整页模式（手动模式的画格快捷条必须自动隐藏）
     fireEvent.click(screen.getByRole('tab', { name: /分镜生图/ }));
     fireEvent.click(screen.getByRole('button', { name: 'AI 整页' }));
     expect(screen.getByRole('button', { name: 'AI 整页' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByRole('toolbar', { name: '分镜格快捷操作' })).toBeNull();
     expect(screen.getByRole('tab', { name: /分镜生图/ }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('button', { name: /生成 AI 整页/ })).toBeTruthy();
 
@@ -194,19 +196,15 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
       expect(screen.getByText('AI 气泡')).toBeTruthy();
     });
 
-    // 高级版式与锁框选项默认收起，展开后仍完整支持双区、黑底回忆杀、统一光照词与破格前景块
-    const advancedSummary = screen.getByText('高级版式与锁框选项');
+    // 「更多选项」默认收起，移除冗余开发者护栏/切齐开关后保留「严格按画布框线出图」、格缝主题与统一光照词
+    const advancedSummary = screen.getByText('更多选项');
     const advancedDetails = advancedSummary.closest('details') as HTMLDetailsElement;
     expect(advancedDetails.open).toBe(false);
     fireEvent.click(advancedSummary);
+    expect(screen.queryByRole('button', { name: '上下双区' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '破格前景块' })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: '自动切齐框线' })).toBeNull();
 
-    // 切换上下双区，按钮展示「2 区拼合」且提供单区独立精修入口
-    fireEvent.click(screen.getByRole('button', { name: '上下双区' }));
-    expect(screen.getByText('2 区拼合')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /仅画区 1/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /仅画区 2/ })).toBeTruthy();
-
-    // 验证「严格按画布框线出图」单开关切换及黑底回忆杀、统一光照词与破格前景块
     const lockSwitch = screen.getByRole('checkbox', { name: '严格按画布框线出图' }) as HTMLInputElement;
     expect(lockSwitch.checked).toBe(true);
     expect(screen.queryByRole('button', { name: '精准锁框' })).toBeNull();
@@ -222,8 +220,6 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     const atmosInput = screen.getByRole('textbox', { name: '全页统一环境光照词' }) as HTMLInputElement;
     fireEvent.change(atmosInput, { target: { value: 'warm afternoon library sunlight' } });
     expect(atmosInput.value).toBe('warm afternoon library sunlight');
-    fireEvent.click(screen.getByRole('button', { name: '破格前景块' }));
-    expect(screen.getAllByText(/破格前景 1/).length).toBeGreaterThanOrEqual(1);
 
     // 一键将气泡锚点转为可编辑矢量气泡
     fireEvent.click(screen.getByRole('button', { name: /气泡点转矢量嵌字/ }));
@@ -301,19 +297,33 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     }));
     expect(screen.getByRole('combobox', { name: '气泡字体' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '爆裂吼叫' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /更多样式/ }));
     expect(screen.getByRole('button', { name: '意识放射' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '心理双线' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /开源漫画字体库/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: '导入本机字体' })).toBeTruthy();
+    const styleDetailsSummary = screen.getByText('外观微调');
+    expect((styleDetailsSummary.closest('details') as HTMLDetailsElement).open).toBe(false);
+    fireEvent.click(styleDetailsSummary);
     expect(screen.getByRole('slider', { name: '气泡旋转角度' })).toBeTruthy();
     expect(screen.getByRole('slider', { name: '气泡边框粗细' })).toBeTruthy();
     expect(screen.getByLabelText('气泡底色')).toBeTruthy();
+    // Tab 3 顶部快捷新建栏支持一键添加气泡 / 文字 / 贴纸并展示可视化贴纸网格
+    const inspectorAside = screen.getByRole('tablist', { name: '漫画创作步骤' }).closest('aside') as HTMLElement;
+    expect(within(inspectorAside).getByRole('button', { name: '添加气泡' })).toBeTruthy();
+    expect(within(inspectorAside).getByRole('button', { name: '添加文字' })).toBeTruthy();
+    fireEvent.click(within(inspectorAside).getByRole('button', { name: '添加贴纸' }));
+    expect(screen.getByText('当前贴纸')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '青筋' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: '速度线' }).length).toBeGreaterThanOrEqual(2);
   });
 
   it('renders live WYSIWYG bubble anchor with floating toolbar and supports on-demand layers drawer operations', () => {
     renderStudio();
 
-    // 进入步骤 2「分镜生图」，在手动模式下添加「气泡点」：直接在画布渲染可视化漫画气泡并弹出快捷编辑条
+    // 先在步骤 1「生图参数微调」开启「空白气泡 + 先占位」，再切到步骤 2「分镜生图」验证手动模式气泡点所见即所得交互
+    fireEvent.click(screen.getByText('生图参数微调'));
+    fireEvent.change(screen.getByRole('combobox', { name: '对白与气泡策略' }), { target: { value: 'empty-bubble' } });
     fireEvent.click(screen.getByRole('tab', { name: /分镜生图/ }));
     fireEvent.click(screen.getByRole('button', { name: '气泡点' }));
     expect(screen.getByText('气泡预演')).toBeTruthy();

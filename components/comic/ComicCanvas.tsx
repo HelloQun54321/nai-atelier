@@ -3437,7 +3437,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
 
             {/* 选格极简悬浮快捷条（手动格：上传/历史选图/叠框/移图/清图；AI 引导格：叠框/无框/出血/复制/删除） */}
             {activeTool === 'select' && !drag && !inlineEdit && !activeFloatingBubble && (() => {
-              const targetManual = selection?.kind === 'panel' && selectedPanel && !selectedPanel.locked && !panelsLayerProps.locked ? selectedPanel : null;
+              const targetManual = draft.creationMode === 'manual' && selection?.kind === 'panel' && selectedPanel && !selectedPanel.locked && !panelsLayerProps.locked ? selectedPanel : null;
               const targetGuide = draft.creationMode === 'ai-page' && !inpaintDraft && !(bubbleCandidates && bubbleCandidates.length > 0) && (draft.aiPage.showGuideOverlay || !draft.aiPage.generatedPageImage?.url) && selectedGuidePanel && !panelsLayerProps.locked ? selectedGuidePanel : null;
               if (!targetManual && !targetGuide) return null;
               const poly = targetManual ? getEffectiveManualPoly(targetManual) : getGuidePanelPolygon(targetGuide!);
