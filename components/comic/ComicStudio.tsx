@@ -29,6 +29,7 @@ import {
 } from '../../services/comic/comicAiPageEngine';
 import {
   getGuidePanelPolygon,
+  renderComicZoneInfillTemplate,
   renderComicZoneLayoutTemplate,
   resolveLayoutLockConfig,
 } from '../../services/comic/comicLayoutTemplateRenderer';
@@ -41,8 +42,8 @@ import {
 import {
   buildComicInpaintRequest,
   clampInpaintRect,
-  createRectInpaintMaskDataUrl,
   loadImageAsDataUrl,
+  prepareComicPanelInpaintEdit,
   type ComicInpaintDraft,
   type ComicInpaintRect,
 } from '../../services/comic/comicInpaintEngine';
@@ -1151,12 +1152,13 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     const isOpus = opusTier >= 3;
     const exhausted = novelaiSubscription.info?.usage?.isNegative === true;
     const lockCfg = resolveLayoutLockConfig(draft);
+    const lockOp = lockCfg.mode === 'infill' ? 'inpaint' : 'image-to-image';
     return aiZonePlan.zones.reduce((sum, zone) => {
       const compiled = buildAiPageZoneRequest(draft, zone, aiZonePlan.zones.length);
       if (lockCfg.enabled) {
         return sum + estimateImageEditCost(
           compiled.params,
-          'image-to-image',
+          lockOp,
           lockCfg.strength,
           false,
           opusTier,
@@ -1593,10 +1595,11 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     let submitKey = readActiveApiKey();
     const firstZone = compiledZones[0];
     const firstCompiled = firstZone.compiled;
+    const lockOp = lockCfg.mode === 'infill' ? 'inpaint' : 'image-to-image';
     const opusBaseCost = lockCfg.enabled
       ? estimateImageEditCost(
         firstCompiled.params,
-        'image-to-image',
+        lockOp,
         lockCfg.strength,
         false,
         3,
@@ -1632,7 +1635,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         : lockCfg.enabled
           ? estimateImageEditCost(
             item.compiled.params,
-            'image-to-image',
+            lockOp,
             lockCfg.strength,
             false,
             opusTier,
@@ -1676,42 +1679,70 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         setGeneratingAiZoneIndex(zone.zoneIndex);
         setAiGenerationStageText(aiZonePlan.zones.length === 2
           ? t('区 {0}/2 · {1} 生成中…', [zone.zoneIndex + 1, zone.label])
-          : lockCfg.enabled ? t('硬锁分镜整页生成中…') : t('整页生成中…'));
+          : lockCfg.mode === 'infill'
+            ? t('精准锁框整页生成中…')
+            : lockCfg.enabled
+              ? t('硬锁分镜整页生成中…')
+              : t('整页生成中…'));
 
-        // 核心升级：硬锁版式模式渲染「纯白/黑底格缝 + 粗边框 + 中性灰确定性轻颗粒」底图走 V5 img2img
-        const layoutTemplate = lockCfg.enabled
-          ? renderComicZoneLayoutTemplate(draft, zone, { seed: sharedSeed ?? 1337 })
-          : null;
+        const historyMeta = {
+          basePrompt: draft.globalBasePrompt,
+          subjectPrompt: draft.aiPage.storyPrompt || zone.label,
+          sourceChainId: draft.styleChainId || 'comic',
+          sourceChainName: aiZonePlan.zones.length === 2
+            ? `漫画整页 · ${draft.title || '未命名漫画页'} · ${zone.label}`
+            : `漫画整页 · ${draft.title || '未命名漫画页'}`,
+          sourceChainType: 'comic' as const,
+        };
 
-        const descriptor = await buildGenerationJobDescriptor({
-          operation: layoutTemplate ? 'image-to-image' : 'text-to-image',
-          prompt: compiled.prompt,
-          negative: compiled.negative,
-          params: compiled.params,
-          approvedCost: zoneCost,
-          stream: generationStreamPreview,
-          forceEmptySeed: sharedSeed !== undefined ? false : forceEmptySeed,
-          apiKey: submitKey,
-          estimatedCost: zoneCost,
-          ...(layoutTemplate
-            ? {
-              edit: {
-                image: layoutTemplate.dataUrl,
-                strength: lockCfg.strength,
-                noise: lockCfg.noise,
-              },
-            }
-            : {}),
-          history: {
-            basePrompt: draft.globalBasePrompt,
-            subjectPrompt: draft.aiPage.storyPrompt || zone.label,
-            sourceChainId: draft.styleChainId || 'comic',
-            sourceChainName: aiZonePlan.zones.length === 2
-              ? `漫画整页 · ${draft.title || '未命名漫画页'} · ${zone.label}`
-              : `漫画整页 · ${draft.title || '未命名漫画页'}`,
-            sourceChainType: 'comic',
-          },
-        });
+        let descriptor;
+        if (lockCfg.enabled && lockCfg.mode === 'infill') {
+          const infillTpl = await renderComicZoneInfillTemplate(draft, zone, { seed: sharedSeed ?? 1337 });
+          descriptor = await buildGenerationJobDescriptor({
+            operation: 'inpaint',
+            prompt: compiled.prompt,
+            negative: compiled.negative,
+            params: compiled.params,
+            approvedCost: zoneCost,
+            stream: generationStreamPreview,
+            forceEmptySeed: sharedSeed !== undefined ? false : forceEmptySeed,
+            apiKey: submitKey,
+            estimatedCost: zoneCost,
+            edit: {
+              image: infillTpl.baseDataUrl,
+              mask: infillTpl.maskDataUrl,
+              strength: lockCfg.strength,
+              noise: lockCfg.noise,
+              focused: false,
+            },
+            history: historyMeta,
+          }, infillTpl.preparedEdit);
+        } else {
+          const layoutTemplate = lockCfg.enabled
+            ? renderComicZoneLayoutTemplate(draft, zone, { seed: sharedSeed ?? 1337 })
+            : null;
+          descriptor = await buildGenerationJobDescriptor({
+            operation: layoutTemplate ? 'image-to-image' : 'text-to-image',
+            prompt: compiled.prompt,
+            negative: compiled.negative,
+            params: compiled.params,
+            approvedCost: zoneCost,
+            stream: generationStreamPreview,
+            forceEmptySeed: sharedSeed !== undefined ? false : forceEmptySeed,
+            apiKey: submitKey,
+            estimatedCost: zoneCost,
+            ...(layoutTemplate
+              ? {
+                edit: {
+                  image: layoutTemplate.dataUrl,
+                  strength: lockCfg.strength,
+                  noise: lockCfg.noise,
+                },
+              }
+              : {}),
+            history: historyMeta,
+          });
+        }
 
         const { session, settle } = beginGenerationSeries({
           scope: COMIC_GEN_SCOPE,
@@ -1874,6 +1905,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     const rect: ComicInpaintRect = guidePanel
       ? clampInpaintRect({ x: guidePanel.x, y: guidePanel.y, width: guidePanel.width, height: guidePanel.height })
       : { x: 0.08, y: 0.08, width: 0.84, height: 0.34 };
+    const points = guidePanel ? getGuidePanelPolygon(guidePanel) : undefined;
     // 把落在该引导格内的已有整页锚点映射为重绘区局部锚点，方便直接微调动作与表情
     const localAnchors = draft.aiPage.anchors
       .filter(a => a.enabled && a.x >= rect.x - 0.02 && a.x <= rect.x + rect.width + 0.02 && a.y >= rect.y - 0.02 && a.y <= rect.y + rect.height + 0.02)
@@ -1885,9 +1917,10 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       }));
     setInpaintDraft(prev => ({
       rect,
+      ...(points ? { points, guidePanelId: guidePanel?.id } : {}),
       prompt: prev?.prompt || guidePanel?.summary || '',
       negativePrompt: prev?.negativePrompt || '',
-      strength: prev?.strength ?? 0.85,
+      strength: prev?.strength ?? 0.88,
       focused: prev?.focused ?? true,
       anchors: localAnchors,
     }));
@@ -1909,8 +1942,18 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       return;
     }
 
+    const estSrcW = draft.aiPage.generatedPageImage?.width || draft.width;
+    const estSrcH = draft.aiPage.generatedPageImage?.height || draft.height;
     let submitKey = readActiveApiKey();
-    const opusBaseCost = estimateV45GenerationCost(compiled.params, true, false);
+    const opusBaseCost = estimateImageEditCost(
+      compiled.params,
+      'inpaint',
+      compiled.strength,
+      compiled.focused,
+      3,
+      false,
+      { width: estSrcW, height: estSrcH, focusedRect: compiled.focusedRect },
+    );
     const poolCheck = await prepareGenerationWithPool({
       model: compiled.params.model,
       estimatedCostWithOpus: opusBaseCost,
@@ -1932,7 +1975,17 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     const exhausted = poolCheck.pooled
       ? poolCheck.info?.usage?.isNegative === true
       : await usageForCostEstimate(novelaiSubscription.info?.usage, () => novelaiSubscription.refresh(), compiled.params.model);
-    const cost = perUseChannel ? 0 : estimateV45GenerationCost(compiled.params, opusTier >= 3, exhausted);
+    const cost = perUseChannel
+      ? 0
+      : estimateImageEditCost(
+        compiled.params,
+        'inpaint',
+        compiled.strength,
+        compiled.focused,
+        opusTier,
+        exhausted,
+        { width: estSrcW, height: estSrcH, focusedRect: compiled.focusedRect },
+      );
 
     if (cost > 0) {
       const approved = await confirmAction({
@@ -1952,7 +2005,6 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     setAiGenerationStageText(t('准备重绘蒙版…'));
     try {
       const base = await loadImageAsDataUrl(baseUrl);
-      const maskDataUrl = createRectInpaintMaskDataUrl(base.width, base.height, inpaintDraft.rect);
       const safeRect = clampInpaintRect(inpaintDraft.rect);
       const padX = safeRect.width * 0.12;
       const padY = safeRect.height * 0.12;
@@ -1966,6 +2018,14 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         width: Math.max(64, Math.round(fw * base.width)),
         height: Math.max(64, Math.round(fh * base.height)),
       };
+      const preparedInpaint = await prepareComicPanelInpaintEdit({
+        baseDataUrl: base.dataUrl,
+        baseWidth: base.width,
+        baseHeight: base.height,
+        page: draft,
+        inpaint: inpaintDraft,
+        focusedRect,
+      });
 
       setAiGenerationStageText(t('单格局部重绘中…'));
       const descriptor = await buildGenerationJobDescriptor({
@@ -1979,8 +2039,8 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         apiKey: submitKey,
         estimatedCost: cost,
         edit: {
-          image: base.dataUrl,
-          mask: maskDataUrl,
+          image: preparedInpaint.image,
+          mask: preparedInpaint.mask,
           strength: compiled.strength,
           noise: 0,
           focused: compiled.focused,
@@ -1993,7 +2053,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
           sourceChainName: `漫画局部重绘 · ${draft.title || '未命名漫画页'}`,
           sourceChainType: 'comic',
         },
-      });
+      }, preparedInpaint);
 
       const { session, settle } = beginGenerationSeries({
         scope: COMIC_GEN_SCOPE,
@@ -2511,7 +2571,9 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       ...created.aiPage,
       castCharacterIds: [...(refPage.aiPage.castCharacterIds || [])],
       gutterStyle: refPage.aiPage.gutterStyle || 'white',
-      layoutLockMode: refPage.aiPage.layoutLockMode || 'img2img',
+      layoutLockMode: refPage.aiPage.layoutLockMode || 'infill',
+      autoTrimFrames: refPage.aiPage.autoTrimFrames !== false,
+      carveBubbleHoles: refPage.aiPage.carveBubbleHoles ?? true,
       ...(refPage.aiPage.layoutLockStrength !== undefined ? { layoutLockStrength: refPage.aiPage.layoutLockStrength } : {}),
       ...(refPage.aiPage.sceneAtmosphere ? { sceneAtmosphere: refPage.aiPage.sceneAtmosphere } : {}),
     };
@@ -2772,7 +2834,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             onUpdateBreakoutZone={handleUpdateBreakoutZone}
             onToggleBubbleCandidate={id => setBubbleCandidates(cur => cur ? cur.map(c => c.id === id ? { ...c, selected: !c.selected } : c) : cur)}
             onWheelScalePanelImage={handleWheelScalePanelImage}
-            onChangeInpaintRect={rect => setInpaintDraft(cur => cur ? { ...cur, rect } : cur)}
+            onChangeInpaintRect={rect => setInpaintDraft(cur => cur ? { ...cur, rect, points: undefined, guidePanelId: undefined } : cur)}
             onMoveInpaintAnchor={(anchorId, x, y) => setInpaintDraft(cur => cur ? {
               ...cur,
               anchors: cur.anchors.map(a => a.id === anchorId ? { ...a, x, y } : a),

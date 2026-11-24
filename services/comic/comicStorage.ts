@@ -42,6 +42,7 @@ const normalizeAiPage = (raw: unknown, width: number, height: number, gutterPx: 
       ...(validPoints ? { points: validPoints } : {}),
       ...(g.bleed ? { bleed: true } : {}),
       ...(g.inset ? { inset: true } : {}),
+      ...(g.borderless ? { borderless: true } : {}),
       ...(g.speedlines ? { speedlines: true } : {}),
       ...(typeof g.fillColor === 'string' && g.fillColor.trim() ? { fillColor: g.fillColor.trim() } : {}),
     };
@@ -78,10 +79,11 @@ const normalizeAiPage = (raw: unknown, width: number, height: number, gutterPx: 
       ? raw.zoneImages as unknown as ComicAiPagePlan['zoneImages']
       : undefined,
     showGuideOverlay: raw.showGuideOverlay !== false,
-    layoutLockMode: raw.layoutLockMode === 'txt2img' ? 'txt2img' : 'img2img',
+    layoutLockMode: raw.layoutLockMode === 'txt2img' ? 'txt2img' : raw.layoutLockMode === 'img2img' ? 'img2img' : 'infill',
+    autoTrimFrames: raw.autoTrimFrames !== false,
     ...(layoutLockStrength !== undefined ? { layoutLockStrength } : {}),
     gutterStyle: raw.gutterStyle === 'black-flashback' ? 'black-flashback' : 'white',
-    carveBubbleHoles: raw.carveBubbleHoles === true,
+    carveBubbleHoles: raw.carveBubbleHoles === undefined ? true : raw.carveBubbleHoles === true,
     projectSketchLayer: raw.projectSketchLayer === true,
     projectSfxText: raw.projectSfxText === true,
     sceneAtmosphere: typeof raw.sceneAtmosphere === 'string' ? raw.sceneAtmosphere : '',

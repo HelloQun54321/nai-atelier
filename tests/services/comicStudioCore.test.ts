@@ -30,6 +30,8 @@ import {
 } from '../../services/comic/comicAiPageEngine';
 import {
   applyDeterministicSelectiveGrain,
+  buildReversePixelLockMaskAlpha,
+  collectHardLockedZoneBubbles,
   computeSafeBubbleHoleEllipse,
   getGuidePanelPolygon,
   hasAnySlantedEdge,
@@ -39,7 +41,9 @@ import {
   LAYOUT_LOCK_DEFAULTS,
   LAYOUT_LOCK_PANEL_GRADIENTS,
   mapPagePointToZonePixels,
+  quantizeCoverageBlockMaskRgba,
   renderComicZoneLayoutTemplate,
+  resolveInfillMaskGeometryParams,
   resolveLayoutLockConfig,
 } from '../../services/comic/comicLayoutTemplateRenderer';
 import {
@@ -63,6 +67,7 @@ import {
 } from '../../services/comic/comicCustomTemplates';
 import {
   buildComicInpaintRequest,
+  createRectInpaintMaskDataUrl,
 } from '../../services/comic/comicInpaintEngine';
 import { parseComicStoryboardResponse } from '../../services/comic/comicStoryboardAgent.mjs';
 import { loadComicDraft, normalizeComicDraft, saveComicDraft } from '../../services/comic/comicStorage';
@@ -854,6 +859,7 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     draft.colorMode = 'monochrome';
     draft.dialogueMode = 'ai-text';
     draft.aiPage.splitMode = 'dual-vertical';
+    draft.aiPage.layoutLockMode = 'img2img';
     draft.aiPage.sceneAtmosphere = 'warm afternoon library sunlight';
     draft.aiPage.breakoutZones = [
       { id: 'bz-hero', label: '破格剑士', x: 0.2, y: 0.52, width: 0.5, height: 0.42, anchorId: 'c-bottom' },
@@ -874,7 +880,9 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     expect(req0.params.seed).toBe(987654);
     expect(req1.params.seed).toBe(987654);
     expect(req0.layoutLock).toEqual({
+      mode: 'img2img',
       enabled: true,
+      autoTrimFrames: true,
       strength: 0.86,
       noise: 0.04,
       colorCorrect: false,
@@ -895,11 +903,30 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     expect(bubbleCaption.endsWith('Text: BAM!')).toBe(true);
     expect(bubbleCaption).not.toMatch(/Text:.*,/);
 
-    // 验证全彩与黑白默认甜点值（无破格块时）
+    // 验证默认 infill 精准锁框及单大格 0.95 / img2img 甜点切换
+    const defaultDraft = createInitialComicDraft('classic-4-121');
+    expect(resolveLayoutLockConfig(defaultDraft)).toMatchObject({
+      mode: 'infill',
+      enabled: true,
+      autoTrimFrames: true,
+      strength: 1.0,
+      noise: 0,
+      addOriginalImage: false,
+    });
+    const splashDraft = createInitialComicDraft('single-splash');
+    splashDraft.aiPage.guidePanels = createGuidePanelsFromTemplate('single-splash', 832, 1216, 14);
+    expect(resolveLayoutLockConfig(splashDraft)).toMatchObject({
+      mode: 'infill',
+      enabled: true,
+      strength: 0.95,
+      noise: 0.02,
+      addOriginalImage: false,
+    });
     const colorDraft = createInitialComicDraft('classic-4-121');
-    expect(resolveLayoutLockConfig(colorDraft)).toMatchObject({ enabled: true, strength: 0.85, noise: 0.05, colorCorrect: false, addOriginalImage: true });
+    colorDraft.aiPage.layoutLockMode = 'img2img';
+    expect(resolveLayoutLockConfig(colorDraft)).toMatchObject({ mode: 'img2img', enabled: true, strength: 0.85, noise: 0.05, colorCorrect: false, addOriginalImage: true });
     colorDraft.colorMode = 'monochrome';
-    expect(resolveLayoutLockConfig(colorDraft)).toMatchObject({ enabled: true, strength: 0.82, noise: 0.04 });
+    expect(resolveLayoutLockConfig(colorDraft)).toMatchObject({ mode: 'img2img', enabled: true, strength: 0.82, noise: 0.04 });
   });
 
   it('migrates legacy drafts without points or layoutLockMode backward-compatibly in comicStorage', () => {
@@ -925,7 +952,10 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
       },
     };
     const migrated = normalizeComicDraft(legacyRaw);
-    expect(migrated.aiPage.layoutLockMode).toBe('img2img');
+    expect(migrated.aiPage.layoutLockMode).toBe('infill');
+    expect(migrated.aiPage.autoTrimFrames).toBe(true);
+    expect(normalizeComicDraft({ ...legacyRaw, aiPage: { ...legacyRaw.aiPage, layoutLockMode: 'img2img' } }).aiPage.layoutLockMode).toBe('img2img');
+    expect(normalizeComicDraft({ ...legacyRaw, aiPage: { ...legacyRaw.aiPage, layoutLockMode: 'txt2img' } }).aiPage.layoutLockMode).toBe('txt2img');
     expect(migrated.aiPage.gutterStyle).toBe('white');
     expect(migrated.aiPage.breakoutZones).toEqual([]);
     expect(migrated.aiPage.guidePanels).toHaveLength(2);
@@ -1101,7 +1131,7 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     ]);
     expect(fillStylesUsed).toContain(LAYOUT_LOCK_COLORS.breakoutFillWhite);
 
-    // 3. 大角度交叉三角模板：自动压低至 0.80 锁框强度 + 不发相互打架的 `3-1 panel arrangement`
+    // 3. 大角度交叉三角模板：img2img 模式自动压低至 0.80 锁框强度 + infill 默认 1.0 + 不发 `3-1 panel arrangement`
     const triDraft = createInitialComicDraft('triangle-impact');
     triDraft.creationMode = 'ai-page';
     triDraft.colorMode = 'monochrome';
@@ -1109,6 +1139,8 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     triDraft.aiPage.guidePanels = createGuidePanelsFromTemplate('triangle-impact', 832, 1216, 14);
     expect(hasSteepDiagonalPanels(triDraft.aiPage.guidePanels)).toBe(true);
     expect(hasAnySlantedEdge(triDraft.aiPage.guidePanels)).toBe(true);
+    expect(resolveLayoutLockConfig(triDraft).strength).toBe(1.0);
+    triDraft.aiPage.layoutLockMode = 'img2img';
     expect(resolveLayoutLockConfig(triDraft).strength).toBe(LAYOUT_LOCK_DEFAULTS.strengthDiagonal);
 
     const triPlan = planComicAiZones(triDraft);
@@ -1143,5 +1175,88 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     });
     expect(insetReq.params.qualityPresetId).toBe('none');
     expect(insetReq.prompt).toContain('very aesthetic, masterpiece');
+  });
+
+  it('quantizes 1/8 binary masks strictly opaque, locks mask=0 pixels with alpha=0, and prevents duplicate empty bubbles in infill mode', () => {
+    // 1. 严格 1/8 覆盖率二值化：32x16 图分左格 [0..8) 与右格 [22..32)，中间 14px 窄缝在 1/8 (4x2 块) 中严格分离不粘连
+    const w = 32;
+    const h = 16;
+    const src = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+        const active = x < 8 || x >= 22;
+        src[idx] = active ? 255 : 0;
+        src[idx + 1] = active ? 255 : 0;
+        src[idx + 2] = active ? 255 : 0;
+        src[idx + 3] = 255;
+      }
+    }
+    const narrowParams = resolveInfillMaskGeometryParams(14);
+    expect(narrowParams.maskExpandPx).toBe(0);
+    expect(narrowParams.covThreshold).toBeGreaterThanOrEqual(0.4);
+
+    const { maskBinary, maskRgba } = quantizeCoverageBlockMaskRgba(src, w, h, narrowParams.covThreshold);
+    // 绝不允许出现灰阶像素或半透明像素
+    for (let i = 0; i < w * h; i++) {
+      const p = i * 4;
+      expect(maskRgba[p] === 0 || maskRgba[p] === 255).toBe(true);
+      expect(maskRgba[p + 3]).toBe(255);
+    }
+    // 左块 [0..7] 活跃，中间块 [8..15] 全黑隔离，右块 [24..31] 活跃
+    expect(maskBinary[0]).toBe(1);
+    expect(maskBinary[10]).toBe(0);
+    expect(maskBinary[26]).toBe(1);
+
+    // 2. 逆向像素锁 Alpha：maskBinary===0 区域像素 alpha 严格为 0，边界内侧紧凑线性羽化
+    const revAlpha = buildReversePixelLockMaskAlpha(maskBinary, w, h, 2);
+    for (let i = 0; i < w * h; i++) {
+      if (maskBinary[i] === 0) expect(revAlpha[i]).toBe(0);
+    }
+    expect(revAlpha[4]).toBeGreaterThan(0);
+
+    // 3. Variant C+ 防额外废泡 + 过滤几何形状误导词
+    const draft = createInitialComicDraft('classic-4-121');
+    draft.creationMode = 'ai-page';
+    draft.dialogueMode = 'empty-bubble';
+    draft.aiPage.layoutLockMode = 'infill';
+    draft.aiPage.carveBubbleHoles = true;
+    draft.aiPage.layoutHint = 'circular panel, 4-panel manga page';
+    draft.aiPage.guidePanels = createGuidePanelsFromTemplate('classic-4-121', 832, 1216, 14);
+    draft.aiPage.anchors = [
+      { id: 'c1', kind: 'character', label: '角色', prompt: '1girl, smiling', negativePrompt: '', x: 0.5, y: 0.25, enabled: true },
+      { id: 'b1', kind: 'bubble', label: '硬锁气泡', prompt: 'left tail', negativePrompt: '', x: 0.25, y: 0.2, enabled: true, bubbleShape: 'oval' },
+    ];
+    const plan = planComicAiZones(draft);
+    expect(collectHardLockedZoneBubbles(draft, plan.zones[0].rect, 832, 1216)).toHaveLength(1);
+    const req = buildAiPageZoneRequest(draft, plan.zones[0], 1);
+    expect(req.prompt.toLowerCase()).not.toContain('blank speech bubbles');
+    expect(req.prompt.toLowerCase()).not.toContain('circular panel');
+    expect(req.negative.toLowerCase()).toContain('speech bubble');
+    expect(req.params.characters?.some(c => c.id === 'b1')).toBe(false);
+
+    // 4. 矩形局部重绘掩码：选区外透明 (alpha === 0)，不再误填不透明黑色
+    const rectOps: string[] = [];
+    let cleared = false;
+    const mockCtx = {
+      fillStyle: '',
+      clearRect: () => { cleared = true; },
+      fillRect: () => { rectOps.push(mockCtx.fillStyle); },
+    };
+    const origCreateElement = document.createElement.bind(document);
+    const origGetCtx = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = (() => mockCtx) as unknown as typeof origGetCtx;
+    const origToDataUrl = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = () => 'data:image/png;base64,MASK';
+    try {
+      const url = createRectInpaintMaskDataUrl(832, 1216, { x: 0.1, y: 0.1, width: 0.5, height: 0.3 });
+      expect(url).toBe('data:image/png;base64,MASK');
+      expect(cleared).toBe(true);
+      expect(rectOps).toEqual(['#ffffff']);
+    } finally {
+      HTMLCanvasElement.prototype.getContext = origGetCtx;
+      HTMLCanvasElement.prototype.toDataURL = origToDataUrl;
+      void origCreateElement;
+    }
   });
 });

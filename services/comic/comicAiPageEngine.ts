@@ -2,6 +2,7 @@ import type { CharacterParams, NAIParams } from '../../types';
 import { getDefaultStepsForModel, isNaiMediumModel } from '../naiModels';
 import { clampAnchorCoord, matchFreeOpusResolution, pointInPolygon } from './comicGeometry';
 import {
+  collectHardLockedZoneBubbles,
   getGuidePanelPolygon,
   hasAnySlantedEdge,
   hasSteepDiagonalPanels,
@@ -440,13 +441,22 @@ export const buildAiPageZoneRequest = (
 
   const capped = kept.slice(0, COMIC_ANCHOR_HARD_LIMIT);
 
+  const isInfillLock = layoutLock.enabled && layoutLock.mode === 'infill';
+  const hasLockedBubbleShapes = isInfillLock
+    && page.dialogueMode !== 'ai-text'
+    && page.aiPage.carveBubbleHoles !== false
+    && collectHardLockedZoneBubbles(page, zone.rect, zone.resolution.width, zone.resolution.height).length > 0;
+
   const panelCountInZone = Math.max(1, zone.guidePanels.length);
   const hasBreakout = (page.aiPage.breakoutZones?.length ?? 0) > 0;
   const geometryCue = describeZoneLayoutGeometry(localPanels, isFlashback, hasBreakout);
   const rawLayoutHint = page.aiPage.layoutHint.trim();
-  const normalizedLayoutHint = isFlashback
-    ? rawLayoutHint.replace(/\b(?:clean\s+)?white\s+gutters?\b/gi, 'black gutters')
+  const shapeCleanedHint = isInfillLock
+    ? rawLayoutHint.replace(/\b(?:circular|round|rounded|oval)\s+panels?\b/gi, '')
     : rawLayoutHint;
+  const normalizedLayoutHint = isFlashback
+    ? shapeCleanedHint.replace(/\b(?:clean\s+)?white\s+gutters?\b/gi, 'black gutters')
+    : shapeCleanedHint;
   const layoutShell = totalZoneCount === 1
     ? cleanCommaList([normalizedLayoutHint || `${panelCountInZone}-panel manga page`, geometryCue].filter(Boolean).join(', '))
     : cleanCommaList([`${panelCountInZone}-panel comic strip section`, geometryCue].filter(Boolean).join(', '));
@@ -456,19 +466,29 @@ export const buildAiPageZoneRequest = (
   const framingTags: string[] = [layoutShell];
   if (isFlashback) framingTags.push('black background page, dark flashback framing');
   if (monochrome) framingTags.push('monochrome, greyscale, manga, screentone, crisp black ink lineart');
-  if (page.dialogueMode === 'clean-vector') framingTags.push('no speech bubbles, no text');
-  if (page.dialogueMode === 'empty-bubble') framingTags.push('blank speech bubbles, no text');
+  if (page.dialogueMode === 'clean-vector' || hasLockedBubbleShapes) {
+    framingTags.push('no speech bubbles, no text');
+  } else if (page.dialogueMode === 'empty-bubble') {
+    framingTags.push('blank speech bubbles, no text');
+  }
   if (quality.extraQualityTags) framingTags.push(quality.extraQualityTags);
 
   const globalNeg = sanitizeComicNegativeConflicts(page.globalNegativePrompt, monochrome);
   const negParts = [globalNeg];
   if (monochrome) negParts.push(MONOCHROME_NEGATIVE_TAGS);
-  if (page.dialogueMode === 'clean-vector') negParts.push('speech bubble, dialogue, text, watermark, caption');
-  if (page.dialogueMode === 'empty-bubble') negParts.push('text, letters, gibberish, speech text, japanese text, english text');
+  if (page.dialogueMode === 'clean-vector' || hasLockedBubbleShapes) {
+    negParts.push('speech bubble, dialogue bubble, dialogue, text, letters, gibberish, watermark, caption');
+  } else if (page.dialogueMode === 'empty-bubble') {
+    negParts.push('text, letters, gibberish, speech text, japanese text, english text');
+  }
+
+  const effectiveAnchorsForCaptions = hasLockedBubbleShapes
+    ? capped.filter(a => a.kind !== 'bubble')
+    : capped;
 
   const panelCueInjected = new Set<string>();
   const panelAtmosphereInjected = new Set<string>();
-  const characters: CharacterParams[] = capped
+  const characters: CharacterParams[] = effectiveAnchorsForCaptions
     .map(anchor => {
       const pid = findContainingGuidePanelId(anchor, localPanels);
       const mergedNote = anchor.kind === 'character' && pid ? (mergedBgNotes.get(pid) || []).join(', ') : '';

@@ -1,11 +1,15 @@
+import type { PreparedImageEdit } from '../imageEdit';
+import { buildComicBubbleRenderModel, drawComicBubbleOnCanvas, type ComicBubbleRenderModel } from './comicArtwork';
 import { getPanelBoundingBox, pointInPolygon, rectToPolygon } from './comicGeometry';
 import { resolveEffectiveLayerProps, syncComicLayerStack } from './comicLayers';
 import type { ComicAiCompiledZone, ComicAiZoneRect } from './comicAiPageEngine';
 import type {
   ComicAiGuidePanel,
   ComicAiGutterStyle,
+  ComicAiLayoutLockMode,
   ComicAnchor,
   ComicBreakoutZone,
+  ComicBubbleShape,
   ComicPageDraft,
   ComicPoint,
   ComicStroke,
@@ -78,11 +82,13 @@ export const LAYOUT_LOCK_DEFAULTS = {
 } as const;
 
 export interface ResolvedLayoutLockConfig {
+  mode: ComicAiLayoutLockMode;
   enabled: boolean;
+  autoTrimFrames: boolean;
   strength: number;
   noise: number;
   colorCorrect: false;
-  addOriginalImage: true;
+  addOriginalImage: boolean;
   gutterStyle: ComicAiGutterStyle;
 }
 
@@ -136,15 +142,38 @@ export const sortGuidePanelsByPriority = (panels: ComicAiGuidePanel[]): ComicAiG
   });
 
 /**
- * 解析当前页面实测甜点参数：
- * - 含破格前景块：strength = 0.86
- * - 三角/大斜切分镜：strength = 0.80（压低重绘避免锐角斜线被拉平）
- * - 黑白网点漫：strength = 0.82, noise = 0.04
- * - 常规全彩模式：strength = 0.85, noise = 0.05
+ * 解析当前页面锁框参数：
+ * - `'infill'`（默认精准锁框，Variant C+）：单格全页 `0.95 / noise 0.02` 防水平腰斩，多格 `1.00 / noise 0`，关闭服务端原图回贴；
+ * - `'img2img'`（旧版参考融合）：保留破格 `0.86`、大斜切 `0.80`、黑白 `0.82/0.04`、全彩 `0.85/0.05`；
+ * - `'txt2img'`（自由文生图）：禁用锁框底图与掩码。
  */
 export const resolveLayoutLockConfig = (page: ComicPageDraft): ResolvedLayoutLockConfig => {
   const aiPage = page.aiPage;
-  const enabled = aiPage.layoutLockMode !== 'txt2img' && aiPage.guidePanels.length > 0;
+  const mode: ComicAiLayoutLockMode = aiPage.layoutLockMode === 'txt2img'
+    ? 'txt2img'
+    : aiPage.layoutLockMode === 'img2img'
+      ? 'img2img'
+      : 'infill';
+  const enabled = mode !== 'txt2img' && aiPage.guidePanels.length > 0;
+  const autoTrimFrames = aiPage.autoTrimFrames !== false;
+  const gutterStyle: ComicAiGutterStyle = aiPage.gutterStyle === 'black-flashback' ? 'black-flashback' : 'white';
+
+  if (mode !== 'img2img') {
+    const regularCount = aiPage.guidePanels.filter(g => !g.inset).length;
+    const hasInset = aiPage.guidePanels.some(g => Boolean(g.inset));
+    const isSingleSplash = regularCount === 1 && !hasInset && (aiPage.breakoutZones?.length ?? 0) === 0;
+    return {
+      mode,
+      enabled,
+      autoTrimFrames,
+      strength: isSingleSplash ? 0.95 : 1.0,
+      noise: isSingleSplash ? 0.02 : 0,
+      colorCorrect: false,
+      addOriginalImage: false,
+      gutterStyle,
+    };
+  }
+
   const hasBreakout = (aiPage.breakoutZones?.length ?? 0) > 0;
   const isMono = page.colorMode === 'monochrome';
   const defaultStrength = hasBreakout
@@ -159,9 +188,10 @@ export const resolveLayoutLockConfig = (page: ComicPageDraft): ResolvedLayoutLoc
     ? Math.round(Math.min(0.94, Math.max(0.72, rawStrength)) * 100) / 100
     : defaultStrength;
   const noise = isMono ? LAYOUT_LOCK_DEFAULTS.noiseMonochrome : LAYOUT_LOCK_DEFAULTS.noiseColor;
-  const gutterStyle: ComicAiGutterStyle = aiPage.gutterStyle === 'black-flashback' ? 'black-flashback' : 'white';
   return {
+    mode,
     enabled,
+    autoTrimFrames,
     strength,
     noise,
     colorCorrect: false,
@@ -282,7 +312,7 @@ export const computeSafeBubbleHoleEllipse = (
 export const applyDeterministicSelectiveGrain = (
   data: Uint8ClampedArray,
   seed = 1337,
-  amplitude = LAYOUT_LOCK_DEFAULTS.grainAmplitude,
+  amplitude: number = LAYOUT_LOCK_DEFAULTS.grainAmplitude,
 ): void => {
   let state = (seed >>> 0) || 1337;
   const nextRand = () => {
@@ -607,6 +637,56 @@ export interface RenderedComicLayoutTemplate {
  * 7. 可选 SFX 手绘底字轻压
  * 8. 确定性选择性像素颗粒（严格跳过纯白 >246 与纯黑 <24，保证格缝与黑框锐利）
  */
+const collectVisibleSketchStrokes = (page: ComicPageDraft): ComicStroke[] => {
+  const sketchStrokes: ComicStroke[] = [];
+  if (!page.aiPage.projectSketchLayer) return sketchStrokes;
+  const synced = syncComicLayerStack(page);
+  const stack = synced.layerStack || [];
+  const drawingMap = new Map((synced.drawingLayers || []).map(d => [d.id, d]));
+  for (const node of stack) {
+    if (node.kind !== 'drawing' || !node.refId) continue;
+    const eff = resolveEffectiveLayerProps(node, stack);
+    if (!eff.visible || eff.opacity <= 0) continue;
+    const dl = drawingMap.get(node.refId);
+    if (dl?.strokes.length) sketchStrokes.push(...dl.strokes);
+  }
+  if (!sketchStrokes.length && page.strokes.length) {
+    sketchStrokes.push(...page.strokes);
+  }
+  return sketchStrokes;
+};
+
+const drawSfxTextInZone = (
+  ctx: CanvasRenderingContext2D,
+  page: ComicPageDraft,
+  zoneRect: ComicAiZoneRect,
+  width: number,
+  height: number,
+): void => {
+  if (!page.aiPage.projectSfxText || page.texts.length === 0) return;
+  const scaleFactor = width / Math.max(1, page.width * zoneRect.width);
+  for (const item of page.texts) {
+    if (!item.text.trim()) continue;
+    const pos = mapPagePointToZonePixels({ x: item.x, y: item.y }, zoneRect, width, height);
+    if (pos.x < -40 || pos.x > width + 40 || pos.y < -40 || pos.y > height + 40) continue;
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+    if (item.rotation) ctx.rotate((item.rotation * Math.PI) / 180);
+    ctx.globalAlpha = 0.78;
+    const fontSize = Math.max(14, Math.round(item.fontSize * scaleFactor));
+    ctx.font = `${item.bold ? '900' : '700'} ${fontSize}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(4, Math.round(fontSize * 0.16));
+    ctx.strokeStyle = LAYOUT_LOCK_COLORS.sfxStrokeColor;
+    ctx.strokeText(item.text, 0, 0);
+    ctx.fillStyle = LAYOUT_LOCK_COLORS.sfxFillColor;
+    ctx.fillText(item.text, 0, 0);
+    ctx.restore();
+  }
+};
+
 export const renderComicZoneLayoutTemplate = (
   page: ComicPageDraft,
   zone: ComicAiCompiledZone,
@@ -640,23 +720,7 @@ export const renderComicZoneLayoutTemplate = (
   );
   const extraInsetPerSide = Math.max(0, (LAYOUT_LOCK_DEFAULTS.minLockGutterPx - (page.gutterPx || 14)) / 2) * zoneScale;
 
-  // 收集可见手绘草图笔画（仅当开启「手绘草图引导」时）
-  const sketchStrokes: ComicStroke[] = [];
-  if (aiPage.projectSketchLayer) {
-    const synced = syncComicLayerStack(page);
-    const stack = synced.layerStack || [];
-    const drawingMap = new Map((synced.drawingLayers || []).map(d => [d.id, d]));
-    for (const node of stack) {
-      if (node.kind !== 'drawing' || !node.refId) continue;
-      const eff = resolveEffectiveLayerProps(node, stack);
-      if (!eff.visible || eff.opacity <= 0) continue;
-      const dl = drawingMap.get(node.refId);
-      if (dl?.strokes.length) sketchStrokes.push(...dl.strokes);
-    }
-    if (!sketchStrokes.length && page.strokes.length) {
-      sketchStrokes.push(...page.strokes);
-    }
-  }
+  const sketchStrokes = collectVisibleSketchStrokes(page);
 
   // 1. 纸张格缝底色
   ctx.fillStyle = isFlashback ? LAYOUT_LOCK_COLORS.gutterFlashback : LAYOUT_LOCK_COLORS.gutterWhite;
@@ -762,29 +826,7 @@ export const renderComicZoneLayoutTemplate = (
   }
 
   // 7. 可选 SFX 手绘底字投影
-  if (aiPage.projectSfxText && page.texts.length > 0) {
-    const scaleFactor = width / Math.max(1, page.width * zone.rect.width);
-    for (const item of page.texts) {
-      if (!item.text.trim()) continue;
-      const pos = mapPagePointToZonePixels({ x: item.x, y: item.y }, zone.rect, width, height);
-      if (pos.x < -40 || pos.x > width + 40 || pos.y < -40 || pos.y > height + 40) continue;
-      ctx.save();
-      ctx.translate(pos.x, pos.y);
-      if (item.rotation) ctx.rotate((item.rotation * Math.PI) / 180);
-      ctx.globalAlpha = 0.78;
-      const fontSize = Math.max(14, Math.round(item.fontSize * scaleFactor));
-      ctx.font = `${item.bold ? '900' : '700'} ${fontSize}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = Math.max(4, Math.round(fontSize * 0.16));
-      ctx.strokeStyle = LAYOUT_LOCK_COLORS.sfxStrokeColor;
-      ctx.strokeText(item.text, 0, 0);
-      ctx.fillStyle = LAYOUT_LOCK_COLORS.sfxFillColor;
-      ctx.fillText(item.text, 0, 0);
-      ctx.restore();
-    }
-  }
+  drawSfxTextInZone(ctx, page, zone.rect, width, height);
 
   // 8. 确定性选择性像素颗粒（严格跳过纯白 >246 与纯黑 <24）
   try {
@@ -805,5 +847,739 @@ export const renderComicZoneLayoutTemplate = (
     insetCount,
     breakoutCount,
     bubbleHoleCount,
+  };
+};
+
+// ==================== V5 Infill Variant C+ 精准锁框引擎 ====================
+
+export interface InfillMaskGeometryParams {
+  guideOutPx: number;
+  maskExpandPx: number;
+  covThreshold: number;
+  borderWidth: number;
+}
+
+/**
+ * 按当前画布缩放后的实际格缝宽度，自适应选择安全的 Variant C+ 几何参数：
+ * - 极窄格缝 (<20px，如工坊默认 14px 或 12px 少女漫细缝)：不向格缝外扩掩码、提高块覆盖门槛，确保相邻格在 1/8 空间绝不粘连；
+ * - 宽格缝 (>=20px)：启用标准 +8px 护城河 +2px 扩边与 0.30 覆盖阈值。
+ */
+export const resolveInfillMaskGeometryParams = (effectiveGutterPx: number): InfillMaskGeometryParams => {
+  if (effectiveGutterPx < 20) {
+    return {
+      guideOutPx: Math.min(8, Math.max(5, Math.ceil(effectiveGutterPx / 2) + 1)),
+      maskExpandPx: 0,
+      covThreshold: 0.42,
+      borderWidth: effectiveGutterPx <= 13 ? 3 : 5,
+    };
+  }
+  return {
+    guideOutPx: 8,
+    maskExpandPx: 2,
+    covThreshold: 0.3,
+    borderWidth: 6,
+  };
+};
+
+/**
+ * 将任意高分辨率前景遮罩严格量化到 1/8 潜在空间网格并最近邻恢复原尺寸：
+ * - 块内前景像素占比 >= covThreshold 置 255，否则置 0；
+ * - 输出严格二值不透明 RGBA（0 或 255，灰阶像素数为 0），契合 V5 Infill 底层采样铁律。
+ */
+export const quantizeCoverageBlockMaskRgba = (
+  interiorRgba: ArrayLike<number>,
+  width: number,
+  height: number,
+  covThreshold = 0.3,
+): { maskBinary: Uint8Array; maskRgba: Uint8ClampedArray } => {
+  const mw = Math.max(8, Math.round(width / 8));
+  const mh = Math.max(8, Math.round(height / 8));
+  const blockMask = new Uint8Array(mw * mh);
+
+  for (let by = 0; by < mh; by++) {
+    const y0 = Math.floor((by * height) / mh);
+    const y1 = Math.min(height, Math.floor(((by + 1) * height) / mh));
+    for (let bx = 0; bx < mw; bx++) {
+      const x0 = Math.floor((bx * width) / mw);
+      const x1 = Math.min(width, Math.floor(((bx + 1) * width) / mw));
+      let total = 0;
+      let white = 0;
+      for (let y = y0; y < y1; y++) {
+        const rowOff = y * width;
+        for (let x = x0; x < x1; x++) {
+          const p = (rowOff + x) * 4;
+          total += 1;
+          if (interiorRgba[p] > 127 && interiorRgba[p + 3] > 127) white += 1;
+        }
+      }
+      blockMask[by * mw + bx] = total > 0 && white / total >= covThreshold ? 1 : 0;
+    }
+  }
+
+  const maskBinary = new Uint8Array(width * height);
+  const maskRgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const by = Math.min(mh - 1, Math.floor((y * mh) / height));
+    const bRow = by * mw;
+    const rowOff = y * width;
+    for (let x = 0; x < width; x++) {
+      const bx = Math.min(mw - 1, Math.floor((x * mw) / width));
+      const bit = blockMask[bRow + bx];
+      const i = rowOff + x;
+      maskBinary[i] = bit;
+      const v = bit ? 255 : 0;
+      const p = i * 4;
+      maskRgba[p] = v;
+      maskRgba[p + 1] = v;
+      maskRgba[p + 2] = v;
+      maskRgba[p + 3] = 255;
+    }
+  }
+  return { maskBinary, maskRgba };
+};
+
+/**
+ * 逆向像素锁回贴 Alpha 蒙版：
+ * - 所有 maskBinary===0 像素输出严格 alpha=0，由原图 100% 比特无损保留（消除多次重绘 VAE 漂移）；
+ * - 仅在 maskBinary===1 内缘保持 featherPx 像素紧凑线性羽化，内部直接全量采用生成图。
+ */
+export const buildReversePixelLockMaskAlpha = (
+  maskBinary: ArrayLike<number>,
+  width: number,
+  height: number,
+  featherPx = 2,
+): Uint8ClampedArray => {
+  const alpha = new Uint8ClampedArray(width * height);
+  const r = Math.max(0, Math.round(featherPx));
+
+  for (let y = 0; y < height; y++) {
+    const rowOff = y * width;
+    for (let x = 0; x < width; x++) {
+      const i = rowOff + x;
+      if (maskBinary[i] === 0) {
+        alpha[i] = 0;
+        continue;
+      }
+      if (r === 0) {
+        alpha[i] = 255;
+        continue;
+      }
+      let minZeroDist = r + 1;
+      const dyStart = Math.max(-r, -y);
+      const dyEnd = Math.min(r, height - 1 - y);
+      const dxStart = Math.max(-r, -x);
+      const dxEnd = Math.min(r, width - 1 - x);
+      for (let dy = dyStart; dy <= dyEnd; dy++) {
+        const nRow = (y + dy) * width;
+        const absDy = Math.abs(dy);
+        for (let dx = dxStart; dx <= dxEnd; dx++) {
+          if (maskBinary[nRow + x + dx] === 0) {
+            const d = Math.max(Math.abs(dx), absDy);
+            if (d < minZeroDist) minZeroDist = d;
+          }
+        }
+      }
+      alpha[i] = minZeroDist <= r ? Math.round((minZeroDist / (r + 1)) * 255) : 255;
+    }
+  }
+  return alpha;
+};
+
+export interface HardLockedZoneBubbleSpec {
+  id: string;
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+  rotation: number;
+  model: ComicBubbleRenderModel;
+}
+
+/** 收集当前生成区或重绘裁剪区内需要硬锁纯白的气泡与旁白框几何。 */
+export const collectHardLockedZoneBubbles = (
+  page: ComicPageDraft,
+  zoneRect: ComicAiZoneRect,
+  width: number,
+  height: number,
+): HardLockedZoneBubbleSpec[] => {
+  if (page.aiPage.carveBubbleHoles === false || page.dialogueMode === 'ai-text') {
+    return [];
+  }
+  const margin = 0.08;
+  const inZone = (nx: number, ny: number) =>
+    nx >= zoneRect.x - margin
+    && nx <= zoneRect.x + zoneRect.width + margin
+    && ny >= zoneRect.y - margin
+    && ny <= zoneRect.y + zoneRect.height + margin;
+
+  const specs: HardLockedZoneBubbleSpec[] = [];
+  const anchorCenters: Array<{ x: number; y: number }> = [];
+
+  for (const anchor of page.aiPage.anchors) {
+    if (anchor.kind !== 'bubble' || !anchor.enabled) continue;
+    if (!inZone(anchor.x, anchor.y)) continue;
+    const center = mapPagePointToZonePixels({ x: anchor.x, y: anchor.y }, zoneRect, width, height);
+    const rx = ((anchor.bubbleWidth ?? 0.22) / Math.max(0.05, zoneRect.width)) * width * 0.5;
+    const ry = ((anchor.bubbleHeight ?? 0.13) / Math.max(0.05, zoneRect.height)) * height * 0.5;
+    if (rx < 6 || ry < 6) continue;
+    const shape = (anchor.bubbleShape || 'oval') as ComicBubbleShape;
+    const tailPt = anchor.bubbleTailX !== undefined && anchor.bubbleTailY !== undefined
+      ? mapPagePointToZonePixels({ x: anchor.bubbleTailX, y: anchor.bubbleTailY }, zoneRect, width, height)
+      : null;
+    const model = buildComicBubbleRenderModel(
+      center.x,
+      center.y,
+      rx,
+      ry,
+      shape,
+      `ai-lock-${anchor.id}`,
+      tailPt ? { enabled: true, tx: tailPt.x, ty: tailPt.y } : undefined,
+    );
+    specs.push({ id: anchor.id, cx: center.x, cy: center.y, rx, ry, rotation: 0, model });
+    anchorCenters.push({ x: anchor.x, y: anchor.y });
+  }
+
+  const synced = syncComicLayerStack(page);
+  const stack = synced.layerStack || [];
+  const bubbleMap = new Map(page.bubbles.map(b => [b.id, b]));
+  for (const node of stack) {
+    if (node.kind !== 'bubble' || !node.refId) continue;
+    const eff = resolveEffectiveLayerProps(node, stack);
+    if (!eff.visible || eff.opacity <= 0) continue;
+    const bubble = bubbleMap.get(node.refId);
+    if (!bubble || !inZone(bubble.x, bubble.y)) continue;
+    if (!bubble.fillColor || bubble.fillColor === 'transparent') continue;
+    if (anchorCenters.some(c => Math.hypot(c.x - bubble.x, c.y - bubble.y) < 0.025)) continue;
+
+    const center = mapPagePointToZonePixels({ x: bubble.x, y: bubble.y }, zoneRect, width, height);
+    const rx = (bubble.width / Math.max(0.05, zoneRect.width)) * width * 0.5;
+    const ry = (bubble.height / Math.max(0.05, zoneRect.height)) * height * 0.5;
+    if (rx < 6 || ry < 6) continue;
+
+    let tailArg: { enabled: boolean; tx: number; ty: number } | undefined;
+    if (bubble.hasTail) {
+      const tailPx = mapPagePointToZonePixels({ x: bubble.tailX, y: bubble.tailY }, zoneRect, width, height);
+      let tx = tailPx.x;
+      let ty = tailPx.y;
+      if (Math.abs(bubble.rotation) > 0.05) {
+        const rad = (-bubble.rotation * Math.PI) / 180;
+        const dx = tx - center.x;
+        const dy = ty - center.y;
+        tx = center.x + dx * Math.cos(rad) - dy * Math.sin(rad);
+        ty = center.y + dx * Math.sin(rad) + dy * Math.cos(rad);
+      }
+      tailArg = { enabled: true, tx, ty };
+    }
+    const model = buildComicBubbleRenderModel(center.x, center.y, rx, ry, bubble.shape, bubble.id, tailArg);
+    specs.push({ id: bubble.id, cx: center.x, cy: center.y, rx, ry, rotation: bubble.rotation || 0, model });
+  }
+
+  return specs;
+};
+
+/** 复用 FramePlanner2 渲染模型绘制硬锁气泡（底图黑边白底 / 掩码挖空 / 修边复原）。 */
+export const drawHardLockedBubbleOnCanvas = (
+  ctx: CanvasRenderingContext2D,
+  spec: HardLockedZoneBubbleSpec,
+  mode: 'base' | 'mask-cut' | 'trim-cut',
+): void => {
+  ctx.save();
+  if (Math.abs(spec.rotation) > 0.05) {
+    ctx.translate(spec.cx, spec.cy);
+    ctx.rotate((spec.rotation * Math.PI) / 180);
+    ctx.translate(-spec.cx, -spec.cy);
+  }
+  if (mode === 'trim-cut') {
+    ctx.globalCompositeOperation = 'destination-out';
+    drawComicBubbleOnCanvas(ctx, spec.model, {
+      fillColor: '#ffffff',
+      strokeColor: spec.model.strokeBody ? '#ffffff' : 'transparent',
+      strokeWidth: spec.model.strokeBody ? 6 : 0,
+      cx: spec.cx,
+      cy: spec.cy,
+      rx: spec.rx,
+      ry: spec.ry,
+    });
+  } else if (mode === 'mask-cut') {
+    drawComicBubbleOnCanvas(ctx, spec.model, {
+      fillColor: '#000000',
+      strokeColor: '#000000',
+      strokeWidth: spec.model.strokeBody ? 4 : 0,
+      cx: spec.cx,
+      cy: spec.cy,
+      rx: spec.rx,
+      ry: spec.ry,
+    });
+  } else {
+    drawComicBubbleOnCanvas(ctx, spec.model, {
+      fillColor: '#ffffff',
+      strokeColor: '#0a0a0a',
+      strokeWidth: 6,
+      cx: spec.cx,
+      cy: spec.cy,
+      rx: spec.rx,
+      ry: spec.ry,
+    });
+  }
+  ctx.restore();
+};
+
+const createScratchCanvas = (width: number, height: number): HTMLCanvasElement => {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(width));
+  c.height = Math.max(1, Math.round(height));
+  return c;
+};
+
+const canvasToPngBlobSafe = async (canvas: HTMLCanvasElement): Promise<Blob> => {
+  if (typeof canvas.toBlob === 'function') {
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(b => resolve(b), 'image/png'));
+    if (blob) return blob;
+  }
+  const res = await fetch(canvas.toDataURL('image/png'));
+  return res.blob();
+};
+
+const traceBreakoutRect = (
+  ctx: CanvasRenderingContext2D,
+  bz: ComicBreakoutZone,
+  zoneRect: ComicAiZoneRect,
+  width: number,
+  height: number,
+): boolean => {
+  const tl = mapPagePointToZonePixels({ x: bz.x, y: bz.y }, zoneRect, width, height);
+  const br = mapPagePointToZonePixels({ x: bz.x + bz.width, y: bz.y + bz.height }, zoneRect, width, height);
+  const w = br.x - tl.x;
+  const h = br.y - tl.y;
+  if (w < 8 || h < 8 || br.x < 0 || br.y < 0 || tl.x > width || tl.y > height) return false;
+  drawRoundedRectPath(ctx, tl.x, tl.y, w, h, Math.min(28, Math.min(w, h) * 0.16));
+  return true;
+};
+
+export interface RenderedComicInfillTemplate {
+  baseDataUrl: string;
+  maskDataUrl: string;
+  preparedEdit: PreparedImageEdit;
+  width: number;
+  height: number;
+  panelCount: number;
+  insetCount: number;
+  bubbleCount: number;
+  maskParams: InfillMaskGeometryParams;
+}
+
+/**
+ * 渲染 V5 Infill Variant C+ 精准锁框原料（底图 + 1/8 严格二值块掩码 + 零成本平滑矢量修边回贴）：
+ * 1. 底图仅在格框外侧绘制平滑矢量黑护城河（杜绝 8×8 锯齿块内侵），悬浮画中画白光环外加 6px 深色稳边；
+ * 2. 单大格自动铺微梯度渐变避免模型腰斩分格；破格前景区自动开闸门免阻挡；
+ * 3. 硬锁空白气泡使用 FramePlanner2 黑边白底并在掩码精确挖空；
+ * 4. 启用 autoTrimFrames 时构建无损耗矢量修边层（悬浮画中画永远叠在常规格框之上），出图后秒级切齐白缝。
+ */
+export const renderComicZoneInfillTemplate = async (
+  page: ComicPageDraft,
+  zone: ComicAiCompiledZone,
+  options?: { seed?: number },
+): Promise<RenderedComicInfillTemplate> => {
+  const width = Math.max(64, Math.round(zone.resolution.width));
+  const height = Math.max(64, Math.round(zone.resolution.height));
+  const aiPage = page.aiPage;
+  const isFlashback = aiPage.gutterStyle === 'black-flashback';
+  const autoTrimFrames = aiPage.autoTrimFrames !== false;
+  const gutterColor = isFlashback ? LAYOUT_LOCK_COLORS.gutterFlashback : '#ffffff';
+  const zoneScale = Math.min(
+    width / Math.max(1, page.width * zone.rect.width),
+    height / Math.max(1, page.height * zone.rect.height),
+  );
+  const effectiveGutterPx = (page.gutterPx || 14) * zoneScale;
+  const maskParams = resolveInfillMaskGeometryParams(effectiveGutterPx);
+
+  const regularGuides = aiPage.guidePanels.filter(g => !g.inset);
+  const insetGuides = aiPage.guidePanels.filter(g => g.inset);
+  const isSingleSplash = regularGuides.length === 1 && insetGuides.length === 0 && (aiPage.breakoutZones?.length ?? 0) === 0;
+  const breakouts = aiPage.breakoutZones || [];
+  const bubbles = collectHardLockedZoneBubbles(page, zone.rect, width, height);
+  const sketchStrokes = collectVisibleSketchStrokes(page);
+
+  const inZonePoly = (gp: ComicAiGuidePanel) => {
+    const pts = getGuidePanelPolygon(gp).map(pt => mapPagePointToZonePixels(pt, zone.rect, width, height));
+    const xs = pts.map(p => p.x);
+    const ys = pts.map(p => p.y);
+    if (Math.max(...xs) < -2 || Math.min(...xs) > width + 2 || Math.max(...ys) < -2 || Math.min(...ys) > height + 2) {
+      return null;
+    }
+    return pts;
+  };
+  const regPolys = regularGuides.map(gp => ({ gp, pts: inZonePoly(gp) })).filter((x): x is { gp: ComicAiGuidePanel; pts: Array<{ x: number; y: number }> } => x.pts !== null);
+  const insetPolys = insetGuides.map(gp => ({ gp, pts: inZonePoly(gp) })).filter((x): x is { gp: ComicAiGuidePanel; pts: Array<{ x: number; y: number }> } => x.pts !== null);
+  const insetHaloPx = 16;
+
+  // 1. 生成 Variant C+ 底图
+  const baseCanvas = createScratchCanvas(width, height);
+  const bCtx = baseCanvas.getContext('2d');
+  if (!bCtx) throw new Error('无法初始化精准锁框底图画布');
+  bCtx.fillStyle = gutterColor;
+  bCtx.fillRect(0, 0, width, height);
+
+  // 1a. 常规格填充（全页大单格启用淡竖向渐变 + 确定性颗粒防腰斩）
+  for (const { gp, pts } of regPolys) {
+    bCtx.save();
+    tracePolygon(bCtx, pts);
+    if (gp.fillColor?.trim()) {
+      bCtx.fillStyle = gp.fillColor.trim();
+    } else if (isSingleSplash) {
+      const grad = bCtx.createLinearGradient(0, 0, 0, height);
+      grad.addColorStop(0, '#e8ecf3');
+      grad.addColorStop(1, '#f4e8dc');
+      bCtx.fillStyle = grad;
+    } else {
+      bCtx.fillStyle = '#ffffff';
+    }
+    bCtx.fill();
+    if (gp.speedlines || sketchStrokes.length > 0) {
+      bCtx.save();
+      tracePolygon(bCtx, pts);
+      bCtx.clip();
+      if (gp.speedlines) drawSpeedlinesInPanel(bCtx, pts);
+      if (sketchStrokes.length > 0) drawSketchStrokesInZone(bCtx, sketchStrokes, zone.rect, width, height, page.width);
+      bCtx.restore();
+    }
+    bCtx.restore();
+  }
+
+  if (isSingleSplash) {
+    try {
+      const imgData = bCtx.getImageData(0, 0, width, height);
+      applyDeterministicSelectiveGrain(imgData.data, options?.seed ?? 4242, 10);
+      bCtx.putImageData(imgData, 0, 0);
+    } catch {
+      // mock 环境跳过
+    }
+  }
+
+  // 1b. 常规格平滑外扩矢量暗带（或黑底双外白框）
+  const guideCanvas = createScratchCanvas(width, height);
+  const gCtx = guideCanvas.getContext('2d');
+  if (gCtx) {
+    gCtx.lineJoin = 'miter';
+    for (const { gp, pts } of regPolys) {
+      if (gp.borderless && (isFlashback || !autoTrimFrames)) continue;
+      gCtx.save();
+      tracePolygon(gCtx, pts);
+      if (isFlashback) {
+        gCtx.strokeStyle = '#ffffff';
+        gCtx.lineWidth = 18;
+      } else {
+        gCtx.strokeStyle = '#0a0a0a';
+        gCtx.lineWidth = maskParams.guideOutPx * 2;
+      }
+      gCtx.stroke();
+      gCtx.restore();
+    }
+    // 严格剔除常规格内部与破格区（仅保留外侧护城河 / 外白边）
+    gCtx.globalCompositeOperation = 'destination-out';
+    gCtx.fillStyle = '#000000';
+    for (const { pts } of regPolys) {
+      tracePolygon(gCtx, pts);
+      gCtx.fill();
+    }
+    for (const bz of breakouts) {
+      if (traceBreakoutRect(gCtx, bz, zone.rect, width, height)) gCtx.fill();
+    }
+    bCtx.drawImage(guideCanvas, 0, 0);
+  }
+
+  // 常规格 2px 平滑内接缝（破格区覆盖前绘制，无框区域跳过）
+  for (const { gp, pts } of regPolys) {
+    if (gp.borderless) continue;
+    bCtx.save();
+    tracePolygon(bCtx, pts);
+    bCtx.lineJoin = 'miter';
+    bCtx.strokeStyle = '#0a0a0a';
+    bCtx.lineWidth = isFlashback ? 4 : 2;
+    bCtx.stroke();
+    bCtx.restore();
+  }
+
+  // 1c. 破格前景区开启白色通行闸门
+  for (const bz of breakouts) {
+    bCtx.save();
+    if (traceBreakoutRect(bCtx, bz, zone.rect, width, height)) {
+      bCtx.fillStyle = '#ffffff';
+      bCtx.fill();
+    }
+    bCtx.restore();
+  }
+
+  // 1d. 悬浮画中画叠框（最外深色稳边 -> 白色隔离光环 -> 内侧护城河 -> 白底 + 2px内线）
+  for (const { gp, pts } of insetPolys) {
+    bCtx.save();
+    bCtx.lineJoin = 'miter';
+    tracePolygon(bCtx, pts);
+    bCtx.strokeStyle = isFlashback ? '#ffffff' : '#0a0a0a';
+    bCtx.lineWidth = isFlashback ? 18 : (insetHaloPx + 6) * 2;
+    bCtx.stroke();
+
+    if (!isFlashback) {
+      tracePolygon(bCtx, pts);
+      bCtx.strokeStyle = '#ffffff';
+      bCtx.lineWidth = insetHaloPx * 2;
+      bCtx.stroke();
+
+      const inGuideCanvas = createScratchCanvas(width, height);
+      const igCtx = inGuideCanvas.getContext('2d');
+      if (igCtx) {
+        tracePolygon(igCtx, pts);
+        igCtx.lineJoin = 'miter';
+        igCtx.strokeStyle = '#0a0a0a';
+        igCtx.lineWidth = 14;
+        igCtx.stroke();
+        igCtx.globalCompositeOperation = 'destination-out';
+        tracePolygon(igCtx, pts);
+        igCtx.fill();
+        bCtx.drawImage(inGuideCanvas, 0, 0);
+      }
+    }
+
+    tracePolygon(bCtx, pts);
+    bCtx.fillStyle = gp.fillColor?.trim() || '#ffffff';
+    bCtx.fill();
+    if (gp.speedlines || sketchStrokes.length > 0) {
+      bCtx.save();
+      tracePolygon(bCtx, pts);
+      bCtx.clip();
+      if (gp.speedlines) drawSpeedlinesInPanel(bCtx, pts);
+      if (sketchStrokes.length > 0) drawSketchStrokesInZone(bCtx, sketchStrokes, zone.rect, width, height, page.width);
+      bCtx.restore();
+    }
+    tracePolygon(bCtx, pts);
+    bCtx.strokeStyle = '#0a0a0a';
+    bCtx.lineWidth = isFlashback ? 4 : 2;
+    bCtx.stroke();
+    bCtx.restore();
+  }
+
+  // 1e. SFX 融画底字与顶层硬锁气泡
+  drawSfxTextInZone(bCtx, page, zone.rect, width, height);
+  for (const bub of bubbles) {
+    drawHardLockedBubbleOnCanvas(bCtx, bub, 'base');
+  }
+
+  // 2. 构建高分辨率内部遮罩并量化至 1/8 严格二值块掩码
+  const interiorCanvas = createScratchCanvas(width, height);
+  const mCtx = interiorCanvas.getContext('2d');
+  if (!mCtx) throw new Error('无法初始化精准锁框掩码画布');
+  mCtx.fillStyle = '#000000';
+  mCtx.fillRect(0, 0, width, height);
+  mCtx.fillStyle = '#ffffff';
+  mCtx.strokeStyle = '#ffffff';
+  mCtx.lineJoin = 'miter';
+
+  for (const { gp, pts } of regPolys) {
+    tracePolygon(mCtx, pts);
+    mCtx.fill();
+    if (maskParams.maskExpandPx > 0 && !gp.borderless) {
+      mCtx.lineWidth = maskParams.maskExpandPx * 2;
+      mCtx.stroke();
+    }
+  }
+  for (const bz of breakouts) {
+    if (traceBreakoutRect(mCtx, bz, zone.rect, width, height)) mCtx.fill();
+  }
+  for (const { pts } of insetPolys) {
+    mCtx.save();
+    tracePolygon(mCtx, pts);
+    mCtx.fillStyle = '#000000';
+    mCtx.strokeStyle = '#000000';
+    mCtx.lineWidth = isFlashback ? 18 : (insetHaloPx + 5) * 2;
+    mCtx.fill();
+    mCtx.stroke();
+    mCtx.restore();
+
+    tracePolygon(mCtx, pts);
+    mCtx.fillStyle = '#ffffff';
+    mCtx.fill();
+    if (maskParams.maskExpandPx > 0) {
+      mCtx.strokeStyle = '#ffffff';
+      mCtx.lineWidth = maskParams.maskExpandPx * 2;
+      mCtx.stroke();
+    }
+  }
+  for (const bub of bubbles) {
+    drawHardLockedBubbleOnCanvas(mCtx, bub, 'mask-cut');
+  }
+
+  const mImg = mCtx.getImageData(0, 0, width, height);
+  const { maskRgba } = quantizeCoverageBlockMaskRgba(mImg.data, width, height, maskParams.covThreshold);
+  const quantMaskCanvas = createScratchCanvas(width, height);
+  const qCtx = quantMaskCanvas.getContext('2d');
+  if (!qCtx) throw new Error('无法写入二值块掩码');
+  const qImg = qCtx.createImageData(width, height);
+  qImg.data.set(maskRgba);
+  qCtx.putImageData(qImg, 0, 0);
+
+  const baseDataUrl = baseCanvas.toDataURL('image/png');
+  const maskDataUrl = quantMaskCanvas.toDataURL('image/png');
+
+  // 3. 零成本平滑矢量修边层（严格把悬浮画中画叠在常规框线之上，并彻底绕开破格区与硬锁气泡）
+  let preparedEdit: PreparedImageEdit;
+  if (autoTrimFrames) {
+    const trimOrigCanvas = createScratchCanvas(width, height);
+    const toCtx = trimOrigCanvas.getContext('2d');
+    const trimMaskCanvas = createScratchCanvas(width, height);
+    const tmCtx = trimMaskCanvas.getContext('2d');
+    if (!toCtx || !tmCtx) throw new Error('无法构建矢量修边合成层');
+
+    // trimOriginalCanvas：纯净格缝底 + 锐利矢量边框 + 顶层悬浮框光环 + 顶层气泡
+    toCtx.fillStyle = gutterColor;
+    toCtx.fillRect(0, 0, width, height);
+    const regTrimBorderW = isFlashback ? 4 : maskParams.borderWidth;
+    if (isFlashback) {
+      const fbRim = createScratchCanvas(width, height);
+      const frCtx = fbRim.getContext('2d');
+      if (frCtx) {
+        frCtx.strokeStyle = '#ffffff';
+        frCtx.lineWidth = 18;
+        frCtx.lineJoin = 'miter';
+        for (const { gp, pts } of regPolys) {
+          if (gp.borderless) continue;
+          tracePolygon(frCtx, pts);
+          frCtx.stroke();
+        }
+        frCtx.globalCompositeOperation = 'destination-out';
+        frCtx.fillStyle = '#000000';
+        for (const { pts } of regPolys) {
+          tracePolygon(frCtx, pts);
+          frCtx.fill();
+        }
+        toCtx.drawImage(fbRim, 0, 0);
+      }
+    }
+    for (const { gp, pts } of regPolys) {
+      if (gp.borderless) continue;
+      toCtx.save();
+      tracePolygon(toCtx, pts);
+      toCtx.lineJoin = 'miter';
+      toCtx.strokeStyle = '#0a0a0a';
+      toCtx.lineWidth = regTrimBorderW;
+      toCtx.stroke();
+      toCtx.restore();
+    }
+    // 悬浮画中画排在最顶层遮断底层格线
+    for (const { pts } of insetPolys) {
+      toCtx.save();
+      toCtx.lineJoin = 'miter';
+      tracePolygon(toCtx, pts);
+      toCtx.fillStyle = gutterColor;
+      toCtx.strokeStyle = gutterColor;
+      toCtx.lineWidth = insetHaloPx * 2;
+      toCtx.fill();
+      toCtx.stroke();
+      if (isFlashback) {
+        tracePolygon(toCtx, pts);
+        toCtx.strokeStyle = '#ffffff';
+        toCtx.lineWidth = 18;
+        toCtx.stroke();
+      }
+      tracePolygon(toCtx, pts);
+      toCtx.strokeStyle = '#0a0a0a';
+      toCtx.lineWidth = regTrimBorderW;
+      toCtx.stroke();
+      toCtx.restore();
+    }
+    for (const bub of bubbles) {
+      drawHardLockedBubbleOnCanvas(toCtx, bub, 'base');
+    }
+
+    // trimCompositeMaskCanvas：alpha=255 保留 AI 画面，alpha=0 切回平滑格缝/框线/气泡
+    tmCtx.clearRect(0, 0, width, height);
+    tmCtx.fillStyle = '#ffffff';
+    for (const { pts } of regPolys) {
+      tracePolygon(tmCtx, pts);
+      tmCtx.fill();
+    }
+    tmCtx.save();
+    tmCtx.globalCompositeOperation = 'destination-out';
+    tmCtx.strokeStyle = '#ffffff';
+    tmCtx.lineJoin = 'miter';
+    tmCtx.lineWidth = regTrimBorderW;
+    for (const { gp, pts } of regPolys) {
+      if (gp.borderless) continue;
+      tracePolygon(tmCtx, pts);
+      tmCtx.stroke();
+    }
+    tmCtx.restore();
+
+    for (const { pts } of insetPolys) {
+      tmCtx.save();
+      tmCtx.globalCompositeOperation = 'destination-out';
+      tmCtx.fillStyle = '#ffffff';
+      tmCtx.strokeStyle = '#ffffff';
+      tmCtx.lineJoin = 'miter';
+      tmCtx.lineWidth = insetHaloPx * 2;
+      tracePolygon(tmCtx, pts);
+      tmCtx.fill();
+      tmCtx.stroke();
+      tmCtx.restore();
+
+      tmCtx.save();
+      tmCtx.fillStyle = '#ffffff';
+      tracePolygon(tmCtx, pts);
+      tmCtx.fill();
+      tmCtx.globalCompositeOperation = 'destination-out';
+      tmCtx.strokeStyle = '#ffffff';
+      tmCtx.lineJoin = 'miter';
+      tmCtx.lineWidth = regTrimBorderW;
+      tracePolygon(tmCtx, pts);
+      tmCtx.stroke();
+      tmCtx.restore();
+    }
+
+    tmCtx.save();
+    tmCtx.fillStyle = '#ffffff';
+    for (const bz of breakouts) {
+      if (traceBreakoutRect(tmCtx, bz, zone.rect, width, height)) tmCtx.fill();
+    }
+    tmCtx.restore();
+
+    for (const bub of bubbles) {
+      drawHardLockedBubbleOnCanvas(tmCtx, bub, 'trim-cut');
+    }
+
+    const [originalImage, compositeMask] = await Promise.all([
+      canvasToPngBlobSafe(trimOrigCanvas),
+      canvasToPngBlobSafe(trimMaskCanvas),
+    ]);
+    preparedEdit = {
+      image: baseDataUrl,
+      mask: maskDataUrl,
+      originalImage,
+      compositeMask,
+      requestWidth: width,
+      requestHeight: height,
+      sourceWidth: width,
+      sourceHeight: height,
+    };
+  } else {
+    preparedEdit = {
+      image: baseDataUrl,
+      mask: maskDataUrl,
+      originalImage: await canvasToPngBlobSafe(baseCanvas),
+      requestWidth: width,
+      requestHeight: height,
+      sourceWidth: width,
+      sourceHeight: height,
+    };
+  }
+
+  return {
+    baseDataUrl,
+    maskDataUrl,
+    preparedEdit,
+    width,
+    height,
+    panelCount: regPolys.length,
+    insetCount: insetPolys.length,
+    bubbleCount: bubbles.length,
+    maskParams,
   };
 };

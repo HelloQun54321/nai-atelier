@@ -1,13 +1,25 @@
 import type { CharacterParams, NAIParams } from '../../types';
+import {
+  dataUrlToBlob,
+  getFocusedImageEditGeometry,
+  type ImageEditRect,
+  type PreparedImageEdit,
+} from '../imageEdit';
 import { getDefaultStepsForModel, isNaiMediumModel } from '../naiModels';
 import { clampAnchorCoord, matchFreeOpusResolution } from './comicGeometry';
+import {
+  buildReversePixelLockMaskAlpha,
+  collectHardLockedZoneBubbles,
+  drawHardLockedBubbleOnCanvas,
+  quantizeCoverageBlockMaskRgba,
+} from './comicLayoutTemplateRenderer';
 import {
   COMIC_ANCHOR_HARD_LIMIT,
   resolveComicQualityPreset,
   sanitizeComicNegativeConflicts,
   stripColorTagsForMonochrome,
 } from './comicPromptBuilder';
-import type { ComicAnchor, ComicBubbleShape, ComicPageDraft } from './comicTypes';
+import type { ComicAnchor, ComicBubbleShape, ComicPageDraft, ComicPoint } from './comicTypes';
 
 export interface ComicInpaintRect {
   /** 相对整页的归一化区域 (0..1) */
@@ -19,6 +31,10 @@ export interface ComicInpaintRect {
 
 export interface ComicInpaintDraft {
   rect: ComicInpaintRect;
+  /** 可选多边形顶点（对齐斜切/曲线引导格，归一化整页坐标 0..1） */
+  points?: ComicPoint[];
+  /** 可选关联引导格 ID */
+  guidePanelId?: string;
   prompt: string;
   negativePrompt: string;
   /** 重绘幅度 0.4 ~ 0.99（默认 0.85） */
@@ -62,7 +78,7 @@ export const clampInpaintRect = (rect: ComicInpaintRect): ComicInpaintRect => {
 };
 
 /**
- * 为整页局部重绘生成黑白 PNG 蒙版 DataURL：重绘矩形内为纯白 (#ffffff)，其余保持纯黑 (#000000)。
+ * 为整页局部重绘生成透明底黑白 PNG 蒙版 DataURL：重绘矩形内为纯白 opaque (#ffffff)，其余保持透明 (alpha=0)。
  */
 export const createRectInpaintMaskDataUrl = (
   pageWidth: number,
@@ -77,8 +93,7 @@ export const createRectInpaintMaskDataUrl = (
   canvas.height = h;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('蒙版画布初始化失败');
-  ctx.fillStyle = '#000000';
-  ctx.fillRect(0, 0, w, h);
+  ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(
     Math.round(safeRect.x * w),
@@ -253,5 +268,142 @@ export const loadImageAsDataUrl = async (url: string): Promise<{ dataUrl: string
   if (!ctx) throw new Error('重绘底图画布初始化失败');
   ctx.drawImage(img, 0, 0, width, height);
   return { dataUrl: canvas.toDataURL('image/png'), width, height };
+};
+
+const toPngBlob = async (canvas: HTMLCanvasElement): Promise<Blob> => {
+  if (typeof canvas.toBlob === 'function') {
+    const b = await new Promise<Blob | null>(resolve => canvas.toBlob(v => resolve(v), 'image/png'));
+    if (b) return b;
+  }
+  return dataUrlToBlob(canvas.toDataURL('image/png'));
+};
+
+/**
+ * 构建带「多边形 1/8 二值块掩码 + 硬锁气泡避让 + 逆向像素锁」的单格局部重绘预处理原料：
+ * - 所有未遮罩区域（其他分格、白缝、相邻硬锁气泡）alpha 严格为 0，100% 比特原样保真无 VAE 漂移；
+ * - 若选中斜切/曲线引导格，严格按多边形轮廓重绘并向内保留 2px 紧致融合带。
+ */
+export const prepareComicPanelInpaintEdit = async (input: {
+  baseDataUrl: string;
+  baseWidth: number;
+  baseHeight: number;
+  page: ComicPageDraft;
+  inpaint: ComicInpaintDraft;
+  focusedRect: ImageEditRect;
+}): Promise<PreparedImageEdit> => {
+  const originalImage = await dataUrlToBlob(input.baseDataUrl);
+  const bitmap = await createImageBitmap(originalImage);
+  const focused = Boolean(input.inpaint.focused);
+  const focusedGeometry = focused
+    ? getFocusedImageEditGeometry(input.baseWidth, input.baseHeight, input.focusedRect, undefined)
+    : undefined;
+  const crop = focusedGeometry?.crop ?? { x: 0, y: 0, width: input.baseWidth, height: input.baseHeight };
+  const reqW = focusedGeometry?.requestWidth ?? input.baseWidth;
+  const reqH = focusedGeometry?.requestHeight ?? input.baseHeight;
+
+  // 1. 构建请求底图（聚焦模式按聚焦裁剪放大，全页模式直接使用原底图）
+  const reqImgCanvas = document.createElement('canvas');
+  reqImgCanvas.width = reqW;
+  reqImgCanvas.height = reqH;
+  const rCtx = reqImgCanvas.getContext('2d');
+  if (!rCtx) {
+    bitmap.close();
+    throw new Error('无法初始化局部重绘底图画布');
+  }
+  rCtx.imageSmoothingQuality = 'high';
+  rCtx.drawImage(bitmap, crop.x, crop.y, crop.width, crop.height, 0, 0, reqW, reqH);
+  bitmap.close();
+
+  // 2. 在请求分辨率下绘制精确多边形或矩形遮罩，并挖除交叉硬锁气泡
+  const interiorCanvas = document.createElement('canvas');
+  interiorCanvas.width = reqW;
+  interiorCanvas.height = reqH;
+  const mCtx = interiorCanvas.getContext('2d');
+  if (!mCtx) throw new Error('无法初始化局部重绘掩码画布');
+  mCtx.fillStyle = '#000000';
+  mCtx.fillRect(0, 0, reqW, reqH);
+
+  const hasPoly = Boolean(input.inpaint.points && input.inpaint.points.length >= 3);
+  const mapOrigPxToReq = (ox: number, oy: number) => ({
+    x: ((ox - crop.x) / Math.max(1, crop.width)) * reqW,
+    y: ((oy - crop.y) / Math.max(1, crop.height)) * reqH,
+  });
+
+  if (hasPoly && input.inpaint.points) {
+    const pts = input.inpaint.points.map(pt => mapOrigPxToReq(pt.x * input.baseWidth, pt.y * input.baseHeight));
+    mCtx.save();
+    mCtx.beginPath();
+    mCtx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) mCtx.lineTo(pts[i].x, pts[i].y);
+    mCtx.closePath();
+    mCtx.fillStyle = '#ffffff';
+    mCtx.fill();
+    mCtx.strokeStyle = '#ffffff';
+    mCtx.lineWidth = 4;
+    mCtx.lineJoin = 'miter';
+    mCtx.stroke();
+    mCtx.restore();
+  } else {
+    const safeRect = clampInpaintRect(input.inpaint.rect);
+    const tl = mapOrigPxToReq(safeRect.x * input.baseWidth, safeRect.y * input.baseHeight);
+    const br = mapOrigPxToReq((safeRect.x + safeRect.width) * input.baseWidth, (safeRect.y + safeRect.height) * input.baseHeight);
+    mCtx.fillStyle = '#ffffff';
+    mCtx.fillRect(tl.x, tl.y, Math.max(8, br.x - tl.x), Math.max(8, br.y - tl.y));
+  }
+
+  // 扣出压在重绘格边线/内部的所有硬锁空白气泡
+  const cropZoneRect = {
+    x: crop.x / Math.max(1, input.baseWidth),
+    y: crop.y / Math.max(1, input.baseHeight),
+    width: crop.width / Math.max(1, input.baseWidth),
+    height: crop.height / Math.max(1, input.baseHeight),
+  };
+  const cropBubbles = collectHardLockedZoneBubbles(input.page, cropZoneRect, reqW, reqH);
+  for (const bub of cropBubbles) {
+    drawHardLockedBubbleOnCanvas(mCtx, bub, 'mask-cut');
+  }
+
+  // 3. 1/8 严格二值化 + 逆向像素锁紧凑 Alpha 蒙版
+  const intImg = mCtx.getImageData(0, 0, reqW, reqH);
+  const { maskBinary, maskRgba } = quantizeCoverageBlockMaskRgba(intImg.data, reqW, reqH, 0.3);
+
+  const reqMaskCanvas = document.createElement('canvas');
+  reqMaskCanvas.width = reqW;
+  reqMaskCanvas.height = reqH;
+  const rmCtx = reqMaskCanvas.getContext('2d');
+  if (!rmCtx) throw new Error('无法写入重绘掩码画布');
+  const rmData = rmCtx.createImageData(reqW, reqH);
+  rmData.data.set(maskRgba);
+  rmCtx.putImageData(rmData, 0, 0);
+
+  const featherPx = hasPoly ? 2 : 6;
+  const revAlpha = buildReversePixelLockMaskAlpha(maskBinary, reqW, reqH, featherPx);
+  const compCanvas = document.createElement('canvas');
+  compCanvas.width = reqW;
+  compCanvas.height = reqH;
+  const cCtx = compCanvas.getContext('2d');
+  if (!cCtx) throw new Error('无法写入逆向像素锁回贴蒙版');
+  const compImg = cCtx.createImageData(reqW, reqH);
+  for (let i = 0; i < reqW * reqH; i++) {
+    const p = i * 4;
+    compImg.data[p] = 255;
+    compImg.data[p + 1] = 255;
+    compImg.data[p + 2] = 255;
+    compImg.data[p + 3] = revAlpha[i];
+  }
+  cCtx.putImageData(compImg, 0, 0);
+
+  const maskDataUrl = reqMaskCanvas.toDataURL('image/png');
+  return {
+    image: focused ? reqImgCanvas.toDataURL('image/png') : input.baseDataUrl,
+    mask: maskDataUrl,
+    originalImage,
+    compositeMask: await toPngBlob(compCanvas),
+    requestWidth: reqW,
+    requestHeight: reqH,
+    sourceWidth: input.baseWidth,
+    sourceHeight: input.baseHeight,
+    focusedGeometry,
+  };
 };
 

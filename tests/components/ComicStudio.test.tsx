@@ -206,9 +206,19 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getByRole('button', { name: /仅画区 1/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /仅画区 2/ })).toBeTruthy();
 
-    // 验证 V5 img2img 硬锁版式控件：默认开启、可切黑底回忆杀、填统一光照词并添加破格前景块
-    const lockToggle = screen.getByRole('checkbox', { name: '按画布分镜框硬锁版式（图生图）' }) as HTMLInputElement;
-    expect(lockToggle.checked).toBe(true);
+    // 验证 V5 精准锁框 / 图生图 / 自由文生图切换及黑底回忆杀、统一光照词与破格前景块
+    const precisionBtn = screen.getByRole('button', { name: '精准锁框' });
+    const img2imgBtn = screen.getByRole('button', { name: '图生图' });
+    const txt2imgBtn = screen.getByRole('button', { name: '自由文生图' });
+    expect(precisionBtn.getAttribute('aria-pressed')).toBe('true');
+    expect(img2imgBtn.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(img2imgBtn);
+    expect(img2imgBtn.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(txt2imgBtn);
+    expect(txt2imgBtn.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(precisionBtn);
+    expect(precisionBtn.getAttribute('aria-pressed')).toBe('true');
+
     fireEvent.click(screen.getByRole('button', { name: '黑底回忆杀' }));
     expect(screen.getByRole('button', { name: '黑底回忆杀' }).getAttribute('aria-pressed')).toBe('true');
     const atmosInput = screen.getByRole('textbox', { name: '全页统一环境光照词' }) as HTMLInputElement;

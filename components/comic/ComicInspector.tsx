@@ -877,7 +877,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       <span>{t('高级版式与锁框选项')}</span>
                     </span>
                     <span className={`font-normal ${aiZonePlan.overallLevel === 'hard-exceeded' ? 'text-red-500' : aiZonePlan.overallLevel === 'soft-warning' ? 'text-amber-500' : 'text-gray-400'}`}>
-                      {aiZonePlan.totalPanels}{t('格')} · {aiZonePlan.zones.length}{t('区')} · {aiPage.layoutLockMode !== 'txt2img' ? t('硬锁版式') : t('自由文生图')}
+                      {aiZonePlan.totalPanels}{t('格')} · {aiZonePlan.zones.length}{t('区')} · {aiPage.layoutLockMode === 'txt2img' ? t('自由文生图') : aiPage.layoutLockMode === 'img2img' ? t('图生图参考') : t('精准锁框')}
                     </span>
                   </summary>
                   <div className="space-y-2.5 border-t border-gray-200/70 px-2.5 pt-2.5 pb-2.5 dark:border-gray-800">
@@ -918,10 +918,11 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       </p>
                     )}
 
-                {/* V5 图生图硬锁分镜与场景氛围控制（0 Anlas 像素级锁框） */}
+                {/* V5 版式锁定策略（精准锁框 Infill / 图生图参考 / 自由文生图） */}
                 {(() => {
                   const lockCfg = resolveLayoutLockConfig(draft);
-                  const isLocked = aiPage.layoutLockMode !== 'txt2img';
+                  const lockMode = lockCfg.mode;
+                  const isLocked = lockCfg.enabled;
                   const isFlashback = aiPage.gutterStyle === 'black-flashback';
                   const breakouts = aiPage.breakoutZones || [];
                   const addBreakoutZone = () => {
@@ -959,20 +960,25 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
                   return (
                     <div className="space-y-2 rounded-xl border border-indigo-200/70 bg-indigo-50/25 p-2.5 dark:border-indigo-900/50 dark:bg-indigo-950/15">
-                      <div className="flex items-center justify-between gap-2">
-                        <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] font-bold text-gray-800 dark:text-gray-100">
-                          <input
-                            type="checkbox"
-                            aria-label={t('按画布分镜框硬锁版式（图生图）')}
-                            checked={isLocked}
-                            onChange={e => onUpdateAiPage(cur => ({
+                      <div className="grid grid-cols-3 gap-1" role="group" aria-label={t('版式锁定方式')}>
+                        {([
+                          { id: 'infill', label: '精准锁框' },
+                          { id: 'img2img', label: '图生图' },
+                          { id: 'txt2img', label: '自由文生图' },
+                        ] as const).map(opt => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            aria-pressed={lockMode === opt.id}
+                            onClick={() => onUpdateAiPage(cur => ({
                               ...cur,
-                              layoutLockMode: e.target.checked ? 'img2img' : 'txt2img',
+                              layoutLockMode: opt.id,
                             }), true)}
-                            className="rounded accent-indigo-600"
-                          />
-                          <span>{t('按画布分镜框硬锁版式（图生图）')}</span>
-                        </label>
+                            className={`rounded-md border px-1.5 py-1 text-[11px] font-semibold transition ${lockMode === opt.id ? 'border-indigo-500 bg-indigo-600 text-white shadow-xs dark:border-indigo-400 dark:bg-indigo-500' : 'border-gray-200/80 bg-white/80 text-gray-600 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-300'}`}
+                          >
+                            {t(opt.label)}
+                          </button>
+                        ))}
                       </div>
 
                       {isLocked && (
@@ -997,14 +1003,25 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                           </div>
 
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600 dark:text-gray-300">
+                            {lockMode === 'infill' && (
+                              <label className="inline-flex cursor-pointer items-center gap-1">
+                                <input
+                                  type="checkbox"
+                                  checked={aiPage.autoTrimFrames !== false}
+                                  onChange={e => onUpdateAiPage(cur => ({ ...cur, autoTrimFrames: e.target.checked }), true)}
+                                  className="rounded accent-indigo-600"
+                                />
+                                <span>{t('自动切齐框线')}</span>
+                              </label>
+                            )}
                             <label className="inline-flex cursor-pointer items-center gap-1">
                               <input
                                 type="checkbox"
-                                checked={Boolean(aiPage.carveBubbleHoles)}
+                                checked={lockMode === 'infill' ? aiPage.carveBubbleHoles !== false : Boolean(aiPage.carveBubbleHoles)}
                                 onChange={e => onUpdateAiPage(cur => ({ ...cur, carveBubbleHoles: e.target.checked }), true)}
                                 className="rounded accent-indigo-600"
                               />
-                              <span>{t('气泡区自动留白')}</span>
+                              <span>{t(lockMode === 'infill' ? '锁定空白气泡' : '气泡区自动留白')}</span>
                             </label>
                             <label className="inline-flex cursor-pointer items-center gap-1">
                               <input
@@ -1026,31 +1043,33 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                             </label>
                           </div>
 
-                          <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
-                            <span className="flex-none">{t('锁框重绘强度')}</span>
-                            <input
-                              type="range"
-                              aria-label={t('锁框重绘强度')}
-                              min={75}
-                              max={92}
-                              step={1}
-                              value={Math.round(lockCfg.strength * 100)}
-                              onChange={e => onUpdateAiPage(cur => ({ ...cur, layoutLockStrength: Number(e.target.value) / 100 }), false)}
-                              className="min-w-0 flex-1 accent-indigo-600"
-                            />
-                            <span className="flex-none rounded bg-indigo-100/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-200">
-                              {lockCfg.strength.toFixed(2)}
-                            </span>
-                            {aiPage.layoutLockStrength !== undefined && (
-                              <button
-                                type="button"
-                                onClick={() => onUpdateAiPage(cur => ({ ...cur, layoutLockStrength: undefined }), true)}
-                                className="flex-none text-indigo-600 hover:underline dark:text-indigo-400"
-                              >
-                                {t('自动')}
-                              </button>
-                            )}
-                          </div>
+                          {lockMode === 'img2img' && (
+                            <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
+                              <span className="flex-none">{t('锁框重绘强度')}</span>
+                              <input
+                                type="range"
+                                aria-label={t('锁框重绘强度')}
+                                min={75}
+                                max={92}
+                                step={1}
+                                value={Math.round(lockCfg.strength * 100)}
+                                onChange={e => onUpdateAiPage(cur => ({ ...cur, layoutLockStrength: Number(e.target.value) / 100 }), false)}
+                                className="min-w-0 flex-1 accent-indigo-600"
+                              />
+                              <span className="flex-none rounded bg-indigo-100/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-200">
+                                {lockCfg.strength.toFixed(2)}
+                              </span>
+                              {aiPage.layoutLockStrength !== undefined && (
+                                <button
+                                  type="button"
+                                  onClick={() => onUpdateAiPage(cur => ({ ...cur, layoutLockStrength: undefined }), true)}
+                                  className="flex-none text-indigo-600 hover:underline dark:text-indigo-400"
+                                >
+                                  {t('自动')}
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </>
                       )}
 
