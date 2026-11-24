@@ -2155,7 +2155,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
           ? t('区 {0}/2 · {1} 生成中…', [zone.zoneIndex + 1, zone.label])
           : lockCfg.enabled
             ? t('精准锁框整页生成中…')
-            : t('自由构图整页生成中…'));
+            : t('整页生成中…'));
 
         const historyMeta = {
           basePrompt: draft.globalBasePrompt,

@@ -892,7 +892,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       <span>{t('高级版式与锁框选项')}</span>
                     </span>
                     <span className={`font-normal ${aiZonePlan.overallLevel === 'hard-exceeded' ? 'text-red-500' : aiZonePlan.overallLevel === 'soft-warning' ? 'text-amber-500' : 'text-gray-400'}`}>
-                      {aiZonePlan.totalPanels}{t('格')} · {aiZonePlan.zones.length}{t('区')} · {aiPage.layoutLockMode === 'txt2img' ? t('自由构图') : t('精准锁框')}
+                      {aiZonePlan.totalPanels}{t('格')} · {aiZonePlan.zones.length}{t('区')} · {aiPage.layoutLockMode === 'txt2img' ? t('不锁框') : t('锁框')}
                     </span>
                   </summary>
                   <div className="space-y-2.5 border-t border-gray-200/70 px-2.5 pt-2.5 pb-2.5 dark:border-gray-800">
@@ -975,25 +975,25 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
                   return (
                     <div className="space-y-2 rounded-xl border border-indigo-200/70 bg-indigo-50/25 p-2.5 dark:border-indigo-900/50 dark:bg-indigo-950/15">
-                      <div className="grid grid-cols-2 gap-1" role="group" aria-label={t('版式锁定方式')}>
-                        {([
-                          { id: 'infill', label: '精准锁框' },
-                          { id: 'txt2img', label: '自由构图' },
-                        ] as const).map(opt => (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            aria-pressed={lockMode === opt.id}
-                            onClick={() => onUpdateAiPage(cur => ({
+                      <label className="flex cursor-pointer items-center justify-between gap-2 text-[11px] font-semibold text-gray-800 dark:text-gray-100">
+                        <span className="inline-flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={lockMode !== 'txt2img'}
+                            onChange={e => onUpdateAiPage(cur => ({
                               ...cur,
-                              layoutLockMode: opt.id,
+                              layoutLockMode: e.target.checked ? 'infill' : 'txt2img',
                             }), true)}
-                            className={`rounded-md border px-1.5 py-1 text-[11px] font-semibold transition ${lockMode === opt.id ? 'border-indigo-500 bg-indigo-600 text-white shadow-xs dark:border-indigo-400 dark:bg-indigo-500' : 'border-gray-200/80 bg-white/80 text-gray-600 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-300'}`}
-                          >
-                            {t(opt.label)}
-                          </button>
-                        ))}
-                      </div>
+                            className="rounded accent-indigo-600"
+                          />
+                          <span>{t('严格按画布框线出图')}</span>
+                        </span>
+                      </label>
+                      <p className="text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
+                        {lockMode !== 'txt2img'
+                          ? t('按你画好的格线精准填充，斜切与叠框不跑形')
+                          : t('画布格与锚点仅作位置参考，具体分格与框线由 AI 自由发挥')}
+                      </p>
 
                       {isLocked && (
                         <>

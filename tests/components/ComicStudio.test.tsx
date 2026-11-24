@@ -206,16 +206,16 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getByRole('button', { name: /仅画区 1/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /仅画区 2/ })).toBeTruthy();
 
-    // 验证 V5 精准锁框 / 自由构图两档切换及黑底回忆杀、统一光照词与破格前景块
-    const precisionBtn = screen.getByRole('button', { name: '精准锁框' });
-    const freeCompBtn = screen.getByRole('button', { name: '自由构图' });
-    expect(screen.queryByRole('button', { name: '图生图' })).toBeNull();
-    expect(precisionBtn.getAttribute('aria-pressed')).toBe('true');
-    expect(freeCompBtn.getAttribute('aria-pressed')).toBe('false');
-    fireEvent.click(freeCompBtn);
-    expect(freeCompBtn.getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(precisionBtn);
-    expect(precisionBtn.getAttribute('aria-pressed')).toBe('true');
+    // 验证「严格按画布框线出图」单开关切换及黑底回忆杀、统一光照词与破格前景块
+    const lockSwitch = screen.getByRole('checkbox', { name: '严格按画布框线出图' }) as HTMLInputElement;
+    expect(lockSwitch.checked).toBe(true);
+    expect(screen.queryByRole('button', { name: '精准锁框' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '自由构图' })).toBeNull();
+    fireEvent.click(lockSwitch);
+    expect(lockSwitch.checked).toBe(false);
+    expect(screen.getByText('画布格与锚点仅作位置参考，具体分格与框线由 AI 自由发挥')).toBeTruthy();
+    fireEvent.click(lockSwitch);
+    expect(lockSwitch.checked).toBe(true);
 
     fireEvent.click(screen.getByRole('button', { name: '黑底回忆杀' }));
     expect(screen.getByRole('button', { name: '黑底回忆杀' }).getAttribute('aria-pressed')).toBe('true');
