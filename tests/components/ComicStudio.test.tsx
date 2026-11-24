@@ -206,16 +206,14 @@ describe('ComicStudio Phase 1 redesigned 4-block workbench', () => {
     expect(screen.getByRole('button', { name: /仅画区 1/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /仅画区 2/ })).toBeTruthy();
 
-    // 验证 V5 精准锁框 / 图生图 / 自由文生图切换及黑底回忆杀、统一光照词与破格前景块
+    // 验证 V5 精准锁框 / 自由构图两档切换及黑底回忆杀、统一光照词与破格前景块
     const precisionBtn = screen.getByRole('button', { name: '精准锁框' });
-    const img2imgBtn = screen.getByRole('button', { name: '图生图' });
-    const txt2imgBtn = screen.getByRole('button', { name: '自由文生图' });
+    const freeCompBtn = screen.getByRole('button', { name: '自由构图' });
+    expect(screen.queryByRole('button', { name: '图生图' })).toBeNull();
     expect(precisionBtn.getAttribute('aria-pressed')).toBe('true');
-    expect(img2imgBtn.getAttribute('aria-pressed')).toBe('false');
-    fireEvent.click(img2imgBtn);
-    expect(img2imgBtn.getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(txt2imgBtn);
-    expect(txt2imgBtn.getAttribute('aria-pressed')).toBe('true');
+    expect(freeCompBtn.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(freeCompBtn);
+    expect(freeCompBtn.getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(precisionBtn);
     expect(precisionBtn.getAttribute('aria-pressed')).toBe('true');
 

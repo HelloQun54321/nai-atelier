@@ -892,7 +892,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       <span>{t('高级版式与锁框选项')}</span>
                     </span>
                     <span className={`font-normal ${aiZonePlan.overallLevel === 'hard-exceeded' ? 'text-red-500' : aiZonePlan.overallLevel === 'soft-warning' ? 'text-amber-500' : 'text-gray-400'}`}>
-                      {aiZonePlan.totalPanels}{t('格')} · {aiZonePlan.zones.length}{t('区')} · {aiPage.layoutLockMode === 'txt2img' ? t('自由文生图') : aiPage.layoutLockMode === 'img2img' ? t('图生图参考') : t('精准锁框')}
+                      {aiZonePlan.totalPanels}{t('格')} · {aiZonePlan.zones.length}{t('区')} · {aiPage.layoutLockMode === 'txt2img' ? t('自由构图') : t('精准锁框')}
                     </span>
                   </summary>
                   <div className="space-y-2.5 border-t border-gray-200/70 px-2.5 pt-2.5 pb-2.5 dark:border-gray-800">
@@ -933,7 +933,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       </p>
                     )}
 
-                {/* V5 版式锁定策略（精准锁框 Infill / 图生图参考 / 自由文生图） */}
+                {/* V5 版式锁定策略（精准锁框 Infill / 自由构图） */}
                 {(() => {
                   const lockCfg = resolveLayoutLockConfig(draft);
                   const lockMode = lockCfg.mode;
@@ -975,11 +975,10 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
                   return (
                     <div className="space-y-2 rounded-xl border border-indigo-200/70 bg-indigo-50/25 p-2.5 dark:border-indigo-900/50 dark:bg-indigo-950/15">
-                      <div className="grid grid-cols-3 gap-1" role="group" aria-label={t('版式锁定方式')}>
+                      <div className="grid grid-cols-2 gap-1" role="group" aria-label={t('版式锁定方式')}>
                         {([
                           { id: 'infill', label: '精准锁框' },
-                          { id: 'img2img', label: '图生图' },
-                          { id: 'txt2img', label: '自由文生图' },
+                          { id: 'txt2img', label: '自由构图' },
                         ] as const).map(opt => (
                           <button
                             key={opt.id}
@@ -1018,25 +1017,23 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                           </div>
 
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600 dark:text-gray-300">
-                            {lockMode === 'infill' && (
-                              <label className="inline-flex cursor-pointer items-center gap-1">
-                                <input
-                                  type="checkbox"
-                                  checked={aiPage.autoTrimFrames !== false}
-                                  onChange={e => onUpdateAiPage(cur => ({ ...cur, autoTrimFrames: e.target.checked }), true)}
-                                  className="rounded accent-indigo-600"
-                                />
-                                <span>{t('自动切齐框线')}</span>
-                              </label>
-                            )}
                             <label className="inline-flex cursor-pointer items-center gap-1">
                               <input
                                 type="checkbox"
-                                checked={lockMode === 'infill' ? aiPage.carveBubbleHoles !== false : Boolean(aiPage.carveBubbleHoles)}
+                                checked={aiPage.autoTrimFrames !== false}
+                                onChange={e => onUpdateAiPage(cur => ({ ...cur, autoTrimFrames: e.target.checked }), true)}
+                                className="rounded accent-indigo-600"
+                              />
+                              <span>{t('自动切齐框线')}</span>
+                            </label>
+                            <label className="inline-flex cursor-pointer items-center gap-1">
+                              <input
+                                type="checkbox"
+                                checked={aiPage.carveBubbleHoles !== false}
                                 onChange={e => onUpdateAiPage(cur => ({ ...cur, carveBubbleHoles: e.target.checked }), true)}
                                 className="rounded accent-indigo-600"
                               />
-                              <span>{t(lockMode === 'infill' ? '锁定空白气泡' : '气泡区自动留白')}</span>
+                              <span>{t('锁定空白气泡')}</span>
                             </label>
                             <label className="inline-flex cursor-pointer items-center gap-1">
                               <input
@@ -1057,34 +1054,6 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                               <span>{t('拟声词融画')}</span>
                             </label>
                           </div>
-
-                          {lockMode === 'img2img' && (
-                            <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
-                              <span className="flex-none">{t('锁框重绘强度')}</span>
-                              <input
-                                type="range"
-                                aria-label={t('锁框重绘强度')}
-                                min={75}
-                                max={92}
-                                step={1}
-                                value={Math.round(lockCfg.strength * 100)}
-                                onChange={e => onUpdateAiPage(cur => ({ ...cur, layoutLockStrength: Number(e.target.value) / 100 }), false)}
-                                className="min-w-0 flex-1 accent-indigo-600"
-                              />
-                              <span className="flex-none rounded bg-indigo-100/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-200">
-                                {lockCfg.strength.toFixed(2)}
-                              </span>
-                              {aiPage.layoutLockStrength !== undefined && (
-                                <button
-                                  type="button"
-                                  onClick={() => onUpdateAiPage(cur => ({ ...cur, layoutLockStrength: undefined }), true)}
-                                  className="flex-none text-indigo-600 hover:underline dark:text-indigo-400"
-                                >
-                                  {t('自动')}
-                                </button>
-                              )}
-                            </div>
-                          )}
                         </>
                       )}
 

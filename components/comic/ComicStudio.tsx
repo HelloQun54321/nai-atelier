@@ -30,7 +30,6 @@ import {
 import {
   getGuidePanelPolygon,
   renderComicZoneInfillTemplate,
-  renderComicZoneLayoutTemplate,
   resolveLayoutLockConfig,
 } from '../../services/comic/comicLayoutTemplateRenderer';
 import {
@@ -1599,7 +1598,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     const isOpus = opusTier >= 3;
     const exhausted = novelaiSubscription.info?.usage?.isNegative === true;
     const lockCfg = resolveLayoutLockConfig(draft);
-    const lockOp = lockCfg.mode === 'infill' ? 'inpaint' : 'image-to-image';
+    const lockOp = 'inpaint' as const;
     return aiZonePlan.zones.reduce((sum, zone) => {
       const compiled = buildAiPageZoneRequest(draft, zone, aiZonePlan.zones.length);
       if (lockCfg.enabled) {
@@ -1763,6 +1762,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
           y: gp.y,
           width: gp.width,
           height: gp.height,
+          ...(gp.points && gp.points.length >= 3 ? { points: gp.points } : {}),
         }))
         : undefined;
 
@@ -2069,7 +2069,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     let submitKey = readActiveApiKey();
     const firstZone = compiledZones[0];
     const firstCompiled = firstZone.compiled;
-    const lockOp = lockCfg.mode === 'infill' ? 'inpaint' : 'image-to-image';
+    const lockOp = 'inpaint' as const;
     const opusBaseCost = lockCfg.enabled
       ? estimateImageEditCost(
         firstCompiled.params,
@@ -2153,11 +2153,9 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         setGeneratingAiZoneIndex(zone.zoneIndex);
         setAiGenerationStageText(aiZonePlan.zones.length === 2
           ? t('区 {0}/2 · {1} 生成中…', [zone.zoneIndex + 1, zone.label])
-          : lockCfg.mode === 'infill'
+          : lockCfg.enabled
             ? t('精准锁框整页生成中…')
-            : lockCfg.enabled
-              ? t('硬锁分镜整页生成中…')
-              : t('整页生成中…'));
+            : t('自由构图整页生成中…'));
 
         const historyMeta = {
           basePrompt: draft.globalBasePrompt,
@@ -2170,7 +2168,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         };
 
         let descriptor;
-        if (lockCfg.enabled && lockCfg.mode === 'infill') {
+        if (lockCfg.enabled) {
           const infillTpl = await renderComicZoneInfillTemplate(draft, zone, { seed: sharedSeed ?? 1337 });
           descriptor = await buildGenerationJobDescriptor({
             operation: 'inpaint',
@@ -2192,11 +2190,8 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             history: historyMeta,
           }, infillTpl.preparedEdit);
         } else {
-          const layoutTemplate = lockCfg.enabled
-            ? renderComicZoneLayoutTemplate(draft, zone, { seed: sharedSeed ?? 1337 })
-            : null;
           descriptor = await buildGenerationJobDescriptor({
-            operation: layoutTemplate ? 'image-to-image' : 'text-to-image',
+            operation: 'text-to-image',
             prompt: compiled.prompt,
             negative: compiled.negative,
             params: compiled.params,
@@ -2205,15 +2200,6 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
             forceEmptySeed: sharedSeed !== undefined ? false : forceEmptySeed,
             apiKey: submitKey,
             estimatedCost: zoneCost,
-            ...(layoutTemplate
-              ? {
-                edit: {
-                  image: layoutTemplate.dataUrl,
-                  strength: lockCfg.strength,
-                  noise: lockCfg.noise,
-                },
-              }
-              : {}),
             history: historyMeta,
           });
         }
@@ -3045,10 +3031,9 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       ...created.aiPage,
       castCharacterIds: [...(refPage.aiPage.castCharacterIds || [])],
       gutterStyle: refPage.aiPage.gutterStyle || 'white',
-      layoutLockMode: refPage.aiPage.layoutLockMode || 'infill',
+      layoutLockMode: refPage.aiPage.layoutLockMode === 'txt2img' ? 'txt2img' : 'infill',
       autoTrimFrames: refPage.aiPage.autoTrimFrames !== false,
       carveBubbleHoles: refPage.aiPage.carveBubbleHoles ?? true,
-      ...(refPage.aiPage.layoutLockStrength !== undefined ? { layoutLockStrength: refPage.aiPage.layoutLockStrength } : {}),
       ...(refPage.aiPage.sceneAtmosphere ? { sceneAtmosphere: refPage.aiPage.sceneAtmosphere } : {}),
     };
     let updated: ComicBook | undefined;

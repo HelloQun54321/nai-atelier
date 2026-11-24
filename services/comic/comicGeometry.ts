@@ -149,7 +149,7 @@ export const createInitialComicDraft = (templateId = 'classic-4-121'): ComicPage
     backgroundColor: '#ffffff',
     gutterPx,
     creationMode: 'manual',
-    dialogueMode: 'empty-bubble',
+    dialogueMode: 'clean-vector',
     colorMode: 'color',
     v5Model: 'nai-diffusion-5-full',
     globalBasePrompt: '',

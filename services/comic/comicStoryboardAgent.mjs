@@ -14,8 +14,115 @@ const clamp = (value, min, max, fallback) => {
   return Math.round(Math.min(max, Math.max(min, n)) * 1000) / 1000;
 };
 
+const round3 = (n) => Math.round(n * 1000) / 1000;
+
 const VALID_KINDS = new Set(['character', 'scene', 'bubble', 'inset']);
 const VALID_SHAPES = new Set(['oval', 'shout', 'thought', 'caption']);
+
+const pointInPoly = (pt, poly) => {
+  if (!Array.isArray(poly) || poly.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x;
+    const yi = poly[i].y;
+    const xj = poly[j].x;
+    const yj = poly[j].y;
+    const intersect = (yi > pt.y) !== (yj > pt.y)
+      && pt.x < ((xj - xi) * (pt.y - yi)) / ((yj - yi) || 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
+
+const polygonCentroid = (poly) => {
+  if (!poly.length) return { x: 0.5, y: 0.5 };
+  let twiceArea = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const cross = a.x * b.y - b.x * a.y;
+    twiceArea += cross;
+    cx += (a.x + b.x) * cross;
+    cy += (a.y + b.y) * cross;
+  }
+  if (Math.abs(twiceArea) > 1e-7) {
+    return { x: cx / (3 * twiceArea), y: cy / (3 * twiceArea) };
+  }
+  const sum = poly.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+  return { x: sum.x / poly.length, y: sum.y / poly.length };
+};
+
+const closestPointOnSegment = (p, a, b) => {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const abLenSq = abx * abx + aby * aby;
+  const t = abLenSq > 1e-12
+    ? Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.y - a.y) * aby) / abLenSq))
+    : 0;
+  const x = a.x + abx * t;
+  const y = a.y + aby * t;
+  const dx = p.x - x;
+  const dy = p.y - y;
+  return { point: { x, y }, distSq: dx * dx + dy * dy };
+};
+
+/**
+ * 参考 @YILING0013/novelai_local_web 的锚点防越界逻辑：
+ * 若锚点落在格缝或斜切多边形外，先投影到最近引导格边，再向格内质心轻拉 ~3%，确保锚点始终停留在真实分镜内。
+ */
+const clampPointIntoGuidePanels = (rawX, rawY, panelPolys) => {
+  const numX = Number(rawX);
+  const numY = Number(rawY);
+  const rawPt = {
+    x: Number.isFinite(numX) ? numX : 0.5,
+    y: Number.isFinite(numY) ? numY : 0.5,
+  };
+  const clampedInitial = {
+    x: clamp(rawPt.x, 0.04, 0.96, 0.5),
+    y: clamp(rawPt.y, 0.04, 0.96, 0.5),
+  };
+  if (!panelPolys.length || panelPolys.some(poly => pointInPoly(clampedInitial, poly))) {
+    return clampedInitial;
+  }
+
+  let bestPoly = panelPolys[0];
+  let bestPt = rawPt;
+  let bestDistSq = Infinity;
+  for (const poly of panelPolys) {
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      const hit = closestPointOnSegment(rawPt, a, b);
+      if (hit.distSq < bestDistSq) {
+        bestDistSq = hit.distSq;
+        bestPt = hit.point;
+        bestPoly = poly;
+      }
+    }
+  }
+
+  const centroid = polygonCentroid(bestPoly);
+  const dx = centroid.x - bestPt.x;
+  const dy = centroid.y - bestPt.y;
+  const dist = Math.hypot(dx, dy);
+  const step = dist > 1e-6 ? Math.min(0.03, dist * 0.45) : 0;
+  let candidate = dist > 1e-6
+    ? { x: bestPt.x + (dx / dist) * step, y: bestPt.y + (dy / dist) * step }
+    : centroid;
+  if (!pointInPoly(candidate, bestPoly)) candidate = centroid;
+
+  const boxSafe = {
+    x: clamp(candidate.x, 0.04, 0.96, centroid.x),
+    y: clamp(candidate.y, 0.04, 0.96, centroid.y),
+  };
+  const finalPt = pointInPoly(boxSafe, bestPoly) ? boxSafe : candidate;
+  return {
+    x: round3(Math.min(0.98, Math.max(0.02, finalPt.x))),
+    y: round3(Math.min(0.98, Math.max(0.02, finalPt.y))),
+  };
+};
 
 export function buildComicStoryboardSystemPrompt() {
   return [
@@ -24,9 +131,9 @@ export function buildComicStoryboardSystemPrompt() {
     '',
     '必须遵守的 NovelAI V5 实测铁律：',
     '1. layoutHint（英文）只写极简分镜骨架壳（如 "4-panel manga page, 1-2-1 layout, crisp white gutters"），绝不剧透具体人物或剧情细节。',
-    '2. guidePanels 定义半透明构图引导区（归一化坐标 x, y, width, height ∈ [0.02, 0.96]），互不重叠且留有漫画白边间距；横版画幅推荐左右双列，竖版画幅推荐 1-2-1、L型、2x2 或上下节奏排列。如果用户在消息中提供了「当前画布参考格坐标」，则必须严格沿用这些格子的位置与大小（不要覆盖改动坐标），只补充每格的 summary（中文镜头剧情）与 visualNote（纯英文机位/景别/光影环境词，如 "wide shot, rainy school gate, cool twilight lighting"）。',
-    '3. anchors 定义整页所有空间锚点，每个锚点坐标 (x, y) 必须准确落在对应 guidePanel 内部：',
-    '   - kind="character"：人物锚点。同一角色在不同格出场必须拆成多个独立锚点！每个角色锚点的英文 prompt 必须包含：外貌服饰一致性特征 + 本格动作表情 + 本格景别机位（如 close-up / low angle）+ 本格背景光影环境。',
+    '2. guidePanels 定义半透明构图引导区（归一化坐标 x, y, width, height ∈ [0.02, 0.96]），互不重叠且留有漫画白边间距；横版画幅推荐左右双列，竖版画幅推荐 1-2-1、L型、2x2 或上下节奏排列。如果用户在消息中提供了「当前画布参考格坐标」，则必须严格沿用这些格子的位置与大小（不要覆盖改动坐标），只补充每格的 summary（中文镜头剧情）与 visualNote（纯英文机位/景别/光影环境词）。注意相邻格子主动切换景别与机位节奏（wide shot / medium shot / close-up / over-the-shoulder / from behind / profile / dutch angle / low angle / hand focus / eye focus），避免连续多格全用正面半身照。',
+    '3. anchors 定义整页所有空间锚点，每个锚点坐标 (x, y) 必须准确落在对应 guidePanel 内部（远离白边格缝）：',
+    '   - kind="character"：人物锚点。同一角色在不同格出场必须拆成多个独立锚点！每个角色锚点的英文 prompt 必须包含：外貌服饰一致性特征 + 本格动作表情 + 本格景别机位 + 本格背景光影环境。同一格内出现两名角色互动时，使用 NovelAI V5 双人互动语法标注动作归属：发起方写 source#<action>（如 source#pointing、source#holding hand），接收方写 target#<action>（如 target#surprised），双方对称动作写 mutual#<action>（如 mutual#hugging、mutual#eye contact）。',
     '   - kind="scene"：仅用于「完全无人的空镜/静物格」（可写 no humans），或在有人格中精准定位某件角落关键道具（如桌上蛋糕、宝箱；此时绝不能写 no humans！）。严禁在已有角色锚点的格子里另建 no humans 背景槽！',
     '   - kind="bubble"：仅在 dialogueMode 为 empty-bubble 或 ai-text 时生成；放置在说话人同格侧上方，指定 bubbleShape（oval / shout / thought / caption）与英文指向说明（如 tail pointing left），bubbleText 填中文/日文/英文短台词（ai-text 模式限 2~6 字）。若 dialogueMode 为 clean-vector，仍可在 guidePanel 留出气泡余白，但不要输出 kind="bubble" 锚点。',
     '   - kind="inset"：可选画中画特写叠框（眼眸/手部/物件特写）。',
@@ -89,10 +196,14 @@ export function buildComicStoryboardUserMessage(input = {}) {
   ];
   if (existingPanels.length > 0 && input.preserveExistingLayout !== false) {
     lines.push(
-      '当前画布参考格坐标（必须严格沿用以下各格的 x/y/width/height，并把每格锚点精准落在对应矩形内部）：',
-      ...existingPanels.map((p, idx) =>
-        `  格 ${idx + 1} (${String(p.label || `第 ${idx + 1} 格`)}): x=${Number(p.x).toFixed(3)}, y=${Number(p.y).toFixed(3)}, width=${Number(p.width).toFixed(3)}, height=${Number(p.height).toFixed(3)}`,
-      ),
+      '当前画布参考格坐标（必须严格沿用以下各格位置，并把每格锚点精准落在对应矩形/多边形内部）：',
+      ...existingPanels.map((p, idx) => {
+        const hasPoly = Array.isArray(p.points) && p.points.length >= 3;
+        const polyNote = hasPoly
+          ? ` [多边形格, 质心≈(${polygonCentroid(p.points).x.toFixed(2)}, ${polygonCentroid(p.points).y.toFixed(2)})]`
+          : '';
+        return `  格 ${idx + 1} (${String(p.label || `第 ${idx + 1} 格`)}): x=${Number(p.x).toFixed(3)}, y=${Number(p.y).toFixed(3)}, width=${Number(p.width).toFixed(3)}, height=${Number(p.height).toFixed(3)}${polyNote}`;
+      }),
     );
   }
   if (cast.length > 0) {
@@ -155,7 +266,26 @@ export function parseComicStoryboardResponse(rawText, options = {}) {
     throw new Error('AI 未返回任何有效分镜格，请补充更具体的剧情描述后重试');
   }
 
-  const dialogueMode = options.dialogueMode || 'empty-bubble';
+  const dialogueMode = options.dialogueMode || 'clean-vector';
+  const panelPolys = guidePanels.map((gp, idx) => {
+    const srcPts = lockedPanels && rawPanels.length === lockedPanels.length
+      ? lockedPanels[idx]?.points
+      : rawPanels[idx]?.points;
+    if (Array.isArray(srcPts) && srcPts.length >= 3) {
+      const cleanPts = srcPts
+        .map(pt => ({ x: Number(pt?.x), y: Number(pt?.y) }))
+        .filter(pt => Number.isFinite(pt.x) && Number.isFinite(pt.y))
+        .map(pt => ({ x: Math.min(1, Math.max(0, pt.x)), y: Math.min(1, Math.max(0, pt.y)) }));
+      if (cleanPts.length >= 3) return cleanPts;
+    }
+    return [
+      { x: gp.x, y: gp.y },
+      { x: gp.x + gp.width, y: gp.y },
+      { x: gp.x + gp.width, y: gp.y + gp.height },
+      { x: gp.x, y: gp.y + gp.height },
+    ];
+  });
+
   const rawAnchors = Array.isArray(parsed.anchors) ? parsed.anchors : [];
   const anchors = rawAnchors
     .slice(0, 40)
@@ -163,13 +293,14 @@ export function parseComicStoryboardResponse(rawText, options = {}) {
       const kind = VALID_KINDS.has(anchor?.kind) ? anchor.kind : 'character';
       if (dialogueMode === 'clean-vector' && kind === 'bubble') return null;
       const bubbleShape = VALID_SHAPES.has(anchor?.bubbleShape) ? anchor.bubbleShape : 'oval';
+      const clampedPos = clampPointIntoGuidePanels(anchor?.x, anchor?.y, panelPolys);
       return {
         kind,
         label: typeof anchor?.label === 'string' && anchor.label.trim() ? anchor.label.trim().slice(0, 40) : `锚点 ${idx + 1}`,
         prompt: typeof anchor?.prompt === 'string' ? anchor.prompt.trim() : '',
         negativePrompt: typeof anchor?.negativePrompt === 'string' ? anchor.negativePrompt.trim() : '',
-        x: clamp(anchor?.x, 0.04, 0.96, 0.5),
-        y: clamp(anchor?.y, 0.04, 0.96, 0.5),
+        x: clampedPos.x,
+        y: clampedPos.y,
         enabled: true,
         ...(kind === 'bubble' ? {
           bubbleShape,

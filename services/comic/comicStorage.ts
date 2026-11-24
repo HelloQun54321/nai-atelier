@@ -79,7 +79,7 @@ const normalizeAiPage = (raw: unknown, width: number, height: number, gutterPx: 
       ? raw.zoneImages as unknown as ComicAiPagePlan['zoneImages']
       : undefined,
     showGuideOverlay: raw.showGuideOverlay !== false,
-    layoutLockMode: raw.layoutLockMode === 'txt2img' ? 'txt2img' : raw.layoutLockMode === 'img2img' ? 'img2img' : 'infill',
+    layoutLockMode: raw.layoutLockMode === 'txt2img' ? 'txt2img' : 'infill',
     autoTrimFrames: raw.autoTrimFrames !== false,
     ...(layoutLockStrength !== undefined ? { layoutLockStrength } : {}),
     gutterStyle: raw.gutterStyle === 'black-flashback' ? 'black-flashback' : 'white',

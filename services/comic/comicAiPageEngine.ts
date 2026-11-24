@@ -372,6 +372,40 @@ const extractEnglishVisualCue = (panel: ComicAiGuidePanel): string => {
   return '';
 };
 
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * 为「自由构图」模式生成单格在页面中的空间分区英文提示（参考 @YILING0013/novelai_local_web，AGPL-3.0）。
+ */
+const describePanelSpatialZone = (panel: ComicAiGuidePanel): string => {
+  const pts = panel.points && panel.points.length >= 3 ? panel.points : null;
+  const cx = pts
+    ? pts.reduce((sum, pt) => sum + pt.x, 0) / pts.length
+    : panel.x + panel.width / 2;
+  const cy = pts
+    ? pts.reduce((sum, pt) => sum + pt.y, 0) / pts.length
+    : panel.y + panel.height / 2;
+  const vBand = cy < 0.34 ? 'upper' : cy > 0.66 ? 'lower' : 'middle';
+  const hBand = cx < 0.34 ? 'left' : cx > 0.66 ? 'right' : 'center';
+  if (panel.inset) return `overlapping inset panel in ${vBand} ${hBand} area`;
+  if (panel.width >= 0.72) return `${vBand} wide panel`;
+  return `${vBand} ${hBand} area`;
+};
+
+/**
+ * 启用 ai-text 时清理画面描述里重复引号台词，避免与末尾 `Text:` 冲突或被画进背景。
+ */
+const stripDuplicateBubbleDialogue = (prompt: string, bubbleText?: string): string => {
+  const literal = (bubbleText || '').trim();
+  if (!literal || !prompt.trim()) return prompt.trim();
+  const escaped = escapeRegExp(literal);
+  const dupPattern = new RegExp(
+    `(?:\\b(?:saying|speaking|shouting|whispering|thinking)\\b\\s*)?(?:["'「『]${escaped}["'」』])`,
+    'gi',
+  );
+  return cleanCommaList(prompt.replace(dupPattern, ''));
+};
+
 /**
  * 为 AI 整页的某一个生成区（单区整页或双区之一）编译 V5 请求。
  * 严格遵循：
@@ -442,6 +476,10 @@ export const buildAiPageZoneRequest = (
   const capped = kept.slice(0, COMIC_ANCHOR_HARD_LIMIT);
 
   const isInfillLock = layoutLock.enabled && layoutLock.mode === 'infill';
+  const isFreeTxt2Img = layoutLock.mode === 'txt2img';
+  const panelNumberById = new Map<string, number>();
+  localPanels.forEach((lp, idx) => panelNumberById.set(lp.id, idx + 1));
+
   const hasLockedBubbleShapes = isInfillLock
     && page.dialogueMode !== 'ai-text'
     && page.aiPage.carveBubbleHoles !== false
@@ -464,6 +502,25 @@ export const buildAiPageZoneRequest = (
   const quality = resolveComicQualityPreset(page.qualityPresetId, page.dialogueMode);
 
   const framingTags: string[] = [layoutShell];
+  if (isFreeTxt2Img) {
+    // 自由构图无物理掩码锁框：借鉴 @YILING0013/novelai_local_web 软分镜语法，在总词按序声明各格空间分区
+    if (localPanels.length > 1 && !/\bmultiple\s+views\b/i.test(`${page.globalBasePrompt}, ${layoutShell}`)) {
+      framingTags.push('comic, multiple views');
+    }
+    if (localPanels.some(p => Boolean(p.inset))) {
+      framingTags.push('1.4::overlapping panels::');
+    }
+    if (localPanels.length > 1 || localPanels.some(lp => Boolean(panelVisualCueById.get(lp.id)))) {
+      localPanels.forEach((lp, idx) => {
+        const zoneDesc = describePanelSpatialZone(lp);
+        const cue = panelVisualCueById.get(lp.id) || '';
+        framingTags.push(cue ? `Panel ${idx + 1} (${zoneDesc}): ${cue}` : `Panel ${idx + 1} (${zoneDesc})`);
+      });
+    }
+    if (sceneAtmosphere) {
+      framingTags.push(sceneAtmosphere);
+    }
+  }
   if (isFlashback) framingTags.push('black background page, dark flashback framing');
   if (monochrome) framingTags.push('monochrome, greyscale, manga, screentone, crisp black ink lineart');
   if (page.dialogueMode === 'clean-vector' || hasLockedBubbleShapes) {
@@ -516,6 +573,11 @@ export const buildAiPageZoneRequest = (
         ? BREAKOUT_PROMPT_TAGS
         : '';
 
+      const panelNum = pid ? panelNumberById.get(pid) : undefined;
+      const panelPrefix = isFreeTxt2Img && panelNum !== undefined && !/\bpanel\s+\d+\b/i.test(anchor.prompt)
+        ? `panel ${panelNum}`
+        : '';
+
       const baseNeg = anchor.negativePrompt.trim();
       let compiledPrompt = '';
       let compiledNeg = monochrome ? cleanCommaList([baseNeg, MONOCHROME_NEGATIVE_TAGS].filter(Boolean).join(', ')) : baseNeg;
@@ -523,7 +585,8 @@ export const buildAiPageZoneRequest = (
       if (anchor.kind === 'bubble') {
         const shape = bubbleShapeTags(anchor.bubbleShape);
         if (page.dialogueMode === 'ai-text' && anchor.bubbleText?.trim()) {
-          compiledPrompt = assembleV5TextSafePrompt([shape, anchor.prompt], {
+          const cleanedBubblePrompt = stripDuplicateBubbleDialogue(anchor.prompt, anchor.bubbleText);
+          compiledPrompt = assembleV5TextSafePrompt([shape, cleanedBubblePrompt], {
             monochrome,
             explicitText: anchor.bubbleText.trim(),
           });
@@ -537,12 +600,12 @@ export const buildAiPageZoneRequest = (
         }
       } else if (anchor.kind === 'inset') {
         compiledPrompt = assembleV5TextSafePrompt(
-          ['inset panel, white bordered close-up box, picture-in-picture', anchor.prompt, breakoutNote],
+          [panelPrefix, 'inset panel, white bordered close-up box, picture-in-picture', anchor.prompt, breakoutNote],
           { monochrome },
         );
       } else {
         compiledPrompt = assembleV5TextSafePrompt(
-          [anchor.prompt, panelCue, atmosphereNote, mergedNote, breakoutNote],
+          [panelPrefix, anchor.prompt, panelCue, atmosphereNote, mergedNote, breakoutNote],
           { monochrome },
         );
       }
@@ -567,7 +630,11 @@ export const buildAiPageZoneRequest = (
     const cue = panelVisualCueById.get(lp.id);
     if (!cue) continue;
     const extraAtmosphere = sceneAtmosphere && !EXPLICIT_BACKGROUND_REGEX.test(cue) ? sceneAtmosphere : '';
-    const compiledCue = assembleV5TextSafePrompt([cue, extraAtmosphere], { monochrome });
+    const panelNum = panelNumberById.get(lp.id);
+    const panelPrefix = isFreeTxt2Img && panelNum !== undefined && !/\bpanel\s+\d+\b/i.test(cue)
+      ? `panel ${panelNum}`
+      : '';
+    const compiledCue = assembleV5TextSafePrompt([panelPrefix, cue, extraAtmosphere], { monochrome });
     if (!compiledCue) continue;
     characters.push({
       id: `guide-cue-${lp.id}`,

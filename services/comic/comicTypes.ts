@@ -254,7 +254,7 @@ export interface ComicPaperPreset {
 
 export type ComicAiZoneSplitMode = 'auto' | 'single' | 'dual-vertical' | 'dual-horizontal';
 
-export type ComicAiLayoutLockMode = 'infill' | 'img2img' | 'txt2img';
+export type ComicAiLayoutLockMode = 'infill' | 'txt2img';
 export type ComicAiGutterStyle = 'white' | 'black-flashback';
 
 export interface ComicBreakoutZone {
@@ -318,11 +318,11 @@ export interface ComicAiPagePlan {
   /** 双区模式下分别保留区 1 / 区 2 已生成成图，支持单区重画与中途断点保留。 */
   zoneImages?: Partial<Record<'0' | '1', ComicAiGeneratedPageImage>>;
   showGuideOverlay: boolean;
-  /** 版式锁定策略：默认 infill 精准局部重绘锁框；可切回 img2img 图生图参考或 txt2img 自由文生图。 */
+  /** 版式锁定策略：默认 infill 精准局部重绘锁框，可切至 txt2img 自由构图（旧版 img2img 自动迁移为 infill）。 */
   layoutLockMode?: ComicAiLayoutLockMode;
   /** 精准锁框出图后自动用平滑矢量格缝与框线切齐外扩辅助边，默认开启。 */
   autoTrimFrames?: boolean;
-  /** 图生图锁框重绘强度（缺省自动按全彩 0.85 / 黑白 0.82 / 含破格 0.86 取甜点值）。 */
+  /** @deprecated 旧版图生图锁框强度字段，仅保留类型兼容，不再参与生图。 */
   layoutLockStrength?: number;
   /** 格缝风格：白底常规 或 黑底回忆杀。 */
   gutterStyle?: ComicAiGutterStyle;

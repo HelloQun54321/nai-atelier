@@ -142,60 +142,28 @@ export const sortGuidePanelsByPriority = (panels: ComicAiGuidePanel[]): ComicAiG
   });
 
 /**
- * 解析当前页面锁框参数：
+ * 解析当前页面锁框参数（旧草稿 `'img2img'` 自动平滑迁入 `'infill'`）：
  * - `'infill'`（默认精准锁框，Variant C+）：单格全页 `0.95 / noise 0.02` 防水平腰斩，多格 `1.00 / noise 0`，关闭服务端原图回贴；
- * - `'img2img'`（旧版参考融合）：保留破格 `0.86`、大斜切 `0.80`、黑白 `0.82/0.04`、全彩 `0.85/0.05`；
- * - `'txt2img'`（自由文生图）：禁用锁框底图与掩码。
+ * - `'txt2img'`（自由构图）：禁用锁框底图与掩码，交由纯文生图自由分镜构图。
  */
 export const resolveLayoutLockConfig = (page: ComicPageDraft): ResolvedLayoutLockConfig => {
   const aiPage = page.aiPage;
-  const mode: ComicAiLayoutLockMode = aiPage.layoutLockMode === 'txt2img'
-    ? 'txt2img'
-    : aiPage.layoutLockMode === 'img2img'
-      ? 'img2img'
-      : 'infill';
+  const mode: ComicAiLayoutLockMode = aiPage.layoutLockMode === 'txt2img' ? 'txt2img' : 'infill';
   const enabled = mode !== 'txt2img' && aiPage.guidePanels.length > 0;
   const autoTrimFrames = aiPage.autoTrimFrames !== false;
   const gutterStyle: ComicAiGutterStyle = aiPage.gutterStyle === 'black-flashback' ? 'black-flashback' : 'white';
 
-  if (mode !== 'img2img') {
-    const regularCount = aiPage.guidePanels.filter(g => !g.inset).length;
-    const hasInset = aiPage.guidePanels.some(g => Boolean(g.inset));
-    const isSingleSplash = regularCount === 1 && !hasInset && (aiPage.breakoutZones?.length ?? 0) === 0;
-    return {
-      mode,
-      enabled,
-      autoTrimFrames,
-      strength: isSingleSplash ? 0.95 : 1.0,
-      noise: isSingleSplash ? 0.02 : 0,
-      colorCorrect: false,
-      addOriginalImage: false,
-      gutterStyle,
-    };
-  }
-
-  const hasBreakout = (aiPage.breakoutZones?.length ?? 0) > 0;
-  const isMono = page.colorMode === 'monochrome';
-  const defaultStrength = hasBreakout
-    ? LAYOUT_LOCK_DEFAULTS.strengthBreakout
-    : hasSteepDiagonalPanels(aiPage.guidePanels)
-      ? LAYOUT_LOCK_DEFAULTS.strengthDiagonal
-      : isMono
-        ? LAYOUT_LOCK_DEFAULTS.strengthMonochrome
-        : LAYOUT_LOCK_DEFAULTS.strengthColor;
-  const rawStrength = aiPage.layoutLockStrength;
-  const strength = typeof rawStrength === 'number' && Number.isFinite(rawStrength)
-    ? Math.round(Math.min(0.94, Math.max(0.72, rawStrength)) * 100) / 100
-    : defaultStrength;
-  const noise = isMono ? LAYOUT_LOCK_DEFAULTS.noiseMonochrome : LAYOUT_LOCK_DEFAULTS.noiseColor;
+  const regularCount = aiPage.guidePanels.filter(g => !g.inset).length;
+  const hasInset = aiPage.guidePanels.some(g => Boolean(g.inset));
+  const isSingleSplash = regularCount === 1 && !hasInset && (aiPage.breakoutZones?.length ?? 0) === 0;
   return {
     mode,
     enabled,
     autoTrimFrames,
-    strength,
-    noise,
+    strength: isSingleSplash ? 0.95 : 1.0,
+    noise: isSingleSplash ? 0.02 : 0,
     colorCorrect: false,
-    addOriginalImage: true,
+    addOriginalImage: false,
     gutterStyle,
   };
 };
@@ -862,7 +830,7 @@ export interface InfillMaskGeometryParams {
 /**
  * 按当前画布缩放后的实际格缝宽度，自适应选择安全的 Variant C+ 几何参数：
  * - 极窄格缝 (<20px，如工坊默认 14px 或 12px 少女漫细缝)：不向格缝外扩掩码、提高块覆盖门槛，确保相邻格在 1/8 空间绝不粘连；
- * - 宽格缝 (>=20px)：启用标准 +8px 护城河 +2px 扩边与 0.30 覆盖阈值。
+ * - 宽格缝 (>=20px)：启用 +8px 护城河、+3px 斜边掩码外扩、0.28 块覆盖门槛与 8px 矢量切齐框线，消除斜切边缘白齿。
  */
 export const resolveInfillMaskGeometryParams = (effectiveGutterPx: number): InfillMaskGeometryParams => {
   if (effectiveGutterPx < 20) {
@@ -870,14 +838,14 @@ export const resolveInfillMaskGeometryParams = (effectiveGutterPx: number): Infi
       guideOutPx: Math.min(8, Math.max(5, Math.ceil(effectiveGutterPx / 2) + 1)),
       maskExpandPx: 0,
       covThreshold: 0.42,
-      borderWidth: effectiveGutterPx <= 13 ? 3 : 5,
+      borderWidth: effectiveGutterPx <= 13 ? 4 : 6,
     };
   }
   return {
     guideOutPx: 8,
-    maskExpandPx: 2,
-    covThreshold: 0.3,
-    borderWidth: 6,
+    maskExpandPx: 3,
+    covThreshold: 0.28,
+    borderWidth: 8,
   };
 };
 
@@ -1211,7 +1179,7 @@ export const renderComicZoneInfillTemplate = async (
   };
   const regPolys = regularGuides.map(gp => ({ gp, pts: inZonePoly(gp) })).filter((x): x is { gp: ComicAiGuidePanel; pts: Array<{ x: number; y: number }> } => x.pts !== null);
   const insetPolys = insetGuides.map(gp => ({ gp, pts: inZonePoly(gp) })).filter((x): x is { gp: ComicAiGuidePanel; pts: Array<{ x: number; y: number }> } => x.pts !== null);
-  const insetHaloPx = 16;
+  const insetHaloPx = effectiveGutterPx >= 20 ? 20 : 16;
 
   // 1. 生成 Variant C+ 底图
   const baseCanvas = createScratchCanvas(width, height);
@@ -1432,7 +1400,7 @@ export const renderComicZoneInfillTemplate = async (
     // trimOriginalCanvas：纯净格缝底 + 锐利矢量边框 + 顶层悬浮框光环 + 顶层气泡
     toCtx.fillStyle = gutterColor;
     toCtx.fillRect(0, 0, width, height);
-    const regTrimBorderW = isFlashback ? 4 : maskParams.borderWidth;
+    const regTrimBorderW = isFlashback ? Math.max(4, maskParams.borderWidth - 2) : maskParams.borderWidth;
     if (isFlashback) {
       const fbRim = createScratchCanvas(width, height);
       const frCtx = fbRim.getContext('2d');

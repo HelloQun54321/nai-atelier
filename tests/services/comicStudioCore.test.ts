@@ -83,7 +83,10 @@ import {
   buildComicInpaintRequest,
   createRectInpaintMaskDataUrl,
 } from '../../services/comic/comicInpaintEngine';
-import { parseComicStoryboardResponse } from '../../services/comic/comicStoryboardAgent.mjs';
+import {
+  buildComicStoryboardSystemPrompt,
+  parseComicStoryboardResponse,
+} from '../../services/comic/comicStoryboardAgent.mjs';
 import { loadComicDraft, normalizeComicDraft, saveComicDraft } from '../../services/comic/comicStorage';
 import {
   appendStrokeToDrawingLayer,
@@ -97,7 +100,7 @@ import {
   resolveEffectiveLayerProps,
   syncComicLayerStack,
 } from '../../services/comic/comicLayers';
-import type { ComicAnchor, ComicStroke } from '../../services/comic/comicTypes';
+import type { ComicAiLayoutLockMode, ComicAnchor, ComicStroke } from '../../services/comic/comicTypes';
 
 describe('comicGeometry & free Opus resolution matching', () => {
   it('matches Opus-free 64-aligned resolutions for portrait, landscape, square, and extreme strip panels', () => {
@@ -858,7 +861,7 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     expect(ops.some(o => o.op === 'stroke' && o.style === LAYOUT_LOCK_COLORS.breakoutBorderColor && o.width === LAYOUT_LOCK_DEFAULTS.breakoutBorderWidth * 2)).toBe(true);
   });
 
-  it('enforces V5 Text: tail-only syntax, dual-zone shared sceneAtmosphere/seed, breakout tags, and img2img sweet-spot defaults', () => {
+  it('enforces V5 Text: tail-only syntax, dual-zone shared sceneAtmosphere/seed, breakout tags, and two-mode lock defaults', () => {
     // V5 Text: 永远在末尾，黑白模式绝不出现 `Text: BAM!, monochrome`
     const sfxCompiled = assembleV5TextSafePrompt(
       ['dynamic impact, red sparks, Text: BAM!', 'monochrome, greyscale'],
@@ -869,11 +872,12 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     expect(sfxCompiled).toContain('monochrome');
 
     const draft = createInitialComicDraft('classic-4-121');
+    expect(draft.dialogueMode).toBe('clean-vector');
     draft.creationMode = 'ai-page';
     draft.colorMode = 'monochrome';
     draft.dialogueMode = 'ai-text';
     draft.aiPage.splitMode = 'dual-vertical';
-    draft.aiPage.layoutLockMode = 'img2img';
+    draft.aiPage.layoutLockMode = 'infill';
     draft.aiPage.sceneAtmosphere = 'warm afternoon library sunlight';
     draft.aiPage.breakoutZones = [
       { id: 'bz-hero', label: '破格剑士', x: 0.2, y: 0.52, width: 0.5, height: 0.42, anchorId: 'c-bottom' },
@@ -890,17 +894,17 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     const req0 = buildAiPageZoneRequest(draft, plan.zones[0], 2, { sharedSeed: 987654 });
     const req1 = buildAiPageZoneRequest(draft, plan.zones[1], 2, { sharedSeed: 987654 });
 
-    // 双区共享同一 Seed 与硬锁 img2img 参数（含破格块默认 0.86，黑白 noise 0.04）
+    // 双区共享同一 Seed 与精准锁框 infill 参数
     expect(req0.params.seed).toBe(987654);
     expect(req1.params.seed).toBe(987654);
     expect(req0.layoutLock).toEqual({
-      mode: 'img2img',
+      mode: 'infill',
       enabled: true,
       autoTrimFrames: true,
-      strength: 0.86,
-      noise: 0.04,
+      strength: 1.0,
+      noise: 0,
       colorCorrect: false,
-      addOriginalImage: true,
+      addOriginalImage: false,
       gutterStyle: 'white',
     });
     // V5 能力边界：不强行拼接 vibes 或 characterReferences
@@ -917,7 +921,7 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     expect(bubbleCaption.endsWith('Text: BAM!')).toBe(true);
     expect(bubbleCaption).not.toMatch(/Text:.*,/);
 
-    // 验证默认 infill 精准锁框及单大格 0.95 / img2img 甜点切换
+    // 验证默认 infill 精准锁框、单大格 0.95、旧版 img2img 平滑迁入 infill 以及 txt2img 自由构图关闭锁框
     const defaultDraft = createInitialComicDraft('classic-4-121');
     expect(resolveLayoutLockConfig(defaultDraft)).toMatchObject({
       mode: 'infill',
@@ -936,14 +940,23 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
       noise: 0.02,
       addOriginalImage: false,
     });
-    const colorDraft = createInitialComicDraft('classic-4-121');
-    colorDraft.aiPage.layoutLockMode = 'img2img';
-    expect(resolveLayoutLockConfig(colorDraft)).toMatchObject({ mode: 'img2img', enabled: true, strength: 0.85, noise: 0.05, colorCorrect: false, addOriginalImage: true });
-    colorDraft.colorMode = 'monochrome';
-    expect(resolveLayoutLockConfig(colorDraft)).toMatchObject({ mode: 'img2img', enabled: true, strength: 0.82, noise: 0.04 });
+    const legacyDraft = createInitialComicDraft('classic-4-121');
+    legacyDraft.aiPage.layoutLockMode = 'img2img' as unknown as ComicAiLayoutLockMode;
+    expect(resolveLayoutLockConfig(legacyDraft)).toMatchObject({
+      mode: 'infill',
+      enabled: true,
+      strength: 1.0,
+      noise: 0,
+      addOriginalImage: false,
+    });
+    legacyDraft.aiPage.layoutLockMode = 'txt2img';
+    expect(resolveLayoutLockConfig(legacyDraft)).toMatchObject({
+      mode: 'txt2img',
+      enabled: false,
+    });
   });
 
-  it('migrates legacy drafts without points or layoutLockMode backward-compatibly in comicStorage', () => {
+  it('migrates legacy drafts without points or with img2img layoutLockMode backward-compatibly in comicStorage', () => {
     const legacyRaw = {
       version: 1,
       id: 'legacy-page-1',
@@ -968,7 +981,7 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     const migrated = normalizeComicDraft(legacyRaw);
     expect(migrated.aiPage.layoutLockMode).toBe('infill');
     expect(migrated.aiPage.autoTrimFrames).toBe(true);
-    expect(normalizeComicDraft({ ...legacyRaw, aiPage: { ...legacyRaw.aiPage, layoutLockMode: 'img2img' } }).aiPage.layoutLockMode).toBe('img2img');
+    expect(normalizeComicDraft({ ...legacyRaw, aiPage: { ...legacyRaw.aiPage, layoutLockMode: 'img2img' } }).aiPage.layoutLockMode).toBe('infill');
     expect(normalizeComicDraft({ ...legacyRaw, aiPage: { ...legacyRaw.aiPage, layoutLockMode: 'txt2img' } }).aiPage.layoutLockMode).toBe('txt2img');
     expect(migrated.aiPage.gutterStyle).toBe('white');
     expect(migrated.aiPage.breakoutZones).toEqual([]);
@@ -1145,7 +1158,7 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     ]);
     expect(fillStylesUsed).toContain(LAYOUT_LOCK_COLORS.breakoutFillWhite);
 
-    // 3. 大角度交叉三角模板：img2img 模式自动压低至 0.80 锁框强度 + infill 默认 1.0 + 不发 `3-1 panel arrangement`
+    // 3. 大角度交叉三角模板：infill 保持 1.0 强度且不发 `3-1 panel arrangement`
     const triDraft = createInitialComicDraft('triangle-impact');
     triDraft.creationMode = 'ai-page';
     triDraft.colorMode = 'monochrome';
@@ -1154,8 +1167,6 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
     expect(hasSteepDiagonalPanels(triDraft.aiPage.guidePanels)).toBe(true);
     expect(hasAnySlantedEdge(triDraft.aiPage.guidePanels)).toBe(true);
     expect(resolveLayoutLockConfig(triDraft).strength).toBe(1.0);
-    triDraft.aiPage.layoutLockMode = 'img2img';
-    expect(resolveLayoutLockConfig(triDraft).strength).toBe(LAYOUT_LOCK_DEFAULTS.strengthDiagonal);
 
     const triPlan = planComicAiZones(triDraft);
     const triReq = buildAiPageZoneRequest(triDraft, triPlan.zones[0], 1);
@@ -1207,8 +1218,18 @@ describe('V5 img2img hard-lock layout template renderer & AI page upgrades', () 
       }
     }
     const narrowParams = resolveInfillMaskGeometryParams(14);
-    expect(narrowParams.maskExpandPx).toBe(0);
-    expect(narrowParams.covThreshold).toBeGreaterThanOrEqual(0.4);
+    expect(narrowParams).toEqual({
+      guideOutPx: 8,
+      maskExpandPx: 0,
+      covThreshold: 0.42,
+      borderWidth: 6,
+    });
+    expect(resolveInfillMaskGeometryParams(24)).toEqual({
+      guideOutPx: 8,
+      maskExpandPx: 3,
+      covThreshold: 0.28,
+      borderWidth: 8,
+    });
 
     const { maskBinary, maskRgba } = quantizeCoverageBlockMaskRgba(src, w, h, narrowParams.covThreshold);
     // 绝不允许出现灰阶像素或半透明像素
@@ -1468,5 +1489,110 @@ describe('comicSnapping geometry, polyline slicing, smart snapping, and spread s
     const rightPanels = buildTemplatePanelsForScope('classic-4-121', 1216, 832, 16, 'right');
     expect(leftPanels.every(p => p.points.every(pt => pt.x < 0.5))).toBe(true);
     expect(rightPanels.every(p => p.points.every(pt => pt.x > 0.5))).toBe(true);
+  });
+
+  it('compiles soft-panel txt2img prompts separately from spoiler-free infill and clamps storyboard anchors inside polygons', () => {
+    const draft = createInitialComicDraft('inset-overlay');
+    draft.creationMode = 'ai-page';
+    draft.dialogueMode = 'ai-text';
+    draft.aiPage.splitMode = 'single';
+    draft.aiPage.sceneAtmosphere = 'golden sunset glow';
+    draft.aiPage.guidePanels = createGuidePanelsFromTemplate('inset-overlay', 832, 1216, 24);
+    draft.aiPage.guidePanels[0].visualNote = 'wide shot, school rooftop, wind';
+    draft.aiPage.guidePanels[1].visualNote = 'close-up, surprised eyes';
+    draft.aiPage.anchors = [
+      {
+        id: 'c1',
+        kind: 'character',
+        label: '主角',
+        prompt: '1boy, source#pointing, rooftop',
+        negativePrompt: '',
+        x: 0.25,
+        y: 0.45,
+        enabled: true,
+      },
+      {
+        id: 'c2',
+        kind: 'character',
+        label: '女主',
+        prompt: '1girl, target#surprised, hair blowing',
+        negativePrompt: '',
+        x: 0.74,
+        y: 0.20,
+        enabled: true,
+      },
+      {
+        id: 'b1',
+        kind: 'bubble',
+        label: '台词',
+        prompt: 'tail pointing left, saying "Wait!"',
+        negativePrompt: '',
+        x: 0.55,
+        y: 0.14,
+        enabled: true,
+        bubbleShape: 'oval',
+        bubbleText: 'Wait!',
+      },
+    ];
+
+    // 1. 精准锁框 infill 保持总词无剧透、角色锚点不加冗余 `panel N` 前缀
+    draft.aiPage.layoutLockMode = 'infill';
+    const infillZone = planComicAiZones(draft).zones[0];
+    const infillReq = buildAiPageZoneRequest(draft, infillZone, 1);
+    expect(infillReq.prompt).not.toContain('Panel 1 (');
+    expect(infillReq.params.characters?.find(c => c.id === 'c1')?.prompt).not.toMatch(/^panel 1\b/i);
+
+    // 2. 自由构图 txt2img 启用软分镜语法：总词带 `comic, multiple views`、`1.4::overlapping panels::` 与有序 `Panel N (...)`，角色槽带 `panel N` 与双人互动词，ai-text 剥离重复台词并保 `Text:` 末尾
+    draft.aiPage.layoutLockMode = 'txt2img';
+    const freeZone = planComicAiZones(draft).zones[0];
+    const freeReq = buildAiPageZoneRequest(draft, freeZone, 1);
+    expect(freeReq.layoutLock).toMatchObject({ mode: 'txt2img', enabled: false });
+    expect(freeReq.prompt).toContain('comic, multiple views');
+    expect(freeReq.prompt).toContain('1.4::overlapping panels::');
+    expect(freeReq.prompt).toContain('Panel 1 (');
+    expect(freeReq.prompt).toContain('Panel 2 (overlapping inset panel in upper right area): close-up, surprised eyes');
+    expect(freeReq.prompt).toContain('golden sunset glow');
+
+    const freeC1 = freeReq.params.characters?.find(c => c.id === 'c1')?.prompt || '';
+    const freeC2 = freeReq.params.characters?.find(c => c.id === 'c2')?.prompt || '';
+    const freeB1 = freeReq.params.characters?.find(c => c.id === 'b1')?.prompt || '';
+    expect(freeC1.startsWith('panel 1,')).toBe(true);
+    expect(freeC1).toContain('source#pointing');
+    expect(freeC2.startsWith('panel 2,')).toBe(true);
+    expect(freeC2).toContain('target#surprised');
+    expect(freeB1.endsWith('Text: Wait!')).toBe(true);
+    expect(freeB1.toLowerCase()).not.toContain('"wait!"');
+
+    // 3. 分镜编排提示词规范 & 锚点防越界：白边/斜切三角形外部的越界锚点被拉回多边形内
+    const sysPrompt = buildComicStoryboardSystemPrompt();
+    expect(sysPrompt).toContain('source#<action>');
+    expect(sysPrompt).toContain('target#<action>');
+    expect(sysPrompt).toContain('mutual#<action>');
+    expect(sysPrompt).toContain('dutch angle');
+
+    const trianglePoly = [
+      { x: 0.04, y: 0.04 },
+      { x: 0.96, y: 0.04 },
+      { x: 0.04, y: 0.88 },
+    ];
+    const parsedOutOfBounds = parseComicStoryboardResponse(JSON.stringify({
+      title: '斜切钳位',
+      layoutHint: '1-panel diagonal manga page',
+      guidePanels: [
+        { label: '第 1 格', summary: '三角冲击格', visualNote: 'dutch angle', x: 0.04, y: 0.04, width: 0.92, height: 0.84 },
+      ],
+      anchors: [
+        { kind: 'character', label: '右下越界角色', prompt: '1girl, jumping', x: 0.86, y: 0.82 },
+      ],
+    }), {
+      dialogueMode: 'clean-vector',
+      preserveExistingLayout: true,
+      existingGuidePanels: [
+        { label: '第 1 格', x: 0.04, y: 0.04, width: 0.92, height: 0.84, points: trianglePoly },
+      ],
+    });
+    expect(parsedOutOfBounds.anchors).toHaveLength(1);
+    const clampedAnchor = parsedOutOfBounds.anchors[0];
+    expect(isPointStrictlyInsidePolygonPx(trianglePoly.map(p => ({ x: p.x * 1000, y: p.y * 1000 })), { x: clampedAnchor.x * 1000, y: clampedAnchor.y * 1000 })).toBe(true);
   });
 });

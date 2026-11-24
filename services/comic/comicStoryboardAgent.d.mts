@@ -17,6 +17,7 @@ export interface ComicStoryboardInput {
     y: number;
     width: number;
     height: number;
+    points?: Array<{ x: number; y: number }>;
   }>;
   preserveExistingLayout?: boolean;
 }
