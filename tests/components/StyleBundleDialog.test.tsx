@@ -8,10 +8,10 @@ import { setLanguage, t } from '../../services/i18n';
 import { setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { getNaiModelDisplayLabel } from '../../services/naiModels';
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), entryPreview: vi.fn(), export: vi.fn(), import: vi.fn(), download: vi.fn(), target: vi.fn(), openDirectory: vi.fn(), getAllChains: vi.fn(), get: vi.fn(), put: vi.fn() }));
+const mocks = vi.hoisted(() => ({ read: vi.fn(), entryPreview: vi.fn(), loadCover: vi.fn(), export: vi.fn(), import: vi.fn(), download: vi.fn(), target: vi.fn(), openDirectory: vi.fn(), getAllChains: vi.fn(), get: vi.fn(), put: vi.fn() }));
 vi.mock('../../services/api', () => ({ api: { get: mocks.get, put: mocks.put } }));
 vi.mock('../../services/dbService', () => ({ db: { getAllChains: mocks.getAllChains } }));
-vi.mock('../../services/styleBundle', () => ({ readStyleBundle: mocks.read, getStyleBundleEntryPreview: mocks.entryPreview, exportStyleBundle: mocks.export, importStyleBundle: mocks.import }));
+vi.mock('../../services/styleBundle', () => ({ readStyleBundle: mocks.read, getStyleBundleEntryPreview: mocks.entryPreview, loadStyleBundleEntryCoverBlob: mocks.loadCover, exportStyleBundle: mocks.export, importStyleBundle: mocks.import }));
 vi.mock('../../services/exportLocation', () => ({ beginExportTarget: mocks.target, openExportDirectory: mocks.openDirectory }));
 vi.mock('../../services/fileDownload', () => ({ downloadFile: mocks.download }));
 vi.mock('../../components/MobileUI', () => ({ useMobileHistoryLayer: (_open: boolean, close: () => void) => close }));
@@ -90,7 +90,7 @@ it.each([320, 390, 1280])('%s宽度常态仅两排顶部控件且无底栏，设
   expect(dialog.querySelector('footer')).toBeNull();
   expect(dialog.querySelector('header')?.children).toHaveLength(2);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   await screen.findByRole('checkbox', { name: '水彩' });
   const header = dialog.querySelector('header')!;
   expect(header.children).toHaveLength(2);
@@ -100,7 +100,7 @@ it.each([320, 390, 1280])('%s宽度常态仅两排顶部控件且无底栏，设
   expect(screen.queryByRole('button', { name: '导入全部' })).toBeNull();
   expect(screen.getByRole('button', { name: '导入已选（2）' }).closest('header')).toBe(header);
   expect(screen.getByLabelText('搜索分享包').closest('header')).toBe(header);
-  for (const label of ['选择 .naia 文件', '分享包信息', '设置文件夹', '选择与导入', '关闭']) expect(screen.getByRole('button', { name: label }).classList.contains('mobile-touch')).toBe(true);
+  for (const label of ['选择分享包（.naia / .zip）', '分享包信息', '设置文件夹', '选择与导入', '关闭']) expect(screen.getByRole('button', { name: label }).classList.contains('mobile-touch')).toBe(true);
   const info = screen.getByRole('button', { name: '分享包信息' });
   expect(info.title).toContain(warning);
   expect(info.querySelector('svg')?.classList.contains('text-amber-700')).toBe(true);
@@ -140,7 +140,7 @@ it.each([undefined, 'nai-diffusion-5-full'])('预览名称行沿用模型标记�
   });
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   const card = (await screen.findByRole('checkbox', { name: '水彩' })).closest('.media-card') as HTMLElement;
   expect(card.querySelector('.gallery-card-badge')?.textContent).toBe(getNaiModelDisplayLabel(model));
   expect(card.querySelector('h3')?.getAttribute('data-safe-mode-title')).toBe('true');
@@ -155,7 +155,7 @@ it.each([390, 1280])('%s宽度导入复用风格串卡片与页面布局偏好�
   expect(dialog.className).toContain('max-w-2xl');
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
   expect(dialog.className).toContain('max-w-6xl');
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   const checkbox = await screen.findByRole('checkbox', { name: '水彩' });
   const card = checkbox.closest('.media-card')!;
   expect(card.className).toContain('gallery-image-card');
@@ -177,7 +177,7 @@ it('配方与原始JSON描述默认折叠，无封面仍可勾选查看完整配
   mocks.read.mockResolvedValueOnce(loaded);
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   const checkbox = await screen.findByRole('checkbox', { name: '素描' });
   const card = checkbox.closest('[data-bundle-entry]') as HTMLElement;
   expect(within(card).getByText('无封面')).toBeTruthy();
@@ -206,7 +206,7 @@ it('独立选择与看图，翻包内有图项；筛选卸载卡片不释放大�
   const callbacks = props();
   const view = render(<StyleBundleDialog {...callbacks} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   const checkbox = await screen.findByRole('checkbox', { name: '水彩' });
   const scroll = checkbox.closest('[role=dialog]')!.querySelector('.overflow-y-auto') as HTMLElement;
   scroll.scrollTop = 250;
@@ -244,7 +244,7 @@ it('更换文件释放旧卡片与大图URL，相同包内ID也恢复折叠详�
   mocks.read.mockResolvedValueOnce(preview).mockResolvedValueOnce(loaded);
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  const input = screen.getByLabelText('选择 .naia 文件', { selector: 'input' });
+  const input = screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' });
   fireEvent.change(input, { target: { files: [new File(['first'], 'first.naia')] } });
   const card = (await screen.findByRole('checkbox', { name: '水彩' })).closest('[data-bundle-entry]') as HTMLElement;
   fireEvent.click(within(card).getByText('配方详情'));
@@ -273,7 +273,7 @@ it('换包清除旧预览状态引用，再读取同一preview对象也不复活
   const callbacks = props();
   render(<StyleBundleDialog {...callbacks} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  const input = screen.getByLabelText('选择 .naia 文件', { selector: 'input' });
+  const input = screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' });
   const selectFile = () => fireEvent.change(input, { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   selectFile();
   const card = (await screen.findByRole('checkbox', { name: '水彩' })).closest('[data-bundle-entry]') as HTMLElement;
@@ -310,7 +310,7 @@ it('以文件名预填新夹并允许改名，分批导入和失败重试复用�
     .mockResolvedValueOnce({ createdIds: ['new-b'], importedEntryIds: ['b'], failed: [] });
   render(<StyleBundleDialog {...props()} onViewFolder={onViewFolder} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], '朋友的配方.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], '朋友的配方.naia')] } });
   const name = await openFolderName();
   expect((name as HTMLInputElement).value).toBe('朋友的配方');
   fireEvent.change(name, { target: { value: '朋友A分享' } });
@@ -338,7 +338,7 @@ it('换包后默认新建独立文件夹，保留上个导入目标的原有归�
   mocks.import.mockResolvedValueOnce({ createdIds: ['new-a'], importedEntryIds: ['a'], failed: [] });
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  const file = screen.getByLabelText('选择 .naia 文件', { selector: 'input' });
+  const file = screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' });
   fireEvent.change(file, { target: { files: [new File(['first'], '旧分享区.naia')] } });
   await openFolderName();
   fireEvent.change(folderModeField(), { target: { value: 'existing' } });
@@ -361,7 +361,7 @@ it('已有文件夹可多选，归类先读取最新归属并追加，保留其�
   });
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], '分享.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], '分享.naia')] } });
   await openFolderName();
   fireEvent.change(folderModeField(), { target: { value: 'existing' } });
   expect((screen.getByRole('button', { name: '导入已选（2）' }) as HTMLButtonElement).disabled).toBe(true);
@@ -382,7 +382,7 @@ it('归类失败明确保留已保存状态，只重试归类而不重建串或�
   }).mockRejectedValueOnce(new Error('合成目录冲突'));
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], '分享.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], '分享.naia')] } });
   await openFolderName();
   fireEvent.change(screen.getByLabelText('搜索分享包'), { target: { value: '水彩' } });
   fireEvent.click(actionButton('导入筛选结果'));
@@ -404,7 +404,7 @@ it.each(['切页返回', '另一批成功'])('归类失败后%s仍保留顶部�
   }).mockRejectedValueOnce(Error('合成归类冲突'));
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], '分享.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], '分享.naia')] } });
   await screen.findByRole('checkbox', { name: '水彩' });
   fireEvent.change(screen.getByLabelText('搜索分享包'), { target: { value: '水彩' } });
   fireEvent.click(actionButton('导入筛选结果'));
@@ -438,7 +438,7 @@ it('新夹保存回执丢失后重读复用原ID，首次归类前不创建风�
   });
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], '分享.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], '分享.naia')] } });
   await openFolderName();
   fireEvent.click(actionButton('导入全部'));
   await screen.findByText('合成回执丢失');
@@ -456,7 +456,7 @@ it('配方保存后目标夹被删除可改选其他夹，只重试归类且不�
   });
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], '分享.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], '分享.naia')] } });
   await openFolderName();
   fireEvent.change(folderModeField(), { target: { value: 'existing' } });
   fireEvent.click(screen.getByRole('checkbox', { name: '旧目标' }));
@@ -478,7 +478,7 @@ it('导入失败后的锁定目标消失可恢复选择，未保存项随后正�
     .mockResolvedValueOnce({ createdIds: ['saved'], importedEntryIds: ['a'], failed: [] });
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], '分享.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], '分享.naia')] } });
   await openFolderName();
   fireEvent.change(folderModeField(), { target: { value: 'existing' } });
   fireEvent.click(screen.getByRole('checkbox', { name: '旧目标' }));
@@ -634,7 +634,7 @@ it.each([['full', '整库打包'], ['partial', '部分打包'], ['unrecorded', '
   mocks.read.mockResolvedValueOnce({ ...preview, coverage });
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   await screen.findByRole('checkbox', { name: '水彩' });
   openMenu('info');
   expect(screen.getByText(label)).toBeTruthy();
@@ -651,7 +651,7 @@ it('预览来源并按搜索导入，部分失败后重试不重复成功项', a
     .mockResolvedValueOnce({ createdIds: ['new-b'], importedEntryIds: ['b'], failed: [] });
   render(<StyleBundleDialog {...callbacks} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   await screen.findByRole('checkbox', { name: '水彩' });
   openMenu('info');
   expect(screen.getByRole('link', { name: 'https://example.org/free' }).getAttribute('rel')).toBe('noopener noreferrer');
@@ -670,7 +670,7 @@ it('取消选文件保留原预览与可导入选择', async () => {
   mocks.import.mockResolvedValue({ createdIds: [], importedEntryIds: [], failed: [] });
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  const input = screen.getByLabelText('选择 .naia 文件', { selector: 'input' });
+  const input = screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' });
   fireEvent.change(input, { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   await screen.findByRole('checkbox', { name: '水彩' });
   fireEvent.change(input, { target: { files: [] } });
@@ -685,7 +685,7 @@ it('选择损坏文件清除旧预览与选择，禁止导入旧包；读取期�
   const callbacks = props();
   render(<StyleBundleDialog {...callbacks} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  const input = screen.getByLabelText('选择 .naia 文件', { selector: 'input' });
+  const input = screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' });
   fireEvent.change(input, { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   await screen.findByRole('checkbox', { name: '水彩' });
   let rejectRead!: (reason: Error) => void;
@@ -712,7 +712,7 @@ it('搜索可匹配分享来源，筛选勾选后仅导入已选且不覆盖现�
   mocks.import.mockResolvedValue({ createdIds: ['new-a'], importedEntryIds: ['a'], failed: [] });
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   await screen.findByRole('checkbox', { name: '水彩' });
   fireEvent.change(screen.getByLabelText('搜索分享包'), { target: { value: '作者甲' } });
   expect(screen.queryByRole('checkbox', { name: '素描' })).toBeNull();
@@ -728,7 +728,7 @@ it('导入预览分批显示，全部与筛选范围仍覆盖尚未显示的条�
   mocks.import.mockResolvedValue({ createdIds: [], importedEntryIds: [], failed: [] });
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   await screen.findByRole('button', { name: '加载更多（5）' });
   expect(screen.queryByRole('checkbox', { name: '包内风格 104' })).toBeNull();
   fireEvent.click(actionButton('导入筛选结果'));
@@ -762,7 +762,7 @@ it('列表刷新失败仍保留成功项，不把已写入风格串重新导入'
   mocks.import.mockResolvedValue({ createdIds: ['new-a'], importedEntryIds: ['a'], failed: [] });
   render(<StyleBundleDialog {...callbacks} />);
   fireEvent.click(screen.getByRole('button', { name: '导入' }));
-  fireEvent.change(screen.getByLabelText('选择 .naia 文件', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   await screen.findByRole('checkbox', { name: '水彩' });
   fireEvent.change(screen.getByLabelText('搜索分享包'), { target: { value: '水彩' } });
   fireEvent.click(actionButton('导入筛选结果'));
@@ -776,9 +776,34 @@ it('英文界面单条导入失败原因使用已有译文', async () => {
   mocks.import.mockResolvedValue({ createdIds: [], importedEntryIds: [], failed: [{ id: 'a', name: '水彩', error: '未收到新建风格串回执' }] });
   render(<StyleBundleDialog {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: 'Import' }));
-  fireEvent.change(screen.getByLabelText('Choose a .naia file', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
+  fireEvent.change(screen.getByLabelText('Choose bundle (.naia / .zip)', { selector: 'input' }), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
   await screen.findByRole('checkbox', { name: '水彩' });
   fireEvent.click(actionButton('Import all'));
   expect(await screen.findByText('No confirmation was received for the new style chain')).toBeTruthy();
   expect(screen.queryByText('未收到新建风格串回执')).toBeNull();
+});
+
+it('大 ZIP 画风包默认不勾选，且支持按模型筛选和按提示词搜索', async () => {
+  const entries = Array.from({ length: 205 }, (_, index) => ({
+    id: `z${index}`,
+    name: index === 0 ? 'dino' : `style-${index}`,
+    description: '',
+    cover: false,
+    model: index < 5 ? 'nai-diffusion-5-full' : 'nai-diffusion-4-5-full',
+    searchText: index === 0 ? 'artist:dino, cinematic' : 'artist:other',
+    sources: [],
+  }));
+  mocks.read.mockResolvedValueOnce({ coverage: 'unrecorded' as const, sourceKind: 'zip' as const, entries, sources: [], warnings: [] });
+  render(<StyleBundleDialog {...props()} />);
+  fireEvent.click(screen.getByRole('button', { name: '导入' }));
+  fireEvent.change(screen.getByLabelText('选择分享包（.naia / .zip）', { selector: 'input' }), { target: { files: [new File(['zip'], 'shared-pack.zip')] } });
+  await screen.findByRole('checkbox', { name: 'dino' });
+  expect((screen.getByRole('button', { name: '导入已选（0）' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '按模型筛选' }));
+  fireEvent.click(screen.getByRole('button', { name: 'V5 (5)' }));
+  expect(screen.getByRole('checkbox', { name: 'dino' })).toBeTruthy();
+  expect(screen.queryByRole('checkbox', { name: 'style-5' })).toBeNull();
+  fireEvent.change(screen.getByLabelText('搜索分享包'), { target: { value: 'cinematic' } });
+  expect(screen.getByRole('checkbox', { name: 'dino' })).toBeTruthy();
+  expect(screen.queryByRole('checkbox', { name: 'style-1' })).toBeNull();
 });

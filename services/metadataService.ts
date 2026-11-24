@@ -14,7 +14,7 @@ import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
 import { createUuid } from './id';
 import { joinNaiTextPrompt, resolveTransparentWeight, splitNaiTextPrompt } from './transparentBackground.mjs';
 import { resolveNaiMetadataModel } from './naiModels';
-import { extractPngMetadata } from './pngMetadata.mjs';
+import { extractImageMetadata } from './pngMetadata.mjs';
 import { DEFAULT_NOISE_SCHEDULE, normalizeNoiseSchedule, parseSamplerWithSchedule } from './naiNoiseSchedule.mjs';
 export { extractNovelAiMetadataFromPng, extractNovelAiStealthMetadataFromRgba } from './pngMetadata.mjs';
 
@@ -91,11 +91,11 @@ const COMPILED_REGEX = {
 // ========== 文件级元数据提取 ==========
 
 /**
- * 从 PNG 文件中提取元数据原始字符串
- * 优先读取标准文本块，未命中时回退到 NovelAI Alpha Stealth 元数据
+ * 从 PNG / WebP / JPEG 文件中提取元数据原始字符串
+ * PNG 优先读取标准文本块，未命中时回退到 NovelAI Alpha Stealth 元数据；WebP/JPEG 读取 EXIF UserComment
  */
 export const extractMetadata = async (file: File): Promise<string | null> => {
-    if (file.type && file.type !== 'image/png') {
+    if (file.type && !['image/png', 'image/webp', 'image/jpeg'].includes(file.type)) {
         return null;
     }
 
@@ -108,7 +108,7 @@ export const extractMetadata = async (file: File): Promise<string | null> => {
                 reader.onerror = () => reject(reader.error);
                 reader.readAsArrayBuffer(file);
             });
-        return await extractPngMetadata(new Uint8Array(arrayBuffer));
+        return await extractImageMetadata(new Uint8Array(arrayBuffer));
     } catch (e) {
         return null;
     }

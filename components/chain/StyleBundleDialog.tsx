@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileInput, Folder, FolderOpen, Info, ListChecks, Loader2, X } from 'lucide-react';
+import { FileInput, Filter, Folder, FolderOpen, Info, ListChecks, Loader2, X } from 'lucide-react';
 import type { PromptChain } from '../../types';
 import { exportStyleBundle, importStyleBundle, readStyleBundle, type StyleBundlePreview } from '../../services/styleBundle';
 import { beginExportTarget, openExportDirectory, type ExportReceipt } from '../../services/exportLocation';
@@ -12,7 +12,7 @@ import { getDirectoryPath } from '../../services/directoryTree.mjs';
 import { saveChainFolders, useChainFolders } from '../../services/useChainFolders';
 import { t, useLanguage } from '../../services/i18n';
 import { ToolbarButton, ToolbarSearch } from '../DesignSystem';
-import { AnchoredToolbarPopover } from '../ToolbarPopover';
+import { AnchoredToolbarPopover, FilterPanelFooter, FilterToggleButton, TOOLBAR_LABEL_CLASS } from '../ToolbarPopover';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
@@ -21,6 +21,15 @@ import { DirectoryTreeChecklist } from '../DirectoryTreeChecklist';
 import { DirectoryTreeSelect } from '../DirectoryTreeSelect';
 
 type Scope = 'all' | 'filtered' | 'selected';
+type ModelFamily = 'all' | 'v5' | 'v45' | 'v4' | 'other';
+const LARGE_ZIP_AUTO_SELECT_LIMIT = 200;
+const classifyModelFamily = (model?: string): Exclude<ModelFamily, 'all'> => {
+  if (!model) return 'other';
+  if (/^nai-diffusion-5(?:-|$)/i.test(model)) return 'v5';
+  if (/^nai-diffusion-4-5(?:-|$)/i.test(model)) return 'v45';
+  if (/^nai-diffusion-4(?:-|$)/i.test(model)) return 'v4';
+  return 'other';
+};
 interface Props {
   chains: PromptChain[];
   filteredChains: PromptChain[];
@@ -57,6 +66,7 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
   const [filedFolder, setFiledFolder] = useState('');
   const targetPlan = useRef<{ ids: string[]; name?: string; parentId?: string | null } | null>(null);
   const [query, setQuery] = useState('');
+  const [modelFilter, setModelFilter] = useState<ModelFamily>('all');
   const [visibleCount, setVisibleCount] = useState(100);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [imported, setImported] = useState<Set<string>>(new Set());
@@ -65,7 +75,8 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
   const [openingDirectory, setOpeningDirectory] = useState(false);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
-  const [popover, setPopover] = useState<'folders' | 'selection' | 'info' | null>(null);
+  const [popover, setPopover] = useState<'filter' | 'folders' | 'selection' | 'info' | null>(null);
+  const filterAnchor = useRef<HTMLDivElement>(null);
   const folderAnchor = useRef<HTMLDivElement>(null);
   const selectionAnchor = useRef<HTMLDivElement>(null);
   const infoAnchor = useRef<HTMLDivElement>(null);
@@ -87,7 +98,26 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
 
   const exportChains = scope === 'all' ? chains : scope === 'filtered' ? filteredChains : selectedChains;
   const entries = preview?.entries || [];
-  const filtered = entries.filter(entry => `${entry.name} ${entry.description} ${entry.sources.map(source => `${source.author} ${source.sourceUrl} ${source.note}`).join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const modelCounts = useMemo(() => {
+    const counts: Record<Exclude<ModelFamily, 'all'>, number> = { v5: 0, v45: 0, v4: 0, other: 0 };
+    for (const entry of entries) counts[classifyModelFamily(entry.model)]++;
+    return counts;
+  }, [entries]);
+  const modelOptions = useMemo(() => {
+    const list: Array<{ id: ModelFamily; label: string; count: number }> = [{ id: 'all', label: t('全部'), count: entries.length }];
+    if (modelCounts.v5) list.push({ id: 'v5', label: 'V5', count: modelCounts.v5 });
+    if (modelCounts.v45) list.push({ id: 'v45', label: 'V4.5', count: modelCounts.v45 });
+    if (modelCounts.v4) list.push({ id: 'v4', label: 'V4', count: modelCounts.v4 });
+    if (modelCounts.other) list.push({ id: 'other', label: t('其他'), count: modelCounts.other });
+    return list;
+  }, [entries.length, modelCounts]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = useMemo(() => entries.filter(entry => {
+    if (modelFilter !== 'all' && classifyModelFamily(entry.model) !== modelFilter) return false;
+    if (!normalizedQuery) return true;
+    const text = `${entry.name} ${entry.description} ${entry.searchText || ''} ${entry.sources.map(source => `${source.author} ${source.sourceUrl} ${source.note}`).join(' ')}`.toLowerCase();
+    return text.includes(normalizedQuery);
+  }), [entries, modelFilter, normalizedQuery]);
   const sources = useMemo(() => [...new Map((preview?.entries || []).flatMap(entry => entry.sources).map(source => [JSON.stringify(source), source])).values()], [preview]);
   const pending = (items: typeof entries) => items.filter(entry => !imported.has(entry.id));
   const selectedPending = pending(entries).filter(entry => selected.has(entry.id));
@@ -127,15 +157,17 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
     begin();
     try {
       const next = await readStyleBundle(file, reportProgress);
-      setPreview(next); setPreviewVersion(version => version + 1); setQuery(''); setVisibleCount(100); setSelected(new Set(next.entries.map(entry => entry.id)));
+      const autoSelectAll = next.sourceKind !== 'zip' || next.entries.length <= LARGE_ZIP_AUTO_SELECT_LIMIT;
+      setPreview(next); setPreviewVersion(version => version + 1); setQuery(''); setModelFilter('all'); setVisibleCount(100);
+      setSelected(autoSelectAll ? new Set(next.entries.map(entry => entry.id)) : new Set());
       setImported(new Set()); setFailures({});
       setFolderMode('new');
       setFolderParentId('');
       setTargetFolders([]);
-      setFolderName(file.name.replace(/\.naia$/i, '').slice(0, 60));
+      setFolderName(file.name.replace(/\.(?:naia|zip)$/i, '').slice(0, 60));
       setTargetLocked(false); setUnfiledIds([]); setFiledFolder(''); targetPlan.current = null;
     } catch (failure) {
-      setPreview(null); setSelected(new Set()); setImported(new Set()); setFailures({});
+      setPreview(null); setModelFilter('all'); setSelected(new Set()); setImported(new Set()); setFailures({});
       setTargetLocked(false); setUnfiledIds([]); setFiledFolder(''); targetPlan.current = null;
       setError(errorText(failure));
     }
@@ -229,13 +261,19 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
             <ToolbarButton active={tab === 'import'} disabled={busy} className="!px-2" onClick={() => { setTab('import'); setPopover(null); setError(''); }}>{t('导入')}</ToolbarButton>
           </div>
           {tab === 'import' && <>
-            <ToolbarButton aria-label={t('选择 .naia 文件')} title={t('选择 .naia 文件')} className="mobile-touch !px-2" disabled={busy} onClick={() => fileRef.current?.click()}><FileInput /><span className="hidden sm:inline">{t('选择 .naia 文件')}</span></ToolbarButton>
+            <ToolbarButton aria-label={t('选择分享包（.naia / .zip）')} title={t('选择 .naia 分享包或含 NovelAI 元数据的 .zip 画风包')} className="mobile-touch !px-2" disabled={busy} onClick={() => fileRef.current?.click()}><FileInput /><span className="hidden sm:inline">{t('选择 .naia / .zip')}</span></ToolbarButton>
             <div ref={infoAnchor} className="shrink-0"><ToolbarButton aria-label={t('分享包信息')} title={infoTitle} aria-expanded={popover === 'info'} aria-haspopup="dialog" className="mobile-touch !px-2" disabled={!preview} active={popover === 'info'} onClick={() => setPopover(previous => previous === 'info' ? null : 'info')}><Info className={preview?.warnings.length ? 'text-amber-700 dark:text-amber-300' : undefined} /></ToolbarButton></div>
           </>}
           <ToolbarButton disabled={busy} onClick={requestClose} aria-label={t('关闭')} className="mobile-touch ml-auto !px-2"><X /></ToolbarButton>
         </div>
         {tab === 'import' ? <div className="flex min-w-0 items-center gap-1.5">
-          <ToolbarSearch aria-label={t('搜索分享包')} placeholder={t('搜索名称或描述')} value={query} disabled={busy || !preview} containerClassName="!max-w-none" onChange={event => { setQuery(event.target.value); setVisibleCount(100); }} />
+          <ToolbarSearch aria-label={t('搜索分享包')} placeholder={t('搜索名称、画师或提示词')} value={query} disabled={busy || !preview} containerClassName="!max-w-none" onChange={event => { setQuery(event.target.value); setVisibleCount(100); }} />
+          <div ref={filterAnchor} className="relative shrink-0">
+            <ToolbarButton aria-label={t('按模型筛选')} title={t('按模型筛选')} aria-expanded={popover === 'filter'} aria-haspopup="dialog" className="mobile-touch !px-2" disabled={!preview || modelOptions.length <= 2} active={popover === 'filter' || modelFilter !== 'all'} onClick={() => setPopover(previous => previous === 'filter' ? null : 'filter')}>
+              <Filter />
+            </ToolbarButton>
+            {modelFilter !== 'all' && <span aria-hidden="true" className="pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white">1</span>}
+          </div>
           <div ref={folderAnchor} className="shrink-0"><ToolbarButton aria-label={t('设置文件夹')} title={[t('导入到'), targetCaption].join(' · ')} aria-expanded={popover === 'folders'} aria-haspopup="dialog" className="mobile-touch !px-2" disabled={!preview} active={popover === 'folders'} onClick={() => setPopover(previous => previous === 'folders' ? null : 'folders')}><Folder /></ToolbarButton></div>
           <div ref={selectionAnchor} className="shrink-0"><ToolbarButton aria-label={t('选择与导入')} title={t('选择与导入')} aria-expanded={popover === 'selection'} aria-haspopup="dialog" className="mobile-touch !px-2" disabled={!preview || busy} active={popover === 'selection'} onClick={() => setPopover(previous => previous === 'selection' ? null : 'selection')}><ListChecks /></ToolbarButton></div>
           <ToolbarButton aria-label={t('导入已选（{0}）', [selectedPending.length])} tone="primary" className="!px-2" disabled={importBlocked || !selectedPending.length} onClick={() => void importEntries(selectedPending)}><span className="hidden sm:inline">{t('导入已选（{0}）', [selectedPending.length])}</span><span className="sm:hidden">{t('导入')}({selectedPending.length})</span></ToolbarButton>
@@ -258,7 +296,7 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
           <label className="block space-y-1.5 text-sm font-semibold"><span>{t('分享说明')}</span><textarea aria-label={t('分享说明')} disabled={busy} value={note} onChange={event => setNote(event.target.value)} maxLength={4000} rows={3} className={fieldClass} /></label>
 
         </> : <>
-          <input ref={fileRef} type="file" accept=".naia" aria-label={t('选择 .naia 文件')} disabled={busy} className="sr-only" onChange={event => { void readBundle(event.target.files?.[0]); event.target.value = ''; }} />
+          <input ref={fileRef} type="file" accept=".naia,.zip" aria-label={t('选择分享包（.naia / .zip）')} disabled={busy} className="sr-only" onChange={event => { void readBundle(event.target.files?.[0]); event.target.value = ''; }} />
           {preview && <>
             <BundlePreviewCards key={previewVersion} preview={preview} entries={filtered.slice(0, visibleCount)} selected={selected} imported={imported} disabled={busy} failures={failures} onSelect={id => setSelected(previous => { const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next; })} />
             {filtered.length > visibleCount && <ToolbarButton disabled={busy} onClick={() => setVisibleCount(count => count + 100)}>{t('加载更多（{0}）', [filtered.length - visibleCount])}</ToolbarButton>}
@@ -266,6 +304,25 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
           </>}
         </>}
       </div>
+      {tab === 'import' && preview && popover === 'filter' && <AnchoredToolbarPopover anchorRef={filterAnchor} title={t('按模型筛选')} allowMobile width={320} onClose={closePopover}>
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <span className={TOOLBAR_LABEL_CLASS}>{t('模型')}</span>
+            <div className="grid grid-cols-2 gap-1.5">
+              {modelOptions.map(option => (
+                <FilterToggleButton
+                  key={option.id}
+                  active={modelFilter === option.id}
+                  onClick={() => { setModelFilter(option.id); setVisibleCount(100); }}
+                >
+                  {option.label} ({option.count})
+                </FilterToggleButton>
+              ))}
+            </div>
+          </div>
+          <FilterPanelFooter resetDisabled={modelFilter === 'all'} onReset={() => { setModelFilter('all'); setVisibleCount(100); }} />
+        </div>
+      </AnchoredToolbarPopover>}
       {tab === 'import' && preview && popover === 'folders' && <AnchoredToolbarPopover anchorRef={folderAnchor} title={t('导入到')} allowMobile width={360} onClose={closePopover}>
         <div className="space-y-3">
           <label className="block space-y-1.5 text-sm font-semibold"><span>{t('导入到')}</span><select aria-label={t('导入到')} value={folderMode} disabled={busy || targetLocked} onChange={event => { setFolderMode(event.target.value as 'new' | 'existing'); targetPlan.current = null; }} className={fieldClass}><option value="new">{t('新建文件夹')}</option><option value="existing">{t('已有文件夹')}</option></select></label>

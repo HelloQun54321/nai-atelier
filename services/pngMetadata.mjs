@@ -19,6 +19,179 @@ export function hasCollectibleNaiMetadata(raw) {
   }
 }
 
+/** 识别图片容器并提取 NovelAI 元数据：PNG 走文本块与隐写，WebP/JPEG 走 EXIF。 */
+export async function extractImageMetadata(bytes, { validatePixels = false, collectibleOnly = false } = {}) {
+  if (!bytes || bytes.length < 12) return null;
+  if (PNG_SIGNATURE.every((v, i) => bytes[i] === v)) {
+    return extractPngMetadata(bytes, { validatePixels, collectibleOnly });
+  }
+  const exif = extractWebpExifPayload(bytes) || extractJpegExifPayload(bytes);
+  if (!exif) return null;
+  const candidate = selectNovelAiGenerationMetadata(readExifTextEntries(exif));
+  return !collectibleOnly || (candidate && hasCollectibleNaiMetadata(candidate)) ? candidate : null;
+}
+
+/** 从 RIFF WebP 的 EXIF 块中提取原始 TIFF/Exif 载荷。 */
+export function extractWebpExifPayload(bytes) {
+  if (!bytes || bytes.length < 12) return null;
+  if (bytes[0] !== 0x52 || bytes[1] !== 0x49 || bytes[2] !== 0x46 || bytes[3] !== 0x46) return null;
+  if (bytes[8] !== 0x57 || bytes[9] !== 0x45 || bytes[10] !== 0x42 || bytes[11] !== 0x50) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let offset = 12, count = 0;
+  while (offset + 8 <= bytes.length && count++ < 4096) {
+    const type = String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+    const size = view.getUint32(offset + 4, true);
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + size;
+    if (!Number.isSafeInteger(dataEnd) || dataEnd > bytes.length) break;
+    if (type === 'EXIF' && size > 0 && size <= MAX_STEALTH_DECOMPRESSED_BYTES) {
+      return bytes.subarray(dataStart, dataEnd);
+    }
+    offset = dataEnd + (size & 1);
+  }
+  return null;
+}
+
+/** 从 JPEG 的 APP1 (Exif) 段中提取原始 EXIF 载荷。 */
+function extractJpegExifPayload(bytes) {
+  if (!bytes || bytes.length < 16 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let offset = 2, count = 0;
+  while (offset + 4 <= bytes.length && count++ < 2048) {
+    if (bytes[offset] !== 0xff) break;
+    let markerOffset = offset + 1;
+    while (markerOffset < bytes.length && bytes[markerOffset] === 0xff) markerOffset++;
+    if (markerOffset >= bytes.length) break;
+    const marker = bytes[markerOffset];
+    if (marker === 0xd9 || marker === 0xda) break;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { offset = markerOffset + 1; continue; }
+    if (markerOffset + 3 > bytes.length) break;
+    const segmentLength = view.getUint16(markerOffset + 1, false);
+    if (segmentLength < 2) break;
+    const dataStart = markerOffset + 3;
+    const dataEnd = markerOffset + 1 + segmentLength;
+    if (dataEnd > bytes.length) break;
+    if (marker === 0xe1 && dataEnd - dataStart > 6
+      && bytes[dataStart] === 0x45 && bytes[dataStart + 1] === 0x78 && bytes[dataStart + 2] === 0x69
+      && bytes[dataStart + 3] === 0x66 && bytes[dataStart + 4] === 0x00 && bytes[dataStart + 5] === 0x00) {
+      return bytes.subarray(dataStart, dataEnd);
+    }
+    offset = dataEnd;
+  }
+  return null;
+}
+
+const EXIF_TYPE_SIZES = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 };
+
+/** 解析 TIFF/EXIF IFD0 与 ExifIFD 中的 UserComment、ImageDescription、Software 等文本字段。 */
+function readExifTextEntries(payload) {
+  if (!payload || payload.length < 8) return [];
+  let tiffStart = 0;
+  if (payload.length >= 14 && payload[0] === 0x45 && payload[1] === 0x78 && payload[2] === 0x69
+    && payload[3] === 0x66 && payload[4] === 0x00 && payload[5] === 0x00) {
+    tiffStart = 6;
+  }
+  const tiff = payload.subarray(tiffStart);
+  if (tiff.length < 8) return [];
+  let littleEndian;
+  if (tiff[0] === 0x49 && tiff[1] === 0x49) littleEndian = true;
+  else if (tiff[0] === 0x4d && tiff[1] === 0x4d) littleEndian = false;
+  else return [];
+  const view = new DataView(tiff.buffer, tiff.byteOffset, tiff.byteLength);
+  if (view.getUint16(2, littleEndian) !== 42) return [];
+  const ifd0Offset = view.getUint32(4, littleEndian);
+  const entries = [];
+  const visited = new Set();
+
+  const readIfd = (ifdOffset) => {
+    if (!Number.isSafeInteger(ifdOffset) || ifdOffset < 8 || ifdOffset + 2 > tiff.length || visited.has(ifdOffset)) return;
+    visited.add(ifdOffset);
+    const count = Math.min(view.getUint16(ifdOffset, littleEndian), 1024);
+    for (let index = 0; index < count; index++) {
+      const entryOffset = ifdOffset + 2 + index * 12;
+      if (entryOffset + 12 > tiff.length) break;
+      const tag = view.getUint16(entryOffset, littleEndian);
+      const type = view.getUint16(entryOffset + 2, littleEndian);
+      const valueCount = view.getUint32(entryOffset + 4, littleEndian);
+      if (tag === 0x8769 && (type === 4 || type === 3) && valueCount >= 1) {
+        const subOffset = type === 4 ? view.getUint32(entryOffset + 8, littleEndian) : view.getUint16(entryOffset + 8, littleEndian);
+        readIfd(subOffset);
+        continue;
+      }
+      if (tag !== 0x9286 && tag !== 0x010e && tag !== 0x0131) continue;
+      const unitSize = EXIF_TYPE_SIZES[type];
+      if (!unitSize) continue;
+      const byteLength = valueCount * unitSize;
+      if (!Number.isSafeInteger(byteLength) || byteLength <= 0 || byteLength > MAX_STEALTH_DECOMPRESSED_BYTES) continue;
+      let raw;
+      if (byteLength <= 4) {
+        raw = tiff.subarray(entryOffset + 8, entryOffset + 8 + byteLength);
+      } else {
+        const valueOffset = view.getUint32(entryOffset + 8, littleEndian);
+        if (!Number.isSafeInteger(valueOffset) || valueOffset + byteLength > tiff.length) continue;
+        raw = tiff.subarray(valueOffset, valueOffset + byteLength);
+      }
+      if (tag === 0x9286) {
+        const text = decodeExifUserComment(raw, littleEndian);
+        if (text) entries.push({ keyword: 'Comment', text });
+      } else if (tag === 0x010e) {
+        const text = decodeUtf8OrLatin1(raw).replace(/\0+$/, '').trim();
+        if (text) entries.push({ keyword: 'Description', text });
+      } else if (tag === 0x0131) {
+        const text = decodeUtf8OrLatin1(raw).replace(/\0+$/, '').trim();
+        if (text) entries.push({ keyword: 'Software', text });
+      }
+    }
+  };
+
+  readIfd(ifd0Offset);
+  return entries;
+}
+
+const stripTrailingNulls = (value) => value.replace(/\0+$/, '').trim();
+
+/** 解码 EXIF UserComment：支持 UNICODE(UTF-16 BE/LE 与误写 UTF-8)、ASCII 与裸文本。 */
+function decodeExifUserComment(raw, tiffLittleEndian) {
+  if (!raw || !raw.length) return '';
+  if (raw.length >= 8) {
+    const prefix = String.fromCharCode(...raw.subarray(0, 8));
+    const body = raw.subarray(8);
+    if (prefix === 'UNICODE\0') {
+      if (!body.length) return '';
+      if (body.length >= 2 && body[0] === 0xfe && body[1] === 0xff) {
+        return stripTrailingNulls(new TextDecoder('utf-16be').decode(body.subarray(2)));
+      }
+      if (body.length >= 2 && body[0] === 0xff && body[1] === 0xfe) {
+        return stripTrailingNulls(new TextDecoder('utf-16le').decode(body.subarray(2)));
+      }
+      // 某些工具会在 UNICODE\0 后直接写入 UTF-8 JSON（如 `{"...`），先识别纯 UTF-8 特征。
+      if (body.length >= 2 && body[0] === 0x7b && body[1] >= 0x20 && body[1] <= 0x7e) {
+        const utf8 = stripTrailingNulls(decodeUtf8OrLatin1(body));
+        if (utf8.startsWith('{')) return utf8;
+      }
+      const evenLen = body.length - (body.length & 1);
+      const slice = evenLen === body.length ? body : body.subarray(0, evenLen);
+      let evenZeros = 0, oddZeros = 0;
+      const probeLimit = Math.min(slice.length, 256);
+      for (let i = 0; i < probeLimit; i += 2) {
+        if (slice[i] === 0) evenZeros++;
+        if (slice[i + 1] === 0) oddZeros++;
+      }
+      const primary = evenZeros > oddZeros ? 'utf-16be' : oddZeros > evenZeros ? 'utf-16le' : (tiffLittleEndian ? 'utf-16le' : 'utf-16be');
+      const fallback = primary === 'utf-16be' ? 'utf-16le' : 'utf-16be';
+      const first = stripTrailingNulls(new TextDecoder(primary).decode(slice));
+      if (first.startsWith('{') || first.includes('Steps:')) return first;
+      const second = stripTrailingNulls(new TextDecoder(fallback).decode(slice));
+      if (second.startsWith('{') || second.includes('Steps:')) return second;
+      return first;
+    }
+    if (prefix === 'ASCII\0\0\0' || prefix === '\0\0\0\0\0\0\0\0') {
+      return stripTrailingNulls(decodeUtf8OrLatin1(body));
+    }
+  }
+  return stripTrailingNulls(decodeUtf8OrLatin1(raw));
+}
+
 /** 不借助 Canvas 解码 Alpha，避免预乘透明度破坏隐藏位。 */
 export async function extractPngMetadata(bytes, { validatePixels = false, collectibleOnly = false } = {}) {
   if (bytes.length < 33 || !PNG_SIGNATURE.every((v, i) => bytes[i] === v)) return null;
@@ -203,7 +376,7 @@ const metadataKeywordPriority = (keyword) => {
   if (keyword === "Stealth") return 1;
   return 2;
 };
-const normalizeNovelAiMetadataCandidate = (text, inheritedSource) => {
+const normalizeNovelAiMetadataCandidate = (text, inheritedSource, inheritedModel) => {
   const trimmed = text.trim();
   if (!trimmed) return null;
   if (trimmed.startsWith("{")) {
@@ -211,15 +384,19 @@ const normalizeNovelAiMetadataCandidate = (text, inheritedSource) => {
       const json = JSON.parse(trimmed);
       if (!json || typeof json !== "object" || Array.isArray(json)) return null;
       const source = typeof json.Source === "string" ? json.Source.trim() : typeof json.source === "string" ? json.source.trim() : inheritedSource;
-      const withSource = (value) => JSON.stringify(
-        source && typeof value.Source !== "string" && typeof value.source !== "string" ? { ...value, Source: source } : value
-      );
+      const model = typeof json.model === "string" ? json.model.trim() : inheritedModel;
+      const withSource = (value) => {
+        const next = { ...value };
+        if (source && typeof next.Source !== "string" && typeof next.source !== "string") next.Source = source;
+        if (model && typeof next.model !== "string") next.model = model;
+        return JSON.stringify(next);
+      };
       const comment = json.Comment ?? json.comment;
       if (comment && typeof comment === "object") {
         return hasNovelAiGenerationFields(comment) ? withSource(comment) : null;
       }
       if (typeof comment === "string") {
-        const normalizedComment = normalizeNovelAiMetadataCandidate(comment, source);
+        const normalizedComment = normalizeNovelAiMetadataCandidate(comment, source, model);
         if (normalizedComment) return normalizedComment;
       }
       if (hasNovelAiGenerationFields(json)) return withSource(json);

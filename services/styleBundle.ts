@@ -6,6 +6,9 @@ import { VIBE_MODELS, vibeParameterKey } from './vibeProtocol.mjs';
 import { createUuid } from './id';
 import { characterReferenceService } from './characterReferenceService';
 import { prepareImageBlob, getCleanSharedImages, getSharedImageCustomText, getSharedImageCleanContent } from './imageSharing';
+import { parseNovelAIMetadata } from './metadataService';
+import { hasCollectibleNaiMetadata } from './pngMetadata.mjs';
+import { inspectZipImageMetadata, isZipBlob, listZipEntries, readZipEntryBlob, readZipEntryBytes, resolveZipEntryDataOffset, type ZipEntryRecord } from './zipArchive';
 import type { NAIParams, PromptChain, StyleBundleSource, VibeAsset } from '../types';
 
 export type { StyleBundleSource } from '../types';
@@ -14,16 +17,18 @@ export interface StyleBundleProgress { phase: 'export' | 'read' | 'import'; comp
 type Progress = (value: StyleBundleProgress) => void;
 export interface StyleBundlePreview {
   coverage: 'full' | 'partial' | 'unrecorded';
-  entries: Array<{ id: string; name: string; description: string; cover: boolean; sources: StyleBundleSource[] }>;
+  sourceKind?: 'naia' | 'zip';
+  entries: Array<{ id: string; name: string; description: string; cover: boolean; model?: string; searchText?: string; sources: StyleBundleSource[] }>;
   sources: StyleBundleSource[];
   warnings: string[];
 }
 interface Asset { id: string; offset: number; size: number; mime: string; hash: string }
 interface Encoding { id: string; asset: string; sourceHash: string; name: string; model: string; modelKey: string; information: number; informationKnown?: boolean; parameters?: Record<string, unknown> | null }
 interface Entry extends Pick<PromptChain, 'name' | 'description' | 'tags' | 'basePrompt' | 'negativePrompt' | 'modules' | 'params' | 'variableValues'> { id: string; cover?: string }
-export interface StyleBundleEntryPreview extends Omit<Entry, 'cover'> { coverBlob?: Blob }
+export interface StyleBundleEntryPreview extends Omit<Entry, 'cover'> { coverBlob?: Blob; hasCover?: boolean }
 interface Manifest { coverage?: 'full' | 'partial'; entries: Entry[]; assets: Asset[]; encodings: Encoding[] }
-interface Parsed { manifest: Manifest; entriesById: Map<string, Entry>; assetsById: Map<string, Asset>; file: Blob; offset: number; imported: Map<string, string>; covers: Map<string, string>; operationIds: Map<string, string>; references: Map<string, string>; vibes: Map<string, { vibeId: string; encodingId: string; informationExtracted: number; informationKnown: boolean }>; busy: boolean }
+interface ZipAssetRef { record: ZipEntryRecord; mime: string }
+interface Parsed { manifest: Manifest; entriesById: Map<string, Entry>; assetsById: Map<string, Asset>; zipAssets?: Map<string, ZipAssetRef>; zipBlobCache?: Map<string, Blob>; file: Blob; offset: number; imported: Map<string, string>; covers: Map<string, string>; operationIds: Map<string, string>; references: Map<string, string>; vibes: Map<string, { vibeId: string; encodingId: string; informationExtracted: number; informationKnown: boolean }>; busy: boolean }
 const parsedBundles = new WeakMap<StyleBundlePreview, Parsed>();
 const MAGIC = new Uint8Array([78, 65, 73, 65, 13, 10, 26, 10]);
 const HEADER = 48;
@@ -96,7 +101,7 @@ const sections = (value: unknown) => {
 const cleanParams = (value: unknown): NAIParams => {
   const item = object(value), result: Record<string, unknown> = {};
   for (const key of ['width', 'height', 'steps', 'scale', 'seed', 'ucPreset', 'cfgRescale', 'transparentWeight']) if (item[key] !== undefined) result[key] = finite(item[key]);
-  for (const key of ['model', 'sampler', 'qualityPresetId', 'ucPresetId', 'alphaMode']) if (item[key] !== undefined) result[key] = text(item[key], 200);
+  for (const key of ['model', 'sampler', 'noiseSchedule', 'qualityPresetId', 'ucPresetId', 'alphaMode']) if (item[key] !== undefined) result[key] = text(item[key], 200);
   for (const key of ['qualityToggle', 'useCoords', 'variety', 'transparent']) if (item[key] !== undefined) result[key] = bool(item[key]);
   for (const key of ['width', 'height', 'steps', 'scale']) if (result[key] === undefined) fail(`分享包缺少参数 ${key}`);
   for (const key of ['width', 'height', 'steps']) if (!Number.isSafeInteger(result[key]) || Number(result[key]) <= 0) fail(`分享包参数 ${key} 无效`);
@@ -268,10 +273,224 @@ export async function exportStyleBundle(chains: PromptChain[], options: { allCha
   return new Blob([header.buffer, obfuscated.buffer, ...blobs], { type: 'application/x-nai-atelier-style-bundle' });
 }
 
+const ZIP_IMAGE_EXT = /\.(?:webp|png|jpe?g)$/i;
+const HASH_OR_NUMERIC_STEM = /^(?:[a-f0-9]{24,}|\d+)$/i;
+const GENERIC_STYLE_NAME_TAGS = new Set([
+  '1girl', '2girls', '3girls', '1boy', '2boys', 'solo', 'multiple girls', 'multiple boys',
+  'masterpiece', 'best quality', 'very aesthetic', 'absurdres', 'highres', 'newest', 'recent',
+  'amazing quality', 'great quality', 'normal quality', 'bad quality', 'worst quality',
+  'no text', 'official style', 'low complexity', 'medium complexity', 'high complexity', 'ultra complexity',
+  'location', 'rating:general', 'rating:sensitive', 'rating:questionable', 'rating:explicit', 'nsfw',
+]);
+
+const unwrapPromptTag = (raw: string): string => {
+  let value = raw.trim();
+  value = value.replace(/^-?\d+(?:\.\d+)?::/, '').replace(/::$/, '').trim();
+  while ((value.startsWith('{') && value.endsWith('}')) || (value.startsWith('[') && value.endsWith(']'))) {
+    value = value.slice(1, -1).trim();
+  }
+  return value.replace(/\\([()[\]{}])/g, '$1').trim();
+};
+
+const deriveZipStyleName = (entryPath: string, prompt: string, fallbackIndex: number): string => {
+  const base = entryPath.split('/').pop() || entryPath;
+  const stem = base.replace(/\.[^.]+$/, '').trim();
+  if (stem && !HASH_OR_NUMERIC_STEM.test(stem)) {
+    return stem.replace(/[_]+/g, ' ').trim().slice(0, 60) || `Style #${fallbackIndex + 1}`;
+  }
+  const tokens = prompt.split(/[,|\n]/).map(unwrapPromptTag).filter(Boolean);
+  const artists: string[] = [];
+  const seenArtists = new Set<string>();
+  for (const token of tokens) {
+    const match = /^(?:artist\s*:\s*|by\s+)(.+)$/i.exec(token);
+    if (!match) continue;
+    const name = match[1].replace(/[_]+/g, ' ').trim();
+    const key = name.toLowerCase();
+    if (name && !seenArtists.has(key)) {
+      seenArtists.add(key);
+      artists.push(name);
+      if (artists.length >= 3) break;
+    }
+  }
+  if (artists.length) return artists.join(', ').slice(0, 60);
+  const descriptors: string[] = [];
+  const seenDesc = new Set<string>();
+  for (const token of tokens) {
+    const cleaned = token.replace(/[_]+/g, ' ').trim();
+    const key = cleaned.toLowerCase();
+    if (!cleaned || cleaned.length > 36 || GENERIC_STYLE_NAME_TAGS.has(key) || seenDesc.has(key)) continue;
+    seenDesc.add(key);
+    descriptors.push(cleaned);
+    if (descriptors.length >= 3) break;
+  }
+  if (descriptors.length) return descriptors.join(', ').slice(0, 60);
+  return stem ? stem.slice(0, 16) : `Style #${fallbackIndex + 1}`;
+};
+
+const tryValidSourceUrl = (value: unknown): string => {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  try {
+    return source({ author: '', sourceUrl: value.trim(), note: '' }).sourceUrl;
+  } catch {
+    return '';
+  }
+};
+
+async function readZipManifestSources(file: Blob, records: ZipEntryRecord[]): Promise<{ byPath: Map<string, string>; byName: Map<string, string>; hasSourceMap: boolean }> {
+  const byPath = new Map<string, string>();
+  const byName = new Map<string, string>();
+  const manifestRecord = records.find(item => item.name.toLowerCase() === 'manifest.json')
+    || records.find(item => item.name.toLowerCase().endsWith('/manifest.json'));
+  if (!manifestRecord || manifestRecord.uncompressedSize <= 0 || manifestRecord.uncompressedSize > 32 * MiB) {
+    return { byPath, byName, hasSourceMap: false };
+  }
+  try {
+    const bytes = await readZipEntryBytes(file, manifestRecord, 32 * MiB);
+    const parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as { files?: unknown };
+    if (Array.isArray(parsed?.files)) {
+      for (const item of parsed.files) {
+        if (!item || typeof item !== 'object') continue;
+        const record = item as Record<string, unknown>;
+        const name = typeof record.name === 'string' ? record.name.replace(/\\/g, '/').replace(/^\/+/, '').trim() : '';
+        const url = tryValidSourceUrl(record.source_url ?? record.sourceUrl);
+        if (!name || !url) continue;
+        byPath.set(name, url);
+        const leaf = name.split('/').pop();
+        if (leaf && !byName.has(leaf)) byName.set(leaf, url);
+      }
+    }
+  } catch {
+    // 非标准或损坏的 manifest.json 不阻塞从图片 EXIF/PNG 直接提取画风
+  }
+  return { byPath, byName, hasSourceMap: byPath.size > 0 };
+}
+
+async function readZipStyleBundle(file: Blob, onProgress?: Progress): Promise<StyleBundlePreview> {
+  const records = await listZipEntries(file);
+  const { byPath, byName, hasSourceMap } = await readZipManifestSources(file, records);
+  const imageRecords = records.filter(item => ZIP_IMAGE_EXT.test(item.name));
+  if (!imageRecords.length) fail('压缩包内未找到支持的图片文件（WebP / PNG / JPEG）');
+
+  const entries: Entry[] = [];
+  const assets: Asset[] = [];
+  const assetMap = new Map<string, Asset>();
+  const zipAssets = new Map<string, ZipAssetRef>();
+  let skippedNoMeta = 0;
+  let truncatedCount = 0;
+
+  for (let index = 0; index < imageRecords.length; index++) {
+    const record = imageRecords[index];
+    if (entries.length >= STYLE_BUNDLE_LIMITS.entries) {
+      truncatedCount = imageRecords.length - index;
+      break;
+    }
+    try {
+      const inspected = await inspectZipImageMetadata(file, record, 12 * MiB);
+      if (!inspected?.rawMetadata || !hasCollectibleNaiMetadata(inspected.rawMetadata)) {
+        skippedNoMeta++;
+      } else {
+        const parsedMeta = parseNovelAIMetadata(inspected.rawMetadata);
+        const prompt = (parsedMeta.prompt || '').trim();
+        const hasCharacterPrompt = Boolean(parsedMeta.params.characters?.some(char => char.prompt?.trim()));
+        if (!prompt && !hasCharacterPrompt) {
+          skippedNoMeta++;
+        } else {
+          const leaf = record.name.split('/').pop() || record.name;
+          const sourceUrl = byPath.get(record.name) || byName.get(leaf) || '';
+          const rawParams: Record<string, unknown> = {
+            ...parsedMeta.params,
+            width: Number.isSafeInteger(parsedMeta.params.width) && parsedMeta.params.width > 0 ? parsedMeta.params.width : inspected.width,
+            height: Number.isSafeInteger(parsedMeta.params.height) && parsedMeta.params.height > 0 ? parsedMeta.params.height : inspected.height,
+            steps: Number.isSafeInteger(parsedMeta.params.steps) && parsedMeta.params.steps > 0 ? parsedMeta.params.steps : 28,
+            scale: typeof parsedMeta.params.scale === 'number' && Number.isFinite(parsedMeta.params.scale) ? parsedMeta.params.scale : 5,
+            sampler: typeof parsedMeta.params.sampler === 'string' && parsedMeta.params.sampler ? parsedMeta.params.sampler : 'k_euler_ancestral',
+          };
+          // 图片内嵌 Vibe 编码未入库为槽位，导入前移除避免空引用。
+          delete rawParams.vibes;
+          if (sourceUrl) rawParams._styleBundleSources = [{ author: '', sourceUrl, note: '' }];
+          for (const key of Object.keys(rawParams)) {
+            if (rawParams[key] === undefined) delete rawParams[key];
+          }
+          const id = `z${entries.length}`;
+          const assetId = `za${entries.length}`;
+          const name = deriveZipStyleName(record.name, prompt, entries.length);
+          const entry = cleanEntry({
+            id,
+            name,
+            description: '',
+            tags: [],
+            basePrompt: prompt,
+            negativePrompt: parsedMeta.negativePrompt || '',
+            modules: [],
+            params: rawParams,
+            cover: assetId,
+          });
+          if (record.compressionMethod === 0) {
+            const dataOffset = await resolveZipEntryDataOffset(file, record);
+            const asset: Asset = { id: assetId, offset: dataOffset, size: record.compressedSize, mime: inspected.mime, hash: '' };
+            assets.push(asset);
+            assetMap.set(assetId, asset);
+          } else {
+            zipAssets.set(assetId, { record, mime: inspected.mime });
+          }
+          entries.push(entry);
+        }
+      }
+    } catch {
+      skippedNoMeta++;
+    }
+    if ((index + 1) % 25 === 0 || index + 1 === imageRecords.length) {
+      onProgress?.({ phase: 'read', completed: index + 1, total: imageRecords.length });
+    }
+  }
+
+  if (!entries.length) fail('压缩包内未找到含 NovelAI 生成信息的图片');
+
+  const warnings: string[] = [];
+  if (skippedNoMeta > 0) warnings.push(`已跳过 ${skippedNoMeta} 张不含 NovelAI 元数据的图片`);
+  if (truncatedCount > 0) warnings.push(`压缩包超过单次 ${STYLE_BUNDLE_LIMITS.entries} 条上限，已截断剩余 ${truncatedCount} 张图片`);
+  if (hasSourceMap) warnings.push('来源是分享者填写的声明，未经签名验证。');
+
+  const allSources = [...new Map(entries.flatMap(entry => entry.params._styleBundleSources || []).map(item => [JSON.stringify(item), item])).values()];
+  const preview: StyleBundlePreview = {
+    coverage: 'unrecorded',
+    sourceKind: 'zip',
+    entries: entries.map(entry => ({
+      id: entry.id,
+      name: entry.name,
+      description: entry.description,
+      cover: Boolean(entry.cover),
+      model: entry.params.model,
+      searchText: entry.basePrompt.slice(0, 600),
+      sources: entry.params._styleBundleSources || [],
+    })),
+    sources: allSources,
+    warnings,
+  };
+  parsedBundles.set(preview, {
+    manifest: { entries, assets, encodings: [] },
+    entriesById: new Map(entries.map(entry => [entry.id, entry])),
+    assetsById: assetMap,
+    zipAssets,
+    zipBlobCache: new Map(),
+    file,
+    offset: 0,
+    imported: new Map(),
+    covers: new Map(),
+    operationIds: new Map(entries.map(entry => [entry.id, `naia-${hex(sha256(new TextEncoder().encode(createUuid())))}`])),
+    references: new Map(),
+    vibes: new Map(),
+    busy: false,
+  });
+  return preview;
+}
+
 export async function readStyleBundle(file: Blob, onProgress?: Progress): Promise<StyleBundlePreview> {
-  if (file.size < HEADER || file.size > STYLE_BUNDLE_LIMITS.fileBytes) fail('分享包大小无效（上限 2 GiB）');
+  if (!file.size || file.size > STYLE_BUNDLE_LIMITS.fileBytes) fail('分享包大小无效（上限 2 GiB）');
+  if (await isZipBlob(file)) return readZipStyleBundle(file, onProgress);
+  if (file.size < HEADER) fail('分享包大小无效（上限 2 GiB）');
   const header = new Uint8Array(await file.slice(0, HEADER).arrayBuffer()), view = new DataView(header.buffer);
-  if (!MAGIC.every((byte, index) => byte === header[index])) fail('不是 Atelier .naia 风格串分享包');
+  if (!MAGIC.every((byte, index) => byte === header[index])) fail('不是受支持的分享包（支持 .naia 或含 NovelAI 元数据的 .zip）');
   if (view.getUint32(8) !== 1) fail('分享包版本不受支持，请更新 Atelier');
   const length = view.getUint32(12); if (!length || length > STYLE_BUNDLE_LIMITS.compressedManifestBytes || HEADER + length > file.size) fail('分享包清单长度无效');
   const compressed = new Uint8Array(await file.slice(HEADER, HEADER + length).arrayBuffer());
@@ -331,7 +550,7 @@ export async function readStyleBundle(file: Blob, onProgress?: Progress): Promis
     onProgress?.({ phase: 'read', completed: index + 1, total: assets.length });
   }
   const allSources = [...new Map(entries.flatMap(entry => entry.params._styleBundleSources || []).map(item => [JSON.stringify(item), item])).values()];
-  const preview: StyleBundlePreview = { coverage, entries: entries.map(entry => ({ id: entry.id, name: entry.name, description: entry.description, cover: Boolean(entry.cover), sources: entry.params._styleBundleSources || [] })), sources: allSources, warnings: ['来源是分享者填写的声明，未经签名验证。'] };
+  const preview: StyleBundlePreview = { coverage, sourceKind: 'naia', entries: entries.map(entry => ({ id: entry.id, name: entry.name, description: entry.description, cover: Boolean(entry.cover), model: entry.params.model, searchText: entry.basePrompt.slice(0, 600), sources: entry.params._styleBundleSources || [] })), sources: allSources, warnings: ['来源是分享者填写的声明，未经签名验证。'] };
   parsedBundles.set(preview, { manifest: { entries, assets, encodings }, entriesById: new Map(entries.map(entry => [entry.id, entry])), assetsById: assetMap, file, offset: HEADER + length, imported: new Map(), covers: new Map(), operationIds: new Map(entries.map(entry => [entry.id, `naia-${hex(sha256(new TextEncoder().encode(createUuid())))}`])), references: new Map(), vibes: new Map(), busy: false });
   return preview;
 }
@@ -344,10 +563,37 @@ export function getStyleBundleEntryPreview(preview: StyleBundlePreview, entryId:
   const { cover, ...entry } = original;
   const result: StyleBundleEntryPreview = structuredClone(entry);
   if (cover) {
-    const asset = parsed.assetsById.get(cover)!;
-    result.coverBlob = parsed.file.slice(parsed.offset + asset.offset, parsed.offset + asset.offset + asset.size, asset.mime);
+    result.hasCover = true;
+    const asset = parsed.assetsById.get(cover);
+    if (asset) {
+      result.coverBlob = parsed.file.slice(parsed.offset + asset.offset, parsed.offset + asset.offset + asset.size, asset.mime);
+    } else if (parsed.zipBlobCache?.has(cover)) {
+      result.coverBlob = parsed.zipBlobCache.get(cover);
+    }
   }
   return result;
+}
+
+/** 按需获取封面 Blob：.naia 与 ZIP_STORED 零拷贝直返，ZIP_DEFLATE 按需解压并轻量缓存。 */
+export async function loadStyleBundleEntryCoverBlob(preview: StyleBundlePreview, entryId: string): Promise<Blob | undefined> {
+  const parsed = parsedBundles.get(preview); if (!parsed) fail('请先读取并校验分享包');
+  const original = parsed.entriesById.get(entryId);
+  if (!original?.cover) return undefined;
+  const asset = parsed.assetsById.get(original.cover);
+  if (asset) return parsed.file.slice(parsed.offset + asset.offset, parsed.offset + asset.offset + asset.size, asset.mime);
+  const cached = parsed.zipBlobCache?.get(original.cover);
+  if (cached) return cached;
+  const zipRef = parsed.zipAssets?.get(original.cover);
+  if (!zipRef) return undefined;
+  const blob = await readZipEntryBlob(parsed.file, zipRef.record, zipRef.mime, 12 * MiB);
+  if (parsed.zipBlobCache) {
+    if (parsed.zipBlobCache.size >= 120) {
+      const oldest = parsed.zipBlobCache.keys().next().value;
+      if (oldest) parsed.zipBlobCache.delete(oldest);
+    }
+    parsed.zipBlobCache.set(original.cover, blob);
+  }
+  return blob;
 }
 
 export async function importStyleBundle(preview: StyleBundlePreview, selectedIds: string[], onProgress?: Progress): Promise<{ createdIds: string[]; importedEntryIds: string[]; failed: Array<{ id: string; name: string; error: string }> }> {
@@ -356,7 +602,15 @@ export async function importStyleBundle(preview: StyleBundlePreview, selectedIds
   const selected = new Set(selectedIds), entries = parsed.manifest.entries.filter(entry => selected.has(entry.id));
   if (entries.length !== selected.size) fail('导入选择含未知风格串');
   const assets = new Map(parsed.manifest.assets.map(asset => [asset.id, asset])), encodings = new Map(parsed.manifest.encodings.map(encoding => [encoding.id, encoding]));
-  const getBlob = (id: string) => { const asset = assets.get(id)!; return parsed.file.slice(parsed.offset + asset.offset, parsed.offset + asset.offset + asset.size, asset.mime); };
+  const getBlob = async (id: string) => {
+    const asset = assets.get(id);
+    if (asset) return parsed.file.slice(parsed.offset + asset.offset, parsed.offset + asset.offset + asset.size, asset.mime);
+    const cached = parsed.zipBlobCache?.get(id);
+    if (cached) return cached;
+    const zipRef = parsed.zipAssets?.get(id);
+    if (zipRef) return readZipEntryBlob(parsed.file, zipRef.record, zipRef.mime, 12 * MiB);
+    fail('分享包素材缺失');
+  };
   const result = { createdIds: [] as string[], importedEntryIds: [] as string[], failed: [] as Array<{ id: string; name: string; error: string }> };
   parsed.busy = true;
   try { for (const [index, entry] of entries.entries()) {
@@ -366,7 +620,7 @@ export async function importStyleBundle(preview: StyleBundlePreview, selectedIds
         for (const slot of params.characterReferences?.slots || []) {
           const id = slot.assetId;
           if (!parsed.references.has(id)) {
-            const blob = getBlob(id), reference = await characterReferenceService.create(new File([blob], 'reference', { type: blob.type }), slot.assetName || entry.name);
+            const blob = await getBlob(id), reference = await characterReferenceService.create(new File([blob], 'reference', { type: blob.type }), slot.assetName || entry.name);
             parsed.references.set(id, reference.item.id);
           }
           slot.assetId = parsed.references.get(id)!;
@@ -375,7 +629,7 @@ export async function importStyleBundle(preview: StyleBundlePreview, selectedIds
           const id = slot.encodingId, encoding = encodings.get(id)!;
           if (!parsed.vibes.has(id)) {
             const parameters = encoding.parameters !== undefined ? encoding.parameters : encoding.informationKnown === false ? null : { information_extracted: encoding.information };
-            const document = { identifier: 'novelai-vibe-transfer', version: 1, type: 'image', id: encoding.sourceHash, name: encoding.name, encodings: { [encoding.modelKey]: { variant: { encoding: await encodeBase64(getBlob(encoding.asset)), ...(parameters !== null ? { params: parameters } : {}) } } }, importInfo: { model: encoding.model, information_extracted: encoding.information, strength: slot.strength } };
+            const document = { identifier: 'novelai-vibe-transfer', version: 1, type: 'image', id: encoding.sourceHash, name: encoding.name, encodings: { [encoding.modelKey]: { variant: { encoding: await encodeBase64(await getBlob(encoding.asset)), ...(parameters !== null ? { params: parameters } : {}) } } }, importInfo: { model: encoding.model, information_extracted: encoding.information, strength: slot.strength } };
             const response = await api.post('/vibes/import', { document }) as { item: VibeAsset };
             const variants = response.item.encodings.filter(variant => variant.model === encoding.model && (encoding.informationKnown === false || variant.informationExtracted === encoding.information));
             if (!variants.length) fail('导入的 Vibe 缺少所需编码');
@@ -389,7 +643,7 @@ export async function importStyleBundle(preview: StyleBundlePreview, selectedIds
         }
         let previewImage: string | undefined;
         if (entry.cover) {
-          if (!parsed.covers.has(entry.cover)) { const blob = getBlob(entry.cover); parsed.covers.set(entry.cover, (await api.uploadFile(new File([blob], `cover.${blob.type.split('/')[1]}`, { type: blob.type }), 'covers')).url); }
+          if (!parsed.covers.has(entry.cover)) { const blob = await getBlob(entry.cover); parsed.covers.set(entry.cover, (await api.uploadFile(new File([blob], `cover.${blob.type.split('/')[1] || 'webp'}`, { type: blob.type }), 'covers')).url); }
           previewImage = parsed.covers.get(entry.cover);
         }
         // 复用后端已有操作 ID：回执丢失后重投同一条只返回已建条目，不覆盖或重复新建。

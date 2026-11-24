@@ -30647,11 +30647,41 @@
     "選択",
     "선택"
   ],
+  "选择 .naia / .zip": [
+    "選擇 .naia / .zip",
+    "Choose .naia / .zip",
+    ".naia / .zip を選択",
+    ".naia / .zip 선택"
+  ],
+  "选择 .naia 分享包或含 NovelAI 元数据的 .zip 画风包": [
+    "選擇 .naia 分享包或含 NovelAI 中繼資料的 .zip 畫風包",
+    "Choose a .naia share bundle or a .zip style pack with NovelAI metadata",
+    ".naia 共有パックまたは NovelAI メタデータ付き .zip 画風パックを選択",
+    ".naia 공유 팩 또는 NovelAI 메타데이터가 포함된 .zip 그림체 팩 선택"
+  ],
   "选择 .naia 文件": [
     "選擇 .naia 檔案",
     "Choose a .naia file",
     ".naia ファイルを選択",
     ".naia 파일 선택"
+  ],
+  "选择分享包（.naia / .zip）": [
+    "選擇分享包（.naia / .zip）",
+    "Choose bundle (.naia / .zip)",
+    "パックを選択（.naia / .zip）",
+    "팩 선택 (.naia / .zip)"
+  ],
+  "按模型筛选": [
+    "依模型篩選",
+    "Filter by model",
+    "モデルで絞り込み",
+    "모델별 필터"
+  ],
+  "搜索名称、画师或提示词": [
+    "搜尋名稱、畫師或提示詞",
+    "Search name, artist, or prompt",
+    "名前・絵師・プロンプトを検索",
+    "이름, 작가 또는 프롬프트 검색"
   ],
   "选择{0}": [
     "選擇{0}",

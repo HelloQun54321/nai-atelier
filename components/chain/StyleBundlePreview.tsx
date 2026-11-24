@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Image as ImageIcon } from 'lucide-react';
-import { getStyleBundleEntryPreview, type StyleBundlePreview as BundlePreview } from '../../services/styleBundle';
+import { getStyleBundleEntryPreview, loadStyleBundleEntryCoverBlob, type StyleBundlePreview as BundlePreview } from '../../services/styleBundle';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { t } from '../../services/i18n';
 import { MediaCardShell } from '../DesignSystem';
@@ -25,7 +25,17 @@ function BundleEntryCard({ preview, id, selected, imported, disabled, failure, o
   failure?: string; onSelect: () => void; onOpen: () => void;
 }) {
   const entry = useMemo(() => getStyleBundleEntryPreview(preview, id), [preview, id]);
-  const src = useCoverUrl(entry.coverBlob);
+  const [asyncCover, setAsyncCover] = useState<{ preview: BundlePreview; id: string; blob?: Blob }>();
+  useEffect(() => {
+    if (entry.coverBlob || !entry.hasCover) return;
+    let active = true;
+    void loadStyleBundleEntryCoverBlob(preview, id).then(blob => {
+      if (active) setAsyncCover({ preview, id, blob });
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [entry.coverBlob, entry.hasCover, id, preview]);
+  const coverBlob = entry.coverBlob || (asyncCover?.preview === preview && asyncCover.id === id ? asyncCover.blob : undefined);
+  const src = useCoverUrl(coverBlob);
   const [ratio, setRatio] = useState(() => Number(entry.params.width) > 0 && Number(entry.params.height) > 0 ? Number(entry.params.width) / Number(entry.params.height) : 1);
   const [expandedPreview, setExpandedPreview] = useState<BundlePreview>();
   const [descriptionPreview, setDescriptionPreview] = useState<BundlePreview>();
@@ -38,7 +48,7 @@ function BundleEntryCard({ preview, id, selected, imported, disabled, failure, o
         <label className={`mobile-touch absolute left-2 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border shadow backdrop-blur ${selected ? 'border-indigo-500 bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white' : 'border-white/80 bg-black/35 text-transparent'} ${disabled || imported ? 'opacity-50' : 'cursor-pointer'}`} onClick={event => event.stopPropagation()}>
           <input type="checkbox" aria-label={entry.name} checked={selected} disabled={disabled || imported} onChange={onSelect} className="peer sr-only" /><Check aria-hidden="true" className="h-4 w-4 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-white" />
         </label>
-        {entry.coverBlob ? <button type="button" aria-label={t('查看封面：{0}', [entry.name])} onClick={onOpen} className="h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+        {coverBlob || entry.hasCover ? <button type="button" aria-label={t('查看封面：{0}', [entry.name])} onClick={onOpen} className="h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
           {src && <img src={src} alt={entry.name} loading="lazy" decoding="async" className="h-full w-full object-contain" onLoad={event => { const image = event.currentTarget; if (image.naturalWidth && image.naturalHeight) setRatio(image.naturalWidth / image.naturalHeight); }} />}
         </button> : <div className="flex flex-col items-center gap-2 text-gray-400 dark:text-gray-600"><ImageIcon className="h-12 w-12" strokeWidth={1.5} /><span className="text-xs">{t('无封面')}</span></div>}
       </div>
@@ -49,7 +59,7 @@ function BundleEntryCard({ preview, id, selected, imported, disabled, failure, o
     </MediaCardShell>
     <details open={expanded} onToggle={event => { setExpandedPreview(event.currentTarget.open ? preview : undefined); if (!event.currentTarget.open) setDescriptionPreview(undefined); }} className="text-xs text-gray-600 dark:text-gray-300">
       <summary className="mobile-touch cursor-pointer rounded-lg px-2 py-1.5 font-semibold">{t('配方详情')}</summary>
-      {expanded && <div className="space-y-2 px-2 pb-2"><pre className="appearance-media max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-100 p-3 font-mono dark:bg-gray-800">{JSON.stringify({ ...entry, coverBlob: undefined, description: undefined }, null, 2)}</pre>
+      {expanded && <div className="space-y-2 px-2 pb-2"><pre className="appearance-media max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-100 p-3 font-mono dark:bg-gray-800">{JSON.stringify({ ...entry, coverBlob: undefined, hasCover: undefined, description: undefined }, null, 2)}</pre>
         {description && <details open={descriptionExpanded} onToggle={event => setDescriptionPreview(event.currentTarget.open ? preview : undefined)}><summary className="mobile-touch cursor-pointer py-1.5 font-semibold">{t('原始描述')}</summary>{descriptionExpanded && <pre className="appearance-media max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-100 p-3 dark:bg-gray-800">{description}</pre>}</details>}
       </div>}
     </details>
@@ -72,7 +82,15 @@ export function StyleBundlePreview({ preview, entries, selected, imported, disab
   }, [opened, preview]);
   const openImage = (id: string) => {
     const entry = getStyleBundleEntryPreview(preview, id);
-    if (entry.coverBlob) setOpened({ preview, id, name: entry.name, src: URL.createObjectURL(entry.coverBlob) });
+    if (entry.coverBlob) {
+      setOpened({ preview, id, name: entry.name, src: URL.createObjectURL(entry.coverBlob) });
+      return;
+    }
+    if (entry.hasCover) {
+      void loadStyleBundleEntryCoverBlob(preview, id).then(blob => {
+        if (blob) setOpened({ preview, id, name: entry.name, src: URL.createObjectURL(blob) });
+      }).catch(() => {});
+    }
   };
   const renderCard = (entry: BundlePreview['entries'][number]) => <BundleEntryCard key={entry.id} preview={preview} id={entry.id} selected={selected.has(entry.id)} imported={imported.has(entry.id)} disabled={disabled} failure={failures[entry.id]} onSelect={() => onSelect(entry.id)} onOpen={() => openImage(entry.id)} />;
   return <div ref={container}>
