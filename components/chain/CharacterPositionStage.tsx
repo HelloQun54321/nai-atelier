@@ -85,32 +85,40 @@ export const CharacterPositionStage: React.FC<CharacterPositionStageProps> = ({ 
         {!freeform && <div aria-hidden="true" className="pointer-events-none absolute inset-0 grid grid-cols-5 grid-rows-5">
           {Array.from({ length: 25 }, (_, index) => <div key={index} className="border border-gray-400/20 dark:border-gray-400/25" />)}
         </div>}
-        {available.map(({ character, index }) => <button
-          key={character.id} type="button" data-character-id={character.id}
-          aria-label={t("定位角色 {0}", [index + 1])} aria-pressed={selected?.character.id === character.id} disabled={!canEdit}
-          title={t("角色 {0} · {1}（方向键微调）", [index + 1, character.prompt || '尚未填写'])}
-          className={`appearance-media absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border text-xs font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:cursor-not-allowed ${selected?.character.id === character.id ? 'z-10 border-indigo-500 bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white' : 'border-gray-300 bg-white text-gray-700 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-100'}`}
-          style={{ left: `clamp(14px, ${normalizeCharacterCoordinate(character.x, freeform) * 100}%, calc(100% - 14px))`, top: `clamp(14px, ${normalizeCharacterCoordinate(character.y, freeform) * 100}%, calc(100% - 14px))` }}
-          onClick={() => setSelectedId(character.id)}
-          onKeyDown={event => {
-            if (!canEdit || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
-            event.preventDefault(); event.stopPropagation();
-            const step = freeform ? 0.01 : 0.2;
-            const x = normalizeCharacterCoordinate(character.x, freeform), y = normalizeCharacterCoordinate(character.y, freeform);
-            onPosition(index, {
-              x: normalizeCharacterCoordinate(Number((x + (event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0)).toFixed(3)), freeform),
-              y: normalizeCharacterCoordinate(Number((y + (event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0)).toFixed(3)), freeform),
-            });
-          }}
-        >{index + 1}</button>)}
+        {available.map(({ character, index }) => {
+          const displayName = character.name?.trim() || t('角色 {0}', [index + 1]);
+          return <button
+            key={character.id} type="button" data-character-id={character.id}
+            aria-label={t("定位角色 {0}", [index + 1])} aria-pressed={selected?.character.id === character.id} disabled={!canEdit}
+            title={character.prompt ? t("{0} · {1}（方向键微调）", [displayName, character.prompt]) : t("{0}（方向键微调）", [displayName])}
+            className={`appearance-media absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border text-xs font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:cursor-not-allowed ${selected?.character.id === character.id ? 'z-10 border-indigo-500 bg-indigo-700 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:hover:from-indigo-500 dark:hover:to-violet-600 text-white' : 'border-gray-300 bg-white text-gray-700 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-100'}`}
+            style={{ left: `clamp(14px, ${normalizeCharacterCoordinate(character.x, freeform) * 100}%, calc(100% - 14px))`, top: `clamp(14px, ${normalizeCharacterCoordinate(character.y, freeform) * 100}%, calc(100% - 14px))` }}
+            onClick={() => setSelectedId(character.id)}
+            onKeyDown={event => {
+              if (!canEdit || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+              event.preventDefault(); event.stopPropagation();
+              const step = freeform ? 0.01 : 0.2;
+              const x = normalizeCharacterCoordinate(character.x, freeform), y = normalizeCharacterCoordinate(character.y, freeform);
+              onPosition(index, {
+                x: normalizeCharacterCoordinate(Number((x + (event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0)).toFixed(3)), freeform),
+                y: normalizeCharacterCoordinate(Number((y + (event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0)).toFixed(3)), freeform),
+              });
+            }}
+          >{index + 1}</button>;
+        })}
       </div>
       <div className="flex min-w-24 max-w-56 flex-1 flex-col gap-2">
         <div className="flex max-h-40 flex-wrap content-start gap-1.5 overflow-y-auto">
-          {available.map(({ character, index }) => <button key={character.id} type="button" disabled={!canEdit}
-            aria-label={t("选择角色 {0}", [index + 1])} aria-pressed={selected?.character.id === character.id}
-            onClick={() => setSelectedId(character.id)} title={character.prompt}
-            className={`max-w-full truncate rounded border px-2 py-1 text-xs disabled:opacity-50 ${selected?.character.id === character.id ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
-          >{index + 1} · {character.prompt || t("尚未填写")}</button>)}
+          {available.map(({ character, index }) => {
+            const defaultLabel = t('角色 {0}', [index + 1]);
+            const displayName = character.name?.trim() || defaultLabel;
+            const buttonLabel = displayName === defaultLabel ? displayName : `${index + 1} · ${displayName}`;
+            return <button key={character.id} type="button" disabled={!canEdit}
+              aria-label={t("选择角色 {0}", [index + 1])} aria-pressed={selected?.character.id === character.id}
+              onClick={() => setSelectedId(character.id)} title={character.prompt ? `${displayName} · ${character.prompt}` : displayName}
+              className={`max-w-full truncate rounded border px-2 py-1 text-xs disabled:opacity-50 ${selected?.character.id === character.id ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+            >{buttonLabel}</button>;
+          })}
           {!available.length && <span className="text-xs text-gray-400">{t("没有已启用的角色")}</span>}
         </div>
         {selected && <div role="group" className="grid grid-cols-2 gap-2" aria-label={t('角色 {0} 坐标', [selected.index + 1])}>

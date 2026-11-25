@@ -45,4 +45,24 @@ describe('角色定位交互', () => {
     rerender(<CharacterPositionStage {...props} characters={[]} />);
     expect(screen.getByText('没有已启用的角色')).toBeTruthy();
   });
+
+  it('右侧列表优先展示角色名而非提示词或「尚未填写」，移动或改名时附带画布槽位号', () => {
+    render(<CharacterPositionStage
+      characters={[
+        { id: 'c1', name: '2b', prompt: '1girl, 2b (nier:automata)', x: 0.2, y: 0.5 },
+        { id: 'c2', name: '角色 2', prompt: '', x: 0.5, y: 0.5 },
+        { id: 'c3', name: '角色 16', prompt: '', x: 0.8, y: 0.5 },
+      ]}
+      freeform
+      width={832}
+      height={1216}
+      canEdit
+      useCoords
+      onPosition={vi.fn()}
+    />);
+    expect(screen.getByRole('button', { name: '选择角色 1' }).textContent).toBe('1 · 2b');
+    expect(screen.getByRole('button', { name: '选择角色 2' }).textContent).toBe('角色 2');
+    expect(screen.getByRole('button', { name: '选择角色 3' }).textContent).toBe('3 · 角色 16');
+    expect(screen.queryByText(/尚未填写/)).toBeNull();
+  });
 });

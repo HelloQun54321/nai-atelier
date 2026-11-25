@@ -12,6 +12,8 @@ import { PresetSection, PresetSource, PresetSourceBadges } from './PresetSourceB
 import { mergePromptFields } from '../../services/promptUtils';
 import { ImageTaggerPanel } from '../ImageTaggerPanel';
 import { compileCharacterContent, getCharacterSectionKeys, hasCharacterSections, reorderCharacter } from '../../services/characterPrompts';
+import { resolveManualCharacterNamePatch } from '../../services/characterAutoName';
+import { useCharacterAutoRename } from './useCharacterAutoRename';
 import { CharacterPositionStage } from './CharacterPositionStage';
 import { CharacterSlotHeader } from './CharacterSlotHeader';
 import { getRuntimeNaiModelInfo, isNaiMediumModel } from '../../services/naiModels';
@@ -136,6 +138,13 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
             setSavingCharacter(false);
         }
     };
+    useCharacterAutoRename({
+        characters,
+        canEdit,
+        legacyNegatives,
+        onRename: (index, patch) => updateCharacter(index, patch),
+    });
+
     const negativeLocked = isNaiMediumModel(params.model);
     const handleReorder = (fromIndex: number, toIndex: number) => {
         if (!canEdit) return;
@@ -257,7 +266,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                         <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-xs transition-transform ${enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
                                     </button>
                                     {editingNameId === char.id
-                                        ? <input autoFocus aria-label={t('角色名称')} value={nameDraft} onChange={event => setNameDraft(event.target.value)} onBlur={() => { updateCharacter(idx, { name: nameDraft.trim() || undefined }); setEditingNameId(''); }} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); updateCharacter(idx, { name: nameDraft.trim() || undefined }); setEditingNameId(''); } else if (event.key === 'Escape') setEditingNameId(''); }} className="h-6 w-28 rounded border border-gray-300 bg-white px-1.5 text-xs dark:border-gray-600 dark:bg-gray-800" />
+                                        ? <input autoFocus aria-label={t('角色名称')} value={nameDraft} onChange={event => setNameDraft(event.target.value)} onBlur={() => { updateCharacter(idx, resolveManualCharacterNamePatch(characters, char.id, nameDraft)); setEditingNameId(''); }} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); updateCharacter(idx, resolveManualCharacterNamePatch(characters, char.id, nameDraft)); setEditingNameId(''); } else if (event.key === 'Escape') setEditingNameId(''); }} className="h-6 w-28 rounded border border-gray-300 bg-white px-1.5 text-xs dark:border-gray-600 dark:bg-gray-800" />
                                         : <button type="button" disabled={!canEdit} title={t('修改角色名称')} onClick={() => { setEditingNameId(char.id); setNameDraft(char.name || ''); }} className={`min-w-0 max-w-44 truncate rounded px-1 py-0.5 text-left font-semibold hover:bg-gray-100 disabled:opacity-100 dark:hover:bg-gray-800 ${enabled ? '' : 'text-gray-400 line-through dark:text-gray-500'}`}>{labelText}</button>}
                                     {!enabled && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">{t('已停用')}</span>}
                                 </div>

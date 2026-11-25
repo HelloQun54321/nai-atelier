@@ -14,6 +14,8 @@ import { useModalA11y } from '../useModalA11y';
 import { compilePrompt } from '../../services/promptUtils';
 import { characterSlotFromLibraryChain } from '../../services/promptLibraryEntries';
 import { hasCharacterSections, reorderCharacter } from '../../services/characterPrompts';
+import { resolveManualCharacterNamePatch } from '../../services/characterAutoName';
+import { useCharacterAutoRename } from './useCharacterAutoRename';
 import { getRuntimeNaiModelInfo } from '../../services/naiModels';
 import { useNaiRuntime } from '../../services/naiRuntime';
 import type { CharacterParams, NAIParams, PromptChain, PromptSectionSource, PromptSections } from '../../types';
@@ -324,9 +326,15 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
   const shownCharacterIndex = characters.length ? Math.max(0, characters.findIndex(item => item.id === resolvedCharacterId)) : -1;
   const characterLabel = (item: CharacterParams, index: number) => item.name || t('角色 {0}', [index + 1]);
   const commitName = (index: number) => {
-    onUpdateCharacter(index, { name: nameDraft.trim() || undefined });
+    const target = characters[index];
+    if (target) onUpdateCharacter(index, resolveManualCharacterNamePatch(characters, target.id, nameDraft));
     setEditingNameId('');
   };
+  useCharacterAutoRename({
+    characters,
+    canEdit: !disabled,
+    onRename: (index, patch) => onUpdateCharacter(index, patch),
+  });
   const characterCount = useRef(characters.length);
   useEffect(() => {
     if (characters.length > characterCount.current) setActiveCharacterId(characters[characters.length - 1].id);

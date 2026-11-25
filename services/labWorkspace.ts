@@ -262,11 +262,11 @@ export const serializeLabWorkspaceMemory = (session: LabWorkspaceSession, memory
       } } : {}),
       ...((memory.parameters || memory.characterPrompt || memory.characterNegativePrompt) && Array.isArray(characters) ? {
         characters: characters.map(character => {
-          const { id, prompt, negativePrompt, sections, sectionMeta, sectionNegatives, ...position } = character;
+          const { id, name, autoNamed, prompt, negativePrompt, sections, sectionMeta, sectionNegatives, ...position } = character;
           return {
             id,
             ...(memory.parameters ? position : {}),
-            ...(memory.characterPrompt ? { prompt, sections, sectionMeta } : {}),
+            ...(memory.characterPrompt ? { name, autoNamed, prompt, sections, sectionMeta } : {}),
             ...(memory.characterNegativePrompt ? memory.characterPrompt ? { negativePrompt, sectionNegatives }
               : { negativePrompt: compileCharacterContent(character).negativePrompt } : {}),
           };
@@ -311,6 +311,8 @@ const restoreLabWorkspaceMemory = (value: unknown, fallback: LabWorkspaceSession
         const original = defaults.characters?.find(item => item.id === character.id);
         return {
           id: character.id,
+          ...(memory.characterPrompt && character.name !== undefined ? { name: character.name } : original?.name !== undefined ? { name: original.name } : {}),
+          ...(memory.characterPrompt && character.autoNamed !== undefined ? { autoNamed: character.autoNamed } : original?.autoNamed !== undefined ? { autoNamed: original.autoNamed } : {}),
           x: memory.parameters ? character.x ?? original?.x ?? 0.5 : original?.x ?? 0.5,
           y: memory.parameters ? character.y ?? original?.y ?? 0.5 : original?.y ?? 0.5,
           enabled: memory.parameters && (character.x !== undefined || character.y !== undefined) ? character.enabled : original?.enabled,
