@@ -886,7 +886,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     className="mobile-touch flex h-7 w-7 items-center justify-center rounded-md p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100">
     {clearUndo ? <RotateCcw aria-hidden="true" className="h-4 w-4" /> : <Eraser aria-hidden="true" className="h-4 w-4" />}
   </button>;
-  const tagInputField = <span key="tag-input" className="inline-grid min-w-[4ch] max-w-full grid-cols-[minmax(0,1fr)] rounded-md border border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_8%,transparent)] font-mono text-micro leading-tight ring-1 ring-[var(--nai-accent)]">
+  const tagInputField = <span key="tag-input" className="inline-grid min-w-[4ch] max-w-full grid-cols-[minmax(0,1fr)] rounded-md border border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_8%,transparent)] font-mono text-micro leading-tight ring-1 ring-inset ring-[color-mix(in_srgb,var(--nai-accent)_35%,transparent)]">
     <span aria-hidden="true" className="invisible min-w-0 whitespace-pre-wrap px-1 py-0.5 [grid-area:1/1] [overflow-wrap:anywhere]">{tagInput + '\u200b'}</span>
     <textarea ref={tagInputRef} rows={1} cols={1} role="combobox" aria-label={t(editingTag ? '修改提示词' : insertionIndex === currentTranslations.length ? '添加提示词' : '插入提示词')} value={tagInput}
     aria-autocomplete="list" aria-expanded={isOpen && completionSource === 'tag'}
@@ -922,13 +922,13 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       if (document.activeElement !== event.currentTarget) finishTagInput(event.currentTarget.value);
       else refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length, 'tag');
     }}
-    style={{ font: 'inherit', lineHeight: 'inherit', letterSpacing: 'inherit', color: 'inherit', minHeight: 0, height: '100%', width: '100%', padding: '0.125rem 0.25rem', border: 0, borderRadius: 'inherit', background: 'transparent', boxShadow: 'none' }}
+    style={{ font: 'inherit', lineHeight: 'inherit', letterSpacing: 'inherit', color: 'inherit', minHeight: 0, height: '100%', width: '100%', padding: '0.125rem 0.25rem', border: 0, borderRadius: 'inherit', background: 'transparent', boxShadow: 'none', outline: 'none', outlineOffset: 0 }}
     className="min-w-0 resize-none overflow-hidden whitespace-pre-wrap outline-none [grid-area:1/1] [overflow-wrap:anywhere]" />
     {!editingTag && tagInput.trim() && <span className="min-w-0 max-w-full whitespace-pre-wrap px-1 pb-0.5 font-sans text-xs font-medium [grid-area:2/1] [overflow-wrap:anywhere]">{draftChinese}</span>}
   </span>;
   const insertionAt = (index: number) => {
     // 插入缝只留窄空白（决策：不显示加号／占位框）。不用 mobile-touch：其 44px 下限会把缝撑成大方块，权重组之间还会被顶成空行。
-    const slotClass = `prompt-insert-slot inline-flex min-h-10 ${index === currentTranslations.length ? 'min-w-3 flex-1' : 'w-3 shrink-0'}`;
+    const slotClass = `prompt-insert-slot inline-flex ${currentTranslations.length ? 'min-h-10' : 'min-h-6'} ${index === currentTranslations.length ? 'min-w-3 flex-1' : 'w-3 shrink-0'}`;
     // 屏蔽／删除模式中不提供插入入口，但保留与普通模式同宽同高的占位，避免切换模式后翻译区排版突然变紧凑。
     if (deleteMode || muteMode) {
       return <button key={`insert:${index}`} type="button" disabled aria-hidden="true" tabIndex={-1} data-prompt-insert-slot className={slotClass} />;
@@ -943,7 +943,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         setInsertionIndex(index);
         requestAnimationFrame(() => tagInputRef.current?.focus());
       }}
-      className={`${slotClass} cursor-text rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--nai-accent)]`} />;
+      style={{ outline: 'none' }}
+      className={`${slotClass} cursor-text rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--nai-accent)]`} />;
   };
   const libraryAction = personalLibrary && promptLibraryActions !== false
     ? <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} mode={promptLibraryActions === 'save' ? 'save' : 'both'} />
@@ -1069,7 +1070,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             if (text.trim()) { event.preventDefault(); insertTags(text); }
           }}>
           {/* 触屏通过框外把手调高，内容区仍允许滚动传递，鼠标保留原生右下角拖拽。 */}
-          <div ref={tagListRef} data-empty={currentTranslations.length === 0 ? 'true' : 'false'} className={`flex flex-wrap content-start items-start gap-1.5 overflow-y-auto pr-1.5 ${currentTranslations.length ? 'min-h-10 pb-1.5' : 'min-h-7 pb-0.5'} ${translationAutoHeight ? 'h-auto' : currentTranslations.length ? (autoHeightMax ? 'h-auto' : 'h-36') : 'h-7'} ${translationAutoHeight ? 'overscroll-contain' : 'pointer-fine:resize-y pointer-fine:overscroll-contain'}`} style={translationAutoHeight || autoHeightMax ? { maxHeight: resolvedAutoHeightMax } : undefined}>
+          <div ref={tagListRef} data-empty={currentTranslations.length === 0 ? 'true' : 'false'} className={`flex flex-wrap content-start items-start gap-1.5 overflow-y-auto p-1.5 ${currentTranslations.length ? 'min-h-12' : insertionIndex !== null ? 'min-h-10' : 'min-h-9'} ${translationAutoHeight ? 'h-auto' : currentTranslations.length ? (autoHeightMax ? 'h-auto' : 'h-36') : insertionIndex !== null ? 'h-auto' : 'h-9'} ${translationAutoHeight ? 'overscroll-contain' : 'pointer-fine:resize-y pointer-fine:overscroll-contain'}`} style={translationAutoHeight || autoHeightMax ? { maxHeight: resolvedAutoHeightMax } : undefined}>
             {(() => {
               // 权重组按连续区间渲染为单个胶囊：中间无间隔、强调色贯穿，选择粒度也是整组。
               const nodes: React.ReactNode[] = [];
