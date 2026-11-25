@@ -172,7 +172,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
   const sourceEntries = directories && directoryIds !== null ? selectPromptLibraryDirectoryEntries(chains, directories, selectedDirectoryIds) : chains;
   const excludedCandidates = sourceEntries.reduce<Partial<Record<PromptPurposeCandidateReason, number>>>((counts, entry) => {
     if (!librarySectionOf(entry)) return counts;
-    const status = getPromptPurposeCandidateStatus(entry);
+    const status = getPromptPurposeCandidateStatus(entry, undefined, directories);
     if (!status.eligible) counts[status.reason] = (counts[status.reason] || 0) + 1;
     return counts;
   }, {});
@@ -193,7 +193,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
   };
   const poolFor = (kind: string) => {
     const section = rollSectionKey(kind);
-    return isPurposeSectionKey(section) ? selectPurposeEntries(sourceEntries, section.slice(8) as PromptPurposeId, true) : directories && section.startsWith('directory:') ? selectPromptLibraryDirectoryEntries(chains, directories, [section.slice(10)]) : chains.filter(item => item.type === section);
+    return isPurposeSectionKey(section) ? selectPurposeEntries(sourceEntries, section.slice(8) as PromptPurposeId, true, directories) : directories && section.startsWith('directory:') ? selectPromptLibraryDirectoryEntries(chains, directories, [section.slice(10)]) : chains.filter(item => item.type === section);
   };
 
   const editRow = (kind: string, text: string, negative = current?.picks[kind]?.negative || '', entry?: PromptChain) => {
@@ -582,9 +582,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
           {purposeMode ? <>{PROMPT_PURPOSE_GROUPS.map(group => {
             const grouped = group.purposes.flatMap(id => rows.filter(row => rollSectionKey(row.kind) === purposeSectionKey(id)));
             const purposes = [...new Set(grouped.map(row => rollSectionKey(row.kind)))];
-            const label = allowedPurposes === undefined ? group.label : purposes.length === 1 ? grouped[0].meta.title
-              : group.id === 'camera-light' && purposes.every(key => key === 'purpose:composition' || key === 'purpose:camera') ? '构图与镜头'
-                : group.id === 'action' && purposes.every(key => key === 'purpose:pose' || key === 'purpose:expression') ? '动作与表情' : group.label;
+            const label = allowedPurposes === undefined ? group.label : purposes.length === 1 ? grouped[0].meta.title : group.label;
             return grouped.length > 0 && <div key={group.id} data-prompt-purpose-group={group.id}><p className={entryTarget ? 'sr-only' : 'content-roll-group text-xs font-medium text-gray-400 dark:text-gray-500'}>{t(label)}</p>{grouped.map(renderRow)}</div>;
           })}{rows.some(row => !isPurposeSectionKey(rollSectionKey(row.kind))) && <div data-prompt-purpose-group="legacy">{rows.filter(row => !isPurposeSectionKey(rollSectionKey(row.kind))).map(renderRow)}</div>}</> : rows.map(renderRow)}
         </section>

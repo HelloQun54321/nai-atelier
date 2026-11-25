@@ -56,7 +56,7 @@ it('文件夹固定标题：片段管理器只让目录列表滚动，标题动�
   expect(viewport.classList.contains('md:flex-1')).toBe(true);
   expect(viewport.contains(header)).toBe(false);
   expect(header.parentElement).toBe(aside);
-  for (const name of ['新建目录', '重命名目录', '删除目录']) {
+  for (const name of ['新建目录', '编辑目录', '删除目录']) {
     const button = screen.getByRole('button', { name });
     expect(header.contains(button)).toBe(true);
     expect(viewport.contains(button)).toBe(false);

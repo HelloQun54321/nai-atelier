@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { PROMPT_PURPOSE_GROUPS, PROMPT_PURPOSES, getEntryPurposes, getPromptPurposeCandidateStatus, normalizePromptPurposeSectionKey, promptPurposeLabel, readPromptPurposes, selectPurposeEntries, isCreativeSectionKey, isPurposeSectionKey } from '../../services/promptPurposes.mjs';
+import { PROMPT_PURPOSE_GROUPS, PROMPT_PURPOSES, getEntryPurposes, getExplicitEntryPurposes, getPromptPurposeCandidateStatus, normalizePromptPurposeSectionKey, promptPurposeLabel, readPromptPurposes, selectPurposeEntries, isCreativeSectionKey, isPurposeSectionKey } from '../../services/promptPurposes.mjs';
+import { createDefaultPromptLibraryTree } from '../../services/promptLibraryTree.mjs';
 import { draw } from '../../services/contentRollDraw';
 import { contentRead, contentSnapshotOf } from '../../services/contentRoll';
 import { planContentRollApply, applyContentRollToParams } from '../../services/contentRollApply';
@@ -34,14 +35,19 @@ it('单用途候选状态区分真实排除原因，纯池与状态一致且不�
   expect(JSON.stringify(entries)).toBe(before);
 });
 
-it('16 个稳定用途拒绝自定义值，不从目录、旧类型和自由标签猜用途', () => {
-  expect(new Set(PROMPT_PURPOSES.map(item => item.id)).size).toBe(16);
+it('10 个稳定用途拒绝自定义值，不从目录、旧类型和自由标签猜用途', () => {
+  expect(new Set(PROMPT_PURPOSES.map(item => item.id)).size).toBe(10);
   expect(readPromptPurposes(['pose', 'clothing', 'pose'])).toEqual(['clothing', 'pose']);
-  // 旧版画风细项只读归并到画风配方，不批量改写用户资料。
-  expect(readPromptPurposes(['artist', 'lighting', 'style', 'texture'])).toEqual(['style']);
-  expect(promptPurposeLabel('lighting')).toBe('画风配方');
+  // 旧版细项与旧版画风细分只读归并到新用途，不批量改写用户资料。
+  expect(readPromptPurposes(['artist', 'lighting', 'style', 'texture', 'quality', 'identity', 'object', 'creature', 'vehicle', 'nature', 'time', 'color', 'composition', 'text', 'effect']))
+    .toEqual(['appearance', 'place', 'atmosphere', 'camera', 'format', 'style']);
+  expect(promptPurposeLabel('object')).toBe('场景地点');
+  expect(promptPurposeLabel('lighting')).toBe('光影与氛围');
+  expect(promptPurposeLabel('artist')).toBe('画风配方');
   expect(isPurposeSectionKey('purpose:artist')).toBe(true);
   expect(normalizePromptPurposeSectionKey('purpose:artist')).toBe('purpose:style');
+  expect(normalizePromptPurposeSectionKey('purpose:lighting')).toBe('purpose:atmosphere');
+  expect(normalizePromptPurposeSectionKey('purpose:identity')).toBe('purpose:appearance');
   for (const invalid of [null, 'clothing', ['衣服'], ['other'], ['clothing', 'custom']]) expect(() => readPromptPurposes(invalid)).toThrow('用途 Tag 无效');
   expect(getEntryPurposes({ ...entry('old'), type: 'wardrobe', tags: ['clothing'] } as PromptChain)).toEqual([]);
   expect(isCreativeSectionKey('purpose:custom')).toBe(false);
@@ -56,7 +62,7 @@ it('16 个稳定用途拒绝自定义值，不从目录、旧类型和自由标�
 });
 
 it('Roll、快照及角色/全局写入使用稳定用途键，空目录不影响选材', () => {
-  const unit = { id: 'purpose:clothing', purposeId: 'clothing' as const, directoryId: '', name: '服饰与配件', path: ['服饰与配件'], scope: 'character' as const };
+  const unit = { id: 'purpose:clothing', purposeId: 'clothing' as const, directoryId: '', name: '服饰穿搭', path: ['服饰穿搭'], scope: 'character' as const };
   const result = draw({ chains: [entry('pure', ['clothing']), entry('mixed', ['clothing', 'pose'])], units: [unit], directories: { revision: 9, nodes: [] }, seed: 'fixed' });
   expect(result.picks[unit.id].id).toBe('pure');
   const read = contentRead(contentSnapshotOf(result, 'synthetic'));
@@ -78,10 +84,32 @@ it('提取审阅和本地草稿保留混合用途，落库不改正文', () => {
   expect(payload.data.basePrompt).toBe(candidate.prompt);
 });
 
-it('五个大区完整覆盖 16 个用途且没有重复，分组不是可保存的用途', () => {
-  expect(PROMPT_PURPOSE_GROUPS.map(group => group.label)).toEqual(['主体与外观', '动作与关系', '场景与环境', '镜头、构图与文字', '画风与成像']);
+it('三个大区完整覆盖 10 个用途且没有重复，分组不是可保存的用途', () => {
+  expect(PROMPT_PURPOSE_GROUPS.map(group => group.label)).toEqual(['人物', '画面与场景', '其他与辅助']);
   const ids = PROMPT_PURPOSE_GROUPS.flatMap(group => group.purposes);
-  expect(ids).toHaveLength(16);
+  expect(ids).toHaveLength(10);
   expect([...ids].sort()).toEqual(PROMPT_PURPOSES.map(item => item.id).sort());
-  expect(() => readPromptPurposes(['subject'])).toThrow('用途 Tag 无效');
+  expect(() => readPromptPurposes(['character'])).toThrow('用途 Tag 无效');
+});
+
+it('传入目录树时未手改用途的条目自动继承目录用途，手工覆盖优先且 none 目录停止继承', () => {
+  const tree = {
+    revision: 2,
+    nodes: [
+      ...createDefaultPromptLibraryTree().nodes,
+      { id: 'gu风', parentId: null, name: '古风', target: 'character' as const, purpose: 'clothing' as const },
+      { id: 'gu风-子', parentId: 'gu风', name: '宋制汉服' },
+      { id: 'free-folder', parentId: 'gu风', name: '纯参考笔记', purpose: 'none' as const },
+    ],
+  };
+  const inherited = { id: 'i1', type: 'preset', name: '齐胸襦裙', basePrompt: 'hanfu', params: { _promptLibraryDirectoryIds: ['gu风-子'], _promptLibraryPurposes: [] } };
+  const overridden = { id: 'i2', type: 'preset', name: '特殊覆盖', basePrompt: 'smile', params: { _promptLibraryDirectoryIds: ['gu风-子'], _promptLibraryPurposes: ['expression'] } };
+  const unbound = { id: 'i3', type: 'preset', name: '不继承', basePrompt: 'note text', params: { _promptLibraryDirectoryIds: ['free-folder'] } };
+
+  expect(getExplicitEntryPurposes(inherited)).toEqual([]);
+  expect(getEntryPurposes(inherited)).toEqual([]);
+  expect(getEntryPurposes(inherited, tree)).toEqual(['clothing']);
+  expect(getEntryPurposes(overridden, tree)).toEqual(['expression']);
+  expect(getEntryPurposes(unbound, tree)).toEqual([]);
+  expect(selectPurposeEntries([inherited, overridden, unbound], 'clothing', true, tree).map(item => item.id)).toEqual(['i1']);
 });

@@ -36,6 +36,6 @@ test('目录任意命名、层级或空树都得到相同用途字段', () => {
   assert.equal(items[0].sections['purpose:style'], 'artist:test, {{golden light}}');
   assert.equal(items[0].sections['purpose:clothing'], 'shiny armor, shiny armor');
   assert.equal(items[1].sections.extra, '1.2::silver armor, blue eyes::');
-  assert.deepEqual(items[0].sectionMeta['purpose:clothing'], { source: 'ai', directoryName: '服饰与配件' });
+  assert.deepEqual(items[0].sectionMeta['purpose:clothing'], { source: 'ai', directoryName: '服饰穿搭' });
   assert.throws(() => parsePromptClassification(JSON.stringify([{ id: 'global', categories: ['purpose:custom'] }, { id: 'role', categories: [] }]), documents), /分类结果/);
 });

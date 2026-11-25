@@ -13,12 +13,11 @@ import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { createFragmentData } from '../../services/promptLibraryEntries';
 import { collectionSnapshot, loadCollection } from '../../services/collectionFavorites';
 import { LAB_DEFAULT_PARAMS } from '../../services/labWorkspace';
-import { expectDirectoryCount } from '../support/directoryPicker';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), post: vi.fn(), upload: vi.fn(), stored: [] as Inspiration[] }));
 vi.mock('../../services/api', async original => ({ ...await original<typeof import('../../services/api')>(), api: { get: mocks.get, put: mocks.put, post: mocks.post, uploadFile: mocks.upload } }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { getPage: async () => ({ items: [], count: 0 }), subscribe: () => () => {}, setFavorite: vi.fn(), setFavorites: vi.fn() } }));
-vi.mock('../../services/appearancePreferences', () => ({ useGalleryFrostedCaption: () => false }));
+vi.mock('../../services/appearancePreferences', async original => ({ ...await original<typeof import('../../services/appearancePreferences')>(), useGalleryFrostedCaption: () => false }));
 vi.mock('../../services/imageSharing', () => ({ useCleanSharedImages: () => false, useImageDownloadFormat: () => 'png', hasImageGenerationData: () => false, copySharedImage: vi.fn(), downloadSharedImage: vi.fn() }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => ({ enabled: false }) }));
 vi.mock('../../services/stBaiBaiPreferences', () => ({ useStBaiBaiPreferences: () => ({ enabled: false }) }));
@@ -93,8 +92,7 @@ it('提示词管理面板封面大图保留对象来源，从大图取消后目�
   expect(lightbox.getByRole('button', { name: '取消收藏' })).toBeTruthy();
   fireEvent.click(lightbox.getByRole('button', { name: '取消收藏' }));
   await waitFor(() => expect(collectionSnapshot().find(saved => saved.sourceId === fragment.id)?.archived).toBe(true));
-  // 桌面目录行把计数放在 aria-describedby 里，不再拼进可访问名称。
-  expectDirectoryCount('收藏', '0');
+  expect(lightbox.getByRole('button', { name: '收藏' }).getAttribute('aria-pressed')).toBe('false');
   expect(mocks.put).toHaveBeenCalledWith('/inspirations/saved-fragment', { archived: true });
   expect(mocks.post).not.toHaveBeenCalled();
 });

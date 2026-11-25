@@ -69,7 +69,7 @@ export function planLibrarySelection(state: PromptLibraryWorkspaceState, entry: 
   const before = removeLibraryCompletion(state, completion);
   const kind = fragmentKindOf(entry);
   let picks: Record<string, RollRow> = kind ? {} : combinationPicks(entry, roleIndex);
-  const purposes = getEntryPurposes(entry);
+  const purposes = getEntryPurposes(entry, directories);
   if (field.purposeId && kind && (purposes.length !== 1 || purposes[0] !== normalizePromptPurposeId(field.purposeId))) throw new Error('此栏位只接受对应的单一用途片段');
   if (kind && purposes.length === 1) {
     const key = purposeSectionKey(purposes[0]);
@@ -81,6 +81,7 @@ export function planLibrarySelection(state: PromptLibraryWorkspaceState, entry: 
   else if (field.directoryId) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => rollSectionKey(key) === 'directory:' + field.directoryId));
   else if (field.kind) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => key === field.kind));
   else if (field.roleId && !kind) picks = Object.fromEntries(Object.entries(picks).filter(([key, row]) => (row.scope || META[rollSectionKey(key)]?.scope || META[key]?.scope) === 'character'));
+  else if (field.targetScope === 'global' && !kind) picks = Object.fromEntries(Object.entries(picks).filter(([key, row]) => (row.scope || META[rollSectionKey(key)]?.scope || META[key]?.scope) !== 'character'));
   const params = { ...before.params, _promptSections: resolvePromptSections(before.params._promptSections, before.subject) };
   const plan = planContentRollApply(picks, params, target);
   for (const row of plan.rows) {

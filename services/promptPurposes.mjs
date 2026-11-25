@@ -1,48 +1,48 @@
-import { isPromptLibraryFragmentEntry } from './promptLibraryTree.mjs';
+import { getPromptLibraryEntryDirectoryIds, inferPurposesFromDirectoryIds, isPromptLibraryFragmentEntry } from './promptLibraryTree.mjs';
 
 /**
  * 用途 Tag 描述正文内容；目录、自由标签、正负极性和本次目标均不决定用途。
- * 画风类细项（画师、画风、质感、特效、质量、光照、色彩）已合并为「画风配方」，
- * 正负配对整段使用，不参与随机组合。
+ * 光影与氛围（时段、天气、光照方向、氛围色调）独立于画风，参与随机组合；
+ * 画师、画风、质感、质量保留为「画风配方」，正负配对整段使用，不参与随机组合。
  */
 export const PROMPT_PURPOSES = Object.freeze([
-  ['identity', '人物设定', '人物身份、年龄段、职业及明确角色身份'],
-  ['appearance', '外貌与身体', '发型、发色、眼睛、脸部、体型及身体特征'],
-  ['clothing', '服饰与配件', '穿戴的衣服、鞋袜、首饰和配件'],
-  ['pose', '动作与姿态', '主体动作、身体姿势及朝向'],
-  ['expression', '表情与情绪', '面部表情、情绪及相关表现'],
-  ['creature', '动物与生物', '作为主体出现的动物、幻想生物'],
-  ['object', '物品与道具', '普通物件、手持道具和装饰物'],
-  ['vehicle', '载具与机械', '交通工具、机械设备及机体'],
-  ['place', '地点与布景', '地点、室内外场所和背景布置'],
-  ['nature', '自然与天气', '自然环境、地貌、植被及天气'],
-  ['time', '时间与季节', '时段、季节及时间环境'],
-  ['interaction', '互动与关系', '两个或多个对象之间的动作、接触和关系'],
-  ['camera', '视角与景别', '观察方向、镜头距离及取景范围'],
-  ['composition', '构图与布局', '主体数量、位置、大小关系及排列'],
-  ['text', '文字与标识', '画面中的文字、字幕、标志及图形标识'],
-  ['style', '画风配方', '画师、画风、质感、特效、质量、光照与色彩的整段配方，正负配对使用'],
+  ['appearance', '外貌与设定', '人物身份、种族特征、发型、发色、瞳色、脸部与体型等外观设定'],
+  ['clothing', '服饰穿搭', '穿戴的衣服、鞋袜、首饰、包袋和随身配饰'],
+  ['pose', '动作姿态', '单人动作、身体姿势、手势、朝向以及手持或骑乘道具等带物动作'],
+  ['expression', '表情神态', '面部表情、视线、情绪及相关表现'],
+  ['interaction', '多人互动', '两个或多个角色之间的动作、接触和关系'],
+  ['place', '场景地点', '室内外地点、建筑布景、自然地貌、环境摆件与背景生物载具'],
+  ['atmosphere', '光影与氛围', '时段、季节、天气、光照方向、氛围色调与环境粒子特效'],
+  ['camera', '镜头与构图', '观察视角、景别、构图布局、主体排列与景深'],
+  ['format', '版式与特效', '分镜框、拍立得、杂志排版、画面文字与特殊视觉形式'],
+  ['style', '画风配方', '画师、画风、质感与质量的整段画风配方，正负配对使用'],
 ].map(([id, label, description]) => Object.freeze({ id, label, description })));
 
 /** 界面分组只组织用途，不改变已有用途 ID、编译顺序或全局／角色落点。 */
 export const PROMPT_PURPOSE_GROUPS = Object.freeze([
-  ['subject', '主体与外观', ['identity', 'appearance', 'clothing', 'creature', 'object', 'vehicle']],
-  ['action', '动作与关系', ['pose', 'expression', 'interaction']],
-  ['environment', '场景与环境', ['place', 'nature', 'time']],
-  ['camera-light', '镜头、构图与文字', ['camera', 'composition', 'text']],
-  ['style', '画风与成像', ['style']],
+  ['character', '人物', ['appearance', 'clothing', 'pose', 'expression', 'interaction']],
+  ['scene', '画面与场景', ['place', 'atmosphere', 'camera']],
+  ['special', '其他与辅助', ['format', 'style']],
 ].map(([id, label, purposes]) => Object.freeze({ id, label, purposes: Object.freeze(purposes) })));
 
 export const PROMPT_PURPOSE_IDS = Object.freeze(PROMPT_PURPOSES.map(item => item.id));
 
-/** 旧版画风细项只读映射到「画风配方」；用户资料不批量改写，读取时归并。 */
+/** 旧版细项与旧版画风细分只读归并到当前用途；用户资料不批量改写，读取时无损兼容。 */
 export const LEGACY_PROMPT_PURPOSE_MAP = Object.freeze({
+  identity: 'appearance',
+  object: 'place',
+  creature: 'place',
+  vehicle: 'place',
+  nature: 'atmosphere',
+  time: 'atmosphere',
+  lighting: 'atmosphere',
+  color: 'atmosphere',
+  composition: 'camera',
+  text: 'format',
+  effect: 'format',
   artist: 'style',
   texture: 'style',
-  effect: 'style',
   quality: 'style',
-  lighting: 'style',
-  color: 'style',
 });
 
 export const normalizePromptPurposeId = id => LEGACY_PROMPT_PURPOSE_MAP[id] || id;
@@ -69,7 +69,7 @@ const entryParams = entry => {
   return entry?.params || {};
 };
 
-export function getEntryPurposes(entry) {
+export function getExplicitEntryPurposes(entry) {
   const params = entryParams(entry);
   const value = params?.[PROMPT_PURPOSES_KEY];
   if (!Array.isArray(value)) return [];
@@ -77,9 +77,18 @@ export function getEntryPurposes(entry) {
   return PROMPT_PURPOSE_IDS.filter(id => normalized.has(id));
 }
 
-/** 只判断已保存标注能否进入单用途池，不把标注视为正文语义已经核验。 */
-export function getPromptPurposeCandidateStatus(entry, purposeId) {
-  const purposes = getEntryPurposes(entry);
+export function getEntryPurposes(entry, directories) {
+  const explicit = getExplicitEntryPurposes(entry);
+  if (explicit.length) return explicit;
+  if (!directories || !entry || !isPromptLibraryFragmentEntry(entry)) return [];
+  const inferred = inferPurposesFromDirectoryIds(getPromptLibraryEntryDirectoryIds(entry, directories), directories);
+  const normalized = new Set(inferred.map(id => normalizePromptPurposeId(String(id))));
+  return PROMPT_PURPOSE_IDS.filter(id => normalized.has(id));
+}
+
+/** 只判断已保存或目录继承标注能否进入单用途池，不把标注视为正文语义已经核验。 */
+export function getPromptPurposeCandidateStatus(entry, purposeId, directories) {
+  const purposes = getEntryPurposes(entry, directories);
   let reason = 'eligible';
   if (!entry || !isPromptLibraryFragmentEntry(entry)) reason = 'non_fragment';
   else if (entryParams(entry)?._promptLibraryPolarity === 'negative') reason = 'negative_only';
@@ -90,13 +99,13 @@ export function getPromptPurposeCandidateStatus(entry, purposeId) {
   return { eligible: reason === 'eligible', reason, purposes };
 }
 
-export function selectPurposeEntries(entries, purposeId, pure = false) {
+export function selectPurposeEntries(entries, purposeId, pure = false, directories) {
   const normalized = normalizePromptPurposeId(purposeId);
   return entries.filter(entry => {
-    if (pure) return getPromptPurposeCandidateStatus(entry, normalized).eligible;
-    const purposes = getEntryPurposes(entry);
+    if (pure) return getPromptPurposeCandidateStatus(entry, normalized, directories).eligible;
+    const purposes = getEntryPurposes(entry, directories);
     return purposes.includes(normalized);
   });
 }
 
-export const PROMPT_PURPOSE_INSTRUCTION = `用途 Tag 只标记正文实际包含的内容，可多选；不要按目录、标题或自由标签猜测，不因白衬衫等物件颜色自动增加整体色调标记。混合片段保留整体内容并标记全部涉及用途，不强拆、不暗删原词。画师、画风、质感、特效、质量、光照、色彩统一标记为 style（画风配方），不再拆成细项；画风配方的正负词属于同一片段。无法判断时返回空数组。purposes 只能使用以下固定 ID：${JSON.stringify(PROMPT_PURPOSES)}。用途 Tag 是元数据，不得追加进 prompt。`;
+export const PROMPT_PURPOSE_INSTRUCTION = `用途 Tag 只标记正文实际包含的内容，可多选；不要按目录、标题或自由标签猜测，不因白衬衫等物件颜色自动增加整体氛围标记。混合片段保留整体内容并标记全部涉及用途，不强拆、不暗删原词。时段、天气、光照方向与整体氛围标记为 atmosphere（光影与氛围）；画师、画风、质感、质量统一标记为 style（画风配方），正负词属于同一片段。无法判断时返回空数组。purposes 只能使用以下固定 ID：${JSON.stringify(PROMPT_PURPOSES)}。用途 Tag 是元数据，不得追加进 prompt。`;

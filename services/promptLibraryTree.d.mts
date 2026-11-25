@@ -1,5 +1,8 @@
+import type { PromptPurposeId } from './promptPurposes.mjs';
+
 export type PromptLibraryDirectoryTarget = 'global' | 'character';
-export interface PromptLibraryDirectory { id: string; parentId: string | null; name: string; target?: PromptLibraryDirectoryTarget }
+export type PromptLibraryDirectoryPurpose = PromptPurposeId | 'none';
+export interface PromptLibraryDirectory { id: string; parentId: string | null; name: string; target?: PromptLibraryDirectoryTarget; purpose?: PromptLibraryDirectoryPurpose }
 export interface PromptLibraryTreeState { revision: number; nodes: PromptLibraryDirectory[] }
 export interface PromptLibraryDirectoryEntry { id: string; type?: string; params?: unknown }
 export const PROMPT_LIBRARY_DIRECTORY_IDS_KEY: '_promptLibraryDirectoryIds';
@@ -7,7 +10,8 @@ export const LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS: Readonly<Record<'appearance' |
 export const PROMPT_LIBRARY_DIRECTORY_ID_ALIASES: Readonly<Record<string, string>>;
 export const PROMPT_LIBRARY_PURPOSE_FROM_DIRECTORY: Readonly<Record<string, string>>;
 export function remapPromptLibraryDirectoryIds(ids: readonly string[] | null | undefined, knownIds: Iterable<string> | Set<string>): string[];
-export function inferPurposesFromDirectoryIds(ids: readonly string[] | null | undefined): string[];
+export function getPromptLibraryDirectoryPurpose(state: PromptLibraryTreeState, id: string): PromptPurposeId | undefined;
+export function inferPurposesFromDirectoryIds(ids: readonly string[] | null | undefined, state?: PromptLibraryTreeState): string[];
 export function createDefaultPromptLibraryTree(): PromptLibraryTreeState;
 export function readPromptLibraryTree(value: unknown): PromptLibraryTreeState;
 export function getPromptLibraryDirectoryPath(state: PromptLibraryTreeState, id: string): PromptLibraryDirectory[];

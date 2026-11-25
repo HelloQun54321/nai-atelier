@@ -237,3 +237,13 @@ it('统一浏览从更多操作打开 AI 提取与图片反推，隐藏页面释
   view.rerender(<ContentLibraryPage {...props} active={false} />);
   expect(screen.queryByRole('dialog', { name: 'AI 提取分类' })).toBeNull();
 });
+
+it('传入 AI 生成回调时更多操作显示 AI 生成片段并可打开独立弹窗', () => {
+  render(<ContentLibraryPage section="items" onSectionChange={vi.fn()} rollOpen={false} onRollOpenChange={vi.fn()}
+    onCapture={async () => {}} onExtractSave={vi.fn()} onGenerateCreate={vi.fn()}
+    browse={slot => <Tools slot={slot} label="统一搜索" />} items={() => null} saved={() => null} roll={() => null} />);
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+  const menu = screen.getByRole('dialog', { name: '更多操作' });
+  fireEvent.click(within(menu).getByRole('button', { name: /AI 生成片段/ }));
+  expect(screen.getByRole('dialog', { name: 'AI 生成片段' })).toBeTruthy();
+});

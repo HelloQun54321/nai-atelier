@@ -1,14 +1,15 @@
 import { purposeSectionKey, type PromptPurposeId } from './promptPurposes.mjs';
 
-/** 实验室 Roll 的选材范围；画风配方保留在完整配方中，不参与随机。 */
-export const LAB_SUBJECT_PURPOSES = ['identity', 'appearance', 'clothing', 'pose', 'expression', 'creature', 'object', 'vehicle'] as const satisfies readonly PromptPurposeId[];
-export const LAB_PICTURE_PURPOSES = ['interaction', 'place', 'nature', 'time', 'composition', 'camera', 'text'] as const satisfies readonly PromptPurposeId[];
+/** 实验室 Roll 的选材范围；版式与画风保留按需手动勾选，默认不参与常规随机。 */
+export const LAB_SUBJECT_PURPOSES = ['appearance', 'clothing', 'pose', 'expression'] as const satisfies readonly PromptPurposeId[];
+export const LAB_PICTURE_PURPOSES = ['interaction', 'place', 'atmosphere', 'camera', 'format'] as const satisfies readonly PromptPurposeId[];
 export const LAB_STYLE_PURPOSES = ['style'] as const satisfies readonly PromptPurposeId[];
 
 /** 互动用途需要至少两名启用角色才默认参与抽取。 */
 export const INTERACTION_MIN_CHARACTERS = 2;
 
 const INTERACTION_SECTION = purposeSectionKey('interaction');
+const LOW_FREQUENCY_ROLL_SECTIONS = new Set<string>([purposeSectionKey('format'), purposeSectionKey('style')]);
 
 /** 统计实验室当前启用角色数；无实验室参数时返回 null（不按人数门禁）。 */
 export function countRollLabCharacters(params: { characters?: Array<{ enabled?: boolean }> | null } | null | undefined): number | null {
@@ -23,9 +24,11 @@ function purposeRollSectionKey(kind: string): string {
 
 /**
  * 用途行默认是否参与抽取。
- * 已知人数且不足两人时，互动默认关闭，可手动勾回；人数从 1…模型上限均适用，不特供双人。
+ * 已知人数且不足两人时，互动默认关闭，可手动勾回；版式与特效、画风配方默认不参与常规随机。
  */
 export function defaultPurposeRollParticipation(kind: string, labCharacterCount: number | null): boolean {
-  if (purposeRollSectionKey(kind) !== INTERACTION_SECTION) return true;
+  const key = purposeRollSectionKey(kind);
+  if (LOW_FREQUENCY_ROLL_SECTIONS.has(key)) return false;
+  if (key !== INTERACTION_SECTION) return true;
   return labCharacterCount === null || labCharacterCount >= INTERACTION_MIN_CHARACTERS;
 }

@@ -113,7 +113,7 @@ export type RollPicks = Record<string, RollRow>;
 export type RollRng = () => number;
 
 export const META: Record<string, { short: string; title: string; scope: 'global' | 'character' }> = {
-  ...Object.fromEntries(PROMPT_PURPOSES.map(item => [purposeSectionKey(item.id), { short: item.label, title: item.label, scope: ['identity', 'appearance', 'clothing', 'pose', 'expression'].includes(item.id) ? 'character' as const : 'global' as const }])),
+  ...Object.fromEntries(PROMPT_PURPOSES.map(item => [purposeSectionKey(item.id), { short: item.label, title: item.label, scope: ['appearance', 'clothing', 'pose', 'expression'].includes(item.id) ? 'character' as const : 'global' as const }])),
   appearance: { short: '形象', title: '人物形象', scope: 'character' },
   wardrobe: { short: '服饰', title: '服饰穿搭', scope: 'character' },
   pose: { short: '动作', title: '动作互动', scope: 'character' },
@@ -303,8 +303,8 @@ export const constraintsOf = (chain: ChainLike | null | undefined) => {
 
 /* ---- 纯内容快照（白名单构造 / 读取 / 摘要 / 从完整搭配提取） ---- */
 /** 项目身份包含落点，编译仍使用原用途／目录键。 */
-/** 补充栏用 `global:extra`／`character:extra`；用途／目录仍要求冒号后接 purpose: 或 directory:。 */
-export const rollSectionKey = (key: string): string => key.replace(/^(global|character):(?=extra$|(?:purpose|directory):)/, '');
+/** 补充栏用 `global:extra`／`character:extra`；用途／目录／自定义栏仍要求冒号后接 purpose:、directory: 或 custom:。 */
+export const rollSectionKey = (key: string): string => key.replace(/^(global|character):(?=extra$|(?:purpose|directory|custom):)/, '');
 export const rollItemKey = (key: string, scope: 'global' | 'character'): string => scope + ':' + rollSectionKey(key);
 export const isExtraSectionKey = (key: string): boolean => rollSectionKey(key) === 'extra';
 export const isRollSectionKey = (key: string): boolean => {
@@ -347,8 +347,8 @@ export const contentSnapshotOf = (record: RollRecordLike | null | undefined, sav
   const items: ContentItem[] = Object.entries(picks).flatMap(([itemKey, row]) => {
     const key = rollSectionKey(itemKey);
     if ((!isCreativeSectionKey(key) && key !== 'extra') || checks[itemKey] === false || !row?.filled || !String(row.text || '').trim()) return [];
-    const directoryName = String(row.directoryName || row.title || row.label || (key === 'extra' ? '补充' : isPurposeSectionKey(key) ? promptPurposeLabel(key.slice(8)) : key.slice(10)));
-    return [{ ...(itemKey !== key ? { itemId: itemKey } : {}), unitId: key, directoryId: key === 'extra' || isPurposeSectionKey(key) ? '' : key.slice(10), directoryName,
+    const directoryName = String(row.directoryName || row.title || row.label || (key === 'extra' ? '补充' : isPurposeSectionKey(key) ? promptPurposeLabel(key.slice(8)) : isDirectorySectionKey(key) ? key.slice(10) : key.replace(/^custom:/, '')));
+    return [{ ...(itemKey !== key ? { itemId: itemKey } : {}), unitId: key, directoryId: isDirectorySectionKey(key) ? key.slice(10) : '', directoryName,
       directoryPath: Array.isArray(row.directoryPath) ? row.directoryPath.filter((part: unknown) => typeof part === 'string') : (key === 'extra' ? ['补充'] : []),
       scope: row.scope === 'character' ? 'character' as const : 'global' as const, text: String(row.text).trim(), negative: String(row.negative || '').trim(),
       constraintNotes: String(row.constraintNotes || row.constraints?.notes || ''), meta: contentMetaOf(row.meta || { entryId: row.id, entryName: row.name }) }];
@@ -430,7 +430,7 @@ export const contentRead = (raw: Json): ContentRead => {
   const items: ContentItem[] = (Array.isArray(raw.items) ? raw.items : []).flatMap((item: Json) => {
     const key = String(item?.unitId || '');
     if ((!isCreativeSectionKey(key) && key !== 'extra') || !String(item?.text || '').trim()) return [];
-    return [{ ...(typeof item.itemId === 'string' && rollSectionKey(item.itemId) === key ? { itemId: rollItemKey(key, item.scope === 'character' ? 'character' : 'global') } : {}), unitId: key, directoryId: key === 'extra' || isPurposeSectionKey(key) ? '' : key.slice(10), directoryName: String(item.directoryName || (key === 'extra' ? '补充' : isPurposeSectionKey(key) ? promptPurposeLabel(key.slice(8)) : key.slice(10))),
+    return [{ ...(typeof item.itemId === 'string' && rollSectionKey(item.itemId) === key ? { itemId: rollItemKey(key, item.scope === 'character' ? 'character' : 'global') } : {}), unitId: key, directoryId: isDirectorySectionKey(key) ? key.slice(10) : '', directoryName: String(item.directoryName || (key === 'extra' ? '补充' : isPurposeSectionKey(key) ? promptPurposeLabel(key.slice(8)) : isDirectorySectionKey(key) ? key.slice(10) : key.replace(/^custom:/, ''))),
       directoryPath: Array.isArray(item.directoryPath) ? item.directoryPath.filter((part: unknown) => typeof part === 'string') : (key === 'extra' ? ['补充'] : []),
       scope: item.scope === 'character' ? 'character' as const : 'global' as const, text: String(item.text).trim(), negative: String(item.negative || '').trim(),
       constraintNotes: String(item.constraintNotes || ''), meta: contentMetaOf(item.meta) }];

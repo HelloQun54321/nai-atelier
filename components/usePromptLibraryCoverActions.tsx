@@ -28,7 +28,10 @@ import { InteractionPopover } from './InteractionPopover';
 import { ImageActivityContext } from './SmartImage';
 import { IMAGE_CARD_ACTION_CLASS } from './ImageShareActions';
 
-type SettingsTarget = { generateAfterSave: false } | { chain: PromptChain; generateAfterSave: true; regenerate?: boolean };
+type SettingsTarget =
+  | { generateAfterSave: false }
+  | { chain: PromptChain; generateAfterSave: true; regenerate?: boolean }
+  | { chains: PromptChain[]; generateBatchAfterSave: true };
 
 /** 提示词库封面生成：费用确认、模板设置与卡片状态共用，不与画师／Roll 模板双向同步。 */
 export function usePromptLibraryCoverActions({ active, notify }: {
@@ -104,6 +107,71 @@ export function usePromptLibraryCoverActions({ active, notify }: {
     return true;
   };
 
+  const generateCoversBatch = async (chains: PromptChain[], value: PromptLibraryCoverTemplate, options: { skipConfirmation?: boolean } = {}) => {
+    if (requesting.current) return;
+    const eligible = chains.filter(chain => Boolean(promptLibraryCoverContent(chain)) && !promptLibraryCoverGenerationBusy(getPromptLibraryCoverGeneration(chain.id)));
+    if (!eligible.length) {
+      notify(t('所选条目没有可生成封面的内容'), 'error');
+      return;
+    }
+    requesting.current = true;
+    const snapshot = structuredClone(value);
+    try {
+      validatePromptLibraryCoverTemplate(snapshot);
+      let key = readPromptLibraryCoverApiKey();
+      let activeSub = subscription.info;
+      const poolCheck = await prepareGenerationWithPool({
+        model: snapshot.params.model,
+        estimatedCostWithOpus: estimateV45GenerationCost(snapshot.params, true, false),
+      });
+      if (poolCheck.pooled) {
+        if (!poolCheck.ok) { notify(t(poolCheck.message), 'error'); return; }
+        key = poolCheck.key;
+        activeSub = poolCheck.info;
+      } else {
+        void subscription.refreshIfStale();
+      }
+      if (!key) { notify(t('请先在“全局设置”中配置 NovelAI API Key'), 'error'); return; }
+      const unitCost = perUseNaiChannel && !poolCheck.pooled
+        ? 0
+        : estimateV45GenerationCost(snapshot.params, isActiveOpusSubscription(activeSub), activeSub?.usage?.isNegative ?? true);
+      const totalCost = unitCost * eligible.length;
+      if (totalCost > 0 && !options.skipConfirmation && !await confirm({
+        rememberKey: 'prompt-library-cover.generate-batch',
+        rememberScope: confirmationCostScope(key, totalCost, eligible.length, budget.remaining, snapshot.params.model),
+        title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片',
+        message: t('本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。', [eligible.length, totalCost, budget.remaining]),
+        confirmLabel: t('消耗 {0} 点并生成', [totalCost]),
+        ...(totalCost > budget.remaining ? { tone: 'danger' as const } : {}),
+      })) return;
+      if (!activeRef.current) return;
+      if (readPromptLibraryCoverApiKey() !== key) throw new Error('NovelAI Key 已变化，请重新发起生成');
+      for (const chain of eligible) {
+        void beginPromptLibraryCoverGeneration(chain, snapshot, key, unitCost, true, Boolean(chain.previewImage), () => activeRef.current)
+          .catch(error => notify((error as Error).message, 'error'));
+      }
+      notify(t('已加入封面生成队列（{0} 条）', [eligible.length]));
+    } catch (error) {
+      notify(t((error as Error).message), 'error');
+    } finally {
+      requesting.current = false;
+    }
+  };
+
+  const requestCoversBatch = (chains: PromptChain[]) => {
+    const eligible = chains.filter(chain => Boolean(promptLibraryCoverContent(chain)) && !promptLibraryCoverGenerationBusy(getPromptLibraryCoverGeneration(chain.id)));
+    if (!eligible.length) {
+      notify(t('所选条目没有可生成封面的内容'), 'error');
+      return false;
+    }
+    if (!template) {
+      setSettings({ chains: eligible, generateBatchAfterSave: true });
+      return false;
+    }
+    void generateCoversBatch(eligible, template);
+    return true;
+  };
+
   const manageGeneration = async (chainId: string, action: 'approve' | 'resume') => {
     const session = getPromptLibraryCoverGeneration(chainId)?.session;
     if (!session || !activeRef.current) return;
@@ -126,18 +194,25 @@ export function usePromptLibraryCoverActions({ active, notify }: {
     } catch (error) { notify((error as Error).message, 'error'); }
   };
 
-  const settingsDialog = settings && <PromptLibraryCoverSettingsDialog key={settings.generateAfterSave ? settings.chain.id : 'settings'} generateAfterSave={settings.generateAfterSave} onClose={() => setSettings(null)} onSaved={value => {
-    setTemplate(value);
-    const target = settings;
-    flushSync(() => setSettings(null));
-    if (target.generateAfterSave) void generateCover(target.chain, value, target.regenerate || Boolean(target.chain.previewImage));
-  }} />;
+  const settingsDialog = settings && <PromptLibraryCoverSettingsDialog
+    key={'generateAfterSave' in settings && settings.generateAfterSave ? settings.chain.id : 'generateBatchAfterSave' in settings ? 'batch' : 'settings'}
+    generateAfterSave={('generateAfterSave' in settings && settings.generateAfterSave) || ('generateBatchAfterSave' in settings)}
+    onClose={() => setSettings(null)}
+    onSaved={value => {
+      setTemplate(value);
+      const target = settings;
+      flushSync(() => setSettings(null));
+      if ('generateBatchAfterSave' in target) void generateCoversBatch(target.chains, value);
+      else if (target.generateAfterSave) void generateCover(target.chain, value, target.regenerate || Boolean(target.chain.previewImage));
+    }}
+  />;
 
   return {
     revision,
     requestingTarget,
     template,
     requestCover,
+    requestCoversBatch,
     manageGeneration,
     openCoverSettings: () => setSettings({ generateAfterSave: false }),
     settingsDialog,

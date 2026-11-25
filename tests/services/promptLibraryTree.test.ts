@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createDefaultPromptLibraryTree, flattenPromptLibraryDirectories, getPromptLibraryDefaultSelection,
-  getPromptLibraryDirectoryLegacyKind, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryRollKey,
+  getPromptLibraryDirectoryLegacyKind, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryPurpose, getPromptLibraryDirectoryRollKey,
   getPromptLibraryDirectoryTarget, getPromptLibraryEntryDirectoryIds, inferPurposesFromDirectoryIds,
   normalizePromptLibraryDirectorySelection, readPromptLibraryTree, remapPromptLibraryDirectoryIds,
   removePromptLibraryDirectory, selectPromptLibraryDirectoryEntries,
@@ -18,18 +18,21 @@ const tree = (): PromptLibraryTreeState => ({ revision: 0, nodes: [
 describe('用户完整掌控的提示词目录树', () => {
   it('预设只是两层起点，每次创建独立对象；空树照常保留', () => {
     const state = readPromptLibraryTree(createDefaultPromptLibraryTree());
-    expect(state.nodes.filter(node => node.parentId === null)).toHaveLength(5);
+    expect(state.nodes.filter(node => node.parentId === null)).toHaveLength(3);
     expect(state.nodes.filter(node => node.parentId === null).map(node => [node.name, state.nodes.filter(child => child.parentId === node.id).map(child => child.name)])).toEqual([
-      ['人物', ['人物设定', '外貌与身体', '服饰与配件', '动作与姿态', '表情与情绪']],
-      ['生物与物品', ['动物与生物', '物品与道具']],
-      ['场景环境', ['地点与布景', '天气与时段']],
-      ['构图与镜头', ['视角与景别', '画面形式', '文字与标识']],
-      ['画风配方', []],
+      ['人物', ['外貌与设定', '服饰穿搭', '动作姿态', '表情神态', '多人互动']],
+      ['画面与场景', ['场景地点', '光影与氛围', '镜头与构图']],
+      ['其他与辅助', ['版式与特效', '常用负面与整段']],
     ]);
-    expect(getPromptLibraryDefaultSelection(state)).toEqual(expect.arrayContaining([
-      'person-identity', 'person-pose', 'environment-climate', 'composition-camera', 'composition-format', 'style',
-    ]));
-    expect(state.nodes.some(node => ['interaction', 'subjects-machines', 'environment-nature', 'environment-time', 'composition-layout'].includes(node.id))).toBe(false);
+    expect(getPromptLibraryDefaultSelection(state)).toEqual([
+      'person-appearance', 'person-wardrobe', 'person-pose', 'person-expression', 'person-interaction',
+      'environment-scene', 'environment-atmosphere', 'composition-camera',
+      'composition-format', 'auxiliary-notes',
+    ]);
+    expect(state.nodes.some(node => [
+      'person-identity', 'subjects-objects', 'subjects-creatures', 'subjects-machines', 'environment-nature',
+      'environment-time', 'environment-climate', 'composition-layout', 'composition-text', 'style',
+    ].includes(node.id))).toBe(false);
     expect(Math.max(...flattenPromptLibraryDirectories(state).map(node => node.depth))).toBe(1);
     state.nodes[0].name = '已更名';
     expect(createDefaultPromptLibraryTree().nodes[0].name).not.toBe('已更名');
@@ -83,7 +86,8 @@ describe('用户完整掌控的提示词目录树', () => {
     state.nodes = state.nodes.map(node => ({ ...node, name: `${node.name}新名字` }));
     expect(getPromptLibraryEntryDirectoryIds(entry, state)).toEqual(['person-wardrobe']);
     expect(getPromptLibraryDirectoryLegacyKind(state, 'person-wardrobe')).toBe('wardrobe');
-    expect(getPromptLibraryEntryDirectoryIds({ id: 'g', type: 'preset', params: { _collectedCategory: 'general' } }, state)).toEqual(['style']);
+    expect(getPromptLibraryEntryDirectoryIds({ id: 'g', type: 'preset', params: { _collectedCategory: 'general' } }, state)).toEqual(['auxiliary-notes']);
+    expect(getPromptLibraryEntryDirectoryIds({ id: 'g', type: 'preset', params: { _collectedCategory: 'general' } }, { revision: 0, nodes: [{ id: 'style', parentId: null, name: '画风配方' }] })).toEqual(['style']);
     expect(getPromptLibraryEntryDirectoryIds({ ...entry, params: { _promptLibraryDirectoryIds: [] } }, state)).toEqual([]);
     expect(getPromptLibraryEntryDirectoryIds({ ...entry, params: { _promptLibraryDirectoryIds: ['deleted'] } }, state)).toEqual([]);
     expect(getPromptLibraryEntryDirectoryIds(entry, removePromptLibraryDirectory(state, 'person-wardrobe'))).toEqual([]);
@@ -94,12 +98,12 @@ describe('用户完整掌控的提示词目录树', () => {
     const known = new Set(createDefaultPromptLibraryTree().nodes.map(node => node.id));
     expect(remapPromptLibraryDirectoryIds([
       'interaction-people', 'subjects-machines', 'environment-nature', 'environment-time',
-      'composition-layout', 'lighting-light', 'quality-supplement', 'person-pose', 'missing',
+      'composition-layout', 'composition-text', 'lighting-light', 'quality-supplement', 'person-pose', 'missing',
     ], known)).toEqual([
-      'person-pose', 'subjects-objects', 'environment-climate', 'composition-format', 'style',
+      'person-interaction', 'environment-scene', 'environment-atmosphere', 'composition-camera', 'composition-format', 'person-pose',
     ]);
-    expect(inferPurposesFromDirectoryIds(['interaction-people', 'subjects-machines', 'environment-time']))
-      .toEqual(['interaction', 'vehicle', 'time']);
+    expect(inferPurposesFromDirectoryIds(['interaction-people', 'subjects-machines', 'environment-time', 'person-identity', 'composition-text']))
+      .toEqual(['interaction', 'place', 'atmosphere', 'appearance', 'format']);
   });
 
   it('候选按实际子树去重，支持数据库字符串params，不混入原文、风格或组合', () => {
@@ -126,5 +130,31 @@ describe('用户完整掌控的提示词目录树', () => {
     expect(removed.nodes.find(node => node.id === 'deep')?.parentId).toBe('child');
     expect(state.nodes.find(node => node.id === 'child')?.parentId).toBe('root');
     expect(getPromptLibraryDirectoryTarget(tree(), 'deep')).toBe('character');
+  });
+
+  it('目录节点支持可选默认用途与 none 解绑，支持子树继承、旧细项归一与删节点延续', () => {
+    const customTree = readPromptLibraryTree({
+      revision: 1,
+      nodes: [
+        { id: 'ancient', parentId: null, name: '古风', target: 'character', purpose: 'lighting' },
+        { id: 'hanfu', parentId: 'ancient', name: '汉服', purpose: 'clothing' },
+        { id: 'sleeve', parentId: 'hanfu', name: '广袖' },
+        { id: 'misc', parentId: 'hanfu', name: '杂项备注', purpose: 'none' },
+        { id: 'person-wardrobe', parentId: null, name: '自定义服饰夹' },
+        { id: 'sub-wardrobe', parentId: 'person-wardrobe', name: '鞋履' },
+        { id: 'person-pose', parentId: null, name: '解绑预设', purpose: 'none' },
+      ],
+    });
+    expect(customTree.nodes.find(node => node.id === 'ancient')?.purpose).toBe('atmosphere');
+    expect(getPromptLibraryDirectoryPurpose(customTree, 'sleeve')).toBe('clothing');
+    expect(getPromptLibraryDirectoryPurpose(customTree, 'misc')).toBeUndefined();
+    expect(getPromptLibraryDirectoryPurpose(customTree, 'sub-wardrobe')).toBe('clothing');
+    expect(getPromptLibraryDirectoryPurpose(customTree, 'person-pose')).toBeUndefined();
+    expect(inferPurposesFromDirectoryIds(['sleeve', 'misc', 'sub-wardrobe'], customTree)).toEqual(['clothing']);
+    expect(() => readPromptLibraryTree({ revision: 0, nodes: [{ id: 'bad', parentId: null, name: '坏用途', purpose: 'unknown' }] })).toThrow('提示词目录名称或位置无效');
+
+    const afterDelete = readPromptLibraryTree(removePromptLibraryDirectory(customTree, 'hanfu'));
+    expect(afterDelete.nodes.find(node => node.id === 'sleeve')).toMatchObject({ parentId: 'ancient', purpose: 'clothing' });
+    expect(afterDelete.nodes.find(node => node.id === 'misc')).toMatchObject({ parentId: 'ancient', purpose: 'none' });
   });
 });

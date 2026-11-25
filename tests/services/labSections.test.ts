@@ -19,24 +19,33 @@ const state = (patch: Partial<PromptLibraryWorkspaceState> = {}): PromptLibraryW
 });
 
 describe('分类编辑的栏位', () => {
-  it('默认空框齐全：场景挂环境与取景六类，角色挂人物五类，互动不进场景', () => {
+  it('默认空框齐全：场景挂地点/氛围/镜头三核心栏，角色挂人物四类，旧稿栏位独立保留不撞标签', () => {
+    expect(PICTURE_ZONES.find(zone => zone.id === 'subject')?.defaults).toEqual(['purpose:appearance', 'purpose:clothing']);
     expect(PICTURE_ZONES.find(zone => zone.id === 'scene')?.defaults).toEqual([
-      'purpose:place', 'purpose:nature', 'purpose:time', 'purpose:composition', 'purpose:camera', 'purpose:text',
+      'purpose:place', 'purpose:atmosphere', 'purpose:camera',
     ]);
     expect(PICTURE_ZONES.find(zone => zone.id === 'frame')?.defaults).toEqual([]);
     expect(CHARACTER_ZONE.defaults).toEqual([
-      'purpose:identity', 'purpose:appearance', 'purpose:clothing', 'purpose:pose', 'purpose:expression',
+      'purpose:appearance', 'purpose:clothing', 'purpose:pose', 'purpose:expression',
     ]);
     const scene = readPictureBoard(undefined, undefined).find(zone => zone.id === 'scene');
     expect(scene?.facets.map(facet => facet.id)).toEqual([
-      'purpose:place', 'purpose:nature', 'purpose:time', 'purpose:composition', 'purpose:camera', 'purpose:text',
+      'purpose:place', 'purpose:atmosphere', 'purpose:camera',
     ]);
     expect(readCharacterBoard({ id: 'c1', prompt: '', x: 0.5, y: 0.5 }, undefined).facets.map(facet => facet.id))
-      .toEqual(['purpose:identity', 'purpose:appearance', 'purpose:clothing', 'purpose:pose', 'purpose:expression']);
-    expect(readPictureBoard({ 'purpose:nature': 'fog' } as never, undefined).find(zone => zone.id === 'scene')?.facets.map(facet => facet.id))
-      .toEqual([
-        'purpose:place', 'purpose:nature', 'purpose:time', 'purpose:composition', 'purpose:camera', 'purpose:text',
-      ]);
+      .toEqual(['purpose:appearance', 'purpose:clothing', 'purpose:pose', 'purpose:expression']);
+    const legacyScene = readPictureBoard({ 'purpose:nature': 'fog', 'purpose:lighting': 'warm glow', 'purpose:object': 'lantern' } as never, undefined).find(zone => zone.id === 'scene')!;
+    expect(legacyScene.facets.map(facet => facet.id)).toEqual([
+      'purpose:place', 'purpose:atmosphere', 'purpose:camera', 'purpose:nature', 'purpose:lighting', 'purpose:object',
+    ]);
+    expect(legacyScene.facets.find(f => f.id === 'purpose:nature')?.label).toBe('自然与天气（原有）');
+    expect(legacyScene.facets.find(f => f.id === 'purpose:lighting')?.label).toBe('光照（原有）');
+    expect(legacyScene.facets.find(f => f.id === 'purpose:object')?.label).toBe('道具与生物（原有）');
+    const legacyRole = readCharacterBoard({ id: 'c1', prompt: '', x: 0.5, y: 0.5, sections: { 'purpose:identity': 'elf', 'purpose:creature': 'fox ears' } }, undefined);
+    expect(legacyRole.facets.map(f => [f.id, f.label])).toEqual(expect.arrayContaining([
+      ['purpose:identity', '人物设定（原有）'],
+      ['purpose:creature', '动物与生物（原有）'],
+    ]));
   });
 
   it('画风分栏并回全局，而且不会再拆开', () => {

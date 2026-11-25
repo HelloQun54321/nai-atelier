@@ -100,3 +100,54 @@ it('同一上级的重名仍明确拒绝，不调用保存服务', async () => {
   expect(screen.getByRole('alert').textContent).toContain('同名');
   expect(save).not.toHaveBeenCalled();
 });
+
+it('新建与编辑目录可选默认用途（含跟随上级与显式不绑定），且保持目录目标范围折叠', async () => {
+  const save = vi.fn(async (next: PromptLibraryTreeState) => next);
+  const withPurpose: PromptLibraryTreeState = {
+    revision: 6,
+    nodes: [
+      { id: 'root', parentId: null, name: '古风', target: 'character', purpose: 'clothing' },
+      { id: 'child', parentId: 'root', name: '汉服' },
+    ],
+  };
+  render(<PromptLibraryDirectoryDialog state={withPurpose} initialParentId="child" onSave={save} onClose={vi.fn()} />);
+  const purposeSelect = screen.getByRole('combobox', { name: '默认用途' }) as HTMLSelectElement;
+  expect(purposeSelect.options[0].textContent).toContain('跟随上级（服饰穿搭）');
+  expect(screen.getByText('目录目标范围', { selector: 'summary' }).closest('details')?.open).toBe(false);
+  fireEvent.change(screen.getByRole('textbox', { name: '名称' }), { target: { value: '杂记' } });
+  fireEvent.change(purposeSelect, { target: { value: 'none' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][0].nodes.at(-1)).toMatchObject({ name: '杂记', parentId: 'child', purpose: 'none' });
+
+  cleanup();
+  save.mockClear();
+  render(<PromptLibraryDirectoryDialog state={withPurpose} editingId="child" onSave={save} onClose={vi.fn()} />);
+  fireEvent.change(screen.getByRole('combobox', { name: '默认用途' }), { target: { value: 'pose' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][0].nodes.find(n => n.id === 'child')).toMatchObject({ id: 'child', parentId: 'root', name: '汉服', purpose: 'pose' });
+});
+
+it('编辑预设二级目录时识别预设默认用途而非误显示为不绑定，并支持显式关闭预设默认', async () => {
+  const save = vi.fn(async (next: PromptLibraryTreeState) => next);
+  const presetTree: PromptLibraryTreeState = {
+    revision: 6,
+    nodes: [
+      { id: 'person', parentId: null, name: '人物', target: 'character' },
+      { id: 'person-wardrobe', parentId: 'person', name: '服饰穿搭' },
+    ],
+  };
+  render(<PromptLibraryDirectoryDialog state={presetTree} editingId="person-wardrobe" onSave={save} onClose={vi.fn()} />);
+  const purposeSelect = screen.getByRole('combobox', { name: '默认用途' }) as HTMLSelectElement;
+  expect(purposeSelect.options[0].textContent).toContain('预设默认（服饰穿搭）');
+  fireEvent.change(purposeSelect, { target: { value: 'none' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][0].nodes.find(n => n.id === 'person-wardrobe')).toMatchObject({
+    id: 'person-wardrobe',
+    parentId: 'person',
+    name: '服饰穿搭',
+    purpose: 'none',
+  });
+});

@@ -87,21 +87,21 @@ it('保存并继续清空正文、名称与用途 Tag，保留分类与标签；
   render(<PromptCaptureDialog open onSave={onSave} onSaved={onSaved} onClose={onClose} />);
   paste(); fireEvent.change(screen.getByRole('textbox', { name: '名称（可选）' }), { target: { value: '雪夜' } });
   fireEvent.change(screen.getByRole('combobox', { name: '分类' }), { target: { value: 'scene' } });
-  openPurposeGroup('场景与环境'); fireEvent.click(screen.getByRole('button', { name: '时间与季节' }));
+  openPurposeGroup('画面与场景'); fireEvent.click(screen.getByRole('button', { name: '光影与氛围' }));
   fireEvent.click(screen.getByRole('button', { name: '保存并继续' }));
-  await waitFor(() => expect(onSave).toHaveBeenCalledWith(original, '雪夜', 'scene', [], undefined, ['time']));
+  await waitFor(() => expect(onSave).toHaveBeenCalledWith(original, '雪夜', 'scene', [], undefined, ['atmosphere']));
   expect(onSaved).toHaveBeenCalledWith('one'); expect(onClose).not.toHaveBeenCalled();
   expect((screen.getByRole('textbox', { name: '提示词原文' }) as HTMLTextAreaElement).value).toBe('');
   expect((screen.getByRole('textbox', { name: '名称（可选）' }) as HTMLInputElement).value).toBe('');
   expect((screen.getByRole('combobox', { name: '分类' }) as HTMLSelectElement).value).toBe('scene');
-  openPurposeGroup('场景与环境'); expect(screen.getByRole('button', { name: '时间与季节' }).getAttribute('aria-pressed')).toBe('false');
+  openPurposeGroup('画面与场景'); expect(screen.getByRole('button', { name: '光影与氛围' }).getAttribute('aria-pressed')).toBe('false');
   fireEvent.change(screen.getByRole('textbox', { name: '提示词原文' }), { target: { value: '新文本' } });
-  fireEvent.click(screen.getByRole('button', { name: '时间与季节' }));
+  fireEvent.click(screen.getByRole('button', { name: '光影与氛围' }));
   fireEvent.click(screen.getByRole('button', { name: '保存并继续' }));
   await screen.findByRole('alert');
   expect((screen.getByRole('textbox', { name: '提示词原文' }) as HTMLTextAreaElement).value).toBe('新文本');
   expect((screen.getByRole('combobox', { name: '分类' }) as HTMLSelectElement).value).toBe('scene');
-  openPurposeGroup('场景与环境'); expect(screen.getByRole('button', { name: '时间与季节' }).getAttribute('aria-pressed')).toBe('true');
+  openPurposeGroup('画面与场景'); expect(screen.getByRole('button', { name: '光影与氛围' }).getAttribute('aria-pressed')).toBe('true');
   expect(onSaved).toHaveBeenCalledTimes(1);
 });
 
@@ -158,12 +158,47 @@ it('真实目录支持片段不归类并通过第五参数保留明确空归属'
 it('关闭再打开保留人工用途选择，新的入口初值才替换', () => {
   const props = { open: true, onSave: vi.fn(), onClose: vi.fn(), initialText: 'dress' };
   const view = render(<PromptCaptureDialog {...props} />);
-  openPurposeGroup('主体与外观'); fireEvent.click(screen.getByRole('button', { name: '服饰与配件' }));
+  openPurposeGroup('人物'); fireEvent.click(screen.getByRole('button', { name: '服饰穿搭' }));
   view.rerender(<PromptCaptureDialog {...props} open={false} />);
   view.rerender(<PromptCaptureDialog {...props} />);
-  openPurposeGroup('主体与外观'); expect(screen.getByRole('button', { name: '服饰与配件' }).getAttribute('aria-pressed')).toBe('true');
+  openPurposeGroup('人物'); expect(screen.getByRole('button', { name: '服饰穿搭' }).getAttribute('aria-pressed')).toBe('true');
   view.rerender(<PromptCaptureDialog {...props} open={false} />);
   view.rerender(<PromptCaptureDialog {...props} initialPurposes={['pose']} />);
-  openPurposeGroup('主体与外观'); expect(screen.getByRole('button', { name: '服饰与配件' }).getAttribute('aria-pressed')).toBe('false');
-  openPurposeGroup('动作与关系'); expect(screen.getByRole('button', { name: '动作与姿态' }).getAttribute('aria-pressed')).toBe('true');
+  openPurposeGroup('人物'); expect(screen.getByRole('button', { name: '服饰穿搭' }).getAttribute('aria-pressed')).toBe('false');
+  expect(screen.getByRole('button', { name: '动作姿态' }).getAttribute('aria-pressed')).toBe('true');
+});
+
+it('真实目录切换实时跟随目录继承并保持显式用途为空，手动覆写与恢复默认可用', async () => {
+  const onSave = vi.fn().mockResolvedValue('created');
+  const directories = {
+    revision: 1,
+    nodes: [
+      { id: 'person-pose', parentId: null, name: '动作姿态' },
+      { id: 'environment-scene', parentId: null, name: '场景地点' },
+    ],
+  };
+  render(<PromptCaptureDialog open directories={directories} initialCategory="general" initialDirectoryIds={['person-pose']} onSave={onSave} onClose={vi.fn()} />);
+  expect(screen.getByText('跟随目录：动作姿态')).toBeTruthy();
+  fireEvent.change(screen.getByRole('textbox', { name: '提示词原文' }), { target: { value: 'standing' } });
+  fireEvent.click(screen.getByText('选择目录'));
+  fireEvent.click(screen.getByRole('checkbox', { name: '动作姿态' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '场景地点' }));
+  expect(screen.getByText('跟随目录：场景地点')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '保存片段' }));
+  await waitFor(() => expect(onSave).toHaveBeenCalledWith('standing', '', 'general', [], ['environment-scene'], []));
+
+  cleanup();
+  onSave.mockClear();
+  render(<PromptCaptureDialog open directories={directories} initialCategory="general" initialDirectoryIds={['person-pose']} onSave={onSave} onClose={vi.fn()} />);
+  openPurposeGroup('画面与场景');
+  fireEvent.click(screen.getByRole('button', { name: '光影与氛围' }));
+  expect(screen.getByText('已单独指定：光影与氛围')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '恢复默认' }));
+  expect(screen.getByText('跟随目录：动作姿态')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '光影与氛围' }));
+  fireEvent.click(screen.getByText('选择目录'));
+  fireEvent.click(screen.getByRole('checkbox', { name: '场景地点' }));
+  fireEvent.change(screen.getByRole('textbox', { name: '提示词原文' }), { target: { value: 'warm dusk' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存片段' }));
+  await waitFor(() => expect(onSave).toHaveBeenLastCalledWith('warm dusk', '', 'general', [], ['person-pose', 'environment-scene'], ['atmosphere']));
 });

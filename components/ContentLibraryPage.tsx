@@ -1,18 +1,32 @@
 import { t, useLanguage } from '../services/i18n';
-import React, { Suspense, useEffect, useId, useState } from 'react';
-import { ClipboardPaste, Dice5, ImagePlus, Sparkles, X } from 'lucide-react';
+import React, { Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { ClipboardPaste, Dice5, Image as ImageIcon, ImagePlus, ListChecks, Plus, Sparkles, Wand2, X } from 'lucide-react';
 import { IconButton, PageSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarOverflowMenu } from './ToolbarOverflowMenu';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { PromptCaptureDialog } from './PromptCaptureDialog';
 import { PromptExtractDialog } from './PromptExtractDialog';
+import { PromptLibraryGenerateDialog } from './PromptLibraryGenerateDialog';
 import { ImageTaggerPanel } from './ImageTaggerPanel';
 import type { ExtractedEntryDraft } from '../services/extractedPromptEntry';
-import type { PromptLibraryTreeState } from '../services/promptLibraryTree.mjs';
+import type { PromptLibraryTreeState } from '../services/promptLibraryDirectories';
+import type { PromptPurposeId } from '../services/promptPurposes.mjs';
 import { useMobileHistoryLayer, type ToolbarOverflowItem } from './MobileUI';
+import type { ChainType, PromptChain } from '../types';
 
 export type ContentLibrarySection = 'items' | 'saved' | 'originals';
+
+export interface ContentLibraryBrowseActions {
+  onExtract?: () => void;
+  onCapture?: () => void;
+  onGenerate?: () => void;
+  onReverse?: () => void;
+  onSelectingChange: (selecting: boolean) => void;
+  onActiveDirectoryIdsChange: (directoryIds: string[]) => void;
+  registerCoverSettingsOpener: (opener: (() => void) | null) => void;
+  registerSelectionStarter: (starter: (() => void) | null, available?: boolean) => void;
+}
 
 const SECTIONS: ReadonlyArray<readonly [ContentLibrarySection, string]> = [
   ['items', '片段'],
@@ -27,12 +41,14 @@ interface ContentLibraryPageProps {
   rollOpen: boolean;
   rollTitle?: string;
   onRollOpenChange: (open: boolean) => void;
-  onCapture?: (text: string, name: string, category: string, tags?: string[], directoryIds?: string[], purposes?: import('../services/promptPurposes.mjs').PromptPurposeId[]) => Promise<string | void>;
+  onCapture?: (text: string, name: string, category: string, tags?: string[], directoryIds?: string[], purposes?: PromptPurposeId[]) => Promise<string | void>;
+  onGenerateCreate?: (name: string, description: string, type: ChainType, data?: Partial<PromptChain>) => Promise<string | undefined>;
+  onGenerateSaved?: () => void;
   onExtractSave?: (draft: ExtractedEntryDraft) => Promise<void>;
   notify?: (message: string, type?: 'success' | 'error') => void;
   onCaptureSaved?: (id?: string) => void;
   onViewCaptured?: (id: string) => void;
-  browse?: (toolbarSlot: HTMLElement | null, actions?: { onExtract?: () => void }) => React.ReactNode;
+  browse?: (toolbarSlot: HTMLElement | null, actions?: ContentLibraryBrowseActions) => React.ReactNode;
   /** 无 browse 时按分区挂载；主浏览模式不传。 */
   items?: (toolbarSlot: HTMLElement | null) => React.ReactNode;
   roll: (toolbarSlot: HTMLElement | null) => React.ReactNode;
@@ -71,7 +87,26 @@ const RollDialog: React.FC<{ open: boolean; title?: string; onClose: () => void;
 };
 
 /** 两个主分区按需保留，搭配独立打开；隐藏面板保留草稿和原列表位置。 */
-export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ directories, section: requestedSection, onSectionChange, active = true, rollOpen, rollTitle, onRollOpenChange, onCapture, onExtractSave, notify, onCaptureSaved, onViewCaptured, browse, items, roll, saved }) => {
+export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({
+  directories,
+  section: requestedSection,
+  onSectionChange,
+  active = true,
+  rollOpen,
+  rollTitle,
+  onRollOpenChange,
+  onCapture,
+  onGenerateCreate,
+  onGenerateSaved,
+  onExtractSave,
+  notify,
+  onCaptureSaved,
+  onViewCaptured,
+  browse,
+  items,
+  roll,
+  saved,
+}) => {
   useLanguage();
   const section = requestedSection === 'saved' ? 'saved' : 'items';
   const id = useId();
@@ -79,27 +114,73 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
   const [mounted, setMounted] = useState<ReadonlySet<ContentLibrarySection>>(() => new Set([section]));
   const [rollMounted, setRollMounted] = useState(rollOpen);
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
   const [extractOpen, setExtractOpen] = useState(false);
-  // 图片反推：识别结果直接走「粘贴收录」同一条创建通道，落成新条目。
   const [reverseOpen, setReverseOpen] = useState(false);
   const [captured, setCaptured] = useState<{ id?: string } | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [activeDirectoryIds, setActiveDirectoryIds] = useState<string[]>([]);
+  const [canStartSelection, setCanStartSelection] = useState(false);
+  const [hasSelectionStarter, setHasSelectionStarter] = useState(false);
+  const [hasCoverSettingsOpener, setHasCoverSettingsOpener] = useState(false);
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  const coverSettingsOpenerRef = useRef<(() => void) | null>(null);
+  const selectionStarterRef = useRef<(() => void) | null>(null);
+
   const rollLabel = rollTitle || (browse ? '搭配' : '随机搭配');
+
+  useLayoutEffect(() => {
+    const sync = () => setMobile(window.innerWidth < 768);
+    window.addEventListener('resize', sync);
+    return () => window.removeEventListener('resize', sync);
+  }, []);
+
   useEffect(() => {
     if (!captured) return;
     const timer = window.setTimeout(() => setCaptured(null), 8000);
     return () => window.clearTimeout(timer);
   }, [captured]);
+
   useEffect(() => {
     setMounted(previous => previous.has(section) ? previous : new Set(previous).add(section));
   }, [section]);
+
   useEffect(() => { if (rollOpen) setRollMounted(true); }, [rollOpen]);
+
+  const registerCoverSettingsOpener = useCallback((opener: (() => void) | null) => {
+    coverSettingsOpenerRef.current = opener;
+    setHasCoverSettingsOpener(Boolean(opener));
+  }, []);
+
+  const registerSelectionStarter = useCallback((starter: (() => void) | null, available = true) => {
+    selectionStarterRef.current = starter;
+    setHasSelectionStarter(Boolean(starter));
+    setCanStartSelection(Boolean(starter && available));
+  }, []);
+
+  const browseActions: ContentLibraryBrowseActions = {
+    onExtract: onExtractSave ? () => setExtractOpen(true) : undefined,
+    onCapture: onCapture ? () => setCaptureOpen(true) : undefined,
+    onGenerate: onGenerateCreate ? () => setGenerateOpen(true) : undefined,
+    onReverse: onCapture ? () => setReverseOpen(true) : undefined,
+    onSelectingChange: setSelecting,
+    onActiveDirectoryIdsChange: setActiveDirectoryIds,
+    registerCoverSettingsOpener,
+    registerSelectionStarter,
+  };
+
   const pane = (key: ContentLibrarySection, node: () => React.ReactNode) => mounted.has(key)
     ? <div role="tabpanel" hidden={section !== key} id={`${id}-${key}-panel`} aria-labelledby={`${id}-${key}-tab`} data-content-library-pane={key} className={section === key ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><Suspense fallback={<Loading />}>{node()}</Suspense></div>
     : null;
+
   const browseOverflowItems: ToolbarOverflowItem[] = [
+    ...(mobile && hasSelectionStarter ? [{ label: '多选', icon: <ListChecks />, onClick: () => selectionStarterRef.current?.(), disabled: !canStartSelection }] : []),
+    ...(onGenerateCreate ? [{ label: 'AI 生成片段', icon: <Sparkles />, onClick: () => setGenerateOpen(true) }] : []),
+    ...(onExtractSave ? [{ label: 'AI 提取分类', icon: <Wand2 />, onClick: () => setExtractOpen(true) }] : []),
     ...(onCapture ? [{ label: '图片反推 Tag', hint: '从图片反推 Tag 并新建条目', icon: <ImagePlus />, onClick: () => setReverseOpen(true) }] : []),
-    ...(onExtractSave ? [{ label: 'AI 提取分类', icon: <Sparkles />, onClick: () => setExtractOpen(true) }] : []),
+    ...(hasCoverSettingsOpener ? [{ label: '封面生成设置', icon: <ImageIcon />, onClick: () => coverSettingsOpenerRef.current?.() }] : []),
   ];
+
   return <div className="content-library workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
     <WorkspaceChrome>
       <WorkspaceToolbar scrollable={false} className={`content-library-toolbar ${browse ? '!flex-nowrap !gap-2' : ''}`}>
@@ -120,11 +201,11 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
           </button>)}
         </div>}
         <div ref={setToolbarSlot} className={`content-library-tools flex min-w-0 flex-1 items-center gap-2 ${browse ? '!order-none !basis-0 !gap-2' : ''}`} />
-        {browse ? <>
+        {browse ? (!selecting && <>
           <ToolbarButton className="mobile-touch !px-2.5 md:!px-3" onClick={() => onRollOpenChange(true)} aria-label={t(rollLabel)} title={t(rollLabel)} aria-haspopup="dialog"><Dice5 /><span className="toolbar-responsive-label hidden xl:inline">{t(rollLabel)}</span></ToolbarButton>
-          {onCapture && <ToolbarButton tone="primary" className="mobile-touch !px-2.5 md:!px-3" onClick={() => setCaptureOpen(true)} aria-label={t('粘贴收录')} title={t('粘贴收录')} aria-haspopup="dialog"><ClipboardPaste /><span className="toolbar-responsive-label hidden xl:inline">{t('粘贴收录')}</span></ToolbarButton>}
+          {onCapture && <ToolbarButton tone="primary" className="mobile-touch !px-2.5 md:!px-3" onClick={() => setCaptureOpen(true)} aria-label={t('粘贴收录')} title={t('粘贴收录')} aria-haspopup="dialog"><Plus /><span className="toolbar-responsive-label hidden xl:inline">{t('粘贴收录')}</span></ToolbarButton>}
           <ToolbarOverflowMenu items={browseOverflowItems} />
-        </> : <>
+        </>) : <>
           {onCapture && <ToolbarButton onClick={() => setReverseOpen(true)} aria-label={t('图片反推 Tag')} title={t('从图片反推 Tag 并新建条目')} aria-haspopup="dialog"><ImagePlus /><span className="hidden sm:inline">{t('图片反推')}</span></ToolbarButton>}
           {onExtractSave && <ToolbarButton onClick={() => setExtractOpen(true)} aria-label={t('AI 提取分类')} aria-haspopup="dialog"><Sparkles /><span className="hidden sm:inline">{t('AI 提取分类')}</span></ToolbarButton>}
           {onCapture && <ToolbarButton onClick={() => setCaptureOpen(true)} aria-label={t('粘贴收录')} aria-haspopup="dialog"><ClipboardPaste /><span className="hidden sm:inline">{t('粘贴收录')}</span></ToolbarButton>}
@@ -134,11 +215,12 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
     </WorkspaceChrome>
     {/* 滚动由嵌入分区自己的 workspace-scroll-viewport 承担，这里只负责留出顶栏高度。 */}
     <div className="content-library-body flex min-h-0 flex-1 flex-col">
-      {browse ? browse(toolbarSlot, {}) : <>{items && pane('items', () => items(section === 'items' ? toolbarSlot : null))}
+      {browse ? browse(toolbarSlot, browseActions) : <>{items && pane('items', () => items(section === 'items' ? toolbarSlot : null))}
       {saved && pane('saved', () => saved(section === 'saved' ? toolbarSlot : null))}</>}
     </div>
     {rollMounted && <ImagePreviewPortal><RollDialog title={rollLabel} open={active && rollOpen} onClose={() => onRollOpenChange(false)}>{roll}</RollDialog></ImagePreviewPortal>}
-    {onCapture && <ImagePreviewPortal><PromptCaptureDialog directories={directories} initialCategory="general" open={active && captureOpen} onClose={() => setCaptureOpen(false)} onSave={onCapture} onSaved={id => { setCaptured({ id }); onCaptureSaved?.(id); }} /></ImagePreviewPortal>}
+    {onCapture && <ImagePreviewPortal><PromptCaptureDialog directories={directories} initialCategory="general" initialDirectoryIds={activeDirectoryIds} open={active && captureOpen} onClose={() => setCaptureOpen(false)} onSave={onCapture} onSaved={id => { setCaptured({ id }); onCaptureSaved?.(id); }} /></ImagePreviewPortal>}
+    {onGenerateCreate && <PromptLibraryGenerateDialog open={active && generateOpen} onClose={() => setGenerateOpen(false)} onCreate={onGenerateCreate} onSaved={onGenerateSaved} directories={directories} initialDirectoryIds={activeDirectoryIds} notify={notify ?? (() => {})} />}
     {onExtractSave && <ImagePreviewPortal><PromptExtractDialog directories={directories} open={active && extractOpen} onClose={() => setExtractOpen(false)} notify={notify ?? (() => {})} onSave={onExtractSave} /></ImagePreviewPortal>}
     {onCapture && reverseOpen && <ImagePreviewPortal><ImageTaggerPanel
       contextual
@@ -147,7 +229,10 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
       onClose={() => setReverseOpen(false)}
       notify={notify ?? (() => {})}
       actionLabel={t('用 {count} 个 Tag 新建条目')}
-      onInsert={tags => { setReverseOpen(false); void onCapture(tags, t('反推 Tag'), 'general'); }}
+      onInsert={tags => {
+        setReverseOpen(false);
+        void onCapture(tags, t('反推 Tag'), 'general', undefined, activeDirectoryIds, []);
+      }}
     /></ImagePreviewPortal>}
     {active && captured && <div role="status" className="appearance-panel fixed bottom-20 left-1/2 z-[1250] flex -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-3 shadow-lg"><span className="text-sm">{t('已收录')}</span>{captured.id && onViewCaptured && <button type="button" className="mobile-touch text-sm font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { onViewCaptured(captured.id!); setCaptured(null); }}>{t('查看')}</button>}</div>}
   </div>;

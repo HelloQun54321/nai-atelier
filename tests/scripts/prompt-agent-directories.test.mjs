@@ -170,11 +170,11 @@ test('导入分类先读取当前真实树，单次mock模型请求按路径分�
     assert.ok(sent[0].categories.includes('purpose:style'));
     assert.ok(sent[1].categories.includes('purpose:style'));
     assert.ok(!sent[0].categories.includes('purpose:artist') && !sent[0].categories.includes('purpose:lighting'));
-    assert.equal(sent[1].directoryCategories.find(item => item.key === 'purpose:interaction').directoryName, '互动与关系');
+    assert.equal(sent[1].directoryCategories.find(item => item.key === 'purpose:interaction').directoryName, '多人互动');
     assert.equal(result.items[0].sections['purpose:style'], 'artist:synthetic, soft light');
     assert.equal(result.items[0].sections.extra, 'other text');
     assert.equal(result.items[1].sections.extra, 'uncertain');
-    assert.equal(result.items[1].sectionMeta['purpose:interaction'].directoryName, '互动与关系');
+    assert.equal(result.items[1].sectionMeta['purpose:interaction'].directoryName, '多人互动');
     current = { revision: 5, nodes: [] };
     const emptyTree = await service.classifyPrompts({ documents }, project);
     assert.equal(requests.length, 2);
@@ -189,7 +189,7 @@ test('导入分类先读取当前真实树，单次mock模型请求按路径分�
 
 test('固定用途生成不读文件夹语义，返回值拒绝未知 Tag', () => {
   const prompt = buildPurposeLibraryPrompt({ purposes: ['clothing'], directories });
-  assert.match(prompt, /服饰与配件/);
+  assert.match(prompt, /服饰穿搭/);
   assert.doesNotMatch(prompt, /雨中关系/);
   assert.deepEqual(parseLibraryResponse(JSON.stringify({ items: [{ prompt: 'dress', purposes: ['clothing'] }] }))[0].purposes, ['clothing']);
   assert.throws(() => parseLibraryResponse(JSON.stringify({ items: [{ prompt: 'dress', purposes: ['custom'] }] })), /用途 Tag 无效/);

@@ -14,10 +14,11 @@ import type { PromptChain } from '../../types';
 
 const promptEntry: PromptChain = { id: 'synthetic', userId: 'owner', type: 'preset', name: '合成片段', description: '', tags: [], basePrompt: '', negativePrompt: '', modules: [], params: { ...LAB_DEFAULT_PARAMS }, createdAt: 0, updatedAt: 0 };
 
-it('取用目录范围从未归类或具体目录切回全部时包含两种片段', () => {
+it('取用目录范围从未归类或具体目录切回全部时包含两种片段，且不重复展示用途下拉', () => {
   const directories = { revision: 1, nodes: [{ id: 'folder', parentId: null, name: '我的目录' }] };
   const entries: PromptChain[] = [{ id: 'loose', name: '未归类候选', ids: [] }, { id: 'filed', name: '目录内候选', ids: ['folder'] }].map(item => ({ ...promptEntry, id: item.id, name: item.name, basePrompt: item.id + ' prompt', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: item.ids, _promptLibraryPurposes: ['place'] } }));
   render(<PromptLibraryContext.Provider value={{ chains: entries, directories, save: vi.fn() }}><PromptLibraryChooser value="" onText={vi.fn()} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  expect(screen.queryByRole('combobox', { name: '用途 Tag' })).toBeNull();
   fireEvent.click(screen.getByRole('checkbox', { name: '未归类' }));
   expect(screen.getByText('未归类候选')).toBeTruthy(); expect(screen.queryByText('目录内候选')).toBeNull();
   fireEvent.click(screen.getByRole('checkbox', { name: '全部目录' }));
@@ -30,8 +31,15 @@ it('取用目录范围从未归类或具体目录切回全部时包含两种片�
   expect(screen.getByText('未归类候选')).toBeTruthy(); expect(screen.getByText('目录内候选')).toBeTruthy();
 });
 
-it('从分类栏打开时按该栏用途筛选片段，仍可切到组合；不展示整库目录选择', () => {
-  const directories = { revision: 1, nodes: [{ id: 'person-appearance', parentId: null, name: '外貌与身体' }, { id: 'person-wardrobe', parentId: null, name: '服饰与配件' }] };
+it('从分类栏打开时按目录继承与显式用途筛选片段，仍可切到组合；不展示整库目录选择', () => {
+  const directories = {
+    revision: 1,
+    nodes: [
+      { id: 'person-appearance', parentId: null, name: '外貌与设定' },
+      { id: 'person-wardrobe', parentId: null, name: '服饰穿搭' },
+      { id: 'plain-notes', parentId: null, name: '纯备注夹', purpose: 'none' as const },
+    ],
+  };
   const combo = { ...promptEntry, id: 'combo', name: '红发白裙', ...createCombinationData('红发白裙', {
     'character:purpose:appearance': { kind: 'purpose:appearance', scope: 'character' as const, filled: true, text: 'red hair' },
     'character:purpose:clothing': { kind: 'purpose:clothing', scope: 'character' as const, filled: true, text: 'white dress' },
@@ -39,18 +47,20 @@ it('从分类栏打开时按该栏用途筛选片段，仍可切到组合；不�
   const entries: PromptChain[] = [
     { ...promptEntry, id: 'hair', name: '红发', basePrompt: 'red hair', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['person-appearance'], _promptLibraryPurposes: ['appearance'] } },
     { ...promptEntry, id: 'dress', name: '白裙', basePrompt: 'white dress', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['person-wardrobe'], _promptLibraryPurposes: ['clothing'] } },
-    { ...promptEntry, id: 'untagged', name: '未标注外貌夹', basePrompt: 'blue eyes', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['person-appearance'], _promptLibraryPurposes: [] } },
+    { ...promptEntry, id: 'inherited', name: '目录继承外貌', basePrompt: 'blue eyes', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['person-appearance'], _promptLibraryPurposes: [] } },
+    { ...promptEntry, id: 'unbound', name: '未绑定外貌夹', basePrompt: 'note words', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['plain-notes'], _promptLibraryPurposes: [] } },
     combo,
   ];
   render(<PromptLibraryContext.Provider value={{ chains: entries, directories, save: vi.fn() }}><PromptLibraryChooser value="" field={{ purposeId: 'appearance', roleId: 'role' }} onText={vi.fn()} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
-  expect(screen.getByText(/当前栏：外貌与身体（只显示此用途片段）/)).toBeTruthy();
+  expect(screen.getByText(/当前栏：外貌与设定（只显示此用途片段）/)).toBeTruthy();
   expect(screen.getByRole('tab', { name: '片段' })).toBeTruthy();
   expect(screen.getByRole('tab', { name: '组合' })).toBeTruthy();
   expect(screen.queryByRole('checkbox', { name: '全部目录' })).toBeNull();
   expect(screen.queryByRole('combobox', { name: '用途 Tag' })).toBeNull();
   expect(screen.getByText('红发')).toBeTruthy();
+  expect(screen.getByText('目录继承外貌')).toBeTruthy();
   expect(screen.queryByText('白裙')).toBeNull();
-  expect(screen.queryByText('未标注外貌夹')).toBeNull();
+  expect(screen.queryByText('未绑定外貌夹')).toBeNull();
   fireEvent.click(screen.getByRole('tab', { name: '组合' }));
   expect(screen.getByText(/组合整套写入本角色/)).toBeTruthy();
   expect(screen.getByText('红发白裙')).toBeTruthy();
@@ -78,14 +88,14 @@ it('全局画风栏锁定画风配方，旧细项用途也归并进来', () => {
   const directories = { revision: 1, nodes: [{ id: 'style-root', parentId: null, name: '画风配方' }] };
   const entries: PromptChain[] = [
     { ...promptEntry, id: 'recipe', name: '水彩配方', basePrompt: 'watercolor', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['style-root'], _promptLibraryPurposes: ['style'] } },
-    { ...promptEntry, id: 'legacy-light', name: '旧光照', basePrompt: 'rim light', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['style-root'], _promptLibraryPurposes: ['lighting' as never] } },
+    { ...promptEntry, id: 'legacy-artist', name: '旧画师', basePrompt: 'artist:example', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['style-root'], _promptLibraryPurposes: ['artist' as never] } },
     { ...promptEntry, id: 'pose', name: '站立', basePrompt: 'standing', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['style-root'], _promptLibraryPurposes: ['pose'] } },
   ];
   render(<PromptLibraryContext.Provider value={{ chains: entries, directories, save: vi.fn() }}><PromptLibraryChooser value="" field={{ purposeId: 'style' }} onText={vi.fn()} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
   expect(screen.getByText(/当前栏：画风配方（只显示此用途片段）/)).toBeTruthy();
   expect(screen.queryByRole('checkbox', { name: '全部目录' })).toBeNull();
   expect(screen.getByText('水彩配方')).toBeTruthy();
-  expect(screen.getByText('旧光照')).toBeTruthy();
+  expect(screen.getByText('旧画师')).toBeTruthy();
   expect(screen.queryByText('站立')).toBeNull();
 });
 
@@ -97,8 +107,8 @@ it('实验室随机入口透传画面名单，应用保留完整全局风格与�
   render(<PromptLibraryContext.Provider value={{ chains: [entry], save: vi.fn() }}><PromptLibraryWorkspace state={state} onChange={changed}><PromptLibraryRandomButton purposes={LAB_PICTURE_PURPOSES} /></PromptLibraryWorkspace></PromptLibraryContext.Provider>);
   fireEvent.click(screen.getByRole('button', { name: '随机搭配' }));
   expect(screen.queryByRole('textbox', { name: '画风配方内容' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '编辑地点与布景' }));
-  fireEvent.change(screen.getByRole('combobox', { name: '选择地点与布景片段' }), { target: { value: 'place' } });
+  fireEvent.click(screen.getByRole('button', { name: '编辑场景地点' }));
+  fireEvent.change(screen.getByRole('combobox', { name: '选择场景地点片段' }), { target: { value: 'place' } });
   expect(document.querySelector('[data-content-roll-apply-preview]')!.textContent).toContain('rainy street');
   const inserted = Array.from(document.querySelectorAll('[data-roll-insert]')).map(node => node.textContent).join('');
   expect(inserted).toContain('rainy street');
@@ -114,7 +124,7 @@ it('实验室随机入口透传画面名单，应用保留完整全局风格与�
 it.each(['global', 'character'] as const)('整段%s骰子关闭重开仍替换本轮内容，撤销恢复回执，手改方向保留', async mode => {
   localStorage.clear();
   const changed = vi.fn(), roleId = mode === 'character' ? 'subject-one' : undefined;
-  const purpose = roleId ? 'clothing' : 'place', label = roleId ? '服饰与配件' : '地点与布景';
+  const purpose = roleId ? 'clothing' : 'place', label = roleId ? '服饰穿搭' : '场景地点';
   const entries: PromptChain[] = ['first', 'second'].map(id => ({ ...promptEntry, id, name: id, basePrompt: `${id} positive`, negativePrompt: `${id} negative`, params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: [], _promptLibraryPurposes: [purpose] } }));
   const initial = { params: { ...LAB_DEFAULT_PARAMS, characters: [{ id: 'subject-one', prompt: 'original subject', negativePrompt: 'original subject negative', x: .5, y: .5 }, { id: 'subject-two', prompt: 'other subject', negativePrompt: 'other negative', x: .5, y: .5 }] }, base: 'complete style', subject: '', negative: 'complete style negative', classified: false };
   function Harness() {
@@ -451,4 +461,84 @@ it('组合收录保存全局与所选角色同用途的两份正文和负面', a
     expect.objectContaining({ itemId: 'character:purpose:clothing', unitId: 'purpose:clothing', scope: 'character', text: 'selected dress', negative: 'selected negative' }),
   ]);
   expect(JSON.stringify(items)).not.toContain('first dress');
+});
+
+it('锁定只选组合时隐藏片段页签，按目标范围筛选普通组合与自定义角色，写回不串栏', () => {
+  const charCombo = {
+    id: 'char-combo',
+    ...createCombinationData('女仆穿搭套', {
+      'character:purpose:clothing': { kind: 'purpose:clothing', scope: 'character', filled: true, text: 'maid outfit' },
+      'global:purpose:place': { kind: 'purpose:place', scope: 'global', filled: true, text: 'coffee shop' },
+    }),
+  } as PromptChain;
+  const globalOnlyCombo = {
+    id: 'scene-combo',
+    ...createCombinationData('夜景纯场景', {
+      'global:purpose:place': { kind: 'purpose:place', scope: 'global', filled: true, text: 'night street' },
+    }),
+  } as PromptChain;
+  const customChar = {
+    id: 'custom-saber',
+    type: 'character',
+    userId: 'owner',
+    name: '女仆Saber',
+    description: '',
+    tags: [],
+    basePrompt: 'blonde hair',
+    negativePrompt: '',
+    modules: [],
+    variableValues: { subject: '' },
+    params: {
+      ...LAB_DEFAULT_PARAMS,
+      characters: [{ id: 's1', enabled: true, prompt: '', x: 0.5, y: 0.5, sections: { 'purpose:appearance': 'blonde hair', 'purpose:clothing': 'maid dress' } }],
+    },
+    createdAt: 1,
+    updatedAt: 1,
+  } as PromptChain;
+  const fragment = { ...promptEntry, id: 'single-dress', basePrompt: 'red dress', params: { ...LAB_DEFAULT_PARAMS, _collectedCategory: 'general', _promptLibraryPurposes: ['clothing'] } } as PromptChain;
+  const changed = vi.fn();
+  const state = { params: { ...LAB_DEFAULT_PARAMS, characters: [{ id: 'target', prompt: '', x: 0.5, y: 0.5 }] }, base: 'artist', subject: 'keep scene', negative: '', classified: false, sectioned: true };
+
+  const view = render(
+    <PromptLibraryContext.Provider value={{ chains: [charCombo, globalOnlyCombo, customChar, fragment], save: vi.fn() }}>
+      <PromptLibraryWorkspace state={state} onChange={changed}>
+        <PromptLibraryChooser value="" field={{ roleId: 'target', lockedSection: 'saved', targetScope: 'character' }} onText={vi.fn()} onClose={vi.fn()} />
+      </PromptLibraryWorkspace>
+    </PromptLibraryContext.Provider>,
+  );
+  expect(screen.queryByRole('tab', { name: '片段' })).toBeNull();
+  expect(screen.getByText('女仆穿搭套')).toBeTruthy();
+  expect(screen.getByText('女仆Saber')).toBeTruthy();
+  expect(screen.queryByText('夜景纯场景')).toBeNull();
+  expect(screen.queryByText('合成片段')).toBeNull();
+
+  fireEvent.click(screen.getByText('女仆穿搭套'));
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
+  expect(changed.mock.calls[0][0].params.characters[0].sections).toMatchObject({ 'purpose:clothing': 'maid outfit' });
+  expect(changed.mock.calls[0][0].params._promptSections?.['purpose:place']).toBeUndefined();
+
+  view.unmount();
+  render(
+    <PromptLibraryContext.Provider value={{ chains: [charCombo, globalOnlyCombo, customChar, fragment], save: vi.fn() }}>
+      <PromptLibraryWorkspace state={state} onChange={changed}>
+        <PromptLibraryChooser value="" field={{ lockedSection: 'saved', targetScope: 'global' }} onText={vi.fn()} onClose={vi.fn()} />
+      </PromptLibraryWorkspace>
+    </PromptLibraryContext.Provider>,
+  );
+  expect(screen.queryByRole('tab', { name: '片段' })).toBeNull();
+  expect(screen.getByText('夜景纯场景')).toBeTruthy();
+  expect(screen.getByText('女仆穿搭套')).toBeTruthy();
+  expect(screen.queryByText('女仆Saber')).toBeNull();
+
+  cleanup();
+  render(
+    <PromptLibraryContext.Provider value={{ chains: [charCombo, globalOnlyCombo, customChar, fragment], save: vi.fn() }}>
+      <PromptLibraryWorkspace state={state} onChange={changed}>
+        <PromptLibraryChooser value="" field={{ purposeId: 'clothing', lockedSection: 'items' }} onText={vi.fn()} onClose={vi.fn()} />
+      </PromptLibraryWorkspace>
+    </PromptLibraryContext.Provider>,
+  );
+  expect(screen.queryByRole('tab', { name: '组合' })).toBeNull();
+  expect(screen.getByText('合成片段')).toBeTruthy();
+  expect(screen.queryByText('女仆穿搭套')).toBeNull();
 });

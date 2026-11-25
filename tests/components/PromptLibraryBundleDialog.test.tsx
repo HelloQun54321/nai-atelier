@@ -92,12 +92,12 @@ it('一段话生成六类候选，取消一条勾选后只保存勾选的五条�
   expect(screen.getAllByRole('checkbox')).toHaveLength(6);
   expect(screen.getAllByRole('checkbox').every(box => (box as HTMLInputElement).checked)).toBe(true);
 
-  fireEvent.click(screen.getByLabelText('选择视角与景别'));
-  expect((screen.getByLabelText('选择视角与景别') as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(screen.getByLabelText('选择镜头与构图'));
+  expect((screen.getByLabelText('选择镜头与构图') as HTMLInputElement).checked).toBe(false);
   const saveButton = screen.getByRole('button', { name: '全部保存到提示词库' }) as HTMLButtonElement;
   expect(saveButton.disabled).toBe(false);
-  fireEvent.change(screen.getByLabelText('外貌与身体名称'), { target: { value: '改过的名字' } });
-  fireEvent.change(screen.getByLabelText('外貌与身体提示词'), { target: { value: 'appearance prompt, edited' } });
+  fireEvent.change(screen.getByLabelText('外貌与设定名称'), { target: { value: '改过的名字' } });
+  fireEvent.change(screen.getByLabelText('外貌与设定提示词'), { target: { value: 'appearance prompt, edited' } });
 
   fireEvent.click(saveButton);
   await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(5));
@@ -120,7 +120,7 @@ it('一段话生成六类候选，取消一条勾选后只保存勾选的五条�
   await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith('已保存 5 条'));
   expect(mocks.saved).toHaveBeenCalledOnce();
   // 未勾选的镜头仍留在面板里，重新勾选即可再存。
-  expect(screen.getByLabelText('选择视角与景别')).toBeTruthy();
+  expect(screen.getByLabelText('选择镜头与构图')).toBeTruthy();
   expect(mocks.close).not.toHaveBeenCalled();
 });
 
@@ -276,12 +276,12 @@ it('改名或清空目录仍发送固定用途，保存时可校正 Tag', async 
   fireEvent.click(screen.getByRole('button', { name: '生成搭配' }));
   await screen.findByText('已生成 1 条');
   expect(mocks.generate.mock.calls[0][0]).toEqual({ brief: '白裙', purposes: ['appearance', 'clothing', 'pose', 'expression', 'place', 'camera'] });
-  const group = screen.getAllByRole('button', { name: '主体与外观' }).at(-1)!;
+  const group = screen.getAllByRole('button', { name: '画面与场景' }).at(-1)!;
   if (group.getAttribute('aria-expanded') === 'false') fireEvent.click(group);
-  fireEvent.click(screen.getAllByRole('button', { name: '物品与道具' }).at(-1)!);
+  fireEvent.click(screen.getAllByRole('button', { name: '镜头与构图' }).at(-1)!);
   fireEvent.click(screen.getByRole('button', { name: '全部保存到提示词库' }));
   await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
-  expect(mocks.create.mock.calls[0][3].params._promptLibraryPurposes).toEqual(['clothing', 'object']);
+  expect(mocks.create.mock.calls[0][3].params._promptLibraryPurposes).toEqual(['clothing', 'camera']);
   expect(mocks.create.mock.calls[0][3].params._promptLibraryDirectoryIds).toEqual([]);
 });
 

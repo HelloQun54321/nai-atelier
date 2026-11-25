@@ -1,14 +1,14 @@
 import { PromptPurposePicker } from './PromptPurposePicker';
-import type { PromptPurposeId } from '../services/promptPurposes.mjs';
+import { promptPurposeLabel, readPromptPurposes, type PromptPurposeId } from '../services/promptPurposes.mjs';
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardPaste, X } from 'lucide-react';
+import { ChevronDown, ClipboardPaste, X } from 'lucide-react';
 import { t } from '../services/i18n';
 import { COLLECTED_PROMPT_CATEGORIES, prepareCollectedPrompt } from '../services/collectedPrompt';
 import { IconButton, ToolbarButton } from './DesignSystem';
 import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { useMobileHistoryLayer } from './MobileUI';
-import { LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, type PromptLibraryTreeState } from '../services/promptLibraryDirectories';
+import { inferPurposesFromDirectoryIds, LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, type PromptLibraryTreeState } from '../services/promptLibraryDirectories';
 import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
 import { useConfirmDialog } from './ConfirmDialog';
 
@@ -23,10 +23,13 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
   directoriesError?: string;
   reloadDirectories?: () => Promise<void>;
 }) {
+  const resolveInitialDirs = (dirs?: string[], cat = '') =>
+    dirs || (cat && cat in LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS ? [LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS[cat as keyof typeof LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS]] : []);
+
   const [text, setText] = useState(initialText);
   const [name, setName] = useState(initialName);
   const [category, setCategory] = useState(initialCategory);
-  const [directoryIds, setDirectoryIds] = useState<string[]>(initialDirectoryIds || (initialCategory && initialCategory in LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS ? [LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS[initialCategory as keyof typeof LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS]] : []));
+  const [directoryIds, setDirectoryIds] = useState<string[]>(() => resolveInitialDirs(initialDirectoryIds, initialCategory));
   const [tags, setTags] = useState(initialTags);
   const [purposes, setPurposes] = useState<PromptPurposeId[]>(initialPurposes);
   const [error, setError] = useState('');
@@ -55,8 +58,9 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
     wasOpen.current = true;
     const next = { text: initialText, name: initialName, category: initialCategory, tags: initialTags, purposes: JSON.stringify(initialPurposes), directories: JSON.stringify(initialDirectoryIds) };
     if (Object.keys(next).some(key => next[key as keyof typeof next] !== lastInitial.current[key as keyof typeof next])) {
-      setPurposes(initialPurposes); setDirectoryIds(initialDirectoryIds || []);
-      initialDraft.current = { text: next.text, name: next.name, category: next.category, tags: next.tags, purposes: initialPurposes, directoryIds: initialDirectoryIds || [] };
+      const nextDirs = initialDirectoryIds || [];
+      setPurposes(initialPurposes); setDirectoryIds(nextDirs);
+      initialDraft.current = { text: next.text, name: next.name, category: next.category, tags: next.tags, purposes: initialPurposes, directoryIds: nextDirs };
       setText(next.text); setName(next.name); setCategory(next.category); setTags(next.tags); setError('');
     }
     lastInitial.current = next;
@@ -86,18 +90,27 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
     finally { pending.current = false; setBusy(false); }
     onSaved?.(typeof id === 'string' ? id : undefined);
     setText(''); setName('');
-    // 保存并继续：保留目录分类与自由标签，清空用途 Tag，方便连续收录不同用途。
-    if (keepOpen) { setPurposes([]); return true; }
+    // 保存并继续：保留目录分类与自由标签，清空人工用途覆盖以继续跟随当前目录。
+    if (keepOpen) {
+      setPurposes([]);
+      return true;
+    }
     setCategory(initialCategory); setTags(''); setPurposes([]); onClose();
     return true;
   };
   if (!open) return null;
+  const inheritedPurposes = directories && saveCategory ? readPromptPurposes(inferPurposesFromDirectoryIds(directoryIds, directories)) : [];
+  const purposeSummary = purposes.length
+    ? `${t('已单独指定')}：${purposes.map(id => t(promptPurposeLabel(id))).join('、')}`
+    : inheritedPurposes.length
+      ? `${t('跟随目录')}：${inheritedPurposes.map(id => t(promptPurposeLabel(id))).join('、')}`
+      : t('未标记用途');
   return <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm">
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t(editing ? '编辑原文' : '粘贴收录')}
       className="content-library appearance-panel flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
       <header className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-700"><ClipboardPaste className="h-5 w-5 text-indigo-500" /><h2 className="flex-1 font-semibold">{t(editing ? '编辑原文' : '粘贴收录')}</h2><IconButton label="关闭" disabled={busy} onClick={requestClose}><X /></IconButton></header>
       <div className="min-h-0 space-y-4 overflow-y-auto p-4">
-      <label className="block text-sm">{t('提示词原文')}<textarea aria-label={t('提示词原文')} className={`${TOOLBAR_FIELD_CLASS} mt-2 min-h-56 resize-y font-mono!`} value={text} disabled={busy}
+      <label className="block text-sm">{t('提示词原文')}<textarea aria-label={t('提示词原文')} className={`${TOOLBAR_FIELD_CLASS} mt-2 min-h-48 resize-y font-mono!`} value={text} disabled={busy}
         onChange={event => { setText(event.target.value); setError(''); }}
         onPaste={event => {
           // 整段粘贴保留 CRLF；textarea 的展示规范化不回写剪贴板原文。
@@ -113,9 +126,32 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
           {directories ? <option value="fragment">{t('片段')}</option> : COLLECTED_PROMPT_CATEGORIES.map(item => <option key={item.kind} value={item.kind}>{t(item.label)}</option>)}
         </select></label>
       </div>
-      {directories && !!category && !categoryDisabled && <PromptLibraryDirectoryPicker state={directories} selectedIds={directoryIds} onChange={setDirectoryIds} disabled={busy} />}
+      {directories && !!category && !categoryDisabled && (
+        <PromptLibraryDirectoryPicker
+          state={directories}
+          selectedIds={directoryIds}
+          onChange={setDirectoryIds}
+          disabled={busy}
+        />
+      )}
       {directoriesError && <p role="alert" className="text-sm text-red-600">{directoriesError}{reloadDirectories && <ToolbarButton onClick={() => void reloadDirectories().catch(() => {})}>{t('重试')}</ToolbarButton>}</p>}
-<PromptPurposePicker value={purposes} onChange={setPurposes} disabled={busy} />
+      <details className="min-w-0">
+        <summary className="appearance-input mobile-touch flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm dark:border-gray-700 [&::-webkit-details-marker]:hidden">
+          <span className="shrink-0">{t('用途 Tag')}</span>
+          <span className="min-w-0 flex-1 truncate text-gray-500 dark:text-gray-400" title={purposeSummary}>{purposeSummary}</span>
+          <ChevronDown className="h-4 w-4 shrink-0" />
+        </summary>
+        <div className="mt-2 space-y-2">
+          {purposes.length > 0 && (
+            <div className="flex justify-end">
+              <button type="button" disabled={busy} onClick={() => setPurposes([])} className="mobile-touch text-xs font-semibold text-indigo-600 hover:underline disabled:opacity-40 dark:text-indigo-300">
+                {t('恢复默认')}
+              </button>
+            </div>
+          )}
+          <PromptPurposePicker label="用途 Tag" value={purposes} onChange={setPurposes} disabled={busy} />
+        </div>
+      </details>
       {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
       </div>
       <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-200 p-4 dark:border-gray-700"><ToolbarButton disabled={busy} onClick={requestClose}>{t('取消')}</ToolbarButton>{!editing && <ToolbarButton tone="save" disabled={busy || !!directoriesError || !text.trim()} onClick={() => void save(true)}>{t(busy ? '保存中…' : '保存并继续')}</ToolbarButton>}<ToolbarButton tone="save" disabled={busy || !!directoriesError || !text.trim()} onClick={() => void save()}>{t(busy ? '保存中…' : editing ? (saveCategory ? '另存片段' : '保存修改') : (saveCategory ? '保存片段' : '保存原文'))}</ToolbarButton></footer>

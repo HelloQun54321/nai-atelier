@@ -1,4 +1,4 @@
-import { PROMPT_PURPOSES, isCustomSectionKey, isPurposeSectionKey, promptPurposeLabel, type PromptPurposeId } from './promptPurposes.mjs';
+import { LEGACY_PROMPT_PURPOSE_MAP, PROMPT_PURPOSES, isCustomSectionKey, isPurposeSectionKey, normalizePromptPurposeId, promptPurposeLabel, type PromptPurposeId } from './promptPurposes.mjs';
 import { getGlobalPromptSectionKeys, mergePromptFields } from './promptUtils';
 import type { CharacterParams, PromptSectionSource, PromptSections } from '../types';
 
@@ -11,7 +11,7 @@ import type { CharacterParams, PromptSectionSource, PromptSections } from '../ty
  * 因此旧稿不会因为界面分组而被换序。
  */
 
-export const STYLE_SECTION_KEYS = ['purpose:style', 'purpose:artist', 'purpose:texture', 'purpose:effect', 'purpose:quality', 'purpose:lighting', 'purpose:color'] as const;
+export const STYLE_SECTION_KEYS = ['purpose:style', 'purpose:artist', 'purpose:texture', 'purpose:quality'] as const;
 
 export const isStyleSectionKey = (key: string): boolean => (STYLE_SECTION_KEYS as readonly string[]).includes(key);
 
@@ -23,19 +23,19 @@ export interface LabZoneDefinition {
 }
 
 export const PICTURE_ZONES: readonly LabZoneDefinition[] = [
-  { id: 'subject', label: '主体', defaults: ['purpose:identity', 'purpose:appearance', 'purpose:clothing'], optional: ['purpose:creature', 'purpose:object', 'purpose:vehicle'] },
-  // 场景页只挂环境＋取景（地点／自然／时间／构图／镜头／文字）；互动挂角色页共用栏。
-  { id: 'scene', label: '场景', defaults: ['purpose:place', 'purpose:nature', 'purpose:time', 'purpose:composition', 'purpose:camera', 'purpose:text'], optional: [] },
+  { id: 'subject', label: '主体', defaults: ['purpose:appearance', 'purpose:clothing'], optional: [] },
+  // 场景页核心三栏：场景地点／光影与氛围／镜头与构图；版式与特效按需添加；多人互动挂角色页共用栏。
+  { id: 'scene', label: '场景', defaults: ['purpose:place', 'purpose:atmosphere', 'purpose:camera'], optional: ['purpose:format'] },
   // 构图分区无默认空框；有旧内容仍显示在场景页下方。
-  { id: 'frame', label: '构图与镜头', defaults: [], optional: ['purpose:composition', 'purpose:camera', 'purpose:text'] },
+  { id: 'frame', label: '构图与镜头', defaults: [], optional: ['purpose:camera', 'purpose:format'] },
 ];
 
 export const CHARACTER_ZONE: LabZoneDefinition = {
   id: 'character',
   label: '这个角色',
-  // 角色页默认人物核心 5 类；生物／物品／载具按需添加。
-  defaults: ['purpose:identity', 'purpose:appearance', 'purpose:clothing', 'purpose:pose', 'purpose:expression'],
-  optional: ['purpose:creature', 'purpose:object', 'purpose:vehicle'],
+  // 角色页默认人物核心 4 类。
+  defaults: ['purpose:appearance', 'purpose:clothing', 'purpose:pose', 'purpose:expression'],
+  optional: [],
 };
 
 const LEGACY_PICTURE: Record<string, { zoneId: string; label: string }> = {
@@ -52,6 +52,20 @@ const LEGACY_CHARACTER: Record<string, string> = {
   wardrobe: '服饰（原有）',
   pose: '动作（原有）',
   expression: '表情（原有）',
+};
+
+const LEGACY_PURPOSE_LABELS: Record<string, string> = {
+  'purpose:identity': '人物设定（原有）',
+  'purpose:object': '道具与生物（原有）',
+  'purpose:creature': '动物与生物（原有）',
+  'purpose:vehicle': '载具与机械（原有）',
+  'purpose:nature': '自然与天气（原有）',
+  'purpose:time': '时间与季节（原有）',
+  'purpose:composition': '构图与布局（原有）',
+  'purpose:text': '文字与标识（原有）',
+  'purpose:lighting': '光照（原有）',
+  'purpose:color': '色彩（原有）',
+  'purpose:effect': '特效（原有）',
 };
 
 export interface LabLayoutZone { id: string; label: string }
@@ -102,10 +116,14 @@ const cleanLabel = (value: unknown, fallback: string) => {
 const isZoneId = (id: string) => PICTURE_ZONES.some(zone => zone.id === id) || /^zone:[\w-]{1,80}$/.test(id);
 const purposeOf = (id: string): PromptPurposeId | undefined => {
   if (!isPurposeSectionKey(id) || isStyleSectionKey(id)) return undefined;
-  const purpose = id.slice(8) as PromptPurposeId;
+  const raw = id.slice(8);
+  const purpose = Object.hasOwn(LEGACY_PROMPT_PURPOSE_MAP, raw)
+    ? normalizePromptPurposeId(raw)
+    : (raw as PromptPurposeId);
   return PROMPT_PURPOSES.some(item => item.id === purpose) ? purpose : undefined;
 };
-const facetLabel = (id: string, stored?: string) => stored?.trim() || (purposeOf(id) ? promptPurposeLabel(purposeOf(id)!) : LEGACY_PICTURE[id]?.label || LEGACY_CHARACTER[id] || id.replace(/^custom:/, ''));
+const facetLabel = (id: string, stored?: string) =>
+  stored?.trim() || LEGACY_PURPOSE_LABELS[id] || (purposeOf(id) ? promptPurposeLabel(purposeOf(id)!) : LEGACY_PICTURE[id]?.label || LEGACY_CHARACTER[id] || id.replace(/^custom:/, ''));
 
 const sectionText = (sections: PromptSections | null | undefined, id: string) => text((sections as Record<string, unknown> | null | undefined)?.[id]);
 const sectionNegative = (sections: PromptSections | null | undefined, id: string) => text(sections?.sectionNegatives?.[id]);
@@ -233,7 +251,11 @@ export const readPictureBoard = (sections?: PromptSections | null, layout?: LabS
   for (const [id, meta] of Object.entries(LEGACY_PICTURE)) if (hasFacetContent(sections, id)) place(id, meta.zoneId, false, meta.label);
   for (const key of getGlobalPromptSectionKeys(sections)) {
     if (!hasFacetContent(sections, key) || shown.has(key) || key === 'extra' || isStyleSectionKey(key)) continue;
-    if (key.startsWith('directory:') || isCustomSectionKey(key)) {
+    if (isPurposeSectionKey(key)) {
+      const canonical = purposeOf(key) ? `purpose:${purposeOf(key)}` : key;
+      const owner = PICTURE_ZONES.find(zone => zone.defaults.includes(canonical) || zone.optional.includes(canonical))?.id || 'scene';
+      place(key, owner, false);
+    } else if (key.startsWith('directory:') || isCustomSectionKey(key)) {
       if (key.startsWith('directory:')) library.push(viewOf(key, 'library', sections, sections?.sectionMeta?.[key]?.directoryPath?.join(' / ') || sections?.sectionMeta?.[key]?.directoryName, false));
       else {
         const facet = stored.facets.find(item => item.id === key);
@@ -269,6 +291,12 @@ export const readCharacterBoard = (character: CharacterParams, layout?: LabSecti
     if (text(sections?.[id]).trim() || text((character.sectionNegatives as Record<string, string> | undefined)?.[id]).trim()) add(id, true);
   }
   for (const facet of stored.characterFacets) add(facet.id, true, facet.label);
+  for (const key of new Set([...Object.keys(character.sections || {}), ...Object.keys(character.sectionNegatives || {})])) {
+    if (shown.has(key) || !isPurposeSectionKey(key) || isStyleSectionKey(key)) continue;
+    const sections = character.sections as Record<string, string> | undefined;
+    const negatives = character.sectionNegatives as Record<string, string> | undefined;
+    if (text(sections?.[key]).trim() || text(negatives?.[key]).trim()) add(key, false);
+  }
   for (const [id, label] of Object.entries(LEGACY_CHARACTER)) {
     const sections = character.sections as Record<string, string> | undefined;
     if (text(sections?.[id]).trim() || text((character.sectionNegatives as Record<string, string> | undefined)?.[id]).trim()) add(id, false, label);

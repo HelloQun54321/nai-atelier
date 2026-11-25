@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { NAIParams, PromptChain } from '../../types';
-import { applyCombinationPicksToCharacter, applyLibraryText, combinationPicks, createCharacterDataFromCombinationPicks, createCombinationData, createFragmentData, isPromptLibraryCharacterProjection, librarySectionOf, libraryEntryText, libraryFieldText, libraryNegativeFallbackText, projectCustomCharacterAsCombination, promptLibraryEntryLabel, searchLibraryEntries, workspacePicks, parsePromptLibraryTags, PROMPT_LIBRARY_CHARACTER_SOURCE_KEY } from '../../services/promptLibraryEntries';
+import { applyCombinationPicksToCharacter, applyLibraryText, buildDirectoryMoveUpdates, characterSlotFromLibraryChain, combinationPicks, createCharacterDataFromCombinationPicks, createCombinationData, createFragmentData, getPromptCardBadges, getPromptEntryCopyText, isPromptLibraryCharacterProjection, librarySectionOf, libraryEntryText, libraryFieldText, libraryNegativeFallbackText, projectCustomCharacterAsCombination, promptLibraryEntryLabel, searchLibraryEntries, workspacePicks, parsePromptLibraryTags, PROMPT_LIBRARY_CHARACTER_SOURCE_KEY } from '../../services/promptLibraryEntries';
+import { createDefaultPromptLibraryTree } from '../../services/promptLibraryTree.mjs';
+import { getEntryPurposes } from '../../services/promptPurposes.mjs';
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
 import { applyLibrarySelection, planLibrarySelection, type PromptLibraryWorkspaceState } from '../../services/promptLibraryApply';
 
@@ -73,6 +75,25 @@ describe('提示词库的对象边界与定向取用', () => {
     expect(librarySectionOf(empty)).toBe('saved');
     expect(combinationPicks(empty).appearance?.text).toBe('空角色');
     expect(combinationPicks(empty).appearance?.negative).toBe('only-negative');
+
+    const modern = chain({
+      type: 'character', name: '现代分栏角色', basePrompt: 'silver hair, blue eyes', negativePrompt: 'lowres',
+      params: { characters: [{ id: 'role', enabled: true, sections: {
+        'purpose:appearance': 'silver hair, blue eyes',
+        'purpose:clothing': 'black coat',
+        'purpose:object': 'crystal staff',
+        'purpose:creature': 'cat ears',
+        'purpose:style': 'artist:ignore_me',
+        'custom:weapon': 'greatsword',
+      }, sectionMeta: { 'custom:weapon': { directoryName: '武器栏' } } }] } as unknown as NAIParams,
+    }, 'modern-char');
+    const modernPicks = combinationPicks(projectCustomCharacterAsCombination(modern, '角色'));
+    expect(modernPicks.appearance?.text).toBe('silver hair, blue eyes');
+    expect(modernPicks.wardrobe?.text).toBe('black coat');
+    expect(modernPicks['character:purpose:place']?.text).toBe('crystal staff, cat ears');
+    expect(modernPicks['character:purpose:place']?.directoryName).toBe('场景地点');
+    expect(modernPicks['character:custom:weapon']).toMatchObject({ text: 'greatsword', directoryName: '武器栏' });
+    expect(modernPicks['character:purpose:style']).toBeUndefined();
   });
   it('组合 picks 写回同一自定义角色，封面保留；挂「角色」新建落成角色', () => {
     const existing = chain({
@@ -163,7 +184,7 @@ describe('提示词库的对象边界与定向取用', () => {
     }, saved, { mode: 'existing', id: 'one' }, 'replace', { roleId: 'one' }));
     expect(after.params.characters![0].prompt).toBe('pipa_(instrument)');
     expect(after.params.characters![0].negativePrompt).toBe('broken instrument');
-    expect((after.params.characters![0].sections as any)['purpose:identity']).toBe('2b');
+    expect((after.params.characters![0].sections as any)['purpose:appearance']).toBe('2b');
   });
   it('组合编辑再保存保留来源和分类负面，新建角色不改动已有角色分栏', () => {
     const original = chain(createCombinationData('白裙', { wardrobe: { kind: 'wardrobe', id: 'dress', name: '白裙片段', filled: true, text: 'white dress', negative: 'red dress', constraintNotes: '保留备注' } }));
@@ -287,4 +308,137 @@ it('呈现形式通过v2组合保存读回并始终写全局，不改原画风�
   expect(after.params._promptSections?.sectionNegatives?.presentation).toBe('single panel');
   expect(after.params.characters).toEqual(before.params.characters);
   expect(after.base).toBe(before.base); expect(after.negative).toBe(before.negative);
+});
+
+it('一键复制文本与卡片去重徽标按条目类型正确生成', () => {
+  const directories = createDefaultPromptLibraryTree();
+  const baseFragment = createFragmentData('blue dress, ribbon', '礼服', 'wardrobe', '', ['person-wardrobe']);
+  const fragment = chain({
+    ...baseFragment,
+    params: { ...baseFragment.params, _promptLibraryPurposes: ['clothing', 'style'] } as NAIParams,
+  } as Partial<PromptChain>);
+  expect(getPromptEntryCopyText(fragment)).toBe('blue dress, ribbon');
+  // 卡片仅展示人看的负面状态与文件夹胶囊，不再额外透出机器用途标签。
+  expect(getPromptCardBadges(fragment, directories)).toEqual([
+    { key: 'dir:person-wardrobe', label: '服饰穿搭', kind: 'folder' },
+  ]);
+
+  const negative = chain({
+    type: 'preset',
+    basePrompt: 'lowres, bad anatomy',
+    params: { _collectedPrompt: 1, _collectedCategory: 'general', _promptLibraryPolarity: 'negative' } as unknown as NAIParams,
+  });
+  expect(getPromptEntryCopyText(negative)).toBe('lowres, bad anatomy');
+  expect(getPromptCardBadges(negative, directories)[0]).toEqual({ key: 'negative', label: '负面', kind: 'negative' });
+
+  const combo = chain(createCombinationData('夜礼服', {
+    'global:purpose:clothing': { kind: 'purpose:clothing', scope: 'global', filled: true, text: 'cloak' },
+    scene: { kind: 'scene', filled: true, text: 'moonlit garden' },
+  }, ['角色', '夜色']));
+  expect(getPromptEntryCopyText(combo)).toBe(libraryEntryText(combo).trim());
+  expect(getPromptCardBadges(combo, directories)).toEqual([
+    { key: 'tag:角色', label: '角色', kind: 'tag' },
+    { key: 'tag:夜色', label: '夜色', kind: 'tag' },
+  ]);
+});
+
+it('移动目录同步清空冗余默认用途以实时继承新目录，仍保留人工覆盖与负面标记', () => {
+  const directories = createDefaultPromptLibraryTree();
+  const baseFragment = createFragmentData('standing pose', '站姿', 'general', '', ['person-pose']);
+  const fragment = chain({
+    ...baseFragment,
+    params: { ...baseFragment.params, _promptLibraryPurposes: ['pose'] } as NAIParams,
+  });
+  const moved = buildDirectoryMoveUpdates(fragment, ['environment-scene'], directories);
+  expect((moved.params as any)._promptLibraryDirectoryIds).toEqual(['environment-scene']);
+  expect((moved.params as any)._promptLibraryPurposes).toEqual([]);
+  expect(getEntryPurposes(chain(moved), directories)).toEqual(['place']);
+
+  const customizedBase = createFragmentData('custom', '复合', 'general', '', ['person-pose']);
+  const customized = chain({
+    ...customizedBase,
+    params: { ...customizedBase.params, _promptLibraryPurposes: ['pose', 'style'] } as NAIParams,
+  });
+  const movedCustomized = buildDirectoryMoveUpdates(customized, ['environment-scene'], directories);
+  expect((movedCustomized.params as any)._promptLibraryPurposes).toEqual(['pose', 'style']);
+
+  const legacyOriginal = chain({
+    type: 'preset',
+    basePrompt: 'old hall',
+    params: { _collectedPrompt: 1, _collectedCategory: 'scene' } as unknown as NAIParams,
+  });
+  const movedLegacy = buildDirectoryMoveUpdates(legacyOriginal, ['environment-scene'], directories);
+  expect((movedLegacy.params as any)._collectedCategory).toBe('general');
+  expect((movedLegacy.params as any)._promptLibraryPurposes).toEqual([]);
+  expect(getEntryPurposes(chain(movedLegacy), directories)).toEqual(['place']);
+
+  const negativeOriginal = chain({
+    type: 'preset',
+    basePrompt: 'blurry',
+    params: { _collectedPrompt: 1, _collectedCategory: 'scene', _promptLibraryPolarity: 'negative' } as unknown as NAIParams,
+  });
+  const movedNegative = buildDirectoryMoveUpdates(negativeOriginal, ['environment-scene'], directories);
+  expect((movedNegative.params as any)._collectedCategory).toBe('scene');
+});
+
+it('带分栏的自定义角色双向还原不与编译镜像混杂，纯文本角色原样保留补充栏', () => {
+  const sectionedChar = chain({
+    type: 'character',
+    name: '女仆Saber',
+    basePrompt: 'blonde hair, green eyes, maid headdress, maid apron, serving tea',
+    negativePrompt: 'bad hands',
+    params: {
+      characters: [{
+        id: 'role-1',
+        enabled: true,
+        prompt: 'serving tea',
+        negativePrompt: 'bad hands',
+        sections: {
+          appearance: 'blonde hair, green eyes',
+          'purpose:clothing': 'maid headdress, maid apron',
+          'custom:weapon': 'invisible sword',
+        },
+        sectionNegatives: {
+          'purpose:clothing': 'modern uniform',
+        },
+      }],
+    } as unknown as NAIParams,
+  }, 'saber-maid');
+
+  const projected = projectCustomCharacterAsCombination(sectionedChar, '角色');
+  const picks = combinationPicks(projected);
+  expect(picks.appearance?.text).toBe('blonde hair, green eyes');
+  expect(picks.wardrobe?.text).toBe('maid headdress, maid apron');
+  expect(picks['character:custom:weapon']?.text).toBe('invisible sword');
+
+  const restored = characterSlotFromLibraryChain(sectionedChar);
+  expect(restored).toMatchObject({
+    name: '女仆Saber',
+    prompt: 'serving tea',
+    negativePrompt: 'bad hands',
+    sections: {
+      'purpose:appearance': 'blonde hair, green eyes',
+      'purpose:clothing': 'maid headdress, maid apron',
+      'custom:weapon': 'invisible sword',
+    },
+    sectionNegatives: {
+      'purpose:clothing': 'modern uniform',
+    },
+  });
+
+  const flatChar = chain({
+    type: 'character',
+    name: '纯文本角色',
+    basePrompt: '1girl, blue ribbon',
+    negativePrompt: 'lowres',
+    params: { characters: [] } as unknown as NAIParams,
+  }, 'flat-char');
+  expect(characterSlotFromLibraryChain(flatChar)).toEqual({
+    name: '纯文本角色',
+    prompt: '1girl, blue ribbon',
+    negativePrompt: 'lowres',
+    sections: undefined,
+    sectionNegatives: undefined,
+    sectionMeta: undefined,
+  });
 });

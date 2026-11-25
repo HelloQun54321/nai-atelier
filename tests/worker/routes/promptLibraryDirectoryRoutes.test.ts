@@ -80,7 +80,7 @@ const invoke = async (method: string, body?: unknown, owner = 'owner') => (await
 it('首次读取返回默认树且不写入；保存空树不会恢复预设或更改任何片段', async () => {
   const result = await invoke('GET');
   expect(result.headers.get('Cache-Control')).toBe('no-store');
-  expect((await result.json() as ReturnType<typeof initial>).nodes.filter(node => node.parentId === null)).toHaveLength(5);
+  expect((await result.json() as ReturnType<typeof initial>).nodes.filter(node => node.parentId === null)).toHaveLength(3);
   expect(sqlite.prepare('SELECT COUNT(*) AS n FROM settings').get()!.n).toBe(1);
   expect((await invoke('PUT', { revision: 0, nodes: [] })).status).toBe(200);
   expect(await (await invoke('GET')).json()).toEqual({ revision: 1, nodes: [] });
@@ -104,4 +104,70 @@ it('所有者隔离；损坏状态拒绝覆盖；非法树和方法不写入', a
   expect(sqlite.prepare('SELECT value FROM settings WHERE key=?').get('prompt_library_directories_v1:owner')!.value).toBe('broken');
   expect((await invoke('POST', initial())).status).toBe(405);
   expect(await handlePromptLibraryDirectoryRoute({ path: '/api/another' } as RouteContext)).toBeNull();
+});
+
+it('持久化并校验目录节点默认用途 purpose，拒绝非法用途值', async () => {
+  const treeWithPurpose = {
+    revision: 0,
+    nodes: [
+      { id: 'hanfu', parentId: null, name: '汉服', target: 'character', purpose: 'clothing' },
+      { id: 'notes', parentId: 'hanfu', name: '纯备注', purpose: 'none' },
+    ],
+  };
+  expect((await invoke('PUT', treeWithPurpose)).status).toBe(200);
+  const loaded = await (await invoke('GET')).json() as { revision: number; nodes: Array<{ id: string; purpose?: string }> };
+  expect(loaded.revision).toBe(1);
+  expect(loaded.nodes.find(n => n.id === 'hanfu')?.purpose).toBe('clothing');
+  expect(loaded.nodes.find(n => n.id === 'notes')?.purpose).toBe('none');
+  expect((await invoke('PUT', { revision: 1, nodes: [{ id: 'bad', parentId: null, name: '非法', purpose: 'not-a-purpose' }] })).status).toBe(400);
+});
+
+const resetDirectories = async (body: unknown = {}, role = 'user', owner = 'owner') => (await handlePromptLibraryDirectoryRoute({
+  db, currentUser: { id: owner, role }, path: '/api/prompt-library/directories/reset', method: 'POST',
+  request: new Request('http://localhost/api/prompt-library/directories/reset', { method: 'POST', body: JSON.stringify(body) }),
+} as RouteContext))!;
+
+it('重置目录树为默认 3 组 10 子夹并无损迁移片段归属与继承用途', async () => {
+  const oldTree = {
+    revision: 0,
+    nodes: [
+      { id: 'person', parentId: null, name: '人物', target: 'character' },
+      { id: 'person-identity', parentId: 'person', name: '角色身份' },
+      { id: 'subjects-creatures', parentId: null, name: '生物', target: 'global' },
+      { id: 'style', parentId: null, name: '画风', target: 'global' },
+      { id: 'custom-cloth', parentId: null, name: '自建汉服', purpose: 'clothing' },
+      { id: 'custom-plain', parentId: null, name: '纯自建目录' },
+    ],
+  };
+  expect((await invoke('PUT', oldTree)).status).toBe(200);
+  insertFragment('remapped', { _promptLibraryDirectoryIds: ['person-identity', 'subjects-creatures'], keep: 1 });
+  insertFragment('styleFrag', { _promptLibraryDirectoryIds: ['style'] });
+  insertFragment('customTyped', { _promptLibraryDirectoryIds: ['custom-cloth'] });
+  insertFragment('customExplicit', { _promptLibraryDirectoryIds: ['custom-cloth'], _promptLibraryPurposes: ['pose'] });
+  insertFragment('customPlain', { _promptLibraryDirectoryIds: ['custom-plain'] });
+  insertFragment('nonFragment', { _promptLibraryOriginal: true, _promptLibraryDirectoryIds: ['style'] });
+  insertFragment('otherUser', { _promptLibraryDirectoryIds: ['custom-cloth'] }, 'another');
+
+  expect((await resetDirectories({ revision: 1 }, 'guest')).status).toBe(403);
+  expect((await resetDirectories({ revision: 0 })).status).toBe(409);
+
+  const response = await resetDirectories({ revision: 1 });
+  expect(response.status).toBe(200);
+  const payload = await response.json() as { ok: boolean; migratedCount: number; unclassifiedCount: number; tree: { revision: number; nodes: Array<{ id: string; parentId: string | null }> } };
+  expect(payload.ok).toBe(true);
+  expect(payload.tree.revision).toBe(2);
+  expect(payload.tree.nodes.filter(node => node.parentId === null)).toHaveLength(3);
+  expect(payload.tree.nodes.filter(node => node.parentId !== null)).toHaveLength(10);
+  expect(payload.migratedCount).toBe(5);
+  expect(payload.unclassifiedCount).toBe(4);
+
+  const readParams = (id: string) => JSON.parse(sqlite.prepare('SELECT params FROM chains WHERE id=?').get(id)!.params as string);
+  expect(readParams('remapped')).toEqual({ _promptLibraryDirectoryIds: ['person-appearance', 'environment-scene'], keep: 1 });
+  expect(readParams('styleFrag')).toEqual({ _promptLibraryDirectoryIds: [], _promptLibraryPurposes: ['style'] });
+  expect(readParams('customTyped')).toEqual({ _promptLibraryDirectoryIds: [], _promptLibraryPurposes: ['clothing'] });
+  expect(readParams('customExplicit')).toEqual({ _promptLibraryDirectoryIds: [], _promptLibraryPurposes: ['pose'] });
+  expect(readParams('customPlain')).toEqual({ _promptLibraryDirectoryIds: [] });
+  expect(readParams('nonFragment')).toEqual({ _promptLibraryOriginal: true, _promptLibraryDirectoryIds: ['style'] });
+  expect(readParams('otherUser')).toEqual({ _promptLibraryDirectoryIds: ['custom-cloth'] });
+  expect(sqlite.prepare('SELECT base_prompt FROM chains WHERE id=?').get('styleFrag')!.base_prompt).toBe('原始正文');
 });

@@ -1,6 +1,6 @@
 import { compactAgentValue } from './agent-runtime.mjs';
 import { getEntryPurposes, getPromptPurposeCandidateStatus, PROMPT_PURPOSE_IDS, isPurposeSectionKey } from '../services/promptPurposes.mjs';
-import { getPromptLibraryDirectoryPath, getPromptLibraryDirectoryTarget, getPromptLibraryEntryDirectoryIds, isPromptLibraryFragmentEntry } from '../services/promptLibraryTree.mjs';
+import { getPromptLibraryDirectoryPath, getPromptLibraryDirectoryPurpose, getPromptLibraryDirectoryTarget, getPromptLibraryEntryDirectoryIds, isPromptLibraryFragmentEntry } from '../services/promptLibraryTree.mjs';
 
 const text = value => typeof value === 'string' ? value : '';
 const integer = (value, fallback, max) => Number.isFinite(Number(value)) ? Math.min(max, Math.max(0, Math.floor(Number(value)))) : fallback;
@@ -18,8 +18,8 @@ export function promptLibrarySection(entry) {
   return null;
 }
 
-const libraryPurposes = entry => {
-  if (promptLibrarySection(entry) !== 'saved') return getEntryPurposes(entry);
+const libraryPurposes = (entry, tree) => {
+  if (promptLibrarySection(entry) !== 'saved') return getEntryPurposes(entry, tree);
   const snapshot = paramsOf(entry)._rollContentSnapshot;
   if (snapshot?.format !== 'nai-roll-content') return [];
   const purposes = new Set((Array.isArray(snapshot.items) ? snapshot.items : [])
@@ -36,7 +36,8 @@ export function promptLibraryDirectory(tree, id) {
   const path = getPromptLibraryDirectoryPath(tree, id);
   if (!path.length) throw new Error(`提示词目录不存在：${id}`);
   return { directoryId: id, directoryName: path.at(-1).name, parentId: path.at(-1).parentId,
-    directoryPath: path.map(node => node.name), target: getPromptLibraryDirectoryTarget(tree, id) };
+    directoryPath: path.map(node => node.name), target: getPromptLibraryDirectoryTarget(tree, id),
+    purpose: getPromptLibraryDirectoryPurpose(tree, id) || null };
 }
 
 const directoryPreview = (tree, id) => {
@@ -127,9 +128,9 @@ export function searchPromptLibrary(entries, tree, args) {
     if (!actualSection || section !== 'all' && actualSection !== section) return false;
     const ids = getPromptLibraryEntryDirectoryIds(entry, tree);
     if (directoryIds !== undefined && (selected.size ? !ids.some(id => getPromptLibraryDirectoryPath(tree, id).some(node => selected.has(node.id))) : ids.length > 0)) return false;
-    const purposes = libraryPurposes(entry);
+    const purposes = libraryPurposes(entry, tree);
     if (requestedPurposes.length && !(purposeMatch === 'all' ? requestedPurposes.every(id => purposes.includes(id)) : requestedPurposes.some(id => purposes.includes(id)))) return false;
-    if (args.pure && !getPromptPurposeCandidateStatus(entry).eligible) return false;
+    if (args.pure && !getPromptPurposeCandidateStatus(entry, undefined, tree).eligible) return false;
     const directories = ids.map(id => promptLibraryDirectory(tree, id));
     return !query || JSON.stringify([entry.name, entry.basePrompt, entry.negativePrompt, entry.description, entry.tags, paramsOf(entry), directories]).toLocaleLowerCase().includes(query);
   });
@@ -141,7 +142,7 @@ export function searchPromptLibrary(entries, tree, args) {
     return { id: entry.id, section: promptLibrarySection(entry), name: preview(entry.name, 160), prompt: preview(prompt), promptLength: prompt.length,
       negativePrompt: preview(negative), negativePromptLength: negative.length, polarity,
       promptField: polarity === 'negative' ? null : 'basePrompt', negativePromptField: polarity === 'negative' ? 'basePrompt' : 'negativePrompt',
-      description: preview(entry.description, 160), purposes: libraryPurposes(entry), pureEligibility: { ...getPromptPurposeCandidateStatus(entry), purposes: libraryPurposes(entry) },
+      description: preview(entry.description, 160), purposes: libraryPurposes(entry, tree), pureEligibility: { ...getPromptPurposeCandidateStatus(entry, undefined, tree), purposes: libraryPurposes(entry, tree) },
       tags: tags.slice(0, 4).map(tag => preview(tag, 60)), tagCount: tags.length,
       meta: { preview: JSON.stringify(params._promptLibrary || {}).slice(0, 160), field: 'params._promptLibrary' },
       directories: ids.slice(0, 1).map(id => directoryPreview(tree, id)), directoryCount: ids.length,

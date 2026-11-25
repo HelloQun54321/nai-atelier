@@ -122,7 +122,7 @@ export const drawOne = (chains: ChainLike[] | null | undefined, kind: string, pe
 
 /** 动态目录只决定候选池；结果保存当时文字，锁定和旧草稿不随词库变化。 */
 export const directoryPoolOf = (input: RollDrawInput, unit: RollUnit): ChainLike[] =>
-  (unit.purposeId ? selectPurposeEntries(input.chains || [], unit.purposeId, true) : selectPromptLibraryDirectoryEntries((input.chains || []).filter((entry): entry is ChainLike & { id: string } => !!entry.id),
+  (unit.purposeId ? selectPurposeEntries(input.chains || [], unit.purposeId, true, input.directories) : selectPromptLibraryDirectoryEntries((input.chains || []).filter((entry): entry is ChainLike & { id: string } => !!entry.id),
     input.directories || createDefaultPromptLibraryTree(), [unit.directoryId])).filter(entry => textOf(entry).trim()).sort((a, b) => idOf(a) < idOf(b) ? -1 : idOf(a) > idOf(b) ? 1 : 0);
 
 const directoryRow = (unit: RollUnit, chain: ChainLike | null, reason: string, locked: boolean, size: number): RollRow => ({

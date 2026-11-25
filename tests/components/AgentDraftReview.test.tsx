@@ -13,7 +13,7 @@ it('分类内容与合并正文一起选择，取消分类不会留下不一致�
   const proposed = structuredClone(current); proposed.subjectPrompt = 'black jacket'; proposed.params._promptSections!['purpose:clothing'] = 'black jacket'; proposed.negativePrompt = 'other negative';
   const apply = vi.fn();
   render(<AgentDraftReview current={current} proposed={proposed} onApply={apply} onClose={() => {}} />);
-  expect(screen.getByText('服饰与配件')).toBeTruthy();
+  expect(screen.getByText('服饰穿搭')).toBeTruthy();
   fireEvent.click(screen.getByRole('checkbox', { name: '参数与角色' }));
   expect((screen.getByRole('checkbox', { name: '主体提示词' }) as HTMLInputElement).checked).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: '应用选中修改' }));

@@ -49,8 +49,7 @@ it('独立编辑只保留一个窗口标题和滚动正文，名称正文在目�
   const dialog = screen.getByRole('dialog', { name: entry.name });
   expect(dialog.querySelectorAll('header')).toHaveLength(1);
   expect(dialog.querySelector('.workspace-command-bar')).toBeNull();
-  expect(dialog.querySelectorAll('.overflow-y-auto').length).toBe(2); // 正文与仅展开时可见的目录选择区。
-  const prompt = screen.getByRole('textbox', { name: '英文提示词' });
+  const prompt = screen.getByRole('combobox', { name: '英文提示词' });
   expect(prompt.compareDocumentPosition(screen.getByText('选择目录')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   const cover = screen.getByRole('img', { name: '封面预览' });
   expect(cover.classList.contains('max-h-48')).toBe(true);
@@ -78,7 +77,7 @@ describe('图片提示词库', () => {
     const entry = { ...chains[0], tags };
     const p = { ...props(), chains: [entry] };
     render(<libraries.PromptLibraryEntryEditor {...p} entry={entry} onClose={vi.fn()} />);
-    fireEvent.change(screen.getByRole('textbox', { name: field === 'name' ? '形象名称' : '英文提示词' }),
+    fireEvent.change(screen.getByRole(field === 'name' ? 'textbox' : 'combobox', { name: field === 'name' ? '形象名称' : '英文提示词' }),
       { target: { value: field === 'name' ? '改名后' : 'updated prompt' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() => expect(p.onUpdateChain).toHaveBeenCalledOnce());
@@ -129,8 +128,9 @@ describe('图片提示词库', () => {
     const name = screen.getByRole('textbox', { name: kind === 'general' ? '片段名称' : '形象名称' });
     expect((name as HTMLInputElement).value).toBe(entry.name);
     fireEvent.change(name, { target: { value: '修改后的名称' } });
-    openPurposeGroup('主体与外观'); fireEvent.click(screen.getByRole('button', { name: '外貌与身体' }));
-    openPurposeGroup('动作与关系'); fireEvent.click(screen.getByRole('button', { name: '表情与情绪' }));
+    openPurposeGroup('人物');
+    fireEvent.click(screen.getByRole('button', { name: '外貌与设定' }));
+    fireEvent.click(screen.getByRole('button', { name: '表情神态' }));
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
     expect(p.onUpdateChain).toHaveBeenCalledWith(entry.id, expect.objectContaining({
@@ -302,10 +302,10 @@ describe('图片提示词库', () => {
   it('详情有改动时切换分类先确认，取消保留文本和当前分类', async () => {
     const Component=Hub(); render(<Component {...props()} />);
     fireEvent.click(screen.getByRole('button',{name:'提示词：雨夜'}));
-    fireEvent.change(screen.getByRole('textbox',{name:'英文提示词'}),{target:{value:'未保存的场景'}});
+    fireEvent.change(screen.getByRole('combobox',{name:'英文提示词'}),{target:{value:'未保存的场景'}});
     fireEvent.click(screen.getByRole('tab',{name:'场景 1'}));
     fireEvent.click(await screen.findByRole('button',{name:'取消'}));
-    expect((screen.getByRole('textbox',{name:'英文提示词'}) as HTMLTextAreaElement).value).toBe('未保存的场景');
+    expect((screen.getByRole('combobox',{name:'英文提示词'}) as HTMLTextAreaElement).value).toBe('未保存的场景');
     expect(screen.getByRole('tab',{name:'全部 2'}).getAttribute('aria-selected')).toBe('true');
   });
 
@@ -372,8 +372,8 @@ describe('管理提示词分类按需展开', () => {
     await screen.findByRole('button', { name: '新建形象' });
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'silver' } });
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    openPurposeGroup('主体与外观');
-    fireEvent.click(screen.getByRole('button', { name: '外貌与身体（1）' }));
+    openPurposeGroup('人物');
+    fireEvent.click(screen.getByRole('button', { name: '外貌与设定（1）' }));
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: '收起分类' }));
     expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('silver');
@@ -448,7 +448,7 @@ it('管理树导航与列表并排，收展保留同一编辑草稿与滚动节�
   scroll.scrollTop = 140; fireEvent.scroll(scroll);
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   const nav = screen.getByRole('complementary', { name: '提示词目录导航' });
-  expect(nav.parentElement?.nextElementSibling).toBe(scroll); expect(nav.parentElement?.classList.contains('md:w-52')).toBe(true); expect(scroll.classList.contains('min-w-0')).toBe(true); expect(nav.classList.contains('workspace-fixed-pane')).toBe(false);
+  expect(nav.parentElement?.nextElementSibling).toBe(scroll); expect(scroll.classList.contains('min-w-0')).toBe(true); expect(nav.classList.contains('workspace-fixed-pane')).toBe(false);
   expect(scroll.scrollTop).toBe(140); expect(screen.getByRole('searchbox')).toBe(search);
   fireEvent.click(screen.getByRole('button', { name: '片段：形象甲' }));
   const name = screen.getByRole('textbox', { name: '片段名称' }); fireEvent.change(name, { target: { value: '未保存草稿' } });
@@ -472,7 +472,7 @@ it('片段详情直接编辑，封面位于名称和正文前；保存留在原�
   render(<Harness />);
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.queryByRole('button', { name: '编辑' })).toBeNull();
-  const prompt = screen.getByRole('textbox', { name: '英文提示词' });
+  const prompt = screen.getByRole('combobox', { name: '英文提示词' });
   const cover = screen.getByRole('button', { name: '查看封面原图' });
   expect(cover.compareDocumentPosition(screen.getByRole('textbox', { name: '形象名称' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(cover.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -504,18 +504,18 @@ it('就地编辑切换条目先处理未保存内容；取消与保存失败保�
   }
   render(<Harness />);
   fireEvent.click(screen.getByRole('button', { name: '查看形象甲' }));
-  fireEvent.change(screen.getByRole('textbox', { name: '英文提示词' }), { target: { value: 'unsaved' } });
+  fireEvent.change(screen.getByRole('combobox', { name: '英文提示词' }), { target: { value: 'unsaved' } });
   fireEvent.click(screen.getByRole('button', { name: '查看雨夜' }));
   fireEvent.click(await screen.findByRole('button', { name: '取消' }));
-  expect((screen.getByRole('textbox', { name: '英文提示词' }) as HTMLTextAreaElement).value).toBe('unsaved');
+  expect((screen.getByRole('combobox', { name: '英文提示词' }) as HTMLTextAreaElement).value).toBe('unsaved');
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(save).toHaveBeenCalledOnce());
   expect(use).not.toHaveBeenCalled();
   await waitFor(() => expect((screen.getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(false));
-  expect((screen.getByRole('textbox', { name: '英文提示词' }) as HTMLTextAreaElement).value).toBe('unsaved');
+  expect((screen.getByRole('combobox', { name: '英文提示词' }) as HTMLTextAreaElement).value).toBe('unsaved');
   fireEvent.click(screen.getByRole('button', { name: '查看雨夜' }));
   fireEvent.click(await screen.findByRole('button', { name: '保存并离开' }));
   await screen.findByRole('complementary', { name: '雨夜' });
   expect(save).toHaveBeenCalledTimes(2);
-  expect((screen.getByRole('textbox', { name: '英文提示词' }) as HTMLTextAreaElement).value).toBe('rainy_street');
+  expect((screen.getByRole('combobox', { name: '英文提示词' }) as HTMLTextAreaElement).value).toBe('rainy_street');
 });

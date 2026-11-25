@@ -1,13 +1,16 @@
-import { getEntryPurposes, normalizePromptPurposeId, normalizePromptPurposeSectionKey, purposeSectionKey, isCreativeSectionKey, isPurposeSectionKey, promptPurposeLabel, type PromptPurposeId } from './promptPurposes.mjs';
+import { getEntryPurposes, getExplicitEntryPurposes, normalizePromptPurposeId, normalizePromptPurposeSectionKey, purposeSectionKey, isCreativeSectionKey, isPurposeSectionKey, promptPurposeLabel, type PromptPurposeId } from './promptPurposes.mjs';
 import { t } from './i18n';
-import type { CharacterParams, CharacterSectionContent, NAIParams, PromptChain } from '../types';
+import type { CharacterParams, CharacterSectionContent, NAIParams, PromptChain, PromptSectionSource } from '../types';
 import { rollItemKey, rollSectionKey, contentRead, contentSnapshotOf, isContentRecord, isDirectorySectionKey, KINDS, META, type RollRow } from './contentRoll';
 import { createUuid } from './id';
 import { collectedPromptText, prepareCollectedPrompt } from './collectedPrompt';
 import type { PromptLibraryKind } from './promptAgent';
 import { applyPromptText, type PromptApplyMode } from './promptApply';
-import { isPromptLibraryFragmentEntry, getPromptLibraryDirectoryPath, getPromptLibraryEntryDirectoryIds, type PromptLibraryTreeState } from './promptLibraryDirectories';
+import { getCustomChainTags } from './chainTags';
+import { isPromptLibraryFragmentEntry, getPromptLibraryDirectoryPath, getPromptLibraryEntryDirectoryIds, resolveExplicitPurposesAfterDirectoryMove, type PromptLibraryTreeState } from './promptLibraryDirectories';
 import { LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, PROMPT_LIBRARY_PURPOSE_FROM_DIRECTORY } from './promptLibraryTree.mjs';
+import { compileCharacterContent, hasCharacterSections } from './characterPrompts';
+import { compilePrompt } from './promptUtils';
 
 export type PromptFragmentKind = PromptLibraryKind | 'general';
 export type PromptLibrarySection = 'items' | 'saved' | 'originals';
@@ -39,6 +42,22 @@ export const promptLibraryCharacterSourceId = (chain: PromptChain): string | nul
   return typeof value === 'string' && value ? value : null;
 };
 
+const isStylePurposeKey = (key: string): boolean => isPurposeSectionKey(key) && normalizePromptPurposeId(key.slice(8)) === 'style';
+
+const mergeDistinctParts = (parts: ReadonlyArray<string | undefined>): string => {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of parts) {
+    const value = String(raw || '').trim();
+    if (!value) continue;
+    const key = value.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out.join(', ');
+};
+
 const directoryWritebackKind = (key: string): string => {
   if (!isDirectorySectionKey(key)) return key;
   const directoryId = key.slice('directory:'.length);
@@ -50,9 +69,9 @@ const directoryWritebackKind = (key: string): string => {
 
 /** 组合分栏写回角色库字段时的稳定落点；全局栏不写入角色本体。 */
 const characterWritebackTarget = (kind: string): 'appearance' | 'wardrobe' | 'pose' | 'expression' | 'extra' | 'section' | null => {
-  const key = directoryWritebackKind(rollSectionKey(kind));
+  const key = directoryWritebackKind(normalizePromptPurposeSectionKey(rollSectionKey(kind)));
   if (key === 'extra') return 'extra';
-  if (key === 'appearance' || key === purposeSectionKey('appearance') || key === purposeSectionKey('identity')) return 'appearance';
+  if (key === 'appearance' || key === purposeSectionKey('appearance')) return 'appearance';
   if (key === 'wardrobe' || key === purposeSectionKey('clothing')) return 'wardrobe';
   if (key === 'pose' || key === purposeSectionKey('pose')) return 'pose';
   if (key === 'expression' || key === purposeSectionKey('expression')) return 'expression';
@@ -87,16 +106,26 @@ export function applyCombinationPicksToCharacter(existing: PromptChain, name: st
     const negative = String(row.negative || '').trim();
     if (!text && !negative) continue;
     const target = characterWritebackTarget(key);
-    const sectionKey = rollSectionKey(key);
+    const sectionKey = normalizePromptPurposeSectionKey(rollSectionKey(key));
+    const slotPurposeKey = target === 'appearance' ? purposeSectionKey('appearance')
+      : target === 'wardrobe' ? purposeSectionKey('clothing')
+        : target === 'pose' ? purposeSectionKey('pose')
+          : target === 'expression' ? purposeSectionKey('expression') : '';
     if (target === 'appearance') {
       hasAppearance = true;
       if (text) { basePrompt = text; sections.appearance = text; }
       if (negative) { negativePrompt = negative; sectionNegatives.appearance = negative; }
-      if (sectionKey.startsWith('purpose:') && text) sections[sectionKey as keyof CharacterSectionContent] = text;
+      if (slotPurposeKey && (sectionKey.startsWith('purpose:') || Object.hasOwn(sections, slotPurposeKey))) {
+        if (text) sections[slotPurposeKey as keyof CharacterSectionContent] = text;
+        if (negative) sectionNegatives[slotPurposeKey as keyof CharacterSectionContent] = negative;
+      }
     } else if (target === 'wardrobe' || target === 'pose' || target === 'expression') {
       if (text) sections[target] = text;
       if (negative) sectionNegatives[target] = negative;
-      if (sectionKey.startsWith('purpose:') && text) sections[sectionKey as keyof CharacterSectionContent] = text;
+      if (slotPurposeKey && (sectionKey.startsWith('purpose:') || Object.hasOwn(sections, slotPurposeKey))) {
+        if (text) sections[slotPurposeKey as keyof CharacterSectionContent] = text;
+        if (negative) sectionNegatives[slotPurposeKey as keyof CharacterSectionContent] = negative;
+      }
     } else if (target === 'extra') {
       if (text) extra = text;
       if (negative) extraNegative = negative;
@@ -153,23 +182,68 @@ export function projectCustomCharacterAsCombination(character: PromptChain, root
   const appearance = [String(character.basePrompt || '').trim(), subject].filter(Boolean).join(', ');
   const negative = String(character.negativePrompt || '').trim();
   const role = (character.params?.characters || []).find(item => item.enabled !== false) || character.params?.characters?.[0];
-  for (const kind of ['appearance', 'wardrobe', 'pose', 'expression'] as const) {
-    const text = String(role?.sections?.[kind] || '').trim();
-    const sectionNegative = String(role?.sectionNegatives?.[kind] || '').trim();
-    if (!text && !(kind === 'appearance' && (appearance || negative))) continue;
-    // 仅有负面、无正向时用名称兜底，避免快照因空正文被判为「没有内容」。
-    const body = text || (kind === 'appearance' ? (appearance || fallback) : '');
-    if (!body.trim()) continue;
-    picks[kind] = {
-      kind, scope: 'character', filled: true,
-      text: body,
-      negative: sectionNegative || (kind === 'appearance' ? negative : ''),
+  const compiledRole = role && hasCharacterSections(role) ? compileCharacterContent(role) : null;
+  const mirroredAppearance = compiledRole && appearance.trim().toLocaleLowerCase() === compiledRole.prompt.trim().toLocaleLowerCase() ? '' : appearance;
+  const mirroredNegative = compiledRole && negative.trim().toLocaleLowerCase() === (compiledRole.negativePrompt || '').trim().toLocaleLowerCase() ? '' : negative;
+  const sectionsMap = (role?.sections || {}) as Record<string, unknown>;
+  const negativesMap = (role?.sectionNegatives || {}) as Record<string, unknown>;
+  const sectionMeta = (role?.sectionMeta || {}) as Record<string, { directoryName?: string; directoryPath?: string[] } | undefined>;
+
+  const slotDefs = [
+    ['appearance', ['appearance', purposeSectionKey('appearance'), 'purpose:identity']],
+    ['wardrobe', ['wardrobe', purposeSectionKey('clothing')]],
+    ['pose', ['pose', purposeSectionKey('pose')]],
+    ['expression', ['expression', purposeSectionKey('expression')]],
+  ] as const;
+  const consumedSlotKeys = new Set<string>(slotDefs.flatMap(([, keys]) => [...keys]));
+
+  for (const [kind, keys] of slotDefs) {
+    const text = mergeDistinctParts(keys.map(slotKey => typeof sectionsMap[slotKey] === 'string' ? sectionsMap[slotKey] : ''));
+    const sectionNegative = mergeDistinctParts(keys.map(slotKey => typeof negativesMap[slotKey] === 'string' ? negativesMap[slotKey] : ''));
+    if (kind === 'appearance') {
+      const mergedNegative = mergeDistinctParts([sectionNegative, mirroredNegative]);
+      const body = text.trim() || mirroredAppearance || (mergedNegative ? fallback : '');
+      if (!body.trim()) continue;
+      picks.appearance = { kind, scope: 'character', filled: true, text: body, negative: mergedNegative };
+      continue;
+    }
+    if (!text.trim()) continue;
+    picks[kind] = { kind, scope: 'character', filled: true, text, negative: sectionNegative };
+  }
+
+  const creativeBuckets = new Map<string, { texts: string[]; negatives: string[]; directoryName?: string }>();
+  for (const rawKey of new Set([...Object.keys(sectionsMap), ...Object.keys(negativesMap)])) {
+    if (consumedSlotKeys.has(rawKey) || !isCreativeSectionKey(rawKey) || isStylePurposeKey(rawKey)) continue;
+    const canonicalKey = isPurposeSectionKey(rawKey) ? normalizePromptPurposeSectionKey(rawKey) : rawKey;
+    const bucket = creativeBuckets.get(canonicalKey) || { texts: [], negatives: [] };
+    if (typeof sectionsMap[rawKey] === 'string') bucket.texts.push(sectionsMap[rawKey]);
+    if (typeof negativesMap[rawKey] === 'string') bucket.negatives.push(negativesMap[rawKey]);
+    if (!bucket.directoryName) {
+      bucket.directoryName = sectionMeta[rawKey]?.directoryPath?.join(' / ') || sectionMeta[rawKey]?.directoryName;
+    }
+    creativeBuckets.set(canonicalKey, bucket);
+  }
+  for (const [canonicalKey, bucket] of creativeBuckets) {
+    const text = mergeDistinctParts(bucket.texts);
+    if (!text) continue;
+    const mergedNegative = mergeDistinctParts(bucket.negatives);
+    const metaName = isPurposeSectionKey(canonicalKey)
+      ? t(promptPurposeLabel(canonicalKey.slice(8)))
+      : (bucket.directoryName || canonicalKey.replace(/^custom:/, ''));
+    picks[rollItemKey(canonicalKey, 'character')] = {
+      kind: canonicalKey,
+      scope: 'character',
+      filled: true,
+      text,
+      negative: mergedNegative,
+      ...(metaName ? { directoryName: metaName, directoryPath: [metaName] } : {}),
     };
   }
+
   if (!Object.keys(picks).length) {
-    picks.appearance = { kind: 'appearance', scope: 'character', filled: true, text: appearance || fallback, negative };
-  } else if (!picks.appearance && (appearance || negative)) {
-    picks.appearance = { kind: 'appearance', scope: 'character', filled: true, text: appearance || fallback, negative };
+    picks.appearance = { kind: 'appearance', scope: 'character', filled: true, text: mirroredAppearance || appearance || fallback, negative: mirroredNegative || negative };
+  } else if (!picks.appearance && (mirroredAppearance || mirroredNegative)) {
+    picks.appearance = { kind: 'appearance', scope: 'character', filled: true, text: mirroredAppearance || fallback, negative: mirroredNegative };
   }
   const extra = String(role?.prompt || '').trim();
   if (extra) picks[rollItemKey('extra', 'character')] = { kind: 'extra', scope: 'character', filled: true, text: extra, negative: String(role?.negativePrompt || ''), directoryName: '补充', directoryPath: ['补充'] };
@@ -178,15 +252,72 @@ export function projectCustomCharacterAsCombination(character: PromptChain, root
     ...character,
     type: 'preset',
     tags: [rootTag],
-    basePrompt: appearance || character.basePrompt,
+    basePrompt: mirroredAppearance || appearance || character.basePrompt,
     params: { ...data.params, [PROMPT_LIBRARY_CHARACTER_SOURCE_KEY]: character.id } as NAIParams,
   } as PromptChain;
 }
+
+const LEGACY_CHARACTER_SLOT_MAP: Record<string, string> = {
+  appearance: purposeSectionKey('appearance'),
+  wardrobe: purposeSectionKey('clothing'),
+  pose: purposeSectionKey('pose'),
+  expression: purposeSectionKey('expression'),
+};
+
+/** 从自定义角色还原实验室分栏槽位；仅存纯文本的角色原样落回补充栏，不硬拆。 */
+export function characterSlotFromLibraryChain(item: PromptChain): Pick<CharacterParams, 'name' | 'prompt' | 'negativePrompt' | 'sections' | 'sectionNegatives' | 'sectionMeta'> {
+  const sourceRole = (item.params?.characters || []).find(role => role.enabled !== false) || item.params?.characters?.[0];
+  if (!sourceRole || !hasCharacterSections(sourceRole)) {
+    return {
+      name: item.name,
+      prompt: compilePrompt(item, item.variableValues?.subject || ''),
+      negativePrompt: item.negativePrompt || '',
+      sections: undefined,
+      sectionNegatives: undefined,
+      sectionMeta: undefined,
+    };
+  }
+  const sections: Record<string, string> = {};
+  const sectionNegatives: Record<string, string> = {};
+  const sectionMeta: Record<string, PromptSectionSource> = {};
+  const normalizeSlotKey = (rawKey: string) => LEGACY_CHARACTER_SLOT_MAP[rawKey]
+    || (isPurposeSectionKey(rawKey) ? normalizePromptPurposeSectionKey(rawKey) : rawKey);
+  const rawSections = (sourceRole.sections || {}) as Record<string, unknown>;
+  const rawNegatives = (sourceRole.sectionNegatives || {}) as Record<string, unknown>;
+  const rawMeta = (sourceRole.sectionMeta || {}) as Record<string, PromptSectionSource | undefined>;
+  for (const rawKey of new Set([...Object.keys(rawSections), ...Object.keys(rawNegatives)])) {
+    const slotKey = normalizeSlotKey(rawKey);
+    if (isStylePurposeKey(slotKey)) continue;
+    const text = typeof rawSections[rawKey] === 'string' ? String(rawSections[rawKey]).trim() : '';
+    const negative = typeof rawNegatives[rawKey] === 'string' ? String(rawNegatives[rawKey]).trim() : '';
+    if (text) sections[slotKey] = mergeDistinctParts([sections[slotKey], text]);
+    if (negative) sectionNegatives[slotKey] = mergeDistinctParts([sectionNegatives[slotKey], negative]);
+    const meta = rawMeta[rawKey];
+    if ((text || negative) && meta && !sectionMeta[slotKey]) sectionMeta[slotKey] = meta;
+  }
+  const compiled = compileCharacterContent(sourceRole);
+  const fallbackAppearance = mergeDistinctParts([String(item.basePrompt || ''), String(item.variableValues?.subject || '')]);
+  if (!sections[purposeSectionKey('appearance')] && fallbackAppearance
+    && fallbackAppearance.toLocaleLowerCase() !== compiled.prompt.trim().toLocaleLowerCase()) {
+    sections[purposeSectionKey('appearance')] = fallbackAppearance;
+  }
+  return {
+    name: item.name,
+    prompt: sourceRole.prompt || '',
+    negativePrompt: sourceRole.negativePrompt || '',
+    sections: Object.keys(sections).length ? (sections as CharacterSectionContent) : undefined,
+    sectionNegatives: Object.keys(sectionNegatives).length ? (sectionNegatives as CharacterSectionContent) : undefined,
+    sectionMeta: Object.keys(sectionMeta).length ? (sectionMeta as CharacterParams['sectionMeta']) : undefined,
+  };
+}
+
 export const parsePromptLibraryTags = (text: string): string[] => [...new Set(text.split(/[,，\r\n]+/).map(tag => tag.trim()).filter(Boolean))];
 export interface PromptLibraryField {
   kind?: PromptFragmentKind;
   directoryId?: string; purposeId?: PromptPurposeId;
   roleId?: string;
+  lockedSection?: 'items' | 'saved';
+  targetScope?: 'global' | 'character';
   negative?: boolean;
   textOnly?: boolean;
 }
@@ -240,8 +371,9 @@ export function combinationPicks(chain: PromptChain, roleIndex = 0): Record<stri
   })), ...directoryPicks };
 }
 
-export function libraryEntryText(chain: PromptChain, field: PromptLibraryField = {}): string {
-  if (field.purposeId && !isContentRecord(chain) && (getEntryPurposes(chain).length !== 1 || !getEntryPurposes(chain).includes(normalizePromptPurposeId(field.purposeId)))) return '';
+export function libraryEntryText(chain: PromptChain, field: PromptLibraryField = {}, directories?: PromptLibraryTreeState): string {
+  const purposes = field.purposeId && !isContentRecord(chain) ? getEntryPurposes(chain, directories) : [];
+  if (field.purposeId && !isContentRecord(chain) && (purposes.length !== 1 || !purposes.includes(normalizePromptPurposeId(field.purposeId)))) return '';
   if ((chain.params as unknown as Record<string, unknown>)?._promptLibraryPolarity === 'negative') return field.negative ? chain.basePrompt || '' : '';
   if (!isContentRecord(chain)) return field.negative ? chain.negativePrompt || '' : chain.basePrompt || '';
   const picks = combinationPicks(chain);
@@ -254,15 +386,15 @@ export function libraryEntryText(chain: PromptChain, field: PromptLibraryField =
  * 界面须原位注明该行为；libraryEntryText 的纯语义保持不变。
  * 组合的负面来自快照分栏，不把组合摘要当负面，因此排除。
  */
-export function libraryNegativeFallbackText(chain: PromptChain, field: PromptLibraryField = {}): string {
+export function libraryNegativeFallbackText(chain: PromptChain, field: PromptLibraryField = {}, directories?: PromptLibraryTreeState): string {
   if (!field.negative || isContentRecord(chain)) return '';
-  if (libraryEntryText(chain, field).trim()) return '';
+  if (libraryEntryText(chain, field, directories).trim()) return '';
   return (chain.basePrompt || '').trim();
 }
 
 /** 取用与候选展示使用：优先负面内容，必要时回退正文。 */
-export const libraryFieldText = (chain: PromptChain, field: PromptLibraryField = {}): string =>
-  libraryEntryText(chain, field) || libraryNegativeFallbackText(chain, field);
+export const libraryFieldText = (chain: PromptChain, field: PromptLibraryField = {}, directories?: PromptLibraryTreeState): string =>
+  libraryEntryText(chain, field, directories) || libraryNegativeFallbackText(chain, field, directories);
 
 /** 原文追加保持空白、换行及权重；片段沿用已有的加权组去重规则。 */
 export function applyLibraryText(current: string, incoming: string, mode: PromptApplyMode, original = false): string {
@@ -310,12 +442,16 @@ export function workspacePicks(params: Partial<NAIParams>, roleId?: string, dire
     if (!isCreativeSectionKey(kind) || typeof text !== 'string' || !text.trim()) continue;
     // 旧工作草稿里的画风细项归并到同一分栏，避免出现多个「画风配方」。
     const normalizedKind = String(normalizePromptPurposeSectionKey(kind));
-    const directoryId = isPurposeSectionKey(normalizedKind) ? '' : normalizedKind.slice('directory:'.length);
-
-    const path = isPurposeSectionKey(normalizedKind) ? [promptPurposeLabel(normalizedKind.slice(8))] : directories ? getPromptLibraryDirectoryPath(directories, directoryId).map(node => node.name) : [];
+    const directoryId = isDirectorySectionKey(normalizedKind) ? normalizedKind.slice('directory:'.length) : '';
+    const sectionMeta = ((scope === 'character' ? role?.sectionMeta : params._promptSections?.sectionMeta) as Record<string, { directoryName?: string; directoryPath?: string[] } | undefined> | undefined)?.[kind];
+    const path = isPurposeSectionKey(normalizedKind)
+      ? [promptPurposeLabel(normalizedKind.slice(8))]
+      : isDirectorySectionKey(normalizedKind)
+        ? (directories ? getPromptLibraryDirectoryPath(directories, directoryId).map(node => node.name) : [])
+        : (sectionMeta?.directoryPath?.length ? sectionMeta.directoryPath : [sectionMeta?.directoryName || normalizedKind.replace(/^custom:/, '')]);
     const key = rollItemKey(normalizedKind, scope);
     const previous = picks[key];
-    picks[key] = { kind: normalizedKind, directoryId, directoryName: path.at(-1) || directoryId, directoryPath: path,
+    picks[key] = { kind: normalizedKind, directoryId, directoryName: path.at(-1) || directoryId || normalizedKind.replace(/^custom:/, ''), directoryPath: path,
       scope,
       filled: true,
       text: [previous?.text, text].filter(Boolean).join(', '),
@@ -347,4 +483,78 @@ export function workspacePicks(params: Partial<NAIParams>, roleId?: string, dire
 export function createFragmentData(text: string, name: string, kind: PromptFragmentKind, negative = '', directoryIds?: string[]): Partial<PromptChain> {
   const data = prepareCollectedPrompt(text, name, kind);
   return { ...data, negativePrompt: negative, ...(directoryIds ? { params: { ...data.params, _promptLibraryDirectoryIds: directoryIds } as NAIParams } : {}) };
+}
+
+export interface PromptCardBadge {
+  key: string;
+  label: string;
+  kind: 'folder' | 'purpose' | 'tag' | 'character' | 'negative';
+}
+
+/** 供卡片一键复制使用的真实文本：组合拼接各分栏正词，片段／原文返回正文。 */
+export function getPromptEntryCopyText(chain: PromptChain): string {
+  if (isContentRecord(chain)) return libraryEntryText(chain).trim();
+  return (collectedPromptText(chain) || chain.basePrompt || '').trim();
+}
+
+/**
+ * 卡片底部徽标：人类视角只展示负面标记与真实所在文件夹胶囊，
+ * 机器使用的固定用途已由目录绑定，不再平铺在浏览卡片上造成双套分类重名。
+ */
+export function getPromptCardBadges(
+  chain: PromptChain,
+  directories?: PromptLibraryTreeState,
+  categoryLabel?: (tag: string) => string,
+): PromptCardBadge[] {
+  if (isPromptLibraryCharacterProjection(chain)) {
+    return [{ key: 'char', label: t('自定义角色'), kind: 'character' }];
+  }
+  if (librarySectionOf(chain) === 'saved') {
+    return getCustomChainTags(chain.tags)
+      .slice(0, 3)
+      .map(tag => ({ key: `tag:${tag}`, label: categoryLabel ? categoryLabel(tag) : tag, kind: 'tag' }));
+  }
+  const badges: PromptCardBadge[] = [];
+  const seenLabels = new Set<string>();
+  const params = paramsBag(chain.params);
+  if (params._promptLibraryPolarity === 'negative') {
+    const negLabel = t('负面');
+    badges.push({ key: 'negative', label: negLabel, kind: 'negative' });
+    seenLabels.add(negLabel.toLocaleLowerCase());
+  }
+  if (directories) {
+    for (const id of getPromptLibraryEntryDirectoryIds(chain, directories)) {
+      const folderName = getPromptLibraryDirectoryPath(directories, id).at(-1)?.name;
+      if (!folderName) continue;
+      const normalized = folderName.toLocaleLowerCase();
+      if (seenLabels.has(normalized)) continue;
+      seenLabels.add(normalized);
+      badges.push({ key: `dir:${id}`, label: folderName, kind: 'folder' });
+    }
+  }
+  return badges.slice(0, 3);
+}
+
+/** 拖拽归类或批量改目录时构造更新载荷，让未单独覆写的条目继续实时继承新目录用途。 */
+export function buildDirectoryMoveUpdates(
+  chain: PromptChain,
+  nextDirectoryIds: string[],
+  directories: PromptLibraryTreeState,
+): Partial<PromptChain> {
+  const params = { ...(chain.params || {}) } as Record<string, unknown>;
+  const previousDirectoryIds = getPromptLibraryEntryDirectoryIds(chain, directories);
+  const nextPurposes = resolveExplicitPurposesAfterDirectoryMove(previousDirectoryIds, getExplicitEntryPurposes(chain), directories);
+  const nextParams: Record<string, unknown> = {
+    ...params,
+    _promptLibraryDirectoryIds: [...new Set(nextDirectoryIds)],
+    _promptLibraryPurposes: nextPurposes,
+  };
+  if (params._promptLibraryPolarity !== 'negative' && nextDirectoryIds.length > 0 && params._collectedPrompt === 1 && params._collectedCategory !== 'general') {
+    nextParams._collectedCategory = 'general';
+  }
+  if (params._promptLibraryOriginal && params._promptLibraryPolarity !== 'negative' && nextDirectoryIds.length > 0) {
+    delete nextParams._promptLibraryOriginal;
+    nextParams._collectedCategory = 'general';
+  }
+  return { params: nextParams as unknown as NAIParams };
 }

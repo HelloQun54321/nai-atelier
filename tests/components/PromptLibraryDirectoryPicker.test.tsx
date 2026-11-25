@@ -58,15 +58,15 @@ it('默认收起目录，摘要保留选中路径；展开与收起分支不修�
   const view = render(<PromptLibraryDirectoryPicker state={createDefaultPromptLibraryTree()} selectedIds={['person-appearance']} onChange={change} />);
   const details = view.container.querySelector('details')!;
   expect(details.open).toBe(false);
-  expect(details.querySelector('summary')?.textContent).toContain('人物 / 外貌与身体');
+  expect(details.querySelector('summary')?.textContent).toContain('人物 / 外貌与设定');
   fireEvent.click(screen.getByText('选择目录'));
   expect(details.open).toBe(true);
-  expect(screen.queryByRole('checkbox', { name: '人物 / 外貌与身体' })).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: '人物 / 外貌与设定' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '展开目录「人物」' }));
-  expect((screen.getByRole('checkbox', { name: '人物 / 外貌与身体' }) as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByRole('checkbox', { name: '人物 / 外貌与设定' }) as HTMLInputElement).checked).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '收起目录「人物」' }));
   expect(change).not.toHaveBeenCalled();
-  expect(details.querySelector('summary')?.textContent).toContain('人物 / 外貌与身体');
+  expect(details.querySelector('summary')?.textContent).toContain('人物 / 外貌与设定');
 });
 
 it('默认全选可切成单目录，选择父目录后取消子目录会保留同级分支', () => {
@@ -81,13 +81,13 @@ it('默认全选可切成单目录，选择父目录后取消子目录会保留�
   const view = render(<Harness />);
   fireEvent.click(screen.getByText('选择目录'));
   fireEvent.click(screen.getByRole('button', { name: '展开目录「人物」' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '人物 / 外貌与身体' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '人物 / 外貌与设定' }));
   expect(allChange).toHaveBeenLastCalledWith(false);
   expect(change).toHaveBeenLastCalledWith(['person-appearance']);
   fireEvent.click(screen.getByRole('checkbox', { name: '人物' }));
   expect(change).toHaveBeenLastCalledWith(['person']);
-  fireEvent.click(screen.getByRole('checkbox', { name: '人物 / 外貌与身体' }));
-  expect(change).toHaveBeenLastCalledWith(['person-identity', 'person-wardrobe', 'person-pose', 'person-expression']);
+  fireEvent.click(screen.getByRole('checkbox', { name: '人物 / 外貌与设定' }));
+  expect(change).toHaveBeenLastCalledWith(['person-wardrobe', 'person-pose', 'person-expression', 'person-interaction']);
   view.unmount();
 });
 
@@ -99,8 +99,8 @@ it('父目录筛选覆盖后代，切换目标时保留完整路径并禁用其�
   fireEvent.click(screen.getByRole('button', { name: '展开目录「人物」' }));
   const person = screen.getByRole('checkbox', { name: '人物' });
   expect(person.hasAttribute('disabled')).toBe(false);
-  expect(screen.getByRole('checkbox', { name: '人物 / 外貌与身体' })).toBeTruthy();
-  expect(screen.getByRole('checkbox', { name: '场景环境' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.getByRole('checkbox', { name: '人物 / 外貌与设定' })).toBeTruthy();
+  expect(screen.getByRole('checkbox', { name: '画面与场景' }).hasAttribute('disabled')).toBe(true);
   fireEvent.click(person);
   expect(change).toHaveBeenCalledWith(['person']);
 });

@@ -217,6 +217,11 @@ export const useConfirmDialog = () => {
     return context.confirmAction;
 };
 
+/** 在可能未包裹 Provider 的局部测试场景中安全读取确认弹窗。 */
+export const useOptionalConfirmDialog = () => {
+    return useContext(ConfirmDialogContext)?.confirmAction ?? null;
+};
+
 /** 只提示、不询问：把页面上的错误横条改成一次性弹窗，点「知道了」即可关闭。 */
 export const useAlertDialog = () => {
     const context = useContext(ConfirmDialogContext);

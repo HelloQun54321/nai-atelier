@@ -820,7 +820,7 @@ export const writePromptSections = (draft, { artist, sections: patch } = {}) => 
     for (const key of Object.keys(patch)) {
       if (!PROMPT_SECTION_KEYS.includes(key) && !isCreativeSectionKey(key) && key !== 'presentation') throw new Error('分类键必须是固定 purpose:用途ID、presentation 或已有旧栏');
       if (typeof patch[key] !== 'string') throw new Error('分类内容必须是字符串');
-      if (key === 'purpose:style' || ['purpose:artist', 'purpose:texture', 'purpose:effect', 'purpose:quality', 'purpose:lighting', 'purpose:color'].includes(key)) {
+      if (key === 'purpose:style' || ['purpose:artist', 'purpose:texture', 'purpose:quality'].includes(key)) {
         nextArtist = joinPromptParts(nextArtist, text(patch[key]));
         continue;
       }

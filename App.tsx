@@ -40,11 +40,11 @@ import { createUuid } from './services/id';
 import type { HistoryBrowseQuery } from './services/historyBrowse';
 import { ContentLibraryPage, type ContentLibrarySection } from './components/ContentLibraryPage';
 import { LibraryDialog, PromptLibraryContext, PromptLibraryRequestEnabledContext, PromptLibraryUseDialog, type WorkspaceAccess } from './components/PromptLibraryAccess';
-import { parsePromptLibraryTags, applyCombinationPicksToCharacter, combinationPicks, createCharacterDataFromCombinationPicks, createCombinationData, isPromptLibraryCharacterProjection, libraryPicksWithSources, librarySectionOf, PROMPT_LIBRARY_CHARACTER_SOURCE_KEY } from './services/promptLibraryEntries';
+import { buildDirectoryMoveUpdates, parsePromptLibraryTags, applyCombinationPicksToCharacter, combinationPicks, createCharacterDataFromCombinationPicks, createCombinationData, isPromptLibraryCharacterProjection, libraryPicksWithSources, librarySectionOf, PROMPT_LIBRARY_CHARACTER_SOURCE_KEY } from './services/promptLibraryEntries';
 import { promptLibraryCategoryUpdates } from './services/promptLibraryCategories';
 import { PromptLibraryBrowser } from './components/PromptLibraryBrowser';
 import { PromptLibraryDirectoryDialog } from './components/PromptLibraryDirectoryDialog';
-import { loadPromptLibraryDirectories, removePromptLibraryDirectory, savePromptLibraryDirectories, PROMPT_LIBRARY_DIRECTORIES_CHANGED, type PromptLibraryTreeState } from './services/promptLibraryDirectories';
+import { getPromptLibraryDirectoryPath, getPromptLibraryEntryDirectoryIds, loadPromptLibraryDirectories, removePromptLibraryDirectory, savePromptLibraryDirectories, PROMPT_LIBRARY_DIRECTORIES_CHANGED, type PromptLibraryTreeState } from './services/promptLibraryDirectories';
 import { emptyPromptLibraryCategoryTree, listPromptLibraryCustomCharacters, loadPromptLibraryCategoryTree, projectPromptLibraryCategoryTree, type PromptLibraryCategoryTreeState } from './services/promptLibraryCategoryTree';
 import { PromptCaptureDialog } from './components/PromptCaptureDialog';
 import { ImagePreviewPortal } from './components/ImagePreviewPortal';
@@ -1099,6 +1099,53 @@ const App = () => {
     return { remainingIds: ids.filter(id => existing.has(id)), errorCount };
   };
 
+  const handleMoveLibraryEntriesToDirectory = async (ids: string[], targetDirectoryId: string) => {
+    if (!libraryDirectories) return;
+    const targets = ids
+      .map(id => chains.find(chain => chain.id === id))
+      .filter((chain): chain is PromptChain => Boolean(chain));
+    if (!targets.length) return;
+    let moved = 0;
+    for (const chain of targets) {
+      await db.updateChain(chain.id, buildDirectoryMoveUpdates(chain, [targetDirectoryId], libraryDirectories));
+      moved++;
+    }
+    await refreshData(true);
+    const folderName = getPromptLibraryDirectoryPath(libraryDirectories, targetDirectoryId).map(node => node.name).join(' / ') || targetDirectoryId;
+    notify(t('已移动 {0} 条到「{1}」', [moved, folderName]));
+  };
+
+  const handleBatchUpdateLibraryDirectories = async (ids: string[], changes: Record<string, boolean>) => {
+    if (!libraryDirectories || !Object.keys(changes).length) return;
+    const targets = ids
+      .map(id => chains.find(chain => chain.id === id))
+      .filter((chain): chain is PromptChain => Boolean(chain));
+    if (!targets.length) return;
+    for (const chain of targets) {
+      const next = new Set(getPromptLibraryEntryDirectoryIds(chain, libraryDirectories));
+      for (const [dirId, checked] of Object.entries(changes)) {
+        if (checked) next.add(dirId);
+        else next.delete(dirId);
+      }
+      await db.updateChain(chain.id, buildDirectoryMoveUpdates(chain, [...next], libraryDirectories));
+    }
+    await refreshData(true);
+    notify(t('已保存'));
+  };
+
+  const handleBatchUpdateLibraryTags = async (ids: string[], tags: string[]) => {
+    const targets = ids
+      .map(id => chains.find(chain => chain.id === id))
+      .filter((chain): chain is PromptChain => Boolean(chain))
+      .filter(chain => !isPromptLibraryCharacterProjection(chain));
+    if (!targets.length) return;
+    for (const chain of targets) {
+      await db.updateChain(chain.id, { tags: replaceCustomChainTags(chain.tags, tags) });
+    }
+    await refreshData(true);
+    notify(t('标签已更新'));
+  };
+
   const getSelectedChain = () => chains.find(c => c.id === selectedId);
   const handleReturnFromEditor = () => {
     const selectedChain = getSelectedChain();
@@ -1149,13 +1196,22 @@ const App = () => {
             const data = prepareCollectedPrompt(text, name, category);
             return createLibraryChain(data.name, '', data.type, { ...data, tags, params: { ...data.params, _promptLibraryPurposes: purposes || [], ...(directoryIds !== undefined ? { _promptLibraryDirectoryIds: directoryIds } : {}) } as NAIParams });
           }}
+          onGenerateCreate={createLibraryChain}
           onViewCaptured={setLibraryFocusId}
-          browse={(toolbarSlot, actions) => <PromptLibraryBrowser chains={chains} {...chainReadState} selectionFocusEnabled={appearancePreferences.gallerySelectionFocus} toolbarSlot={toolbarSlot} notify={notify} onExtract={actions?.onExtract}
+          browse={(toolbarSlot, actions) => <PromptLibraryBrowser chains={chains} {...chainReadState} selectionFocusEnabled={appearancePreferences.gallerySelectionFocus} toolbarSlot={toolbarSlot} notify={notify}
+            onExtract={actions?.onExtract}
+            onSelectingChange={actions?.onSelectingChange} onActiveDirectoryIdsChange={actions?.onActiveDirectoryIdsChange}
+            registerCoverSettingsOpener={actions?.registerCoverSettingsOpener} registerSelectionStarter={actions?.registerSelectionStarter}
             directories={libraryDirectories} onCreateDirectory={openLibraryDirectories} onRenameDirectory={editLibraryDirectory} onDeleteDirectory={deleteLibraryDirectory} onMoveDirectory={moveLibraryDirectory} directoriesBusy={movingLibraryDirectory}
             categoryNames={libraryCategoryNames || []} categoryTree={libraryCategoryTree} categoryChange={libraryCategoryChange}
             onDelete={handleDeleteLibraryEntry}
+            onBulkDelete={handleBulkDelete}
+            onMoveEntriesToDirectory={handleMoveLibraryEntriesToDirectory}
+            onBatchUpdateDirectories={handleBatchUpdateLibraryDirectories}
+            onBatchUpdateTags={handleBatchUpdateLibraryTags}
             onClearCover={async chain => { await handleUpdateChain(chain.id, { previewImage: '' }); }}
             renderEntryEditor={(entry, controls) => <Suspense fallback={<PageSpinner fill={false} className="py-16" />}><PromptLibraryEntryEditor entry={entry} chains={chains} panel panelActionsRef={controls.actionsRef}
+              tagAssistEnabled={appearancePreferences.tagAssistEnabled}
               onCreate={createLibraryChain} onUpdateChain={handleUpdateChain} onDelete={handleDelete} notify={notify} onClose={controls.onClose} /></Suspense>}
             onUse={handleUseLibraryEntry} onOpen={editLibraryEntry} onSaveAs={chain => handleLoadContentRoll(chain, undefined, { saveAsNew: true })} onUpdateTags={async (chain, tags) => { await handleUpdateChain(chain.id, { tags: replaceCustomChainTags((chains.find(item => item.id === chain.id) || chain).tags, tags) }); }} focusEntryId={libraryFocusId} />}
           notify={notify}
@@ -1385,7 +1441,7 @@ const App = () => {
   ]);
   const contentLibraryContent = useMemo(() => renderViewContent('content-library'), [
     view, chains, loading, chainsError, currentUser, contentLibrarySection, contentRollOpen, contentRollEntryTarget, contentRollEditId,
-    playgroundChain, contentRollUndo, contentRollSeed, libraryFocusId, libraryCategoryNames, libraryCategoryChange, libraryCategoryTree, libraryDirectories, libraryDirectoriesError, movingLibraryDirectory, language,
+    playgroundChain, contentRollUndo, contentRollSeed, libraryFocusId, libraryCategoryNames, libraryCategoryChange, libraryCategoryTree, libraryDirectories, libraryDirectoriesError, movingLibraryDirectory, appearancePreferences.tagAssistEnabled, language,
   ]);
   const saveLibraryEntry = useCommittedCallback(async (data: Partial<PromptChain>) => {
     if (data.id) { await handleUpdateChain(data.id, data); return; }
