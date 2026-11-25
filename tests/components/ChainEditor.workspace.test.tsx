@@ -269,10 +269,13 @@ it('统一整段编辑，旧场景与呈现形式完整显示，切页不改原�
 
 it('未接入分类开关时不出现切换，接入后才显示且整段分页不变', () => {
   const view = setup();
-  expect(screen.queryByRole('button', { name: '切换为分类编辑' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+  expect(screen.queryByRole('button', { name: /切换为分类编辑/ })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
   expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['全局', '角色', '参考', '参数']);
   view.rerender(<ChainEditor {...view.props} onSectionedPromptChange={vi.fn()} />);
-  expect(screen.getByRole('button', { name: '切换为分类编辑' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+  expect(screen.getByRole('button', { name: /切换为分类编辑/ })).toBeTruthy();
   expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['全局', '角色', '参考', '参数']);
 });
 

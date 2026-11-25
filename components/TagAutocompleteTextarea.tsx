@@ -1235,8 +1235,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             {insertionAt(currentTranslations.length)}
           </div>
           <div className={`mt-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70 ${compactToolbar && !deleteMode && !muteMode ? 'flex flex-col gap-1.5' : 'flex min-h-7 flex-wrap items-center gap-1'}`}>
-            {(!compactToolbar || deleteMode || muteMode) && (
-              <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
+            {(deleteMode || muteMode) && (
+              <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
             )}
             {deleteMode || muteMode ? <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <button type="button" onClick={() => { setDeleteMode(false); setMuteMode(false); clearSelection(); }} className="mobile-touch h-8 rounded-md px-2 py-1 text-meta font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">{t("取消")}</button>
@@ -1317,9 +1317,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                     className={`mobile-touch ml-auto h-7 shrink-0 whitespace-nowrap rounded-md border px-1.5 text-meta font-semibold transition-colors disabled:pointer-events-none disabled:opacity-45 ${selectedTokens.length ? 'border-[color-mix(in_srgb,var(--nai-accent)_45%,transparent)] text-[var(--nai-accent)] hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)]' : 'border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'}`}
                   >{t("移除权重")}</button>
                 </div>
-                {/* 窄栏第 2 行：撤销 + 翻译缺失项 + 右对齐屏蔽/删除（不再出现孤立第 3 行） */}
+                {/* 窄栏第 2 行：翻译缺失项 + 右对齐撤销/屏蔽/删除（不再出现孤立第 3 行） */}
                 <div className="flex items-center gap-1">
-                  <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800"><RotateCcw className="h-3.5 w-3.5" /></button>
                   {translationError && <InfoPopover label={t("翻译失败详情")} preserveSelection content={translationError} className="mobile-touch h-7 min-w-0 flex-1 truncate text-left text-micro text-red-500 underline decoration-dotted underline-offset-2">{translationError}</InfoPopover>}
                   {allowAiTranslation && editable && missingTags.length > 0 && (
                     <button
@@ -1334,9 +1333,10 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                     </button>
                   )}
                   <div className="ml-auto flex shrink-0 items-center gap-1">
+                    <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"><RotateCcw className="h-3.5 w-3.5" /></button>
                     <button type="button" aria-label={t("屏蔽模式")} title={t("进入屏蔽模式：选择 Tag 后暂时移出提示词")}
                       disabled={!editable || !promptTokens.length} onClick={() => { clearSelection(); setDeleteMode(false); setMuteMode(true); }}
-                      className="mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-40 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50">
+                      className="mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-45 dark:bg-amber-500/15 dark:text-amber-300 dark:hover:bg-amber-500/25">
                       <EyeOff aria-hidden="true" className="h-3.5 w-3.5" />
                     </button>
                     <button
@@ -1350,7 +1350,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                         if (warningTokens.length) setSelectedTagIds(new Set(warningTokens.map(token => token.id)));
                         else clearSelection();
                       }}
-                      className="relative mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-40 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50"
+                      className="relative mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-45 dark:bg-rose-500/15 dark:text-rose-300 dark:hover:bg-rose-500/25"
                     >
                       <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                       {warningTokens.length > 0 && (
@@ -1454,9 +1454,10 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               </button>
             )}
             <div className="ml-auto flex shrink-0 items-center gap-1">
+              <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
               <button type="button" aria-label={t("屏蔽模式")} title={t("进入屏蔽模式：选择 Tag 后暂时移出提示词")}
                 disabled={!editable || !promptTokens.length} onClick={() => { clearSelection(); setDeleteMode(false); setMuteMode(true); }}
-                className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-40 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50">
+                className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-45 dark:bg-amber-500/15 dark:text-amber-300 dark:hover:bg-amber-500/25">
                 <EyeOff aria-hidden="true" className="h-4 w-4" />
               </button>
               <button
@@ -1470,7 +1471,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                   if (warningTokens.length) setSelectedTagIds(new Set(warningTokens.map(token => token.id)));
                   else clearSelection();
                 }}
-                className="relative mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-40 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50"
+                className="relative mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-45 dark:bg-rose-500/15 dark:text-rose-300 dark:hover:bg-rose-500/25"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
                 {warningTokens.length > 0 && (

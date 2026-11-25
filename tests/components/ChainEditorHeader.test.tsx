@@ -64,14 +64,26 @@ describe('实验室顶栏的反推入口', () => {
     expect(onReverseTag).toHaveBeenCalledOnce();
   });
 
-  it('桌面端将破坏性的重置当前模式收入更多操作，保存使用绿色 save 语义，Tag 辅助以激活态表达', () => {
+  it('桌面端将低频与辅助开关收入更多操作，保存使用绿色 save 语义', () => {
     const handleReset = vi.fn();
-    render(<ChainEditorHeader {...baseProps({ handleReset, tagAssistEnabled: true })} />);
+    const onTagAssistEnabledChange = vi.fn();
+    const onSectionedPromptChange = vi.fn();
+    render(<ChainEditorHeader {...baseProps({ handleReset, onTagAssistEnabledChange, onSectionedPromptChange, tagAssistEnabled: true })} />);
     expect(screen.queryByRole('button', { name: '重置当前模式' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Tag 辅助/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /切换为分类编辑/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /翻译所有未翻译提示词/ })).toBeNull();
     expect(screen.getByRole('button', { name: '保存到库' }).getAttribute('data-tone')).toBe('save');
-    const tagButton = screen.getByRole('button', { name: '关闭 Tag 辅助' });
-    expect(tagButton.getAttribute('data-active')).toBe('true');
-    expect(tagButton.textContent).toBe('');
+    expect(screen.getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    const tagRow = screen.getByRole('button', { name: /Tag 辅助/ });
+    expect(tagRow.textContent).toContain('已开启');
+    expect(screen.getByRole('button', { name: /切换为分类编辑/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /翻译所有未翻译提示词/ })).toBeTruthy();
+    fireEvent.click(tagRow);
+    expect(onTagAssistEnabledChange).toHaveBeenCalledWith(false);
+
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     fireEvent.click(screen.getByRole('button', { name: '重置当前模式' }));
     expect(handleReset).toHaveBeenCalledOnce();

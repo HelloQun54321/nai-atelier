@@ -6,7 +6,6 @@ import { ChainEditorModeHeader } from '../ChainEditorModeHeader';
 import { IconButton, ToolbarActionRow as ActionRow, ToolbarDivider } from '../DesignSystem';
 import type { PromptToolbarSlot } from '../PromptLibraryAccess';
 import { MobileBottomSheet } from '../MobileUI';
-import { ToolbarOverflowMenu } from '../ToolbarOverflowMenu';
 import { AnchoredToolbarPopover, TOOLBAR_MENU_CLASS } from '../ToolbarPopover';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 
@@ -93,7 +92,6 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     const forkLabel = isCharacterMode ? t("另存为新角色") : t("另存为新串");
     const saveDetail = hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存';
     const ownerSaveTone = canSaveCurrentChain && !isUploading ? 'save' : 'neutral';
-    const desktopOverflowItems = canEdit ? [{ label: '重置当前模式', icon: <RotateCcw />, tone: 'danger' as const, onClick: handleReset }] : [];
     const renderSaveOptions = () => <div className="space-y-1">
         <button type="button" className={`${TOOLBAR_MENU_CLASS} disabled:cursor-not-allowed disabled:opacity-40`} disabled={!canSaveCurrentChain || isUploading} onClick={() => { closeSaveActions(); handleSaveAll(); }}><Save />{saveDetail}</button>
         <button type="button" className={`${TOOLBAR_MENU_CLASS} disabled:cursor-not-allowed disabled:opacity-40`} disabled={isUploading} onClick={() => { closeSaveActions(); handleFork(); }}><Copy />{forkLabel}</button>
@@ -154,33 +152,26 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             </div>
 
             {!compact && <div className="chain-editor-actions flex flex-none items-center justify-end gap-1.5 ml-auto">
-                {/* 分组 1：素材输入与导入 */}
+                {/* 高频输入与提示词库入口（低频辅助开关与重置收进更多菜单） */}
                 {canEdit && onReverseTag && <IconButton label={t('从图片反推 Tag')} title={t('上传或粘贴图片，识别后追加到当前模式的正面提示词')} onClick={onReverseTag}><ImagePlus /></IconButton>}
                 {renderPromptTools()}
                 {canEdit && <IconButton label={t("导入图片或 JSON 配置")} onClick={() => importInputRef.current?.click()}><FileDown /></IconButton>}
-                {canEdit && <ToolbarDivider />}
-                {/* 分组 2：编辑辅助开关与翻译 */}
-                {canEdit && <IconButton label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} title={t("使用当前助手模型翻译当前模式所有提示词框里的未翻译 Tag，可能产生模型调用费用")} disabled={translationPending} onClick={onTranslateMissingPrompts}>{translationPending ? <LoaderCircle className="animate-spin" /> : <Languages />}</IconButton>}
-                {onSectionedPromptChange && <IconButton label={t(sectionedPrompt ? '切换为整段编辑' : '切换为分类编辑')} active={sectionedPrompt === true} aria-pressed={sectionedPrompt === true} onClick={() => onSectionedPromptChange(!sectionedPrompt)}><ListTree /></IconButton>}
-                <IconButton
-                    label={tagAssistEnabled ? t("关闭 Tag 辅助") : t("开启 Tag 辅助")}
-                    active={tagAssistEnabled}
-                    aria-pressed={tagAssistEnabled}
-                    onClick={() => {
-                        const enabled = !tagAssistEnabled;
-                        onTagAssistEnabledChange(enabled);
-                        notify(`Tag 辅助已${enabled ? '开启' : '关闭'}`);
-                    }}
-                >
-                    <Tags />
-                </IconButton>
-                {/* 分组 3：保存主操作与低频/危险操作（重置收进更多，防误触） */}
-                {(canSaveActiveModeToLibrary || desktopOverflowItems.length > 0) && <ToolbarDivider />}
+                <ToolbarDivider />
                 {canSaveActiveModeToLibrary && (isPlayground || (!isOwner && !isGuest)) && <IconButton label={isPlayground ? t("保存到库") : forkLabel} tone="save" disabled={isUploading} onClick={handleFork}><Save /></IconButton>}
                 {canSaveActiveModeToLibrary && isOwner && !isPlayground && <div ref={saveAnchorRef} className="flex-none">
                     <IconButton label={t(saveLabel)} title={saveDetail} tone={ownerSaveTone} disabled={isUploading} aria-haspopup="dialog" aria-expanded={saveActionsOpen} onClick={() => setSaveActionsOpen(value => !value)}><Save /></IconButton>
                 </div>}
-                <ToolbarOverflowMenu items={desktopOverflowItems} />
+                <div ref={moreAnchorRef} className="flex-none">
+                    <IconButton
+                        label={t("更多操作")}
+                        active={actionsOpen}
+                        aria-haspopup="dialog"
+                        aria-expanded={actionsOpen}
+                        onClick={() => setActionsOpen(value => !value)}
+                    >
+                        <MoreVertical className="h-4 w-4" />
+                    </IconButton>
+                </div>
             </div>}
         </header>
         <input aria-label={t("导入 PNG 或 JSON 创作配置")} type="file" ref={importInputRef} className="hidden" accept="image/png,application/json,.json" onChange={handleImportImage} />
@@ -197,11 +188,9 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
 
     function renderActions() {
         return <div className="flex flex-col gap-1">
-                {renderPromptTools()}
-                {canEdit && onReverseTag && <ActionRow icon={<ImagePlus className="h-4 w-4" />} label={t("从图片反推 Tag")} detail={t("上传图片后识别")} onClick={() => { closeActions(); onReverseTag(); }} />}
-                {canEdit && <ActionRow icon={<FileDown className="h-4 w-4" />} label={t("导入图片或 JSON 配置")} onClick={() => { closeActions(); importInputRef.current?.click(); }} />}
-                {canEdit && <ActionRow icon={translationPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />} label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} detail={translationPending ? t("翻译中") : undefined} disabled={translationPending} onClick={() => { closeActions(); onTranslateMissingPrompts(); }} />}
-                {onSectionedPromptChange && <ActionRow icon={<ListTree className="h-4 w-4" />} label={t(sectionedPrompt ? '切换为整段编辑' : '切换为分类编辑')} detail={t(sectionedPrompt ? '分类' : '整段')} onClick={() => { onSectionedPromptChange(!sectionedPrompt); closeActions(); }} />}
+                {compact && renderPromptTools()}
+                {compact && canEdit && onReverseTag && <ActionRow icon={<ImagePlus className="h-4 w-4" />} label={t("从图片反推 Tag")} detail={t("上传图片后识别")} onClick={() => { closeActions(); onReverseTag(); }} />}
+                {compact && canEdit && <ActionRow icon={<FileDown className="h-4 w-4" />} label={t("导入图片或 JSON 配置")} onClick={() => { closeActions(); importInputRef.current?.click(); }} />}
                 <ActionRow
                     icon={<Tags className="h-4 w-4" />}
                     label={t("Tag 辅助")}
@@ -213,8 +202,11 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                         closeActions();
                     }}
                 />
+                {onSectionedPromptChange && <ActionRow icon={<ListTree className="h-4 w-4" />} label={t(sectionedPrompt ? '切换为整段编辑' : '切换为分类编辑')} detail={t(sectionedPrompt ? '分类' : '整段')} onClick={() => { onSectionedPromptChange(!sectionedPrompt); closeActions(); }} />}
+                {canEdit && <ActionRow icon={translationPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />} label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} detail={translationPending ? t("翻译中") : undefined} disabled={translationPending} onClick={() => { closeActions(); onTranslateMissingPrompts(); }} />}
+                {canEdit && <div className="my-1 border-t border-gray-200/70 dark:border-gray-700/70" />}
                 {canEdit && <ActionRow icon={<RotateCcw className="h-4 w-4" />} label={t("重置当前模式")} tone="danger" onClick={() => { closeActions(); handleReset(); }} />}
-                {canSaveActiveModeToLibrary && isPlayground && <ActionRow icon={<Save className="h-4 w-4" />} label={t("保存到库")} tone="primary" disabled={isUploading} onClick={() => { closeActions(); handleFork(); }} />}
+                {compact && canSaveActiveModeToLibrary && isPlayground && <ActionRow icon={<Save className="h-4 w-4" />} label={t("保存到库")} tone="primary" disabled={isUploading} onClick={() => { closeActions(); handleFork(); }} />}
             </div>;
     }
 
