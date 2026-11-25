@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.242.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.242.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -118,7 +118,7 @@ npm run dev:local
 ### 更新工坊
 
 - **EXE 安装版**：在「全局设置 → 数据与维护 → 应用更新」检查并下载 GitHub Release 新版，点击「重启并安装」即可原位覆盖升级。
-- **源码本地部署**：关闭正在运行的服务窗口，Windows 双击根目录的 `更新 NAI Atelier.bat`（macOS / Linux 执行 `sh scripts/update-local.sh`），自动拉取已发布版本并重新构建启动。
+- **源码本地部署**：关闭正在运行的服务窗口，Windows 双击根目录的 `更新 NAI Atelier.bat`（macOS / Linux 执行 `sh scripts/update-local.sh`），自动从官方 `main` 分支拉取最新源码并重新构建启动。
 - **Android 独立版**：使用同一签名且构建号更高的新版 APK 直接覆盖安装，手机内资料原样保留。
 
 ### 🎨 生成第一张图（5 步上手）

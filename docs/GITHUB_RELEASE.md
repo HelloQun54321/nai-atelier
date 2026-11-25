@@ -1,6 +1,6 @@
 # GitHub Release 发布指南
 
-[NAI Atelier Releases](https://github.com/HelloQun54321/nai-atelier/releases) 用于分发 Windows 安装版与版本更新元数据。应用内更新器与源码双击更新脚本均只读取该页面已公开发布的版本，不会跟踪日常开发提交。
+[NAI Atelier Releases](https://github.com/HelloQun54321/nai-atelier/releases) 用于分发 Windows 安装版与版本更新元数据。应用内更新器只读取该页面已公开发布的版本；源码部署的双击更新脚本默认直接跟随官方 `main` 分支。
 
 ## 发布附件构成
 
