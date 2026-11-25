@@ -1249,12 +1249,13 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               <>
                 {/* 窄栏第 1 行：权重类型 + 添加 + 增减 + 移除，紧凑单行排布 */}
                 <div className="flex flex-wrap items-center gap-1">
-                  <div role="group" aria-label={t("权重类型")} className="appearance-group appearance-segmented flex h-7 shrink-0 items-stretch gap-0.5 overflow-hidden rounded-md bg-gray-100/90 p-0.5 ring-1 ring-inset ring-gray-200 dark:bg-gray-800/90 dark:ring-gray-700">
+                  <div role="group" aria-label={t("权重类型")} title={t("权重类型")} className="appearance-group appearance-segmented flex h-7 shrink-0 items-stretch gap-0.5 overflow-hidden rounded-md bg-gray-100/90 p-0.5 ring-1 ring-inset ring-gray-200 dark:bg-gray-800/90 dark:ring-gray-700">
                     <button
                       type="button"
                       data-appearance="control"
                       onClick={() => setWeightKind('brace')}
                       aria-pressed={weightKind === 'brace'}
+                      style={{ borderRadius: 'var(--workspace-control-radius, 0.25rem)', height: '100%', minHeight: 0 }}
                       className={`mobile-touch inline-flex h-full shrink-0 items-center justify-center rounded-sm px-2 text-meta font-bold leading-none transition-colors ${weightKind === 'brace' ? 'bg-white text-[var(--nai-accent)] shadow-xs dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
                     >{t("括号")}</button>
                     <button
@@ -1262,6 +1263,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                       data-appearance="control"
                       onClick={() => setWeightKind('numeric')}
                       aria-pressed={weightKind === 'numeric'}
+                      style={{ borderRadius: 'var(--workspace-control-radius, 0.25rem)', height: '100%', minHeight: 0 }}
                       className={`mobile-touch inline-flex h-full shrink-0 items-center justify-center rounded-sm px-2 text-meta font-bold leading-none transition-colors ${weightKind === 'numeric' ? 'bg-white text-[var(--nai-accent)] shadow-xs dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
                     >{t("数值")}</button>
                   </div>
@@ -1338,7 +1340,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                     <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"><RotateCcw className="h-3.5 w-3.5" /></button>
                     <button type="button" aria-label={t("屏蔽模式")} title={t("进入屏蔽模式：选择 Tag 后暂时移出提示词")}
                       disabled={!editable || !promptTokens.length} onClick={() => { clearSelection(); setDeleteMode(false); setMuteMode(true); }}
-                      className="mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-45 dark:bg-amber-500/15 dark:text-amber-300 dark:hover:bg-amber-500/25">
+                      className="mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800">
                       <EyeOff aria-hidden="true" className="h-3.5 w-3.5" />
                     </button>
                     <button
@@ -1352,7 +1354,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                         if (warningTokens.length) setSelectedTagIds(new Set(warningTokens.map(token => token.id)));
                         else clearSelection();
                       }}
-                      className="relative mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-45 dark:bg-rose-500/15 dark:text-rose-300 dark:hover:bg-rose-500/25"
+                      className="relative mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"
                     >
                       <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                       {warningTokens.length > 0 && (
@@ -1370,13 +1372,13 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               </>
             ) : <>
             <div className="flex shrink-0 items-center gap-1 whitespace-nowrap">
-              <span className="text-meta text-gray-500 dark:text-gray-400">{t("权重类型")}</span>
-              <div role="group" aria-label={t("权重类型")} className="appearance-group appearance-segmented flex h-8 shrink-0 items-stretch gap-0.5 overflow-hidden rounded-md bg-gray-100/90 p-0.5 ring-1 ring-inset ring-gray-200 max-md:h-11 dark:bg-gray-800/90 dark:ring-gray-700">
+              <div role="group" aria-label={t("权重类型")} title={t("权重类型")} className="appearance-group appearance-segmented flex h-8 shrink-0 items-stretch gap-0.5 overflow-hidden rounded-md bg-gray-100/90 p-0.5 ring-1 ring-inset ring-gray-200 max-md:h-11 dark:bg-gray-800/90 dark:ring-gray-700">
               <button
                 type="button"
                 data-appearance="control"
                 onClick={() => setWeightKind('brace')}
                 aria-pressed={weightKind === 'brace'}
+                style={{ borderRadius: 'var(--workspace-control-radius, 0.25rem)', height: '100%', minHeight: 0 }}
                 className={`mobile-touch inline-flex h-full shrink-0 items-center justify-center rounded-sm px-2.5 text-meta font-bold leading-none transition-colors ${weightKind === 'brace' ? 'bg-white text-[var(--nai-accent)] shadow-xs dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
               >{t("括号")}</button>
               <button
@@ -1384,6 +1386,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 data-appearance="control"
                 onClick={() => setWeightKind('numeric')}
                 aria-pressed={weightKind === 'numeric'}
+                style={{ borderRadius: 'var(--workspace-control-radius, 0.25rem)', height: '100%', minHeight: 0 }}
                 className={`mobile-touch inline-flex h-full shrink-0 items-center justify-center rounded-sm px-2.5 text-meta font-bold leading-none transition-colors ${weightKind === 'numeric' ? 'bg-white text-[var(--nai-accent)] shadow-xs dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
               >{t("数值")}</button>
               </div>
@@ -1459,7 +1462,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
               <button type="button" aria-label={t("屏蔽模式")} title={t("进入屏蔽模式：选择 Tag 后暂时移出提示词")}
                 disabled={!editable || !promptTokens.length} onClick={() => { clearSelection(); setDeleteMode(false); setMuteMode(true); }}
-                className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-45 dark:bg-amber-500/15 dark:text-amber-300 dark:hover:bg-amber-500/25">
+                className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800">
                 <EyeOff aria-hidden="true" className="h-4 w-4" />
               </button>
               <button
@@ -1473,7 +1476,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                   if (warningTokens.length) setSelectedTagIds(new Set(warningTokens.map(token => token.id)));
                   else clearSelection();
                 }}
-                className="relative mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-45 dark:bg-rose-500/15 dark:text-rose-300 dark:hover:bg-rose-500/25"
+                className="relative mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
                 {warningTokens.length > 0 && (

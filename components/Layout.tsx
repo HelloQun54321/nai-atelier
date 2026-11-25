@@ -444,9 +444,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
                   >
                     {active && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-indigo-500" />}
                     <item.icon aria-hidden="true" className={`${sidebarCollapsed ? 'h-[18px] w-[18px]' : 'h-4 w-4'} flex-none`} strokeWidth={1.85} />
-                    <span aria-hidden={sidebarCollapsed} className="app-sidebar-label ml-2.5 flex min-w-0 flex-1 flex-col overflow-hidden text-left text-[13px]">
+                    <span aria-hidden={sidebarCollapsed} className="app-sidebar-label ml-2.5 flex min-w-0 flex-1 flex-col justify-center overflow-hidden text-left text-[13px] leading-[1.15]">
                       <span className="truncate">{t(item.label)}</span>
-                      {!externalBrowseExpanded && externalActiveItem && <span className="truncate text-micro font-normal text-gray-400">{t(externalActiveItem.label)}</span>}
+                      {!externalBrowseExpanded && externalActiveItem && <span className={`truncate text-micro font-normal ${active ? 'text-current opacity-80' : 'text-gray-400'}`}>{t(externalActiveItem.label)}</span>}
                     </span>
                     <ChevronRight aria-hidden="true" className={`app-sidebar-label ml-auto h-3.5 w-3.5 flex-none transition-transform ${externalBrowseExpanded ? 'rotate-90' : ''}`} />
                   </button>
