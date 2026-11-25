@@ -960,23 +960,53 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
   .mobile-touch { min-width: 44px; min-height: 44px; touch-action: manipulation; }
 }
 @media (min-width: 1024px) {
-  .chain-editor-workspace { --lab-tabs-height: 36px; --lab-tabs-gap: 8px; --lab-tabs-padding: 3px; }
-  /* 二级分区条独立悬浮在顶栏下方居中对齐，四边完整圆角收口，不再与顶栏粘成“下巴”。 */
-  .workspace-mode-tabs { width: var(--lab-tabs-width, calc(50% - 1.5rem)); height: var(--lab-tabs-height); margin-left: var(--lab-tabs-left, .75rem); margin-top: calc(var(--lab-tabs-gap) - var(--lab-tabs-chrome-gap, 0px)); margin-bottom: calc(var(--lab-tabs-chrome-gap, 0px) - var(--lab-tabs-height) - var(--lab-tabs-gap)); }
+  .chain-editor-workspace { --lab-tabs-height: 36px; --lab-tabs-padding: 2px; }
+  .workspace-mode-tabs { width: var(--lab-tabs-width, calc(50% - 1.5rem)); height: var(--lab-tabs-height); margin-left: var(--lab-tabs-left, .75rem); margin-top: calc(-1 * var(--lab-tabs-chrome-gap, 0px)); margin-bottom: calc(var(--lab-tabs-chrome-gap, 0px) - var(--lab-tabs-height)); }
+  /* 主次导航只由同一个底板绘制背景，中间没有边框、阴影或独立圆角。 */
+  html:root .chain-editor-workspace .chain-editor-header[data-lab-navigation='joined'] {
+    isolation: isolate;
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  html:root .chain-editor-header[data-lab-navigation='joined'] .lab-navigation-surface {
+    display: block;
+    position: absolute;
+    z-index: -1;
+    pointer-events: none;
+    inset: -1px;
+    bottom: calc(-1 * var(--lab-tabs-height));
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    border: 0;
+    /* 高光是沿元素圆角绘制的内阴影，随后才被 clip-path 裁切：
+       这里必须沿用顶栏自身的圆角，否则顶部高光在两端会被裁成直角缺口。 */
+    border-radius: var(--nai-panel-radius, 24px) var(--nai-panel-radius, 24px) 0 0;
+    background-color: var(--nai-toolbar-surface);
+    clip-path: var(--lab-navigation-outline);
+  }
+  html:root .chain-editor-header[data-lab-navigation='joined'] .generation-mode-nav {
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
   html:root .chain-editor-workspace .workspace-mode-tabs {
     isolation: isolate;
-    padding: var(--lab-tabs-padding) !important;
-    gap: 4px !important;
-    border: 1px solid var(--nai-panel-border, color-mix(in srgb, var(--color-gray-300) 70%, transparent));
-    border-radius: var(--workspace-control-radius, 10px);
-    background-color: var(--nai-toolbar-surface, rgb(255 255 255 / 0.92)) !important;
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+    padding: var(--lab-tabs-padding) 0 !important;
+    gap: 6px !important;
+    border: 0;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none;
   }
-  html:root .chain-editor-workspace .workspace-mode-tabs:has(> span) { padding-right: var(--lab-tabs-padding) !important; }
-  html:root .chain-editor-workspace .workspace-mode-tabs > button { min-height: 0; border-radius: max(4px, calc(var(--workspace-control-radius) - 3px)); }
+  html:root .chain-editor-workspace .workspace-mode-tabs:has(> span) { padding-right: 0 !important; }
+  html:root .chain-editor-workspace .workspace-mode-tabs > button { min-height: 0; border-radius: max(4px, calc(var(--workspace-control-radius) - 2px)); }
   .workspace-mode-tabs > button { font-size: .8125rem; font-weight: 500; }
   .workspace-mode-tabs > button[aria-selected='true'] { font-weight: 600; }
-  .chain-editor-workspace .chain-editor-main { padding-top: calc(var(--lab-tabs-height) + var(--lab-tabs-gap) - var(--lab-tabs-chrome-gap, 0px)); scroll-padding-top: calc(var(--lab-tabs-height) + var(--lab-tabs-gap) - var(--lab-tabs-chrome-gap, 0px)); }
+  .chain-editor-workspace .chain-editor-main { padding-top: calc(var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px)); scroll-padding-top: calc(var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px)); }
 }
 @media (min-width: 1024px) and (any-pointer: coarse) {
   .chain-editor-workspace { --lab-tabs-height: 48px; }

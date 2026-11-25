@@ -85,12 +85,12 @@ html[data-surfaces='translucent'] .workspace-fixed-pane { margin-top: var(--work
   html[data-surfaces='translucent'] .aitag-detail-panel { margin-top: var(--workspace-chrome-height, 0px); }
   html[data-surfaces='translucent'] .chain-editor-workspace :is(.chain-editor-main, .chain-editor-preview) { padding-top: var(--workspace-chrome-height, 0px); }
   html[data-surfaces='translucent'] .chain-editor-workspace .chain-editor-main {
-    padding-top: calc(var(--workspace-chrome-height, 0px) + var(--lab-tabs-height) + var(--lab-tabs-gap, 8px) - var(--lab-tabs-chrome-gap, 0px));
-    scroll-padding-top: calc(var(--workspace-chrome-height, 0px) + var(--lab-tabs-height) + var(--lab-tabs-gap, 8px) - var(--lab-tabs-chrome-gap, 0px));
+    padding-top: calc(var(--workspace-chrome-height, 0px) + var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px));
+    scroll-padding-top: calc(var(--workspace-chrome-height, 0px) + var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px));
   }
   html[data-surfaces='translucent'] .chain-editor-workspace .workspace-mode-tabs {
-    margin-top: calc(var(--workspace-chrome-height, 0px) + var(--lab-tabs-gap, 8px) - var(--lab-tabs-chrome-gap, 0px));
-    margin-bottom: calc(var(--lab-tabs-chrome-gap, 0px) - var(--workspace-chrome-height, 0px) - var(--lab-tabs-height) - var(--lab-tabs-gap, 8px));
+    margin-top: calc(var(--workspace-chrome-height, 0px) - var(--lab-tabs-chrome-gap, 0px));
+    margin-bottom: calc(var(--lab-tabs-chrome-gap, 0px) - var(--workspace-chrome-height, 0px) - var(--lab-tabs-height));
   }
 }
 html[data-surfaces='translucent'] .workspace-mode-tabs {

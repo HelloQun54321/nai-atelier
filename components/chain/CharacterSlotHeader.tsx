@@ -222,32 +222,33 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
               <div
                 role="group"
                 aria-label={t('构图模式')}
-                className="appearance-group appearance-segmented inline-flex h-8 shrink-0 items-stretch gap-0.5 rounded-lg bg-gray-100/90 p-0.5 ring-1 ring-inset ring-gray-200 dark:bg-gray-800/90 dark:ring-gray-700"
+                style={{ borderRadius: 'var(--workspace-control-radius, 0.5rem)' }}
+                className="inline-flex h-8 shrink-0 items-stretch gap-0.5 overflow-hidden border border-gray-200/80 bg-gray-100/90 p-0.5 dark:border-gray-700 dark:bg-gray-800/90"
               >
                 <button
                   type="button"
-                  data-appearance="control"
                   disabled={!canEdit}
                   aria-pressed={!useCoords}
                   onClick={() => onUseCoordsChange(false)}
-                  className={`mobile-touch inline-flex h-full items-center justify-center rounded-md px-2.5 text-xs font-semibold leading-none transition-colors disabled:opacity-40 ${!useCoords
+                  style={{ borderRadius: 'max(0.25rem, calc(var(--workspace-control-radius, 0.5rem) - 2px))', height: '100%', minHeight: 0 }}
+                  className={`inline-flex shrink-0 items-center justify-center border-0 px-2.5 text-xs font-semibold leading-none transition-colors disabled:opacity-40 ${!useCoords
                     ? 'bg-white text-[var(--nai-accent)] shadow-xs dark:bg-gray-700'
-                    : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                    : 'bg-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
                 >
                   {t('自动构图')}
                 </button>
                 <button
                   type="button"
-                  data-appearance="control"
                   disabled={!canEdit}
                   aria-pressed={useCoords}
                   onClick={() => {
                     onUseCoordsChange(true);
                     if (!positionOpen) onTogglePosition();
                   }}
-                  className={`mobile-touch inline-flex h-full items-center justify-center rounded-md px-2.5 text-xs font-semibold leading-none transition-colors disabled:opacity-40 ${useCoords
+                  style={{ borderRadius: 'max(0.25rem, calc(var(--workspace-control-radius, 0.5rem) - 2px))', height: '100%', minHeight: 0 }}
+                  className={`inline-flex shrink-0 items-center justify-center border-0 px-2.5 text-xs font-semibold leading-none transition-colors disabled:opacity-40 ${useCoords
                     ? 'bg-white text-[var(--nai-accent)] shadow-xs dark:bg-gray-700'
-                    : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                    : 'bg-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
                 >
                   {t('手动定位')}
                 </button>
@@ -258,9 +259,10 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
                 aria-expanded={positionOpen}
                 title={coordinateHint || t('展开或收起角色定位画布')}
                 onClick={onTogglePosition}
-                className={`mobile-touch inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors ${positionOpen
+                style={{ borderRadius: 'var(--workspace-control-radius, 0.5rem)' }}
+                className={`mobile-touch inline-flex h-8 shrink-0 items-center gap-1 border px-2.5 text-xs font-medium transition-colors ${positionOpen
                   ? 'border-[color-mix(in_srgb,var(--nai-accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] text-[var(--nai-accent)]'
-                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-300 dark:hover:bg-gray-800'}`}
+                  : 'border-gray-200/80 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-300 dark:hover:bg-gray-800'}`}
               >
                 <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 <span>{t('定位画布')}</span>
@@ -279,7 +281,8 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
             aria-label={t('添加角色')}
             title={atLimit && maxCharacters ? t('当前模型最多支持 {0} 个角色', [maxCharacters]) : t('添加角色')}
             onClick={onAddCharacter}
-            className="mobile-touch ml-auto inline-flex h-8 shrink-0 items-center gap-1 rounded-lg bg-[#0d8bf2] px-3 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-[#0b7ad6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d8bf2] focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-45"
+            style={{ borderRadius: 'var(--workspace-control-radius, 0.5rem)' }}
+            className="mobile-touch ml-auto inline-flex h-8 shrink-0 items-center gap-1 border-0 bg-[#0d8bf2] px-3 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-[#0b7ad6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d8bf2] focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-45"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             <span>{characters.length > 0 ? t('添加角色 ({0})', [characters.length]) : t('添加角色')}</span>

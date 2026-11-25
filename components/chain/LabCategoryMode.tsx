@@ -448,7 +448,7 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
                   title={enabled ? t('点击停用此角色') : t('点击启用此角色')}
                   disabled={disabled}
                   onClick={() => onUpdateCharacter(index, { enabled: !enabled })}
-                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d8bf2] focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-45 ${enabled ? 'bg-[#0d8bf2]' : 'bg-gray-300 dark:bg-gray-700'}`}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-0 p-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d8bf2] focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-45 ${enabled ? 'bg-[#0d8bf2]' : 'bg-gray-300 dark:bg-gray-700'}`}
                 >
                   <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-xs transition-transform ${enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
                 </button>
