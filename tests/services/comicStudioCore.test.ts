@@ -43,6 +43,11 @@ import {
   planComicAiZones,
 } from '../../services/comic/comicAiPageEngine';
 import {
+  computeNormalizedAssetBox,
+  parseSvgViewBoxSize,
+  resolveBubbleTextBox,
+} from '../../services/comic/comicAssets';
+import {
   applyDeterministicSelectiveGrain,
   buildReversePixelLockMaskAlpha,
   collectHardLockedZoneBubbles,
@@ -1594,5 +1599,56 @@ describe('comicSnapping geometry, polyline slicing, smart snapping, and spread s
     expect(parsedOutOfBounds.anchors).toHaveLength(1);
     const clampedAnchor = parsedOutOfBounds.anchors[0];
     expect(isPointStrictlyInsidePolygonPx(trianglePoly.map(p => ({ x: p.x * 1000, y: p.y * 1000 })), { x: clampedAnchor.x * 1000, y: clampedAnchor.y * 1000 })).toBe(true);
+  });
+});
+
+describe('comicAssets & custom bubble/transparent image layers', () => {
+  it('parses SVG dimensions from viewBox and computes aspect-preserving normalized boxes', () => {
+    expect(parseSvgViewBoxSize('<svg viewBox="0 0 800 400"></svg>')).toEqual({ width: 800, height: 400 });
+    expect(parseSvgViewBoxSize('<svg width="320px" height="240px" viewBox="0 0 100 100"></svg>')).toEqual({ width: 320, height: 240 });
+    expect(parseSvgViewBoxSize('<div>not svg</div>')).toBeNull();
+
+    // 横图 2:1 放入竖页 832x1216 时，应保留原始纵横比而不是强行拉成正方形
+    const box = computeNormalizedAssetBox(800, 400, 832, 1216, 0.5);
+    expect(box.width).toBe(0.5);
+    expect(box.height).toBeLessThan(0.2);
+  });
+
+  it('computes safe text box for custom bubbles and preserves flip/inset/aspect props when duplicating layers', () => {
+    const defaultBox = resolveBubbleTextBox({ customImageUrl: undefined }, 100, 200, 50, 40);
+    expect(defaultBox).toEqual({ x: 100 - 38.5, y: 200 - 30.8, width: 77, height: 61.6, cx: 100, cy: 200 });
+
+    const customBox = resolveBubbleTextBox({
+      customImageUrl: '/api/assets/comic-assets/u/b1.png',
+      textInsetX: 0.2,
+      textInsetY: 0.25,
+      textOffsetX: 0.1,
+      textOffsetY: -0.1,
+    }, 100, 200, 50, 40);
+    expect(customBox.width).toBe(60);
+    expect(customBox.height).toBe(40);
+    expect(customBox.cx).toBe(110);
+    expect(customBox.cy).toBe(192);
+
+    const draft = createInitialComicDraft('classic-4-121');
+    const created = createImageLayerInDraft(draft, {
+      name: '透明特效',
+      url: '/api/assets/comic-assets/u/fx.png',
+      width: 0.4,
+      height: 0.3,
+      assetId: 'ca_fx1',
+      naturalWidth: 800,
+      naturalHeight: 600,
+      lockAspect: true,
+      flipX: true,
+    });
+    expect(created.imageItem.assetId).toBe('ca_fx1');
+    expect(created.imageItem.flipX).toBe(true);
+    expect(created.imageItem.lockAspect).toBe(true);
+
+    const dupImg = duplicateLayerInDraft(created.draft, created.layer.id);
+    const copiedImg = dupImg.draft.imageLayers?.find(item => item.id === dupImg.newLayer?.refId);
+    expect(copiedImg?.flipX).toBe(true);
+    expect(copiedImg?.assetId).toBe('ca_fx1');
   });
 });

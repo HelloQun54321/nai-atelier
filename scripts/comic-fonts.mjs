@@ -333,6 +333,30 @@ export const createComicFontManager = ({ cacheRoot, fetchImpl = fetch } = {}) =>
     };
   };
 
+  const renameCustomFont = async (id, name) => {
+    if (!SAFE_FONT_ID_RE.test(id)) {
+      const err = new Error('非法的字体 ID');
+      err.status = 400;
+      throw err;
+    }
+    const cleanName = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 48);
+    if (!cleanName) {
+      const err = new Error('字体名称不能为空');
+      err.status = 400;
+      throw err;
+    }
+    const existing = await readCustomManifest();
+    const target = existing.find(item => item.id === id);
+    if (!target) {
+      const err = new Error('未找到对应的自定义字体');
+      err.status = 404;
+      throw err;
+    }
+    const updated = existing.map(item => (item.id === id ? { ...item, name: cleanName } : item));
+    await writeCustomManifest(updated);
+    return await status();
+  };
+
   const deleteFont = async id => {
     if (!SAFE_FONT_ID_RE.test(id)) {
       const err = new Error('非法的字体 ID');
@@ -387,6 +411,7 @@ export const createComicFontManager = ({ cacheRoot, fetchImpl = fetch } = {}) =>
     status,
     downloadBuiltin,
     uploadCustomFont,
+    renameCustomFont,
     deleteFont,
     readFontFile,
   };

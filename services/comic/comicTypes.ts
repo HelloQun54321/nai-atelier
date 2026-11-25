@@ -131,6 +131,18 @@ export interface ComicStroke {
 export interface ComicBubbleItem {
   id: string;
   shape: ComicBubbleShape;
+  /** 关联的自定义气泡素材 ID（存在 customImageUrl 时以图片作为气泡底图）。 */
+  customAssetId?: string;
+  /** 自定义气泡图片 URL（透明底 PNG/WebP/SVG/GIF，支持 /api/assets/... 或临时 data: URL）。 */
+  customImageUrl?: string;
+  /** 仅水平/垂直翻转自定义气泡底图，不翻转气泡内文字。 */
+  flipX?: boolean;
+  flipY?: boolean;
+  /** 自定义气泡文字安全区内边距（相对宽/高，默认 0.14）与中心偏移（-0.3..0.3，默认 0）。 */
+  textInsetX?: number;
+  textInsetY?: number;
+  textOffsetX?: number;
+  textOffsetY?: number;
   /** 包围盒中心（归一化页面坐标 0..1）。 */
   x: number;
   y: number;
@@ -207,6 +219,14 @@ export interface ComicImageLayerItem {
   id: string;
   name: string;
   url: string;
+  /** 关联的持久化自定义素材库 ID（临时单次图片图层为空）。 */
+  assetId?: string;
+  flipX?: boolean;
+  flipY?: boolean;
+  /** 拖拽四角缩放或调宽时是否保持原图比例（默认 true）。 */
+  lockAspect?: boolean;
+  naturalWidth?: number;
+  naturalHeight?: number;
   x: number;
   y: number;
   width: number;

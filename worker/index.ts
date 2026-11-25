@@ -15,6 +15,7 @@ import { handleArtistSampleRoute } from './routes/artistSampleRoutes';
 import { handlePromptLibraryCoverRoute } from './routes/promptLibraryCoverRoutes';
 import { handleStyleRollRoute } from './routes/styleRollRoutes';
 import { handleComicBookshelfRoute } from './routes/comicBookshelfRoutes';
+import { handleComicAssetRoute } from './routes/comicAssetRoutes';
 import { handlePromptLibraryLinkRoute } from './routes/promptLibraryLinkRoutes';
 import { handleAppearancePresetRoute } from './routes/appearancePresetRoutes';
 import { handleChainFolderRoute } from './routes/chainFolderRoutes';
@@ -72,6 +73,9 @@ export default {
           headers.set('Cache-Control', 'private, max-age=31536000, immutable');
           // 对象内容不可信时禁止浏览器嗅探 MIME，防止借资产存储 HTML/脚本形成同源 XSS
           headers.set('X-Content-Type-Options', 'nosniff');
+          if (headers.get('content-type')?.toLowerCase().includes('svg') || key.toLowerCase().endsWith('.svg')) {
+            headers.set('Content-Security-Policy', "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox");
+          }
           const origin = request.headers.get('Origin');
           if (path.startsWith('/api/assets/covers/') && origin && /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(origin)) {
             headers.set('Access-Control-Allow-Origin', origin);
@@ -218,6 +222,9 @@ export default {
 
       const comicBookshelfResult = await handleComicBookshelfRoute(routeContext);
       if (comicBookshelfResult) return comicBookshelfResult;
+
+      const comicAssetResult = await handleComicAssetRoute(routeContext);
+      if (comicAssetResult) return comicAssetResult;
 
       const keyVaultResult = await handleNaiKeyVaultRoute(routeContext);
       if (keyVaultResult) return keyVaultResult;

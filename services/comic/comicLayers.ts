@@ -431,7 +431,18 @@ export const createDrawingLayerInDraft = (
 
 export const createImageLayerInDraft = (
   draft: ComicPageDraft,
-  input: { name: string; url: string; width?: number; height?: number },
+  input: {
+    name: string;
+    url: string;
+    width?: number;
+    height?: number;
+    assetId?: string;
+    naturalWidth?: number;
+    naturalHeight?: number;
+    lockAspect?: boolean;
+    flipX?: boolean;
+    flipY?: boolean;
+  },
 ): { draft: ComicPageDraft; layer: ComicLayerNode; imageItem: ComicImageLayerItem } => {
   const synced = syncComicLayerStack(draft);
   const id = `img-${createUuid().slice(0, 8)}`;
@@ -439,6 +450,12 @@ export const createImageLayerInDraft = (
     id,
     name: input.name || '导入图片',
     url: input.url,
+    ...(input.assetId ? { assetId: input.assetId } : {}),
+    ...(input.naturalWidth ? { naturalWidth: input.naturalWidth } : {}),
+    ...(input.naturalHeight ? { naturalHeight: input.naturalHeight } : {}),
+    lockAspect: input.lockAspect ?? true,
+    ...(input.flipX ? { flipX: true } : {}),
+    ...(input.flipY ? { flipY: true } : {}),
     x: 0.5,
     y: 0.5,
     width: input.width ?? 0.45,

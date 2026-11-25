@@ -33,6 +33,7 @@ import {
   resolveComicFont,
   seededUnit,
 } from '../../services/comic/comicArtwork';
+import { resolveBubbleTextBox } from '../../services/comic/comicAssets';
 import {
   resolveActiveDrawingLayerId,
   resolveEffectiveLayerProps,
@@ -166,7 +167,8 @@ type DragAction =
   | { kind: 'move-sticker'; id: string; dx: number; dy: number }
   | { kind: 'resize-sticker'; id: string; origX: number; origY: number }
   | { kind: 'move-image-layer'; id: string; dx: number; dy: number }
-  | { kind: 'resize-image-layer'; id: string; origX: number; origY: number }
+  | { kind: 'resize-image-layer'; id: string; handle: ResizeHandleDir; startPoint: ComicPoint; origX: number; origY: number; origW: number; origH: number }
+  | { kind: 'rotate-image-layer'; id: string; cx: number; cy: number; startAngle: number; origRotation: number }
   | { kind: 'stroke'; drawingLayerId: string; stroke: ComicStroke };
 
 type InlineEditState =
@@ -1330,9 +1332,42 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       return;
     }
     if (drag.kind === 'resize-image-layer') {
-      const nextW = Math.min(1, Math.max(0.06, Math.abs(pt.x - drag.origX) * 2));
-      const nextH = Math.min(1, Math.max(0.06, Math.abs(pt.y - drag.origY) * 2));
-      onUpdateImageLayer?.(drag.id, cur => ({ ...cur, width: Number(nextW.toFixed(3)), height: Number(nextH.toFixed(3)) }), false);
+      const targetImg = imageLayerMap.get(drag.id);
+      const h = drag.handle;
+      const dx = pt.x - drag.startPoint.x;
+      const dy = pt.y - drag.startPoint.y;
+      let nextW = drag.origW;
+      let nextH = drag.origH;
+      if (h.includes('e')) nextW = Math.min(1.5, Math.max(0.04, drag.origW + dx * 2));
+      if (h.includes('w')) nextW = Math.min(1.5, Math.max(0.04, drag.origW - dx * 2));
+      if (h.includes('s')) nextH = Math.min(1.5, Math.max(0.04, drag.origH + dy * 2));
+      if (h.includes('n')) nextH = Math.min(1.5, Math.max(0.04, drag.origH - dy * 2));
+
+      const isCorner = h.length === 2;
+      const keepAspect = isCorner && ((targetImg?.lockAspect !== false) !== event.shiftKey);
+      if (keepAspect && drag.origH > 0 && drag.origW > 0) {
+        const scaleW = nextW / drag.origW;
+        const scaleH = nextH / drag.origH;
+        const uniform = Math.abs(scaleW - 1) >= Math.abs(scaleH - 1) ? scaleW : scaleH;
+        nextW = Math.min(1.5, Math.max(0.04, drag.origW * uniform));
+        nextH = Math.min(1.5, Math.max(0.04, drag.origH * uniform));
+      }
+      onUpdateImageLayer?.(drag.id, cur => ({
+        ...cur,
+        width: Number(nextW.toFixed(3)),
+        height: Number(nextH.toFixed(3)),
+      }), false);
+      return;
+    }
+    if (drag.kind === 'rotate-image-layer') {
+      const angle = (Math.atan2((pt.y - drag.cy) * pageH, (pt.x - drag.cx) * pageW) * 180) / Math.PI;
+      let nextRot = drag.origRotation + (angle - drag.startAngle);
+      if (!event.altKey && Math.abs(nextRot % 15) < 2.5) nextRot = Math.round(nextRot / 15) * 15;
+      while (nextRot > 180) nextRot -= 360;
+      while (nextRot < -180) nextRot += 360;
+      nextRot = Math.round(nextRot);
+      setRotationBadge({ cx: drag.cx * pageW, cy: drag.cy * pageH, angle: nextRot });
+      onUpdateImageLayer?.(drag.id, cur => ({ ...cur, rotation: nextRot }), false);
       return;
     }
     if (drag.kind === 'move-text') {
@@ -1490,7 +1525,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     } else if (drag.kind === 'move-bubble-tail') {
       const b = draft.bubbles.find(item => item.id === drag.id);
       if (b) onMoveBubbleTail(b.id, b.tailX, b.tailY, true);
-    } else if (drag.kind === 'move-image-layer' || drag.kind === 'resize-image-layer') {
+    } else if (drag.kind === 'move-image-layer' || drag.kind === 'resize-image-layer' || drag.kind === 'rotate-image-layer') {
       onUpdateImageLayer?.(drag.id, cur => cur, true);
     } else if (drag.kind === 'move-text') {
       const txt = draft.texts.find(item => item.id === drag.id);
@@ -1577,6 +1612,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
           shape: b.shape,
           writingMode: b.writingMode,
           hasTail: b.hasTail,
+          isCustomImage: Boolean(b.customImageUrl),
           fontSize: b.fontSize,
         };
       }
@@ -1629,12 +1665,13 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
       if (!b) return null;
       const bw = b.width * pageW;
       const bh = b.height * pageH;
-      const fontSize = computeAutoFitFontSize(inlineEdit.value || b.text, b.fontSize, bw * 0.68, bh * 0.66, b.writingMode);
+      const textBox = resolveBubbleTextBox(b, b.x * pageW, b.y * pageH, bw / 2, bh / 2);
+      const fontSize = computeAutoFitFontSize(inlineEdit.value || b.text, b.fontSize, textBox.width, textBox.height, b.writingMode);
       return {
-        x: b.x,
-        y: b.y,
-        width: b.width * 0.72,
-        height: b.height * 0.68,
+        x: textBox.cx / pageW,
+        y: textBox.cy / pageH,
+        width: textBox.width / pageW,
+        height: textBox.height / pageH,
         fontFamily: resolveComicFont(b.fontFamily).cssFamily,
         fontSize: Math.max(11, Math.round(fontSize * zoom)),
         color: b.textColor || '#111827',
@@ -2268,12 +2305,27 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                   const cy = imgLayer.y * pageH;
                   const w = imgLayer.width * pageW;
                   const h = imgLayer.height * pageH;
+                  const hw = w / 2;
+                  const hh = h / 2;
+                  const imgResizeHandles: Array<{ dir: ResizeHandleDir; hx: number; hy: number; cursor: string }> = [
+                    { dir: 'nw', hx: cx - hw, hy: cy - hh, cursor: 'cursor-nwse-resize' },
+                    { dir: 'n', hx: cx, hy: cy - hh, cursor: 'cursor-ns-resize' },
+                    { dir: 'ne', hx: cx + hw, hy: cy - hh, cursor: 'cursor-nesw-resize' },
+                    { dir: 'e', hx: cx + hw, hy: cy, cursor: 'cursor-ew-resize' },
+                    { dir: 'se', hx: cx + hw, hy: cy + hh, cursor: 'cursor-nwse-resize' },
+                    { dir: 's', hx: cx, hy: cy + hh, cursor: 'cursor-ns-resize' },
+                    { dir: 'sw', hx: cx - hw, hy: cy + hh, cursor: 'cursor-nesw-resize' },
+                    { dir: 'w', hx: cx - hw, hy: cy, cursor: 'cursor-ew-resize' },
+                  ];
+                  const flipTransform = (imgLayer.flipX || imgLayer.flipY)
+                    ? `translate(${cx} ${cy}) scale(${imgLayer.flipX ? -1 : 1} ${imgLayer.flipY ? -1 : 1}) translate(${-cx} ${-cy})`
+                    : undefined;
                   return (
                     <g
                       key={layerNode.id}
                       style={layerStyle}
                       transform={imgLayer.rotation ? `rotate(${imgLayer.rotation} ${cx} ${cy})` : undefined}
-                      className="pointer-events-auto cursor-move"
+                      className={eff.locked ? 'pointer-events-none' : 'pointer-events-auto cursor-move'}
                       onPointerDown={event => {
                         if (isPanningMode || activeTool !== 'select' || eff.locked) return;
                         event.stopPropagation();
@@ -2283,41 +2335,80 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                         setDrag({ kind: 'move-image-layer', id: imgLayer.id, dx: pt.x - imgLayer.x, dy: pt.y - imgLayer.y });
                       }}
                     >
-                      <image
-                        href={imgLayer.url}
-                        x={cx - w / 2}
-                        y={cy - h / 2}
-                        width={w}
-                        height={h}
-                        preserveAspectRatio="xMidYMid meet"
-                      />
+                      <g transform={flipTransform}>
+                        <image
+                          href={imgLayer.url}
+                          x={cx - hw}
+                          y={cy - hh}
+                          width={w}
+                          height={h}
+                          preserveAspectRatio="none"
+                        />
+                      </g>
                       {selected && !eff.locked && (
                         <>
                           <rect
-                            x={cx - w / 2}
-                            y={cy - h / 2}
+                            x={cx - hw}
+                            y={cy - hh}
                             width={w}
                             height={h}
                             fill="none"
                             stroke="#4f46e5"
                             strokeWidth={2}
                           />
-                          <rect
-                            x={cx + w / 2 - 7}
-                            y={cy + h / 2 - 7}
-                            width={14}
-                            height={14}
-                            rx={3}
-                            fill="#4f46e5"
-                            stroke="#ffffff"
-                            strokeWidth={2}
-                            className="cursor-nwse-resize"
+                          <line x1={cx} y1={cy - hh} x2={cx} y2={cy - hh - 26} stroke="#4f46e5" strokeWidth={2} />
+                          <circle
+                            cx={cx}
+                            cy={cy - hh - 28}
+                            r={8}
+                            fill="#ffffff"
+                            stroke="#4f46e5"
+                            strokeWidth={2.5}
+                            className="cursor-grab"
                             onPointerDown={event => {
                               event.stopPropagation();
+                              const pt = toNormalizedPoint(event.clientX, event.clientY);
+                              const startAngle = (Math.atan2((pt.y - imgLayer.y) * pageH, (pt.x - imgLayer.x) * pageW) * 180) / Math.PI;
                               stageRef.current?.setPointerCapture?.(event.pointerId);
-                              setDrag({ kind: 'resize-image-layer', id: imgLayer.id, origX: imgLayer.x, origY: imgLayer.y });
+                              setDrag({
+                                kind: 'rotate-image-layer',
+                                id: imgLayer.id,
+                                cx: imgLayer.x,
+                                cy: imgLayer.y,
+                                startAngle,
+                                origRotation: imgLayer.rotation || 0,
+                              });
                             }}
                           />
+                          {imgResizeHandles.map(handle => (
+                            <rect
+                              key={handle.dir}
+                              x={handle.hx - 5.5}
+                              y={handle.hy - 5.5}
+                              width={11}
+                              height={11}
+                              rx={2}
+                              fill="#ffffff"
+                              stroke="#4f46e5"
+                              strokeWidth={2.2}
+                              className={handle.cursor}
+                              onPointerDown={event => {
+                                event.stopPropagation();
+                                const pt = toNormalizedPoint(event.clientX, event.clientY);
+                                stageRef.current?.setPointerCapture?.(event.pointerId);
+                                setDrag({
+                                  kind: 'resize-image-layer',
+                                  id: imgLayer.id,
+                                  handle: handle.dir,
+                                  startPoint: pt,
+                                  origX: imgLayer.x,
+                                  origY: imgLayer.y,
+                                  origW: imgLayer.width,
+                                  origH: imgLayer.height,
+                                });
+                              }}
+                            />
+                          ))}
                         </>
                       )}
                     </g>
@@ -2349,17 +2440,19 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                     localTy = cy + dx * Math.sin(rad) + dy * Math.cos(rad);
                   }
 
+                  const hasCustomImage = Boolean(bubble.customImageUrl);
                   const model = buildComicBubbleRenderModel(cx, cy, rx, ry, bubble.shape, bubble.id, {
-                    enabled: bubble.hasTail && !isTransparentFill,
+                    enabled: !hasCustomImage && bubble.hasTail && !isTransparentFill,
                     tx: localTx,
                     ty: localTy,
                   });
                   const fontMeta = resolveComicFont(bubble.fontFamily);
+                  const textBox = resolveBubbleTextBox(bubble, cx, cy, rx, ry);
                   const fittedSize = computeAutoFitFontSize(
                     bubble.text,
                     bubble.fontSize,
-                    rx * 1.54,
-                    ry * 1.54,
+                    textBox.width,
+                    textBox.height,
                     bubble.writingMode,
                   );
 
@@ -2408,81 +2501,100 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                       }}
                     >
                       <g transform={bubble.rotation ? `rotate(${bubble.rotation} ${cx} ${cy})` : undefined}>
-                        {model.radialLines && strokeW > 0 && (
-                          <g opacity={0.72}>
-                            {model.radialLines.map((seg, idx) => (
-                              <line
-                                key={idx}
-                                x1={seg.x1}
-                                y1={seg.y1}
-                                x2={seg.x2}
-                                y2={seg.y2}
+                        {hasCustomImage ? (
+                          <g
+                            transform={(bubble.flipX || bubble.flipY)
+                              ? `translate(${cx} ${cy}) scale(${bubble.flipX ? -1 : 1} ${bubble.flipY ? -1 : 1}) translate(${-cx} ${-cy})`
+                              : undefined}
+                          >
+                            <image
+                              href={bubble.customImageUrl}
+                              x={cx - rx}
+                              y={cy - ry}
+                              width={rx * 2}
+                              height={ry * 2}
+                              preserveAspectRatio="none"
+                            />
+                          </g>
+                        ) : (
+                          <>
+                            {model.radialLines && strokeW > 0 && (
+                              <g opacity={0.72}>
+                                {model.radialLines.map((seg, idx) => (
+                                  <line
+                                    key={idx}
+                                    x1={seg.x1}
+                                    y1={seg.y1}
+                                    x2={seg.x2}
+                                    y2={seg.y2}
+                                    stroke={strokeColor}
+                                    strokeWidth={Math.max(1, strokeW * 0.42)}
+                                    strokeLinecap="round"
+                                  />
+                                ))}
+                              </g>
+                            )}
+
+                            {model.tailPath && strokeW > 0 && model.strokeBody && (
+                              <path
+                                d={model.tailPath}
+                                fill="none"
                                 stroke={strokeColor}
-                                strokeWidth={Math.max(1, strokeW * 0.42)}
+                                strokeWidth={strokeW * 2}
+                                strokeLinejoin="round"
                                 strokeLinecap="round"
                               />
-                            ))}
-                          </g>
-                        )}
-
-                        {model.tailPath && strokeW > 0 && model.strokeBody && (
-                          <path
-                            d={model.tailPath}
-                            fill="none"
-                            stroke={strokeColor}
-                            strokeWidth={strokeW * 2}
-                            strokeLinejoin="round"
-                            strokeLinecap="round"
-                          />
-                        )}
-                        {strokeW > 0 && model.strokeBody && (
-                          <path
-                            d={model.bodyPath}
-                            fill="none"
-                            stroke={strokeColor}
-                            strokeWidth={isTransparentFill ? strokeW : strokeW * 2}
-                            strokeLinejoin="round"
-                            strokeLinecap="round"
-                          />
-                        )}
-                        {model.tailPath && !isTransparentFill && (
-                          <path d={model.tailPath} fill={bubble.fillColor} stroke="none" />
-                        )}
-                        {!isTransparentFill && (
-                          <path d={model.bodyPath} fill={bubble.fillColor} stroke="none" />
-                        )}
-
-                        {model.trailPaths && model.trailPaths.map((tp, idx) => (
-                          <g key={idx}>
-                            {strokeW > 0 && (
-                              <path d={tp} fill="none" stroke={strokeColor} strokeWidth={strokeW * 1.6} strokeLinejoin="round" />
+                            )}
+                            {strokeW > 0 && model.strokeBody && (
+                              <path
+                                d={model.bodyPath}
+                                fill="none"
+                                stroke={strokeColor}
+                                strokeWidth={isTransparentFill ? strokeW : strokeW * 2}
+                                strokeLinejoin="round"
+                                strokeLinecap="round"
+                              />
+                            )}
+                            {model.tailPath && !isTransparentFill && (
+                              <path d={model.tailPath} fill={bubble.fillColor} stroke="none" />
                             )}
                             {!isTransparentFill && (
-                              <path d={tp} fill={bubble.fillColor} stroke="none" />
+                              <path d={model.bodyPath} fill={bubble.fillColor} stroke="none" />
                             )}
-                          </g>
-                        ))}
 
-                        {model.overrunLines && strokeW > 0 && (
-                          <g>
-                            {model.overrunLines.map((seg, idx) => (
-                              <line
-                                key={idx}
-                                x1={seg.x1}
-                                y1={seg.y1}
-                                x2={seg.x2}
-                                y2={seg.y2}
-                                stroke={strokeColor}
-                                strokeWidth={Math.max(1.2, strokeW * 0.85)}
-                                strokeLinecap="round"
-                                opacity={0.92}
-                              />
+                            {model.trailPaths && model.trailPaths.map((tp, idx) => (
+                              <g key={idx}>
+                                {strokeW > 0 && (
+                                  <path d={tp} fill="none" stroke={strokeColor} strokeWidth={strokeW * 1.6} strokeLinejoin="round" />
+                                )}
+                                {!isTransparentFill && (
+                                  <path d={tp} fill={bubble.fillColor} stroke="none" />
+                                )}
+                              </g>
                             ))}
-                          </g>
+
+                            {model.overrunLines && strokeW > 0 && (
+                              <g>
+                                {model.overrunLines.map((seg, idx) => (
+                                  <line
+                                    key={idx}
+                                    x1={seg.x1}
+                                    y1={seg.y1}
+                                    x2={seg.x2}
+                                    y2={seg.y2}
+                                    stroke={strokeColor}
+                                    strokeWidth={Math.max(1.2, strokeW * 0.85)}
+                                    strokeLinecap="round"
+                                    opacity={0.92}
+                                  />
+                                ))}
+                              </g>
+                            )}
+                          </>
                         )}
 
                         {!isInlineEditing && (
-                          <foreignObject x={cx - rx * 0.78} y={cy - ry * 0.78} width={rx * 1.56} height={ry * 1.56}>
+                          <foreignObject x={textBox.x} y={textBox.y} width={textBox.width} height={textBox.height}>
                             <div
                               style={{
                                 width: '100%',
@@ -2579,7 +2691,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                         )}
                       </g>
 
-                      {selected && !eff.locked && bubble.hasTail && model.supportsTail && !isTransparentFill && (
+                      {selected && !eff.locked && !hasCustomImage && bubble.hasTail && model.supportsTail && !isTransparentFill && (
                         <circle
                           cx={tx}
                           cy={ty}
@@ -3607,7 +3719,12 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
 
               const updateShape = (shape: ComicBubbleShape) => {
                 if (fb.mode === 'vector') {
-                  onUpdateBubble?.(fb.id, cur => ({ ...cur, shape }), true);
+                  onUpdateBubble?.(fb.id, cur => ({
+                    ...cur,
+                    shape,
+                    customAssetId: undefined,
+                    customImageUrl: undefined,
+                  }), true);
                 } else if (fb.mode === 'ai-anchor') {
                   onUpdateAiAnchor?.(fb.id, cur => ({ ...cur, bubbleShape: shape }), true);
                 } else {
@@ -3706,7 +3823,7 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
                     {fb.writingMode === 'vertical' ? t('竖排') : t('横排')}
                   </button>
 
-                  {fb.mode === 'vector' && (
+                  {fb.mode === 'vector' && !fb.isCustomImage && (
                     <button
                       type="button"
                       aria-label={t('切换气泡尾巴')}

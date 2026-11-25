@@ -5275,6 +5275,11 @@ const serveDistFile = async (req, res, url) => {
           });
           return req.method === 'HEAD' ? res.end() : res.end(file.buffer);
         }
+        if (req.method === 'PATCH') {
+          const id = decodeURIComponent(url.pathname.slice('/api/comic-fonts/'.length));
+          const body = JSON.parse((await readRequestBody(req, 32 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, await comicFontManager.renameCustomFont(id, body.name));
+        }
         if (req.method === 'DELETE') {
           const id = decodeURIComponent(url.pathname.slice('/api/comic-fonts/'.length));
           return sendJson(res, 200, await comicFontManager.deleteFont(id));

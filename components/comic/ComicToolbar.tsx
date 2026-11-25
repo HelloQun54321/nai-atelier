@@ -27,6 +27,7 @@ import {
   type ComicLayoutTemplateCategory,
   type ComicTemplateScope,
 } from '../../services/comic/comicGeometry';
+import type { ComicCustomAsset } from '../../services/comic/comicAssets';
 import type { ComicCustomTemplate } from '../../services/comic/comicCustomTemplates';
 import { ComicBubbleShapeIcon } from './ComicBubbleShapeIcon';
 import {
@@ -59,6 +60,8 @@ interface ComicToolbarProps {
   brushOpacity: number;
   defaultStickerKind: ComicStickerKind;
   defaultBubbleShape: ComicBubbleShape;
+  defaultCustomBubbleAssetId?: string | null;
+  customBubbleAssets?: ComicCustomAsset[];
   defaultBubbleWritingMode: 'horizontal' | 'vertical';
   canUndo: boolean;
   canRedo: boolean;
@@ -80,7 +83,7 @@ interface ComicToolbarProps {
   onChangeBrush: (patch: { color?: string; size?: number; opacity?: number }) => void;
   onClearStrokes: () => void;
   onChangeDefaultStickerKind: (kind: ComicStickerKind) => void;
-  onChangeDefaultBubbleStyle: (patch: { shape?: ComicBubbleShape; writingMode?: 'horizontal' | 'vertical' }) => void;
+  onChangeDefaultBubbleStyle: (patch: { shape?: ComicBubbleShape; customAssetId?: string | null; writingMode?: 'horizontal' | 'vertical' }) => void;
   onUpdateActivePanelImage?: (patch: { scale?: number; reset?: boolean }) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -119,6 +122,8 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
   brushOpacity,
   defaultStickerKind,
   defaultBubbleShape,
+  defaultCustomBubbleAssetId = null,
+  customBubbleAssets = [],
   defaultBubbleWritingMode,
   canUndo,
   canRedo,
@@ -313,6 +318,9 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
         )}
 
         {activeTool === 'bubble' && (() => {
+          const currentCustomBubble = defaultCustomBubbleAssetId
+            ? customBubbleAssets.find(a => a.id === defaultCustomBubbleAssetId)
+            : undefined;
           const currentShape = COMIC_BUBBLE_SHAPES.find(s => s.id === defaultBubbleShape) || COMIC_BUBBLE_SHAPES[0];
           return (
             <>
@@ -325,8 +333,14 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
                   onClick={() => setBubbleShapeMenuOpen(v => !v)}
                   className="inline-flex h-7 items-center gap-1.5 rounded-md border border-indigo-400/80 bg-indigo-50/70 px-2 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-100/70 dark:border-indigo-500/70 dark:bg-indigo-950/60 dark:text-indigo-200"
                 >
-                  <ComicBubbleShapeIcon shape={currentShape.id} className="h-4 w-5 flex-none" />
-                  <span className="whitespace-nowrap">{t(currentShape.label)}</span>
+                  {currentCustomBubble ? (
+                    <img src={currentCustomBubble.url} alt="" className="h-4 w-5 flex-none object-contain" />
+                  ) : (
+                    <ComicBubbleShapeIcon shape={currentShape.id} className="h-4 w-5 flex-none" />
+                  )}
+                  <span className="max-w-24 truncate whitespace-nowrap">
+                    {currentCustomBubble ? currentCustomBubble.name : t(currentShape.label)}
+                  </span>
                   <ChevronDown className="h-3 w-3 flex-none opacity-75" aria-hidden="true" />
                 </button>
                 {bubbleShapeMenuOpen && (
@@ -335,24 +349,49 @@ export const ComicToolbar: React.FC<ComicToolbarProps> = ({
                     <div
                       role="listbox"
                       aria-label={t('选择默认气泡框形')}
-                      className="absolute left-0 top-full z-50 mt-1.5 grid w-72 grid-cols-4 gap-1 rounded-xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+                      className="absolute left-0 top-full z-50 mt-1.5 w-72 space-y-2 rounded-xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
                     >
-                      {COMIC_BUBBLE_SHAPES.map(shape => (
-                        <button
-                          key={shape.id}
-                          type="button"
-                          role="option"
-                          aria-selected={defaultBubbleShape === shape.id}
-                          onClick={() => {
-                            onChangeDefaultBubbleStyle({ shape: shape.id });
-                            setBubbleShapeMenuOpen(false);
-                          }}
-                          className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border px-1 py-1 text-[10px] font-medium transition ${defaultBubbleShape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/70 dark:text-indigo-200' : 'border-transparent text-gray-700 hover:border-gray-200 hover:bg-gray-50 dark:text-slate-200 dark:hover:border-gray-700 dark:hover:bg-gray-800'}`}
-                        >
-                          <ComicBubbleShapeIcon shape={shape.id} className="h-5 w-7" />
-                          <span className="w-full truncate text-center">{t(shape.label)}</span>
-                        </button>
-                      ))}
+                      <div className="grid grid-cols-4 gap-1">
+                        {COMIC_BUBBLE_SHAPES.map(shape => (
+                          <button
+                            key={shape.id}
+                            type="button"
+                            role="option"
+                            aria-selected={!defaultCustomBubbleAssetId && defaultBubbleShape === shape.id}
+                            onClick={() => {
+                              onChangeDefaultBubbleStyle({ shape: shape.id, customAssetId: null });
+                              setBubbleShapeMenuOpen(false);
+                            }}
+                            className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border px-1 py-1 text-[10px] font-medium transition ${!defaultCustomBubbleAssetId && defaultBubbleShape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/70 dark:text-indigo-200' : 'border-transparent text-gray-700 hover:border-gray-200 hover:bg-gray-50 dark:text-slate-200 dark:hover:border-gray-700 dark:hover:bg-gray-800'}`}
+                          >
+                            <ComicBubbleShapeIcon shape={shape.id} className="h-5 w-7" />
+                            <span className="w-full truncate text-center">{t(shape.label)}</span>
+                          </button>
+                        ))}
+                      </div>
+                      {customBubbleAssets.length > 0 && (
+                        <div className="border-t border-gray-200/80 pt-1.5 dark:border-slate-700">
+                          <div className="mb-1 px-1 text-[10px] font-semibold text-gray-400">{t('自定义气泡')}</div>
+                          <div className="grid max-h-36 grid-cols-4 gap-1 overflow-y-auto">
+                            {customBubbleAssets.map(asset => (
+                              <button
+                                key={asset.id}
+                                type="button"
+                                role="option"
+                                aria-selected={defaultCustomBubbleAssetId === asset.id}
+                                onClick={() => {
+                                  onChangeDefaultBubbleStyle({ customAssetId: asset.id });
+                                  setBubbleShapeMenuOpen(false);
+                                }}
+                                className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border px-1 py-1 text-[10px] font-medium transition ${defaultCustomBubbleAssetId === asset.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/70 dark:text-indigo-200' : 'border-transparent text-gray-700 hover:border-gray-200 hover:bg-gray-50 dark:text-slate-200 dark:hover:border-gray-700 dark:hover:bg-gray-800'}`}
+                              >
+                                <img src={asset.url} alt={asset.name} className="h-5 w-7 object-contain" />
+                                <span className="w-full truncate text-center">{asset.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}

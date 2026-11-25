@@ -73,11 +73,27 @@ import {
   type ComicCustomTemplate,
 } from '../../services/comic/comicCustomTemplates';
 import {
+  computeNormalizedAssetBox,
+  deleteComicAsset,
+  fetchComicAssets,
+  readImageFileAsDataUrl,
+  readImageFileDimensions,
+  renameComicAsset,
+  uploadComicAsset,
+  uploadComicAssetsBatch,
+  type ComicCustomAsset,
+  type ComicCustomAssetKind,
+} from '../../services/comic/comicAssets';
+import {
   deleteComicFont,
   downloadBuiltinComicFont,
   FALLBACK_BUILTIN_FONTS,
   fetchComicFontsStatus,
+  loadDefaultComicFontId,
+  renameCustomComicFont,
+  saveDefaultComicFontId,
   uploadCustomComicFont,
+  uploadCustomComicFonts,
   type ComicFontCatalogState,
 } from '../../services/comic/comicFonts';
 import { getBubbleShapeMeta } from '../../services/comic/comicArtwork';
@@ -280,7 +296,10 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   const [brushOpacity, setBrushOpacity] = useState(1);
   const [defaultStickerKind, setDefaultStickerKind] = useState<ComicStickerKind>('speedlines');
   const [defaultBubbleShape, setDefaultBubbleShape] = useState<ComicBubbleShape>('soft');
+  const [defaultCustomBubbleAssetId, setDefaultCustomBubbleAssetId] = useState<string | null>(null);
   const [defaultBubbleWritingMode, setDefaultBubbleWritingMode] = useState<'horizontal' | 'vertical'>('vertical');
+  const [defaultFontId, setDefaultFontId] = useState<string | null>(() => loadDefaultComicFontId());
+  const [customAssets, setCustomAssets] = useState<ComicCustomAsset[]>([]);
   const [fontCatalog, setFontCatalog] = useState<ComicFontCatalogState>({
     fonts: FALLBACK_BUILTIN_FONTS,
     customFonts: [],
@@ -292,6 +311,9 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     let cancelled = false;
     void fetchComicFontsStatus().then(state => {
       if (!cancelled) setFontCatalog(state);
+    });
+    void fetchComicAssets().then(assets => {
+      if (!cancelled) setCustomAssets(assets);
     });
     return () => { cancelled = true; };
   }, []);
@@ -1224,51 +1246,288 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     notify(t('已新建手绘图层'));
   }, [applyDraftChange, draft, notify]);
 
-  const handleImportImageLayer = useCallback(async (file: File) => {
-    try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(new Error(t('读取图片文件失败')));
-        reader.readAsDataURL(file);
-      });
-      if (!dataUrl) return;
-      let width = 0.55;
-      let height = 0.55;
+  const handleImportImageLayer = useCallback(async (fileOrFiles: File | File[], options: { saveToLibrary?: boolean } = {}) => {
+    const files = (Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles]).filter(Boolean);
+    if (files.length === 0) return;
+
+    const shouldSaveToLibrary = options.saveToLibrary !== false;
+    let currentDraft = draft;
+    let lastAddedId: string | null = null;
+    let addedCount = 0;
+
+    for (const file of files) {
       try {
-        const dims = await new Promise<{ w: number; h: number }>((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve({ w: img.naturalWidth || 1, h: img.naturalHeight || 1 });
-          img.onerror = () => reject(new Error('load failed'));
-          img.src = dataUrl;
-        });
-        const imgAspect = dims.w / Math.max(1, dims.h);
-        const pageAspect = draft.width / Math.max(1, draft.height);
-        const normAspect = imgAspect / pageAspect;
-        if (normAspect >= 1) {
-          width = 0.65;
-          height = Math.min(0.85, Math.max(0.12, Number((width / normAspect).toFixed(3))));
+        let url = '';
+        let assetId: string | undefined;
+        let naturalWidth = 512;
+        let naturalHeight = 512;
+        let cleanName = file.name.replace(/\.[^.]+$/, '') || t('导入图片');
+
+        if (shouldSaveToLibrary) {
+          const uploaded = await uploadComicAsset(file, 'image');
+          setCustomAssets(uploaded.assets);
+          url = uploaded.asset.url;
+          assetId = uploaded.asset.id;
+          naturalWidth = uploaded.asset.width || 512;
+          naturalHeight = uploaded.asset.height || 512;
+          cleanName = uploaded.asset.name || cleanName;
         } else {
-          height = 0.65;
-          width = Math.min(0.85, Math.max(0.12, Number((height * normAspect).toFixed(3))));
+          const [dataUrl, dims] = await Promise.all([
+            readImageFileAsDataUrl(file),
+            readImageFileDimensions(file),
+          ]);
+          if (!dataUrl) continue;
+          url = dataUrl;
+          naturalWidth = dims.width;
+          naturalHeight = dims.height;
         }
-      } catch {
-        // 测试或无图像解码环境回退默认方框尺寸
+
+        const box = computeNormalizedAssetBox(naturalWidth, naturalHeight, currentDraft.width, currentDraft.height, 0.55);
+        const res = createImageLayerInDraft(currentDraft, {
+          name: cleanName,
+          url,
+          width: box.width,
+          height: box.height,
+          assetId,
+          naturalWidth,
+          naturalHeight,
+          lockAspect: true,
+        });
+        currentDraft = res.draft;
+        lastAddedId = res.imageItem.id;
+        addedCount += 1;
+      } catch (error) {
+        notify(error instanceof Error ? error.message : t('导入图片图层失败'), 'error');
       }
-      const cleanName = file.name.replace(/\.[^.]+$/, '') || t('导入图片');
-      const res = createImageLayerInDraft(draft, {
-        name: cleanName,
-        url: dataUrl,
-        width,
-        height,
-      });
-      applyDraftChange(() => res.draft, true);
-      setSelection({ kind: 'image', id: res.imageItem.id });
-      notify(t('已导入图片图层「{0}」', [cleanName]));
-    } catch (error) {
-      notify(error instanceof Error ? error.message : t('导入图片图层失败'), 'error');
     }
-  }, [applyDraftChange, draft, notify]);
+
+    if (addedCount > 0 && lastAddedId) {
+      applyDraftChange(() => currentDraft, true);
+      handleSelectWithTab({ kind: 'image', id: lastAddedId });
+      notify(addedCount === 1
+        ? t('已导入图片图层')
+        : t('已导入 {0} 张图片图层', [addedCount]));
+    }
+  }, [applyDraftChange, draft, handleSelectWithTab, notify]);
+
+  const handleUploadCustomAssets = useCallback(async (
+    files: File[],
+    kind: ComicCustomAssetKind,
+    options?: { insertToCanvas?: boolean; applyToSelectedBubble?: boolean },
+  ) => {
+    if (files.length === 0) return;
+    const { imported, failed, assets } = await uploadComicAssetsBatch(files, kind);
+    setCustomAssets(assets);
+
+    if (imported.length > 0) {
+      const first = imported[0];
+      if (kind === 'bubble') {
+        if (options?.applyToSelectedBubble && selection?.kind === 'bubble') {
+          const targetBubble = draft.bubbles.find(b => b.id === selection.id);
+          const box = computeNormalizedAssetBox(
+            first.width || 512,
+            first.height || 360,
+            draft.width,
+            draft.height,
+            Math.max(targetBubble?.width || 0.28, targetBubble?.height || 0.22),
+          );
+          applyDraftChange(cur => ({
+            ...cur,
+            bubbles: cur.bubbles.map(b => b.id === selection.id ? {
+              ...b,
+              customAssetId: first.id,
+              customImageUrl: first.url,
+              hasTail: false,
+              width: box.width,
+              height: box.height,
+            } : b),
+          }), true);
+        } else if (options?.insertToCanvas) {
+          const box = computeNormalizedAssetBox(first.width || 512, first.height || 360, draft.width, draft.height, 0.3);
+          const created: ComicBubbleItem = {
+            id: createUuid(),
+            shape: defaultBubbleShape,
+            customAssetId: first.id,
+            customImageUrl: first.url,
+            x: 0.45 + (draft.bubbles.length % 3) * 0.06,
+            y: 0.32 + (draft.bubbles.length % 3) * 0.08,
+            width: box.width,
+            height: box.height,
+            hasTail: false,
+            tailX: 0.52,
+            tailY: 0.45,
+            text: '输入台词…',
+            writingMode: defaultBubbleWritingMode,
+            fontFamily: defaultFontId || undefined,
+            fontSize: 22,
+            textColor: '#111827',
+            fillColor: '#ffffff',
+            strokeColor: '#111827',
+            strokeWidth: 3,
+            rotation: 0,
+          };
+          applyDraftChange(cur => ({ ...cur, bubbles: [...cur.bubbles, created] }), true);
+          handleSelectWithTab({ kind: 'bubble', id: created.id });
+        }
+      } else if (kind === 'image' && options?.insertToCanvas) {
+        let nextDraft = draft;
+        let lastId: string | null = null;
+        for (const asset of imported) {
+          const box = computeNormalizedAssetBox(asset.width || 512, asset.height || 512, nextDraft.width, nextDraft.height, 0.48);
+          const res = createImageLayerInDraft(nextDraft, {
+            name: asset.name,
+            url: asset.url,
+            width: box.width,
+            height: box.height,
+            assetId: asset.id,
+            naturalWidth: asset.width,
+            naturalHeight: asset.height,
+            lockAspect: true,
+          });
+          nextDraft = res.draft;
+          lastId = res.imageItem.id;
+        }
+        applyDraftChange(() => nextDraft, true);
+        if (lastId) handleSelectWithTab({ kind: 'image', id: lastId });
+      }
+      notify(imported.length === 1
+        ? t('已保存至素材库「{0}」', [first.name])
+        : t('已导入 {0} 个素材至素材库', [imported.length]));
+    }
+    if (failed.length > 0) {
+      notify(t('{0} 个文件导入失败：{1}', [failed.length, failed[0].error]), 'error');
+    }
+  }, [applyDraftChange, defaultBubbleShape, defaultBubbleWritingMode, defaultFontId, draft, handleSelectWithTab, notify, selection]);
+
+  const handleInsertCustomAsset = useCallback((asset: ComicCustomAsset, targetBubbleId?: string) => {
+    if (asset.kind === 'bubble') {
+      const box = computeNormalizedAssetBox(asset.width || 512, asset.height || 360, draft.width, draft.height, 0.3);
+      if (targetBubbleId) {
+        applyDraftChange(cur => ({
+          ...cur,
+          bubbles: cur.bubbles.map(b => b.id === targetBubbleId ? {
+            ...b,
+            customAssetId: asset.id,
+            customImageUrl: asset.url,
+            hasTail: false,
+            width: box.width,
+            height: box.height,
+          } : b),
+        }), true);
+        return;
+      }
+      const created: ComicBubbleItem = {
+        id: createUuid(),
+        shape: defaultBubbleShape,
+        customAssetId: asset.id,
+        customImageUrl: asset.url,
+        x: 0.45 + (draft.bubbles.length % 3) * 0.06,
+        y: 0.30 + (draft.bubbles.length % 3) * 0.08,
+        width: box.width,
+        height: box.height,
+        hasTail: false,
+        tailX: 0.55,
+        tailY: 0.45,
+        text: '输入台词…',
+        writingMode: defaultBubbleWritingMode,
+        fontFamily: defaultFontId || (fontCatalog.fonts.find(f => f.installed)?.id || fontCatalog.customFonts[0]?.id || 'comic-sans'),
+        fontSize: 22,
+        textColor: '#111827',
+        fillColor: '#ffffff',
+        strokeColor: '#111827',
+        strokeWidth: 3,
+        rotation: 0,
+      };
+      applyDraftChange(cur => ({ ...cur, bubbles: [...cur.bubbles, created] }), true);
+      handleSelectWithTab({ kind: 'bubble', id: created.id });
+      return;
+    }
+
+    const box = computeNormalizedAssetBox(asset.width || 512, asset.height || 512, draft.width, draft.height, 0.48);
+    const res = createImageLayerInDraft(draft, {
+      name: asset.name,
+      url: asset.url,
+      width: box.width,
+      height: box.height,
+      assetId: asset.id,
+      naturalWidth: asset.width,
+      naturalHeight: asset.height,
+      lockAspect: true,
+    });
+    applyDraftChange(() => res.draft, true);
+    handleSelectWithTab({ kind: 'image', id: res.imageItem.id });
+  }, [applyDraftChange, defaultBubbleShape, defaultBubbleWritingMode, defaultFontId, draft, fontCatalog.customFonts, fontCatalog.fonts, handleSelectWithTab]);
+
+  const handleRenameCustomAsset = useCallback(async (id: string, name: string) => {
+    try {
+      const assets = await renameComicAsset(id, name);
+      setCustomAssets(assets);
+      notify(t('已重命名素材'));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('重命名素材失败'), 'error');
+    }
+  }, [notify]);
+
+  const handleDeleteCustomAsset = useCallback(async (id: string) => {
+    try {
+      const assets = await deleteComicAsset(id);
+      setCustomAssets(assets);
+      if (defaultCustomBubbleAssetId === id) setDefaultCustomBubbleAssetId(null);
+      notify(t('已移除素材'));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('删除素材失败'), 'error');
+    }
+  }, [defaultCustomBubbleAssetId, notify]);
+
+  const handleApplyTemporaryBubbleImage = useCallback(async (bubbleId: string, file: File) => {
+    try {
+      const [dataUrl, dims] = await Promise.all([
+        readImageFileAsDataUrl(file),
+        readImageFileDimensions(file),
+      ]);
+      if (!dataUrl) return;
+      const box = computeNormalizedAssetBox(dims.width, dims.height, draft.width, draft.height, 0.3);
+      applyDraftChange(cur => ({
+        ...cur,
+        bubbles: cur.bubbles.map(b => b.id === bubbleId ? {
+          ...b,
+          customAssetId: undefined,
+          customImageUrl: dataUrl,
+          hasTail: false,
+          width: box.width,
+          height: box.height,
+        } : b),
+      }), true);
+      notify(t('已替换为临时自定义气泡'));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('读取气泡图片失败'), 'error');
+    }
+  }, [applyDraftChange, draft.height, draft.width, notify]);
+
+  const handleSaveImageLayerToLibrary = useCallback(async (imgLayer: ComicImageLayerItem) => {
+    if (!imgLayer.url.startsWith('data:')) return;
+    try {
+      const resp = await fetch(imgLayer.url);
+      const blob = await resp.blob();
+      const ext = blob.type.includes('svg') ? 'svg' : blob.type.includes('webp') ? 'webp' : blob.type.includes('gif') ? 'gif' : 'png';
+      const file = new File([blob], `${imgLayer.name || 'image'}.${ext}`, { type: blob.type || 'image/png' });
+      const { asset, assets } = await uploadComicAsset(file, 'image', { name: imgLayer.name });
+      setCustomAssets(assets);
+      applyDraftChange(cur => ({
+        ...cur,
+        imageLayers: (cur.imageLayers || []).map(item => item.id === imgLayer.id ? {
+          ...item,
+          url: asset.url,
+          assetId: asset.id,
+          naturalWidth: asset.width ?? item.naturalWidth,
+          naturalHeight: asset.height ?? item.naturalHeight,
+        } : item),
+      }), true);
+      notify(t('已保存到自定义图片库'));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('保存素材失败'), 'error');
+    }
+  }, [applyDraftChange, notify]);
 
   const handleCreateGroupLayer = useCallback((wrapLayerId?: string) => {
     const res = createGroupLayerInDraft(draft, wrapLayerId);
@@ -1433,6 +1692,30 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [fitCanvasToViewport, handleDeleteSelection, handleDuplicateSelection, handleRedo, handleUndo, selection]);
 
+  // 支持在漫画工作台直接 Ctrl+V 粘贴剪贴板图片（保留透明 PNG 通道）
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      const items = event.clipboardData?.items;
+      if (!items) return;
+      const imageFiles: File[] = [];
+      for (const item of Array.from(items)) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+      if (imageFiles.length === 0) return;
+      event.preventDefault();
+      void handleImportImageLayer(imageFiles);
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [handleImportImageLayer]);
+
   const handleUpdateImageLayer = useCallback((id: string, updater: (item: ComicImageLayerItem) => ComicImageLayerItem, commit = true) => {
     applyDraftChange(cur => ({
       ...cur,
@@ -1463,11 +1746,24 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   }, [applyDraftChange, selection]);
 
   const preferredMangaFontId = useMemo(() => {
+    if (defaultFontId) {
+      const existsBuiltin = fontCatalog.fonts.some(f => f.id === defaultFontId && f.installed);
+      const existsCustom = fontCatalog.customFonts.some(f => f.id === defaultFontId);
+      const existsPreset = ['comic-sans', 'round', 'hand', 'bold', 'impact'].includes(defaultFontId);
+      if (existsBuiltin || existsCustom || existsPreset) return defaultFontId;
+    }
     const installed = fontCatalog.fonts.find(f => f.installed);
     if (installed) return installed.id;
     if (fontCatalog.customFonts[0]) return fontCatalog.customFonts[0].id;
     return 'comic-sans';
-  }, [fontCatalog]);
+  }, [defaultFontId, fontCatalog]);
+
+  const handleSetDefaultFont = useCallback((fontId: string | null) => {
+    const next = defaultFontId === fontId ? null : fontId;
+    setDefaultFontId(next);
+    saveDefaultComicFontId(next);
+    notify(next ? t('已设为默认漫画字体') : t('已取消自定义默认字体'));
+  }, [defaultFontId, notify]);
 
   const handleDownloadFont = useCallback(async (id: string) => {
     setDownloadingFontId(id);
@@ -1483,29 +1779,63 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     }
   }, [notify]);
 
-  const handleUploadCustomFont = useCallback(async (file: File) => {
+  const handleUploadCustomFont = useCallback(async (fileOrFiles: File | File[]) => {
+    const files = (Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles]).filter(Boolean);
+    if (files.length === 0) return;
     try {
-      const { imported, state } = await uploadCustomComicFont(file);
+      if (files.length === 1) {
+        const { imported, state } = await uploadCustomComicFont(files[0]);
+        setFontCatalog(state);
+        if (selection?.kind === 'bubble') {
+          applyDraftChange(cur => ({
+            ...cur,
+            bubbles: cur.bubbles.map(b => b.id === selection.id ? { ...b, fontFamily: imported.id } : b),
+          }), true);
+        } else if (selection?.kind === 'text') {
+          applyDraftChange(cur => ({
+            ...cur,
+            texts: cur.texts.map(item => item.id === selection.id ? { ...item, fontFamily: imported.id } : item),
+          }), true);
+        }
+        notify(imported.localOnly
+          ? t('已在本次会话载入本机字体「{0}」（重启本地后端后可永久缓存）', [imported.name])
+          : t('已导入并缓存本机字体「{0}」', [imported.name]));
+        return;
+      }
+
+      const { imported, failed, state } = await uploadCustomComicFonts(files);
       setFontCatalog(state);
-      // 若当前正选中气泡或文字，直接一键应用新导入字体
-      if (selection?.kind === 'bubble') {
+      if (imported.length > 0 && selection?.kind === 'bubble') {
         applyDraftChange(cur => ({
           ...cur,
-          bubbles: cur.bubbles.map(b => b.id === selection.id ? { ...b, fontFamily: imported.id } : b),
+          bubbles: cur.bubbles.map(b => b.id === selection.id ? { ...b, fontFamily: imported[0].id } : b),
         }), true);
-      } else if (selection?.kind === 'text') {
+      } else if (imported.length > 0 && selection?.kind === 'text') {
         applyDraftChange(cur => ({
           ...cur,
-          texts: cur.texts.map(item => item.id === selection.id ? { ...item, fontFamily: imported.id } : item),
+          texts: cur.texts.map(item => item.id === selection.id ? { ...item, fontFamily: imported[0].id } : item),
         }), true);
       }
-      notify(imported.localOnly
-        ? t('已在本次会话载入本机字体「{0}」（重启本地后端后可永久缓存）', [imported.name])
-        : t('已导入并缓存本机字体「{0}」', [imported.name]));
+      if (imported.length > 0) {
+        notify(t('已批量导入 {0} 款字体', [imported.length]));
+      }
+      if (failed.length > 0) {
+        notify(t('{0} 款字体导入失败：{1}', [failed.length, failed[0].error]), 'error');
+      }
     } catch (error) {
       notify(error instanceof Error ? error.message : t('导入本机字体失败'), 'error');
     }
   }, [applyDraftChange, notify, selection]);
+
+  const handleRenameCustomFont = useCallback(async (id: string, name: string) => {
+    try {
+      const next = await renameCustomComicFont(id, name);
+      setFontCatalog(next);
+      notify(t('已重命名字体'));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('重命名字体失败'), 'error');
+    }
+  }, [notify]);
 
   const handleDeleteFont = useCallback(async (id: string) => {
     try {
@@ -1518,15 +1848,22 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
   }, [notify]);
 
   const handleAddBubbleAt = useCallback((pt: ComicPoint) => {
+    const customBubble = defaultCustomBubbleAssetId
+      ? customAssets.find(a => a.id === defaultCustomBubbleAssetId && a.kind === 'bubble')
+      : undefined;
     const shapeMeta = getBubbleShapeMeta(defaultBubbleShape);
+    const box = customBubble
+      ? computeNormalizedAssetBox(customBubble.width || 512, customBubble.height || 360, draft.width, draft.height, 0.3)
+      : { width: 0.28, height: 0.15 };
     const created: ComicBubbleItem = {
       id: createUuid(),
       shape: defaultBubbleShape,
+      ...(customBubble ? { customAssetId: customBubble.id, customImageUrl: customBubble.url } : {}),
       x: pt.x,
       y: pt.y,
-      width: 0.28,
-      height: 0.15,
-      hasTail: shapeMeta.supportsTail,
+      width: box.width,
+      height: box.height,
+      hasTail: customBubble ? false : shapeMeta.supportsTail,
       tailX: Math.min(0.95, pt.x + 0.08),
       tailY: Math.min(0.95, pt.y + 0.12),
       text: '输入台词…',
@@ -1542,7 +1879,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     applyDraftChange(cur => ({ ...cur, bubbles: [...cur.bubbles, created] }), true);
     handleSelectWithTab({ kind: 'bubble', id: created.id });
     setActiveTool('select');
-  }, [applyDraftChange, defaultBubbleShape, defaultBubbleWritingMode, handleSelectWithTab, preferredMangaFontId]);
+  }, [applyDraftChange, customAssets, defaultBubbleShape, defaultBubbleWritingMode, defaultCustomBubbleAssetId, draft.height, draft.width, handleSelectWithTab, preferredMangaFontId]);
 
   const handleAddTextAt = useCallback((pt: ComicPoint) => {
     const created: ComicTextItem = {
@@ -1551,7 +1888,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
       y: pt.y,
       text: '砰！',
       writingMode: 'horizontal',
-      fontFamily: fontCatalog.fonts.find(f => f.id === 'smiley-sans' && f.installed)?.id || preferredMangaFontId,
+      fontFamily: defaultFontId || fontCatalog.fonts.find(f => f.id === 'smiley-sans' && f.installed)?.id || preferredMangaFontId,
       fontSize: 38,
       color: '#111827',
       strokeColor: '#ffffff',
@@ -1561,7 +1898,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
     applyDraftChange(cur => ({ ...cur, texts: [...cur.texts, created] }), true);
     handleSelectWithTab({ kind: 'text', id: created.id });
     setActiveTool('select');
-  }, [applyDraftChange, fontCatalog.fonts, handleSelectWithTab, preferredMangaFontId]);
+  }, [applyDraftChange, defaultFontId, fontCatalog.fonts, handleSelectWithTab, preferredMangaFontId]);
 
   const handleAddStickerAt = useCallback((pt: ComicPoint) => {
     const created: ComicStickerItem = {
@@ -3205,6 +3542,8 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         brushOpacity={brushOpacity}
         defaultStickerKind={defaultStickerKind}
         defaultBubbleShape={defaultBubbleShape}
+        defaultCustomBubbleAssetId={defaultCustomBubbleAssetId}
+        customBubbleAssets={customAssets.filter(a => a.kind === 'bubble')}
         defaultBubbleWritingMode={defaultBubbleWritingMode}
         canUndo={undoStack.length > 0}
         canRedo={redoStack.length > 0}
@@ -3231,7 +3570,13 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
         onClearStrokes={handleClearActiveDrawingLayer}
         onChangeDefaultStickerKind={setDefaultStickerKind}
         onChangeDefaultBubbleStyle={patch => {
-          if (patch.shape !== undefined) setDefaultBubbleShape(patch.shape);
+          if (patch.shape !== undefined) {
+            setDefaultBubbleShape(patch.shape);
+            setDefaultCustomBubbleAssetId(null);
+          }
+          if (patch.customAssetId !== undefined) {
+            setDefaultCustomBubbleAssetId(patch.customAssetId);
+          }
           if (patch.writingMode !== undefined) setDefaultBubbleWritingMode(patch.writingMode);
         }}
         onUpdateActivePanelImage={patch => {
@@ -3265,7 +3610,23 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
           />
         )}
 
-        <div ref={canvasWrapRef} className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div
+          ref={canvasWrapRef}
+          onDragOver={e => {
+            if (e.dataTransfer?.types?.includes('Files')) {
+              e.preventDefault();
+            }
+          }}
+          onDrop={e => {
+            const files = Array.from(e.dataTransfer?.files || []).filter(f =>
+              f.type.startsWith('image/') || /\.(png|webp|gif|jpe?g|svg)$/i.test(f.name),
+            );
+            if (files.length === 0) return;
+            e.preventDefault();
+            void handleImportImageLayer(files);
+          }}
+          className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+        >
           <ComicCanvas
             draft={draft}
             aiZonePlan={aiZonePlan}
@@ -3427,7 +3788,7 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
                   onUpdateLayerNode={handleUpdateLayerNode}
                   onReorderLayer={handleReorderLayer}
                   onCreateDrawingLayer={handleCreateDrawingLayer}
-                  onImportImageLayer={file => void handleImportImageLayer(file)}
+                  onImportImageLayer={files => void handleImportImageLayer(files)}
                   onCreateGroupLayer={handleCreateGroupLayer}
                   onDuplicateLayer={handleDuplicateLayer}
                   onMergeLayerDown={handleMergeLayerDown}
@@ -3579,10 +3940,21 @@ export const ComicStudio: React.FC<ComicStudioProps> = ({
                   onUpdateImageLayer={handleUpdateImageLayer}
                   onDeleteImageLayer={handleDeleteImageLayer}
                   onConvertSingleAnchorBubbleToVector={handleConvertSingleAnchorBubbleToVector}
+                  customAssets={customAssets}
+                  onUploadCustomAssets={(files, kind, opts) => void handleUploadCustomAssets(files, kind, opts)}
+                  onInsertCustomAsset={(asset, targetBubbleId) => handleInsertCustomAsset(asset, targetBubbleId)}
+                  onRenameCustomAsset={(id, name) => void handleRenameCustomAsset(id, name)}
+                  onDeleteCustomAsset={id => void handleDeleteCustomAsset(id)}
+                  onApplyTemporaryBubbleImage={(bubbleId, file) => void handleApplyTemporaryBubbleImage(bubbleId, file)}
+                  onImportImageFiles={(files, opts) => void handleImportImageLayer(files, opts)}
+                  onSaveImageLayerToLibrary={img => void handleSaveImageLayerToLibrary(img)}
                   fontCatalog={fontCatalog}
+                  defaultFontId={defaultFontId}
                   downloadingFontId={downloadingFontId}
                   onDownloadFont={id => void handleDownloadFont(id)}
-                  onUploadCustomFont={file => void handleUploadCustomFont(file)}
+                  onUploadCustomFont={files => void handleUploadCustomFont(files)}
+                  onRenameCustomFont={(id, name) => void handleRenameCustomFont(id, name)}
+                  onSetDefaultFont={handleSetDefaultFont}
                   onDeleteFont={id => void handleDeleteFont(id)}
                 />
               </div>

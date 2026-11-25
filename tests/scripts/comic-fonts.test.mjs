@@ -96,6 +96,18 @@ test('comic-fonts: 导入本机自定义字体校验格式、持久化与删除'
     assert.equal(file?.contentType, 'font/ttf');
     assert.equal(file?.buffer.length, 4096);
 
+    const renamed = await manager.renameCustomFont(uploaded.imported.id, '漫画手写体 Pro');
+    assert.equal(renamed.customFonts[0]?.name, '漫画手写体 Pro');
+
+    await assert.rejects(
+      () => manager.renameCustomFont(uploaded.imported.id, '   '),
+      /不能为空/,
+    );
+    await assert.rejects(
+      () => manager.renameCustomFont('missing-font-id', '新名称'),
+      /未找到/,
+    );
+
     const afterDelete = await manager.deleteFont(uploaded.imported.id);
     assert.equal(afterDelete.customFonts.length, 0);
   } finally {

@@ -1,5 +1,6 @@
 import { downloadFile } from '../fileDownload';
 import { localHistory } from '../localHistory';
+import { resolveBubbleTextBox } from './comicAssets';
 import {
   buildComicBubbleRenderModel,
   computeAutoFitFontSize,
@@ -276,13 +277,19 @@ export const renderComicPageToBlob = async (rawPage: ComicPageDraft): Promise<Bl
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('浏览器画布初始化失败');
 
+  // 等待已注册字体就绪，避免刚导入字体立即导出时回退为系统字体
+  if (typeof document !== 'undefined' && document.fonts?.ready) {
+    await document.fonts.ready.catch(() => {});
+  }
+
   // 纸张底色
   ctx.fillStyle = page.backgroundColor || '#ffffff';
   ctx.fillRect(0, 0, page.width, page.height);
 
-  // 预加载分镜格图片、AI 整页成图与导入的图片图层
+  // 预加载分镜格图片、AI 整页成图、导入的图片图层与自定义气泡图片
   const imageMap = new Map<string, HTMLImageElement>();
   const customImageMap = new Map<string, HTMLImageElement>();
+  const customBubbleImageMap = new Map<string, HTMLImageElement>();
   let aiWholeImage: HTMLImageElement | null = null;
   await Promise.all([
     ...(page.creationMode === 'ai-page' && page.aiPage?.generatedPageImage?.url
@@ -306,6 +313,16 @@ export const renderComicPageToBlob = async (rawPage: ComicPageDraft): Promise<Bl
         // 忽略失效图片层
       }
     }),
+    ...page.bubbles
+      .filter(b => b.customImageUrl)
+      .map(async b => {
+        try {
+          const img = await loadImageElement(b.customImageUrl!);
+          customBubbleImageMap.set(b.id, img);
+        } catch {
+          // 加载失败时回退为矢量气泡
+        }
+      }),
   ]);
 
   const stack = page.layerStack || [];
@@ -427,12 +444,14 @@ export const renderComicPageToBlob = async (rawPage: ComicPageDraft): Promise<Bl
         const w = item.width * page.width;
         const h = item.height * page.height;
         ctx.save();
+        ctx.translate(cx, cy);
         if (item.rotation) {
-          ctx.translate(cx, cy);
           ctx.rotate((item.rotation * Math.PI) / 180);
-          ctx.translate(-cx, -cy);
         }
-        ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+        if (item.flipX || item.flipY) {
+          ctx.scale(item.flipX ? -1 : 1, item.flipY ? -1 : 1);
+        }
+        ctx.drawImage(img, -w / 2, -h / 2, w, h);
         ctx.restore();
       }
       ctx.restore();
@@ -449,6 +468,7 @@ export const renderComicPageToBlob = async (rawPage: ComicPageDraft): Promise<Bl
         const tx = bubble.tailX * page.width;
         const ty = bubble.tailY * page.height;
         const isTransparentFill = !bubble.fillColor || bubble.fillColor === 'transparent';
+        const customBubbleImg = bubble.customImageUrl ? customBubbleImageMap.get(bubble.id) : undefined;
 
         ctx.save();
         let localTx = tx;
@@ -464,35 +484,46 @@ export const renderComicPageToBlob = async (rawPage: ComicPageDraft): Promise<Bl
           ctx.translate(-cx, -cy);
         }
 
-        const model = buildComicBubbleRenderModel(cx, cy, rx, ry, bubble.shape, bubble.id, {
-          enabled: bubble.hasTail && !isTransparentFill,
-          tx: localTx,
-          ty: localTy,
-        });
-        drawComicBubbleOnCanvas(ctx, model, {
-          fillColor: bubble.fillColor,
-          strokeColor: bubble.strokeColor,
-          strokeWidth: bubble.strokeWidth,
-          cx,
-          cy,
-          rx,
-          ry,
-        });
+        if (customBubbleImg) {
+          ctx.save();
+          ctx.translate(cx, cy);
+          if (bubble.flipX || bubble.flipY) {
+            ctx.scale(bubble.flipX ? -1 : 1, bubble.flipY ? -1 : 1);
+          }
+          ctx.drawImage(customBubbleImg, -rx, -ry, rx * 2, ry * 2);
+          ctx.restore();
+        } else {
+          const model = buildComicBubbleRenderModel(cx, cy, rx, ry, bubble.shape, bubble.id, {
+            enabled: bubble.hasTail && !isTransparentFill,
+            tx: localTx,
+            ty: localTy,
+          });
+          drawComicBubbleOnCanvas(ctx, model, {
+            fillColor: bubble.fillColor,
+            strokeColor: bubble.strokeColor,
+            strokeWidth: bubble.strokeWidth,
+            cx,
+            cy,
+            rx,
+            ry,
+          });
+        }
 
+        const textBox = resolveBubbleTextBox(bubble, cx, cy, rx, ry);
         const fittedSize = computeAutoFitFontSize(
           bubble.text,
           bubble.fontSize,
-          rx * 1.52,
-          ry * 1.52,
+          textBox.width,
+          textBox.height,
           bubble.writingMode,
         );
         drawWrappedText(
           ctx,
           bubble.text,
-          cx,
-          cy,
-          rx * 1.52,
-          ry * 1.52,
+          textBox.cx,
+          textBox.cy,
+          textBox.width,
+          textBox.height,
           fittedSize,
           bubble.writingMode,
           bubble.textColor,

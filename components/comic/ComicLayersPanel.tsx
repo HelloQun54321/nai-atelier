@@ -49,7 +49,7 @@ interface ComicLayersPanelProps {
   onUpdateLayerNode: (layerId: string, updater: (node: ComicLayerNode) => ComicLayerNode, commit?: boolean) => void;
   onReorderLayer: (sourceId: string, targetId: string, position: 'above' | 'below' | 'inside') => void;
   onCreateDrawingLayer: () => void;
-  onImportImageLayer: (file: File) => void;
+  onImportImageLayer: (fileOrFiles: File | File[]) => void;
   onCreateGroupLayer: (wrapLayerId?: string) => void;
   onDuplicateLayer: (layerId: string) => void;
   onMergeLayerDown: (layerId: string) => void;
@@ -153,7 +153,11 @@ export const ComicLayersPanel: React.FC<ComicLayersPanelProps> = ({
       const bubble = bubbleMap.get(node.refId);
       return (
         <div style={CHECKER_STYLE} className="flex h-6 w-8 flex-none items-center justify-center overflow-hidden rounded border border-gray-300/80 text-gray-800 dark:border-gray-600 dark:text-gray-200">
-          <ComicBubbleShapeIcon shape={bubble?.shape || 'soft'} className="h-5 w-7" />
+          {bubble?.customImageUrl ? (
+            <img src={bubble.customImageUrl} alt={node.name} className="h-full w-full object-contain" />
+          ) : (
+            <ComicBubbleShapeIcon shape={bubble?.shape || 'soft'} className="h-5 w-7" />
+          )}
         </div>
       );
     }
@@ -176,7 +180,7 @@ export const ComicLayersPanel: React.FC<ComicLayersPanelProps> = ({
       return (
         <div style={CHECKER_STYLE} className="flex h-6 w-8 flex-none items-center justify-center overflow-hidden rounded border border-gray-300/80 dark:border-gray-600">
           {img?.url ? (
-            <img src={img.url} alt={node.name} className="h-full w-full object-cover" />
+            <img src={img.url} alt={node.name} className="h-full w-full object-contain" />
           ) : (
             <ImagePlus className="h-3.5 w-3.5 text-gray-400" />
           )}
@@ -561,11 +565,12 @@ export const ComicLayersPanel: React.FC<ComicLayersPanelProps> = ({
               <input
                 ref={imageInputRef}
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
+                multiple
+                accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
                 className="hidden"
                 onChange={e => {
-                  const file = e.target.files?.[0];
-                  if (file) onImportImageLayer(file);
+                  const files = Array.from(e.target.files || []);
+                  if (files.length > 0) onImportImageLayer(files);
                   e.target.value = '';
                 }}
               />

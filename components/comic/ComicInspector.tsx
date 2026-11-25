@@ -7,17 +7,23 @@ import {
   Download,
   Eye,
   EyeOff,
+  FlipHorizontal2,
+  FlipVertical2,
   Image as ImageIcon,
+  ImagePlus,
   Lock,
   MessageCircle,
   Palette,
+  Pencil,
   Play,
   Plus,
   RotateCcw,
   Search,
   Sparkles,
+  Star,
   Trash2,
   Type,
+  Unlock,
   Upload,
   UserPlus,
   Wand2,
@@ -27,7 +33,18 @@ import type { LocalGenItem, PromptChain } from '../../types';
 import { t, useLanguage } from '../../services/i18n';
 import { formatGenerationCostLabel } from '../../services/anlasBudget';
 import { searchCharacterDictionary, type CharacterDictionaryEntry } from '../../services/tagDictionary';
-import { COMIC_BUBBLE_SHAPES, COMIC_FONT_PRESETS } from '../../services/comic/comicArtwork';
+import {
+  COMIC_CUSTOM_ASSET_ACCEPT,
+  computeNormalizedAssetBox,
+  type ComicCustomAsset,
+  type ComicCustomAssetKind,
+} from '../../services/comic/comicAssets';
+import { COMIC_BUBBLE_SHAPES, COMIC_FONT_PRESETS, resolveComicFont } from '../../services/comic/comicArtwork';
+import {
+  COMIC_BLEND_MODES,
+  findLayerNodeForSelection,
+  syncComicLayerStack,
+} from '../../services/comic/comicLayers';
 import type { ComicFontCatalogState } from '../../services/comic/comicFonts';
 import { ComicBubbleShapeIcon } from './ComicBubbleShapeIcon';
 import {
@@ -58,6 +75,7 @@ import type {
   ComicAiPagePlan,
   ComicAnchor,
   ComicAnchorKind,
+  ComicBlendMode,
   ComicBubbleItem,
   ComicBubbleShape,
   ComicColorMode,
@@ -65,6 +83,7 @@ import type {
   ComicDialogueMode,
   ComicFontFamily,
   ComicImageLayerItem,
+  ComicLayerNode,
   ComicPageDraft,
   ComicPanel,
   ComicSelection,
@@ -154,10 +173,21 @@ interface ComicInspectorProps {
   onUpdateImageLayer: (id: string, updater: (item: ComicImageLayerItem) => ComicImageLayerItem, commit?: boolean) => void;
   onDeleteImageLayer: (id: string) => void;
   onConvertSingleAnchorBubbleToVector: (target: { kind: 'ai-anchor'; anchorId: string } | { kind: 'panel-anchor'; panelId: string; anchorId: string }) => void;
+  customAssets?: ComicCustomAsset[];
+  onUploadCustomAssets?: (files: File[], kind: ComicCustomAssetKind, options?: { insertToCanvas?: boolean; applyToSelectedBubble?: boolean }) => void;
+  onInsertCustomAsset?: (asset: ComicCustomAsset, targetBubbleId?: string) => void;
+  onRenameCustomAsset?: (id: string, name: string) => void;
+  onDeleteCustomAsset?: (id: string) => void;
+  onApplyTemporaryBubbleImage?: (bubbleId: string, file: File) => void;
+  onImportImageFiles?: (files: File[], options?: { saveToLibrary?: boolean }) => void;
+  onSaveImageLayerToLibrary?: (imageLayer: ComicImageLayerItem) => void;
   fontCatalog: ComicFontCatalogState;
+  defaultFontId?: string | null;
   downloadingFontId: string | null;
   onDownloadFont: (id: string) => void;
-  onUploadCustomFont: (file: File) => void;
+  onUploadCustomFont: (fileOrFiles: File | File[]) => void;
+  onRenameCustomFont?: (id: string, name: string) => void;
+  onSetDefaultFont?: (fontId: string | null) => void;
   onDeleteFont: (id: string) => void;
 }
 
@@ -553,10 +583,21 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   onUpdateImageLayer,
   onDeleteImageLayer,
   onConvertSingleAnchorBubbleToVector,
+  customAssets = [],
+  onUploadCustomAssets,
+  onInsertCustomAsset,
+  onRenameCustomAsset,
+  onDeleteCustomAsset,
+  onApplyTemporaryBubbleImage,
+  onImportImageFiles,
+  onSaveImageLayerToLibrary,
   fontCatalog,
+  defaultFontId = null,
   downloadingFontId,
   onDownloadFont,
   onUploadCustomFont,
+  onRenameCustomFont,
+  onSetDefaultFont,
   onDeleteFont,
   onTogglePanelOverlay,
   onTogglePanelBorderless,
@@ -586,8 +627,18 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   const [charDictResults, setCharDictResults] = useState<CharacterDictionaryEntry[]>([]);
   const [charDictLoading, setCharDictLoading] = useState(false);
   const [fontManagerOpen, setFontManagerOpen] = useState(false);
+  const [assetLibraryOpen, setAssetLibraryOpen] = useState(true);
+  const [assetLibraryTab, setAssetLibraryTab] = useState<ComicCustomAssetKind>('bubble');
+  const [renamingAssetId, setRenamingAssetId] = useState<string | null>(null);
+  const [renameAssetValue, setRenameAssetValue] = useState('');
+  const [renamingFontId, setRenamingFontId] = useState<string | null>(null);
+  const [renameFontValue, setRenameFontValue] = useState('');
   const [showAllBubbleShapes, setShowAllBubbleShapes] = useState(false);
   const fontFileInputRef = useRef<HTMLInputElement>(null);
+  const quickImageInputRef = useRef<HTMLInputElement>(null);
+  const bubbleAssetInputRef = useRef<HTMLInputElement>(null);
+  const tempBubbleInputRef = useRef<HTMLInputElement>(null);
+  const libraryAssetInputRef = useRef<HTMLInputElement>(null);
   const panelFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -711,6 +762,28 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
   const selectedImageLayer = selection?.kind === 'image'
     ? (draft.imageLayers || []).find(item => item.id === selection.id)
     : undefined;
+  const syncedLayerStack = useMemo(() => syncComicLayerStack(draft).layerStack || [], [draft]);
+  const selectedImageLayerNode = useMemo(
+    () => (selection?.kind === 'image' ? findLayerNodeForSelection(syncedLayerStack, selection) : undefined),
+    [selection, syncedLayerStack],
+  );
+  const customBubbleAssets = useMemo(
+    () => customAssets.filter(item => item.kind === 'bubble'),
+    [customAssets],
+  );
+  const customImageAssets = useMemo(
+    () => customAssets.filter(item => item.kind === 'image'),
+    [customAssets],
+  );
+  const updateLayerNodeProp = (layerId: string, updater: (node: ComicLayerNode) => ComicLayerNode, commit = true) => {
+    onUpdateDraft(cur => {
+      const synced = syncComicLayerStack(cur);
+      return {
+        ...synced,
+        layerStack: (synced.layerStack || []).map(node => (node.id === layerId ? updater(node) : node)),
+      };
+    }, commit);
+  };
 
   const addAnchorToPanel = (panel: ComicPanel, kind: ComicAnchorKind, seed?: { label?: string; prompt?: string; negativePrompt?: string; sourceCharacterId?: string }) => {
     if (panel.anchors.length >= COMIC_ANCHOR_HARD_LIMIT) return;
@@ -780,7 +853,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
     setHistoryPickerOpen(false);
   };
 
-  const overlayCount = draft.bubbles.length + draft.texts.length + draft.stickers.length;
+  const overlayCount = draft.bubbles.length + draft.texts.length + draft.stickers.length + (draft.imageLayers?.length ?? 0);
 
   return (
     <aside className="appearance-panel flex h-full w-full flex-col border-l border-gray-200 bg-white/90 dark:border-gray-800 dark:bg-gray-900/90">
@@ -2714,44 +2787,70 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
       {/* ==================== 标签 3：嵌字与图层 ==================== */}
       {activeTab === 'layers' && (
         <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-3.5 pb-6 text-xs">
-          {/* 顶部常驻快捷添加：进到第 3 步就能直接开工 */}
-          {(onQuickAddBubble || onQuickAddText || onQuickAddSticker) && (
-            <div className="grid grid-cols-3 gap-1.5">
+          {/* 顶部常驻快捷添加：气泡 / 文字 / 贴纸 / 透明底图片 */}
+          {(onQuickAddBubble || onQuickAddText || onQuickAddSticker || onImportImageFiles) && (
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
               {onQuickAddBubble && (
                 <button
                   type="button"
                   onClick={onQuickAddBubble}
-                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200/90 bg-white px-2 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-200"
+                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200/90 bg-white px-1.5 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-200"
                 >
-                  <MessageCircle className="h-3.5 w-3.5 text-amber-500" />
-                  <span>{t('添加气泡')}</span>
+                  <MessageCircle className="h-3.5 w-3.5 flex-none text-amber-500" />
+                  <span className="truncate">{t('添加气泡')}</span>
                 </button>
               )}
               {onQuickAddText && (
                 <button
                   type="button"
                   onClick={onQuickAddText}
-                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200/90 bg-white px-2 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-200"
+                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200/90 bg-white px-1.5 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-200"
                 >
-                  <Type className="h-3.5 w-3.5 text-indigo-500" />
-                  <span>{t('添加文字')}</span>
+                  <Type className="h-3.5 w-3.5 flex-none text-indigo-500" />
+                  <span className="truncate">{t('添加文字')}</span>
                 </button>
               )}
               {onQuickAddSticker && (
                 <button
                   type="button"
                   onClick={onQuickAddSticker}
-                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200/90 bg-white px-2 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-200"
+                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200/90 bg-white px-1.5 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-200"
                 >
-                  <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-                  <span>{t('添加贴纸')}</span>
+                  <Sparkles className="h-3.5 w-3.5 flex-none text-purple-500" />
+                  <span className="truncate">{t('添加贴纸')}</span>
                 </button>
+              )}
+              {onImportImageFiles && (
+                <>
+                  <input
+                    ref={quickImageInputRef}
+                    type="file"
+                    multiple
+                    accept={COMIC_CUSTOM_ASSET_ACCEPT}
+                    className="hidden"
+                    onChange={e => {
+                      const files = Array.from(e.target.files || []);
+                      if (files.length > 0) onImportImageFiles(files, { saveToLibrary: true });
+                      e.target.value = '';
+                    }}
+                  />
+                  <button
+                    type="button"
+                    title={t('导入透明底 PNG/WebP/SVG 等图片图层并自动入库')}
+                    onClick={() => quickImageInputRef.current?.click()}
+                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200/90 bg-white px-1.5 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-200"
+                  >
+                    <ImagePlus className="h-3.5 w-3.5 flex-none text-emerald-500" />
+                    <span className="truncate">{t('添加图片')}</span>
+                  </button>
+                </>
               )}
             </div>
           )}
 
-          {/* 当前选中的气泡 / 文字 / 贴纸属性编辑 */}
+          {/* 当前选中的气泡 / 文字 / 贴纸 / 图片图层属性编辑 */}
           {selectedBubble && (() => {
+            const isCustomBubble = Boolean(selectedBubble.customImageUrl);
             const visibleShapeIds = CORE_BUBBLE_SHAPE_IDS.includes(selectedBubble.shape)
               ? CORE_BUBBLE_SHAPE_IDS
               : [...CORE_BUBBLE_SHAPE_IDS.slice(0, 3), selectedBubble.shape];
@@ -2774,20 +2873,22 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                   className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                 />
 
-                {/* 气泡样式：默认精简 4 款，点击按需展开全部 12 款 */}
-                <div className="space-y-1">
+                {/* 气泡样式：内置矢量气泡 + 自定义透明气泡 */}
+                <div className="space-y-1.5">
                   <div className={`grid gap-1 ${showAllBubbleShapes ? 'grid-cols-3' : 'grid-cols-4'}`}>
                     {displayedShapes.map(shape => (
                       <button
                         key={shape.id}
                         type="button"
-                        aria-pressed={selectedBubble.shape === shape.id}
+                        aria-pressed={!isCustomBubble && selectedBubble.shape === shape.id}
                         onClick={() => onUpdateBubble(selectedBubble.id, i => ({
                           ...i,
                           shape: shape.id,
+                          customAssetId: undefined,
+                          customImageUrl: undefined,
                           hasTail: shape.supportsTail ? i.hasTail : false,
                         }), true)}
-                        className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border px-1 py-1 text-[10px] font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 ${selectedBubble.shape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/70 dark:text-indigo-100' : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 dark:border-slate-700 dark:bg-slate-800/85 dark:text-slate-100 dark:hover:border-indigo-400'}`}
+                        className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border px-1 py-1 text-[10px] font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 ${!isCustomBubble && selectedBubble.shape === shape.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/70 dark:text-indigo-100' : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 dark:border-slate-700 dark:bg-slate-800/85 dark:text-slate-100 dark:hover:border-indigo-400'}`}
                       >
                         <ComicBubbleShapeIcon shape={shape.id} className="h-5 w-8" />
                         <span className="w-full truncate text-center">{t(shape.label)}</span>
@@ -2802,32 +2903,176 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                   >
                     {showAllBubbleShapes ? t('收起样式') : `${t('更多样式')} (${COMIC_BUBBLE_SHAPES.length})`}
                   </button>
+
+                  {/* 自定义透明气泡选择与快捷导入 */}
+                  <div className="space-y-1.5 rounded-lg border border-gray-200/80 bg-white/70 p-1.5 dark:border-gray-700/80 dark:bg-gray-900/50">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400">
+                        {t('自定义气泡')}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {onApplyTemporaryBubbleImage && (
+                          <>
+                            <input
+                              ref={tempBubbleInputRef}
+                              type="file"
+                              accept={COMIC_CUSTOM_ASSET_ACCEPT}
+                              className="hidden"
+                              onChange={e => {
+                                const file = e.target.files?.[0];
+                                if (file) onApplyTemporaryBubbleImage(selectedBubble.id, file);
+                                e.target.value = '';
+                              }}
+                            />
+                            <button
+                              type="button"
+                              title={t('仅替换当前气泡图片（不存入素材库）')}
+                              onClick={() => tempBubbleInputRef.current?.click()}
+                              className="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-600 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                            >
+                              {t('仅本页换图')}
+                            </button>
+                          </>
+                        )}
+                        {onUploadCustomAssets && (
+                          <>
+                            <input
+                              ref={bubbleAssetInputRef}
+                              type="file"
+                              multiple
+                              accept={COMIC_CUSTOM_ASSET_ACCEPT}
+                              className="hidden"
+                              onChange={e => {
+                                const files = Array.from(e.target.files || []);
+                                if (files.length > 0) {
+                                  onUploadCustomAssets(files, 'bubble', { applyToSelectedBubble: true });
+                                }
+                                e.target.value = '';
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => bubbleAssetInputRef.current?.click()}
+                              className="inline-flex items-center gap-0.5 rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200"
+                            >
+                              <Plus className="h-2.5 w-2.5" />
+                              <span>{t('导入')}</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {customBubbleAssets.length > 0 && (
+                      <div className="grid max-h-28 grid-cols-4 gap-1 overflow-y-auto">
+                        {customBubbleAssets.map(asset => {
+                          const active = selectedBubble.customAssetId === asset.id || selectedBubble.customImageUrl === asset.url;
+                          return (
+                            <button
+                              key={asset.id}
+                              type="button"
+                              title={asset.name}
+                              aria-pressed={active}
+                              onClick={() => {
+                                const box = computeNormalizedAssetBox(
+                                  asset.width || 512,
+                                  asset.height || 360,
+                                  draft.width,
+                                  draft.height,
+                                  Math.max(selectedBubble.width, selectedBubble.height, 0.28),
+                                );
+                                onUpdateBubble(selectedBubble.id, i => ({
+                                  ...i,
+                                  customAssetId: asset.id,
+                                  customImageUrl: asset.url,
+                                  hasTail: false,
+                                  width: box.width,
+                                  height: box.height,
+                                }), true);
+                              }}
+                              className={`flex flex-col items-center gap-0.5 rounded-md border p-1 transition ${active ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-950/60' : 'border-gray-200/80 bg-white hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800'}`}
+                            >
+                              <div
+                                className="flex h-6 w-full items-center justify-center overflow-hidden rounded-xs"
+                                style={{
+                                  backgroundImage: 'linear-gradient(45deg, rgba(148,163,184,0.2) 25%, transparent 25%), linear-gradient(-45deg, rgba(148,163,184,0.2) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(148,163,184,0.2) 75%), linear-gradient(-45deg, transparent 75%, rgba(148,163,184,0.2) 75%)',
+                                  backgroundSize: '8px 8px',
+                                  backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0',
+                                }}
+                              >
+                                <img src={asset.url} alt={asset.name} className="h-full w-full object-contain" />
+                              </div>
+                              <span className="w-full truncate text-center text-[9px] text-gray-600 dark:text-gray-300">{asset.name}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, writingMode: i.writingMode === 'vertical' ? 'horizontal' : 'vertical' }), true)}
-                    className="rounded-lg border border-gray-200 bg-white px-2 py-1 font-medium dark:border-gray-700 dark:bg-gray-800"
-                  >
-                    {selectedBubble.writingMode === 'vertical' ? t('排版：竖排') : t('排版：横排')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, hasTail: !i.hasTail }), true)}
-                    className="rounded-lg border border-gray-200 bg-white px-2 py-1 font-medium dark:border-gray-700 dark:bg-gray-800"
-                  >
-                    {selectedBubble.hasTail ? t('指向尾巴：开') : t('指向尾巴：关')}
-                  </button>
-                </div>
+                {isCustomBubble ? (
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, writingMode: i.writingMode === 'vertical' ? 'horizontal' : 'vertical' }), true)}
+                      className="rounded-lg border border-gray-200 bg-white px-1.5 py-1 font-medium dark:border-gray-700 dark:bg-gray-800"
+                    >
+                      {selectedBubble.writingMode === 'vertical' ? t('竖排') : t('横排')}
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={Boolean(selectedBubble.flipX)}
+                      onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, flipX: !i.flipX }), true)}
+                      className={`inline-flex items-center justify-center gap-1 rounded-lg border px-1.5 py-1 font-medium ${selectedBubble.flipX ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'}`}
+                    >
+                      <FlipHorizontal2 className="h-3 w-3" />
+                      <span>{t('水平翻转')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={Boolean(selectedBubble.flipY)}
+                      onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, flipY: !i.flipY }), true)}
+                      className={`inline-flex items-center justify-center gap-1 rounded-lg border px-1.5 py-1 font-medium ${selectedBubble.flipY ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'}`}
+                    >
+                      <FlipVertical2 className="h-3 w-3" />
+                      <span>{t('垂直翻转')}</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, writingMode: i.writingMode === 'vertical' ? 'horizontal' : 'vertical' }), true)}
+                      className="rounded-lg border border-gray-200 bg-white px-2 py-1 font-medium dark:border-gray-700 dark:bg-gray-800"
+                    >
+                      {selectedBubble.writingMode === 'vertical' ? t('排版：竖排') : t('排版：横排')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, hasTail: !i.hasTail }), true)}
+                      className="rounded-lg border border-gray-200 bg-white px-2 py-1 font-medium dark:border-gray-700 dark:bg-gray-800"
+                    >
+                      {selectedBubble.hasTail ? t('指向尾巴：开') : t('指向尾巴：关')}
+                    </button>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block">
                     <span className="mb-1 block text-gray-500">{t('字号')} {selectedBubble.fontSize}px</span>
                     <input type="range" min={12} max={56} value={selectedBubble.fontSize} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, fontSize: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
                   </label>
-                  <label className="block">
-                    <span className="mb-1 block text-gray-500">{t('漫画字体')}</span>
+                  <div className="block">
+                    <div className="mb-1 flex items-center justify-between gap-1">
+                      <span className="text-gray-500">{t('漫画字体')}</span>
+                      <button
+                        type="button"
+                        onClick={() => fontFileInputRef.current?.click()}
+                        className="text-[10px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                      >
+                        + {t('导入')}
+                      </button>
+                    </div>
                     <select
                       aria-label={t('气泡字体')}
                       value={selectedBubble.fontFamily || 'comic-sans'}
@@ -2850,33 +3095,35 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                         ))}
                       </optgroup>
                     </select>
-                  </label>
+                  </div>
                 </div>
 
                 {/* 快捷配色预设 */}
-                <div className="grid grid-cols-3 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, fillColor: '#ffffff', textColor: '#111827', strokeColor: '#111827', strokeWidth: i.strokeWidth || 3 }), true)}
-                    className={`rounded-md border px-2 py-1 text-[10px] font-semibold transition ${selectedBubble.fillColor === '#ffffff' && selectedBubble.textColor === '#111827' ? 'border-indigo-500 bg-white text-indigo-700' : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}
-                  >
-                    {t('白底黑字')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, fillColor: '#111827', textColor: '#ffffff', strokeColor: '#111827', strokeWidth: i.strokeWidth || 3 }), true)}
-                    className={`rounded-md border px-2 py-1 text-[10px] font-semibold transition ${selectedBubble.fillColor === '#111827' ? 'border-indigo-500 bg-gray-900 text-white' : 'border-gray-200 bg-gray-900 text-white opacity-85 hover:opacity-100'}`}
-                  >
-                    {t('黑底白字')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, fillColor: 'transparent', textColor: '#111827', strokeColor: '#ffffff', strokeWidth: 0 }), true)}
-                    className={`rounded-md border px-2 py-1 text-[10px] font-semibold transition ${selectedBubble.fillColor === 'transparent' ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white/70 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
-                  >
-                    {t('透明嵌字')}
-                  </button>
-                </div>
+                {!isCustomBubble && (
+                  <div className="grid grid-cols-3 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, fillColor: '#ffffff', textColor: '#111827', strokeColor: '#111827', strokeWidth: i.strokeWidth || 3 }), true)}
+                      className={`rounded-md border px-2 py-1 text-[10px] font-semibold transition ${selectedBubble.fillColor === '#ffffff' && selectedBubble.textColor === '#111827' ? 'border-indigo-500 bg-white text-indigo-700' : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}
+                    >
+                      {t('白底黑字')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, fillColor: '#111827', textColor: '#ffffff', strokeColor: '#111827', strokeWidth: i.strokeWidth || 3 }), true)}
+                      className={`rounded-md border px-2 py-1 text-[10px] font-semibold transition ${selectedBubble.fillColor === '#111827' ? 'border-indigo-500 bg-gray-900 text-white' : 'border-gray-200 bg-gray-900 text-white opacity-85 hover:opacity-100'}`}
+                    >
+                      {t('黑底白字')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateBubble(selectedBubble.id, i => ({ ...i, fillColor: 'transparent', textColor: '#111827', strokeColor: '#ffffff', strokeWidth: 0 }), true)}
+                      className={`rounded-md border px-2 py-1 text-[10px] font-semibold transition ${selectedBubble.fillColor === 'transparent' ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white/70 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                    >
+                      {t('透明嵌字')}
+                    </button>
+                  </div>
+                )}
 
                 {/* 低频外观细节（默认折叠） */}
                 <details className="group border-t border-indigo-200/60 pt-2 dark:border-indigo-900/50">
@@ -2888,45 +3135,85 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     <div className="grid grid-cols-2 gap-2">
                       <label className="block">
                         <span className="mb-1 block text-gray-500">{t('旋转')} {selectedBubble.rotation}°</span>
-                        <input type="range" aria-label={t('气泡旋转角度')} min={-45} max={45} value={selectedBubble.rotation} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, rotation: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+                        <input type="range" aria-label={t('气泡旋转角度')} min={isCustomBubble ? -180 : -45} max={isCustomBubble ? 180 : 45} value={selectedBubble.rotation} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, rotation: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
                       </label>
-                      <label className="block">
-                        <span className="mb-1 block text-gray-500">{t('边框粗细')} {selectedBubble.strokeWidth}px</span>
-                        <input type="range" aria-label={t('气泡边框粗细')} min={0} max={10} value={selectedBubble.strokeWidth} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, strokeWidth: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
-                      </label>
+                      {!isCustomBubble && (
+                        <label className="block">
+                          <span className="mb-1 block text-gray-500">{t('边框粗细')} {selectedBubble.strokeWidth}px</span>
+                          <input type="range" aria-label={t('气泡边框粗细')} min={0} max={10} value={selectedBubble.strokeWidth} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, strokeWidth: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+                        </label>
+                      )}
+                      {isCustomBubble && (
+                        <label className="flex items-center gap-1.5 pt-3 text-[11px] text-gray-600 dark:text-gray-300">
+                          <span>{t('字色')}</span>
+                          <input
+                            type="color"
+                            aria-label={t('气泡字色')}
+                            value={selectedBubble.textColor}
+                            onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, textColor: e.target.value }), true)}
+                            className="h-5 w-6 cursor-pointer rounded border border-gray-300 bg-transparent"
+                          />
+                        </label>
+                      )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-600 dark:text-gray-300">
-                      <label className="flex items-center gap-1">
-                        <span>{t('底色')}</span>
-                        <input
-                          type="color"
-                          aria-label={t('气泡底色')}
-                          value={selectedBubble.fillColor === 'transparent' ? '#ffffff' : selectedBubble.fillColor}
-                          onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, fillColor: e.target.value }), true)}
-                          className="h-5 w-6 cursor-pointer rounded border border-gray-300 bg-transparent"
-                        />
-                      </label>
-                      <label className="flex items-center gap-1">
-                        <span>{t('字色')}</span>
-                        <input
-                          type="color"
-                          aria-label={t('气泡字色')}
-                          value={selectedBubble.textColor}
-                          onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, textColor: e.target.value }), true)}
-                          className="h-5 w-6 cursor-pointer rounded border border-gray-300 bg-transparent"
-                        />
-                      </label>
-                      <label className="flex items-center gap-1">
-                        <span>{t('边框')}</span>
-                        <input
-                          type="color"
-                          aria-label={t('气泡边框颜色')}
-                          value={selectedBubble.strokeColor === 'transparent' ? '#111827' : selectedBubble.strokeColor}
-                          onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, strokeColor: e.target.value }), true)}
-                          className="h-5 w-6 cursor-pointer rounded border border-gray-300 bg-transparent"
-                        />
-                      </label>
-                    </div>
+
+                    {isCustomBubble ? (
+                      <div className="space-y-1.5">
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="block">
+                            <span className="mb-0.5 block text-[10px] text-gray-500">{t('文字水平内边距')} {Math.round((selectedBubble.textInsetX ?? 0.14) * 100)}%</span>
+                            <input type="range" min={4} max={40} value={Math.round((selectedBubble.textInsetX ?? 0.14) * 100)} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, textInsetX: Number(e.target.value) / 100 }), false)} className="w-full accent-indigo-600" />
+                          </label>
+                          <label className="block">
+                            <span className="mb-0.5 block text-[10px] text-gray-500">{t('文字垂直内边距')} {Math.round((selectedBubble.textInsetY ?? 0.14) * 100)}%</span>
+                            <input type="range" min={4} max={40} value={Math.round((selectedBubble.textInsetY ?? 0.14) * 100)} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, textInsetY: Number(e.target.value) / 100 }), false)} className="w-full accent-indigo-600" />
+                          </label>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="block">
+                            <span className="mb-0.5 block text-[10px] text-gray-500">{t('文字横向偏移')} {Math.round((selectedBubble.textOffsetX ?? 0) * 100)}%</span>
+                            <input type="range" min={-30} max={30} value={Math.round((selectedBubble.textOffsetX ?? 0) * 100)} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, textOffsetX: Number(e.target.value) / 100 }), false)} className="w-full accent-indigo-600" />
+                          </label>
+                          <label className="block">
+                            <span className="mb-0.5 block text-[10px] text-gray-500">{t('文字纵向偏移')} {Math.round((selectedBubble.textOffsetY ?? 0) * 100)}%</span>
+                            <input type="range" min={-30} max={30} value={Math.round((selectedBubble.textOffsetY ?? 0) * 100)} onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, textOffsetY: Number(e.target.value) / 100 }), false)} className="w-full accent-indigo-600" />
+                          </label>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-600 dark:text-gray-300">
+                        <label className="flex items-center gap-1">
+                          <span>{t('底色')}</span>
+                          <input
+                            type="color"
+                            aria-label={t('气泡底色')}
+                            value={selectedBubble.fillColor === 'transparent' ? '#ffffff' : selectedBubble.fillColor}
+                            onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, fillColor: e.target.value }), true)}
+                            className="h-5 w-6 cursor-pointer rounded border border-gray-300 bg-transparent"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <span>{t('字色')}</span>
+                          <input
+                            type="color"
+                            aria-label={t('气泡字色')}
+                            value={selectedBubble.textColor}
+                            onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, textColor: e.target.value }), true)}
+                            className="h-5 w-6 cursor-pointer rounded border border-gray-300 bg-transparent"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <span>{t('边框')}</span>
+                          <input
+                            type="color"
+                            aria-label={t('气泡边框颜色')}
+                            value={selectedBubble.strokeColor === 'transparent' ? '#111827' : selectedBubble.strokeColor}
+                            onChange={e => onUpdateBubble(selectedBubble.id, i => ({ ...i, strokeColor: e.target.value }), true)}
+                            className="h-5 w-6 cursor-pointer rounded border border-gray-300 bg-transparent"
+                          />
+                        </label>
+                      </div>
+                    )}
                   </div>
                 </details>
               </div>
@@ -2961,8 +3248,17 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                   <span className="mb-1 block text-gray-500">{t('字号')} {selectedText.fontSize}px</span>
                   <input type="range" min={14} max={96} value={selectedText.fontSize} onChange={e => onUpdateText(selectedText.id, i => ({ ...i, fontSize: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
                 </label>
-                <label className="block">
-                  <span className="mb-1 block text-gray-500">{t('漫画字体')}</span>
+                <div className="block">
+                  <div className="mb-1 flex items-center justify-between gap-1">
+                    <span className="text-gray-500">{t('漫画字体')}</span>
+                    <button
+                      type="button"
+                      onClick={() => fontFileInputRef.current?.click()}
+                      className="text-[10px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                    >
+                      + {t('导入')}
+                    </button>
+                  </div>
                   <select
                     aria-label={t('文字字体')}
                     value={selectedText.fontFamily || 'impact'}
@@ -2985,7 +3281,7 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                       ))}
                     </optgroup>
                   </select>
-                </label>
+                </div>
               </div>
               <div className="grid grid-cols-3 gap-1">
                 <button
@@ -3086,35 +3382,171 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
 
           {selectedImageLayer && (
             <div className="space-y-2.5 rounded-xl border border-indigo-200/80 bg-indigo-50/30 p-3 dark:border-indigo-900/60 dark:bg-indigo-950/20">
-              <div className="flex items-center justify-between">
-                <span className="truncate font-bold text-gray-800 dark:text-gray-100">{t('当前图片图层')} · {selectedImageLayer.name}</span>
-                <button type="button" aria-label={t('删除图片图层')} onClick={() => onDeleteImageLayer(selectedImageLayer.id)} className="rounded p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40">
-                  <Trash2 className="h-3.5 w-3.5" />
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <div
+                    className="flex h-7 w-7 flex-none items-center justify-center overflow-hidden rounded border border-gray-300/80 dark:border-gray-600"
+                    style={{
+                      backgroundImage: 'linear-gradient(45deg, rgba(148,163,184,0.22) 25%, transparent 25%), linear-gradient(-45deg, rgba(148,163,184,0.22) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(148,163,184,0.22) 75%), linear-gradient(-45deg, transparent 75%, rgba(148,163,184,0.22) 75%)',
+                      backgroundSize: '8px 8px',
+                      backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0',
+                    }}
+                  >
+                    <img src={selectedImageLayer.url} alt={selectedImageLayer.name} className="h-full w-full object-contain" />
+                  </div>
+                  <span className="truncate font-bold text-gray-800 dark:text-gray-100">{selectedImageLayer.name}</span>
+                </div>
+                <div className="flex flex-none items-center gap-1">
+                  {selectedImageLayer.url.startsWith('data:') && onSaveImageLayerToLibrary && (
+                    <button
+                      type="button"
+                      onClick={() => onSaveImageLayerToLibrary(selectedImageLayer)}
+                      className="rounded border border-indigo-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-800 dark:text-indigo-300"
+                    >
+                      {t('存素材库')}
+                    </button>
+                  )}
+                  <button type="button" aria-label={t('删除图片图层')} onClick={() => onDeleteImageLayer(selectedImageLayer.id)} className="rounded p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-1">
+                <button
+                  type="button"
+                  aria-pressed={Boolean(selectedImageLayer.flipX)}
+                  onClick={() => onUpdateImageLayer(selectedImageLayer.id, item => ({ ...item, flipX: !item.flipX }), true)}
+                  className={`inline-flex items-center justify-center gap-1 rounded-lg border px-1.5 py-1 text-[10px] font-medium ${selectedImageLayer.flipX ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'}`}
+                >
+                  <FlipHorizontal2 className="h-3 w-3" />
+                  <span>{t('水平')}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={Boolean(selectedImageLayer.flipY)}
+                  onClick={() => onUpdateImageLayer(selectedImageLayer.id, item => ({ ...item, flipY: !item.flipY }), true)}
+                  className={`inline-flex items-center justify-center gap-1 rounded-lg border px-1.5 py-1 text-[10px] font-medium ${selectedImageLayer.flipY ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'}`}
+                >
+                  <FlipVertical2 className="h-3 w-3" />
+                  <span>{t('垂直')}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={selectedImageLayer.lockAspect !== false}
+                  onClick={() => onUpdateImageLayer(selectedImageLayer.id, item => ({ ...item, lockAspect: item.lockAspect === false }), true)}
+                  className={`inline-flex items-center justify-center gap-1 rounded-lg border px-1.5 py-1 text-[10px] font-medium ${selectedImageLayer.lockAspect !== false ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'}`}
+                >
+                  {selectedImageLayer.lockAspect !== false ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+                  <span>{t('比例锁')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateImageLayer(selectedImageLayer.id, item => {
+                    const box = computeNormalizedAssetBox(
+                      item.naturalWidth || 512,
+                      item.naturalHeight || 512,
+                      draft.width,
+                      draft.height,
+                      Math.max(item.width, item.height, 0.3),
+                    );
+                    return { ...item, width: box.width, height: box.height, lockAspect: true };
+                  }, true)}
+                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200 bg-white px-1.5 py-1 text-[10px] font-medium hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>{t('原比例')}</span>
                 </button>
               </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
                   <span className="mb-1 block text-gray-500">{t('宽度')} {Math.round(selectedImageLayer.width * 100)}%</span>
-                  <input type="range" min={8} max={100} value={Math.round(selectedImageLayer.width * 100)} onChange={e => onUpdateImageLayer(selectedImageLayer.id, item => ({ ...item, width: Number(e.target.value) / 100 }), false)} className="w-full accent-indigo-600" />
+                  <input
+                    type="range"
+                    min={5}
+                    max={120}
+                    value={Math.round(selectedImageLayer.width * 100)}
+                    onChange={e => {
+                      const nextW = Number(e.target.value) / 100;
+                      onUpdateImageLayer(selectedImageLayer.id, item => {
+                        if (item.lockAspect !== false && item.width > 0) {
+                          const nextH = Math.min(1.5, Math.max(0.04, Number(((item.height / item.width) * nextW).toFixed(3))));
+                          return { ...item, width: nextW, height: nextH };
+                        }
+                        return { ...item, width: nextW };
+                      }, false);
+                    }}
+                    className="w-full accent-indigo-600"
+                  />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-gray-500">{t('高度')} {Math.round(selectedImageLayer.height * 100)}%</span>
-                  <input type="range" min={8} max={100} value={Math.round(selectedImageLayer.height * 100)} onChange={e => onUpdateImageLayer(selectedImageLayer.id, item => ({ ...item, height: Number(e.target.value) / 100 }), false)} className="w-full accent-indigo-600" />
+                  <input
+                    type="range"
+                    min={5}
+                    max={120}
+                    value={Math.round(selectedImageLayer.height * 100)}
+                    onChange={e => {
+                      const nextH = Number(e.target.value) / 100;
+                      onUpdateImageLayer(selectedImageLayer.id, item => {
+                        if (item.lockAspect !== false && item.height > 0) {
+                          const nextW = Math.min(1.5, Math.max(0.04, Number(((item.width / item.height) * nextH).toFixed(3))));
+                          return { ...item, width: nextW, height: nextH };
+                        }
+                        return { ...item, height: nextH };
+                      }, false);
+                    }}
+                    className="w-full accent-indigo-600"
+                  />
                 </label>
               </div>
-              <label className="block">
-                <span className="mb-1 block text-gray-500">{t('旋转')} {selectedImageLayer.rotation}°</span>
-                <input type="range" min={-180} max={180} value={selectedImageLayer.rotation} onChange={e => onUpdateImageLayer(selectedImageLayer.id, item => ({ ...item, rotation: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
-              </label>
+
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="mb-1 block text-gray-500">{t('旋转')} {selectedImageLayer.rotation}°</span>
+                  <input type="range" min={-180} max={180} value={selectedImageLayer.rotation} onChange={e => onUpdateImageLayer(selectedImageLayer.id, item => ({ ...item, rotation: Number(e.target.value) }), false)} className="w-full accent-indigo-600" />
+                </label>
+                {selectedImageLayerNode && (
+                  <label className="block">
+                    <span className="mb-1 block text-gray-500">{t('不透明度')} {Math.round(selectedImageLayerNode.opacity * 100)}%</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={Math.round(selectedImageLayerNode.opacity * 100)}
+                      onChange={e => updateLayerNodeProp(selectedImageLayerNode.id, node => ({ ...node, opacity: Number(e.target.value) / 100 }), false)}
+                      onMouseUp={() => updateLayerNodeProp(selectedImageLayerNode.id, node => node, true)}
+                      className="w-full accent-indigo-600"
+                    />
+                  </label>
+                )}
+              </div>
+
+              {selectedImageLayerNode && (
+                <label className="block">
+                  <span className="mb-1 block text-gray-500">{t('混合模式')}</span>
+                  <select
+                    aria-label={t('图片混合模式')}
+                    value={selectedImageLayerNode.blendMode}
+                    onChange={e => updateLayerNodeProp(selectedImageLayerNode.id, node => ({ ...node, blendMode: e.target.value as ComicBlendMode }), true)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                  >
+                    {COMIC_BLEND_MODES.map(mode => (
+                      <option key={mode.id} value={mode.id}>{t(mode.label)}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
           )}
 
-          {/* 本页气泡 / 文字 / 贴纸大纲列表 */}
+          {/* 本页气泡 / 文字 / 贴纸 / 图片大纲列表 */}
           <div className="space-y-1.5">
-            <div className="font-bold text-gray-700 dark:text-gray-200">{t('页面嵌字与贴纸')}</div>
+            <div className="font-bold text-gray-700 dark:text-gray-200">{t('页面嵌字与叠图')}</div>
             {overlayCount === 0 ? (
               <p className="rounded-lg border border-dashed border-gray-200 p-3 text-center text-[11px] text-gray-400 dark:border-gray-700">
-                {t('点击上方快捷按钮或画布底部工具栏添加气泡、文字或贴纸')}
+                {t('点击上方快捷按钮、拖入透明底图片或 Ctrl+V 粘贴添加')}
               </p>
             ) : (
               <div className="max-h-44 space-y-1 overflow-y-auto">
@@ -3125,7 +3557,11 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     onClick={() => onSelect({ kind: 'bubble', id: b.id })}
                     className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left ${selection?.kind === 'bubble' && selection.id === b.id ? 'border-indigo-400 bg-indigo-50/60 dark:border-indigo-500 dark:bg-indigo-950/40' : 'border-gray-200/80 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800/70'}`}
                   >
-                    <MessageCircle className="h-3.5 w-3.5 flex-none text-amber-500" />
+                    {b.customImageUrl ? (
+                      <img src={b.customImageUrl} alt="" className="h-4 w-4 flex-none object-contain" />
+                    ) : (
+                      <MessageCircle className="h-3.5 w-3.5 flex-none text-amber-500" />
+                    )}
                     <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-100">{b.text || t('空白气泡')}</span>
                   </button>
                 ))}
@@ -3153,11 +3589,189 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                     </span>
                   </button>
                 ))}
+                {(draft.imageLayers || []).map(img => (
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={() => onSelect({ kind: 'image', id: img.id })}
+                    className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left ${selection?.kind === 'image' && selection.id === img.id ? 'border-indigo-400 bg-indigo-50/60 dark:border-indigo-500 dark:bg-indigo-950/40' : 'border-gray-200/80 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800/70'}`}
+                  >
+                    <img src={img.url} alt="" className="h-4 w-4 flex-none rounded-xs object-contain" />
+                    <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-100">{img.name}</span>
+                  </button>
+                ))}
               </div>
             )}
           </div>
 
-          {/* 开源免费商用漫画字体库（按需缓存至 local-cache/comic-fonts/）+ 本机字体导入 */}
+          {/* 可复用的本地自定义素材库（气泡 & 透明底图片/贴纸） */}
+          <div className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                aria-expanded={assetLibraryOpen}
+                onClick={() => setAssetLibraryOpen(open => !open)}
+                className="flex items-center gap-1.5 font-bold text-gray-700 hover:text-indigo-600 dark:text-gray-200 dark:hover:text-indigo-300"
+              >
+                <ImagePlus className="h-3.5 w-3.5 text-emerald-500" />
+                <span>{t('自定义素材库')}</span>
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                  {customAssets.length}
+                </span>
+              </button>
+              {onUploadCustomAssets && (
+                <div>
+                  <input
+                    ref={libraryAssetInputRef}
+                    type="file"
+                    multiple
+                    accept={COMIC_CUSTOM_ASSET_ACCEPT}
+                    className="hidden"
+                    onChange={e => {
+                      const files = Array.from(e.target.files || []);
+                      if (files.length > 0) onUploadCustomAssets(files, assetLibraryTab);
+                      e.target.value = '';
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => libraryAssetInputRef.current?.click()}
+                    className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200"
+                  >
+                    <Upload className="h-3 w-3" /> {t('批量导入')}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {assetLibraryOpen && (
+              <div className="space-y-2 rounded-xl border border-gray-200/80 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-800/40">
+                <div className="grid grid-cols-2 gap-1 rounded-lg bg-gray-200/70 p-0.5 dark:bg-gray-900/70">
+                  <button
+                    type="button"
+                    onClick={() => setAssetLibraryTab('bubble')}
+                    className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${assetLibraryTab === 'bubble' ? 'bg-white text-indigo-700 shadow-xs dark:bg-gray-800 dark:text-indigo-200' : 'text-gray-600 dark:text-gray-400'}`}
+                  >
+                    {t('自定义气泡')} ({customBubbleAssets.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssetLibraryTab('image')}
+                    className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${assetLibraryTab === 'image' ? 'bg-white text-indigo-700 shadow-xs dark:bg-gray-800 dark:text-indigo-200' : 'text-gray-600 dark:text-gray-400'}`}
+                  >
+                    {t('图片与贴纸')} ({customImageAssets.length})
+                  </button>
+                </div>
+
+                {(() => {
+                  const list = assetLibraryTab === 'bubble' ? customBubbleAssets : customImageAssets;
+                  if (list.length === 0) {
+                    return (
+                      <p className="rounded-lg border border-dashed border-gray-200 bg-white/70 p-3 text-center text-[10px] text-gray-400 dark:border-gray-700 dark:bg-gray-900/40">
+                        {assetLibraryTab === 'bubble'
+                          ? t('支持导入透明底 PNG / WebP / SVG 气泡框')
+                          : t('支持导入透明底 PNG / WebP / GIF / SVG 贴纸与特效图')}
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="grid max-h-56 grid-cols-3 gap-1.5 overflow-y-auto">
+                      {list.map(asset => {
+                        const isRenaming = renamingAssetId === asset.id;
+                        return (
+                          <div
+                            key={asset.id}
+                            className="group relative flex flex-col overflow-hidden rounded-lg border border-gray-200/90 bg-white p-1 transition hover:border-indigo-400 dark:border-gray-700 dark:bg-gray-900"
+                          >
+                            <button
+                              type="button"
+                              title={asset.kind === 'bubble' ? t('点击添加该气泡到画布') : t('点击添加到画布')}
+                              onClick={() => onInsertCustomAsset?.(asset)}
+                              className="flex h-14 w-full items-center justify-center overflow-hidden rounded-md"
+                              style={{
+                                backgroundImage: 'linear-gradient(45deg, rgba(148,163,184,0.22) 25%, transparent 25%), linear-gradient(-45deg, rgba(148,163,184,0.22) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(148,163,184,0.22) 75%), linear-gradient(-45deg, transparent 75%, rgba(148,163,184,0.22) 75%)',
+                                backgroundSize: '10px 10px',
+                                backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0',
+                              }}
+                            >
+                              <img src={asset.url} alt={asset.name} className="h-full w-full object-contain" />
+                            </button>
+
+                            {isRenaming ? (
+                              <input
+                                type="text"
+                                autoFocus
+                                aria-label={t('重命名素材')}
+                                value={renameAssetValue}
+                                onChange={e => setRenameAssetValue(e.target.value)}
+                                onBlur={() => {
+                                  const clean = renameAssetValue.trim();
+                                  if (clean && clean !== asset.name) onRenameCustomAsset?.(asset.id, clean);
+                                  setRenamingAssetId(null);
+                                }}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') {
+                                    const clean = renameAssetValue.trim();
+                                    if (clean && clean !== asset.name) onRenameCustomAsset?.(asset.id, clean);
+                                    setRenamingAssetId(null);
+                                  } else if (e.key === 'Escape') {
+                                    setRenamingAssetId(null);
+                                  }
+                                }}
+                                className="mt-1 w-full rounded border border-indigo-400 px-1 py-0.5 text-[10px] outline-none dark:bg-gray-800 dark:text-white"
+                              />
+                            ) : (
+                              <div className="mt-1 flex items-center justify-between gap-0.5 px-0.5">
+                                <span className="min-w-0 flex-1 truncate text-[10px] font-medium text-gray-700 dark:text-gray-200">{asset.name}</span>
+                              </div>
+                            )}
+
+                            <div className="absolute top-1 right-1 flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+                              {asset.kind === 'bubble' && selectedBubble && (
+                                <button
+                                  type="button"
+                                  title={t('套用到当前选中气泡')}
+                                  onClick={() => onInsertCustomAsset?.(asset, selectedBubble.id)}
+                                  className="rounded bg-indigo-600/90 px-1 py-0.5 text-[9px] font-semibold text-white hover:bg-indigo-600"
+                                >
+                                  {t('替换')}
+                                </button>
+                              )}
+                              {onRenameCustomAsset && (
+                                <button
+                                  type="button"
+                                  aria-label={t('重命名素材 {0}', [asset.name])}
+                                  onClick={() => {
+                                    setRenamingAssetId(asset.id);
+                                    setRenameAssetValue(asset.name);
+                                  }}
+                                  className="rounded bg-white/90 p-0.5 text-gray-600 shadow-xs hover:text-indigo-600 dark:bg-gray-800/90 dark:text-gray-300"
+                                >
+                                  <Pencil className="h-2.5 w-2.5" />
+                                </button>
+                              )}
+                              {onDeleteCustomAsset && (
+                                <button
+                                  type="button"
+                                  aria-label={t('删除素材 {0}', [asset.name])}
+                                  onClick={() => onDeleteCustomAsset(asset.id)}
+                                  className="rounded bg-white/90 p-0.5 text-gray-500 shadow-xs hover:text-red-500 dark:bg-gray-800/90 dark:text-gray-300"
+                                >
+                                  <Trash2 className="h-2.5 w-2.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+
+          {/* 开源免费商用漫画字体库（按需缓存至 local-cache/comic-fonts/）+ 本机字体批量导入/预览/重命名/设默认 */}
           <div className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800">
             <div className="flex items-center justify-between gap-2">
               <button
@@ -3176,11 +3790,12 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                 <input
                   ref={fontFileInputRef}
                   type="file"
+                  multiple
                   accept=".ttf,.otf,.woff2,.woff"
                   className="hidden"
                   onChange={e => {
-                    const file = e.target.files?.[0];
-                    if (file) onUploadCustomFont(file);
+                    const files = Array.from(e.target.files || []);
+                    if (files.length > 0) onUploadCustomFont(files);
                     e.target.value = '';
                   }}
                 />
@@ -3197,10 +3812,11 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
             {fontManagerOpen && (
               <div className="space-y-1.5 rounded-xl border border-gray-200/80 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-800/40">
                 <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                  {t('开源商用字体，下载后离线生效')}
+                  {t('开源商用字体，支持批量导入 .ttf / .otf / .woff2')}
                 </p>
                 {fontCatalog.fonts.map(font => {
                   const isBusy = downloadingFontId === font.id || font.downloading;
+                  const isDefault = defaultFontId === font.id;
                   return (
                     <div
                       key={font.id}
@@ -3214,13 +3830,37 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                               {t('已缓存')}
                             </span>
                           )}
+                          {isDefault && (
+                            <span className="rounded bg-amber-50 px-1 py-0.5 text-[9px] font-bold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+                              {t('默认')}
+                            </span>
+                          )}
                         </div>
                         <div className="truncate text-[10px] text-gray-400">
                           {font.styleTag} · ~{font.approxSizeMB}MB
                         </div>
+                        {font.installed && (
+                          <div
+                            style={{ fontFamily: resolveComicFont(font.id).cssFamily }}
+                            className="mt-0.5 truncate text-[12px] text-gray-700 dark:text-gray-200"
+                          >
+                            {t('「就是现在！」 Abc 123')}
+                          </div>
+                        )}
                       </div>
                       {font.installed ? (
                         <div className="flex flex-none items-center gap-1">
+                          {onSetDefaultFont && (
+                            <button
+                              type="button"
+                              title={isDefault ? t('取消默认字体') : t('设为新建气泡/文字默认字体')}
+                              aria-label={isDefault ? t('取消默认字体') : t('设为默认字体')}
+                              onClick={() => onSetDefaultFont(font.id)}
+                              className={`rounded p-1 transition ${isDefault ? 'text-amber-500' : 'text-gray-400 hover:bg-amber-50 hover:text-amber-500 dark:hover:bg-amber-950/40'}`}
+                            >
+                              <Star className={`h-3 w-3 ${isDefault ? 'fill-amber-400' : ''}`} />
+                            </button>
+                          )}
                           {(selectedBubble || selectedText) && (
                             <button
                               type="button"
@@ -3260,36 +3900,104 @@ export const ComicInspector: React.FC<ComicInspectorProps> = ({
                 {fontCatalog.customFonts.length > 0 && (
                   <div className="space-y-1 border-t border-gray-200/80 pt-1.5 dark:border-gray-700">
                     <div className="text-[10px] font-semibold text-gray-500 dark:text-gray-400">{t('我导入的本机字体')}</div>
-                    {fontCatalog.customFonts.map(font => (
-                      <div
-                        key={font.id}
-                        className="flex items-center justify-between gap-2 rounded-lg border border-indigo-200/70 bg-white px-2 py-1 dark:border-indigo-900/60 dark:bg-gray-900"
-                      >
-                        <span className="min-w-0 flex-1 truncate font-medium text-gray-800 dark:text-gray-100">{font.name}</span>
-                        <div className="flex flex-none items-center gap-1">
-                          {(selectedBubble || selectedText) && (
+                    {fontCatalog.customFonts.map(font => {
+                      const isDefault = defaultFontId === font.id;
+                      const isRenaming = renamingFontId === font.id;
+                      return (
+                        <div
+                          key={font.id}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-indigo-200/70 bg-white px-2 py-1.5 dark:border-indigo-900/60 dark:bg-gray-900"
+                        >
+                          <div className="min-w-0 flex-1">
+                            {isRenaming ? (
+                              <input
+                                type="text"
+                                autoFocus
+                                aria-label={t('重命名字体')}
+                                value={renameFontValue}
+                                onChange={e => setRenameFontValue(e.target.value)}
+                                onBlur={() => {
+                                  const clean = renameFontValue.trim();
+                                  if (clean && clean !== font.name) onRenameCustomFont?.(font.id, clean);
+                                  setRenamingFontId(null);
+                                }}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') {
+                                    const clean = renameFontValue.trim();
+                                    if (clean && clean !== font.name) onRenameCustomFont?.(font.id, clean);
+                                    setRenamingFontId(null);
+                                  } else if (e.key === 'Escape') {
+                                    setRenamingFontId(null);
+                                  }
+                                }}
+                                className="w-full rounded border border-indigo-400 px-1 py-0.5 text-[11px] font-medium outline-none dark:bg-gray-800 dark:text-white"
+                              />
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <span className="min-w-0 truncate font-medium text-gray-800 dark:text-gray-100">{font.name}</span>
+                                {isDefault && (
+                                  <span className="rounded bg-amber-50 px-1 py-0.5 text-[9px] font-bold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+                                    {t('默认')}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            <div
+                              style={{ fontFamily: resolveComicFont(font.id).cssFamily }}
+                              className="mt-0.5 truncate text-[12px] text-gray-700 dark:text-gray-200"
+                            >
+                              {t('「就是现在！」 Abc 123')}
+                            </div>
+                          </div>
+                          <div className="flex flex-none items-center gap-0.5">
+                            {onSetDefaultFont && (
+                              <button
+                                type="button"
+                                title={isDefault ? t('取消默认字体') : t('设为新建气泡/文字默认字体')}
+                                aria-label={isDefault ? t('取消默认字体') : t('设为默认字体')}
+                                onClick={() => onSetDefaultFont(font.id)}
+                                className={`rounded p-1 transition ${isDefault ? 'text-amber-500' : 'text-gray-400 hover:bg-amber-50 hover:text-amber-500 dark:hover:bg-amber-950/40'}`}
+                              >
+                                <Star className={`h-3 w-3 ${isDefault ? 'fill-amber-400' : ''}`} />
+                              </button>
+                            )}
+                            {onRenameCustomFont && (
+                              <button
+                                type="button"
+                                aria-label={t('重命名字体 {0}', [font.name])}
+                                onClick={() => {
+                                  setRenamingFontId(font.id);
+                                  setRenameFontValue(font.name);
+                                }}
+                                className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                            )}
+                            {(selectedBubble || selectedText) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (selectedBubble) onUpdateBubble(selectedBubble.id, i => ({ ...i, fontFamily: font.id }), true);
+                                  else if (selectedText) onUpdateText(selectedText.id, i => ({ ...i, fontFamily: font.id }), true);
+                                }}
+                                className="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200"
+                              >
+                                {t('应用')}
+                              </button>
+                            )}
                             <button
                               type="button"
-                              onClick={() => {
-                                if (selectedBubble) onUpdateBubble(selectedBubble.id, i => ({ ...i, fontFamily: font.id }), true);
-                                else if (selectedText) onUpdateText(selectedText.id, i => ({ ...i, fontFamily: font.id }), true);
-                              }}
-                              className="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200"
+                              aria-label={t('删除导入字体 {0}', [font.name])}
+                              onClick={() => onDeleteFont(font.id)}
+                              className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40"
                             >
-                              {t('应用')}
+                              <Trash2 className="h-3 w-3" />
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            aria-label={t('删除导入字体 {0}', [font.name])}
-                            onClick={() => onDeleteFont(font.id)}
-                            className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

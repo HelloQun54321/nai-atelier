@@ -281,6 +281,87 @@ export const uploadCustomComicFont = async (file: File): Promise<{ imported: Com
   return { imported, state };
 };
 
+const COMIC_DEFAULT_FONT_STORAGE_KEY = 'nai_comic_default_font_v1';
+
+export const loadDefaultComicFontId = (): string | null => {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const val = localStorage.getItem(COMIC_DEFAULT_FONT_STORAGE_KEY);
+    return val && val.trim() ? val.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveDefaultComicFontId = (fontId: string | null): void => {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (fontId && fontId.trim()) {
+      localStorage.setItem(COMIC_DEFAULT_FONT_STORAGE_KEY, fontId.trim());
+    } else {
+      localStorage.removeItem(COMIC_DEFAULT_FONT_STORAGE_KEY);
+    }
+  } catch {
+    // 忽略隐私模式 storage 异常
+  }
+};
+
+export const renameCustomComicFont = async (id: string, name: string): Promise<ComicFontCatalogState> => {
+  const cleanName = name.replace(/\s+/g, ' ').trim().slice(0, 48);
+  if (!cleanName) throw new Error('字体名称不能为空');
+
+  const localTarget = sessionCustomFonts.find(item => item.id === id);
+  if (localTarget) {
+    localTarget.name = cleanName;
+    return fetchComicFontsStatus();
+  }
+
+  const res = await fetch(`/api/comic-fonts/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: cleanName }),
+  });
+  const data = await res.json().catch(() => ({})) as { error?: string; fonts?: ComicBuiltinFontItem[]; customFonts?: ComicCustomFontItem[] };
+  if (!res.ok) {
+    throw new Error(data.error || `重命名字体失败（HTTP ${res.status}）`);
+  }
+  const state: ComicFontCatalogState = {
+    fonts: Array.isArray(data.fonts) ? data.fonts : FALLBACK_BUILTIN_FONTS,
+    customFonts: [...(Array.isArray(data.customFonts) ? data.customFonts : []), ...sessionCustomFonts],
+    serverReachable: true,
+  };
+  await syncLoadedFontsFromState(state);
+  return state;
+};
+
+export const uploadCustomComicFonts = async (
+  files: File[],
+): Promise<{ imported: ComicCustomFontItem[]; failed: Array<{ filename: string; error: string }>; state: ComicFontCatalogState }> => {
+  const imported: ComicCustomFontItem[] = [];
+  const failed: Array<{ filename: string; error: string }> = [];
+  let latestState: ComicFontCatalogState | null = null;
+
+  for (const file of files) {
+    try {
+      const res = await uploadCustomComicFont(file);
+      imported.push(res.imported);
+      latestState = res.state;
+    } catch (error) {
+      failed.push({
+        filename: file.name,
+        error: error instanceof Error ? error.message : '导入失败',
+      });
+    }
+  }
+
+  return {
+    imported,
+    failed,
+    state: latestState || await fetchComicFontsStatus(),
+  };
+};
+
 export const deleteComicFont = async (id: string): Promise<ComicFontCatalogState> => {
   const localIdx = sessionCustomFonts.findIndex(item => item.id === id);
   if (localIdx >= 0) {
