@@ -206,7 +206,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                     type="button"
                                     aria-expanded={negativeOpen}
                                     onClick={() => setOpenNegativeIds(prev => ({ ...prev, [char.id]: !negativeOpen }))}
-                                    className="mobile-touch inline-flex items-center gap-1 rounded px-1 py-0.5 text-micro font-bold text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+                                    className="mobile-touch -ml-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-micro font-bold text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
                                 >
                                     {negativeOpen
                                         ? <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
