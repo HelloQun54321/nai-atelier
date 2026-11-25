@@ -253,7 +253,7 @@ it('统一整段编辑，旧场景与呈现形式完整显示，切页不改原�
   setup(entry);
   expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['全局', '角色', '参考', '参数']);
   expect(textPrompt().value).toBe(base + ', city street, poster layout');
-  expect(screen.queryByRole('button', { name: /切换为分类编辑|切换为整段编辑/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /编辑模式/ })).toBeNull();
   const before = structuredClone(state.agent!.draft);
   fireEvent.click(screen.getByRole('tab', { name: '角色' }));
   expect(screen.queryByRole('textbox', { name: '呈现形式' })).toBeNull();
@@ -267,16 +267,50 @@ it('统一整段编辑，旧场景与呈现形式完整显示，切页不改原�
   expect(state.agent?.draft.params._promptSections).toBeUndefined();
 });
 
-it('未接入分类开关时不出现切换，接入后才显示且整段分页不变', () => {
+it('未接入分类开关时不出现切换，接入后才显示且骰子仅在细分模式出现', () => {
   const view = setup();
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
-  expect(screen.queryByRole('button', { name: /切换为分类编辑/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /编辑模式/ })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
   expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['全局', '角色', '参考', '参数']);
-  view.rerender(<ChainEditor {...view.props} onSectionedPromptChange={vi.fn()} />);
+  // 原生模式下即使传入随机回调，顶栏也不显示全局随机搭配骰子
+  view.rerender(<ChainEditor {...view.props} onContentRollForGlobal={vi.fn()} />);
+  expect(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).queryByRole('button', { name: '随机搭配' })).toBeNull();
+  view.rerender(<ChainEditor {...view.props} onContentRollForGlobal={vi.fn()} onSectionedPromptChange={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
-  expect(screen.getByRole('button', { name: /切换为分类编辑/ })).toBeTruthy();
+  const modeButton = screen.getByRole('button', { name: /编辑模式/ });
+  expect(modeButton.textContent).toContain('原生');
   expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['全局', '角色', '参考', '参数']);
+  view.rerender(<ChainEditor {...view.props} sectionedPrompt onContentRollForGlobal={vi.fn()} onSectionedPromptChange={vi.fn()} />);
+  expect(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '随机搭配' })).toBeTruthy();
+});
+
+it('文生图空白处 Ctrl+V 粘贴 JSON 元数据可直接导入，在输入框内粘贴不受干扰', async () => {
+  setup();
+  await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
+
+  const dispatchPaste = (target: EventTarget, text: string) => {
+    const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(event, 'clipboardData', {
+      value: {
+        files: [] as File[],
+        items: [] as DataTransferItem[],
+        getData: (type: string) => (type === 'text/plain' ? text : ''),
+      },
+    });
+    act(() => { target.dispatchEvent(event); });
+    return event;
+  };
+
+  // 光标在文本框内时不拦截正常粘贴
+  const insideEvent = dispatchPaste(textPrompt(), '{"prompt":"ignored","steps":20}');
+  expect(insideEvent.defaultPrevented).toBe(false);
+  expect(textPrompt().value).toBe('saved style, subject');
+
+  // 非输入框处直接 Ctrl+V JSON 配置触发导入
+  const outsideEvent = dispatchPaste(document.body, JSON.stringify({ prompt: 'pasted prompt', uc: 'pasted uc', steps: 25, width: 832, height: 1216 }));
+  expect(outsideEvent.defaultPrevented).toBe(true);
+  await waitFor(() => expect(textPrompt().value).toBe('pasted prompt'));
 });
 
 describe('实验室参考分区', () => {
@@ -1261,7 +1295,7 @@ it.each(['playground', chain.id])('%s 局部重绘重置后默认聚焦，图生
   const view = setup({ ...chain, id });
   expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe('false');
   fireEvent.click(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '更多操作' }));
-  await act(async () => fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: '重置当前模式' })));
+  await act(async () => fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: /^重置当前模式/ })));
   await waitFor(() => expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe('true'));
   for (const label of ['图生图', '扩图']) {
     await switchTo(label);
@@ -1422,7 +1456,7 @@ describe('自由实验室图片只保留本次打开', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '移除编辑历史' })));
     expect(state.unlinkHistory).toHaveBeenCalledWith('old-0');
     fireEvent.click(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '更多操作' }));
-    await act(async () => fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: '重置当前模式' })));
+    await act(async () => fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: /^重置当前模式/ })));
     expect(screen.getByLabelText('编辑底图').textContent).toBe('');
     expect(screen.getByLabelText('编辑结果').textContent).toBe('');
     await switchTo('文生图');
@@ -1753,7 +1787,7 @@ describe('统一工作台真实状态链路', () => {
     await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.change(textPrompt(), { target: { value: 'temporary change' } });
     fireEvent.click(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '更多操作' }));
-    await act(async () => { fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: '重置当前模式' })); });
+    await act(async () => { fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: /^重置当前模式/ })); });
     expect(textPrompt().value).toBe('saved style, subject');
     expect(loadLabWorkspaceSession('playground', fallback()).textToImage.basePrompt).toBe('private playground draft');
     expect(view.props.onUpdateChain).not.toHaveBeenCalled();

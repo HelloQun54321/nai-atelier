@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorHeader } from '../../components/chain/ChainEditorHeader';
 
@@ -64,28 +64,59 @@ describe('实验室顶栏的反推入口', () => {
     expect(onReverseTag).toHaveBeenCalledOnce();
   });
 
-  it('桌面端将低频与辅助开关收入更多操作，保存使用绿色 save 语义', () => {
+  it('桌面端将低频与辅助开关收入更多操作，空白草稿保存按钮为中性态、有改动才变绿', () => {
     const handleReset = vi.fn();
     const onTagAssistEnabledChange = vi.fn();
     const onSectionedPromptChange = vi.fn();
-    render(<ChainEditorHeader {...baseProps({ handleReset, onTagAssistEnabledChange, onSectionedPromptChange, tagAssistEnabled: true })} />);
-    expect(screen.queryByRole('button', { name: '重置当前模式' })).toBeNull();
+    const view = render(<ChainEditorHeader {...baseProps({ handleReset, onTagAssistEnabledChange, onSectionedPromptChange, tagAssistEnabled: true })} />);
+    expect(screen.queryByRole('button', { name: /^重置当前模式/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Tag 辅助/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /切换为分类编辑/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /编辑模式/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /翻译所有未翻译提示词/ })).toBeNull();
-    expect(screen.getByRole('button', { name: '保存到库' }).getAttribute('data-tone')).toBe('save');
+    expect(screen.getByRole('button', { name: '保存到库' }).getAttribute('data-tone')).toBe('neutral');
     expect(screen.getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
+
+    view.rerender(<ChainEditorHeader {...baseProps({ handleReset, onTagAssistEnabledChange, onSectionedPromptChange, tagAssistEnabled: true, canSaveCurrentChain: true })} />);
+    expect(screen.getByRole('button', { name: '保存到库' }).getAttribute('data-tone')).toBe('save');
 
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     const tagRow = screen.getByRole('button', { name: /Tag 辅助/ });
     expect(tagRow.textContent).toContain('已开启');
-    expect(screen.getByRole('button', { name: /切换为分类编辑/ })).toBeTruthy();
+    const modeRow = screen.getByRole('button', { name: /编辑模式/ });
+    expect(modeRow.textContent).toContain('原生');
     expect(screen.getByRole('button', { name: /翻译所有未翻译提示词/ })).toBeTruthy();
     fireEvent.click(tagRow);
     expect(onTagAssistEnabledChange).toHaveBeenCalledWith(false);
 
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
-    fireEvent.click(screen.getByRole('button', { name: '重置当前模式' }));
+    fireEvent.click(screen.getByRole('button', { name: /编辑模式/ }));
+    expect(onSectionedPromptChange).toHaveBeenCalledWith(true);
+
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    const resetRow = screen.getByRole('button', { name: /重置当前模式/ });
+    expect(resetRow.textContent).toContain('图生图');
+    fireEvent.click(resetRow);
     expect(handleReset).toHaveBeenCalledOnce();
+  });
+
+  it('导入弹窗支持选择文件、从剪贴板导入与粘贴 JSON 文本', async () => {
+    const onImportFromClipboard = vi.fn(async () => true);
+    const onImportText = vi.fn(async () => true);
+    render(<ChainEditorHeader {...baseProps({ onImportFromClipboard, onImportText })} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '导入图片或 JSON 配置' }));
+    const dialog = screen.getByRole('dialog', { name: '导入图片或 JSON 配置' });
+    expect(dialog.querySelector('button svg')).toBeTruthy();
+    expect(dialog.textContent).toContain('选择文件');
+    fireEvent.click(screen.getByRole('button', { name: /从剪贴板导入/ }));
+    expect(onImportFromClipboard).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '导入图片或 JSON 配置' })).toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: '导入图片或 JSON 配置' }));
+    const textarea = screen.getByRole('textbox', { name: '粘贴 JSON 配置文本' });
+    fireEvent.change(textarea, { target: { value: '{"prompt":"1girl"}' } });
+    fireEvent.click(screen.getByRole('button', { name: '解析并导入' }));
+    expect(onImportText).toHaveBeenCalledWith('{"prompt":"1girl"}');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '导入图片或 JSON 配置' })).toBeNull());
   });
 });

@@ -48,9 +48,10 @@ import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createBlankLa
 import { DEFAULT_NAI_RUNTIME, useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
-import { compileCharacterContent } from '../services/characterPrompts';
+import { compileCharacterContent, hasCharacterSections } from '../services/characterPrompts';
 import { LabModuleSection } from './LabModuleSection';
-import { FileDown } from 'lucide-react';
+import { Import } from 'lucide-react';
+import { getPastedImageFile, isTextPasteTarget } from '../services/imageClipboard';
 import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags, isNativePromptText } from '../services/tagTranslations';
 import { UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
@@ -1163,15 +1164,23 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         return file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
     };
 
-    const isPngMetadataFile = (file: File) => {
-        return file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
+    const isImageMetadataFile = (file: File) => {
+        return ['image/png', 'image/webp', 'image/jpeg'].includes(file.type)
+            || /\.(?:png|webp|jpe?g)$/i.test(file.name);
     };
 
     const normalizeMetadataFile = (file: File) => {
-        if (file.name.toLowerCase().endsWith('.png')) {
+        const lowerName = file.name.toLowerCase();
+        if (lowerName.endsWith('.png') && file.type !== 'image/png') {
             return new File([file], file.name, { type: 'image/png' });
         }
-        if (file.name.toLowerCase().endsWith('.json') && file.type !== 'application/json') {
+        if (lowerName.endsWith('.webp') && file.type !== 'image/webp') {
+            return new File([file], file.name, { type: 'image/webp' });
+        }
+        if ((lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) && file.type !== 'image/jpeg') {
+            return new File([file], file.name, { type: 'image/jpeg' });
+        }
+        if (lowerName.endsWith('.json') && file.type !== 'application/json') {
             return new File([file], file.name, { type: 'application/json' });
         }
         return file;
@@ -1181,10 +1190,19 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         return extractRawMetadataFromJsonText(await file.text());
     };
 
-    const applyRawMetadata = async (rawMeta: string, sourceLabel: string) => {
+    const applyRawMetadata = async (
+        rawMeta: string,
+        sourceLabel: string,
+        options?: { fromClipboardImage?: boolean },
+    ): Promise<boolean> => {
         if (!rawMeta) {
-            notify(`无法读取${sourceLabel}元数据`, 'error');
-            return;
+            notify(
+                options?.fromClipboardImage
+                    ? '无法读取剪贴板图片元数据（浏览器直接复制图片可能会清除元数据，建议复制原图文件或拖入导入）'
+                    : `无法读取${sourceLabel}元数据`,
+                'error',
+            );
+            return false;
         }
 
         try {
@@ -1193,7 +1211,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 updateEditDraft(activeEditOperation, buildImageEditMetadataPatch(parsed.prompt, parsed.negativePrompt, parsed.params));
                 const modeLabel = activeEditOperation === 'image-to-image' ? '图生图' : activeEditOperation === 'inpaint' ? '局部重绘' : '扩图';
                 notify(`已将完整提示词、角色与生成参数导入当前${modeLabel}页面。`);
-                return;
+                return true;
             }
             setBasePrompt(parsed.prompt);
             setSubjectPrompt('');
@@ -1203,32 +1221,152 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             clearPresetSources();
             markChange();
             notify('已将完整提示词导入全局提示词，并恢复角色与生成参数。');
+            return true;
         } catch (e: any) {
             notify('解析失败: ' + e.message, 'error');
+            return false;
         }
     };
 
-    const importMetadataFile = async (file: File) => {
-
+    const importMetadataFile = async (file: File, options?: { fromClipboard?: boolean }): Promise<boolean> => {
         const normalizedFile = normalizeMetadataFile(file);
         if (isJsonMetadataFile(normalizedFile)) {
             try {
                 const rawMeta = await extractRawMetadataFromJson(normalizedFile);
-                await applyRawMetadata(rawMeta, 'JSON');
+                return await applyRawMetadata(rawMeta, 'JSON');
             } catch (e: any) {
                 notify('读取 JSON 失败: ' + e.message, 'error');
+                return false;
             }
-            return;
         }
 
-        if (!isPngMetadataFile(normalizedFile)) {
-            notify('目前只支持导入 PNG 图片或 JSON 元数据文件', 'error');
-            return;
+        if (!isImageMetadataFile(normalizedFile)) {
+            notify('目前只支持导入 PNG / WebP / JPEG 图片或 JSON 元数据文件', 'error');
+            return false;
         }
 
         const rawMeta = await extractMetadata(normalizedFile);
-        await applyRawMetadata(rawMeta || '', '图片');
+        return await applyRawMetadata(
+            rawMeta || '',
+            options?.fromClipboard ? '剪贴板图片' : '图片',
+            { fromClipboardImage: options?.fromClipboard },
+        );
     };
+
+    const importMetadataText = async (rawText: string, sourceLabel = 'JSON'): Promise<boolean> => {
+        const trimmed = rawText.trim();
+        if (!trimmed) {
+            notify('请先粘贴 JSON 配置或元数据文本', 'error');
+            return false;
+        }
+        const rawMeta = extractRawMetadataFromJsonText(trimmed);
+        return await applyRawMetadata(rawMeta, sourceLabel);
+    };
+
+    const importMetadataFromClipboard = async (): Promise<boolean> => {
+        if (window.isSecureContext !== false && navigator.clipboard?.read) {
+            try {
+                const items = await navigator.clipboard.read();
+                const imageTypes = ['image/png', 'image/webp', 'image/jpeg'] as const;
+                const imageExtensions: Record<typeof imageTypes[number], string> = {
+                    'image/png': 'png',
+                    'image/webp': 'webp',
+                    'image/jpeg': 'jpg',
+                };
+                for (const item of items) {
+                    const imageType = imageTypes.find(type => item.types.includes(type));
+                    if (imageType) {
+                        const blob = await item.getType(imageType);
+                        const file = new File([blob], `clipboard.${imageExtensions[imageType]}`, { type: imageType });
+                        return await importMetadataFile(file, { fromClipboard: true });
+                    }
+                }
+                for (const item of items) {
+                    if (item.types.includes('text/plain')) {
+                        const textBlob = await item.getType('text/plain');
+                        const text = (await textBlob.text()).trim();
+                        if (text) return await importMetadataText(text, '剪贴板');
+                    }
+                }
+                if (navigator.clipboard.readText) {
+                    const fallbackText = (await navigator.clipboard.readText()).trim();
+                    if (fallbackText) return await importMetadataText(fallbackText, '剪贴板');
+                }
+                notify('剪贴板中没有可导入的图片或 JSON 配置', 'error');
+                return false;
+            } catch (error) {
+                if (error instanceof Error && error.name === 'NotAllowedError') {
+                    notify('剪贴板读取未获允许，请允许浏览器访问，或直接按 Ctrl+V 粘贴', 'error');
+                    return false;
+                }
+                if (navigator.clipboard.readText) {
+                    try {
+                        const fallbackText = (await navigator.clipboard.readText()).trim();
+                        if (fallbackText) return await importMetadataText(fallbackText, '剪贴板');
+                    } catch {
+                        // 转入统一失败提示
+                    }
+                }
+                notify('剪贴板读取失败，请直接按 Ctrl+V 粘贴，或选择文件导入', 'error');
+                return false;
+            }
+        }
+        if (navigator.clipboard?.readText) {
+            try {
+                const text = (await navigator.clipboard.readText()).trim();
+                if (text) return await importMetadataText(text, '剪贴板');
+            } catch {
+                // 转入不支持图片读取提示
+            }
+        }
+        notify('当前浏览器不支持直接读取剪贴板图片，请直接按 Ctrl+V 粘贴，或选择文件导入', 'error');
+        return false;
+    };
+
+    const handleImportPasteRef = useRef<(event: ClipboardEvent) => void>(() => {});
+    handleImportPasteRef.current = (event: ClipboardEvent) => {
+        if (!event.clipboardData) return;
+        if (isTextPasteTarget(event.target)) return;
+        if (reverseTagOpen || lightboxImg || agentProposal) return;
+        const importPopoverOpen = Boolean(document.querySelector('[data-import-metadata-popover="true"]'));
+        const otherDialog = Array.from(document.querySelectorAll('[role="dialog"]'))
+            .some(dialog => !dialog.querySelector('[data-import-metadata-popover="true"]') && !dialog.hasAttribute('data-import-metadata-popover'));
+        if (otherDialog) return;
+        if (activeGenerationMode !== 'text-to-image' && !importPopoverOpen) return;
+
+        const imageFile = getPastedImageFile(event.clipboardData);
+        if (imageFile) {
+            event.preventDefault();
+            void importMetadataFile(imageFile, { fromClipboard: true });
+            return;
+        }
+
+        const jsonFile = Array.from(event.clipboardData.files || []).find(isJsonMetadataFile);
+        if (jsonFile) {
+            event.preventDefault();
+            void importMetadataFile(jsonFile);
+            return;
+        }
+
+        const text = event.clipboardData.getData('text/plain')?.trim() || '';
+        if (text.startsWith('{') && text.endsWith('}')) {
+            try {
+                const parsed = JSON.parse(text);
+                if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                    event.preventDefault();
+                    void importMetadataText(text, '剪贴板 JSON');
+                }
+            } catch {
+                // 非完整 JSON 普通文本静默放行
+            }
+        }
+    };
+
+    useEffect(() => {
+        const onPaste = (event: ClipboardEvent) => handleImportPasteRef.current(event);
+        window.addEventListener('paste', onPaste);
+        return () => window.removeEventListener('paste', onPaste);
+    }, []);
 
     const handleImportImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -1243,7 +1381,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
 
     const getDroppedImageFile = (dataTransfer: DataTransfer) => {
         const files = Array.from(dataTransfer.files || []);
-        return files.find(file => file.type.startsWith('image/') || isPngMetadataFile(file) || isJsonMetadataFile(file)) || null;
+        return files.find(file => file.type.startsWith('image/') || isImageMetadataFile(file) || isJsonMetadataFile(file)) || null;
     };
 
     const getDroppedImageUrl = (dataTransfer: DataTransfer) => {
@@ -1639,7 +1777,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 basePrompt: compileCharacterContent(character).prompt,
                 negativePrompt: compileCharacterContent(character).negativePrompt || '',
                 modules: [],
-                params: { ...roleParams, characters: [], vibes: undefined, characterReferences: undefined },
+                params: { ...roleParams, characters: hasCharacterSections(character) ? [{ ...character, name, enabled: true }] : [], vibes: undefined, characterReferences: undefined },
                 variableValues: { subject: '' },
                 previewImage: cover.previewImage,
             });
@@ -2291,10 +2429,10 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 <div className="pointer-events-none absolute inset-0 z-[80] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm">
                     <div className="appearance-group mx-4 max-w-sm rounded-lg border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center shadow-2xl dark:bg-gray-900/95 dark:border-indigo-300">
                         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
-                            <FileDown className="h-6 w-6" />
+                            <Import className="h-6 w-6" />
                         </div>
                         <div className="text-base font-bold text-gray-900 dark:text-white">{t("松手导入配置")}</div>
-                        <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t("PNG / JSON · 替换提示词与参数")}</div>
+                        <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t("PNG / WebP / JPEG / JSON · 替换提示词与参数")}</div>
                     </div>
                 </div>
             )}
@@ -2323,6 +2461,8 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 handleFork={handleFork}
                 handleSaveAll={handleSaveAll}
                 handleImportImage={handleImportImage}
+                onImportFromClipboard={importMetadataFromClipboard}
+                onImportText={text => importMetadataText(text)}
                 onTranslateMissingPrompts={() => { void translateAllMissingPromptTags(); }}
                 translationPending={translationPending}
                 notify={notify}
@@ -2369,8 +2509,8 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             />
             {agentProposal && (!agentProposal.draft.target || agentProposal.draft.target.chainId === chain.id && agentProposal.draft.target.mode === activeGenerationMode) && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal.draft} onClose={() => setAgentProposal(null)} onApply={async draft => { await applyGuardedAgentDraft(draft, agentProposal.onApplied, agentProposal.beforeApply); setAgentProposal(null); }}/>}
             {activeGenerationMode === 'text-to-image' ? <>
-            <PromptLibraryRandomButton purposes={LAB_PICTURE_PURPOSES} toolbarSlot={promptToolbarSlot}
-                disabled={isGenerating} fallback={onContentRollForGlobal} />
+            {sectionedActive && <PromptLibraryRandomButton purposes={LAB_PICTURE_PURPOSES} toolbarSlot={promptToolbarSlot}
+                disabled={isGenerating} fallback={onContentRollForGlobal} />}
             {sectionedActive ? <LabEditorTabs key={`${chain.id}:sectioned`} value={categoryTab} options={labCategoryTabOptions(supportsReferences)} onChange={setCategoryTab} /> : <LabEditorTabs key={chain.id} value={mobileEditorTab} options={supportsReferences
                 ? [['global', '全局'], ['character', '角色'], ['reference', '参考'], ['params', '参数']]
                 : [['global', '全局'], ['character', '角色'], ['params', '参数']]} onChange={setMobileEditorTab} />}

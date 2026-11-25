@@ -88,25 +88,25 @@ const renderHeader = (props: Partial<Parameters<typeof ChainEditorHeader>[0]> = 
 };
 
 describe('ChainEditorHeader 工具栏', () => {
-  it('桌面不再提供分类或整段切换，原提示词工具槽位及其他动作保留', () => {
+  it('桌面端按 Plan A 在更多操作收拢低频辅助项，并保留提示词工具槽位与导入弹窗入口', () => {
     const slot = vi.fn();
     const view = renderHeader({ onPromptToolbarSlotChange: slot });
     expect(view.queryByRole('tablist', { name: '提示词编辑方式' })).toBeNull();
-    expect(view.queryByRole('button', { name: /切换为.*编辑/ })).toBeNull();
+    expect(view.queryByRole('button', { name: /编辑模式/ })).toBeNull();
     expect(view.container.querySelector('.lucide-list-tree, .lucide-text-align-start')).toBeNull();
     expect(slot.mock.lastCall?.[0]?.variant).toBe('icon');
     expect(slot.mock.lastCall?.[0]?.element.closest('.chain-editor-actions')).toBeTruthy();
     expect(view.getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
-    expect(view.getByRole('button', { name: '翻译所有未翻译提示词' })).toBeTruthy();
+    expect(view.getByRole('button', { name: '更多操作' })).toBeTruthy();
   });
 
-  it('窄屏没有编辑方式切换，更多菜单仍提供提示词工具槽位且关闭释放', () => {
+  it('窄屏不显示编辑模式开关时，更多菜单仍提供提示词工具槽位且关闭释放', () => {
     workWidth = 390; vi.stubGlobal('innerWidth', 390);
     const slot = vi.fn();
     renderHeader({ onPromptToolbarSlotChange: slot });
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     const dialog = screen.getByRole('dialog', { name: '更多操作' });
-    expect(within(dialog).queryByRole('button', { name: /切换为.*编辑/ })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: /编辑模式/ })).toBeNull();
     expect(slot.mock.lastCall?.[0]?.variant).toBe('menu');
     expect(dialog.contains(slot.mock.lastCall?.[0]?.element)).toBe(true);
     expect(within(dialog).getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
@@ -115,12 +115,12 @@ describe('ChainEditorHeader 工具栏', () => {
     expect(slot.mock.lastCall?.[0]).toBeNull();
   });
 
-  it('桌面宽栏直接显示动作，手机收纳且模式导航与更多保持同一行', () => {
+  it('桌面宽栏直接显示动作栏与更多操作，手机收纳进更多底部抽屉', () => {
     const { container, getByRole } = renderHeader();
     const actions = container.querySelector('.chain-editor-actions') as HTMLElement;
     expect(actions).toBeTruthy();
     expect(actions.classList.contains('flex')).toBe(true);
-    expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull();
+    expect(getByRole('button', { name: '更多操作' })).toBeTruthy();
     expect(container.querySelector('header')?.classList.contains('grid-cols-2')).toBe(true);
     resizeWorkspace(390, 390);
     expect(container.querySelector('.chain-editor-actions')).toBeNull();
@@ -143,10 +143,11 @@ describe('ChainEditorHeader 工具栏', () => {
     expect(within(dialog).getByRole('button', { name: '翻译所有未翻译提示词' })).toBeTruthy();
     expect(within(dialog).queryByRole('button', { name: '图片反推 Tag' })).toBeNull();
     expect(within(dialog).getByRole('button', { name: /^Tag 辅助/ })).toBeTruthy();
-    expect(within(dialog).getByRole('button', { name: '重置当前模式' })).toBeTruthy();
+    const resetButton = within(dialog).getByRole('button', { name: /^重置当前模式/ });
+    expect(resetButton.textContent).toContain('文生图');
     expect(within(dialog).getByRole('button', { name: '保存到库' })).toBeTruthy();
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '重置当前模式' }));
+    fireEvent.click(resetButton);
     expect(handleReset).toHaveBeenCalledOnce();
     expect(queryByRole('dialog', { name: '更多操作' })).toBeNull();
   });
@@ -163,22 +164,26 @@ describe('ChainEditorHeader 工具栏', () => {
     expect(notify).toHaveBeenCalledWith('Tag 辅助已开启');
   });
 
-  it.each([false, true])('两种资料入口和自由实验室共用工具顺序，角色模式=%s', isCharacterMode => {
+  it.each([false, true])('两种资料入口共用顶栏与更多菜单动作，角色模式=%s', isCharacterMode => {
     const onTranslateMissingPrompts = vi.fn(); const handleReset = vi.fn();
     const { container } = renderHeader({ chainId: 'asset-1', isCharacterMode, hasChanges: true, onTranslateMissingPrompts, handleReset });
     const actions = container.querySelector('.chain-editor-actions') as HTMLElement;
     expect(within(actions).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
-      '导入图片或 JSON 配置', '翻译所有未翻译提示词', '开启 Tag 辅助', '重置当前模式', isCharacterMode ? '保存自定义角色' : '保存风格串',
+      '导入图片或 JSON 配置', isCharacterMode ? '保存自定义角色' : '保存风格串', '更多操作',
     ]);
-    fireEvent.click(within(actions).getByRole('button', { name: '翻译所有未翻译提示词' }));
+    fireEvent.click(within(actions).getByRole('button', { name: '更多操作' }));
+    const desktopMore = screen.getByRole('dialog', { name: '更多操作' });
+    fireEvent.click(within(desktopMore).getByRole('button', { name: '翻译所有未翻译提示词' }));
     expect(onTranslateMissingPrompts).toHaveBeenCalledOnce();
-    fireEvent.click(within(actions).getByRole('button', { name: '重置当前模式' }));
+    fireEvent.click(within(actions).getByRole('button', { name: '更多操作' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: /^重置当前模式/ }));
     expect(handleReset).toHaveBeenCalledOnce();
+
     resizeWorkspace(550);
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     const more = screen.getByRole('dialog', { name: '更多操作' });
     expect(within(more).getAllByRole('button').map(button => button.textContent?.trim()).filter(Boolean)).toEqual([
-      '导入图片或 JSON 配置', '翻译所有未翻译提示词', 'Tag 辅助已关闭', '重置当前模式',
+      '导入图片或 JSON 配置', 'Tag 辅助已关闭', '翻译所有未翻译提示词', '重置当前模式文生图',
     ]);
     fireEvent.click(within(more).getByRole('button', { name: '翻译所有未翻译提示词' }));
     expect(onTranslateMissingPrompts).toHaveBeenCalledTimes(2);
@@ -226,6 +231,7 @@ describe('ChainEditorHeader 工具栏', () => {
   });
 
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('模式 %s 的顶栏跟随预览分栏，只有纵排时整组动作进入锚定菜单', activeGenerationMode => {
+    const modeLabel = { 'text-to-image': '文生图', 'image-to-image': '图生图', inpaint: '局部重绘', outpaint: '扩图' }[activeGenerationMode];
     const handleFork = vi.fn();
     const view = renderHeader({ activeGenerationMode, handleFork });
     expect(view.container.querySelector('.chain-editor-actions')).toBeTruthy();
@@ -233,7 +239,7 @@ describe('ChainEditorHeader 工具栏', () => {
     expect(window.innerWidth).toBe(1600);
     expect(view.container.querySelector('.chain-editor-actions')).toBeTruthy();
     expect(view.container.querySelector('header')?.classList.contains('grid-cols-2')).toBe(true);
-    expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull();
+    expect(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '更多操作' })).toBeTruthy();
     resizeWorkspace(560);
     expect(view.container.querySelector('.chain-editor-actions')).toBeTruthy();
     expect(view.container.querySelector('header')?.classList.contains('grid-cols-2')).toBe(true);
@@ -247,7 +253,7 @@ describe('ChainEditorHeader 工具栏', () => {
     expect(dialog.closest('main')).toBeNull();
     expect(dialog.closest('.safe-mode.dark')).toBeTruthy();
     expect(within(dialog).getAllByRole('button').map(button => button.textContent?.trim())).toEqual([
-      '导入图片或 JSON 配置', '翻译所有未翻译提示词', 'Tag 辅助已关闭', '重置当前模式', '保存到库',
+      '导入图片或 JSON 配置', 'Tag 辅助已关闭', '翻译所有未翻译提示词', `重置当前模式${modeLabel}`, '保存到库',
     ]);
     fireEvent.click(within(dialog).getByRole('button', { name: '保存到库' }));
     expect(handleFork).toHaveBeenCalledOnce();
@@ -255,7 +261,7 @@ describe('ChainEditorHeader 工具栏', () => {
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     resizeWorkspace(560);
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull();
+    expect(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '更多操作' })).toBeTruthy();
     expect(view.container.querySelector('header')?.classList.contains('grid-cols-2')).toBe(true);
     expect(view.container.querySelector('.chain-editor-actions')).toBeTruthy();
   });
@@ -277,7 +283,7 @@ describe('ChainEditorHeader 工具栏', () => {
   it('字号不单独改变分栏，桌面切手机或模式切换关闭原菜单', async () => {
     const view = renderHeader();
     document.documentElement.style.fontSize = '20px';
-    expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull();
+    expect(view.container.querySelector('.chain-editor-actions')).toBeTruthy();
     expect(view.container.querySelector('header')?.classList.contains('grid-cols-2')).toBe(true);
     resizeWorkspace(550);
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
@@ -298,10 +304,10 @@ describe('ChainEditorHeader 工具栏', () => {
     const view = renderHeader();
     const workspace = view.container.querySelector('.workspace-container')!;
     act(() => workspace.classList.add('workspace-editor-compact'));
-    await waitFor(() => expect(screen.getByRole('button', { name: '更多操作' })).toBeTruthy());
+    await waitFor(() => expect(view.container.querySelector('.chain-editor-actions')).toBeNull());
     expect(view.container.querySelector('header')?.classList.contains('grid-cols-1')).toBe(true);
     act(() => workspace.classList.remove('workspace-editor-compact'));
-    await waitFor(() => expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull());
+    await waitFor(() => expect(view.container.querySelector('.chain-editor-actions')).toBeTruthy());
     expect(view.container.querySelector('header')?.classList.contains('grid-cols-2')).toBe(true);
   });
 });
