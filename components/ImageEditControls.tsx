@@ -1,7 +1,7 @@
 import type { PromptToolbarSlot } from './PromptLibraryAccess';
 import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
-import { ClipboardPaste, Contrast, Eraser, ImagePlus, Images, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
+import { ClipboardPaste, Contrast, Eraser, ImagePlus, Images, Redo2, Undo2 } from 'lucide-react';
 import { CharacterParams, ImageEditCanvasExpansion, ImageEditOperation, ImageToImageSizeMode, LabImageEditDraft, LocalGenItem, NAIParams, PromptChain } from '../types';
 import { DEFAULT_LAB_PAGE_LAYOUTS, LabPageLayout } from '../services/appearancePreferences';
 import { isNaiMediumModel, getRuntimeNaiModelInfo } from '../services/naiModels';
@@ -162,9 +162,9 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           <button disabled={isBusy || safeMode} type="button" onClick={onResetFocusedRect} className="h-8 w-full rounded-lg bg-amber-50 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-amber-950/30 dark:text-amber-300">{t("重新框选区域")}</button>
         )}
         <div className="grid grid-cols-4 gap-1">
-          <button disabled={isBusy || safeMode} type="button" onClick={onUndo} className="appearance-group flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("撤销")}><RotateCcw className="h-4 w-4" /></button>
-          <button disabled={isBusy || safeMode} type="button" onClick={onRedo} className="appearance-group flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("重做")}><RotateCw className="h-4 w-4" /></button>
-          <button disabled={isBusy || safeMode} type="button" onClick={onClearMask} className="appearance-group flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("清空蒙版")}><Trash2 className="h-4 w-4" /></button>
+          <button disabled={isBusy || safeMode} type="button" onClick={onUndo} className="appearance-group flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("撤销")}><Undo2 className="h-4 w-4" /></button>
+          <button disabled={isBusy || safeMode} type="button" onClick={onRedo} className="appearance-group flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("重做")}><Redo2 className="h-4 w-4" /></button>
+          <button disabled={isBusy || safeMode} type="button" onClick={onClearMask} className="appearance-group flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("清空蒙版")}><Eraser className="h-4 w-4" /></button>
           <button disabled={isBusy || safeMode} type="button" onClick={onInvertMask} className="appearance-group flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("反转蒙版")}><Contrast className="h-4 w-4" /></button>
         </div>
       </div>
@@ -191,24 +191,21 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
             </div>
             <TagAutocompleteTextarea
               clearActionSlotRef={promptClearActionSlotRef}
-              promptTidy={{ notify }}
+              libraryField={{ lockedSection: 'saved' }}
+              promptTidy={{ notify, hideProofread: true }}
+              onCopy={val => { void navigator.clipboard?.writeText(val); notify(t("提示词已复制")); }}
+              copyTitle={t("复制提示词")}
               tagAssistEnabled={tagAssistEnabled}
               disabled={isBusy}
               value={draft.prompt}
               onValueChange={value => onDraftChange({ prompt: value, promptSource: 'custom', negativePrompt: getEditableGlobalNegative(draft.negativePrompt, selectableParams._promptSections), params: { ...selectableParams, _promptSections: undefined } })}
               className="min-h-28 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              placeholder={
-                operation === 'outpaint'
-                  ? t("扩图提示词")
-                  : operation === 'inpaint'
-                  ? t("重绘提示词")
-                  : t("图生图提示词")
-              }
+              placeholder=""
             />
           </div>
-          <div className={isNaiMediumModel(selectableParams.model) ? 'nai-model-locked' : undefined} title={isNaiMediumModel(selectableParams.model) ? t('Medium 不支持负面提示词') : undefined}><div className="mb-2 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100">{t("全局负面提示词")}</label><span ref={negativeClearActionSlotRef} /></div><TagAutocompleteTextarea libraryField={{ negative: true }} clearActionSlotRef={negativeClearActionSlotRef} aria-label={t('全局负面提示词')} tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(selectableParams.model)} disabled={isBusy || isNaiMediumModel(selectableParams.model)} value={getEditableGlobalNegative(draft.negativePrompt, selectableParams._promptSections)} onValueChange={value => {
+          <div className={isNaiMediumModel(selectableParams.model) ? 'nai-model-locked' : undefined} title={isNaiMediumModel(selectableParams.model) ? t('Medium 不支持负面提示词') : undefined}><div className="mb-2 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100">{t("全局负面提示词")}</label><span ref={negativeClearActionSlotRef} /></div><TagAutocompleteTextarea libraryField={{ negative: true }} clearActionSlotRef={negativeClearActionSlotRef} onCopy={val => { void navigator.clipboard?.writeText(val); notify(t("全局负面提示词已复制")); }} copyTitle={t("复制全局负面提示词")} aria-label={t('全局负面提示词')} tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(selectableParams.model)} disabled={isBusy || isNaiMediumModel(selectableParams.model)} value={getEditableGlobalNegative(draft.negativePrompt, selectableParams._promptSections)} onValueChange={value => {
             onDraftChange({ negativePrompt: value, params: { ...selectableParams, _promptSections: selectableParams._promptSections && { ...selectableParams._promptSections, sectionNegatives: undefined } } });
-          }} className="min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder={t("输入本次负面提示词")} /></div>
+          }} className="min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder="" /></div>
         </section>
       </LabModuleSection>
 
@@ -230,6 +227,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
         showCharacterReference={showCharacterReference}
         canSaveCharacter={canSaveCharacter}
         onSaveCharacter={onSaveCharacter}
+        onCopyPrompt={(val, label) => { void navigator.clipboard?.writeText(val); notify(`${label}已复制`); }}
         notify={notify}
         markPresetSectionModified={() => undefined}
         markChange={() => undefined}

@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../../services/i18n';
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { ClipboardPaste, Copy, Download, FolderOpen, ImagePlus, Languages, ListTree, LoaderCircle, MoreVertical, RotateCcw, Save, Tags } from 'lucide-react';
+import { ClipboardPaste, Copy, Download, FolderOpen, Languages, ListTree, LoaderCircle, MoreVertical, RotateCcw, Save, ScanSearch, SpellCheck, Tags } from 'lucide-react';
 import { GenerationMode } from '../../types';
 import { ChainEditorModeHeader } from '../ChainEditorModeHeader';
 import { IconButton, ToolbarActionRow as ActionRow } from '../DesignSystem';
@@ -38,6 +38,8 @@ export interface ChainEditorHeaderProps {
     onReverseTag?: () => void;
     onTranslateMissingPrompts: () => void;
     translationPending?: boolean;
+    onProofreadAllPrompts?: () => void;
+    proofreadPending?: boolean;
     notify: (msg: string, type?: 'success' | 'error') => void;
     sectionedPrompt?: boolean;
     onSectionedPromptChange?: (enabled: boolean) => void;
@@ -77,6 +79,8 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     onReverseTag,
     onTranslateMissingPrompts,
     translationPending = false,
+    onProofreadAllPrompts,
+    proofreadPending = false,
     notify,
     sectionedPrompt = false,
     onSectionedPromptChange,
@@ -211,7 +215,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
 
             {!compact && <div className="chain-editor-actions flex flex-none items-center justify-end gap-1.5 ml-auto">
                 {/* 高频输入与提示词库入口（低频辅助开关与重置收进更多菜单） */}
-                {canEdit && onReverseTag && <IconButton label={t('从图片反推 Tag')} title={t('上传或粘贴图片，识别后追加到当前模式的正面提示词')} onClick={onReverseTag}><ImagePlus /></IconButton>}
+                {canEdit && onReverseTag && <IconButton label={t('从图片反推 Tag')} title={t('上传或粘贴图片，识别后追加到当前模式的正面提示词')} onClick={onReverseTag}><ScanSearch /></IconButton>}
                 {canEdit && <div ref={importAnchorRef} className="flex-none">
                     <IconButton
                         label={t("导入图片或 JSON 配置")}
@@ -224,6 +228,14 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                         <Download />
                     </IconButton>
                 </div>}
+                {canEdit && onProofreadAllPrompts && <IconButton
+                    label={t(proofreadPending ? "正在校对提示词" : "校对全部提示词 Tag")}
+                    title={t("校对当前模式全部提示词：对齐词库写法并统一英文标点")}
+                    disabled={proofreadPending}
+                    onClick={onProofreadAllPrompts}
+                >
+                    {proofreadPending ? <LoaderCircle className="animate-spin" /> : <SpellCheck />}
+                </IconButton>}
                 {canEdit && <IconButton
                     label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")}
                     disabled={translationPending}
@@ -265,7 +277,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
 
     function renderActions() {
         return <div className="flex flex-col gap-1">
-                {compact && canEdit && onReverseTag && <ActionRow icon={<ImagePlus className="h-4 w-4" />} label={t("从图片反推 Tag")} detail={t("上传图片后识别")} onClick={() => { closeActions(); onReverseTag(); }} />}
+                {compact && canEdit && onReverseTag && <ActionRow icon={<ScanSearch className="h-4 w-4" />} label={t("从图片反推 Tag")} detail={t("上传图片后识别")} onClick={() => { closeActions(); onReverseTag(); }} />}
                 {compact && canEdit && <ActionRow icon={<Download className="h-4 w-4" />} label={t("导入图片或 JSON 配置")} onClick={() => { closeActions(); setImportOpen(true); }} />}
                 <ActionRow
                     icon={<Tags className="h-4 w-4" />}
@@ -280,6 +292,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                 />
                 {onSectionedPromptChange && <ActionRow icon={<ListTree className="h-4 w-4" />} label={t('提示词细分')} detail={sectionedPrompt ? t('已开启') : t('已关闭')} onClick={() => { onSectionedPromptChange(!sectionedPrompt); closeActions(); }} />}
                 {renderPromptTools()}
+                {compact && canEdit && onProofreadAllPrompts && <ActionRow icon={proofreadPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <SpellCheck className="h-4 w-4" />} label={t(proofreadPending ? "正在校对提示词" : "校对全部提示词 Tag")} detail={proofreadPending ? t("校对中") : undefined} disabled={proofreadPending} onClick={() => { closeActions(); onProofreadAllPrompts(); }} />}
                 {compact && canEdit && <ActionRow icon={translationPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />} label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} detail={translationPending ? t("翻译中") : undefined} disabled={translationPending} onClick={() => { closeActions(); onTranslateMissingPrompts(); }} />}
                 {canEdit && <div className="my-1 border-t border-gray-200/70 dark:border-gray-700/70" />}
                 {canEdit && <ActionRow icon={<RotateCcw className="h-4 w-4" />} label={t("重置当前模式")} detail={activeModeLabel} tone="danger" onClick={() => { closeActions(); handleReset(); }} />}

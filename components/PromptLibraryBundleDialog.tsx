@@ -10,7 +10,7 @@ import { promptLibraryCategoryNames } from '../services/promptLibraryCategories'
  * 界面必须说明模型服务可能收费（见 docs/PRODUCT_DECISIONS.md 第 2 节）。
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { LoaderCircle, Sparkles, Wand2, X } from 'lucide-react';
+import { LoaderCircle, Sparkles, WandSparkles, X } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import { LAB_DEFAULT_PARAMS } from '../services/labWorkspace';
 import { planRollToChain } from '../services/contentRollToChain';
@@ -287,7 +287,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
           className="appearance-panel ui-modal-enter flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900 sm:rounded-2xl"
         >
           <header className="flex flex-none items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-5">
-            <Wand2 className="h-4 w-4 text-indigo-500" aria-hidden="true" />
+            <WandSparkles className="h-4 w-4 text-indigo-500" aria-hidden="true" />
             <h2 className="min-w-0 flex-1 truncate font-bold text-gray-900 dark:text-white">{t('AI 生成搭配')}</h2>
             <button
               type="button"

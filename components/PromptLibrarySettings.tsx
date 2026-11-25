@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
-import { BookOpen } from 'lucide-react';
+import { Library } from 'lucide-react';
 import { usePromptLibrary } from './PromptLibraryAccess';
 import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
 import { PROMPT_LIBRARY_KIND_LABELS, promptAgentService, type PromptLibraryKind } from '../services/promptAgent';
@@ -117,7 +117,7 @@ export const PromptLibrarySettings: React.FC = () => {
     <section aria-label={t("库生成提示词")} className={SETTINGS_CARD_CLASS}>
       <SettingsCardHeader
         title={t("库生成提示词")}
-        icon={<BookOpen />}
+        icon={<Library />}
         className="mb-3"
       />
       <div className="space-y-3">

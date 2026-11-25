@@ -133,11 +133,14 @@ it('分区标题已是「全局正面提示词」时不再显示第二行同名�
   expect(container.querySelector('label[for]')!.className).not.toContain('sr-only');
 });
 
-it('空白全局正面提示词在开启 Tag 辅助时常驻显示翻译与权重操作栏，关闭辅助时隐藏', () => {
+it('空白全局正面提示词默认隐藏空翻译与权重操作栏，有内容时才显示，关闭辅助始终隐藏', () => {
   const { rerender } = render(<ChainEditorPromptInputs {...defaults()} prompt="" tagAssistEnabled />);
+  expect(screen.queryByLabelText('提示词中文翻译')).toBeNull();
+  expect(screen.queryByRole('group', { name: '权重类型' })).toBeNull();
+  rerender(<ChainEditorPromptInputs {...defaults()} prompt="1girl" tagAssistEnabled />);
   expect(screen.getByLabelText('提示词中文翻译')).toBeTruthy();
   expect(screen.getByRole('group', { name: '权重类型' })).toBeTruthy();
-  rerender(<ChainEditorPromptInputs {...defaults()} prompt="" tagAssistEnabled={false} />);
+  rerender(<ChainEditorPromptInputs {...defaults()} prompt="1girl" tagAssistEnabled={false} />);
   expect(screen.queryByLabelText('提示词中文翻译')).toBeNull();
   expect(screen.queryByRole('group', { name: '权重类型' })).toBeNull();
 });

@@ -7,15 +7,17 @@ import type { AgentPromptApplied, AgentPromptBeforeApply } from '../../services/
 
 const PromptAgentPanel = React.lazy(() => import('../PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
 
-export const PromptCopyButton: React.FC<{ onClick: () => void; title: string }> = ({ onClick, title }) => (
+export const PromptCopyButton: React.FC<{ onClick: () => void; title: string; disabled?: boolean }> = ({ onClick, title, disabled = false }) => (
     <button
         type="button"
+        disabled={disabled}
         onClick={onClick}
-        className="flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-200"
+        aria-label={title}
         title={title}
+        className="mobile-touch flex h-7 w-7 items-center justify-center rounded-md p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
     >
-        <Copy className="h-4 w-4" />
-        {t("复制")}</button>
+        <Copy aria-hidden="true" className="h-4 w-4" />
+    </button>
 );
 
 export type PresetSource = { name: string; modified: boolean };

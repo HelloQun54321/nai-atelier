@@ -3,7 +3,7 @@ import { PressRevealSurface } from './PressRevealSurface';
 import { DetailSidePanel } from './DetailPanel';
 import { PromptPurposePicker } from './PromptPurposePicker';
 import { PromptPurposeGroup } from './PromptPurposeGroup';
-import { PROMPT_PURPOSE_GROUPS, PROMPT_PURPOSES, promptPurposeLabel, getEntryPurposes, readPromptPurposes, type PromptPurposeId } from '../services/promptPurposes.mjs';
+import { PROMPT_PURPOSE_GROUPS, PROMPT_PURPOSES, promptPurposeLabel, getEntryPurposes, getExplicitEntryPurposes, readPromptPurposes, type PromptPurposeId } from '../services/promptPurposes.mjs';
 /**
  * 提示词库：人物形象 / 服饰 / 姿势 / 场景共用一套配置驱动实现。
  *
@@ -27,6 +27,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useId, useMemo, useRef,
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
+  ChevronDown,
   Copy,
   Folder,
   Heart,
@@ -36,12 +37,13 @@ import {
   PersonStanding,
   Plus,
   Aperture,
+  RefreshCw,
   Shirt,
   Smile,
   Sparkles,
   Trash2,
   UserRound,
-  Wand2,
+  WandSparkles,
   Image,
   X,
 } from 'lucide-react';
@@ -70,12 +72,14 @@ import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
 import { PromptLibraryDirectoryNavigation, type PromptLibraryDirectorySelection } from './PromptLibraryDirectoryNavigation';
 import { usePromptLibraryFavorites } from './usePromptLibraryFavorites';
 import type { CollectionTarget } from '../services/collectionFavorites';
-import { getPromptLibraryEntryDirectoryIds, getPromptLibraryDirectoryPath, selectPromptLibraryDirectoryEntries } from '../services/promptLibraryDirectories';
+import { getPromptLibraryEntryDirectoryIds, getPromptLibraryDirectoryPath, inferPurposesFromDirectoryIds, resolveExplicitPurposesAfterDirectoryMove, selectPromptLibraryDirectoryEntries } from '../services/promptLibraryDirectories';
 import { removePromptTag, tagDetails } from '../services/promptTagFilter';
 import { classifyPromptTags, summarizePromptSources } from '../services/promptProvenance';
 import { usePromptLibraryCoverActions } from './usePromptLibraryCoverActions';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
-import { promptLibraryCoverContent } from '../services/promptLibraryCoverTemplate';
+import { PROMPT_LIBRARY_COVER_CHANGED, promptLibraryCoverContent } from '../services/promptLibraryCoverTemplate';
+import { collectedPromptText } from '../services/collectedPrompt';
+import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 export { PROMPT_LIBRARY_KINDS } from './promptLibraryConfig';
 export type { PromptLibraryFacet, PromptLibraryKindConfig } from './promptLibraryConfig';
 
@@ -186,6 +190,7 @@ export interface PromptLibraryPanelActions { leave: () => Promise<boolean> }
 interface PromptLibraryInternalProps extends PromptLibraryProps {
   panel?: boolean;
   panelActionsRef?: React.MutableRefObject<PromptLibraryPanelActions | null>;
+  tagAssistEnabled?: boolean;
   dynamicDirectories?: boolean;
   initialDirectoryIds?: string[];
   directoryNavigation?: React.ReactNode;
@@ -216,6 +221,7 @@ const DETAIL_LABEL_CLASS = 'text-sm font-semibold text-gray-700 dark:text-gray-2
 export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   config,
   panel = false, panelActionsRef,
+  tagAssistEnabled = true,
   initialEntry,
   onEditorClose,
   requestCloseRef,
@@ -353,9 +359,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   const tagOptions = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const chain of items) for (const value of getEntryPurposes(chain)) counts.set(value, (counts.get(value) || 0) + 1);
+    for (const chain of items) for (const value of getEntryPurposes(chain, library?.directories)) counts.set(value, (counts.get(value) || 0) + 1);
     return PROMPT_PURPOSES.map(item => [item.id, counts.get(item.id) || 0] as [string, number]);
-  }, [items]);
+  }, [items, library?.directories]);
 
   const visibleTagOptions = useMemo(() => {
     const keyword = tagQuery.trim().toLowerCase();
@@ -367,7 +373,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     return items
       .filter(chain => {
         if (selectedTags.size) {
-          const tags: string[] = getEntryPurposes(chain);
+          const tags: string[] = getEntryPurposes(chain, library?.directories);
           for (const tag of selectedTags) if (!tags.includes(tag)) return false;
         }
         if (!keyword) return true;
@@ -401,12 +407,12 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   function draftFromChain(chain: PromptChain): LibraryDraft { return {
     id: chain.id,
-    purposes: getEntryPurposes(chain),
+    purposes: getExplicitEntryPurposes(chain),
     description: chain.description || '',
     directoryIds: library?.directories ? getPromptLibraryEntryDirectoryIds(chain, library.directories) : [],
     name: String(chain.name || ''),
     tags: chainTags(chain).join(', '),
-    prompt: chainPrompt(chain),
+    prompt: collectedPromptText(chain) ?? chainPrompt(chain),
     bilingual: chainBilingual(chain),
     negativePrompt: String(chain.negativePrompt || ''),
     cover: String(chain.previewImage || ''),
@@ -418,15 +424,27 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     setDetail(previous => (previous ? { ...previous, ...patch } : previous));
   }, []);
 
+  useEffect(() => {
+    const onCoverChanged = (event: Event) => {
+      const info = (event as CustomEvent<{ chainId?: string; previewImage?: string }>).detail;
+      if (!info?.chainId || !info.previewImage) return;
+      setDetail(current => (current && current.id === info.chainId && !current.coverChanged
+        ? { ...current, cover: info.previewImage! }
+        : current));
+    };
+    window.addEventListener(PROMPT_LIBRARY_COVER_CHANGED, onCoverChanged);
+    return () => window.removeEventListener(PROMPT_LIBRARY_COVER_CHANGED, onCoverChanged);
+  }, []);
+
   const draftDirty = useMemo(() => {
     if (!detail) return false;
     const base = items.find(chain => chain.id === detail.id);
     if (!base) return false;
     if (detail.coverChanged) return true;
     return !!library?.directories && !sameIds(detail.directoryIds, getPromptLibraryEntryDirectoryIds(base, library.directories)) || detail.name !== String(base.name || '')
-      || !sameIds(detail.purposes, getEntryPurposes(base))
+      || !sameIds(detail.purposes, getExplicitEntryPurposes(base))
       || detail.description !== (base.description || '')
-      || detail.prompt !== chainPrompt(base)
+      || detail.prompt !== (collectedPromptText(base) ?? chainPrompt(base))
       || detail.bilingual !== chainBilingual(base)
       || detail.negativePrompt !== String(base.negativePrompt || '')
       || !sameIds(detail.references.map(row => row.id), chainReferences(base).map(row => row.id));
@@ -474,9 +492,15 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         notify(t('这条{0}已不在库中，请返回列表刷新', [t(config.itemNoun)]), 'error');
         return false;
       }
+      const baseRecord = (base.params || {}) as unknown as Record<string, unknown>;
+      const promoteOriginal = baseRecord._promptLibraryPolarity !== 'negative'
+        && detail.directoryIds.length > 0
+        && baseRecord._collectedPrompt === 1
+        && baseRecord._collectedCategory !== 'general';
       // params 是整字段覆盖：必须带上原有生图参数，只合并 _promptLibrary。
       const params: PromptLibraryParams = {
         ...(base.params || ({} as NAIParams)),
+        ...(promoteOriginal ? { _collectedCategory: 'general' as const } : {}),
         _promptLibraryPurposes: detail.purposes,
         ...(library?.directories ? { _promptLibraryDirectoryIds: detail.directoryIds } : {}),
         _promptLibrary: {
@@ -485,6 +509,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           references: detail.references.map(row => ({ id: row.id, url: row.url, prompt: row.prompt })),
         },
       };
+      if (promoteOriginal && '_promptLibraryOriginal' in (params as unknown as Record<string, unknown>)) {
+        delete (params as unknown as Record<string, unknown>)._promptLibraryOriginal;
+      }
       const updates: Partial<PromptChain> = {
         description: detail.description,
         name: detail.name.trim() || t('未命名{0}', [t(config.itemNoun)]),
@@ -754,7 +781,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const itemActions = !config.hideActions && <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="min-w-0 flex-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{t(config.title)} <span className="ml-1 text-xs font-normal tabular-nums text-gray-400">{countsPending && !shown.length ? '—' : shown.length}</span></span>
         <ToolbarButton onClick={() => setBundleOpen(true)} aria-label={t('AI 生成搭配')} title={t('AI 生成搭配')} className="mobile-touch !px-2.5 md:!px-3">
-          <Wand2 /><span className="content-library-action-label hidden sm:inline">{t('AI 生成搭配')}</span>
+          <WandSparkles /><span className="content-library-action-label hidden sm:inline">{t('AI 生成搭配')}</span>
         </ToolbarButton>
         {(library?.directories || !config.general) && <ToolbarButton onClick={openGenerator} aria-label={t(library?.directories ? generatorTitle : config.generateLabel)} title={t(library?.directories ? generatorTitle : config.generateLabel)} className="mobile-touch !px-2.5 md:!px-3">
           <Sparkles /><span className="content-library-action-label hidden sm:inline">{t(generatorTitle)}</span>
@@ -860,10 +887,32 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     ? detail.references.map(row => ({ url: row.url, caption: row.prompt }))
     : [];
 
+  const buildDraftChain = (): PromptChain | null => {
+    if (!detail) return null;
+    const base = chainsRef.current.find(chain => chain.id === detail.id) || initialEntry;
+    if (!base) return null;
+    return {
+      ...base,
+      name: detail.name.trim() || base.name,
+      description: detail.description,
+      basePrompt: detail.prompt,
+      negativePrompt: detail.negativePrompt,
+      previewImage: detail.cover,
+      params: {
+        ...(base.params || ({} as NAIParams)),
+        _promptLibraryPurposes: detail.purposes,
+        ...(library?.directories ? { _promptLibraryDirectoryIds: detail.directoryIds } : {}),
+      },
+    };
+  };
+
   const detailActions = detail ? (
       <div className="flex flex-none items-center gap-1">
         {!panel && <ToolbarButton tone="danger" disabled={savingDetail} onClick={() => void removeChain(detail.id, detail.name)} aria-label={t('删除')} title={t('删除')} className="mobile-touch !px-2.5 md:!px-3">
           <Trash2 /><span className="hidden sm:inline">{t('删除')}</span>
+        </ToolbarButton>}
+        {panel && <ToolbarButton disabled={savingDetail || !detail.prompt.trim()} onClick={() => void copyText(detail.prompt, t('英文提示词'))} aria-label={t('复制')} title={t('复制英文提示词')} className="mobile-touch !px-2.5">
+          <Copy />
         </ToolbarButton>}
         <ToolbarButton tone="save" disabled={savingDetail || panel && !draftDirty} onClick={() => void saveDetail(!panel)} aria-label={t('保存')} title={t('保存')} className="mobile-touch !px-2.5 md:!px-3">
           {savingDetail && <LoaderCircle className="animate-spin" />}<span>{savingDetail ? t('保存中…') : t('保存')}</span>
@@ -883,28 +932,60 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   ) : null;
   const detailToolbar = detailToolbarContent ? <WorkspaceToolbar>{detailToolbarContent}</WorkspaceToolbar> : null;
 
+  const coverBusy = detail ? coverActions.isBusy(detail.id) : false;
+  const triggerCoverGenerate = (regenerate = false) => {
+    const draft = buildDraftChain();
+    if (draft) coverActions.requestCover(draft, regenerate);
+  };
+
   const detailCover = detail ? (
         <div>
-          <span className={DETAIL_LABEL_CLASS}>{t('封面')}</span>
           {detail.cover ? (
-            <PressRevealSurface touchActions="bar" className="group relative mt-1.5 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800"><button
-              type="button"
-              onClick={() => openViewer([{ url: detail.cover, caption: detail.name, favorite: { imageUrl: detail.cover, title: detail.name, sourceType: 'other', sourceId: detail.id } }], 0)}
-              aria-label={t('查看封面原图')}
-              title={t('点击查看原图')}
-              className="block w-full"
-            >
-              <SmartImage src={detail.cover} alt={t('封面预览')} thumbnailVariant="thumb-640" className="block max-h-48 w-full object-contain" containerClassName="relative w-full overflow-hidden" />
-            </button>{panel && <ImageShareOverlay imageUrl={detail.cover} filename={detail.name + '.png'} notify={notify} favorite={{ imageUrl: detail.cover, title: detail.name, sourceType: 'other', sourceId: detail.id }} />}</PressRevealSurface>
+            <>
+              <span className={DETAIL_LABEL_CLASS}>{t('封面')}</span>
+              <PressRevealSurface touchActions="bar" className="group relative mt-1.5 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800"><button
+                type="button"
+                onClick={() => openViewer([{ url: detail.cover, caption: detail.name, favorite: { imageUrl: detail.cover, title: detail.name, sourceType: 'other', sourceId: detail.id } }], 0)}
+                aria-label={t('查看封面原图')}
+                title={t('点击查看原图')}
+                className="block w-full"
+              >
+                <SmartImage src={detail.cover} alt={t('封面预览')} thumbnailVariant="thumb-640" className="block max-h-48 w-full object-contain" containerClassName="relative w-full overflow-hidden" />
+              </button>{panel && <ImageShareOverlay imageUrl={detail.cover} filename={detail.name + '.png'} notify={notify} favorite={{ imageUrl: detail.cover, title: detail.name, sourceType: 'other', sourceId: detail.id }} />}</PressRevealSurface>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <ToolbarButton disabled={coverBusy || !detail.prompt.trim()} onClick={() => triggerCoverGenerate(true)} className="mobile-touch flex-1">
+                  <RefreshCw /><span>{t('重新生成封面')}</span>
+                </ToolbarButton>
+                <ToolbarButton onClick={() => setPicker('cover')} className="mobile-touch flex-1"><ImagePlus /><span>{t('从历史选图')}</span></ToolbarButton>
+                <ToolbarButton onClick={() => patchDetail({ cover: '', coverChanged: true })} aria-label={t('清除')} title={t('清除')} className="mobile-touch !px-2.5"><X /></ToolbarButton>
+              </div>
+            </>
           ) : (
-            <div className="appearance-media mt-1.5 flex h-24 items-center justify-center rounded-xl bg-gray-100 text-meta text-gray-400 dark:bg-gray-950">{t('暂无封面')}</div>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200/80 bg-gray-50/70 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/60">
+              <span className="text-xs text-gray-500 dark:text-gray-400">{t('暂无封面')}</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <ToolbarButton disabled={coverBusy || !detail.prompt.trim()} onClick={() => triggerCoverGenerate(false)} className="mobile-touch">
+                  <ImagePlus /><span>{t('生成封面')}</span>
+                </ToolbarButton>
+                <ToolbarButton onClick={() => setPicker('cover')} className="mobile-touch">
+                  <span>{t('从历史选图')}</span>
+                </ToolbarButton>
+              </div>
+            </div>
           )}
-          <div className="mt-2 flex flex-wrap gap-2">
-            <ToolbarButton onClick={() => setPicker('cover')} className="mobile-touch flex-1"><ImagePlus /><span>{t('从历史选图')}</span></ToolbarButton>
-            <ToolbarButton disabled={!detail.cover} onClick={() => patchDetail({ cover: '', coverChanged: true })} className="mobile-touch flex-1"><X /><span>{t('清除')}</span></ToolbarButton>
-          </div>
         </div>
   ) : null;
+
+  const inheritedPurposes = detail && library?.directories
+    ? readPromptPurposes(inferPurposesFromDirectoryIds(detail.directoryIds, library.directories))
+    : [];
+  const purposeSummary = detail
+    ? (detail.purposes.length
+      ? `${t('已单独指定')}：${detail.purposes.map(id => t(promptPurposeLabel(id))).join('、')}`
+      : inheritedPurposes.length
+        ? `${t('跟随目录')}：${inheritedPurposes.map(id => t(promptPurposeLabel(id))).join('、')}`
+        : t('未标记用途'))
+    : '';
 
   const detailBody = detail ? (
     <fieldset disabled={savingDetail} className={panel ? "min-w-0 space-y-4" : "mx-auto grid w-full max-w-5xl gap-5 lg:grid-cols-[minmax(0,1fr)_15rem]"}>
@@ -926,38 +1007,95 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
             <span className={DETAIL_LABEL_CLASS}>{t('纯英文提示词（生图用）')}</span>
             <button type="button" onClick={() => void copyText(detail.prompt, t('英文提示词'))} aria-label={t('复制英文提示词')} title={t('复制英文提示词')} className="mobile-touch inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"><Copy className="h-4 w-4" /></button>
           </div>
-          <textarea
+          <TagAutocompleteTextarea
             value={detail.prompt}
-            onChange={event => patchDetail({ prompt: event.target.value })}
+            onValueChange={prompt => patchDetail({ prompt })}
+            tagAssistEnabled={tagAssistEnabled}
+            showTranslations
+            allowAiTranslation={false}
+            libraryEnabled={false}
+            promptLibraryActions={false}
+            compactToolbar
+            autoHeightMax="180px"
+            disabled={savingDetail}
             aria-label={t('英文提示词')}
-            className={`${DETAIL_FIELD_CLASS} h-32 resize-y font-mono`}
+            containerClassName="mt-1.5"
+            className={`${DETAIL_FIELD_CLASS} mt-0 min-h-24 resize-y font-mono`}
           />
         </div>
-        <PromptPurposePicker value={detail.purposes} onChange={purposes => patchDetail({ purposes })} disabled={savingDetail} />
-        <div>
-          <div className="flex items-center justify-between gap-2">
-            <span className={DETAIL_LABEL_CLASS}>{t('中英对照')}</span>
-            <button type="button" onClick={() => void copyText(detail.bilingual, t('中英对照'))} aria-label={t('复制中英对照')} title={t('复制中英对照')} className="mobile-touch inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"><Copy className="h-4 w-4" /></button>
+
+        {library?.directories && (
+          <PromptLibraryDirectoryPicker
+            state={library.directories}
+            selectedIds={detail.directoryIds}
+            onChange={nextIds => patchDetail({
+              directoryIds: nextIds,
+              purposes: resolveExplicitPurposesAfterDirectoryMove(detail.directoryIds, detail.purposes, library.directories),
+            })}
+            disabled={savingDetail}
+          />
+        )}
+
+        <details className="min-w-0">
+          <summary className="appearance-input mobile-touch flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm dark:border-gray-700 [&::-webkit-details-marker]:hidden">
+            <span className="shrink-0">{t('用途 Tag')}</span>
+            <span className="min-w-0 flex-1 truncate text-gray-500 dark:text-gray-400" title={purposeSummary}>{purposeSummary}</span>
+            <ChevronDown className="h-4 w-4 shrink-0" />
+          </summary>
+          <div className="mt-2 space-y-2">
+            {detail.purposes.length > 0 && library?.directories && (
+              <div className="flex justify-end">
+                <button type="button" disabled={savingDetail} onClick={() => patchDetail({ purposes: [] })} className="mobile-touch text-xs font-semibold text-indigo-600 hover:underline disabled:opacity-40 dark:text-indigo-300">
+                  {t('恢复默认')}
+                </button>
+              </div>
+            )}
+            <PromptPurposePicker value={detail.purposes} onChange={purposes => patchDetail({ purposes })} disabled={savingDetail} />
           </div>
-          <textarea
-            value={detail.bilingual}
-            onChange={event => patchDetail({ bilingual: event.target.value })}
-            placeholder={t('AI 生成时自动写入，也可以手写或粘贴')}
-            aria-label={t('中英对照提示词')}
-            className={`${DETAIL_FIELD_CLASS} ${panel ? 'h-20' : 'h-32'} resize-y`}
-          />
-        </div>
-        <label className="block">
-          <span className={DETAIL_LABEL_CLASS}>{t('负面提示词（可选）')}</span>
-          <textarea
-            value={detail.negativePrompt}
-            onChange={event => patchDetail({ negativePrompt: event.target.value })}
-            aria-label={t('负面提示词')}
-            className={`${DETAIL_FIELD_CLASS} h-20 resize-y font-mono`}
-          />
-        </label>
-        <label className="block"><span className={DETAIL_LABEL_CLASS}>{t('备注')}</span><textarea aria-label={t('备注')} value={detail.description} onChange={event => patchDetail({ description: event.target.value })} className={`${DETAIL_FIELD_CLASS} h-20 resize-y`} /></label>
-        {library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={detail.directoryIds} onChange={directoryIds => patchDetail({ directoryIds })} disabled={savingDetail} />}
+        </details>
+
+        <details open={Boolean(detail.negativePrompt)} className="min-w-0">
+          <summary className="mobile-touch cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-200">{t('负面提示词（可选）')}</summary>
+          <div className="mt-1.5">
+            <TagAutocompleteTextarea
+              value={detail.negativePrompt}
+              onValueChange={negativePrompt => patchDetail({ negativePrompt })}
+              tagAssistEnabled={tagAssistEnabled}
+              showTranslations
+              allowAiTranslation={false}
+              libraryEnabled={false}
+              promptLibraryActions={false}
+              compactToolbar
+              autoHeightMax="120px"
+              disabled={savingDetail}
+              aria-label={t('负面提示词')}
+              className={`${DETAIL_FIELD_CLASS} mt-0 min-h-16 resize-y font-mono`}
+            />
+          </div>
+        </details>
+
+        <details open={Boolean(detail.description || detail.bilingual)} className="min-w-0">
+          <summary className="mobile-touch cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-200">{t('中英对照')} · {t('备注')}</summary>
+          <div className="mt-2 space-y-3">
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className={DETAIL_LABEL_CLASS}>{t('中英对照')}</span>
+                <button type="button" onClick={() => void copyText(detail.bilingual, t('中英对照'))} aria-label={t('复制中英对照')} title={t('复制中英对照')} className="mobile-touch inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"><Copy className="h-4 w-4" /></button>
+              </div>
+              <textarea
+                value={detail.bilingual}
+                onChange={event => patchDetail({ bilingual: event.target.value })}
+                placeholder={t('AI 生成时自动写入，也可以手写或粘贴')}
+                aria-label={t('中英对照提示词')}
+                className={`${DETAIL_FIELD_CLASS} ${panel ? 'h-20' : 'h-28'} resize-y`}
+              />
+            </div>
+            <label className="block">
+              <span className={DETAIL_LABEL_CLASS}>{t('备注')}</span>
+              <textarea aria-label={t('备注')} value={detail.description} onChange={event => patchDetail({ description: event.target.value })} className={`${DETAIL_FIELD_CLASS} h-20 resize-y`} />
+            </label>
+          </div>
+        </details>
       </div>
 
       <div className="min-w-0 space-y-4">
@@ -1017,7 +1155,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           className="appearance-panel ui-modal-enter flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900 sm:rounded-2xl"
         >
           <header className="flex flex-none items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-5">
-            <Wand2 className="h-4 w-4 text-indigo-500" />
+            <WandSparkles className="h-4 w-4 text-indigo-500" />
             <h2 className="min-w-0 flex-1 truncate font-bold text-gray-900 dark:text-white">{t(generatorTitle)}</h2>
             <button type="button" onClick={closeGenerator} disabled={generating || savingDrafts} aria-label={t('关闭生成面板')} className="mobile-touch flex h-10 w-10 flex-none items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800"><X className="h-5 w-5" /></button>
           </header>
@@ -1262,6 +1400,7 @@ export type PromptLibraryEntryEditorProps = Omit<PromptLibraryProps, 'embedded' 
   entry: PromptChain;
   panel?: boolean;
   panelActionsRef?: React.MutableRefObject<PromptLibraryPanelActions | null>;
+  tagAssistEnabled?: boolean;
   onClose: () => void;
   requestCloseRef?: React.MutableRefObject<(() => void) | null>;
 };
@@ -1392,7 +1531,7 @@ const DirectoryPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   const selectionKey = (allSelected ? 'all' : unclassified ? 'unclassified' : selectedIds.join(',')) + (favoritesOnly ? ':fav' : '');
   const currentPath = allSelected ? t('全部') : unclassified ? t('未归类') : selectedIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).join('、');
   const categoryToggle = <ToolbarButton data-agent-action="browse" aria-label={t(expanded ? '收起目录' : '展开目录')} title={[t(expanded ? '收起目录' : '展开目录'), currentPath].join(' · ')} aria-expanded={expanded} aria-controls={navigationId} active={expanded || !allSelected || unclassified} onClick={toggleDirectories} className="!px-2.5 md:!px-3"><Folder className="h-4 w-4" /><span className="hidden max-w-24 truncate md:inline">{currentPath}</span></ToolbarButton>;
-  const navigation = expanded && <div className="min-h-0 min-w-0 shrink-0 md:flex md:w-52 md:flex-col md:overflow-hidden"><PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={fragments} countsPending={countsPending} selectedIds={selectedIds} allSelected={allSelected} unclassified={unclassified} expanded={expanded} embedded onCreate={library.onCreateDirectory} onRename={library.onRenameDirectory} onDelete={library.onDeleteDirectory} onMove={library.onMoveDirectory} onRequestClose={() => setDirectoriesOpen(false)} disabled={library.directoriesBusy} onSelect={selection => { void select(selection.directoryIds, selection.allDirectories, selection.unclassified); }} /></div>;
+  const navigation = expanded && <div className="min-h-0 min-w-0 shrink-0 md:flex md:w-60 md:flex-col md:overflow-hidden"><PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={fragments} countsPending={countsPending} selectedIds={selectedIds} allSelected={allSelected} unclassified={unclassified} expanded={expanded} embedded onCreate={library.onCreateDirectory} onRename={library.onRenameDirectory} onDelete={library.onDeleteDirectory} onMove={library.onMoveDirectory} onRequestClose={() => setDirectoriesOpen(false)} disabled={library.directoriesBusy} onSelect={selection => { void select(selection.directoryIds, selection.allDirectories, selection.unclassified); }} /></div>;
   return <PromptLibrary {...props} chains={chains} requestCloseRef={undefined} config={favoritesOnly && favorites.status !== 'ready' ? { ...DIRECTORY_CONFIG, emptyTitle: favorites.status === 'error' ? '收藏库加载失败，请稍后重试' : '加载中…', emptyHint: '' } : DIRECTORY_CONFIG} dynamicDirectories initialDirectoryIds={allSelected || unclassified ? [] : selectedIds} directorySelectionKey={selectionKey} favoritesFilter={{ active: favoritesOnly, onToggle: toggleFavoritesOnly }} directoryNavigation={navigation} categoryToggle={categoryToggle} registerLeaveGuard={guard => { leaveGuard.current = guard; return () => { leaveGuard.current = null; }; }} />;
 };
 

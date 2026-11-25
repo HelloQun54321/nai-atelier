@@ -42,7 +42,7 @@ html[data-theme-details='true'] :where(input:not([type='range']):not([type='colo
 html[data-theme-details='true'] textarea { border-radius: min(var(--workspace-card-radius), 16px); }
 html[data-theme-details='true'][data-theme-material] :is(.appearance-panel, .settings-dialog, .operation-dialog) { border-radius: var(--nai-panel-radius, var(--radius-2xl)); }
 html[data-theme-details='true'][data-theme-material] :is(.appearance-panel, .settings-dialog, .operation-dialog) { box-shadow: 0 12px 40px rgb(0 0 0 / calc(.16 * var(--nai-shadow-strength, 1))), 0 1px 6px rgb(0 0 0 / .05); }
-html[data-theme-details='true'] .media-card { border-radius: var(--workspace-card-radius); }
+html[data-theme-details='true'] :is(.media-card, .prompt-text-card) { border-radius: var(--workspace-card-radius); }
 html[data-theme-details='true'] [role='tablist'] { border-radius: var(--workspace-control-radius); }
 html[data-theme-details='true'] [role='tablist'] [role='tab'] { border-radius: var(--workspace-control-radius); }
 html[data-theme-details='true'] [role='tab'][aria-selected='true'] { box-shadow: 0 1px 4px rgb(0 0 0 / .12), inset 0 1px 0 rgb(255 255 255 / .2); }
@@ -85,12 +85,12 @@ html[data-surfaces='translucent'] .workspace-fixed-pane { margin-top: var(--work
   html[data-surfaces='translucent'] .aitag-detail-panel { margin-top: var(--workspace-chrome-height, 0px); }
   html[data-surfaces='translucent'] .chain-editor-workspace :is(.chain-editor-main, .chain-editor-preview) { padding-top: var(--workspace-chrome-height, 0px); }
   html[data-surfaces='translucent'] .chain-editor-workspace .chain-editor-main {
-    padding-top: calc(var(--workspace-chrome-height, 0px) + var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px));
-    scroll-padding-top: calc(var(--workspace-chrome-height, 0px) + var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px));
+    padding-top: calc(var(--workspace-chrome-height, 0px) + var(--lab-tabs-height) + var(--lab-tabs-gap, 8px) - var(--lab-tabs-chrome-gap, 0px));
+    scroll-padding-top: calc(var(--workspace-chrome-height, 0px) + var(--lab-tabs-height) + var(--lab-tabs-gap, 8px) - var(--lab-tabs-chrome-gap, 0px));
   }
   html[data-surfaces='translucent'] .chain-editor-workspace .workspace-mode-tabs {
-    margin-top: calc(var(--workspace-chrome-height, 0px) - var(--lab-tabs-chrome-gap, 0px));
-    margin-bottom: calc(var(--lab-tabs-chrome-gap, 0px) - var(--workspace-chrome-height, 0px) - var(--lab-tabs-height));
+    margin-top: calc(var(--workspace-chrome-height, 0px) + var(--lab-tabs-gap, 8px) - var(--lab-tabs-chrome-gap, 0px));
+    margin-bottom: calc(var(--lab-tabs-chrome-gap, 0px) - var(--workspace-chrome-height, 0px) - var(--lab-tabs-height) - var(--lab-tabs-gap, 8px));
   }
 }
 html[data-surfaces='translucent'] .workspace-mode-tabs {

@@ -38,3 +38,14 @@ export const moveCharacter = (characters: CharacterParams[], index: number, dire
   [next[index], next[target]] = [next[target], next[index]];
   return next;
 };
+
+/** 按指针拖拽或键盘排序的目标索引重排角色列表，越界或同位置保持原数组引用。 */
+export const reorderCharacter = (characters: CharacterParams[], fromIndex: number, toIndex: number): CharacterParams[] => {
+  if (fromIndex === toIndex || fromIndex < 0 || fromIndex >= characters.length || toIndex < 0 || toIndex >= characters.length) {
+    return characters;
+  }
+  const next = [...characters];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  return next;
+};

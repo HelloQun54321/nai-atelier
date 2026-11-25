@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen } from 'lucide-react';
+import { Library } from 'lucide-react';
 import { InlineSpinner } from './DesignSystem';
 import { t, useLanguage } from '../services/i18n';
 import { PROMPT_LIBRARY_KIND_LABELS, type PromptLibraryKind } from '../services/promptAgent';
@@ -102,7 +102,7 @@ const LibraryOptions: React.FC<PromptLibraryPickerProps & { close: () => void }>
 export const PromptLibraryPicker: React.FC<PromptLibraryPickerProps> = props => {
     useLanguage();
     return <ToolbarPopover label="库导入" title={t('从{0}库导入', [t(PROMPT_LIBRARY_KIND_LABELS[props.kind])])}
-        icon={<BookOpen className="h-4 w-4" />} disabled={props.disabled} width={360}>
+        icon={<Library className="h-4 w-4" />} disabled={props.disabled} width={360}>
         {close => <LibraryOptions {...props} close={close} />}
     </ToolbarPopover>;
 };

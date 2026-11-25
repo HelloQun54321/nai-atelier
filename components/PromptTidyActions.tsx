@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useRef, useState } from 'react';
-import { LoaderCircle, RotateCcw, SpellCheck, Sparkles, Trash2, WandSparkles } from 'lucide-react';
+import { LoaderCircle, SpellCheck, Sparkles, Trash2, Undo2, WandSparkles } from 'lucide-react';
 import { FilterPill } from './DesignSystem';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { isPromptTidyRewrite, PROMPT_TIDY_INSTRUCTION_LIMIT, resolvePromptTidyMethod, tidyPrompt, type PromptTidyDropped, type PromptTidyKeep, type PromptTidySettings } from '../services/promptTidy';
@@ -11,7 +11,7 @@ import { PromptSampleButton } from './PromptSampleButton';
 
 export type PromptTidyNotify = (message: string, type?: 'success' | 'error') => void;
 /** 提示词框接入整理时的选项；sample 只在能出图的编辑器里提供。 */
-export interface PromptTidyOptions { notify: PromptTidyNotify; sample?: PromptSampleBridge }
+export interface PromptTidyOptions { notify: PromptTidyNotify; sample?: PromptSampleBridge; hideProofread?: boolean }
 export interface PromptTidyActionsProps extends PromptTidyOptions {
   value: string;
   disabled?: boolean;
@@ -33,7 +33,7 @@ const FIELD_CLASS = 'w-full rounded-lg border border-gray-200 bg-white px-2.5 py
 const CHECK_CLASS = 'flex items-start gap-2 text-xs text-gray-700 dark:text-gray-200';
 
 /** 提示词工具栏里的「整理」与「校对」：设置面板、自定义快捷按钮、改动清单与撤销。 */
-export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, disabled = false, notify, sample, onApply, onProofread, lastAction = 'tidy', canUndo, onUndo }) => {
+export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, disabled = false, notify, sample, hideProofread = false, onApply, onProofread, lastAction = 'tidy', canUndo, onUndo }) => {
   useLanguage();
   const { draft, presets } = usePromptTidyState();
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -149,12 +149,12 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
         {busy === 'draft' ? spinner : <WandSparkles aria-hidden="true" className="h-4 w-4" />}
       </button>
     </span>
-    <button type="button" disabled={disabled || Boolean(busy)} aria-label={t('校对 Tag')} title={t('校对 Tag：对齐词库写法，统一英文标点')}
+    {!hideProofread && <button type="button" disabled={disabled || Boolean(busy)} aria-label={t('校对 Tag')} title={t('校对 Tag：对齐词库写法，统一英文标点')}
       onClick={() => { void runProofread(); }} className={ICON_CLASS}>
       {busy === 'proofread' ? spinner : <SpellCheck aria-hidden="true" className="h-4 w-4" />}
-    </button>
+    </button>}
     {canUndo && lastAction === 'tidy' && <button type="button" disabled={disabled} aria-label={t('撤销整理')} title={t('撤销整理')} onMouseDown={event => event.preventDefault()} onClick={onUndo} className={`${ICON_CLASS} text-[var(--nai-accent)]`}>
-      <RotateCcw aria-hidden="true" className="h-4 w-4" />
+      <Undo2 aria-hidden="true" className="h-4 w-4" />
     </button>}
     {showDropped && <button ref={droppedRef} type="button" aria-label={t('查看去掉的 {0} 段', [dropped.length])} title={t('查看去掉的 {0} 段', [dropped.length])} aria-haspopup="dialog" aria-expanded={droppedOpen}
       onClick={() => setDroppedOpen(!droppedOpen)}
@@ -179,7 +179,7 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
         <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
           <button type="button" disabled={disabled} onClick={() => { setDroppedOpen(false); onUndo(); }}
             className="mobile-touch inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-            <RotateCcw aria-hidden="true" className="h-4 w-4" />{t('撤销整理')}
+            <Undo2 aria-hidden="true" className="h-4 w-4" />{t('撤销整理')}
           </button>
         </div>
       </div>
@@ -203,7 +203,7 @@ export const PromptTidyActions: React.FC<PromptTidyActionsProps> = ({ value, dis
         <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
           <button type="button" disabled={disabled} onClick={() => { setProofreadOpen(false); onUndo(); }}
             className="mobile-touch inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-            <RotateCcw aria-hidden="true" className="h-4 w-4" />{t('撤销校对')}
+            <Undo2 aria-hidden="true" className="h-4 w-4" />{t('撤销校对')}
           </button>
         </div>
       </div>

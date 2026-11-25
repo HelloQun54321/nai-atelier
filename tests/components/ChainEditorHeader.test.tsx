@@ -48,10 +48,13 @@ describe('实验室顶栏的反推入口', () => {
     expect(onReverseTag).toHaveBeenCalledOnce();
   });
 
-  it('没有回调时不渲染反推按钮，文生图保持原有工具排', () => {
-    render(<ChainEditorHeader {...baseProps()} />);
+  it('没有回调时不渲染反推按钮，文生图保持原有工具排，支持顶栏全页校对', () => {
+    const onProofreadAllPrompts = vi.fn();
+    render(<ChainEditorHeader {...baseProps({ onProofreadAllPrompts })} />);
     expect(screen.queryByRole('button', { name: '从图片反推 Tag' })).toBeNull();
     expect(screen.getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '校对全部提示词 Tag' }));
+    expect(onProofreadAllPrompts).toHaveBeenCalledOnce();
   });
 
   it('窄屏收进更多操作面板，仍能从面板里发起反推', () => {

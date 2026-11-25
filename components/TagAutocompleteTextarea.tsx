@@ -1,7 +1,7 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Eraser, EyeOff, ImagePlus, Info, Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
+import { Copy, Eraser, EyeOff, Info, Languages, LoaderCircle, ScanSearch, Trash2, Undo2 } from 'lucide-react';
 import type { PromptTagLibraryTarget } from './PromptTagLibraryInfo';
 import { InlineSpinner } from './DesignSystem';
 import { InfoPopover } from './InfoPopover';
@@ -49,7 +49,7 @@ interface MutedPromptTag {
   afterTag?: string;
 }
 
-interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'onChange'> {
+interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'onChange' | 'onCopy'> {
   value: string;
   onValueChange: (value: string) => void;
   containerClassName?: string;
@@ -72,6 +72,9 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   autoHeightMax?: string;
   /** 窄侧栏紧凑双行权重与操作栏排版，避免折成松散三行。 */
   compactToolbar?: boolean;
+  /** 提供时在清空按钮前渲染统一纯图标「复制」按钮，组成 Copy + Eraser 尾组。 */
+  onCopy?: (value: string) => void;
+  copyTitle?: string;
 }
 type PromptSuggestion = TagSuggestion & { libraryEntry?: PromptChain };
 const PromptTagLibraryInfo = React.lazy(() => import('./PromptTagLibraryInfo').then(module => ({ default: module.PromptTagLibraryInfo })));
@@ -134,6 +137,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   warningTags,
   autoHeightMax,
   compactToolbar = false,
+  onCopy,
+  copyTitle,
   disabled,
   readOnly,
   onFocus,
@@ -182,8 +187,6 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
   const [mutedTags, setMutedTags] = useState<MutedPromptTag[]>([]);
   const mutedIdRef = useRef(0);
-  const [deleteMode, setDeleteMode] = useState(false);
-  const [muteMode, setMuteMode] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [tagComposing, setTagComposing] = useState(false);
   const [insertionIndex, setInsertionIndex] = useState<number | null>(null);
@@ -288,8 +291,6 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     neutralGroupsRef.current = { value, groups: [] };
     setSelectedTagIds(new Set());
     setMutedTags([]);
-    setDeleteMode(false);
-    setMuteMode(false);
     setTagInput('');
     setInsertionIndex(null);
     setEditingTag(null);
@@ -327,8 +328,6 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     setClearActionState(current => current === 'cleared' && !redo ? 'undone' : current === 'undone' && redo ? 'cleared' : null);
     neutralGroupsRef.current = { value: next, groups: [] };
     setSelectedTagIds(new Set());
-    setDeleteMode(false);
-    setMuteMode(false);
     setTagInput('');
     setInsertionIndex(null);
     setEditingTag(null);
@@ -374,8 +373,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 
   const selectedTokens = promptTokens.filter(token => selectedTagIds.has(token.id));
   const highlightRanges = tagAssistEnabled && showTranslations ? [...selectedTokens.map(token => ({
-    start: !deleteMode ? token.groupStart ?? token.start ?? 0 : token.start ?? 0,
-    end: !deleteMode ? token.groupEnd ?? token.end ?? 0 : token.end ?? 0,
+    start: token.groupStart ?? token.start ?? 0,
+    end: token.groupEnd ?? token.end ?? 0,
   })), ...(editingTag ? [{ start: editingTag.start, end: editingTag.end }] : [])].sort((a, b) => a.start - b.start || b.end - a.end) : [];
   const hasHighlight = highlightRanges.length > 0;
   const syncHighlight = useCallback(() => {
@@ -481,8 +480,6 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     if (!editable || !value) return;
     clearSelection();
     setMutedTags([]);
-    setDeleteMode(false);
-    setMuteMode(false);
     setTagInput('');
     closeSuggestions();
     commitValue('');
@@ -494,8 +491,6 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     if (!editable || next === value) return;
     clearSelection();
     setMutedTags([]);
-    setDeleteMode(false);
-    setMuteMode(false);
     setTagInput('');
     closeSuggestions();
     commitValue(next);
@@ -508,11 +503,10 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     if (!editable || !selectedTokens.length) return;
     commitValue(removePromptTagTokens(value, selectedTokens));
     clearSelection();
-    setDeleteMode(false);
   };
-  // 暂时屏蔽：在屏蔽模式中确认后从提示词移除，翻译区原位置保留可恢复的胶囊样式。
+  // 暂时屏蔽：选中 Tag 后直接从提示词移出，在翻译区原位留一条虚线胶囊供点按恢复。
   const muteSelected = () => {
-    if (!editable || !muteMode || !selectedTokens.length) return;
+    if (!editable || !selectedTokens.length) return;
     const groups = new Map<string, PromptTagToken[]>();
     selectedTokens.forEach(token => groups.set(token.groupId || token.id, [...(groups.get(token.groupId || token.id) || []), token]));
     const muted = [...groups.values()].map(members => {
@@ -538,10 +532,9 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     commitValue(next);
     setMutedTags(current => [...current.filter(item => !muted.some(added => added.raw === item.raw)), ...muted]);
     clearSelection();
-    setMuteMode(false);
   };
   const unmuteTag = (id: string) => {
-    if (!editable || deleteMode) return;
+    if (!editable) return;
     const item = mutedTags.find(entry => entry.id === id);
     if (!item || value.includes(item.raw)) return;
     const tokens = parsePromptTags(value);
@@ -569,8 +562,6 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     setTagInput('');
     closeSuggestions();
     clearSelection();
-    setDeleteMode(false);
-    setMuteMode(false);
     return { value: next, start };
   };
   const finishTagInput = (text: string) => {
@@ -590,7 +581,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     return committed;
   };
   const editTag = (item: PromptTagToken) => {
-    if (!editable || deleteMode || muteMode || item.start === undefined || item.end === undefined) return;
+    if (!editable || item.start === undefined || item.end === undefined) return;
     const raw = value.slice(item.start, item.end);
     // 正文可能与 artist: 或数值权重前缀重名，只替换真正的词。
     const prefix = raw.match(/^[{\[\s]*(?:[+-]?(?:\d+(?:\.\d+)?|\.\d+)::\s*)?(?:\(?artists?\s*:\s*)?/i)?.[0] || '';
@@ -643,7 +634,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   }, [promptTokens, selectedTagIds]);
 
   const commitWeightInput = () => {
-    if (!editable || deleteMode || muteMode || weightKind !== 'numeric' || !weightInputEdited) return;
+    if (!editable || weightKind !== 'numeric' || !weightInputEdited) return;
     const next = Number(weightInput);
     if (!weightInput.trim() || !Number.isFinite(next) || !selectedTokens.length) {
       setWeightInput(displayedWeight);
@@ -710,19 +701,17 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     closeSuggestions();
     setTranslations([]);
     setTranslationError('');
-    setDeleteMode(false);
-    setMuteMode(false);
     clearSelection();
   }, [tagAssistEnabled, closeSuggestions]);
 
   useEffect(() => {
-    if (!editable || !tagAssistEnabled || !showTranslations || deleteMode || muteMode) {
+    if (!editable || !tagAssistEnabled || !showTranslations) {
       setEditingTag(null);
       setTagInput('');
       setInsertionIndex(null);
       if (!editable || completionSource === 'tag') closeSuggestions();
     }
-  }, [editable, completionSource, tagAssistEnabled, showTranslations, deleteMode, muteMode, closeSuggestions]);
+  }, [editable, completionSource, tagAssistEnabled, showTranslations, closeSuggestions]);
 
   const refreshSuggestions = useCallback((nextValue = value, caret = textareaRef.current?.selectionStart ?? 0, source: 'prompt' | 'tag' = 'prompt') => {
     if (!completionEnabled || !editable || composingRef.current) return;
@@ -793,7 +782,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     });
   };
 
-  const isOpen = completionEnabled && editable && !deleteMode && !muteMode && (completionSource === 'prompt' || showTranslations) && Boolean(target && (suggestions.length > 0 || isLoading));
+  const isOpen = completionEnabled && editable && (completionSource === 'prompt' || showTranslations) && Boolean(target && (suggestions.length > 0 || isLoading));
   const handleCompletionKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     if (composingRef.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 || !isOpen
       || event.currentTarget !== (completionSource === 'tag' ? tagInputRef.current : textareaRef.current)) return false;
@@ -877,14 +866,26 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   }, [isOpen, completionSource]);
 
   const clearUndo = clearActionState === 'cleared' && undoableAction === 'clear';
+  const actionButtonClass = "mobile-touch flex h-7 w-7 items-center justify-center rounded-md p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100";
+  const copyAction = onCopy ? (
+    <button type="button"
+      disabled={!value.trim()}
+      aria-label={t(copyTitle || '复制提示词')}
+      title={t(copyTitle || '复制提示词')}
+      onMouseDown={event => event.preventDefault()}
+      onClick={() => onCopy(value)}
+      className={actionButtonClass}>
+      <Copy aria-hidden="true" className="h-4 w-4" />
+    </button>
+  ) : null;
   const clearAction = <button type="button"
     disabled={!editable || (!value.length && !clearUndo)}
     aria-label={t(clearUndo ? '撤销清空' : '清空当前提示词')}
     title={t(clearUndo ? '撤销清空' : '清空当前提示词')}
     onMouseDown={event => event.preventDefault()}
     onClick={() => { if (clearUndo) moveHistory(); else clearPrompt(); textareaRef.current?.focus(); }}
-    className="mobile-touch flex h-7 w-7 items-center justify-center rounded-md p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100">
-    {clearUndo ? <RotateCcw aria-hidden="true" className="h-4 w-4" /> : <Eraser aria-hidden="true" className="h-4 w-4" />}
+    className={actionButtonClass}>
+    {clearUndo ? <Undo2 aria-hidden="true" className="h-4 w-4" /> : <Eraser aria-hidden="true" className="h-4 w-4" />}
   </button>;
   const tagInputField = <span key="tag-input" className="inline-grid min-w-[4ch] max-w-full grid-cols-[minmax(0,1fr)] rounded-md border border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_8%,transparent)] font-mono text-micro leading-tight ring-1 ring-inset ring-[color-mix(in_srgb,var(--nai-accent)_35%,transparent)]">
     <span aria-hidden="true" className="invisible min-w-0 whitespace-pre-wrap px-1 py-0.5 [grid-area:1/1] [overflow-wrap:anywhere]">{tagInput + '\u200b'}</span>
@@ -929,10 +930,6 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const insertionAt = (index: number) => {
     // 插入缝只留窄空白（决策：不显示加号／占位框）。不用 mobile-touch：其 44px 下限会把缝撑成大方块，权重组之间还会被顶成空行。
     const slotClass = `prompt-insert-slot inline-flex ${currentTranslations.length ? 'min-h-10' : 'min-h-6'} ${index === currentTranslations.length ? 'min-w-3 flex-1' : 'w-3 shrink-0'}`;
-    // 屏蔽／删除模式中不提供插入入口，但保留与普通模式同宽同高的占位，避免切换模式后翻译区排版突然变紧凑。
-    if (deleteMode || muteMode) {
-      return <button key={`insert:${index}`} type="button" disabled aria-hidden="true" tabIndex={-1} data-prompt-insert-slot className={slotClass} />;
-    }
     if (!editable) return null;
     if (insertionIndex === index) return tagInputField;
     return <button key={`insert:${index}`} type="button" data-prompt-insert-slot aria-label={index < currentTranslations.length ? t('插入提示词：位置 {0}', [index + 1]) : t('在末尾插入提示词')}
@@ -956,9 +953,9 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     : null;
   const reverseAction = reverseTag
     ? <button type="button" aria-label={t('从图片反推 Tag 到这一栏')} title={t('上传或粘贴图片，识别后追加到这一栏')} disabled={!editable || reverseTag.disabled} onClick={event => { event.stopPropagation(); reverseTag.onReverse(); }}
-      className="mobile-touch flex h-7 w-7 items-center justify-center rounded-md p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"><ImagePlus className="h-4 w-4" /></button>
+      className={actionButtonClass}><ScanSearch className="h-4 w-4" /></button>
     : null;
-  const promptActions = <>{reverseAction}{tidyAction}{libraryAction}{clearAction}</>;
+  const promptActions = <>{reverseAction}{tidyAction}{libraryAction}{copyAction}{clearAction}</>;
 
   return (
     <div data-lab-prompt-field="true" className={`group relative ${containerClassName}`} onKeyDownCapture={event => {
@@ -983,9 +980,9 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         event.preventDefault();
         setSelectedTagIds(new Set(promptTokens.map(token => token.id)));
       }
-      if (event.key === 'Escape' && (deleteMode || muteMode)) { event.preventDefault(); event.stopPropagation(); setDeleteMode(false); setMuteMode(false); clearSelection(); }
+      if (event.key === 'Escape' && selectedTagIds.size > 0) { event.preventDefault(); event.stopPropagation(); clearSelection(); }
     }}>
-      {clearActionSlotRef && clearActionTarget ? createPortal(libraryAction || tidyAction ? <span className="flex items-center gap-1">{promptActions}</span> : promptActions, clearActionTarget) : <div className="mb-1 flex justify-end gap-1">{promptActions}</div>}
+      {clearActionSlotRef && clearActionTarget ? createPortal((libraryAction || tidyAction || copyAction) ? <span className="flex items-center gap-1">{promptActions}</span> : promptActions, clearActionTarget) : <div className="mb-1 flex justify-end gap-1">{promptActions}</div>}
       {librarySelection && <PromptLibraryChooser value={value} onText={commitValue} field={libraryField} initialEntry={librarySelection.entry} completion={librarySelection.edit} onClose={() => setLibrarySelection(null)} />}
       <div className="relative min-w-0">
       <textarea
@@ -1061,7 +1058,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 
       {libraryInfo && <React.Suspense fallback={null}><PromptTagLibraryInfo target={libraryInfo} onClose={() => setLibraryInfo(null)} /></React.Suspense>}
 
-      {tagAssistEnabled && showTranslations && (currentTranslations.length > 0 || editable) && (
+      {tagAssistEnabled && showTranslations && (currentTranslations.length > 0 || visibleMutedTags.length > 0 || insertionIndex !== null) && (
         <div className="prompt-tag-assist appearance-group mt-1 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/55" aria-label={t("提示词中文翻译")} tabIndex={0}
           onCopy={event => copySelection(event)} onCut={event => copySelection(event, true)}
           onPaste={event => {
@@ -1111,7 +1108,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               const mutedUnit = (item: MutedPromptTag) => {
                 // 不额外加图标：只靠虚线、删除线与琥珀色标记，避免胶囊变宽挤动后面的 Tag。
                 const hasInfo = Boolean(item.tags?.some(tag => catalogEntries.has(tag)));
-                return <button type="button" key={item.id} disabled={!editable || deleteMode} onClick={() => unmuteTag(item.id)}
+                return <button type="button" key={item.id} disabled={!editable} onClick={() => unmuteTag(item.id)}
                   aria-label={t("恢复屏蔽的 Tag：{0}", [item.label])} title={t("点击恢复原文：{0}", [item.raw])}
                   className={`mobile-touch inline-flex min-w-0 max-w-full flex-col rounded-md border border-dashed border-amber-300 bg-amber-50/60 px-2 py-1 text-left leading-tight text-amber-700 transition-colors hover:border-amber-400 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:border-amber-700 dark:hover:bg-amber-950/50 ${hasInfo ? 'pr-7' : ''}`}>
                   <span className="min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro line-through [overflow-wrap:anywhere]">{item.label}</span>
@@ -1125,7 +1122,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 if (mutedHere) nodes.push(...mutedHere.map(mutedUnit));
                 if (!item.groupId) {
                   const selected = selectedTagIds.has(item.id);
-                  const warningReason = deleteMode ? warningTags?.get(item.lookupTag) : undefined;
+                  const warningReason = warningTags?.get(item.lookupTag);
                   nodes.push(
                     <div
                       role="button" tabIndex={0} data-agent-interaction="double_click" onKeyDown={selectUnitWithKeyboard}
@@ -1138,17 +1135,17 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                         return next;
                       })}
                       key={item.id}
-                      className={`relative inline-flex min-w-0 max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors ${catalogEntries.has(item.lookupTag) ? 'pr-7' : ''} ${deleteMode ? 'hover:border-red-400' : muteMode ? 'hover:border-amber-400' : 'hover:border-[var(--nai-accent)]'} ${selected
-                        ? deleteMode ? 'border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/40'
-                          : muteMode ? 'border-amber-400 bg-amber-50 dark:border-amber-500 dark:bg-amber-950/40'
-                            : 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
-                        : 'appearance-group border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
+                      className={`relative inline-flex min-w-0 max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors ${catalogEntries.has(item.lookupTag) ? 'pr-7' : ''} hover:border-[var(--nai-accent)] ${selected
+                        ? 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
+                        : warningReason
+                          ? 'border-red-300 bg-red-50/50 dark:border-red-800/70 dark:bg-red-950/25'
+                          : 'appearance-group border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
                       aria-pressed={selected}
                     >
-                      <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={warningReason ? `${item.displayTag} — ${warningReason}` : item.displayTag}>
+                      <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${selected ? 'text-[var(--nai-accent)]' : warningReason ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`} title={warningReason ? `${item.displayTag} — ${warningReason}` : item.displayTag}>
                         {editingTag?.id === item.id ? tagInputField : item.displayTag}
                       </span>
-                      <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={editingTag?.id === item.id ? draftChinese : item.chinese || t("词库暂无翻译")}>{editingTag?.id === item.id ? draftChinese : item.chinese || t("待翻译")}</span>
+                      <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${selected ? 'text-[var(--nai-accent)]' : warningReason ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`} title={editingTag?.id === item.id ? draftChinese : item.chinese || t("词库暂无翻译")}>{editingTag?.id === item.id ? draftChinese : item.chinese || t("待翻译")}</span>
                       {infoButton(item)}
                     </div>,
                   );
@@ -1172,8 +1169,6 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                   : last.groupKind === 'brace' ? '}'.repeat(last.groupLevel || 1)
                     : last.groupKind === 'bracket' ? ']'.repeat(last.groupLevel || 1) : '';
                 const groupSelected = members.every(member => selectedTagIds.has(member.id));
-                // 普通模式与屏蔽模式以整组为单位选择；删除模式逐词选择。三种模式共用同一套组容器与权重语法。
-                const memberMode = deleteMode || muteMode;
                 const toggleGroupSelection = () => setSelectedTagIds(current => {
                   const groupIds = members.map(member => member.id);
                   const allSelected = groupIds.every(id => current.has(id));
@@ -1181,45 +1176,32 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                   groupIds.forEach(id => (allSelected ? next.delete(id) : next.add(id)));
                   return next;
                 });
-                const selectedTone = (selected: boolean) => selected
-                  ? deleteMode ? 'text-red-600 dark:text-red-400' : muteMode ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--nai-accent)]'
-                  : 'text-gray-500 dark:text-gray-400';
+                const selectedTone = (selected: boolean, hasWarning = false) => selected
+                  ? 'text-[var(--nai-accent)]'
+                  : hasWarning ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400';
                 const groupTextTone = selectedTone(groupSelected);
-                const syntaxTone = memberMode ? 'text-gray-500 dark:text-gray-400' : groupTextTone;
                 nodes.push(
                   <div
-                    role={deleteMode ? undefined : 'button'} tabIndex={deleteMode ? undefined : 0} onKeyDown={deleteMode ? undefined : selectUnitWithKeyboard}
-                    onClick={deleteMode ? undefined : toggleGroupSelection}
+                    role="button" tabIndex={0} onKeyDown={selectUnitWithKeyboard}
+                    onClick={toggleGroupSelection}
                     key={item.groupId}
-                    className={`inline-flex max-w-full flex-wrap items-start overflow-hidden rounded-md border text-left leading-tight transition-colors ${deleteMode ? 'hover:border-red-400' : muteMode ? 'hover:border-amber-400' : 'hover:border-[var(--nai-accent)]'} ${!deleteMode && groupSelected
+                    className={`inline-flex max-w-full flex-wrap items-start overflow-hidden rounded-md border text-left leading-tight transition-colors hover:border-[var(--nai-accent)] ${groupSelected
                       ? 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
                       : 'appearance-group border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
-                    aria-pressed={deleteMode ? undefined : groupSelected}
+                    aria-pressed={groupSelected}
                   >
-                    {openSyntax && <span title={openWeight ? t("原文缺少结尾 ::，补全后权重才会生效") : undefined} className={`shrink-0 py-1 pl-2 font-mono text-micro font-bold ${syntaxTone}`}>{openSyntax}</span>}
+                    {openSyntax && <span title={openWeight ? t("原文缺少结尾 ::，补全后权重才会生效") : undefined} className={`shrink-0 py-1 pl-2 font-mono text-micro font-bold ${groupTextTone}`}>{openSyntax}</span>}
                     {members.map((member, memberIndex) => {
-                      const memberSelected = memberMode ? (muteMode ? groupSelected : selectedTagIds.has(member.id)) : groupSelected;
-                      const memberWarning = deleteMode ? warningTags?.get(member.lookupTag) : undefined;
-                      const memberTextTone = selectedTone(memberSelected);
+                      const memberSelected = selectedTagIds.has(member.id) || groupSelected;
+                      const memberWarning = warningTags?.get(member.lookupTag);
+                      const memberTextTone = selectedTone(memberSelected, Boolean(memberWarning));
                       return <React.Fragment key={member.id}>
                         {memberIndex > 0 && insertionAt(groupIndex + memberIndex)}
                         <span
-                          role={memberMode ? 'button' : undefined} tabIndex={memberMode ? 0 : undefined}
-                          aria-pressed={memberMode ? memberSelected : undefined}
                           data-warning-tag={memberWarning ? 'true' : undefined}
                           title={memberWarning}
-                          onKeyDown={memberMode ? selectUnitWithKeyboard : undefined}
-                          onClick={memberMode ? event => {
-                            event.stopPropagation();
-                            if (muteMode) { toggleGroupSelection(); return; }
-                            setSelectedTagIds(current => {
-                              const next = new Set(current);
-                              if (next.has(member.id)) next.delete(member.id); else next.add(member.id);
-                              return next;
-                            });
-                          } : undefined}
                           data-agent-interaction="double_click" aria-label={member.displayTag} onDoubleClick={event => { event.stopPropagation(); editTag(member); }}
-                          className={`relative flex min-w-0 max-w-full flex-col px-2 py-1 ${catalogEntries.has(member.lookupTag) ? 'pr-7' : ''} ${memberIndex > 0 ? 'border-l border-gray-200 dark:border-gray-700' : ''} ${memberMode && memberSelected ? (deleteMode ? 'bg-red-50 dark:bg-red-950/40' : 'bg-amber-50 dark:bg-amber-950/40') : ''}`}>
+                          className={`relative flex min-w-0 max-w-full flex-col px-2 py-1 ${catalogEntries.has(member.lookupTag) ? 'pr-7' : ''} ${memberIndex > 0 ? 'border-l border-gray-200 dark:border-gray-700' : ''}`}>
                           <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${memberTextTone}`} title={memberWarning ? `${member.displayTag} — ${memberWarning}` : member.displayTag}>
                             {editingTag?.id === member.id ? tagInputField : member.displayTag}
                           </span>
@@ -1228,7 +1210,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                         </span>
                       </React.Fragment>;
                     })}
-                    {closeSyntax && <span className={`shrink-0 py-1 pr-2 font-mono text-micro font-bold ${syntaxTone}`}>{closeSyntax}</span>}
+                    {closeSyntax && <span className={`shrink-0 py-1 pr-2 font-mono text-micro font-bold ${groupTextTone}`}>{closeSyntax}</span>}
                   </div>,
                 );
               }
@@ -1237,16 +1219,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             })()}
             {insertionAt(currentTranslations.length)}
           </div>
-          <div className={`mt-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70 ${compactToolbar && !deleteMode && !muteMode ? 'flex flex-col gap-1.5' : 'flex min-h-7 flex-wrap items-center gap-1'}`}>
-            {(deleteMode || muteMode) && (
-              <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
-            )}
-            {deleteMode || muteMode ? <div className="ml-auto flex shrink-0 items-center gap-1.5">
-              <button type="button" onClick={() => { setDeleteMode(false); setMuteMode(false); clearSelection(); }} className="mobile-touch h-8 rounded-md px-2 py-1 text-meta font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">{t("取消")}</button>
-              {deleteMode
-                ? <button type="button" disabled={!editable || !selectedTokens.length} onClick={deleteSelected} className="mobile-touch inline-flex h-8 items-center gap-1 rounded-md bg-red-600 px-2.5 py-1 text-meta font-bold text-white hover:bg-red-500 disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" />{t("删除 {0} 个 Tag", [selectedTokens.length])}</button>
-                : <button type="button" disabled={!editable || !selectedTokens.length} onClick={muteSelected} className="mobile-touch inline-flex h-8 items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 text-meta font-bold text-white hover:bg-amber-400 disabled:opacity-40"><EyeOff className="h-3.5 w-3.5" />{t("屏蔽 {0} 个 Tag", [selectedTokens.length])}</button>}
-            </div> : compactToolbar ? (
+          <div className={`mt-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70 ${compactToolbar ? 'flex flex-col gap-1.5' : 'flex min-h-7 flex-wrap items-center gap-1'}`}>
+            {compactToolbar ? (
               <>
                 {/* 窄栏第 1 行：权重类型 + 添加 + 增减 + 移除，紧凑单行排布 */}
                 <div className="flex flex-wrap items-center gap-1">
@@ -1338,24 +1312,22 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                     </button>
                   )}
                   <div className="ml-auto flex shrink-0 items-center gap-1">
-                    <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"><RotateCcw className="h-3.5 w-3.5" /></button>
-                    <button type="button" aria-label={t("屏蔽模式")} title={t("进入屏蔽模式：选择 Tag 后暂时移出提示词")}
-                      disabled={!editable || !promptTokens.length} onClick={() => { clearSelection(); setDeleteMode(false); setMuteMode(true); }}
-                      className="mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800">
+                    <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"><Undo2 className="h-3.5 w-3.5" /></button>
+                    <button type="button" aria-label={t("屏蔽选中的 Tag")} title={selectedTokens.length ? t("屏蔽选中的 {0} 个 Tag（可在翻译区点虚线胶囊恢复）", [selectedTokens.length]) : t("先点选上方 Tag，再点击屏蔽")}
+                      disabled={!editable || !selectedTokens.length} onClick={muteSelected}
+                      className="mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-600 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-amber-950/40 dark:hover:text-amber-400">
                       <EyeOff aria-hidden="true" className="h-3.5 w-3.5" />
                     </button>
                     <button
                       type="button"
-                      aria-label={t("删除模式")}
-                      title={warningTokens.length ? t("检测到 {0} 处疑似待删词：点击进入删除模式查看并清理", [warningTokens.length]) : t("删除模式")}
-                      disabled={!editable || !promptTokens.length}
+                      aria-label={selectedTokens.length ? t("删除选中的 Tag") : warningTokens.length ? t("选中疑似待删词") : t("删除选中的 Tag")}
+                      title={selectedTokens.length ? t("删除选中的 {0} 个 Tag（可撤销）", [selectedTokens.length]) : warningTokens.length ? t("检测到 {0} 处疑似待删词：点击选中，再点一次删除", [warningTokens.length]) : t("先点选上方 Tag，再点击删除")}
+                      disabled={!editable || (!selectedTokens.length && !warningTokens.length)}
                       onClick={() => {
-                        setMuteMode(false);
-                        setDeleteMode(true);
-                        if (warningTokens.length) setSelectedTagIds(new Set(warningTokens.map(token => token.id)));
-                        else clearSelection();
+                        if (selectedTokens.length) deleteSelected();
+                        else if (warningTokens.length) setSelectedTagIds(new Set(warningTokens.map(token => token.id)));
                       }}
-                      className="relative mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"
+                      className="relative mobile-touch flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                     >
                       <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                       {warningTokens.length > 0 && (
@@ -1460,24 +1432,22 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               </button>
             )}
             <div className="ml-auto flex shrink-0 items-center gap-1">
-              <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
-              <button type="button" aria-label={t("屏蔽模式")} title={t("进入屏蔽模式：选择 Tag 后暂时移出提示词")}
-                disabled={!editable || !promptTokens.length} onClick={() => { clearSelection(); setDeleteMode(false); setMuteMode(true); }}
-                className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800">
+              <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"><Undo2 className="h-4 w-4" /></button>
+              <button type="button" aria-label={t("屏蔽选中的 Tag")} title={selectedTokens.length ? t("屏蔽选中的 {0} 个 Tag（可在翻译区点虚线胶囊恢复）", [selectedTokens.length]) : t("先点选上方 Tag，再点击屏蔽")}
+                disabled={!editable || !selectedTokens.length} onClick={muteSelected}
+                className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-600 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-amber-950/40 dark:hover:text-amber-400">
                 <EyeOff aria-hidden="true" className="h-4 w-4" />
               </button>
               <button
                 type="button"
-                aria-label={t("删除模式")}
-                title={warningTokens.length ? t("检测到 {0} 处疑似待删词：点击进入删除模式查看并清理", [warningTokens.length]) : t("删除模式")}
-                disabled={!editable || !promptTokens.length}
+                aria-label={selectedTokens.length ? t("删除选中的 Tag") : warningTokens.length ? t("选中疑似待删词") : t("删除选中的 Tag")}
+                title={selectedTokens.length ? t("删除选中的 {0} 个 Tag（可撤销）", [selectedTokens.length]) : warningTokens.length ? t("检测到 {0} 处疑似待删词：点击选中，再点一次删除", [warningTokens.length]) : t("先点选上方 Tag，再点击删除")}
+                disabled={!editable || (!selectedTokens.length && !warningTokens.length)}
                 onClick={() => {
-                  setMuteMode(false);
-                  setDeleteMode(true);
-                  if (warningTokens.length) setSelectedTagIds(new Set(warningTokens.map(token => token.id)));
-                  else clearSelection();
+                  if (selectedTokens.length) deleteSelected();
+                  else if (warningTokens.length) setSelectedTagIds(new Set(warningTokens.map(token => token.id)));
                 }}
-                className="relative mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"
+                className="relative mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-35 dark:text-gray-300 dark:hover:bg-red-950/40 dark:hover:text-red-400"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
                 {warningTokens.length > 0 && (

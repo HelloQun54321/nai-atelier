@@ -5,7 +5,7 @@ import { LabPageLayout } from '../../services/appearancePreferences';
 import { mergePromptSections } from '../../services/labWorkspace';
 import { LabModuleSection } from '../LabModuleSection';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
-import { PresetSection, PresetSource, PresetSourceBadges, PromptCopyButton } from './PresetSourceBadges';
+import { PresetSection, PresetSource, PresetSourceBadges } from './PresetSourceBadges';
 import type { PromptFragmentKind } from '../../services/promptLibraryEntries';
 import type { PromptSectionSource, PromptSections } from '../../types';
 import { getEditableGlobalPrompt } from '../../services/promptUtils';
@@ -17,7 +17,7 @@ interface PromptFieldProps {
     value: string;
     placeholder: string;
     library?: PromptFragmentKind;
-    directoryId?: string; purposeId?: PromptPurposeId; roleId?: string; negativeLabel?: string;
+    directoryId?: string; purposeId?: PromptPurposeId; roleId?: string; lockedSection?: 'items' | 'saved'; negativeLabel?: string;
     disabled: boolean;
     tagAssistEnabled: boolean;
     onChange: (value: string, source?: PromptSectionSource) => void;
@@ -35,7 +35,7 @@ interface PromptFieldProps {
     onReverseTag?: () => void;
 }
 
-export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, directoryId, purposeId, roleId, negativeLabel, disabled, tagAssistEnabled, onChange, onCopy, sourceName, negative, negativeLocked, onNegativeChange, hideLabel, tidy, onReverseTag }) => {
+export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, directoryId, purposeId, roleId, lockedSection, negativeLabel, disabled, tagAssistEnabled, onChange, onCopy, sourceName, negative, negativeLocked, onNegativeChange, hideLabel, tidy, onReverseTag }) => {
     const id = useId();
     const clearSlot = useRef<HTMLSpanElement>(null);
     const negativeContent = onNegativeChange && <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
@@ -44,6 +44,17 @@ export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placehol
             tagAssistEnabled={tagAssistEnabled && !negativeLocked} disabled={disabled || negativeLocked} value={negative || ''} onValueChange={onNegativeChange}
             className="min-h-10 w-full rounded border border-gray-200 bg-gray-50 p-2 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
     </div>;
+    const contentContent = <TagAutocompleteTextarea id={id} aria-label={t(label)} clearActionSlotRef={clearSlot}
+            promptTidy={tidy ? { ...tidy, hideProofread: true } : undefined}
+            reverseTag={onReverseTag ? { onReverse: onReverseTag } : undefined}
+            onCopy={onCopy ? next => onCopy(next, label) : undefined}
+            copyTitle={t('复制{0}', [t(label)])}
+            libraryField={{ kind: library, directoryId, purposeId, roleId, lockedSection }}
+            tagAssistEnabled={tagAssistEnabled} disabled={disabled} value={value} onValueChange={onChange}
+            placeholder={placeholder ? t(placeholder) : ''}
+            className={`min-h-20 w-full rounded-lg border p-3 font-mono text-sm font-normal leading-relaxed outline-none ${disabled
+                ? 'cursor-not-allowed bg-gray-100 text-gray-500 dark:bg-gray-800'
+                : 'border-gray-200 bg-gray-50 text-gray-900 focus:ring-1 focus:ring-indigo-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-200'}`} />;
     return <div role="group" aria-label={t(label)} className="flex min-w-0 flex-col gap-2">
         <div className="flex min-w-0 items-center justify-between gap-2">
             <label htmlFor={id} className={hideLabel ? 'sr-only' : 'min-w-0 truncate text-sm font-semibold text-gray-800 dark:text-gray-100'}>
@@ -52,18 +63,9 @@ export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placehol
             </label>
             <div className="ml-auto flex shrink-0 items-center gap-1">
                 <span ref={clearSlot} />
-                {onCopy && <PromptCopyButton onClick={() => onCopy(value, label)} title={t('复制{0}', [t(label)])} />}
             </div>
         </div>
-        <TagAutocompleteTextarea id={id} aria-label={t(label)} clearActionSlotRef={clearSlot}
-            promptTidy={tidy}
-            reverseTag={onReverseTag ? { onReverse: onReverseTag } : undefined}
-            libraryField={{ kind: library, directoryId, purposeId, roleId }}
-            tagAssistEnabled={tagAssistEnabled} disabled={disabled} value={value} onValueChange={onChange}
-            placeholder={t(placeholder)}
-            className={`min-h-20 w-full rounded-lg border p-3 font-mono text-sm font-normal leading-relaxed outline-none ${disabled
-                ? 'cursor-not-allowed bg-gray-100 text-gray-500 dark:bg-gray-800'
-                : 'border-gray-200 bg-gray-50 text-gray-900 focus:ring-1 focus:ring-indigo-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-200'}`} />
+        {contentContent}
         {negativeContent}
     </div>;
 };
@@ -105,7 +107,7 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                 <PresetSourceBadges sources={activeSources} />
             </div>}
             <div className="flex flex-col gap-3">
-                <PromptField label="全局正面提示词" onReverseTag={onReversePromptTag} hideLabel={!embedded} value={getEditableGlobalPrompt(prompt, supplementPrompt)} placeholder="全局正面提示词" disabled={!canEdit}
+                <PromptField label="全局正面提示词" lockedSection="saved" onReverseTag={onReversePromptTag} hideLabel={!embedded} value={getEditableGlobalPrompt(prompt, supplementPrompt)} placeholder="" disabled={!canEdit}
                     tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} tidy={notify && { notify, sample }} onChange={value => {
                         if (onPlainPromptChange) onPlainPromptChange(value);
                         else { setPrompt(value); setSupplementPrompt?.(''); setSections?.({}); }

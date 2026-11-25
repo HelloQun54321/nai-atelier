@@ -36,7 +36,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { readSafeModeStartupPreference } from '../services/safeModePreferences';
 import { clearMobileThumbnailCache, getMobileCacheStats, setMobileCacheLimitMb } from '../services/mobileImageCache';
-import { ArrowDown, ArrowUp, ArrowLeft, Bot, Check, ChevronDown, Copy, Download, Expand, ImagePlus, List, Minimize2, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Square, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowLeft, Bot, Check, ChevronDown, Copy, Download, Expand, ImagePlus, List, Minimize2, MoreVertical, Pencil, Play, Plus, RotateCcw, Square, Trash2, X } from 'lucide-react';
 import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 
 interface PromptAgentPanelProps {
@@ -1314,7 +1314,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             <span className="mt-0.5 block truncate text-micro text-gray-400">{t("{0} · {1} 轮 · {2}", [displayModelName(session.model), session.messageCount || 0, new Date(session.updatedAt).toLocaleString(getLanguage(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })])}</span>
             <span className="mt-1 flex items-center gap-1.5 text-mini font-bold">{session.running ? <span className="text-indigo-600">{t("工作中")}</span> : session.taskStatus === 'interrupted' ? <span className="text-amber-600">{t("上次中断")}</span> : session.taskStatus === 'failed' ? <span className="text-red-500">{t("上次失败")}</span> : <span className="text-emerald-700 dark:text-emerald-400">{t("就绪")}</span>}</span>
           </button>}
-          <button type="button" data-session-menu onClick={() => setSessionMenuId(value => value === session.id ? '' : session.id)} className="mobile-touch absolute right-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:bg-white/70 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("会话操作")} title={t("会话操作")}><MoreHorizontal className="h-4 w-4" /></button>
+          <button type="button" data-session-menu onClick={() => setSessionMenuId(value => value === session.id ? '' : session.id)} className="mobile-touch absolute right-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:bg-white/70 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("会话操作")} title={t("会话操作")}><MoreVertical className="h-4 w-4" /></button>
           {sessionMenuId === session.id && <div data-session-menu className="appearance-panel appearance-overlay absolute right-1 top-[calc(50%+1.45rem)] z-30 w-28 overflow-hidden rounded-xl border border-gray-200 bg-white p-1 shadow-xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900">
             <button type="button" onClick={() => { setSessionMenuId(''); setEditingSessionId(session.id); setEditingTitle(session.title); }} disabled={running || compacting} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"><Pencil className="h-3.5 w-3.5" />{t("重命名")}</button>
             <button type="button" onClick={() => { setSessionMenuId(''); void deleteSession(session); }} disabled={running || compacting || sessions.length <= 1} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-30 dark:text-rose-400 dark:hover:bg-rose-950/30"><Trash2 className="h-3.5 w-3.5 text-rose-500" />{t("删除")}</button>
@@ -1365,7 +1365,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               aria-label={t("更多会话操作")}
               title={t("更多会话操作")}
             >
-              <MoreHorizontal className="h-5 w-5" />
+              <MoreVertical className="h-5 w-5" />
             </button>
             {showMoreMenu && (
               <div className="appearance-panel appearance-overlay absolute right-0 top-11 z-30 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">

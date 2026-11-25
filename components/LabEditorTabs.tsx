@@ -31,15 +31,14 @@ export const LabEditorTabs = <T extends string,>({ value, options, onChange }: {
       const lastMode = buttons[buttons.length - 1];
       const gap = collapsed ? 0 : Math.max(0, chrome.getBoundingClientRect().bottom - header.getBoundingClientRect().bottom);
       host.style.setProperty('--lab-tabs-chrome-gap', `${gap}px`);
+      header.style.removeProperty('--lab-navigation-outline');
+      delete header.dataset.labNavigation;
       if (!firstMode || !lastMode || buttons.length < 2 || modes.dataset.modeChrome === 'compact') {
         nav.style.removeProperty('--lab-tabs-width');
         nav.style.removeProperty('--lab-tabs-left');
-        header.style.removeProperty('--lab-navigation-outline');
-        delete header.dataset.labNavigation;
         return;
       }
       const firstRect = firstMode.getBoundingClientRect(), lastRect = lastMode.getBoundingClientRect();
-      const modeRect = modes.getBoundingClientRect(), headerRect = header.getBoundingClientRect();
       const bodyRect = nav.nextElementSibling?.getBoundingClientRect();
       const available = lastRect.right - firstRect.left;
       if (!bodyRect || available <= 0) return;
@@ -47,23 +46,6 @@ export const LabEditorTabs = <T extends string,>({ value, options, onChange }: {
       const inset = (available - width) / 2;
       nav.style.setProperty('--lab-tabs-width', `${width}px`);
       nav.style.setProperty('--lab-tabs-left', `${firstRect.left + inset - bodyRect.left}px`);
-      // 共用一个连续轮廓，避免两块半透明底板重叠形成接缝。
-      const w = headerRect.width, h = headerRect.height;
-      const left = modeRect.left - headerRect.left + inset, right = modeRect.right - headerRect.left - inset;
-      const bottom = h + nav.getBoundingClientRect().height;
-      const radius = Math.min(parseFloat(getComputedStyle(header).borderTopLeftRadius) || 10, h / 2);
-      const lowerRadius = Math.min(parseFloat(getComputedStyle(modes).borderTopLeftRadius) || radius, nav.getBoundingClientRect().height / 2);
-      const turn = Math.max(0, Math.min(8, left - radius, w - right - radius));
-      const outline = [
-        `M ${radius} 0 H ${w - radius} Q ${w} 0 ${w} ${radius}`,
-        `V ${h - radius} Q ${w} ${h} ${w - radius} ${h} H ${right + turn} Q ${right} ${h} ${right} ${h + turn}`,
-        `V ${bottom - lowerRadius} Q ${right} ${bottom} ${right - lowerRadius} ${bottom}`,
-        `H ${left + lowerRadius} Q ${left} ${bottom} ${left} ${bottom - lowerRadius}`,
-        `V ${h + turn} Q ${left} ${h} ${left - turn} ${h} H ${radius} Q 0 ${h} 0 ${h - radius}`,
-        `V ${radius} Q 0 0 ${radius} 0 Z`,
-      ].join(' ');
-      header.style.setProperty('--lab-navigation-outline', `path("${outline}")`);
-      header.dataset.labNavigation = 'joined';
     };
     measure();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);

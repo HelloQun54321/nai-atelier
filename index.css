@@ -129,7 +129,7 @@ html:root[data-design-theme='nai-atelier'] .content-library [data-appearance='co
 }
 
 /* 卡片不画装饰边和悬停阴影，仅保留选中及键盘焦点的功能性外圈。 */
-html:root :is(.media-card, .gallery-image-card, .appearance-card, .atelier-theme-card, .appearance-control-panel) {
+html:root :is(.media-card, .gallery-image-card, .prompt-text-card, .appearance-card, .atelier-theme-card, .appearance-control-panel) {
   border-width: 0 !important;
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000) !important;
 }
@@ -237,7 +237,8 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
   }
 }
 
-.gallery-image-card {
+.gallery-image-card,
+.prompt-text-card {
   /* 悬停反馈要跟手：150ms 内完成，曲线末端干脆，不留长拖尾。 */
   transition: translate 150ms cubic-bezier(.2, 0, 0, 1), box-shadow 150ms ease, border-color 120ms ease, filter 120ms ease;
 }
@@ -248,7 +249,7 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
   transition: scale 150ms cubic-bezier(.2, 0, 0, 1), opacity 300ms ease, filter 160ms ease, transform 160ms ease;
 }
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  html[data-gallery-hover-float='true'][data-gallery-pointer-tilt='false'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover {
+  html[data-gallery-hover-float='true'][data-gallery-pointer-tilt='false'][data-motion='full'] :is(.gallery-image-card, .prompt-text-card):not([data-press-input='touch']):not([data-press-input='pen']):hover {
     translate: 0 -3px;
   }
   html[data-gallery-hover-float='true'][data-gallery-pointer-tilt='false'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover .mobile-gallery-frame img {
@@ -948,8 +949,8 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
   background-color: var(--nai-toolbar-surface, rgb(255 255 255 / 0.92)) !important;
 }
 .lab-navigation-surface { display: none; }
-.character-tools { --nai-control-height: 24px; }
-.character-tools [data-appearance='control'] { height: 24px; min-height: 24px; width: 24px; min-width: 24px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.character-tools { --nai-control-height: 28px; }
+.character-tools [data-appearance='control'] { height: 28px; min-height: 28px; width: 28px; min-width: 28px; padding: 0; border: 0; background: transparent; box-shadow: none; }
 @media (pointer: coarse) {
   .character-tools button { height: 44px; min-height: 44px; width: 44px; min-width: 44px; }
 }
@@ -959,53 +960,23 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
   .mobile-touch { min-width: 44px; min-height: 44px; touch-action: manipulation; }
 }
 @media (min-width: 1024px) {
-  .chain-editor-workspace { --lab-tabs-height: 36px; --lab-tabs-padding: 2px; }
-  .workspace-mode-tabs { width: var(--lab-tabs-width, calc(50% - 1.5rem)); height: var(--lab-tabs-height); margin-left: var(--lab-tabs-left, .75rem); margin-top: calc(-1 * var(--lab-tabs-chrome-gap, 0px)); margin-bottom: calc(var(--lab-tabs-chrome-gap, 0px) - var(--lab-tabs-height)); }
-  /* 主次导航只由同一个底板绘制背景，中间没有边框、阴影或独立圆角。 */
-  html:root .chain-editor-workspace .chain-editor-header[data-lab-navigation='joined'] {
-    isolation: isolate;
-    background: transparent !important;
-    border-color: transparent !important;
-    box-shadow: none !important;
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-  }
-  html:root .chain-editor-header[data-lab-navigation='joined'] .lab-navigation-surface {
-    display: block;
-    position: absolute;
-    z-index: -1;
-    pointer-events: none;
-    inset: -1px;
-    bottom: calc(-1 * var(--lab-tabs-height));
-    height: auto;
-    min-height: 0;
-    margin: 0;
-    border: 0;
-    /* 高光是沿元素圆角绘制的内阴影，随后才被 clip-path 裁切：
-       这里必须沿用顶栏自身的圆角，否则顶部高光在两端会被裁成直角缺口。 */
-    border-radius: var(--nai-panel-radius, 24px) var(--nai-panel-radius, 24px) 0 0;
-    background-color: var(--nai-toolbar-surface);
-    clip-path: var(--lab-navigation-outline);
-  }
-  html:root .chain-editor-header[data-lab-navigation='joined'] .generation-mode-nav {
-    background: transparent !important;
-    border-color: transparent !important;
-    box-shadow: none !important;
-  }
+  .chain-editor-workspace { --lab-tabs-height: 36px; --lab-tabs-gap: 8px; --lab-tabs-padding: 3px; }
+  /* 二级分区条独立悬浮在顶栏下方居中对齐，四边完整圆角收口，不再与顶栏粘成“下巴”。 */
+  .workspace-mode-tabs { width: var(--lab-tabs-width, calc(50% - 1.5rem)); height: var(--lab-tabs-height); margin-left: var(--lab-tabs-left, .75rem); margin-top: calc(var(--lab-tabs-gap) - var(--lab-tabs-chrome-gap, 0px)); margin-bottom: calc(var(--lab-tabs-chrome-gap, 0px) - var(--lab-tabs-height) - var(--lab-tabs-gap)); }
   html:root .chain-editor-workspace .workspace-mode-tabs {
     isolation: isolate;
-    padding: var(--lab-tabs-padding) 0 !important;
-    gap: 6px !important;
-    border: 0;
-    border-radius: 0;
-    background: transparent !important;
-    box-shadow: none;
+    padding: var(--lab-tabs-padding) !important;
+    gap: 4px !important;
+    border: 1px solid var(--nai-panel-border, color-mix(in srgb, var(--color-gray-300) 70%, transparent));
+    border-radius: var(--workspace-control-radius, 10px);
+    background-color: var(--nai-toolbar-surface, rgb(255 255 255 / 0.92)) !important;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
   }
-  html:root .chain-editor-workspace .workspace-mode-tabs:has(> span) { padding-right: 0 !important; }
-  html:root .chain-editor-workspace .workspace-mode-tabs > button { min-height: 0; border-radius: max(4px, calc(var(--workspace-control-radius) - 2px)); }
+  html:root .chain-editor-workspace .workspace-mode-tabs:has(> span) { padding-right: var(--lab-tabs-padding) !important; }
+  html:root .chain-editor-workspace .workspace-mode-tabs > button { min-height: 0; border-radius: max(4px, calc(var(--workspace-control-radius) - 3px)); }
   .workspace-mode-tabs > button { font-size: .8125rem; font-weight: 500; }
   .workspace-mode-tabs > button[aria-selected='true'] { font-weight: 600; }
-  .chain-editor-workspace .chain-editor-main { padding-top: calc(var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px)); scroll-padding-top: calc(var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px)); }
+  .chain-editor-workspace .chain-editor-main { padding-top: calc(var(--lab-tabs-height) + var(--lab-tabs-gap) - var(--lab-tabs-chrome-gap, 0px)); scroll-padding-top: calc(var(--lab-tabs-height) + var(--lab-tabs-gap) - var(--lab-tabs-chrome-gap, 0px)); }
 }
 @media (min-width: 1024px) and (any-pointer: coarse) {
   .chain-editor-workspace { --lab-tabs-height: 48px; }

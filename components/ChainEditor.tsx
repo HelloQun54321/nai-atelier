@@ -15,7 +15,7 @@ import { getGenerationQueue, setGenerationQueuePaused, setGenerationInterval, ty
 import { AgentDraftReview } from './AgentDraftReview';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { GenerationMode, ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft, PromptAgentGenerationResult, LabImageEditDraft, LabWorkspaceSession } from '../types';
+import { GenerationMode, ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft, PromptAgentGenerationResult, LabImageEditDraft, LabWorkspaceSession, PromptSections } from '../types';
 import { compilePrompt, getEditableGlobalNegative } from '../services/promptUtils';
 import { buildGenerationJobDescriptor } from '../services/naiService';
 import { localHistory } from '../services/localHistory';
@@ -55,6 +55,7 @@ import { Download } from 'lucide-react';
 import { getPastedImageFile, hasPastedPlainText, isTextPasteTarget } from '../services/imageClipboard';
 import { createLabUndoHistory, redoLabHistory, recordLabUndoSnapshot, undoLabHistory, type LabUndoHistory } from '../services/labUndoHistory';
 import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags, isNativePromptText } from '../services/tagTranslations';
+import { proofreadPrompt } from '../services/tagProofread';
 import { UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
 import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
@@ -64,7 +65,7 @@ import { enterSectionedPrompt, subjectFromSections } from '../services/labSectio
 import { PromptLibraryWorkspace, PromptLibraryRandomButton } from './PromptLibraryAccess';
 import { LAB_PICTURE_PURPOSES } from '../services/labPromptLayout';
 import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
-import { PresetSection, PresetSource, PresetSourceBadge, PromptCopyButton, PromptAgentOverlayController } from './chain/PresetSourceBadges';
+import { PresetSection, PresetSource, PresetSourceBadge, PromptAgentOverlayController } from './chain/PresetSourceBadges';
 import { ImageTaggerPanel } from './ImageTaggerPanel';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 
@@ -383,6 +384,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     const importDragDepthRef = useRef(0);
     const [isImportDragActive, setIsImportDragActive] = useState(false);
     const [translationPending, setTranslationPending] = useState(false);
+    const [proofreadPending, setProofreadPending] = useState(false);
     const [selectedEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'reference' | 'params'>('global');
     const [categoryTab, setCategoryTab] = useState('style');
     const supportsReferences = activeModelInfo.supportsVibes || activeModelInfo.supportsCharacterReferences;
@@ -2620,6 +2622,168 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         notify(`${label}已复制`);
     };
 
+    const proofreadAllPrompts = async () => {
+        if (proofreadPending) return;
+        setProofreadPending(true);
+        let correctionCount = 0;
+        let punctuationCount = 0;
+        let dictionaryUnavailable = false;
+        let changed = false;
+
+        const proofreadField = async (text: string): Promise<string> => {
+            if (!text.trim()) return text;
+            const result = await proofreadPrompt(text);
+            correctionCount += result.corrections.length;
+            punctuationCount += result.punctuation;
+            if (result.dictionaryUnavailable) dictionaryUnavailable = true;
+            if (result.text !== text) changed = true;
+            return result.text;
+        };
+
+        const proofreadSectionsMap = async (sections?: PromptSections | null): Promise<PromptSections | undefined> => {
+            if (!sections) return sections ?? undefined;
+            const entries = Object.entries(sections);
+            if (!entries.length) return sections;
+            let sectionChanged = false;
+            const next: Record<string, unknown> = { ...sections };
+            for (const [key, val] of entries) {
+                if (typeof val === 'string' && val.trim()) {
+                    const updated = await proofreadField(val);
+                    if (updated !== val) {
+                        next[key] = updated;
+                        sectionChanged = true;
+                    }
+                }
+            }
+            if (sections.sectionNegatives) {
+                const nextNeg: Record<string, string> = { ...sections.sectionNegatives };
+                let negChanged = false;
+                for (const [key, val] of Object.entries(sections.sectionNegatives)) {
+                    if (typeof val === 'string' && val.trim()) {
+                        const updated = await proofreadField(val);
+                        if (updated !== val) {
+                            nextNeg[key] = updated;
+                            negChanged = true;
+                        }
+                    }
+                }
+                if (negChanged) {
+                    next.sectionNegatives = nextNeg;
+                    sectionChanged = true;
+                }
+            }
+            return sectionChanged ? (next as PromptSections) : sections;
+        };
+
+        const proofreadCharactersList = async (list?: CharacterParams[]): Promise<CharacterParams[] | undefined> => {
+            if (!list?.length) return list;
+            let listChanged = false;
+            const nextList = await Promise.all(list.map(async character => {
+                const nextPrompt = await proofreadField(character.prompt || '');
+                const nextNeg = character.negativePrompt ? await proofreadField(character.negativePrompt) : character.negativePrompt;
+                let nextSections = character.sections;
+                let sectionsChanged = false;
+                if (character.sections) {
+                    const secEntries = Object.entries(character.sections);
+                    const updatedSec: Record<string, string | undefined> = { ...character.sections };
+                    for (const [key, val] of secEntries) {
+                        if (typeof val === 'string' && val.trim()) {
+                            const updated = await proofreadField(val);
+                            if (updated !== val) {
+                                updatedSec[key] = updated;
+                                sectionsChanged = true;
+                            }
+                        }
+                    }
+                    if (sectionsChanged) nextSections = updatedSec;
+                }
+                let nextSecNeg = character.sectionNegatives;
+                let secNegChanged = false;
+                if (character.sectionNegatives) {
+                    const negEntries = Object.entries(character.sectionNegatives);
+                    const updatedNeg: Record<string, string | undefined> = { ...character.sectionNegatives };
+                    for (const [key, val] of negEntries) {
+                        if (typeof val === 'string' && val.trim()) {
+                            const updated = await proofreadField(val);
+                            if (updated !== val) {
+                                updatedNeg[key] = updated;
+                                secNegChanged = true;
+                            }
+                        }
+                    }
+                    if (secNegChanged) nextSecNeg = updatedNeg;
+                }
+                if (nextPrompt === (character.prompt || '') && nextNeg === character.negativePrompt && !sectionsChanged && !secNegChanged) {
+                    return character;
+                }
+                listChanged = true;
+                return {
+                    ...character,
+                    prompt: nextPrompt,
+                    ...(nextNeg !== undefined ? { negativePrompt: nextNeg } : {}),
+                    ...(sectionsChanged ? { sections: nextSections } : {}),
+                    ...(secNegChanged ? { sectionNegatives: nextSecNeg } : {}),
+                };
+            }));
+            return listChanged ? nextList : list;
+        };
+
+        try {
+            if (activeEditOperation && activeEditDraft) {
+                const [nextPrompt, nextNegative, nextSections, nextCharacters] = await Promise.all([
+                    proofreadField(activeEditDraft.prompt || ''),
+                    proofreadField(activeEditDraft.negativePrompt || ''),
+                    proofreadSectionsMap(activeEditDraft.params._promptSections),
+                    proofreadCharactersList(activeEditDraft.params.characters),
+                ]);
+                if (!changed) {
+                    notify(dictionaryUnavailable ? t('Tag 词库未就绪，没有可校对的词；请先在全局设置更新词库') : t('当前提示词没有需要校对的地方'), dictionaryUnavailable ? 'error' : 'success');
+                    return;
+                }
+                updateEditDraft(activeEditOperation, {
+                    prompt: nextPrompt,
+                    negativePrompt: nextNegative,
+                    promptSource: 'custom',
+                    params: {
+                        ...activeEditDraft.params,
+                        _promptSections: nextSections,
+                        characters: nextCharacters,
+                    },
+                });
+            } else {
+                const [nextBase, nextSubject, nextNegative, nextSections, nextCharacters] = await Promise.all([
+                    proofreadField(basePrompt || ''),
+                    proofreadField(subjectPrompt || ''),
+                    proofreadField(negativePrompt || ''),
+                    proofreadSectionsMap(params._promptSections),
+                    proofreadCharactersList(params.characters),
+                ]);
+                if (!changed) {
+                    notify(dictionaryUnavailable ? t('Tag 词库未就绪，没有可校对的词；请先在全局设置更新词库') : t('当前提示词没有需要校对的地方'), dictionaryUnavailable ? 'error' : 'success');
+                    return;
+                }
+                setBasePrompt(nextBase);
+                setSubjectPrompt(nextSections ? subjectFromSections(nextSections, params._labSectionLayout) : nextSubject);
+                setNegativePrompt(nextNegative);
+                setParams(previous => ({
+                    ...previous,
+                    _promptSections: nextSections,
+                    characters: nextCharacters,
+                }));
+                markChange();
+            }
+
+            if (dictionaryUnavailable) notify(t('Tag 词库未就绪，仅统一了 {0} 处标点（Ctrl+Z 可撤回）', [punctuationCount]), 'error');
+            else if (correctionCount && punctuationCount) notify(t('已校对 {0} 个 Tag、{1} 处标点（Ctrl+Z 可撤回）', [correctionCount, punctuationCount]), 'success');
+            else if (correctionCount) notify(t('已校对 {0} 个 Tag（Ctrl+Z 可撤回）', [correctionCount]), 'success');
+            else notify(t('已统一 {0} 处中文标点（Ctrl+Z 可撤回）', [punctuationCount]), 'success');
+        } catch (error) {
+            notify(error instanceof Error ? error.message : t('校对提示词失败'), 'error');
+        } finally {
+            setProofreadPending(false);
+        }
+    };
+
     const translateAllMissingPromptTags = async () => {
         if (translationPending) return;
         const currentParams = activeEditDraft?.params || params;
@@ -2697,6 +2861,8 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 onImportFromClipboard={importMetadataFromClipboard}
                 onTranslateMissingPrompts={() => { void translateAllMissingPromptTags(); }}
                 translationPending={translationPending}
+                onProofreadAllPrompts={() => { void proofreadAllPrompts(); }}
+                proofreadPending={proofreadPending}
                 notify={notify}
                 sectionedPrompt={sectionedActive}
                 onSectionedPromptChange={onSectionedPromptChange && activeGenerationMode === 'text-to-image' ? turnSectioned : undefined}
@@ -2780,6 +2946,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
 
                         {/* Character Management (New V4.5) */}
                         <ChainEditorCharacters
+                            bare
                             scopeKey={`${chain.id}:text-to-image`}
                             params={params}
                             setParams={setParams}
@@ -2795,6 +2962,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                             showCharacterReference
                             canSaveCharacter
                             onSaveCharacter={saveCharacterToLibrary}
+                            onCopyPrompt={copyPromptToClipboard}
                             notify={notify}
                             sample={promptSample}
                             markPresetSectionModified={markPresetSectionModified}
@@ -2833,11 +3001,14 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <PresetSourceBadge source={presetSources.negative} />
                                 </div>
-                                <div className="flex items-center gap-1"><span ref={negativeClearActionSlotRef} /><PromptCopyButton onClick={() => copyPromptToClipboard(getEditableGlobalNegative(negativePrompt, params._promptSections), '全局负面提示词')} title={t("复制全局负面提示词")} /></div>
+                                <div className="flex items-center gap-1"><span ref={negativeClearActionSlotRef} /></div>
                             </div>
                             <TagAutocompleteTextarea
                                 clearActionSlotRef={negativeClearActionSlotRef}
                                 libraryField={{ negative: true }}
+                                onCopy={val => copyPromptToClipboard(val, '全局负面提示词')}
+                                copyTitle={t("复制全局负面提示词")}
+                                placeholder=""
                                 tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(params.model)}
                                 disabled={isNaiMediumModel(params.model)}
                                 className="w-full border rounded-lg p-3 outline-none font-mono text-sm font-normal leading-relaxed min-h-[80px] bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-800 text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-indigo-500/50"
