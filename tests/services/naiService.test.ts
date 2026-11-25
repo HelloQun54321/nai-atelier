@@ -329,4 +329,12 @@ describe('能力校验', () => {
     await expect(textDescriptor({ params: { ...baseParams(), characterReferences: { enabled: true, slots } } }))
       .rejects.toThrow('一次最多使用 16 个精准参考');
   });
+
+  it('V5 局部重绘拒绝精准参考，文生图允许', async () => {
+    const slots = [{ assetId: 'a1', type: 'costume' as const, strength: 2.5, fidelity: 1 }];
+    await expect(textDescriptor({ params: { ...baseParams(), model: 'nai-diffusion-5-full', steps: 23, characterReferences: { enabled: true, slots } } })).resolves.toBeTruthy();
+    await expect(editDescriptor('inpaint', {
+      params: { ...baseParams(), model: 'nai-diffusion-5-full', steps: 23, characterReferences: { enabled: true, slots } },
+    })).rejects.toThrow('局部重绘／扩图暂不支持精准参考');
+  });
 });

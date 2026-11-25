@@ -15,11 +15,15 @@ it('来源只记录部分参数时展示已知值，不把缺失分辨率或开�
     expect(screen.getByRole('button', { name: `查看${label}完整值` }).textContent).toBe('-');
   }
 });
-it('历史参考参数不把当前估算价格冒充当时的实际扣费', () => {
+it('历史参考参数不把当前估算价格冒充当时的实际扣费，V5 隐藏保真并显示同款服装状态', () => {
   const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', characterReferences: { enabled: true, slots: [{ assetId: 'ref', type: 'character' as const, strength: 1, fidelity: 1 }] } };
-  render(<ParamsViewer params={params} />);
+  const view = render(<ParamsViewer params={params} />);
   expect(screen.getByText('精准参考 (1)')).toBeTruthy();
   expect(screen.queryByText(/Anlas/)).toBeNull();
+  view.rerender(<ParamsViewer params={{ ...params, model: 'nai-diffusion-5-full', characterReferences: { enabled: true, slots: [{ assetId: 'ref', type: 'character' as const, preferSameOutfit: true, strength: 2.5, fidelity: 1 }] } }} />);
+  expect(screen.getByText('角色 · 同款服装')).toBeTruthy();
+  expect(screen.getByText('强度 2.50')).toBeTruthy();
+  expect(screen.queryByText(/保真/)).toBeNull();
 });
 it('手机可点按完整采样器和种子，内容在浮层中换行，原参数不变化', () => {
   const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'custom_very_long_sampler_name', noiseSchedule: 'exponential' as const, seed: 987654321, qualityToggle: true, ucPreset: 4 };

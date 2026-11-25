@@ -48874,5 +48874,53 @@
     "Anger Vein",
     "怒りマーク",
     "화남 표시"
+  ],
+  "优先同款服装": [
+    "優先同款服裝",
+    "Prefer same outfit",
+    "衣装も参照する",
+    "같은 의상 우선"
+  ],
+  "当前模型不支持服装参考，生成时将跳过": [
+    "目前模型不支援服裝參考，生成時將略過",
+    "Outfit references aren't supported by this model and will be skipped",
+    "このモデルは衣装参照に対応していないため、生成時にスキップされます",
+    "현재 모델은 의상 참조를 지원하지 않아 생성 시 건너뜁니다"
+  ],
+  "已跳过不支持的服装参考": [
+    "已略過不支援的服裝參考",
+    "Unsupported outfit references skipped",
+    "未対応の衣装参照をスキップ",
+    "지원되지 않는 의상 참조 건너뜀"
+  ],
+  "角色 · 同款服装": [
+    "角色 · 同款服裝",
+    "Character · Same outfit",
+    "キャラクター・衣装参照",
+    "캐릭터 · 같은 의상"
+  ],
+  "角色与画风 · 任意服装": [
+    "角色與畫風 · 任意服裝",
+    "Character & Style · Any outfit",
+    "キャラクター&絵柄・衣装自由",
+    "캐릭터 및 화풍 · 자유 의상"
+  ],
+  "强度 {0}": [
+    "強度 {0}",
+    "Strength {0}",
+    "強度 {0}",
+    "강도 {0}"
+  ],
+  "默认强度必须在 -1 到 5 之间": [
+    "預設強度必須在 -1 到 5 之間",
+    "Default strength must be between -1 and 5",
+    "デフォルト強度は -1 から 5 の間で指定してください",
+    "기본 강도는 -1에서 5 사이여야 합니다"
+  ],
+  "NovelAI {0} 的局部重绘／扩图暂不支持精准参考，请先移除精准参考或切换模型": [
+    "NovelAI {0} 的局部重繪／擴圖暫不支援精準參考，請先移除精準參考或切換模型",
+    "NovelAI {0} does not support Precise Reference in inpainting/outpainting yet. Please remove it or switch models.",
+    "NovelAI {0} のインペイント／アウトペイントは精密参照に対応していません。解除するかモデルを切り替えてください。",
+    "NovelAI {0}의 인페인트/아웃페인트에서는 정밀 참조를 지원하지 않습니다. 제거하거나 모델을 변경해 주세요."
   ]
 }

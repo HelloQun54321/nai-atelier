@@ -13,7 +13,8 @@ import { useAssetManagerLayer } from './useAssetManagerLayer';
 import { AssetDefaultsForm } from './AssetDefaultsForm';
 import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
 import { ReferenceSelectionPreview } from './ReferenceSelectionPreview';
-import { CHARACTER_REFERENCE_TYPES, MAX_CHARACTER_REFERENCES } from '../services/characterReferenceTypes';
+import { CHARACTER_REFERENCE_TYPES, MAX_CHARACTER_REFERENCES, characterReferenceTypeDisplayLabel } from '../services/characterReferenceTypes';
+import { filterEffectiveCharacterReferences, isPreferSameOutfitEnabled } from '../services/preciseReferenceProtocol.mjs';
 import { getDirectoryDescendantIds } from '../services/directoryTree.mjs';
 import { getReferenceFolderIds } from '../services/referenceFolders';
 import { useReferenceFolders } from '../services/useReferenceFolders';
@@ -30,16 +31,6 @@ interface Props {
 }
 
 const referenceTypes = CHARACTER_REFERENCE_TYPES;
-
-/**
- * 参考槽的三个数值字段。强度／保真沿用官方输入可越界的保守守卫（-1..2），
- * 信息提取量固定官方 0..1，逐个显式给出范围，避免共用一个 min/max 写错。
- */
-const REFERENCE_NUMERIC_FIELDS: Array<{ field: 'strength' | 'fidelity' | 'informationExtracted'; label: string; min: number; max: number }> = [
-  { field: 'strength', label: '强度', min: -1, max: 2 },
-  { field: 'fidelity', label: '保真', min: -1, max: 2 },
-  { field: 'informationExtracted', label: '信息提取量', min: 0, max: 1 },
-];
 
 const referenceNumericValue = (slot: CharacterReferenceSelection, field: 'strength' | 'fidelity' | 'informationExtracted') =>
   field === 'informationExtracted' ? slot.informationExtracted ?? 1 : slot[field];
@@ -82,7 +73,25 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
   const [busyId, setBusyId] = useState('');
   const imageImportLock = useRef(false);
   const references = params.characterReferences || emptyReferences();
-  const enabledCount = references.enabled ? references.slots.length : 0;
+  const modelInfo = getRuntimeNaiModelInfo(params.model, runtime);
+  const supportsReferences = operation === 'inpaint' || operation === 'outpaint'
+    ? modelInfo.supportsCharacterReferenceInpainting
+    : modelInfo.supportsCharacterReferences;
+  const supportsOutfitReferences = Boolean(modelInfo.supportsOutfitReferences);
+  const showFidelity = modelInfo.supportsCharacterReferenceFidelity !== false;
+  const strengthMax = Math.max(2, Number(modelInfo.characterReferenceStrengthMax) || 2);
+  const effectiveSlots = filterEffectiveCharacterReferences(
+    references.slots,
+    { ...modelInfo, supportsCharacterReferences: supportsReferences, supportsCharacterReferenceInpainting: supportsReferences },
+    operation === 'inpaint' || operation === 'outpaint',
+  );
+  const enabledCount = references.enabled ? effectiveSlots.length : 0;
+  const hasSkippedOutfits = !supportsOutfitReferences && references.slots.some(slot => slot.type === 'costume');
+  const numericFields: Array<{ field: 'strength' | 'fidelity' | 'informationExtracted'; label: string; min: number; max: number }> = [
+    { field: 'strength', label: '强度', min: -1, max: strengthMax },
+    ...(showFidelity ? [{ field: 'fidelity' as const, label: '保真', min: -1, max: 2 }] : []),
+    { field: 'informationExtracted', label: '信息提取量', min: 0, max: 1 },
+  ];
   // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还）。
   const dialogRef = useModalA11y<HTMLDivElement>(open);
 
@@ -234,10 +243,6 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
     catch (error: any) { notify(error.message || '恢复失败', 'error'); }
   };
 
-  const modelInfo = getRuntimeNaiModelInfo(params.model, runtime);
-  const supportsReferences = operation === 'inpaint' || operation === 'outpaint'
-    ? modelInfo.supportsCharacterReferenceInpainting
-    : modelInfo.supportsCharacterReferences;
   const detailSelected = Boolean(detail && references.slots.some(slot => slot.assetId === detail.id));
   // 不支持的辅助模块直接隐藏；已有选择保留，切回支持的模型后由用户重新启用。
   if (!supportsReferences) return null;
@@ -249,7 +254,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
         const asset = allAssets.find(item => item.id === slot.assetId);
         return { id: `${slot.assetId}:${index}`, name: slot.assetName || asset?.name || t('未知参考'),
           imageUrl: asset?.thumbnailUrl || asset?.originalImageUrl || `/api/character-references/${encodeURIComponent(slot.assetId)}/thumbnail`,
-          description: t(referenceTypes.find(item => item.value === slot.type)?.label) };
+          description: t(characterReferenceTypeDisplayLabel(slot, supportsOutfitReferences)) };
       })}
       summary={enabledCount > 0 ? <span className="text-meta font-medium text-amber-600 dark:text-amber-400">{t('本次生成额外消耗 {0} × {1} = {2} Anlas', [enabledCount, referenceCost, enabledCount * referenceCost])}</span> : undefined}
     />
@@ -287,7 +292,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
           <div className="workspace-manager-detail mx-auto grid max-w-5xl gap-5 md:grid-cols-[minmax(280px,1fr)_minmax(300px,1fr)]">
             <div className="overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30"><OriginalImage src={detail.originalImageUrl} alt={detail.name} className="max-h-[70vh] w-full object-contain" /></div>
             <div className="space-y-4">
-              <AssetDefaultsForm key={detail.id} name={detail.name} strength={detail.defaultStrength} fidelity={detail.defaultFidelity} min={-1} max={2} onSave={async (name, strength, fidelity) => {
+              <AssetDefaultsForm key={detail.id} name={detail.name} strength={detail.defaultStrength} fidelity={detail.defaultFidelity} min={-1} max={2} strengthMax={5} onSave={async (name, strength, fidelity) => {
                   const session = sessionRef.current;
                   const result = await characterReferenceService.rename(detail.id, name, strength, fidelity);
                   if (session !== sessionRef.current) return;
@@ -337,15 +342,24 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
                 <div className="mt-3 space-y-3">{references.slots.map((slot, index) => <div key={`${slot.assetId}-${index}`} data-agent-object={`精准参考 ${index + 1}：${slot.assetName || slot.assetId}`} className="rounded-xl border border-gray-200 p-3 dark:border-gray-800">
                   <div className="flex items-center gap-2"><span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{index + 1}</span>{allAssets.find(asset => asset.id === slot.assetId)?.thumbnailUrl && <div className="h-8 w-7 flex-none"><SmartImage src={allAssets.find(asset => asset.id === slot.assetId)!.thumbnailUrl} alt="" className="h-full w-full object-contain" /></div>}<p className="min-w-0 flex-1 truncate text-sm font-bold">{slot.assetName || allAssets.find(asset => asset.id === slot.assetId)?.name || (loaded ? t("资产缺失") : slot.assetId)}</p><button type="button" onClick={() => removeSlot(index)} className="mobile-touch flex h-9 w-9 items-center justify-center p-0 text-lg leading-none text-gray-400 hover:text-red-500" aria-label={t("移除")}>×</button></div>
                   <div className="mt-2 space-y-2">
-                    <label className="block text-meta text-gray-500">{t("参考类型")}<select value={slot.type} onChange={event => updateSlot(index, { type: event.target.value as CharacterReferenceSelection['type'] })} className="mt-1 w-full rounded-lg border border-gray-200 bg-transparent px-2 py-2 text-xs dark:border-gray-800">{referenceTypes.map(item => <option key={item.value} value={item.value}>{t(item.label)} · {t(item.hint)}</option>)}</select></label>
-                    {REFERENCE_NUMERIC_FIELDS.map(({ field, label, min, max }) => {
+                    <label className="block text-meta text-gray-500">{t("参考类型")}<select value={slot.type} onChange={event => updateSlot(index, { type: event.target.value as CharacterReferenceSelection['type'], preferSameOutfit: undefined })} className="mt-1 w-full rounded-lg border border-gray-200 bg-transparent px-2 py-2 text-xs dark:border-gray-800">{referenceTypes.filter(item => supportsOutfitReferences || item.value !== 'costume' || slot.type === 'costume').map(item => <option key={item.value} value={item.value}>{t(item.label)} · {t(item.hint)}</option>)}</select></label>
+                    {supportsOutfitReferences && (slot.type === 'character' || slot.type === 'character_style') && (
+                      <label className="flex items-center justify-between gap-2 text-meta text-gray-600 dark:text-gray-300">
+                        <span>{t("优先同款服装")}</span>
+                        <input type="checkbox" checked={isPreferSameOutfitEnabled(slot)} onChange={event => updateSlot(index, { preferSameOutfit: event.target.checked })} className="h-4 w-4 accent-indigo-600" />
+                      </label>
+                    )}
+                    {!supportsOutfitReferences && slot.type === 'costume' && (
+                      <p className="text-meta text-amber-600 dark:text-amber-400">{t("当前模型不支持服装参考，生成时将跳过")}</p>
+                    )}
+                    {numericFields.map(({ field, label, min, max }) => {
                       const value = referenceNumericValue(slot, field);
                       const commit = (input: number) => updateSlot(index, { [field]: Math.max(min, Math.min(max, input)) } as Partial<CharacterReferenceSelection>);
                       return <div key={field} className="grid grid-cols-[42px_minmax(0,1fr)_58px] items-center gap-2"><span className="text-meta text-gray-500">{t(label)}</span><input type="range" min={min} max={max} step={0.05} value={value} onChange={event => commit(Number(event.target.value))} className="min-w-0 accent-indigo-600" /><input type="number" min={min} max={max} step={0.05} value={value} onChange={event => commit(Number(event.target.value))} className="rounded-md border border-gray-200 bg-transparent px-1 py-1 text-right text-xs font-mono dark:border-gray-800" /></div>;
                     })}
                   </div>
                 </div>)}{!references.slots.length && <p className="appearance-group rounded-xl bg-gray-50 px-3 py-8 text-center text-xs text-gray-500 dark:bg-gray-950">{t("未选择参考图")}</p>}</div>
-                {references.slots.length > 0 && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"><b>{t("本次额外消耗 {0} Anlas", [references.slots.length * referenceCost])}</b><p className="mt-1 opacity-80">{t("{0} 张 × {1} Anlas／次", [references.slots.length, referenceCost])}</p></div>}
+                {references.slots.length > 0 && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"><b>{t("本次额外消耗 {0} Anlas", [effectiveSlots.length * referenceCost])}</b><p className="mt-1 opacity-80">{t("{0} 张 × {1} Anlas／次", [effectiveSlots.length, referenceCost])}{hasSkippedOutfits ? ` · ${t("已跳过不支持的服装参考")}` : ''}</p></div>}
               </div>
 
             </aside>

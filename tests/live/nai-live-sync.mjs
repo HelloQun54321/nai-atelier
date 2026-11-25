@@ -115,6 +115,17 @@ const compareOfficialBilling = async (bundle, runtime) => {
     context[normalizer[2]] = subscription => subscription.active;
     bind(pricingSubscription[1], 'pricingSubscription', new Script(`(${normalizer[0]})`).runInContext(context, { timeout: 1000 }));
   }
+  const refFilter = params?.[7] && params?.[5]
+    ? priceSource.match(new RegExp(`\\b${params[7]}=\\(0,([\\w$]+)\\.([\\w$]+)\\)\\(${params[7]},${params[5]}\\)`))
+    : null;
+  if (refFilter) {
+    bind(refFilter[1], refFilter[2], (refs, model) => {
+      const cap = runtime.modelCapabilities[model];
+      return Array.isArray(refs)
+        ? refs.filter(item => item?.enabled !== false && (cap?.supportsOutfitReferences || item?.description !== 'costume'))
+        : [];
+    });
+  }
   bind(account[1], account[2], session => session);
   bind(account[1], account[5], 'state');
   bind(account[3], account[4], 'session');
@@ -156,6 +167,7 @@ const compareOfficialBilling = async (bundle, runtime) => {
   for (const sm of [false, true]) for (const sm_dyn of [false, true]) {
     cases.push({ model: 'nai-diffusion-5-full', parameters: { width: 832, height: 1216, steps: 29, n_samples: 1, sm, sm_dyn }, opus: false, usageExhausted: false, referenceCount: 0, vibeCount: 0 });
   }
+  for (const model of ['nai-diffusion-4-5-full', 'nai-diffusion-5-full']) cases.push({ model, parameters: { width: 832, height: 1216, steps: 28, n_samples: 1 }, opus: false, usageExhausted: false, referenceCount: 1, referenceDescription: 'costume', vibeCount: 0 });
   for (const vibeCount of [0, 4, 5, 6]) for (const samples of [1, 2]) for (const opus of [false, true])
     cases.push({ model: 'nai-diffusion-4-5-full', parameters: { width: 832, height: 1216, steps: 28, n_samples: samples }, opus, usageExhausted: false, referenceCount: 0, vibeCount });
   context.cases = cases;
@@ -164,7 +176,7 @@ const compareOfficialBilling = async (bundle, runtime) => {
     await priceCalculator(() => ({subscription:{active:c.opus,tier:3,usage:{isNegative:c.usageExhausted}}}),
       null,null,c.parameters,null,c.model,
       Array.from({length:c.vibeCount}, () => ({enabled:true})),
-      Array.from({length:c.referenceCount}, () => ({enabled:true})),null,
+      Array.from({length:c.referenceCount}, () => ({enabled:true,description:c.referenceDescription||'character'})),null,
       value => {result = value.price;}, message => {throw new Error(message);});
     return result;
   }))`).runInContext(context, { timeout: 1000 });
@@ -172,7 +184,7 @@ const compareOfficialBilling = async (bundle, runtime) => {
     const p = item.parameters;
     const model = p.mask ? `${item.model}-inpainting` : item.model;
     const actual = estimateNaiBilling({ ...p, samples: p.n_samples, strength: p.mask ? p.inpaintImg2ImgStrength : p.image ? p.strength : 1,
-      referenceCount: item.referenceCount, vibeCount: p.mask ? 0 : item.vibeCount }, model, runtime, item.opus, item.usageExhausted).cost;
+      referenceCount: (!p.mask || runtime.modelCapabilities[item.model]?.supportsCharacterReferenceInpainting) && (item.referenceDescription !== 'costume' || runtime.modelCapabilities[item.model]?.supportsOutfitReferences) ? item.referenceCount : 0, vibeCount: p.mask ? 0 : item.vibeCount }, model, runtime, item.opus, item.usageExhausted).cost;
     assert.equal(actual, official[index], `计价不一致：${JSON.stringify(item)}`);
   });
   return cases.length;
@@ -222,6 +234,15 @@ const main = async () => {
     assert.ok(capability.fixedSettings.sampler, `${model} 未提取固定采样器`);
     assert.ok(capability.ucPresets.some(preset => preset.id === capability.fixedSettings.ucPresetId), `${model} 未提取固定 UC 预设`);
     console.log(`  ✔ ${model} 固定设置: ${JSON.stringify(capability.fixedSettings)}`);
+  }
+  for (const model of ['nai-diffusion-5-full', 'nai-diffusion-5-curated', 'nai-diffusion-5-full-medium']) {
+    const capability = runtime.modelCapabilities[model];
+    assert.equal(capability?.supportsCharacterReferences, true, `${model} 应支持精准参考`);
+    assert.equal(capability?.supportsCharacterReferenceInpainting, false, `${model} 局部重绘暂不支持精准参考`);
+    assert.equal(capability?.supportsOutfitReferences, true, `${model} 应支持服装参考`);
+    assert.equal(capability?.supportsCharacterReferenceFidelity, false, `${model} 不应显示保真度滑块`);
+    assert.equal(capability?.characterReferenceStrengthMax, 5, `${model} 精准参考强度上限应为 5`);
+    assert.equal(capability?.bucketCharacterReferences, true, `${model} 应使用多比例分桶裁剪`);
   }
   await compareOfficialVibeBilling(bundle, runtime.billing);
   console.log(`\n✔ 全部提取命中，${await compareOfficialBilling(bundle, runtime)} 组计价与官方实际费用调用一致；Vibe 附加费及缓存／新编码费用独立核对通过`);

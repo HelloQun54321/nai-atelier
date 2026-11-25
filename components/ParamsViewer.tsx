@@ -3,12 +3,12 @@ import { t, useLanguage } from '../services/i18n';
 import React from 'react';
 import { ChevronDown, Copy } from 'lucide-react';
 import { ImageEditMetadata, NAIParams } from '../types';
-import { getNaiModelDisplayLabel } from '../services/naiModels';
+import { findNaiModelInfo, getNaiModelDisplayLabel } from '../services/naiModels';
 import { copyTagText } from '../services/externalImageTags';
 import { DEFAULT_NOISE_SCHEDULE, NOISE_SCHEDULE_LABELS, normalizeNoiseSchedule } from '../services/naiNoiseSchedule.mjs';
 import { InfoPopover } from './InfoPopover';
 import { PromptLibraryCaptureButton } from './PromptLibraryAccess';
-import { characterReferenceTypeLabel } from '../services/characterReferenceTypes';
+import { characterReferenceTypeDisplayLabel } from '../services/characterReferenceTypes';
 
 /**
  * UC Preset 的人类可读标签映射
@@ -176,7 +176,11 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                 </div>
             </div>}
 
-            {(!section || section === 'characterReference') && params.characterReferences?.enabled && params.characterReferences.slots.length > 0 && (
+            {(!section || section === 'characterReference') && params.characterReferences?.enabled && params.characterReferences.slots.length > 0 && (() => {
+                const refModelInfo = params.model ? findNaiModelInfo(params.model) : undefined;
+                const supportsOutfits = Boolean(refModelInfo?.supportsOutfitReferences);
+                const showFidelity = !refModelInfo || refModelInfo.supportsCharacterReferenceFidelity;
+                return (
                 <div>
                     <label className="mb-2 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">{t("精准参考 ({0})", [params.characterReferences.slots.length])}</label>
                     <div className="space-y-2">
@@ -184,14 +188,15 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                             <div key={`${slot.assetId}-${index}`} className="rounded-lg border border-cyan-100 bg-cyan-50/60 p-2.5 dark:border-cyan-900/60 dark:bg-cyan-950/20">
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="truncate text-xs font-bold text-cyan-700 dark:text-cyan-300">{slot.assetName || t("精准参考 {0}", [index + 1])}</span>
-                                    <span className="flex-none text-micro text-gray-500">{t(characterReferenceTypeLabel(slot.type))}</span>
+                                    <span className="flex-none text-micro text-gray-500">{t(characterReferenceTypeDisplayLabel(slot, supportsOutfits))}</span>
                                 </div>
-                                <p className="mt-1 text-micro text-gray-500">{t("强度 {0} · 保真 {1}", [slot.strength.toFixed(2), slot.fidelity.toFixed(2)])}</p>
+                                <p className="mt-1 text-micro text-gray-500">{showFidelity ? t("强度 {0} · 保真 {1}", [slot.strength.toFixed(2), slot.fidelity.toFixed(2)]) : t("强度 {0}", [slot.strength.toFixed(2)])}</p>
                             </div>
                         ))}
                     </div>
                 </div>
-            )}
+                );
+            })()}
 
             {(!section || section === 'vibe') && params.vibes?.enabled && params.vibes.slots.length > 0 && (
                 <div>

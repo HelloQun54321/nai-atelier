@@ -30,7 +30,7 @@ declare module 'mobile:gateway' {
   export const getNaiRuntime: any, applyNaiRuntimeOverride: any, computeNaiRuntimeSync: any, fetchNaiRuntimeText: any,
     sanitizeNovelAiSubscription: any, cacheNovelAiSubscription: any,
     normalizeCloudQueuePreferences: any, keyHashFromAuthorization: any, handleGenerateRequest: any,
-    handleGenerateStreamRequest: any, handleGenerationTaskRequest: any, handleVibeEncodeRequest: any, selectPreciseReferenceCanvas: any, recoverPendingVibeEncodings: any,
+    handleGenerateStreamRequest: any, handleGenerationTaskRequest: any, handleVibeEncodeRequest: any, selectPreciseReferenceCanvas: any, selectPreciseReferenceBucket: any, recoverPendingVibeEncodings: any,
     sendJson: any, hasValidLanCookie: any;
   export const assertVibeEncodingIdle: (vibeId: string) => void;
   export const extractNaiRuntimeChunkPaths: (html: string) => string[];

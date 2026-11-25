@@ -151,7 +151,7 @@ describe('.naia 风格串分享包', () => {
   it('无封面仍带必要参考和 Vibe 编码，重复引用只读一次且导入重映射', async () => {
     const first = chain(), second = chain('second');
     for (const item of [first, second]) {
-      item.params.characterReferences = { enabled: true, slots: [{ assetId: 'old-ref', type: 'character', strength: 0.8, fidelity: 0.9 }] };
+      item.params.characterReferences = { enabled: true, slots: [{ assetId: 'old-ref', type: 'character', preferSameOutfit: true, strength: 0.8, fidelity: 0.9 }] };
       item.params.vibes = { enabled: true, normalizeStrengths: true, slots: [{ vibeId: 'old-vibe', encodingId: 'old-encoding', informationExtracted: 0.7, strength: 0.6 }] };
     }
     vi.mocked(api.get).mockImplementation(async path => String(path).endsWith('/data') ? { encoding: btoa('x'.repeat(64)), variant: { model: 'nai-diffusion-4-5-full', modelKey: 'v4-5full', informationExtracted: 0.7 } } : { item: { sourceHash: 'a'.repeat(64), name: 'Vibe' } });
@@ -164,6 +164,7 @@ describe('.naia 风格串分享包', () => {
     expect(characterReferenceService.create).toHaveBeenCalledTimes(1); expect(vi.mocked(api.post).mock.calls.filter(([path]) => path === '/vibes/import')).toHaveLength(1);
     const params = createChain.mock.calls[0][0]!.params!;
     expect(params.characterReferences!.slots[0].assetId).toBe('new-reference');
+    expect(params.characterReferences!.slots[0].preferSameOutfit).toBe(true);
     expect(params.vibes!.slots[0]).toMatchObject({ vibeId: 'new-vibe', encodingId: 'new-encoding', strength: 0.6 });
     expect(preview.entries.every(entry => !entry.cover)).toBe(true);
   });

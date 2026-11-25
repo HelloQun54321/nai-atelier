@@ -39,6 +39,7 @@ import { normalizeVibeSelections } from '../services/vibeUtils';
 import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences, type LabPageLayouts } from '../services/appearancePreferences';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { applyNaiModelSettings, getRuntimeNaiModelInfo, getSelectableNaiModels, isNaiMediumModel } from '../services/naiModels';
+import { filterEffectiveCharacterReferences } from '../services/preciseReferenceProtocol.mjs';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
 import { prepareGenerationWithPool, reportPoolKeyCooldown } from '../services/naiKeyPool';
 import { formatGenerationDuration, readGenerationDurationMs } from '../services/generationDuration';
@@ -1853,7 +1854,12 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             })) return false;
         } else if (!perUseChannel && cost > 0 && !await confirmAction({ rememberKey: 'generation.text', rememberScope: confirmationCostScope(submitKey, cost, 1, anlasBudget.remaining, draft.params.model),
             title: '确认生成图片',
-            message: `当前参数预计消耗 ${cost} Anlas${draft.params.characterReferences?.enabled && draft.params.characterReferences.slots.length ? `\n其中精准参考：${draft.params.characterReferences.slots.length} × ${(naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} = ${draft.params.characterReferences.slots.length * (naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} Anlas` : ''}${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
+            message: (() => {
+                const effectiveRefCount = draft.params.characterReferences?.enabled
+                    ? filterEffectiveCharacterReferences(draft.params.characterReferences.slots, activeModelInfo, false).length
+                    : 0;
+                return `当前参数预计消耗 ${cost} Anlas${effectiveRefCount ? `\n其中精准参考：${effectiveRefCount} × ${(naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} = ${effectiveRefCount * (naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} Anlas` : ''}${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`;
+            })(),
             confirmLabel: `消耗 ${cost} 点并生成`,
         })) return false;
         try {

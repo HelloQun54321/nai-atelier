@@ -7,6 +7,13 @@ import type { NAIParams } from '../../types';
 
 const rules = vi.hoisted(() => ({
   characterReferenceCost: 7,
+  modelCapabilities: {
+    supportsCharacterReferences: true,
+    supportsCharacterReferenceInpainting: true,
+    supportsOutfitReferences: true,
+    supportsCharacterReferenceFidelity: true,
+    characterReferenceStrengthMax: 2,
+  },
   listOverride: undefined as ((archived: boolean) => Promise<unknown[]>) | undefined,
   confirm: vi.fn(async (_options?: unknown) => true),
   remove: vi.fn(async (_id: string) => ({ success: true })),
@@ -16,7 +23,7 @@ const rules = vi.hoisted(() => ({
   },
 }));
 vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({ billing: rules }) }));
-vi.mock('../../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => ({ supportsCharacterReferences: true }) }));
+vi.mock('../../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => rules.modelCapabilities }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => rules.confirm }));
 vi.mock('../../services/useReferenceFolders', () => ({ useReferenceFolders: () => rules.folders }));
 vi.mock('../../services/characterReferenceService', () => ({ characterReferenceService: {
@@ -25,7 +32,20 @@ vi.mock('../../services/characterReferenceService', () => ({ characterReferenceS
   archive: async () => ({ success: true }),
   remove: (id: string) => rules.remove(id),
 } }));
-afterEach(() => { cleanup(); rules.listOverride = undefined; rules.confirm.mockClear(); rules.remove.mockClear(); window.history.replaceState({}, ""); });
+afterEach(() => {
+  cleanup();
+  rules.listOverride = undefined;
+  rules.modelCapabilities = {
+    supportsCharacterReferences: true,
+    supportsCharacterReferenceInpainting: true,
+    supportsOutfitReferences: true,
+    supportsCharacterReferenceFidelity: true,
+    characterReferenceStrengthMax: 2,
+  };
+  rules.confirm.mockClear();
+  rules.remove.mockClear();
+  window.history.replaceState({}, "");
+});
 it('参考图所有费用提示跟随动态单价', () => {
   const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral',
     characterReferences: { enabled: true, slots: [{ assetId: 'ref', type: 'character' as const, strength: 1, fidelity: 1 }] } };
@@ -163,4 +183,43 @@ it('已归档的参考可以永久删除，删除前给出引用说明', async (
   fireEvent.click(screen.getByRole('button', { name: '永久删除这张参考' }));
   await waitFor(() => expect(rules.confirm).toHaveBeenCalledWith(expect.objectContaining({ rememberKey: 'character-reference.delete' })));
   await waitFor(() => expect(rules.remove).toHaveBeenCalledWith('old'));
+});
+
+it('V5 隐藏保真滑块、扩展强度到 5 且支持优先同款服装；V4.5 跳过服装参考且不计费', async () => {
+  rules.characterReferenceCost = 5;
+  rules.modelCapabilities = {
+    supportsCharacterReferences: true,
+    supportsCharacterReferenceInpainting: false,
+    supportsOutfitReferences: true,
+    supportsCharacterReferenceFidelity: false,
+    characterReferenceStrengthMax: 5,
+  };
+  const setParams = vi.fn();
+  const v5Params = referenceParams([
+    { assetId: 'ref', assetName: '已有角色参考名字', type: 'character', strength: 1, fidelity: 1 },
+  ]);
+  const view = render(<CharacterReferenceManager params={v5Params} setParams={setParams} markChange={vi.fn()} notify={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: /精准参考/ }));
+  expect(screen.queryByText('保真')).toBeNull();
+  const sliders = screen.getAllByRole('slider') as HTMLInputElement[];
+  expect(sliders).toHaveLength(2);
+  expect(sliders[0].max).toBe('5');
+  const outfitToggle = screen.getByRole('checkbox', { name: '优先同款服装' }) as HTMLInputElement;
+  expect(outfitToggle.checked).toBe(false);
+  fireEvent.click(outfitToggle);
+  expect(setParams.mock.lastCall?.[0].characterReferences.slots[0]).toMatchObject({ preferSameOutfit: true });
+
+  // 切到 V4.5：已有服装参考在费用统计中被跳过并给出说明
+  rules.modelCapabilities = {
+    supportsCharacterReferences: true,
+    supportsCharacterReferenceInpainting: true,
+    supportsOutfitReferences: false,
+    supportsCharacterReferenceFidelity: true,
+    characterReferenceStrengthMax: 1,
+  };
+  view.rerender(<CharacterReferenceManager params={referenceParams([
+    { assetId: 'ref', assetName: '已有角色参考名字', type: 'costume', strength: 1, fidelity: 1 },
+  ])} setParams={setParams} markChange={vi.fn()} notify={vi.fn()} />);
+  expect(screen.getByText('当前模型不支持服装参考，生成时将跳过')).toBeTruthy();
+  expect(screen.getByText('本次额外消耗 0 Anlas')).toBeTruthy();
 });

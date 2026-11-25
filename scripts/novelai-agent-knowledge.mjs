@@ -40,7 +40,7 @@ export const NOVELAI_OFFICIAL_KNOWLEDGE = Object.freeze([
       'V5 原生支持透明背景与 Alpha 透明效果。',
     ],
     caveats: [
-      'V5 发布时 Precise Reference 与 Vibe Transfer 尚未开放。',
+      'V5 初版发布时未开放 Precise Reference 与 Vibe Transfer；2026-11-24 已为 V5 系列更新支持 Precise Reference（Vibe Transfer 与局部重绘精准参考仍未开放）。',
       '不要把 V4.5 的约 512 T5 Token、六角色或 5×5 定位当作 V5 的官方上限。',
     ],
   },
@@ -202,7 +202,28 @@ export const NOVELAI_OFFICIAL_KNOWLEDGE = Object.freeze([
       '多张精准参考目前会互相混合，并不会自动对应为多个独立角色。',
       'Precise Reference 可用于 Inpainting。',
     ],
-    caveats: ['官方文档限定为 V4.5；V5 发布时该功能尚未开放，并且与 Vibe Transfer 不兼容。'],
+    caveats: ['本条目描述 V4.5 行为；V5 的 Precise Reference 请参见 precise-reference-v5，两者均与 Vibe Transfer 不兼容。'],
+  },
+  {
+    id: 'precise-reference-v5',
+    title: 'V5 Precise Reference',
+    topic: 'references',
+    appliesTo: ['v5'],
+    sourceKind: 'official-release',
+    authorityRank: 395,
+    reviewedAt: '2026-11-25',
+    sourceUrl: 'https://blog.novelai.net/image-generation-feature-release-precise-reference-for-novelai-diffusion-v5-c2df7c6b8d2d/',
+    summary: 'V5 Full、V5 Curated 与 V5 Full Medium 支持精准参考，新增服装参考与「优先同款服装」，强度上限提高到 5.0 并移除保真度滑块。',
+    facts: [
+      'V5 新增 Outfit Reference（服装参考，`costume`），可直接上传图片复刻服装造型；支持与角色、画风自由混搭。',
+      '角色参考与角色+画风参考新增「Prefer same outfit（优先同款服装）」开关（角色默认关，角色+画风默认开）。',
+      'V5 移除 Fidelity（保真度）滑块，Strength（强度）上限提高到 5.0（画风参考偏弱时可拉高到 1.0 以上）。',
+      'V5 对参考图改用多比例分桶裁剪（不再补黑边），计费仍为每张生效参考额外消耗 ImageAnlas。',
+    ],
+    caveats: [
+      'V5 局部重绘／扩图暂不支持精准参考（charRefInpainting 为 false）。',
+      'V5 仍未开放 Vibe Transfer，且精准参考与 Vibe Transfer 不兼容。',
+    ],
   },
   {
     id: 'sampling-guidance',
@@ -258,7 +279,7 @@ export const getNovelAiModelProfile = modelId => {
     officialPromptCapacity: '长于 V4.5；官方发布公告未给出精确 Token 上限。',
     officialCharacterCapability: '高于 V4.5，官方测试最高展示 22 个角色；不是稳定保证。',
     officialPositioning: '画布自由定位，服从性比 V4.5 更强。',
-    project: { promptStrategy, maxCharacterPrompts: 32, supportsVibes: false, supportsPreciseReference: false, supportsAlphaTransparency: true, coordinateRange: '0..1' },
+    project: { promptStrategy, maxCharacterPrompts: 32, supportsVibes: false, supportsPreciseReference: true, supportsAlphaTransparency: true, coordinateRange: '0..1' },
   };
   if (family === 'v4.5') return {
     id, family, label: /curated/.test(id) ? 'V4.5 Curated' : 'V4.5 Full',

@@ -19,3 +19,15 @@ export const CHARACTER_REFERENCE_TYPES: Array<{ value: CharacterReferenceSelecti
 /** 未知或旧值按官方默认的「角色与画风」显示，与新建参考的默认类型一致。 */
 export const characterReferenceTypeLabel = (type: string) =>
   CHARACTER_REFERENCE_TYPES.find(item => item.value === type)?.label ?? '角色与画风';
+
+/** 在支持 V5 服装参考的模型下，展示含「优先同款服装」开关态的清晰类型文本。 */
+export const characterReferenceTypeDisplayLabel = (
+  slot: Pick<CharacterReferenceSelection, 'type' | 'preferSameOutfit'>,
+  supportsOutfitReferences: boolean,
+) => {
+  if (supportsOutfitReferences) {
+    if (slot.type === 'character' && slot.preferSameOutfit === true) return '角色 · 同款服装';
+    if (slot.type === 'character_style' && slot.preferSameOutfit === false) return '角色与画风 · 任意服装';
+  }
+  return characterReferenceTypeLabel(slot.type);
+};

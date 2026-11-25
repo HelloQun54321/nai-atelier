@@ -113,6 +113,8 @@ export interface CharacterReferenceSelection {
   assetName?: string;
   /** 与官方 Precise Reference 的 Description 一致：角色／画风／服装／角色与画风／差异。 */
   type: 'character' | 'style' | 'costume' | 'character_style' | 'delta';
+  /** V5「优先同款服装」开关：角色默认 false，角色与画风默认 true。 */
+  preferSameOutfit?: boolean;
   strength: number;
   fidelity: number;
   informationExtracted?: number;

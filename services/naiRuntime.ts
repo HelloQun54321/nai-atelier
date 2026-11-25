@@ -31,6 +31,11 @@ export interface NaiModelRuntimeCapability {
   supportsVibes: boolean;
   supportsCharacterReferences: boolean;
   supportsCharacterReferenceInpainting: boolean;
+  supportsOutfitReferences: boolean;
+  supportsCharacterReferenceFidelity: boolean;
+  characterReferenceStrengthMax: number;
+  resizeCharacterReferences: boolean;
+  bucketCharacterReferences: boolean;
   supportsStreamedResponses: boolean;
   supportsTransparentBackground: boolean;
   maxCharacters: number;
@@ -124,6 +129,11 @@ const makeCapability = (
   supportsVibes: false,
   supportsCharacterReferences: false,
   supportsCharacterReferenceInpainting: false,
+  supportsOutfitReferences: false,
+  supportsCharacterReferenceFidelity: false,
+  characterReferenceStrengthMax: 1,
+  resizeCharacterReferences: false,
+  bucketCharacterReferences: false,
   supportsStreamedResponses: true,
   supportsTransparentBackground: false,
   maxCharacters: 6,
@@ -132,6 +142,13 @@ const makeCapability = (
 });
 
 const V5_CAPABILITY = makeCapability({
+  supportsCharacterReferences: true,
+  supportsCharacterReferenceInpainting: false,
+  supportsOutfitReferences: true,
+  supportsCharacterReferenceFidelity: false,
+  characterReferenceStrengthMax: 5,
+  resizeCharacterReferences: false,
+  bucketCharacterReferences: true,
   maxCharacters: 32,
   freeformCharacterPosition: true,
   supportsTransparentBackground: true,
@@ -142,6 +159,11 @@ const V45_FULL_CAPABILITY = makeCapability({
   supportsVibes: true,
   supportsCharacterReferences: true,
   supportsCharacterReferenceInpainting: true,
+  supportsOutfitReferences: false,
+  supportsCharacterReferenceFidelity: true,
+  characterReferenceStrengthMax: 1,
+  resizeCharacterReferences: true,
+  bucketCharacterReferences: false,
   qualityPresets: QUALITY_V45_FULL,
   ucPresets: UC_V45_FULL,
 });
@@ -149,6 +171,11 @@ const V45_CURATED_CAPABILITY = makeCapability({
   supportsVibes: true,
   supportsCharacterReferences: true,
   supportsCharacterReferenceInpainting: true,
+  supportsOutfitReferences: false,
+  supportsCharacterReferenceFidelity: true,
+  characterReferenceStrengthMax: 1,
+  resizeCharacterReferences: true,
+  bucketCharacterReferences: false,
   qualityPresets: QUALITY_V45_CURATED,
   ucPresets: UC_V45_CURATED,
 });
@@ -278,12 +305,18 @@ const resolveRuntimePayload = (payload: unknown): NaiRuntimeConfig | null => {
     ...(cachedConfig || DEFAULT_NAI_RUNTIME),
     health: { ...next.health, ok: false, reason: 'partial', missed: [...new Set([...(next.health.missed || []), 'billing'])] },
   };
+  const mergedCapabilities: Record<string, NaiModelRuntimeCapability> = { ...DEFAULT_NAI_RUNTIME.modelCapabilities };
+  if (next.modelCapabilities && typeof next.modelCapabilities === 'object') {
+    for (const [id, cap] of Object.entries(next.modelCapabilities)) {
+      if (!cap || typeof cap !== 'object') continue;
+      const baseline = DEFAULT_NAI_RUNTIME.modelCapabilities[id];
+      mergedCapabilities[id] = baseline ? { ...baseline, ...cap } : cap;
+    }
+  }
   const resolved: NaiRuntimeConfig = {
     ...DEFAULT_NAI_RUNTIME,
     ...next,
-    modelCapabilities: next.modelCapabilities && typeof next.modelCapabilities === 'object'
-      ? { ...DEFAULT_NAI_RUNTIME.modelCapabilities, ...next.modelCapabilities }
-      : DEFAULT_NAI_RUNTIME.modelCapabilities,
+    modelCapabilities: mergedCapabilities,
   };
   return resolved;
 };

@@ -234,6 +234,21 @@ describe('image edit cost estimation', () => {
     expect(estimateImageEditCost(params, 'inpaint', 1, false, 3, true)).toBe(30);
     const referenced = { ...params, characterReferences: { enabled: true, slots: [{ assetId: 'ref', type: 'character' as const, strength: 1, fidelity: 1 }] } };
     expect(estimateV45GenerationCost(referenced, true)).toBe(5);
+    expect(estimateImageEditCost(referenced, 'image-to-image', 1, false, 3, false)).toBe(5);
+    expect(estimateImageEditCost(referenced, 'inpaint', 1, false, 3, false)).toBe(0);
+    const v45Costume = {
+      ...params,
+      model: 'nai-diffusion-4-5-full',
+      characterReferences: {
+        enabled: true,
+        slots: [
+          { assetId: 'ref-a', type: 'character' as const, strength: 1, fidelity: 1 },
+          { assetId: 'ref-b', type: 'costume' as const, strength: 1, fidelity: 1 },
+        ],
+      },
+    };
+    expect(estimateV45GenerationCost(v45Costume, true)).toBe(5);
+    expect(estimateV45GenerationCost({ ...v45Costume, model: 'nai-diffusion-5-full' }, true)).toBe(10);
     try {
       applyEstimatorRuntime({ ...DEFAULT_NAI_RUNTIME, billing: { ...DEFAULT_NAI_RUNTIME.billing,
         modelMultipliers: { v5: 2 }, freeImageToImage: false, characterReferenceCost: 7 } });

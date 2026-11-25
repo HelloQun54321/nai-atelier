@@ -1,5 +1,7 @@
 import type { GenerationJobDescriptor, GenerationJobOutput, GenerationJobs } from '../worker/generationJobs.mjs';
 import { generationJobEventResponse } from '../worker/generationJobs.mjs';
+import { getRuntimeNaiModelInfo } from '../services/naiModels';
+import { filterEffectiveCharacterReferences } from '../services/preciseReferenceProtocol.mjs';
 import type { GenerationPlacement } from '../services/generationTask';
 import { json } from '../worker/routes/types';
 
@@ -74,9 +76,16 @@ export const generationJobPlacement = (request: Request): GenerationPlacement | 
 export const normalizedBillingPayload = (payload: GenerationJobDescriptor['payload']) => {
   const parameters: Record<string, unknown> = { ...payload?.parameters };
   const vibes = parameters._local_vibes as { enabled?: boolean; slots?: unknown[] } | undefined;
-  const references = parameters._local_character_references as { enabled?: boolean; slots?: unknown[] } | undefined;
+  const references = parameters._local_character_references as { enabled?: boolean; slots?: Array<{ type?: string }> } | undefined;
   if (vibes?.enabled && Array.isArray(vibes.slots)) parameters.reference_image_multiple_cached = vibes.slots;
-  if (references?.enabled && Array.isArray(references.slots)) parameters.director_reference_images_cached = references.slots;
+  if (references?.enabled && Array.isArray(references.slots)) {
+    const effective = filterEffectiveCharacterReferences(
+      references.slots,
+      getRuntimeNaiModelInfo(payload?.model),
+      Boolean(parameters.mask) || payload?.action === 'infill',
+    );
+    if (effective.length) parameters.director_reference_images_cached = effective;
+  }
   return { ...payload, parameters };
 };
 

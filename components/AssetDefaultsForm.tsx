@@ -7,26 +7,27 @@ interface Props {
   fidelity?: number;
   min?: number;
   max?: number;
+  strengthMax?: number;
   onSave: (name: string, strength: number, fidelity?: number) => Promise<void>;
 }
 
 /** 资料默认值显式保存，与右侧即时生效的本次参考参数区分。 */
-export const AssetDefaultsForm: React.FC<Props> = ({ name, strength, fidelity, min = 0, max = 1, onSave }) => {
+export const AssetDefaultsForm: React.FC<Props> = ({ name, strength, fidelity, min = 0, max = 1, strengthMax = max, onSave }) => {
   useLanguage();
   const [draft, setDraft] = useState({ name, strength: String(strength), fidelity: String(fidelity ?? 1) });
   const [saved, setSaved] = useState({ name, strength, fidelity });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
-  const normalize = (value: string) => Math.max(min, Math.min(max, Number(value)));
+  const normalize = (value: string, upper = max) => Math.max(min, Math.min(upper, Number(value)));
   const valid = draft.name.trim() && draft.strength.trim() && Number.isFinite(Number(draft.strength)) &&
     (fidelity === undefined || (draft.fidelity.trim() && Number.isFinite(Number(draft.fidelity))));
-  const dirty = draft.name.trim() !== saved.name || normalize(draft.strength) !== saved.strength ||
-    (fidelity !== undefined && normalize(draft.fidelity) !== saved.fidelity);
+  const dirty = draft.name.trim() !== saved.name || normalize(draft.strength, strengthMax) !== saved.strength ||
+    (fidelity !== undefined && normalize(draft.fidelity, max) !== saved.fidelity);
   return <form className="space-y-3" onSubmit={async event => {
     event.preventDefault();
     if (!valid || !dirty || saving) return;
     setSaving(true); setMessage('');
-    const next = { name: draft.name.trim(), strength: normalize(draft.strength), fidelity: fidelity === undefined ? undefined : normalize(draft.fidelity) };
+    const next = { name: draft.name.trim(), strength: normalize(draft.strength, strengthMax), fidelity: fidelity === undefined ? undefined : normalize(draft.fidelity, max) };
     try {
       await onSave(next.name, next.strength, next.fidelity);
       setSaved(next); setDraft({ name: next.name, strength: String(next.strength), fidelity: String(next.fidelity ?? 1) });
@@ -36,7 +37,10 @@ export const AssetDefaultsForm: React.FC<Props> = ({ name, strength, fidelity, m
   }}>
     <p className="text-xs text-gray-500" title={t("仅用于下次添加")}>{t("资料默认值")}</p>
     <label className="block"><span className="mb-1 block text-xs font-bold text-gray-500">{t("名称")}</span><input value={draft.name} disabled={saving} onChange={event => setDraft({ ...draft, name: event.target.value })} className="h-9 w-full rounded-lg border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-800" /></label>
-    <div className="grid grid-cols-2 gap-3">{(['strength', ...(fidelity === undefined ? [] : ['fidelity'])] as Array<'strength' | 'fidelity'>).map(field => <label key={field}><span className="mb-1 block text-xs font-bold text-gray-500">{field === 'strength' ? t("默认强度") : t("默认保真度")}</span><input type="number" min={Number.isFinite(min) ? min : undefined} max={Number.isFinite(max) ? max : undefined} step="0.01" value={draft[field]} disabled={saving} onChange={event => setDraft({ ...draft, [field]: event.target.value })} className="h-9 w-full rounded-lg border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-800" /></label>)}</div>
+    <div className="grid grid-cols-2 gap-3">{(['strength', ...(fidelity === undefined ? [] : ['fidelity'])] as Array<'strength' | 'fidelity'>).map(field => {
+      const upper = field === 'strength' ? strengthMax : max;
+      return <label key={field}><span className="mb-1 block text-xs font-bold text-gray-500">{field === 'strength' ? t("默认强度") : t("默认保真度")}</span><input type="number" min={Number.isFinite(min) ? min : undefined} max={Number.isFinite(upper) ? upper : undefined} step="0.01" value={draft[field]} disabled={saving} onChange={event => setDraft({ ...draft, [field]: event.target.value })} className="h-9 w-full rounded-lg border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-800" /></label>;
+    })}</div>
     <div className="flex items-center justify-between gap-2"><span role="status" className="text-xs text-gray-500">{t(message)}</span><button type="submit" disabled={!valid || !dirty || saving} className="mobile-touch h-9 rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white disabled:opacity-40">{saving ? t("保存中…") : t("保存资料")}</button></div>
   </form>;
 };

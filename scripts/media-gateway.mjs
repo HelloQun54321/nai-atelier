@@ -1,4 +1,10 @@
 import { vibeBaseModel, vibeModelKey } from '../services/vibeProtocol.mjs';
+import {
+  filterEffectiveCharacterReferences,
+  resolvePreciseReferenceCaption,
+  selectPreciseReferenceBucket,
+} from '../services/preciseReferenceProtocol.mjs';
+export { selectPreciseReferenceBucket };
 import { GenerationTasks, DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval, validateGenerationIntervalJitter } from '../worker/generationTasks.mjs';
 import { createDesktopGenerationJobs, handleGenerationJobRequest } from './generation-gateway.mjs';
 import { readGenerationResponse } from './generation-output.mjs';
@@ -769,14 +775,6 @@ export const normalizeVibeStrengths = slots => {
   return values.length > 1 && total > 1 ? values.map(value => value / total) : values;
 };
 
-const PRECISE_REFERENCE_TYPES = new Map([
-  ['character', 'character'],
-  ['style', 'style'],
-  ['costume', 'costume'],
-  ['character_style', 'character&style'],
-  ['delta', 'delta'],
-]);
-
 const PRECISE_REFERENCE_CANVASES = [
   { width: 1024, height: 1536 },
   { width: 1472, height: 1472 },
@@ -792,7 +790,7 @@ export const selectPreciseReferenceCanvas = (width, height) => {
   return { width: selected.width, height: selected.height };
 };
 
-const preparePreciseReferenceImage = async (key, buffer) => {
+const preparePreciseReferenceImage = async (key, buffer, mode = 'resize') => {
   const cached = preciseReferenceImageCache.get(key);
   if (cached) {
     preciseReferenceImageCache.delete(key);
@@ -805,9 +803,19 @@ const preparePreciseReferenceImage = async (key, buffer) => {
     const source = sharp(buffer, { failOn: 'warning', limitInputPixels: 100_000_000 }).rotate();
     const metadata = await source.metadata();
     if (!metadata.width || !metadata.height) throw new Error('精准参考图片尺寸无效');
-    const canvas = selectPreciseReferenceCanvas(metadata.width, metadata.height);
-    const output = await source
-      .resize({ width: canvas.width, height: canvas.height, fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 1 } })
+    let pipeline = source;
+    if (mode === 'bucket') {
+      const bucket = selectPreciseReferenceBucket(metadata.width, metadata.height);
+      if (!bucket.unchanged) {
+        pipeline = source
+          .resize({ width: bucket.resizeWidth, height: bucket.resizeHeight, fit: 'fill' })
+          .extract({ left: bucket.left, top: bucket.top, width: bucket.width, height: bucket.height });
+      }
+    } else if (mode === 'resize') {
+      const canvas = selectPreciseReferenceCanvas(metadata.width, metadata.height);
+      pipeline = source.resize({ width: canvas.width, height: canvas.height, fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 1 } });
+    }
+    const output = await pipeline
       .png({ compressionLevel: 7, adaptiveFiltering: true })
       .toBuffer();
     const data = output.toString('base64');
@@ -839,11 +847,14 @@ const stripImageDataUrl = value => {
   return match ? { mimeType: match[1].toLowerCase(), data: match[2].replace(/\s+/g, '') } : { data: input.replace(/\s+/g, '') };
 };
 
-/** Build official NovelAI V4.5 Precise Reference fields from trusted Worker data. */
-export const buildPreciseReferenceParameters = (slots, resolvedAssets) => {
+/** Build official NovelAI Precise Reference fields from trusted Worker data. */
+export const buildPreciseReferenceParameters = (slots, resolvedAssets, options = {}) => {
   if (!Array.isArray(slots) || !slots.length) return {};
   if (slots.length > 16) throw new Error('一次最多使用 16 个精准参考');
   if (!Array.isArray(resolvedAssets) || resolvedAssets.length !== slots.length) throw new Error('精准参考图片数量不一致');
+  const supportsOutfitReferences = options.supportsOutfitReferences === true;
+  const supportsFidelity = options.supportsFidelity !== false;
+  const maxStrength = Math.max(2, Number(options.strengthMax) || 2);
   const images = resolvedAssets.map((item, index) => {
     const parsed = stripImageDataUrl(item?.imageData ?? item?.data);
     const mimeType = String(item?.mimeType || parsed.mimeType || '').toLowerCase();
@@ -852,19 +863,19 @@ export const buildPreciseReferenceParameters = (slots, resolvedAssets) => {
     return parsed.data;
   });
   const descriptions = slots.map((slot, index) => {
-    const baseCaption = PRECISE_REFERENCE_TYPES.get(slot?.type);
+    const baseCaption = resolvePreciseReferenceCaption(slot, supportsOutfitReferences);
     if (!baseCaption) throw new Error(`精准参考 ${index + 1} 的参考类型无效`);
     return { caption: { base_caption: baseCaption, char_captions: [] }, legacy_uc: false };
   });
   // NovelAI's numeric inputs accept values below zero when entered directly.
-  // Keep the UI's conservative -1..2 guard while leaving information extracted
-  // on its own documented 0..1 scale.
-  const fidelity = slots.map(slot => clampRange(slot?.fidelity, 0.6, -1, 2));
+  // Keep the UI's conservative lower guard while honoring model strength cap
+  // (2 on V4.5, 5 on V5) and pinning fidelity=1 when fidelity is disabled (V5).
+  const fidelity = slots.map(slot => supportsFidelity ? clampRange(slot?.fidelity, 0.6, -1, 2) : 1);
   return {
     director_reference_images: images,
     director_reference_descriptions: descriptions,
     director_reference_information_extracted: slots.map(slot => clampRange(slot?.informationExtracted, 1, 0, 1)),
-    director_reference_strength_values: slots.map(slot => clampRange(slot?.strength, 0.6, -1, 2)),
+    director_reference_strength_values: slots.map(slot => clampRange(slot?.strength, 0.6, -1, maxStrength)),
     director_reference_secondary_strength_values: fidelity.map(value => 1 - value),
   };
 };
@@ -950,10 +961,12 @@ export const isNaiUsageLimitedModel = (model, runtime = getNaiRuntime()) =>
 
 const getNaiModelCapability = (model, runtime = getNaiRuntime()) => {
   const id = String(model || '').trim();
-  const direct = runtime.modelCapabilities?.[id];
-  if (direct) return direct;
-  if (id.endsWith('-inpainting')) return runtime.modelCapabilities?.[id.slice(0, -'-inpainting'.length)];
-  return undefined;
+  const baseline = DEFAULT_NAI_MODEL_CAPABILITIES[id]
+    || (id.endsWith('-inpainting') ? DEFAULT_NAI_MODEL_CAPABILITIES[id.slice(0, -'-inpainting'.length)] : undefined);
+  const direct = runtime.modelCapabilities?.[id]
+    || (id.endsWith('-inpainting') ? runtime.modelCapabilities?.[id.slice(0, -'-inpainting'.length)] : undefined);
+  if (direct && baseline) return { ...baseline, ...direct };
+  return direct || baseline;
 };
 
 /** 将实际请求字段交给前后台共用计费函数；本地扣减仍属于估算。 */
@@ -1604,6 +1617,11 @@ const makeNaiRuntimeCapability = (overrides = {}) => ({
   supportsVibes: false,
   supportsCharacterReferences: false,
   supportsCharacterReferenceInpainting: false,
+  supportsOutfitReferences: false,
+  supportsCharacterReferenceFidelity: false,
+  characterReferenceStrengthMax: 1,
+  resizeCharacterReferences: false,
+  bucketCharacterReferences: false,
   supportsStreamedResponses: true,
   supportsTransparentBackground: false,
   maxCharacters: 6,
@@ -1663,9 +1681,44 @@ const UC_V4_CURATED = clonePromptPresets([
   promptPreset('light', 'light', { category: 'light', prefix: 'blurry, lowres, error, worst quality, bad quality, jpeg artifacts, very displeasing, logo, dated, signature, white blank page, blank page' }),
   promptPreset('none', 'none', { category: 'none' }),
 ]);
-const V5_CAPABILITY = makeNaiRuntimeCapability({ maxCharacters: 32, freeformCharacterPosition: true, supportsTransparentBackground: true, qualityPresets: QUALITY_V5, ucPresets: UC_V5 });
-const V45_FULL_CAPABILITY = makeNaiRuntimeCapability({ supportsVibes: true, supportsCharacterReferences: true, supportsCharacterReferenceInpainting: true, qualityPresets: QUALITY_V45_FULL, ucPresets: UC_V45_FULL });
-const V45_CURATED_CAPABILITY = makeNaiRuntimeCapability({ supportsVibes: true, supportsCharacterReferences: true, supportsCharacterReferenceInpainting: true, qualityPresets: QUALITY_V45_CURATED, ucPresets: UC_V45_CURATED });
+const V5_CAPABILITY = makeNaiRuntimeCapability({
+  supportsCharacterReferences: true,
+  supportsCharacterReferenceInpainting: false,
+  supportsOutfitReferences: true,
+  supportsCharacterReferenceFidelity: false,
+  characterReferenceStrengthMax: 5,
+  resizeCharacterReferences: false,
+  bucketCharacterReferences: true,
+  maxCharacters: 32,
+  freeformCharacterPosition: true,
+  supportsTransparentBackground: true,
+  qualityPresets: QUALITY_V5,
+  ucPresets: UC_V5,
+});
+const V45_FULL_CAPABILITY = makeNaiRuntimeCapability({
+  supportsVibes: true,
+  supportsCharacterReferences: true,
+  supportsCharacterReferenceInpainting: true,
+  supportsOutfitReferences: false,
+  supportsCharacterReferenceFidelity: true,
+  characterReferenceStrengthMax: 1,
+  resizeCharacterReferences: true,
+  bucketCharacterReferences: false,
+  qualityPresets: QUALITY_V45_FULL,
+  ucPresets: UC_V45_FULL,
+});
+const V45_CURATED_CAPABILITY = makeNaiRuntimeCapability({
+  supportsVibes: true,
+  supportsCharacterReferences: true,
+  supportsCharacterReferenceInpainting: true,
+  supportsOutfitReferences: false,
+  supportsCharacterReferenceFidelity: true,
+  characterReferenceStrengthMax: 1,
+  resizeCharacterReferences: true,
+  bucketCharacterReferences: false,
+  qualityPresets: QUALITY_V45_CURATED,
+  ucPresets: UC_V45_CURATED,
+});
 const V4_FULL_CAPABILITY = makeNaiRuntimeCapability({ supportsVibes: true, qualityPresets: QUALITY_V4_FULL, ucPresets: UC_V4_FULL });
 const V4_CURATED_CAPABILITY = makeNaiRuntimeCapability({ supportsVibes: true, qualityPresets: QUALITY_V4_CURATED, ucPresets: UC_V4_CURATED });
 const pairNaiRuntimeCapability = (id, capability) => ({ [id]: capability, [`${id}-inpainting`]: capability });
@@ -1713,8 +1766,11 @@ export const DEFAULT_NAI_RUNTIME = {
   ],
   /** NovelAI PNG 的 Source 字段到 API model_version 的精确映射。 */
   metadataModelMappings: {
+    'NovelAI Diffusion V5 81E2A1BD': 'nai-diffusion-5-full',
     'NovelAI Diffusion V5 657484A5': 'nai-diffusion-5-full',
     'NovelAI Diffusion V5 0ADF9AB7': 'nai-diffusion-5-full',
+    'NovelAI Diffusion V5 93F4BD30': 'nai-diffusion-5-full-medium',
+    'NovelAI Diffusion V5 70AB5786': 'nai-diffusion-5-full-medium',
     'NovelAI Diffusion V4.5 4BDE2A90': 'nai-diffusion-4-5-full',
     'NovelAI Diffusion V4.5 1229B44F': 'nai-diffusion-4-5-full',
     'NovelAI Diffusion V4.5 B9F340FD': 'nai-diffusion-4-5-full',
@@ -1952,6 +2008,11 @@ export const extractNaiModelCapabilities = text => {
         supportsVibes: readBoolean(source, 'vibetransfer', base.supportsVibes),
         supportsCharacterReferences: readBoolean(source, 'characterReferences', base.supportsCharacterReferences),
         supportsCharacterReferenceInpainting: readBoolean(source, 'charRefInpainting', base.supportsCharacterReferenceInpainting),
+        supportsOutfitReferences: readBoolean(source, 'outfitReferences', base.supportsOutfitReferences),
+        supportsCharacterReferenceFidelity: readBoolean(source, 'characterReferenceFidelity', base.supportsCharacterReferenceFidelity),
+        characterReferenceStrengthMax: readNumber(source, 'characterReferenceStrengthMax', base.characterReferenceStrengthMax || 1),
+        resizeCharacterReferences: readBoolean(source, 'resizeCharacterReferences', base.resizeCharacterReferences),
+        bucketCharacterReferences: readBoolean(source, 'bucketCharacterReferences', base.bucketCharacterReferences),
         supportsStreamedResponses: streamed,
         supportsTransparentBackground: readBoolean(source, 'transparency', base.supportsTransparentBackground),
         maxCharacters: readNumber(source, 'maxCharacters', base.maxCharacters),
@@ -2312,6 +2373,15 @@ export const initNaiRuntimeSync = async (requestRemote = fetch) => {
       naiRuntimeState = {
         ...DEFAULT_NAI_RUNTIME,
         ...saved.runtime,
+        modelCapabilities: saved.runtime.modelCapabilities && typeof saved.runtime.modelCapabilities === 'object'
+          ? {
+            ...DEFAULT_NAI_MODEL_CAPABILITIES,
+            ...Object.fromEntries(Object.entries(saved.runtime.modelCapabilities).map(([id, cap]) => [
+              id,
+              DEFAULT_NAI_MODEL_CAPABILITIES[id] ? { ...DEFAULT_NAI_MODEL_CAPABILITIES[id], ...cap } : cap,
+            ])),
+          }
+          : DEFAULT_NAI_MODEL_CAPABILITIES,
         billing: validBilling ? saved.runtime.billing : DEFAULT_NAI_BILLING,
         syncedAt: Number(saved.syncedAt) || 0,
         health,
@@ -2546,8 +2616,9 @@ const prepareGenerationReferences = async (payload, req, workerPort, { generatio
   const editOperation = String(payload?.parameters?._local_edit_operation || '');
   const isImageEdit = payload?.action === 'infill' || payload?.action === 'img2img'
     || editOperation === 'inpaint' || editOperation === 'outpaint' || editOperation === 'image-to-image';
+  const isInpaintEdit = isImageEdit && editOperation !== 'image-to-image';
   const allowsVibes = !isImageEdit || editOperation === 'image-to-image';
-  const allowsCharacterReferences = isImageEdit && editOperation !== 'image-to-image'
+  const allowsCharacterReferences = isInpaintEdit
     ? capability.supportsCharacterReferenceInpainting === true
     : capability.supportsCharacterReferences === true;
   const characterPromptCount = Array.isArray(payload?.parameters?.v4_prompt?.caption?.char_captions)
@@ -2619,34 +2690,46 @@ const prepareGenerationReferences = async (payload, req, workerPort, { generatio
       if (characterSlots.some(slot => typeof slot?.assetId !== 'string' || !slot.assetId.trim())) {
         throw Object.assign(new Error('精准参考缺少有效的本地资产 ID'), { status: 400 });
       }
-      const resolved = await Promise.all(characterSlots.map(async slot => {
-        const image = await requestWorkerBuffer(
-          `/api/character-references/${encodeURIComponent(slot.assetId)}/image`, req, workerPort
-        );
-        if (image.status >= 400 || !image.buffer.length) {
-          throw Object.assign(new Error(`精准参考“${slot.assetName || slot.assetId}”的原图不存在`), { status: image.status || 404 });
+      const effectiveSlots = filterEffectiveCharacterReferences(characterSlots, capability, isInpaintEdit);
+      if (effectiveSlots.length) {
+        const imageMode = capability.resizeCharacterReferences
+          ? 'resize'
+          : capability.bucketCharacterReferences
+            ? 'bucket'
+            : 'raw';
+        const resolved = await Promise.all(effectiveSlots.map(async slot => {
+          const image = await requestWorkerBuffer(
+            `/api/character-references/${encodeURIComponent(slot.assetId)}/image`, req, workerPort
+          );
+          if (image.status >= 400 || !image.buffer.length) {
+            throw Object.assign(new Error(`精准参考“${slot.assetName || slot.assetId}”的原图不存在`), { status: image.status || 404 });
+          }
+          const etag = String(image.headers.etag || image.headers['last-modified'] || 'immutable');
+          return {
+            data: await preparePreciseReferenceImage(`${slot.assetId}:${etag}:${imageMode}`, image.buffer, imageMode),
+            mimeType: 'image/png',
+          };
+        }));
+        try {
+          const built = buildPreciseReferenceParameters(effectiveSlots, resolved, {
+            supportsOutfitReferences: capability.supportsOutfitReferences === true,
+            supportsFidelity: capability.supportsCharacterReferenceFidelity !== false,
+            strengthMax: capability.characterReferenceStrengthMax,
+          });
+          Object.assign(payload.parameters, built);
+          preciseReferenceImages = built.director_reference_images;
+          if (gatewayUrl) {
+            toCachedPreciseReferenceParameters(payload.parameters);
+          } else if (!generationProxyUrl) {
+            // 官方直连复用官方服务端缓存；云队列仍发送原始 director_reference_images。
+            toCachedPreciseReferenceParameters(payload.parameters, { reuseServerCache: true });
+            preciseCacheKeysSentWithData = new Set(payload.parameters.director_reference_images_cached
+              .filter(item => item.data)
+              .map(item => item.cache_secret_key));
+          }
+        } catch (error) {
+          throw Object.assign(new Error(error?.message || '精准参考参数无效'), { status: 400 });
         }
-        const etag = String(image.headers.etag || image.headers['last-modified'] || 'immutable');
-        return {
-          data: await preparePreciseReferenceImage(`${slot.assetId}:${etag}`, image.buffer),
-          mimeType: 'image/png',
-        };
-      }));
-      try {
-        const built = buildPreciseReferenceParameters(characterSlots, resolved);
-        Object.assign(payload.parameters, built);
-        preciseReferenceImages = built.director_reference_images;
-        if (gatewayUrl) {
-          toCachedPreciseReferenceParameters(payload.parameters);
-        } else if (!generationProxyUrl) {
-          // 官方直连复用官方服务端缓存；云队列仍发送原始 director_reference_images。
-          toCachedPreciseReferenceParameters(payload.parameters, { reuseServerCache: true });
-          preciseCacheKeysSentWithData = new Set(payload.parameters.director_reference_images_cached
-            .filter(item => item.data)
-            .map(item => item.cache_secret_key));
-        }
-      } catch (error) {
-        throw Object.assign(new Error(error?.message || '精准参考参数无效'), { status: 400 });
       }
     }
     // 底图缓存只用于官方直连：中转站与云队列不认识缓存键，仍每次都带原图。
@@ -4186,8 +4269,15 @@ const serveDistFile = async (req, res, url) => {
     },
     estimate: async (job, fresh, setStage) => {
       const payload = job.descriptor.payload, p = payload.parameters;
+      const effectiveRefs = p._local_character_references?.enabled
+        ? filterEffectiveCharacterReferences(
+          p._local_character_references.slots,
+          getNaiModelCapability(payload.model, getNaiRuntime()),
+          Boolean(p.mask) || payload.action === 'infill',
+        )
+        : [];
       const priced = { ...payload, parameters: { ...p,
-        ...(p._local_character_references?.enabled ? { director_reference_images_cached: p._local_character_references.slots } : {}),
+        ...(effectiveRefs.length ? { director_reference_images_cached: effectiveRefs } : {}),
         ...(p._local_vibes?.enabled ? { reference_image_multiple_cached: p._local_vibes.slots } : {}),
       } };
       // 开启 Key 池时，批内每张生成前均按满圈率优先动态选 Key；优先复用干净缓存零阻塞发车，成图后再后台异步刷新。

@@ -49,10 +49,13 @@ describe('样张组装', () => {
     const kept = buildPromptSampleDraft('artist:a', settings({ keepOriginalCharacters: true, characters: ['ignored'] }), { params: original, negativePrompt: 'lowres' });
     expect(kept.params).toMatchObject({ characters: original.characters, useCoords: true, characterReferences: original.characterReferences });
     expect(kept.params.characters).not.toBe(original.characters);
-    const snapshot = createPromptSampleSnapshot({ ...original, model: 'nai-diffusion-5-full' }, '');
+    const snapshot = createPromptSampleSnapshot({ ...original, model: 'nai-diffusion-4-full' }, '');
     const mine = buildPromptSampleDraft('artist:a', settings({ source: 'mine', snapshot, keepOriginalCharacters: true }), { params: original, negativePrompt: 'lowres' });
-    expect(mine.params).toMatchObject({ model: 'nai-diffusion-5-full', characters: original.characters, useCoords: true });
+    expect(mine.params).toMatchObject({ model: 'nai-diffusion-4-full', characters: original.characters, useCoords: true });
     expect(mine.params).not.toHaveProperty('characterReferences');
+    const v5Snapshot = createPromptSampleSnapshot({ ...original, model: 'nai-diffusion-5-full' }, '');
+    const v5Mine = buildPromptSampleDraft('artist:a', settings({ source: 'mine', snapshot: v5Snapshot, keepOriginalCharacters: true }), { params: original, negativePrompt: 'lowres' });
+    expect(v5Mine.params).toMatchObject({ model: 'nai-diffusion-5-full', characters: original.characters, useCoords: true, characterReferences: original.characterReferences });
   });
 });
 

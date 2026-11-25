@@ -62,7 +62,8 @@ export const estimateNaiBilling = (parameters, model, runtime, opus = false, usa
   const freeSamples = free ? Math.min(samples, rules.freeSamples) : 0;
   return {
     cost: baseCost * (samples - freeSamples)
-      + Math.max(0, vibeCount - rules.freeVibeCount) * rules.extraVibeCost
+      // 官方现行计价将超出免费数量的 Vibe 附加费按出图张数（n_samples）相乘。
+      + Math.max(0, vibeCount - rules.freeVibeCount) * rules.extraVibeCost * samples
       + referenceCount * rules.characterReferenceCost * samples,
     opusImages: usageLimited ? freeSamples : 0,
   };

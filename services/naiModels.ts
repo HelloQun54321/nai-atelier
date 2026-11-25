@@ -25,6 +25,16 @@ export interface NaiModelInfo {
   supportsCharacterReferences: boolean;
   /** 是否允许在当前模型的局部重绘／扩图请求中发送角色参考。 */
   supportsCharacterReferenceInpainting: boolean;
+  /** 是否支持服装参考及「优先同款服装」开关。 */
+  supportsOutfitReferences: boolean;
+  /** 是否显示保真度（Fidelity）滑块。 */
+  supportsCharacterReferenceFidelity: boolean;
+  /** 精准参考强度的官方上限（V4.5 为 1，V5 为 5）。 */
+  characterReferenceStrengthMax: number;
+  /** 精准参考是否按 3 档画布补黑边缩放（V4.5）。 */
+  resizeCharacterReferences: boolean;
+  /** 精准参考是否按官方 97 档多比例分桶裁剪（V5）。 */
+  bucketCharacterReferences: boolean;
   /** 当前模型允许保存并提交的角色提示词槽数量。 */
   maxCharacters: number;
   /** 是否支持 V5 风格的自由画布角色定位。 */
@@ -36,12 +46,12 @@ export interface NaiModelInfo {
 }
 
 export const NAI_MODELS: NaiModelInfo[] = [
-  { id: 'nai-diffusion-5-full', label: 'V5 Full', opusUsageLimit: true, supportsVibes: false, supportsCharacterReferences: false, supportsCharacterReferenceInpainting: false, maxCharacters: 32, freeformCharacterPosition: true, supportsStreamedResponses: true, supportsTransparentBackground: true },
-  { id: 'nai-diffusion-5-curated', label: 'V5 Curated', opusUsageLimit: true, supportsVibes: false, supportsCharacterReferences: false, supportsCharacterReferenceInpainting: false, maxCharacters: 32, freeformCharacterPosition: true, supportsStreamedResponses: true, supportsTransparentBackground: true },
-  { id: 'nai-diffusion-4-5-full', label: 'V4.5 Full', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: true, supportsCharacterReferenceInpainting: true, maxCharacters: 6, freeformCharacterPosition: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
-  { id: 'nai-diffusion-4-5-curated', label: 'V4.5 Curated', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: true, supportsCharacterReferenceInpainting: true, maxCharacters: 6, freeformCharacterPosition: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
-  { id: 'nai-diffusion-4-full', label: 'V4 Full', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: false, supportsCharacterReferenceInpainting: false, maxCharacters: 6, freeformCharacterPosition: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
-  { id: 'nai-diffusion-4-curated-preview', label: 'V4 Curated', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: false, supportsCharacterReferenceInpainting: false, maxCharacters: 6, freeformCharacterPosition: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
+  { id: 'nai-diffusion-5-full', label: 'V5 Full', opusUsageLimit: true, supportsVibes: false, supportsCharacterReferences: true, supportsCharacterReferenceInpainting: false, supportsOutfitReferences: true, supportsCharacterReferenceFidelity: false, characterReferenceStrengthMax: 5, resizeCharacterReferences: false, bucketCharacterReferences: true, maxCharacters: 32, freeformCharacterPosition: true, supportsStreamedResponses: true, supportsTransparentBackground: true },
+  { id: 'nai-diffusion-5-curated', label: 'V5 Curated', opusUsageLimit: true, supportsVibes: false, supportsCharacterReferences: true, supportsCharacterReferenceInpainting: false, supportsOutfitReferences: true, supportsCharacterReferenceFidelity: false, characterReferenceStrengthMax: 5, resizeCharacterReferences: false, bucketCharacterReferences: true, maxCharacters: 32, freeformCharacterPosition: true, supportsStreamedResponses: true, supportsTransparentBackground: true },
+  { id: 'nai-diffusion-4-5-full', label: 'V4.5 Full', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: true, supportsCharacterReferenceInpainting: true, supportsOutfitReferences: false, supportsCharacterReferenceFidelity: true, characterReferenceStrengthMax: 1, resizeCharacterReferences: true, bucketCharacterReferences: false, maxCharacters: 6, freeformCharacterPosition: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
+  { id: 'nai-diffusion-4-5-curated', label: 'V4.5 Curated', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: true, supportsCharacterReferenceInpainting: true, supportsOutfitReferences: false, supportsCharacterReferenceFidelity: true, characterReferenceStrengthMax: 1, resizeCharacterReferences: true, bucketCharacterReferences: false, maxCharacters: 6, freeformCharacterPosition: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
+  { id: 'nai-diffusion-4-full', label: 'V4 Full', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: false, supportsCharacterReferenceInpainting: false, supportsOutfitReferences: false, supportsCharacterReferenceFidelity: false, characterReferenceStrengthMax: 1, resizeCharacterReferences: false, bucketCharacterReferences: false, maxCharacters: 6, freeformCharacterPosition: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
+  { id: 'nai-diffusion-4-curated-preview', label: 'V4 Curated', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: false, supportsCharacterReferenceInpainting: false, supportsOutfitReferences: false, supportsCharacterReferenceFidelity: false, characterReferenceStrengthMax: 1, resizeCharacterReferences: false, bucketCharacterReferences: false, maxCharacters: 6, freeformCharacterPosition: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
 ];
 
 export const DEFAULT_NAI_MODEL = 'nai-diffusion-4-5-full';
@@ -86,8 +96,11 @@ export const getModelFollowDefaultSteps = (modelId: string | undefined, currentS
  * 精确哈希会由网关从官方 Web 应用同步；这里保留当前官方映射作为离线回退。
  */
 export const DEFAULT_NAI_METADATA_MODEL_MAPPINGS: Record<string, string> = {
+  'NovelAI Diffusion V5 81E2A1BD': 'nai-diffusion-5-full',
   'NovelAI Diffusion V5 657484A5': 'nai-diffusion-5-full',
   'NovelAI Diffusion V5 0ADF9AB7': 'nai-diffusion-5-full',
+  'NovelAI Diffusion V5 93F4BD30': 'nai-diffusion-5-full-medium',
+  'NovelAI Diffusion V5 70AB5786': 'nai-diffusion-5-full-medium',
   'NovelAI Diffusion V4.5 4BDE2A90': 'nai-diffusion-4-5-full',
   'NovelAI Diffusion V4.5 1229B44F': 'nai-diffusion-4-5-full',
   'NovelAI Diffusion V4.5 B9F340FD': 'nai-diffusion-4-5-full',
@@ -176,6 +189,11 @@ const applyRuntimeCapability = (model: NaiModelInfo, capability?: NaiModelRuntim
   supportsVibes: capability.supportsVibes,
   supportsCharacterReferences: capability.supportsCharacterReferences,
   supportsCharacterReferenceInpainting: capability.supportsCharacterReferenceInpainting,
+  supportsOutfitReferences: capability.supportsOutfitReferences ?? model.supportsOutfitReferences,
+  supportsCharacterReferenceFidelity: capability.supportsCharacterReferenceFidelity ?? model.supportsCharacterReferenceFidelity,
+  characterReferenceStrengthMax: capability.characterReferenceStrengthMax || model.characterReferenceStrengthMax,
+  resizeCharacterReferences: capability.resizeCharacterReferences ?? model.resizeCharacterReferences,
+  bucketCharacterReferences: capability.bucketCharacterReferences ?? model.bucketCharacterReferences,
   maxCharacters: capability.maxCharacters || model.maxCharacters,
   freeformCharacterPosition: capability.freeformCharacterPosition,
   supportsStreamedResponses: capability.supportsStreamedResponses,
@@ -196,6 +214,11 @@ export const getRuntimeNaiModelInfo = (model: string | undefined, runtime?: NaiR
     supportsVibes: false,
     supportsCharacterReferences: false,
     supportsCharacterReferenceInpainting: false,
+    supportsOutfitReferences: false,
+    supportsCharacterReferenceFidelity: false,
+    characterReferenceStrengthMax: 1,
+    resizeCharacterReferences: false,
+    bucketCharacterReferences: false,
     maxCharacters: 6,
     freeformCharacterPosition: false,
     supportsStreamedResponses: runtime?.streamedModels.includes(model as string) ?? false,
@@ -223,6 +246,11 @@ export const getSelectableNaiModels = (runtime?: Pick<NaiRuntimeConfig, 'models'
       supportsVibes: false,
       supportsCharacterReferences: false,
       supportsCharacterReferenceInpainting: false,
+      supportsOutfitReferences: false,
+      supportsCharacterReferenceFidelity: false,
+      characterReferenceStrengthMax: 1,
+      resizeCharacterReferences: false,
+      bucketCharacterReferences: false,
       maxCharacters: 6,
       freeformCharacterPosition: false,
       supportsStreamedResponses: runtime.streamedModels?.includes(id) ?? false,

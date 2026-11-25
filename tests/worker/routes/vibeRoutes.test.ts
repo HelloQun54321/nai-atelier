@@ -484,4 +484,13 @@ describe('精准参考永久删除', () => {
       JSON.stringify({ revision: 1, folders: [{ id: 'f1', name: '角色', parentId: null }], assignments: { 'ref-c': ['f1'] } }));
     expect((await f.request('/api/character-references/ref-c', undefined, 'DELETE')).status).toBe(200);
   });
+
+  it('精准参考默认强度接受 V5 上限 5，超过 5 拒绝保存', async () => {
+    const f = fixture(true); seed(f, 'ref-strength');
+    const ok = await f.request('/api/character-references/ref-strength', { name: '强参考', defaultStrength: 4.5, defaultFidelity: 1 }, 'PUT');
+    expect(ok.status).toBe(200);
+    expect(ok.body.item.defaultStrength).toBe(4.5);
+    const over = await f.request('/api/character-references/ref-strength', { name: '过强', defaultStrength: 5.5, defaultFidelity: 1 }, 'PUT');
+    expect(over.status).toBe(400);
+  });
 });

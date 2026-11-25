@@ -627,8 +627,8 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
       const requestedStrength = body.defaultStrength === undefined
         ? Number(existing.default_strength ?? 1)
         : Number(body.defaultStrength);
-      if (!Number.isFinite(requestedStrength) || requestedStrength < -1 || requestedStrength > 2) {
-        return error('默认强度必须在 -1 到 2 之间', 400);
+      if (!Number.isFinite(requestedStrength) || requestedStrength < -1 || requestedStrength > 5) {
+        return error('默认强度必须在 -1 到 5 之间', 400);
       }
       const requestedFidelity = body.defaultFidelity === undefined
         ? Number(existing.default_fidelity ?? 1)

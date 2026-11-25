@@ -372,11 +372,27 @@ describe('后台任务描述与计费入参', () => {
       parameters: {
         n_samples: 1,
         _local_vibes: { enabled: true, slots: [{}, {}, {}] },
-        _local_character_references: { enabled: true, slots: [{}] },
+        _local_character_references: { enabled: true, slots: [{ type: 'character' }, { type: 'costume' }] },
       },
     });
     expect(priced.parameters.reference_image_multiple_cached).toHaveLength(3);
     expect(priced.parameters.director_reference_images_cached).toHaveLength(1);
+    const v5Priced = normalizedBillingPayload({
+      model: 'nai-diffusion-5-full', action: 'generate',
+      parameters: {
+        n_samples: 1,
+        _local_character_references: { enabled: true, slots: [{ type: 'character' }, { type: 'costume' }] },
+      },
+    });
+    expect(v5Priced.parameters.director_reference_images_cached).toHaveLength(2);
+    const v5InpaintPriced = normalizedBillingPayload({
+      model: 'nai-diffusion-5-full-inpainting', action: 'infill',
+      parameters: {
+        n_samples: 1, mask: 'm',
+        _local_character_references: { enabled: true, slots: [{ type: 'character' }] },
+      },
+    });
+    expect(v5InpaintPriced.parameters.director_reference_images_cached).toBeUndefined();
     const plain = normalizedBillingPayload({ model: 'nai-diffusion-4-5-full', action: 'generate', parameters: { n_samples: 1 } });
     expect(plain.parameters.reference_image_multiple_cached).toBeUndefined();
     expect(plain.parameters.director_reference_images_cached).toBeUndefined();

@@ -3,7 +3,8 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ImageEditOperation, NAIParams } from '../types';
 import { api } from './api';
-import { applyNaiModelSettings, DEFAULT_NAI_MODEL } from './naiModels';
+import { applyNaiModelSettings, DEFAULT_NAI_MODEL, getRuntimeNaiModelInfo } from './naiModels';
+import { filterEffectiveCharacterReferences } from './preciseReferenceProtocol.mjs';
 import { DEFAULT_NAI_RUNTIME, NaiRuntimeConfig } from './naiRuntime';
 import { imageEditRequestDimensions } from './imageEdit';
 import type { NovelaiSubscriptionInfo, NovelaiUsageState } from './naiUsage';
@@ -87,11 +88,15 @@ export const formatGenerationCostLabel = (cost: number, model?: string): string 
  */
 export const estimateV45GenerationCost = (params: NAIParams, opus = true, opusUsageExhausted = false) => {
   params = applyNaiModelSettings(params, estimatorRuntime);
+  const model = params.model || DEFAULT_NAI_MODEL;
+  const referenceCount = params.characterReferences?.enabled
+    ? filterEffectiveCharacterReferences(params.characterReferences.slots, getRuntimeNaiModelInfo(model, estimatorRuntime), false).length
+    : 0;
   return estimateNaiBilling({
     width: params.width, height: params.height, steps: params.steps,
     vibeCount: params.vibes?.enabled ? params.vibes.slots.length : 0,
-    referenceCount: params.characterReferences?.enabled ? params.characterReferences.slots.length : 0,
-  }, params.model || DEFAULT_NAI_MODEL, estimatorRuntime, opus, opusUsageExhausted).cost;
+    referenceCount,
+  }, model, estimatorRuntime, opus, opusUsageExhausted).cost;
 };
 
 export const estimateImageEditCost = (
@@ -104,15 +109,19 @@ export const estimateImageEditCost = (
   dimensions?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number },
 ) => {
   params = applyNaiModelSettings(params, estimatorRuntime);
+  const model = params.model || DEFAULT_NAI_MODEL;
   const sourceWidth = Math.max(1, Number(dimensions?.width ?? params.width) || 1);
   const sourceHeight = Math.max(1, Number(dimensions?.height ?? params.height) || 1);
   const requestDimensions = imageEditRequestDimensions(sourceWidth, sourceHeight, operation, focused, dimensions?.focusedRect, dimensions?.minimumContextArea);
+  const referenceCount = params.characterReferences?.enabled
+    ? filterEffectiveCharacterReferences(params.characterReferences.slots, getRuntimeNaiModelInfo(model, estimatorRuntime), operation !== 'image-to-image').length
+    : 0;
   return estimateNaiBilling({
     ...requestDimensions, steps: params.steps, strength,
     image: true, mask: operation !== 'image-to-image',
     vibeCount: operation === 'image-to-image' && params.vibes?.enabled ? params.vibes.slots.length : 0,
-    referenceCount: params.characterReferences?.enabled ? params.characterReferences.slots.length : 0,
-  }, params.model || DEFAULT_NAI_MODEL, estimatorRuntime, typeof opusTier === 'number' && opusTier >= 3, opusUsageExhausted).cost;
+    referenceCount,
+  }, model, estimatorRuntime, typeof opusTier === 'number' && opusTier >= 3, opusUsageExhausted).cost;
 };
 
 const broadcastBudget = (state: AnlasBudgetState, keyHash: string) => {

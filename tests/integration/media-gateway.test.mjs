@@ -235,6 +235,7 @@ import {
   requestRemoteBuffer,
   requestAgentProjectImage,
   sniffImageMime,
+  selectPreciseReferenceBucket,
   selectPreciseReferenceCanvas,
   CloudQueueCoordinator,
   createSseEventObserver,
@@ -1174,7 +1175,7 @@ test('官方 Web 应用常量提取器解析真实压缩代码片段', () => {
   assert.equal(extractNaiFreeTierLimits('function C(e){return e.steps<=28}'), null);
 
   // 模型能力表：case 分组以 opusUsageLimit 收尾。
-  const capabilityTable = 'switch(t){case"nai-diffusion-5-full":case"nai-diffusion-5-full-inpainting":{streamedResponses:!0,opusUsageLimit:!0};case"nai-diffusion-4-5-full":case"nai-diffusion-4-5-full-inpainting":{characterReferences:!0,opusUsageLimit:!1};case"nai-diffusion-6-full":{opusUsageLimit:!0}}';
+  const capabilityTable = 'switch(t){case"nai-diffusion-5-full":case"nai-diffusion-5-full-inpainting":{streamedResponses:!0,characterReferences:!0,charRefInpainting:!1,bucketCharacterReferences:!0,characterReferenceFidelity:!1,characterReferenceStrengthMax:5,outfitReferences:!0,opusUsageLimit:!0};case"nai-diffusion-4-5-full":case"nai-diffusion-4-5-full-inpainting":{characterReferences:!0,charRefInpainting:!0,resizeCharacterReferences:!0,characterReferenceFidelity:!0,characterReferenceStrengthMax:1,opusUsageLimit:!1};case"nai-diffusion-6-full":{opusUsageLimit:!0}}';
   const capabilities = extractNaiModelCapabilities(capabilityTable);
   assert.deepEqual(capabilities.models, [
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
@@ -1189,6 +1190,12 @@ test('官方 Web 应用常量提取器解析真实压缩代码片段', () => {
   ]);
   assert.equal(capabilities.modelCapabilities['nai-diffusion-5-full'].supportsTransparentBackground, false);
   assert.equal(capabilities.modelCapabilities['nai-diffusion-5-full'].maxCharacters, 0);
+  assert.equal(capabilities.modelCapabilities['nai-diffusion-5-full'].supportsOutfitReferences, true);
+  assert.equal(capabilities.modelCapabilities['nai-diffusion-5-full'].supportsCharacterReferenceFidelity, false);
+  assert.equal(capabilities.modelCapabilities['nai-diffusion-5-full'].characterReferenceStrengthMax, 5);
+  assert.equal(capabilities.modelCapabilities['nai-diffusion-5-full'].bucketCharacterReferences, true);
+  assert.equal(capabilities.modelCapabilities['nai-diffusion-4-5-full'].supportsCharacterReferenceFidelity, true);
+  assert.equal(capabilities.modelCapabilities['nai-diffusion-4-5-full'].resizeCharacterReferences, true);
 
   const promptPresetTable = [
     'case n.oM.naiDiffusionV5Full:return[{id:"standard",name:"standard",suffix:"very aesthetic"},{id:"light",name:"light",suffix:"amazing quality"},{id:"none",name:"none"}]',
@@ -1281,7 +1288,7 @@ test('共享计费覆盖多张、参考资格、Strength 舍入及同步规则�
   const parameters = { width: 832, height: 1216, steps: 28, n_samples: 2 };
   const base = { model: 'nai-diffusion-5-full', parameters };
   assert.equal(estimateNovelAiGenerationCost(base, false, true), 30);
-  assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, reference_image_multiple_cached: Array(5).fill({}) } }, false, true), 32);
+  assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, reference_image_multiple_cached: Array(5).fill({}) } }, false, true), 34);
   assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, director_reference_images_cached: [{}] } }, false, true), 40);
   assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, image: 'fake', strength: 0.7 } }, true, true), 42);
   assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, image: 'fake', strength: 0 } }, true, true), 4);
@@ -1492,6 +1499,32 @@ test('Precise Reference chooses the nearest official portrait, square and landsc
   assert.deepEqual(selectPreciseReferenceCanvas(800, 1200), { width: 1024, height: 1536 });
   assert.deepEqual(selectPreciseReferenceCanvas(1200, 1200), { width: 1472, height: 1472 });
   assert.deepEqual(selectPreciseReferenceCanvas(1600, 900), { width: 1536, height: 1024 });
+});
+
+test('V5 Precise Reference supports outfit captions, strength up to 5, fidelity=1, and 97-bucket cropping', () => {
+  const image = Buffer.from('x'.repeat(128)).toString('base64');
+  const slots = [
+    { assetId: 'a', type: 'character', preferSameOutfit: true, strength: 4.5, fidelity: 0.2 },
+    { assetId: 'b', type: 'character_style', preferSameOutfit: false, strength: 1.5, fidelity: 0.4 },
+    { assetId: 'c', type: 'costume', strength: 6, fidelity: 0.3 },
+  ];
+  const parameters = buildPreciseReferenceParameters(slots, [
+    { mimeType: 'image/png', imageData: image },
+    { mimeType: 'image/png', imageData: image },
+    { mimeType: 'image/png', imageData: image },
+  ], { supportsOutfitReferences: true, supportsFidelity: false, strengthMax: 5 });
+  assert.deepEqual(
+    parameters.director_reference_descriptions.map(item => item.caption.base_caption),
+    ['character_mainoutfit', 'character&style_anyoutfit', 'costume'],
+  );
+  assert.deepEqual(parameters.director_reference_strength_values, [4.5, 1.5, 5]);
+  assert.deepEqual(parameters.director_reference_secondary_strength_values, [0, 0, 0]);
+  assert.deepEqual(selectPreciseReferenceBucket(1024, 1024), {
+    width: 1024, height: 1024, resizeWidth: 1024, resizeHeight: 1024, left: 0, top: 0, unchanged: true,
+  });
+  const tall = selectPreciseReferenceBucket(600, 1400);
+  assert.equal(tall.width * tall.height <= 1048576, true);
+  assert.equal(tall.resizeWidth >= tall.width && tall.resizeHeight >= tall.height, true);
 });
 
 test('Precise Reference strips spoofed browser fields and rejects invalid input', () => {

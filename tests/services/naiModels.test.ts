@@ -12,7 +12,7 @@ describe('runtime NovelAI model capabilities', () => {
     expect(draft).toEqual(snapshot);
     const high = { ...draft, model: 'nai-diffusion-5-full' };
     expect(applyNaiModelSettings(high, DEFAULT_NAI_RUNTIME)).toBe(high);
-    expect(getRuntimeNaiModelInfo(model, DEFAULT_NAI_RUNTIME)).toMatchObject({ maxCharacters: 32, opusUsageLimit: true, supportsStreamedResponses: true, supportsTransparentBackground: true, supportsVibes: false, supportsCharacterReferences: false });
+    expect(getRuntimeNaiModelInfo(model, DEFAULT_NAI_RUNTIME)).toMatchObject({ maxCharacters: 32, opusUsageLimit: true, supportsStreamedResponses: true, supportsTransparentBackground: true, supportsVibes: false, supportsCharacterReferences: true, supportsCharacterReferenceInpainting: false, supportsOutfitReferences: true, supportsCharacterReferenceFidelity: false, characterReferenceStrengthMax: 5, bucketCharacterReferences: true });
     expect(getDefaultStepsForModel(model)).toBe(14);
     expect(getSelectableNaiModels(DEFAULT_NAI_RUNTIME).some(item => item.id === model)).toBe(false);
   });
@@ -32,12 +32,24 @@ describe('runtime NovelAI model capabilities', () => {
     expect(v5.maxCharacters).toBe(32);
     expect(v5.supportsTransparentBackground).toBe(true);
     expect(v5.supportsVibes).toBe(false);
+    expect(v5.supportsCharacterReferences).toBe(true);
+    expect(v5.supportsCharacterReferenceInpainting).toBe(false);
+    expect(v5.supportsOutfitReferences).toBe(true);
+    expect(v5.supportsCharacterReferenceFidelity).toBe(false);
+    expect(v5.characterReferenceStrengthMax).toBe(5);
+    expect(v5.bucketCharacterReferences).toBe(true);
+    expect(v5.resizeCharacterReferences).toBe(false);
 
     const curated = getRuntimeNaiModelInfo('nai-diffusion-4-5-curated', DEFAULT_NAI_RUNTIME);
     expect(curated.maxCharacters).toBe(6);
     expect(curated.supportsVibes).toBe(true);
     expect(curated.supportsCharacterReferences).toBe(true);
     expect(curated.supportsCharacterReferenceInpainting).toBe(true);
+    expect(curated.supportsOutfitReferences).toBe(false);
+    expect(curated.supportsCharacterReferenceFidelity).toBe(true);
+    expect(curated.characterReferenceStrengthMax).toBe(1);
+    expect(curated.resizeCharacterReferences).toBe(true);
+    expect(curated.bucketCharacterReferences).toBe(false);
   });
 
   it('applies the base-model capability to inpainting variants and future models', () => {

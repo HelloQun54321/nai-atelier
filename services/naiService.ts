@@ -44,7 +44,10 @@ const validateGenerationCapabilities = (params: NAIParams, runtime: NaiRuntimeCo
     ? modelInfo.supportsCharacterReferenceInpainting
     : modelInfo.supportsCharacterReferences;
   if (params.characterReferences?.enabled && params.characterReferences.slots.length > 0 && !canSendCharacterReferences) {
-    throw new Error(`NovelAI ${modelInfo.label} 暂不支持精准参考，请先移除精准参考或切换模型`);
+    const inpaintOnlyRestriction = (operation === 'inpaint' || operation === 'outpaint') && modelInfo.supportsCharacterReferences;
+    throw new Error(inpaintOnlyRestriction
+      ? `NovelAI ${modelInfo.label} 的局部重绘／扩图暂不支持精准参考，请先移除精准参考或切换模型`
+      : `NovelAI ${modelInfo.label} 暂不支持精准参考，请先移除精准参考或切换模型`);
   }
   if (params.characterReferences?.enabled && params.characterReferences.slots.length > 16) {
     throw new Error('一次最多使用 16 个精准参考');
