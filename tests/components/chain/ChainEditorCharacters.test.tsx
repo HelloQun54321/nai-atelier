@@ -122,10 +122,14 @@ describe('共用角色编辑器', () => {
     expect(random.mock.calls.some(([props]) => props.roleId === 'b' && JSON.stringify(props.purposes) === JSON.stringify(purposes))).toBe(true);
     fireEvent.click(within(screen.getByRole('dialog', { name: '使用提示词' })).getByRole('button', { name: '关闭' }));
     fireEvent.keyDown(switch2, { key: 'ArrowLeft', altKey: true });
-    selectCharacter(/角色 2/);
+    // 重排后原角色 a 仍保留固化默认名「角色 1」（现位于第 2 槽）
+    selectCharacter(/角色 1/);
     fireEvent.change(positiveBox(), { target: { value: 'edited role a' } });
     fireEvent.click(screen.getByRole('switch', { name: '启用角色 2' }));
-    expect(draft().characters).toEqual([initial.characters![1], { ...initial.characters![0], prompt: 'edited role a', enabled: false }]);
+    expect(draft().characters).toEqual([
+      { ...initial.characters![1], name: '角色 2' },
+      { ...initial.characters![0], name: '角色 1', prompt: 'edited role a', enabled: false },
+    ]);
   });
 
   it('角色卡头部直接提供取用、收录到角色库与删除，不再有上下箭头与更多菜单', () => {
@@ -311,14 +315,20 @@ describe('共用角色编辑器', () => {
     const switch2 = screen.getAllByRole('button', { name: /角色 2/ }).find(node => node.hasAttribute('aria-pressed'))!;
     fireEvent.click(switch2);
     fireEvent.keyDown(switch2, { key: 'ArrowLeft', altKey: true });
-    expect(draft().characters).toEqual([initial.characters![1], initial.characters![0]]);
+    expect(draft().characters).toEqual([
+      { ...initial.characters![1], name: '角色 2' },
+      { ...initial.characters![0], name: '角色 1' },
+    ]);
     fireEvent.click(screen.getByRole('switch', { name: '启用角色 1' }));
-    expect(draft().characters?.[0]).toEqual({ ...initial.characters![1], enabled: false });
+    expect(draft().characters?.[0]).toEqual({ ...initial.characters![1], name: '角色 2', enabled: false });
     expect(screen.getAllByText('已停用').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('switch', { name: '启用角色 1' }));
-    const switch1 = screen.getAllByRole('button', { name: /角色 1/ }).find(node => node.hasAttribute('aria-pressed'))!;
-    fireEvent.keyDown(switch1, { key: 'ArrowRight', altKey: true });
-    expect(draft().characters).toEqual([initial.characters![0], { ...initial.characters![1], enabled: true }]);
+    const movedRole2 = screen.getAllByRole('button', { name: /角色 2/ }).find(node => node.hasAttribute('aria-pressed'))!;
+    fireEvent.keyDown(movedRole2, { key: 'ArrowRight', altKey: true });
+    expect(draft().characters).toEqual([
+      { ...initial.characters![0], name: '角色 1' },
+      { ...initial.characters![1], name: '角色 2', enabled: true },
+    ]);
     expect(mark).toHaveBeenCalledTimes(4);
   });
 
@@ -330,7 +340,10 @@ describe('共用角色编辑器', () => {
     fireEvent.keyDown(switch1, { key: 'ArrowRight', altKey: true });
     const movedHeader = screen.getByText('角色提示词').parentElement as HTMLElement;
     fireEvent.click(within(movedHeader).getByRole('button', { name: '撤销清空' }));
-    expect(draft().characters).toEqual([initial.characters![1], initial.characters![0]]);
+    expect(draft().characters).toEqual([
+      { ...initial.characters![1], name: '角色 2' },
+      { ...initial.characters![0], name: '角色 1' },
+    ]);
     expect(document.activeElement).toBe(positiveBox());
   });
 

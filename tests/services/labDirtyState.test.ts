@@ -87,12 +87,23 @@ describe('buildLabDirtyFingerprint 实验室变更指纹', () => {
       params: {
         ...LAB_DEFAULT_PARAMS,
         characters: [
-          { id: 'uuid-2', prompt: '', x: 0.5, y: 0.5 },
-          { id: 'uuid-3', prompt: '', x: 0.5, y: 0.5 },
+          { id: 'uuid-2', name: '角色 1', prompt: '', x: 0.5, y: 0.5 },
+          { id: 'uuid-3', name: '角色 2', prompt: '', x: 0.5, y: 0.5 },
         ],
       },
     });
     expect(addedBlank).toBe(base);
+
+    const customNamedBlank = buildLabDirtyFingerprint({
+      basePrompt: 'masterpiece',
+      subjectPrompt: '',
+      negativePrompt: '',
+      params: {
+        ...LAB_DEFAULT_PARAMS,
+        characters: [{ id: 'uuid-2', name: 'Saber', prompt: '', x: 0.5, y: 0.5 }],
+      },
+    });
+    expect(customNamedBlank).not.toBe(base);
 
     const edited = buildLabDirtyFingerprint({
       basePrompt: 'masterpiece',

@@ -2,7 +2,7 @@ import { isCreativeSectionKey } from './promptPurposes.mjs';
 import { CharacterParams, GenerationMode, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LabWorkspaceSession, NAIParams, PromptSections } from '../types';
 import { normalizeMinimumContextArea } from './imageEdit';
 import { getDefaultStepsForModel } from './naiModels';
-import { clampCharacterCoordinate, compileCharacterContent } from './characterPrompts';
+import { clampCharacterCoordinate, compileCharacterContent, nextDefaultCharacterName } from './characterPrompts';
 import { getEditableGlobalNegative, getGlobalPromptSectionKeys } from './promptUtils';
 import { normalizeTransparentWeight } from './transparentBackground.mjs';
 import { DEFAULT_NOISE_SCHEDULE, normalizeNoiseSchedule } from './naiNoiseSchedule.mjs';
@@ -16,9 +16,10 @@ const ASSET_DB_VERSION = 3;
 
 const emptyExpansion: ImageEditCanvasExpansion = { top: 0, right: 0, bottom: 0, left: 0 };
 
-/** 实验室空稿默认的一个空白角色槽（可写提示词，坐标居中）。 */
-export const createBlankLabCharacter = (): CharacterParams => ({
+/** 实验室空稿默认的一个空白角色槽（可写提示词，坐标居中，固化不重号的默认名称）。 */
+export const createBlankLabCharacter = (existingCharacters: CharacterParams[] = []): CharacterParams => ({
     id: createUuid(),
+    name: nextDefaultCharacterName(existingCharacters),
     prompt: '',
     x: 0.5,
     y: 0.5,

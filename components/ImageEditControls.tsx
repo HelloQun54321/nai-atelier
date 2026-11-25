@@ -17,6 +17,7 @@ import { PromptLibraryWorkspace, PromptLibraryRandomButton } from './PromptLibra
 import { VibeManager } from './VibeManager';
 import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
 import { createUuid } from '../services/id';
+import { nextDefaultCharacterName } from '../services/characterPrompts';
 import { LAB_PICTURE_PURPOSES } from '../services/labPromptLayout';
 import { mergePromptSections } from '../services/labWorkspace';
 import { getEditableGlobalNegative, mergePromptFields } from '../services/promptUtils';
@@ -237,7 +238,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           const characters = selectableParams.characters || [];
           const maximum = getRuntimeNaiModelInfo(selectableParams.model, runtime).maxCharacters;
           if (characters.length >= maximum) { notify(`当前模型最多支持 ${maximum} 个角色提示词`, 'error'); return; }
-          onDraftChange({ params: { ...selectableParams, characters: [...characters, { id: createUuid(), prompt: '', negativePrompt: '', x: 0.5, y: 0.5 }] } });
+          onDraftChange({ params: { ...selectableParams, characters: [...characters, { id: createUuid(), name: nextDefaultCharacterName(characters), prompt: '', negativePrompt: '', x: 0.5, y: 0.5 }] } });
         }}
         updateCharacter={(index, patch, useCoords) => onDraftChange({ params: { ...selectableParams,
           ...(useCoords !== undefined ? { useCoords } : {}),

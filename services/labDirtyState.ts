@@ -1,4 +1,5 @@
 import { CharacterParams, NAIParams, PromptModule, PromptSections } from '../types';
+import { isDefaultCharacterName } from './characterPrompts';
 import { normalizeParams, normalizePromptSections } from './labWorkspace';
 import { getEditableGlobalPrompt, getGlobalPromptSectionKeys } from './promptUtils';
 
@@ -65,7 +66,7 @@ const isBlankDefaultCharacter = (char: {
 }) => (
   !char.prompt.trim()
   && !char.negativePrompt.trim()
-  && !char.name.trim()
+  && (!char.name.trim() || isDefaultCharacterName(char.name))
   && char.enabled
   && char.x === 0.5
   && char.y === 0.5

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHARACTER_SECTION_KEYS, clampCharacterCoordinate, compileCharacterContent, getActiveCharacters, hasCharacterSections, moveCharacter, normalizeCharacterCoordinate, withGenerationCharacters } from '../../services/characterPrompts';
+import { CHARACTER_SECTION_KEYS, clampCharacterCoordinate, compileCharacterContent, getActiveCharacters, hasCharacterSections, isDefaultCharacterName, moveCharacter, nextDefaultCharacterName, normalizeCharacterCoordinate, reorderCharacter, withGenerationCharacters } from '../../services/characterPrompts';
 
 describe('角色请求与定位规则', () => {
   it('旧版使用官方五等分中心，边界进入后一格；V5 保留自由值', () => {
@@ -135,5 +135,45 @@ describe('旧格式负面值为对象时不被拼成 [object Object]', () => {
       .toBe('只有备注');
     expect(compileCharacterContent(character, { 'c1::wardrobe': { text: 'x' } }).negativePrompt)
       .not.toContain('[object Object]');
+  });
+});
+
+describe('角色默认名固化与拖拽重排', () => {
+  it('重排未命名角色前按原位固化默认名，挪到新位置后名字跟着角色走', () => {
+    const characters = Array.from({ length: 4 }, (_, index) => ({
+      id: `c${index + 1}`,
+      prompt: `p${index + 1}`,
+      x: 0.5,
+      y: 0.5,
+    }));
+    const reordered = reorderCharacter(characters, 3, 1);
+    expect(reordered.map(item => `${item.id}:${item.name}`)).toEqual([
+      'c1:角色 1',
+      'c4:角色 4',
+      'c2:角色 2',
+      'c3:角色 3',
+    ]);
+    // 再次拖动已固化角色，名字保持不变
+    const again = reorderCharacter(reordered, 1, 0);
+    expect(again.map(item => `${item.id}:${item.name}`)).toEqual([
+      'c4:角色 4',
+      'c1:角色 1',
+      'c2:角色 2',
+      'c3:角色 3',
+    ]);
+  });
+
+  it('新建默认名避开已占用的显式与隐式编号，且正确识别默认名与自定义名', () => {
+    expect(nextDefaultCharacterName([
+      { id: 'a', name: '角色 1', prompt: '', x: 0.5, y: 0.5 },
+      { id: 'b', name: '角色 3', prompt: '', x: 0.5, y: 0.5 },
+    ])).toBe('角色 2');
+    expect(nextDefaultCharacterName([
+      { id: 'a', prompt: '', x: 0.5, y: 0.5 },
+      { id: 'b', name: '角色 2', prompt: '', x: 0.5, y: 0.5 },
+    ])).toBe('角色 3');
+    expect(isDefaultCharacterName('角色 9')).toBe(true);
+    expect(isDefaultCharacterName('Character 12')).toBe(true);
+    expect(isDefaultCharacterName('Saber')).toBe(false);
   });
 });

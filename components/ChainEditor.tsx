@@ -1176,11 +1176,12 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
 
     // --- Character Handlers ---
     const addCharacter = () => {
-        if ((params.characters || []).length >= activeModelInfo.maxCharacters) {
+        const existing = params.characters || [];
+        if (existing.length >= activeModelInfo.maxCharacters) {
             notify(`${activeModelInfo.label} 最多支持 ${activeModelInfo.maxCharacters} 个角色提示词`, 'error');
             return;
         }
-        setParams({ ...params, characters: [...(params.characters || []), createBlankLabCharacter()] });
+        setParams({ ...params, characters: [...existing, createBlankLabCharacter(existing)] });
         markChange();
     };
 
@@ -1687,7 +1688,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             const tags = (data.prompt || '').trim();
             if (!tags) return;
             const tagCount = tags.split(',').filter(Boolean).length;
-            const placed = placeTagsInCharacterSlot(params.characters || [], tags, activeModelInfo.maxCharacters, createBlankLabCharacter);
+            const placed = placeTagsInCharacterSlot(params.characters || [], tags, activeModelInfo.maxCharacters, () => createBlankLabCharacter(params.characters || []));
             if (placed.slot < 0) return;
             setParams({ ...params, characters: placed.characters });
             markChange();
