@@ -381,7 +381,7 @@ test('手机共用生图处理器包含通用中转分支，构建注入地址�
  test('Android 共用任务租约接口及协调器，不遗漏后端单并发依赖', async () => {
    const { readFile } = await import('node:fs/promises');
    const source = extractAndroidShared(join(projectRoot, 'scripts/media-gateway.mjs'), ['handleGenerationTaskRequest', 'handleGenerateRequest', 'handleGenerateStreamRequest']);
-   assert.match(source, /tasks\.enter\(keyHash/); assert.match(source, /tasks\.reserve\(key, token, count\)/); assert.match(source, /finishGeneration\?\.\(\)/);
+   assert.match(source, /tasks\.enter\(taskKeyHash/); assert.match(source, /tasks\.reserve\(key, token, count\)/); assert.match(source, /finishGeneration\?\.\(\)/);
    const build = await readFile(join(projectRoot, 'scripts/build-android.mjs'), 'utf8');
    assert.match(build, /'handleGenerationTaskRequest'/);
    assert.match(build, /import \{ GenerationTasks, DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval \} from '\/worker\/generationTasks\.mjs'/);
