@@ -47,6 +47,9 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
   const gridRef = useRef<HTMLDivElement>(null);
   const tileRefs = useRef(new Map<string, HTMLButtonElement | null>());
   const prevRectsRef = useRef(new Map<string, DOMRect>());
+  const flipRafRef = useRef<number | null>(null);
+  const reorderLockRef = useRef(false);
+  const reorderUnlockTimerRef = useRef<number | null>(null);
   const dragSessionRef = useRef<{
     id: string;
     pointerId: number;
@@ -87,44 +90,80 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
     prevRectsRef.current = rects;
   };
 
-  // FLIP 位移动画：顺序变更后将兄弟卡片从旧位置平滑滑入新网格位置。
+  // FLIP 位移动画：先清空上一轮未结束的 transform 再测终态位置，避免连续拖拽打断时叠加错位或叠压。
   useLayoutEffect(() => {
+    reorderLockRef.current = false;
+    if (reorderUnlockTimerRef.current !== null) {
+      window.clearTimeout(reorderUnlockTimerRef.current);
+      reorderUnlockTimerRef.current = null;
+    }
+    if (flipRafRef.current !== null) {
+      cancelAnimationFrame(flipRafRef.current);
+      flipRafRef.current = null;
+    }
     const prevRects = prevRectsRef.current;
     if (!prevRects.size) return;
     prevRectsRef.current = new Map();
+
+    const activeDragId = dragSessionRef.current?.active ? dragSessionRef.current.id : null;
+    // 先把所有节点复位到无 transform 的真实布局态，确保 newRect 不受上一轮飞行中的 transform 污染。
+    characters.forEach(item => {
+      const el = tileRefs.current.get(item.id);
+      if (!el) return;
+      el.style.transition = 'none';
+      el.style.transform = '';
+    });
+
     const animated: HTMLButtonElement[] = [];
     characters.forEach(item => {
       const el = tileRefs.current.get(item.id);
+      if (!el) return;
+      if (item.id === activeDragId) {
+        el.style.transition = '';
+        return;
+      }
       const oldRect = prevRects.get(item.id);
-      if (!el || !oldRect) return;
+      if (!oldRect) {
+        el.style.transition = '';
+        return;
+      }
       const newRect = el.getBoundingClientRect();
       const dx = oldRect.left - newRect.left;
       const dy = oldRect.top - newRect.top;
-      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
-      el.style.transition = 'none';
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
+        el.style.transition = '';
+        return;
+      }
       el.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
       animated.push(el);
     });
+
     if (!animated.length) return;
-    // 读取 layout 属性强制浏览器完成首帧提交，再开过渡动画。
+    // 读取 layout 属性强制浏览器提交首帧起始偏移，再开过渡动画。
     void gridRef.current?.offsetHeight;
-    requestAnimationFrame(() => {
+    flipRafRef.current = requestAnimationFrame(() => {
+      flipRafRef.current = null;
       animated.forEach(el => {
-        el.style.transition = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)';
+        el.style.transition = 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1)';
         el.style.transform = '';
       });
     });
   }, [orderKey]);
 
+  useEffect(() => () => {
+    if (flipRafRef.current !== null) cancelAnimationFrame(flipRafRef.current);
+    if (reorderUnlockTimerRef.current !== null) window.clearTimeout(reorderUnlockTimerRef.current);
+  }, []);
+
   useEffect(() => {
-    const findHitIndex = (clientX: number, clientY: number, draggingId: string): number => {
+    const findHitIndex = (clientX: number, clientY: number): number => {
       const grid = gridRef.current;
       if (!grid) return -1;
       const gridRect = grid.getBoundingClientRect();
       const localX = clientX - gridRect.left;
       const localY = clientY - gridRect.top;
       const list = charactersRef.current;
-      // 使用与 CSS transform 无关的网格局部坐标 (offsetLeft / offsetTop) 命中测试，彻底消除 FLIP 过渡期抖动。
+      // gridRef 已设为 position: relative，子按钮的 offsetLeft / offsetTop 精确相对 gridRef 且不受 CSS transform 影响。
       for (let idx = 0; idx < list.length; idx += 1) {
         const el = tileRefs.current.get(list[idx].id);
         if (!el) continue;
@@ -137,18 +176,16 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
           return idx;
         }
       }
-      // 落入行间缝隙时，找同一行内中心最近的兄弟项。
+      // 落入行间或列间缝隙时，找中心最近槽位（含当前拖动槽本身，避免在缝隙中反复震荡）。
       let bestIdx = -1;
       let bestDist = Infinity;
       for (let idx = 0; idx < list.length; idx += 1) {
-        const item = list[idx];
-        if (item.id === draggingId) continue;
-        const el = tileRefs.current.get(item.id);
+        const el = tileRefs.current.get(list[idx].id);
         if (!el) continue;
         const cx = el.offsetLeft + el.offsetWidth / 2;
         const cy = el.offsetTop + el.offsetHeight / 2;
         const dist = Math.hypot(localX - cx, localY - cy);
-        if (dist < bestDist && dist < Math.max(el.offsetWidth, el.offsetHeight) * 1.1) {
+        if (dist < bestDist && dist < Math.max(el.offsetWidth, el.offsetHeight) * 0.9) {
           bestDist = dist;
           bestIdx = idx;
         }
@@ -174,20 +211,32 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
         disabled: session.disabled,
       });
 
+      if (reorderLockRef.current || !reorderRef.current) return;
       const currentIdx = charactersRef.current.findIndex(item => item.id === session.id);
       if (currentIdx < 0) return;
-      const targetIdx = findHitIndex(event.clientX, event.clientY, session.id);
-      if (targetIdx >= 0 && targetIdx !== currentIdx && reorderRef.current) {
+      const targetIdx = findHitIndex(event.clientX, event.clientY);
+      if (targetIdx >= 0 && targetIdx !== currentIdx) {
+        reorderLockRef.current = true;
+        if (reorderUnlockTimerRef.current !== null) window.clearTimeout(reorderUnlockTimerRef.current);
+        reorderUnlockTimerRef.current = window.setTimeout(() => {
+          reorderLockRef.current = false;
+          reorderUnlockTimerRef.current = null;
+        }, 120);
         captureTileRects();
         reorderRef.current(currentIdx, targetIdx);
       }
     };
 
-    const finishDrag = (event: PointerEvent) => {
+    const endDragSession = () => {
       const session = dragSessionRef.current;
-      if (!session || session.pointerId !== event.pointerId) return;
+      if (!session) return;
       const didDrag = session.didDrag;
       dragSessionRef.current = null;
+      reorderLockRef.current = false;
+      if (reorderUnlockTimerRef.current !== null) {
+        window.clearTimeout(reorderUnlockTimerRef.current);
+        reorderUnlockTimerRef.current = null;
+      }
       setDragState(null);
       if (didDrag) {
         // 吞掉紧随 pointerup 之后同帧派发的 click，防止松手瞬间意外触发切角或失焦。
@@ -200,13 +249,21 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
       }
     };
 
+    const finishDrag = (event: PointerEvent) => {
+      const session = dragSessionRef.current;
+      if (!session || session.pointerId !== event.pointerId) return;
+      endDragSession();
+    };
+
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', finishDrag);
     window.addEventListener('pointercancel', finishDrag);
+    window.addEventListener('blur', endDragSession);
     return () => {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', finishDrag);
       window.removeEventListener('pointercancel', finishDrag);
+      window.removeEventListener('blur', endDragSession);
     };
   }, []);
 
@@ -296,7 +353,7 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
           ref={gridRef}
           role="group"
           aria-label={t('角色切换')}
-          className="grid grid-cols-[repeat(auto-fill,minmax(6.25rem,1fr))] gap-1.5 select-none"
+          className="relative grid grid-cols-[repeat(auto-fill,minmax(6.25rem,1fr))] gap-1.5 select-none"
         >
           {characters.map((character, index) => {
             const active = character.id === activeCharacterId;
@@ -314,6 +371,11 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
                 aria-pressed={active}
                 title={canEdit && onReorderCharacters ? t('{0} · 按住拖拽可调整顺序（或 Alt+方向键）', [label]) : label}
                 onClick={() => onSelectCharacter(character.id)}
+                onTransitionEnd={event => {
+                  if (event.propertyName === 'transform') {
+                    event.currentTarget.style.transition = '';
+                  }
+                }}
                 onPointerDown={event => {
                   if (!canEdit || !onReorderCharacters || event.button !== 0) return;
                   const rect = event.currentTarget.getBoundingClientRect();
@@ -344,16 +406,18 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
                     onReorderCharacters(index, index + 1);
                   }
                 }}
-                className={`mobile-touch inline-flex h-8 min-w-0 items-center justify-center gap-1 rounded-lg border px-2 text-xs tabular-nums transition-colors ${canEdit && onReorderCharacters ? 'cursor-grab active:cursor-grabbing' : ''} ${draggingSelf ? 'opacity-0' : ''} ${active
-                  ? disabled
-                    ? 'border-dashed border-gray-400 bg-gray-100 font-semibold text-gray-500 dark:border-gray-500 dark:bg-gray-800 dark:text-gray-300'
-                    : 'border-[#0d8bf2] bg-[#0d8bf2]/10 font-semibold text-[#0d8bf2] dark:bg-[#0d8bf2]/20 dark:text-[#60b5ff]'
-                  : disabled
-                    ? 'border-dashed border-gray-300 bg-gray-50/70 text-gray-400 hover:border-gray-400 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-500'
-                    : 'appearance-group border-gray-200 bg-white/80 font-medium text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:text-white'}`}
+                className={`mobile-touch inline-flex h-8 min-w-0 items-center justify-center gap-1 rounded-lg border px-2 text-xs tabular-nums transition-colors ${canEdit && onReorderCharacters ? 'cursor-grab active:cursor-grabbing' : ''} ${draggingSelf
+                  ? 'border-dashed border-[#0d8bf2]/55 bg-[#0d8bf2]/[0.06] text-transparent dark:border-[#60b5ff]/45 dark:bg-[#0d8bf2]/[0.12] dark:text-transparent'
+                  : active
+                    ? disabled
+                      ? 'border-dashed border-gray-400 bg-gray-100 font-semibold text-gray-500 dark:border-gray-500 dark:bg-gray-800 dark:text-gray-300'
+                      : 'border-[#0d8bf2] bg-[#0d8bf2]/10 font-semibold text-[#0d8bf2] dark:bg-[#0d8bf2]/20 dark:text-[#60b5ff]'
+                    : disabled
+                      ? 'border-dashed border-gray-300 bg-gray-50/70 text-gray-400 hover:border-gray-400 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-500'
+                      : 'appearance-group border-gray-200 bg-white/80 font-medium text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:text-white'}`}
               >
-                <span className={`min-w-0 truncate ${disabled ? 'line-through' : ''}`}>{label}</span>
-                {disabled && (
+                <span className={`min-w-0 truncate ${draggingSelf ? 'opacity-0' : disabled ? 'line-through' : ''}`}>{label}</span>
+                {disabled && !draggingSelf && (
                   <>
                     <EyeOff className="h-3 w-3 shrink-0 opacity-60" aria-hidden="true" />
                     <span className="sr-only">{t('· 已停用')}</span>
@@ -365,27 +429,34 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
         </div>
       )}
 
-      {/* 跟随指针的悬浮克隆卡片 */}
-      {dragState && createPortal(
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'fixed',
-            left: dragState.x,
-            top: dragState.y,
-            width: dragState.width,
-            height: dragState.height,
-            zIndex: 2500,
-            transform: 'scale(1.05)',
-            pointerEvents: 'none',
-          }}
-          className="inline-flex items-center justify-center gap-1 rounded-lg border border-[#0d8bf2] bg-white px-2 text-xs font-semibold text-[#0d8bf2] shadow-xl ring-2 ring-[#0d8bf2]/20 dark:bg-gray-900 dark:text-[#60b5ff]"
-        >
-          <span className={`min-w-0 truncate ${dragState.disabled ? 'line-through opacity-65' : ''}`}>{dragState.label}</span>
-          {dragState.disabled && <EyeOff className="h-3 w-3 shrink-0 opacity-60" />}
-        </div>,
-        document.body,
-      )}
+      {/* 跟随指针的悬浮克隆卡片：未命名角色实时显示当前落位序号，避免与网格中其他编号重复 */}
+      {dragState && (() => {
+        const draggingIndex = characters.findIndex(item => item.id === dragState.id);
+        const draggingCharacter = draggingIndex >= 0 ? characters[draggingIndex] : null;
+        const floatingLabel = draggingCharacter ? characterTileLabel(draggingCharacter, draggingIndex) : dragState.label;
+        const floatingDisabled = draggingCharacter ? draggingCharacter.enabled === false : dragState.disabled;
+        return createPortal(
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'fixed',
+              left: dragState.x,
+              top: dragState.y,
+              width: dragState.width,
+              height: dragState.height,
+              borderRadius: 'var(--workspace-control-radius, 0.5rem)',
+              zIndex: 2500,
+              transform: 'scale(1.05)',
+              pointerEvents: 'none',
+            }}
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-[#0d8bf2] bg-white px-2 text-xs font-semibold text-[#0d8bf2] shadow-xl ring-2 ring-[#0d8bf2]/20 dark:bg-gray-900 dark:text-[#60b5ff]"
+          >
+            <span className={`min-w-0 truncate ${floatingDisabled ? 'line-through opacity-65' : ''}`}>{floatingLabel}</span>
+            {floatingDisabled && <EyeOff className="h-3 w-3 shrink-0 opacity-60" />}
+          </div>,
+          document.body,
+        );
+      })()}
     </div>
   );
 };
