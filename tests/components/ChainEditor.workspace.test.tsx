@@ -323,6 +323,59 @@ it('空白自由实验室无改动时保存保持中性，历史预览/切换细
   expect(screen.getByRole('button', { name: '保存到库' }).getAttribute('data-tone')).toBe('neutral');
 });
 
+it('已保存风格串开关提示词细分或改回原文均不误亮绿，新出图仍亮绿提示设封面', async () => {
+  const Harness = () => {
+    const [sectioned, setSectioned] = React.useState(false);
+    const viewProps = {
+      chain,
+      allChains: [chain],
+      onUpdateChain: vi.fn(async () => {}),
+      onFork: vi.fn(async () => {}),
+      setIsDirty: vi.fn(),
+      notify: vi.fn(),
+      saveRef: React.createRef<ChainEditorSaveHandle>(),
+      tagAssistEnabled: false,
+      onTagAssistEnabledChange: vi.fn(),
+      generationStreamPreview: false,
+      rememberGenerationSettings: true,
+      generationMemory: DEFAULT_GENERATION_MEMORY_PREFERENCES,
+      labPageLayouts: cloneDefaultLabPageLayouts(),
+      safeMode: false,
+      onBack: vi.fn(),
+      sectionedPrompt: sectioned,
+      onSectionedPromptChange: setSectioned,
+    };
+    return <ChainEditor {...viewProps} />;
+  };
+
+  render(<Harness />);
+  await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
+  expect(screen.getByRole('button', { name: '保存风格串' }).getAttribute('data-tone')).toBe('neutral');
+
+  // 有内容的风格串来回开关提示词细分，不误亮绿
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: /提示词细分/ }));
+  expect(screen.getByRole('button', { name: '保存风格串' }).getAttribute('data-tone')).toBe('neutral');
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: /提示词细分/ }));
+  expect(screen.getByRole('button', { name: '保存风格串' }).getAttribute('data-tone')).toBe('neutral');
+
+  // 改动后变绿，改回原文后自动退回中性
+  fireEvent.change(textPrompt(), { target: { value: 'saved style, subject, extra' } });
+  expect(screen.getByRole('button', { name: '保存风格串' }).getAttribute('data-tone')).toBe('save');
+  fireEvent.change(textPrompt(), { target: { value: 'saved style, subject' } });
+  expect(screen.getByRole('button', { name: '保存风格串' }).getAttribute('data-tone')).toBe('neutral');
+
+  // 无封面风格串在出图后保留补封面提醒（存在可用作初始封面的历史图时仍亮绿）
+  cleanup();
+  state.history.mockResolvedValueOnce([{
+    id: 'hist-style-1', createdAt: Date.now(), prompt: 'saved style, subject', negativePrompt: 'saved negative',
+    imageUrl: '/synthetic/new-cover.png', sourceChainId: chain.id, params: chain.params,
+  }]);
+  setup({ ...chain, previewImage: undefined });
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存风格串' }).getAttribute('data-tone')).toBe('save'));
+});
+
 it('文生图空白处 Ctrl+V 粘贴 JSON 元数据可直接导入，在输入框内粘贴不受干扰', async () => {
   setup();
   await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
@@ -1595,7 +1648,7 @@ describe('统一工作台真实状态链路', () => {
       v4_negative_prompt: { caption: { base_caption: 'explicit negative', char_captions: [{ char_caption: 'explicit character negative' }] } } });
     const file = new File([raw], 'config.json', { type: 'application/json' });
     Object.defineProperty(file, 'text', { value: async () => raw });
-    await act(async () => fireEvent.change(screen.getByLabelText('导入 PNG 或 JSON 创作配置'), { target: { files: [file] } }));
+    await act(async () => fireEvent.change(screen.getByLabelText('导入图片或 JSON 创作配置'), { target: { files: [file] } }));
     await waitFor(() => expect(screen.getByLabelText('编辑提示词')).toHaveProperty('value', 'explicit prompt'));
     const saved = loadLabWorkspaceSession(chain.id, fallback());
     expect(saved.edits['image-to-image']).toMatchObject({ prompt: 'explicit prompt', negativePrompt: 'explicit negative', promptSource: 'custom',

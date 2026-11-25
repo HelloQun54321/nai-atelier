@@ -48,6 +48,7 @@ import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createBlankLa
 import { DEFAULT_NAI_RUNTIME, useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
+import { buildLabDirtyFingerprint } from '../services/labDirtyState';
 import { compileCharacterContent, hasCharacterSections } from '../services/characterPrompts';
 import { LabModuleSection } from './LabModuleSection';
 import { Download } from 'lucide-react';
@@ -161,20 +162,30 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     // --- New: Subject/Variable Prompt State ---
     const [subjectPrompt, setSubjectPrompt] = useState('');
 
-    const [hasChanges, setHasChanges] = useState(false);
+    const [baselineFingerprint, setBaselineFingerprint] = useState<string | null>(null);
     const [lightboxImg, setLightboxImg] = useState<string | null>(null);
     // 反推入口：预览图与放大图的操作条带图打开；文生图、图生图的顶栏入口打开空面板，由用户自行上传图片。
     const [reverseTagImage, setReverseTagImage] = useState<string | null>(null);
     const [reverseTagOpen, setReverseTagOpen] = useState(false);
 
+    // --- Testing State ---
+    const [activeModules, setActiveModules] = useState<Record<string, boolean>>({});
+    const [finalPrompt, setFinalPrompt] = useState('');
+
+    const currentFingerprint = useMemo(() => buildLabDirtyFingerprint({
+        basePrompt,
+        subjectPrompt,
+        negativePrompt,
+        params,
+        modules,
+        activeModules,
+    }), [basePrompt, subjectPrompt, negativePrompt, params, modules, activeModules]);
+    const hasChanges = baselineFingerprint !== null && currentFingerprint !== baselineFingerprint;
+
     // Sync dirty state with parent.
     useEffect(() => {
         setIsDirty(hasChanges);
     }, [hasChanges, setIsDirty]);
-
-    // --- Testing State ---
-    const [activeModules, setActiveModules] = useState<Record<string, boolean>>({});
-    const [finalPrompt, setFinalPrompt] = useState('');
 
     // --- Generation State ---
     const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
@@ -660,14 +671,29 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             cfgRescale: chain.params?.cfgRescale ?? 0,
             ...storedWorkspace.textToImage.params
         });
-        const moduleStateDiffers = (chain.modules || []).some(m => (initialModules[m.id] ?? m.isActive) !== m.isActive);
-        const restoredDiffers =
-            (storedWorkspace.textToImage.basePrompt || '') !== (chain.basePrompt || '') ||
-            (storedWorkspace.textToImage.negativePrompt || '') !== (chain.negativePrompt || '') ||
-            (storedWorkspace.textToImage.subjectPrompt || '') !== String(chain.variableValues?.subject || '') ||
-            JSON.stringify(restoredParams) !== JSON.stringify(persistedParams) ||
-            moduleStateDiffers;
-        setHasChanges(chain.id === 'playground' ? false : restoredDiffers);
+        const persistedModules = (chain.modules || []).map(module => ({
+            ...module,
+            position: module.position || 'post' as const,
+        }));
+        const persistedActiveModules = Object.fromEntries(persistedModules.map(module => [module.id, module.isActive]));
+        const persistedFingerprint = buildLabDirtyFingerprint({
+            basePrompt: chain.basePrompt || '',
+            subjectPrompt: String(chain.variableValues?.subject || ''),
+            negativePrompt: chain.negativePrompt || '',
+            params: persistedParams,
+            modules: persistedModules,
+            activeModules: persistedActiveModules,
+        });
+        const restoredFingerprint = buildLabDirtyFingerprint({
+            basePrompt: storedWorkspace.textToImage.basePrompt,
+            subjectPrompt: storedWorkspace.textToImage.subjectPrompt,
+            negativePrompt: storedWorkspace.textToImage.negativePrompt,
+            params: restoredParams,
+            modules: persistedModules,
+            activeModules: initialModules,
+        });
+        const restoredDiffers = restoredFingerprint !== persistedFingerprint;
+        setBaselineFingerprint(chain.id === 'playground' ? restoredFingerprint : persistedFingerprint);
         if (restoredDiffers && chain.id !== 'playground') {
             notify('已恢复上次未保存的修改，保存后才会写回风格串');
         }
@@ -1104,10 +1130,9 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         return `NAI-${timestamp}.png`;
     };
 
-    // 编辑操作共用脏状态。
+    // 编辑修订号用于 AI 助手并发改动保护；脏状态改由基线指纹对比决定。
     const markChange = () => {
         editorRevisionRef.current += 1;
-        setHasChanges(true);
     };
     const turnSectioned = (enabled: boolean) => {
         onSectionedPromptChange?.(enabled);
@@ -1118,9 +1143,6 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         setNegativePrompt(next.negative);
         setParams(previous => ({ ...previous, _promptSections: next.sections }));
         setCategoryTab('style');
-        if (basePrompt.trim() || subjectPrompt.trim() || negativePrompt.trim()) {
-            markChange();
-        }
     };
 
     // --- Character Handlers ---
@@ -1498,20 +1520,19 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             if (data.targetMode !== 'text-to-image' && activeEditOperation && activeEditDraft) {
                 const patch = buildPromptFragmentPatch(activeEditDraft, fragment);
                 updateEditDraft(activeEditOperation, { ...patch, promptSource: 'custom' });
-            } else {
-                const textDraft = workspaceSession.textToImage;
-                const patch = buildPromptFragmentPatch(data.targetMode === 'text-to-image'
-                    ? { prompt: textDraft.basePrompt, negativePrompt: textDraft.negativePrompt, params: textDraft.params }
-                    : { prompt: basePrompt, negativePrompt, params }, fragment);
-                if (patch.prompt !== undefined) setBasePrompt(patch.prompt);
-                if (patch.negativePrompt !== undefined) setNegativePrompt(patch.negativePrompt);
-                if (patch.params) setParams(patch.params);
-                if (fragment.fullMetadata) {
-                    setSubjectPrompt(''); setModules([]);
-                    setActiveModules(Object.fromEntries([...Object.keys(activeModules), ...modules.map(module => module.id)].map(id => [id, false])));
-                }
+                notify('已取用所选内容到当前模式');
+                return;
             }
+            const textDraft = workspaceSession.textToImage;
+            const patch = buildPromptFragmentPatch(data.targetMode === 'text-to-image'
+                ? { prompt: textDraft.basePrompt, negativePrompt: textDraft.negativePrompt, params: textDraft.params }
+                : { prompt: basePrompt, negativePrompt, params }, fragment);
+            if (patch.prompt !== undefined) setBasePrompt(patch.prompt);
+            if (patch.negativePrompt !== undefined) setNegativePrompt(patch.negativePrompt);
+            if (patch.params) setParams(patch.params);
             if (fragment.fullMetadata) {
+                setSubjectPrompt(''); setModules([]);
+                setActiveModules(Object.fromEntries([...Object.keys(activeModules), ...modules.map(module => module.id)].map(id => [id, false])));
                 clearPresetSources();
             }
             markChange();
@@ -1660,7 +1681,14 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 setGeneratedImage(null);
                 coverAutoSaveTriggeredRef.current = true;
             }
-            setHasChanges(false);
+            setBaselineFingerprint(buildLabDirtyFingerprint({
+                basePrompt,
+                subjectPrompt,
+                negativePrompt,
+                params,
+                modules: updatedModules,
+                activeModules,
+            }));
             notify(`${isCharacterMode ? '自定义角色' : '风格串'}已保存${cover.changed ? '，当前图片已设为封面' : ''}`);
             return true;
         } catch (error: any) {
@@ -1713,17 +1741,25 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
 
         const resetToSaved = chain.id !== 'playground';
         const restored = resetToSaved ? workspaceFallback.textToImage : createLabWorkspaceSession('', '', '', LAB_DEFAULT_PARAMS, {}).textToImage;
+        const resetModules = resetToSaved ? (chain.modules || []).map(module => ({ ...module, position: module.position || 'post' as const })) : [];
         editorRevisionRef.current += 1;
         setBasePrompt(restored.basePrompt);
         setNegativePrompt(restored.negativePrompt);
         setSubjectPrompt(restored.subjectPrompt);
-        setModules(resetToSaved ? (chain.modules || []).map(module => ({ ...module, position: module.position || 'post' })) : []);
+        setModules(resetModules);
         setActiveModules(restored.activeModules);
         setParams(restored.params);
         if (resetToSaved) {
             setChainTags(chain.tags || []);
         }
-        setHasChanges(false);
+        setBaselineFingerprint(buildLabDirtyFingerprint({
+            basePrompt: restored.basePrompt,
+            subjectPrompt: restored.subjectPrompt,
+            negativePrompt: restored.negativePrompt,
+            params: restored.params,
+            modules: resetModules,
+            activeModules: restored.activeModules,
+        }));
         clearPresetSources();
         setGeneratedImage(null);
         setPreviewMode('cover');
@@ -1756,6 +1792,16 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 variableValues: { 'subject': subjectPrompt },
                 previewImage: cover.previewImage,
             }, targetType);
+            if (chain.id === 'playground') {
+                setBaselineFingerprint(buildLabDirtyFingerprint({
+                    basePrompt,
+                    subjectPrompt,
+                    negativePrompt,
+                    params,
+                    modules: updatedModules,
+                    activeModules,
+                }));
+            }
         } catch (error: any) {
             notify(`保存失败：${error?.message || '未知错误'}`, 'error');
         } finally {
@@ -2218,7 +2264,6 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         setModules(draft.modules);
         setActiveModules(Object.fromEntries(draft.modules.map(module => [module.id, module.isActive])));
         setParams(draft.params);
-        setHasChanges(true);
         return draft;
     };
     const applyGuardedAgentDraft = (proposed: PromptAgentDraft, onApplied?: AgentPromptApplied, beforeApply?: AgentPromptBeforeApply, restore = false) => {
@@ -2358,7 +2403,14 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         setGeneratedImage(null);
         setLightboxImg(current => current ? previewImage : null);
         coverAutoSaveTriggeredRef.current = true;
-        setHasChanges(false);
+        setBaselineFingerprint(buildLabDirtyFingerprint({
+            basePrompt,
+            subjectPrompt,
+            negativePrompt,
+            params,
+            modules: updatedModules,
+            activeModules,
+        }));
         notify(`${isCharacterMode ? '自定义角色' : '风格串'}已保存，封面已更新`);
     };
 
