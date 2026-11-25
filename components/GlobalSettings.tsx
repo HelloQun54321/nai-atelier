@@ -45,7 +45,9 @@ import {
   AppearancePreset,
   BUILTIN_APPEARANCE_PRESET,
   CornerStyle,
+  DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS,
   FontScale,
+  FreeTagTranslatorProviderId,
   InterfaceDensity,
   MotionStyle,
   appearanceMatchesPreset,
@@ -67,7 +69,7 @@ import { resolveWorkspaceBackground, type BackgroundMode } from '../services/the
 import { sharedAppearancePresets } from '../services/sharedAppearancePresets';
 import { useSharedAppearancePresets } from './useSharedAppearancePresets';
 import { FLOATING_CONTROL_MAX, FLOATING_CONTROL_MIN, useFloatingControlSize } from '../services/floatingControls';
-import { ArrowLeft, Boxes, Bot, Check, ChevronRight, Copy, Database, Eye, EyeOff, FolderInput, FolderOutput, Globe, HardDrive, Info, KeyRound, LayoutGrid, Link2, Lock, Monitor, Moon, Palette, Pencil, Plus, RotateCcw, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, Users, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Boxes, Bot, Check, ChevronRight, Copy, Database, Eye, EyeOff, FolderInput, FolderOutput, Globe, HardDrive, Info, KeyRound, LayoutGrid, Link2, Lock, Monitor, Moon, Palette, Pencil, Plus, RotateCcw, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, Users, X } from 'lucide-react';
 import {
   SETTINGS_BTN_DANGER,
   SETTINGS_BTN_ICON,
@@ -1168,26 +1170,135 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   onChange={next => updateAppearance({ promptInputAutoHeight: next, promptTranslationAutoHeight: next })}
                   label="提示词框高度跟随内容"
                 />
-                <div className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold text-gray-800 dark:text-gray-100">{t("Tag 缺失项翻译")}</div>
-                    <p className="mt-0.5 text-micro text-gray-500 dark:text-gray-400">{t("未命中本地词库时，默认用内置免费翻译补齐，也可切换为创作助手模型。")}</p>
+                <div className="space-y-2.5 py-2.5">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-gray-800 dark:text-gray-100">{t("Tag 缺失项翻译")}</div>
+                      <p className="mt-0.5 text-micro text-gray-500 dark:text-gray-400">{t("未命中本地词库时，默认用内置免费翻译补齐，也可切换为创作助手模型。")}</p>
+                    </div>
+                    <div role="group" aria-label={t("Tag 缺失项翻译")} className="appearance-segmented grid shrink-0 grid-cols-2 gap-1.5 sm:w-52">
+                      {([['free', '免费翻译'], ['ai', '创作助手 AI']] as const).map(([mode, label]) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          data-appearance="control"
+                          data-tone="neutral"
+                          aria-pressed={appearancePreferences.tagTranslationMode === mode}
+                          onClick={() => updateAppearance({ tagTranslationMode: mode as TagTranslationMode })}
+                          className={`${SETTINGS_SEGMENT_CLASS} ${appearancePreferences.tagTranslationMode === mode ? SETTINGS_SEGMENT_ON : SETTINGS_SEGMENT_OFF}`}
+                        >
+                          {t(label)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div role="group" aria-label={t("Tag 缺失项翻译")} className="appearance-segmented grid shrink-0 grid-cols-2 gap-1.5 sm:w-52">
-                    {([['free', '免费翻译'], ['ai', '创作助手 AI']] as const).map(([mode, label]) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        data-appearance="control"
-                        data-tone="neutral"
-                        aria-pressed={appearancePreferences.tagTranslationMode === mode}
-                        onClick={() => updateAppearance({ tagTranslationMode: mode as TagTranslationMode })}
-                        className={`${SETTINGS_SEGMENT_CLASS} ${appearancePreferences.tagTranslationMode === mode ? SETTINGS_SEGMENT_ON : SETTINGS_SEGMENT_OFF}`}
-                      >
-                        {t(label)}
-                      </button>
-                    ))}
-                  </div>
+                  {appearancePreferences.tagTranslationMode === 'free' && (() => {
+                    const providerMeta: Record<FreeTagTranslatorProviderId, { name: string; hint: string }> = {
+                      microsoft: { name: '微软 Edge', hint: '批量直连' },
+                      transmart: { name: '腾讯 TranSmart', hint: '批量直连' },
+                      bilibili: { name: 'B 站 Index-Translate', hint: '35B 翻译模型' },
+                      google: { name: 'Google 翻译', hint: '批量 · 建议代理' },
+                    };
+                    const order = appearancePreferences.freeTagTranslationOrder;
+                    const enabledSet = new Set(appearancePreferences.freeTagTranslationEnabled);
+                    const isDefault = order.every((id, index) => id === DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS[index])
+                      && enabledSet.size === DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS.length;
+                    let activeRank = 0;
+                    const toggleProvider = (id: FreeTagTranslatorProviderId) => {
+                      if (enabledSet.has(id) && enabledSet.size <= 1) return;
+                      const nextEnabled = enabledSet.has(id)
+                        ? order.filter(item => item !== id && enabledSet.has(item))
+                        : order.filter(item => item === id || enabledSet.has(item));
+                      updateAppearance({ freeTagTranslationEnabled: nextEnabled });
+                    };
+                    const moveProvider = (index: number, delta: -1 | 1) => {
+                      const target = index + delta;
+                      if (target < 0 || target >= order.length) return;
+                      const nextOrder = [...order];
+                      [nextOrder[index], nextOrder[target]] = [nextOrder[target], nextOrder[index]];
+                      const nextEnabled = nextOrder.filter(item => enabledSet.has(item));
+                      updateAppearance({ freeTagTranslationOrder: nextOrder, freeTagTranslationEnabled: nextEnabled });
+                    };
+                    return (
+                      <div className={`${SETTINGS_SUBPANEL_CLASS} space-y-2`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-micro font-semibold text-gray-600 dark:text-gray-300">{t("免费线路与回退顺序")}</span>
+                          {!isDefault && (
+                            <button
+                              type="button"
+                              data-appearance="control"
+                              data-tone="neutral"
+                              onClick={() => updateAppearance({
+                                freeTagTranslationOrder: [...DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS],
+                                freeTagTranslationEnabled: [...DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS],
+                              })}
+                              className={SETTINGS_BTN_INLINE}
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                              {t("恢复默认")}
+                            </button>
+                          )}
+                        </div>
+                        <div className="space-y-1.5">
+                          {order.map((id, index) => {
+                            const enabled = enabledSet.has(id);
+                            const isLastEnabled = enabled && enabledSet.size <= 1;
+                            const rank = enabled ? ++activeRank : null;
+                            const meta = providerMeta[id];
+                            return (
+                              <div
+                                key={id}
+                                className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 transition-colors ${enabled
+                                  ? 'border-gray-200/90 bg-white/80 dark:border-gray-700/80 dark:bg-gray-900/55'
+                                  : 'border-dashed border-gray-200/70 bg-gray-50/50 opacity-60 dark:border-gray-700/60 dark:bg-gray-900/25'}`}
+                              >
+                                <label className={`flex min-w-0 flex-1 items-center gap-2 ${isLastEnabled ? 'cursor-not-allowed' : 'cursor-pointer'}`} title={isLastEnabled ? t("至少保留一条启用线路") : undefined}>
+                                  <input
+                                    type="checkbox"
+                                    checked={enabled}
+                                    disabled={isLastEnabled}
+                                    onChange={() => toggleProvider(id)}
+                                    className="h-3.5 w-3.5 flex-none rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800"
+                                  />
+                                  <span className={`flex h-4 w-4 flex-none items-center justify-center rounded text-[11px] font-bold tabular-nums ${enabled ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-300' : 'bg-gray-200/80 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
+                                    {rank ?? '—'}
+                                  </span>
+                                  <span className="truncate text-xs font-semibold text-gray-800 dark:text-gray-100">{t(meta.name)}</span>
+                                  <span className="truncate text-micro text-gray-500 dark:text-gray-400">{t(meta.hint)}</span>
+                                </label>
+                                <div className="flex flex-none items-center gap-1">
+                                  <button
+                                    type="button"
+                                    data-appearance="control"
+                                    data-tone="neutral"
+                                    disabled={index === 0}
+                                    onClick={() => moveProvider(index, -1)}
+                                    aria-label={t("上移 {0}", [t(meta.name)])}
+                                    title={t("提高优先级")}
+                                    className={`${SETTINGS_BTN_ICON} h-7 w-7 disabled:opacity-35`}
+                                  >
+                                    <ArrowUp className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    data-appearance="control"
+                                    data-tone="neutral"
+                                    disabled={index === order.length - 1}
+                                    onClick={() => moveProvider(index, 1)}
+                                    aria-label={t("下移 {0}", [t(meta.name)])}
+                                    title={t("降低优先级")}
+                                    className={`${SETTINGS_BTN_ICON} h-7 w-7 disabled:opacity-35`}
+                                  >
+                                    <ArrowDown className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </SettingsCard>
             </>}

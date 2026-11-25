@@ -48970,5 +48970,83 @@
     "AI Retranslate {0}",
     "AI 再翻訳 {0}",
     "AI 재번역 {0}"
+  ],
+  "免费线路与回退顺序": [
+    "免費線路與回退順序",
+    "Free Providers & Fallback Order",
+    "無料エンジンとフォールバック順",
+    "무료 엔진 및 폴백 순서"
+  ],
+  "微软 Edge": [
+    "微軟 Edge",
+    "Microsoft Edge",
+    "Microsoft Edge",
+    "Microsoft Edge"
+  ],
+  "腾讯 TranSmart": [
+    "騰訊 TranSmart",
+    "Tencent TranSmart",
+    "Tencent TranSmart",
+    "Tencent TranSmart"
+  ],
+  "B 站 Index-Translate": [
+    "B 站 Index-Translate",
+    "Bilibili Index-Translate",
+    "Bilibili Index-Translate",
+    "Bilibili Index-Translate"
+  ],
+  "Google 翻译": [
+    "Google 翻譯",
+    "Google Translate",
+    "Google 翻訳",
+    "Google 번역"
+  ],
+  "批量直连": [
+    "批次直連",
+    "Batch · Direct",
+    "一括・直結",
+    "일괄 · 직접 연결"
+  ],
+  "35B 翻译模型": [
+    "35B 翻譯模型",
+    "35B Translation Model",
+    "35B 翻訳モデル",
+    "35B 번역 모델"
+  ],
+  "批量 · 建议代理": [
+    "批次 · 建議代理",
+    "Batch · Proxy recommended",
+    "一括・プロキシ推奨",
+    "일괄 · 프록시 권장"
+  ],
+  "至少保留一条启用线路": [
+    "至少保留一條啟用線路",
+    "Keep at least one provider enabled",
+    "少なくとも 1 つのエンジンを有効にしてください",
+    "최소 하나의 엔진은 활성화해야 합니다"
+  ],
+  "上移 {0}": [
+    "上移 {0}",
+    "Move {0} up",
+    "{0} を上へ移動",
+    "{0} 위로 이동"
+  ],
+  "下移 {0}": [
+    "下移 {0}",
+    "Move {0} down",
+    "{0} を下へ移動",
+    "{0} 아래로 이동"
+  ],
+  "提高优先级": [
+    "提高優先級",
+    "Move up",
+    "優先度を上げる",
+    "우선순위 올리기"
+  ],
+  "降低优先级": [
+    "降低優先級",
+    "Move down",
+    "優先度を下げる",
+    "우선순위 내리기"
   ]
 }

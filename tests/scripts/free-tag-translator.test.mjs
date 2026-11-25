@@ -7,6 +7,7 @@ import { PromptAgentService } from '../../scripts/prompt-agent.mjs';
 import {
   handleTagTranslationRequest,
   lookupPromptTagTranslations,
+  normalizeFreeProviders,
   resetFreeTranslatorHealth,
   splitInteractionPrefix,
   translateTagsFree,
@@ -101,6 +102,47 @@ test('整批英文原样回显时自动拒收并切换下一线路', async () =>
   const result = await translateTagsFree(['glowing lantern'], { fetchImpl: fetchEcho });
   assert.equal(result.provider, 'transmart');
   assert.equal(result.translations.get('glowing lantern'), '发光的灯笼');
+});
+
+test('支持自定义免费线路子集与优先级顺序，并过滤非法线路名', async () => {
+  resetFreeTranslatorHealth();
+  assert.deepEqual(normalizeFreeProviders(['bilibili', 'invalid', 'microsoft', 'bilibili']), ['bilibili', 'microsoft']);
+  assert.deepEqual(normalizeFreeProviders([]), ['microsoft', 'transmart', 'bilibili', 'google']);
+
+  const called = [];
+  const customFetch = async (url, init) => {
+    const target = String(url);
+    called.push(target);
+    if (target.includes('index-translate.bilibili.com')) return jsonResponse({}, 503);
+    if (target.includes('transmart.qq.com')) {
+      const body = JSON.parse(init.body);
+      assert.deepEqual(body.source.text_list, ['golden sunset']);
+      return jsonResponse({ header: { ret_code: 'succ' }, auto_translation: ['金色日落'] });
+    }
+    throw new Error(`不应调用未选线路: ${target}`);
+  };
+
+  const result = await translateTagsFree(['golden sunset'], {
+    fetchImpl: customFetch,
+    providers: ['bilibili', 'transmart'],
+  });
+  assert.equal(result.provider, 'transmart');
+  assert.equal(result.translations.get('golden sunset'), '金色日落');
+  assert.equal(called.length, 2);
+  assert.ok(called[0].includes('index-translate.bilibili.com'));
+  assert.ok(called[1].includes('transmart.qq.com'));
+
+  // 仅选 Google 时，即使未显式配置 HTTP 代理也能按用户指定线路发起直连（兼容系统 TUN/VPN）
+  resetFreeTranslatorHealth();
+  const googleOnly = await translateTagsFree(['dawn mist'], {
+    fetchImpl: async url => {
+      assert.ok(String(url).includes('translate.googleapis.com'));
+      return jsonResponse([['晨雾', 'en']]);
+    },
+    providers: ['google'],
+  });
+  assert.equal(googleOnly.provider, 'google');
+  assert.equal(googleOnly.translations.get('dawn mist'), '晨雾');
 });
 
 test('路由缓存区分 free / ai 来源：free 不覆盖已有译文，AI 升级可覆盖旧 free 并在失败时无损恢复', async () => {

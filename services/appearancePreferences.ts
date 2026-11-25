@@ -128,6 +128,41 @@ export const DEFAULT_ACTIVE_APPEARANCE_PRESET_ID = BUILTIN_APPEARANCE_PRESET.id;
 const factoryVisuals = appearanceValues(BUILTIN_APPEARANCE_PRESET);
 
 export type TagTranslationMode = 'free' | 'ai';
+export type FreeTagTranslatorProviderId = 'microsoft' | 'transmart' | 'bilibili' | 'google';
+export const DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS: readonly FreeTagTranslatorProviderId[] = [
+  'microsoft',
+  'transmart',
+  'bilibili',
+  'google',
+];
+
+export const normalizeFreeTagTranslationOrder = (value: unknown): FreeTagTranslatorProviderId[] => {
+  const valid = Array.isArray(value)
+    ? value.filter((item): item is FreeTagTranslatorProviderId => isOneOf(item, DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS))
+    : [];
+  const seen = new Set<FreeTagTranslatorProviderId>();
+  const ordered: FreeTagTranslatorProviderId[] = [];
+  for (const id of valid) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      ordered.push(id);
+    }
+  }
+  for (const id of DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS) {
+    if (!seen.has(id)) ordered.push(id);
+  }
+  return ordered;
+};
+
+export const normalizeFreeTagTranslationEnabled = (
+  value: unknown,
+  order: readonly FreeTagTranslatorProviderId[] = DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS,
+): FreeTagTranslatorProviderId[] => {
+  if (!Array.isArray(value)) return [...order];
+  const valid = new Set(value.filter((item): item is FreeTagTranslatorProviderId => isOneOf(item, DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS)));
+  const enabled = order.filter(id => valid.has(id));
+  return enabled.length ? enabled : [...order];
+};
 
 export interface AppearancePreferences {
   designTheme: DesignTheme;
@@ -162,6 +197,10 @@ export interface AppearancePreferences {
   promptTranslationAutoHeight: boolean;
   /** 词库缺失 Tag 的在线翻译方式（免费翻译池 / 创作助手 AI）；本端偏好，不属于外观预设。 */
   tagTranslationMode: TagTranslationMode;
+  /** 免费翻译线路的回退优先级顺序；本端偏好，不属于外观预设。 */
+  freeTagTranslationOrder: FreeTagTranslatorProviderId[];
+  /** 已启用的免费翻译线路集合（至少保留 1 项）；本端偏好，不属于外观预设。 */
+  freeTagTranslationEnabled: FreeTagTranslatorProviderId[];
   /** 在支持的模型上显示采样过程；这是当前设备的观看偏好，不写入风格串。 */
   generationStreamPreview: boolean;
   /** 跨重启记住各工作台的文字与参数，不属于外观预设。 */
@@ -198,6 +237,8 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   labSectionedPrompt: false,
   promptTranslationAutoHeight: true,
   tagTranslationMode: 'free',
+  freeTagTranslationOrder: [...DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS],
+  freeTagTranslationEnabled: [...DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS],
   generationStreamPreview: false,
   rememberGenerationSettings: true,
   generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES },
@@ -299,6 +340,8 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     : typeof input.galleryPointerTilt === 'boolean'
       ? input.galleryPointerTilt
       : DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTilt;
+  const freeTagTranslationOrder = normalizeFreeTagTranslationOrder(input.freeTagTranslationOrder);
+  const freeTagTranslationEnabled = normalizeFreeTagTranslationEnabled(input.freeTagTranslationEnabled, freeTagTranslationOrder);
   return {
     designTheme: input.designTheme === 'nai-atelier' ? input.designTheme : DEFAULT_APPEARANCE_PREFERENCES.designTheme,
     themeMode: isOneOf(input.themeMode, ['light', 'dark', 'system']) ? input.themeMode : DEFAULT_APPEARANCE_PREFERENCES.themeMode,
@@ -331,6 +374,8 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     tagTranslationMode: isOneOf(input.tagTranslationMode, ['free', 'ai'])
       ? input.tagTranslationMode
       : DEFAULT_APPEARANCE_PREFERENCES.tagTranslationMode,
+    freeTagTranslationOrder,
+    freeTagTranslationEnabled,
     generationStreamPreview: typeof input.generationStreamPreview === 'boolean'
       ? input.generationStreamPreview
       : DEFAULT_APPEARANCE_PREFERENCES.generationStreamPreview,
@@ -423,10 +468,13 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences, i
   if (tiltAngleChanged || tiltWeightChanged) window.dispatchEvent(new Event('nai-pointer-tilt-change'));
   const inputAutoChanged = root.dataset.promptInputAutoHeight !== String(preferences.promptInputAutoHeight);
   const translationAutoChanged = root.dataset.promptTranslationAutoHeight !== String(preferences.promptTranslationAutoHeight);
-  const translationModeChanged = root.dataset.tagTranslationMode !== preferences.tagTranslationMode;
+  const activeFreeProviders = normalizeFreeTagTranslationEnabled(preferences.freeTagTranslationEnabled, normalizeFreeTagTranslationOrder(preferences.freeTagTranslationOrder)).join(',');
+  const translationModeChanged = root.dataset.tagTranslationMode !== preferences.tagTranslationMode
+    || root.dataset.freeTagTranslationProviders !== activeFreeProviders;
   root.dataset.promptInputAutoHeight = String(preferences.promptInputAutoHeight);
   root.dataset.promptTranslationAutoHeight = String(preferences.promptTranslationAutoHeight);
   root.dataset.tagTranslationMode = preferences.tagTranslationMode;
+  root.dataset.freeTagTranslationProviders = activeFreeProviders;
   if (captionChanged) window.dispatchEvent(new Event('nai-gallery-caption-change'));
   if (inputAutoChanged || translationAutoChanged) window.dispatchEvent(new Event('nai-prompt-auto-height-change'));
   if (translationModeChanged) window.dispatchEvent(new Event('nai-tag-translation-mode-change'));
@@ -473,6 +521,12 @@ export const useTagTranslationMode = () => useSyncExternalStore(
   subscribeTagTranslationMode,
   getTagTranslationMode,
 );
+export const getActiveFreeTagTranslationProviders = (): FreeTagTranslatorProviderId[] => {
+  const raw = typeof document !== 'undefined' ? document.documentElement.dataset.freeTagTranslationProviders : '';
+  if (!raw) return [...DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS];
+  const parsed = raw.split(',').filter((item): item is FreeTagTranslatorProviderId => isOneOf(item, DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS));
+  return parsed.length ? parsed : [...DEFAULT_FREE_TAG_TRANSLATION_PROVIDERS];
+};
 
 /** App 挂载前和系统明暗变化时恢复外观，访问门禁与错误页也使用同一套偏好。 */
 export const restoreAppearancePreferences = () => {

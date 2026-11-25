@@ -176,6 +176,8 @@ describe('appearance preferences', () => {
       promptInputAutoHeight: true,
       promptTranslationAutoHeight: true,
       tagTranslationMode: 'free',
+      freeTagTranslationOrder: ['microsoft', 'transmart', 'bilibili', 'google'],
+      freeTagTranslationEnabled: ['microsoft', 'transmart', 'bilibili', 'google'],
       generationStreamPreview: true,
       rememberGenerationSettings: false,
       generationMemory: DEFAULT_GENERATION_MEMORY_PREFERENCES,
@@ -199,6 +201,23 @@ describe('appearance preferences', () => {
       customPresets: [],
       activePresetId: 'builtin-default',
     });
+  });
+
+  it('免费翻译线路顺序与启停独立规范化保存，清空或非法时自动回退完整顺序', () => {
+    const normalized = normalizeAppearancePreferences({
+      tagTranslationMode: 'free',
+      freeTagTranslationOrder: ['bilibili', 'google', 'unknown', 'bilibili'],
+      freeTagTranslationEnabled: ['google', 'bilibili'],
+    });
+    expect(normalized.freeTagTranslationOrder).toEqual(['bilibili', 'google', 'microsoft', 'transmart']);
+    expect(normalized.freeTagTranslationEnabled).toEqual(['bilibili', 'google']);
+
+    const emptyEnabled = normalizeAppearancePreferences({
+      freeTagTranslationOrder: ['transmart', 'microsoft'],
+      freeTagTranslationEnabled: [],
+    });
+    expect(emptyEnabled.freeTagTranslationOrder).toEqual(['transmart', 'microsoft', 'bilibili', 'google']);
+    expect(emptyEnabled.freeTagTranslationEnabled).toEqual(['transmart', 'microsoft', 'bilibili', 'google']);
   });
 
   it('falls back safely when persisted values are malformed', () => {
@@ -234,7 +253,7 @@ describe('appearance preferences', () => {
       labPageLayouts: cloneDefaultLabPageLayouts(),
       generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES },
     });
-    saveAppearancePreferences({ ...BUILTIN_APPEARANCE_PRESET, surfaces: 'solid', themeMode: 'dark', galleryPointerTiltAngle: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltAngle, galleryPointerTiltWeight: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltWeight, designTheme: 'nai-atelier', tagAssistEnabled: true, promptInputAutoHeight: true, labSectionedPrompt: false, promptTranslationAutoHeight: true, tagTranslationMode: 'free', generationStreamPreview: false, rememberGenerationSettings: true, generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES }, continuousGenerationEnabled: true, forceEmptySeed: false, enforceFreeStepLimit: true, labPageLayouts: cloneDefaultLabPageLayouts(), customPresets: [], activePresetId: 'builtin-default' });
+    saveAppearancePreferences({ ...BUILTIN_APPEARANCE_PRESET, surfaces: 'solid', themeMode: 'dark', galleryPointerTiltAngle: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltAngle, galleryPointerTiltWeight: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltWeight, designTheme: 'nai-atelier', tagAssistEnabled: true, promptInputAutoHeight: true, labSectionedPrompt: false, promptTranslationAutoHeight: true, tagTranslationMode: 'free', freeTagTranslationOrder: ['microsoft', 'transmart', 'bilibili', 'google'], freeTagTranslationEnabled: ['microsoft', 'transmart', 'bilibili', 'google'], generationStreamPreview: false, rememberGenerationSettings: true, generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES }, continuousGenerationEnabled: true, forceEmptySeed: false, enforceFreeStepLimit: true, labPageLayouts: cloneDefaultLabPageLayouts(), customPresets: [], activePresetId: 'builtin-default' });
     expect(loadAppearancePreferences().activePresetId).toBe('builtin-default');
     expect(loadAppearancePreferences().surfaces).toBe('solid');
     expect(loadAppearancePreferences().themeMode).toBe('dark');

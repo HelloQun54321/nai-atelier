@@ -1,5 +1,5 @@
 import { lookupTagDictionaryEntries, lookupTagTranslations, normalizeTagQuery } from './tagDictionary';
-import { getTagTranslationMode, type TagTranslationMode } from './appearancePreferences';
+import { getActiveFreeTagTranslationProviders, getTagTranslationMode, type FreeTagTranslatorProviderId, type TagTranslationMode } from './appearancePreferences';
 import { parsePromptTags } from './promptTags.mjs';
 import type { PromptTagToken } from './promptTags.mjs';
 
@@ -357,11 +357,15 @@ export interface TranslatePromptTagsOptions {
   mode?: TagTranslationMode;
   overwriteFree?: boolean;
   protectedTags?: string[];
+  providers?: FreeTagTranslatorProviderId[];
 }
 
 export const translateMissingPromptTags = async (tags: string[], options: TranslatePromptTagsOptions = {}) => {
   const normalized = [...new Set(tags.map(normalizeTagQuery).filter(Boolean))];
   const mode = options.mode ?? getTagTranslationMode();
+  const providers = mode === 'free'
+    ? (options.providers?.length ? options.providers : getActiveFreeTagTranslationProviders())
+    : undefined;
   const translated: Array<{ tag?: string; chinese?: string; source?: string }> = [];
   for (let index = 0; index < normalized.length; index += 50) {
     const response = await fetch('/api/prompt-agent/tag-translations', {
@@ -372,6 +376,7 @@ export const translateMissingPromptTags = async (tags: string[], options: Transl
         action: 'translate',
         tags: normalized.slice(index, index + 50),
         mode,
+        ...(providers?.length ? { providers } : {}),
         ...(options.overwriteFree ? { overwriteFree: true } : {}),
         ...(options.protectedTags?.length ? { protectedTags: options.protectedTags } : {}),
       }),

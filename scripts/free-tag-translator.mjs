@@ -5,6 +5,15 @@ import { ProxyAgent, fetch as undiciFetch } from 'undici';
 
 export const FREE_TAG_TRANSLATOR_PROVIDERS = ['microsoft', 'transmart', 'bilibili', 'google'];
 
+const KNOWN_FREE_PROVIDERS = new Set(FREE_TAG_TRANSLATOR_PROVIDERS);
+
+/** 过滤并去重用户传入的免费翻译线路列表，保留原有优先级顺序；空或全无效时回退默认四线。 */
+export const normalizeFreeProviders = rawProviders => {
+  if (!Array.isArray(rawProviders)) return [...FREE_TAG_TRANSLATOR_PROVIDERS];
+  const filtered = [...new Set(rawProviders.map(item => String(item ?? '').trim()).filter(id => KNOWN_FREE_PROVIDERS.has(id)))];
+  return filtered.length ? filtered : [...FREE_TAG_TRANSLATOR_PROVIDERS];
+};
+
 export const INTERACTION_PREFIX_LABELS = Object.freeze({
   source: '发起：',
   target: '接收：',
@@ -380,15 +389,19 @@ export async function translateTagsFree(rawTags, options = {}) {
     return { translations, provider: 'cache', skipped };
   }
 
-  const canUseGoogle = Boolean(outboundProxyUrl) || runtimePlatform === 'android' || Boolean(options.allowGoogleWithoutProxy);
-  const activeProviders = providers.filter(id => id !== 'google' || canUseGoogle);
+  const activeProviders = normalizeFreeProviders(providers);
   const directFetch = fetchImpl || ((url, init) => undiciFetch(url, init));
   const proxyHandle = fetchImpl ? { fetchImpl, close: async () => {} } : createProxyFetch(outboundProxyUrl, runtimePlatform);
 
   const deadline = now() + totalDeadlineMs;
   const failures = [];
   const runProvider = async (providerId, remainingMs) => {
-    const providerTimeout = Math.min(remainingMs, providerId === 'bilibili' ? bilibiliTimeoutMs : timeoutMs);
+    const baseTimeout = providerId === 'bilibili'
+      ? bilibiliTimeoutMs
+      : providerId === 'google' && !outboundProxyUrl && runtimePlatform !== 'android' && !fetchImpl
+        ? Math.min(timeoutMs, 4_000)
+        : timeoutMs;
+    const providerTimeout = Math.min(remainingMs, baseTimeout);
     if (providerId === 'microsoft') {
       return translateMicrosoftBatch(bodiesToTranslate, directFetch, providerTimeout, signal);
     }
@@ -544,6 +557,7 @@ export async function handleTagTranslationRequest(promptAgent, body = {}, option
   const mode = body?.mode === 'ai' ? 'ai' : 'free';
   const overwriteFree = body?.overwriteFree === true;
   const protectedTags = Array.isArray(body?.protectedTags) ? body.protectedTags : [];
+  const providers = normalizeFreeProviders(body?.providers);
 
   if (mode === 'free') {
     const store = promptAgent.tagTranslations || {};
@@ -566,6 +580,7 @@ export async function handleTagTranslationRequest(promptAgent, body = {}, option
       runtimePlatform: promptAgent.runtimePlatform || 'desktop',
       protectedTags,
       cachedBodies,
+      providers,
       ...options,
     });
     if (result.translations.size > 0) {

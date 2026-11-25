@@ -250,6 +250,25 @@ describe('translateMissingPromptTags', () => {
       vi.stubGlobal('fetch', originalFetch);
     }
   });
+
+  it('免费模式下携带用户选定的线路列表与优先级顺序', async () => {
+    const originalFetch = globalThis.fetch;
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      const parsed = JSON.parse(String(init.body)) as Record<string, unknown>;
+      bodies.push(parsed);
+      return {
+        ok: true,
+        json: async () => ({ items: [{ tag: 'sunset glow', chinese: '夕阳余晖', source: 'free' }] }),
+      } as Response;
+    }));
+    try {
+      await translateMissingPromptTags(['sunset glow'], { mode: 'free', providers: ['bilibili', 'microsoft'] });
+      expect(bodies[0]).toMatchObject({ action: 'translate', mode: 'free', providers: ['bilibili', 'microsoft'] });
+    } finally {
+      vi.stubGlobal('fetch', originalFetch);
+    }
+  });
 });
 
 describe('resolvePromptTranslations', () => {
