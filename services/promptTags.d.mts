@@ -2,6 +2,8 @@ export interface PromptTagToken {
   id: string;
   displayTag: string;
   lookupTag: string;
+  /** 原文带有显式 artist: 前缀时为 true，用于跳过画师名机翻。 */
+  artistPrefix?: boolean;
   start?: number;
   end?: number;
   groupId?: string;

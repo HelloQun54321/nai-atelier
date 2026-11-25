@@ -175,6 +175,7 @@ describe('appearance preferences', () => {
       tagAssistEnabled: false,
       promptInputAutoHeight: true,
       promptTranslationAutoHeight: true,
+      tagTranslationMode: 'free',
       generationStreamPreview: true,
       rememberGenerationSettings: false,
       generationMemory: DEFAULT_GENERATION_MEMORY_PREFERENCES,
@@ -233,7 +234,7 @@ describe('appearance preferences', () => {
       labPageLayouts: cloneDefaultLabPageLayouts(),
       generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES },
     });
-    saveAppearancePreferences({ ...BUILTIN_APPEARANCE_PRESET, surfaces: 'solid', themeMode: 'dark', galleryPointerTiltAngle: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltAngle, galleryPointerTiltWeight: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltWeight, designTheme: 'nai-atelier', tagAssistEnabled: true, promptInputAutoHeight: true, labSectionedPrompt: false, promptTranslationAutoHeight: true, generationStreamPreview: false, rememberGenerationSettings: true, generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES }, continuousGenerationEnabled: true, forceEmptySeed: false, enforceFreeStepLimit: true, labPageLayouts: cloneDefaultLabPageLayouts(), customPresets: [], activePresetId: 'builtin-default' });
+    saveAppearancePreferences({ ...BUILTIN_APPEARANCE_PRESET, surfaces: 'solid', themeMode: 'dark', galleryPointerTiltAngle: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltAngle, galleryPointerTiltWeight: DEFAULT_APPEARANCE_PREFERENCES.galleryPointerTiltWeight, designTheme: 'nai-atelier', tagAssistEnabled: true, promptInputAutoHeight: true, labSectionedPrompt: false, promptTranslationAutoHeight: true, tagTranslationMode: 'free', generationStreamPreview: false, rememberGenerationSettings: true, generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES }, continuousGenerationEnabled: true, forceEmptySeed: false, enforceFreeStepLimit: true, labPageLayouts: cloneDefaultLabPageLayouts(), customPresets: [], activePresetId: 'builtin-default' });
     expect(loadAppearancePreferences().activePresetId).toBe('builtin-default');
     expect(loadAppearancePreferences().surfaces).toBe('solid');
     expect(loadAppearancePreferences().themeMode).toBe('dark');

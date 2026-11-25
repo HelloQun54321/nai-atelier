@@ -48922,5 +48922,53 @@
     "NovelAI {0} does not support Precise Reference in inpainting/outpainting yet. Please remove it or switch models.",
     "NovelAI {0} のインペイント／アウトペイントは精密参照に対応していません。解除するかモデルを切り替えてください。",
     "NovelAI {0}의 인페인트/아웃페인트에서는 정밀 참조를 지원하지 않습니다. 제거하거나 모델을 변경해 주세요."
+  ],
+  "Tag 缺失项翻译": [
+    "Tag 缺失項翻譯",
+    "Missing Tag Translation",
+    "未翻訳タグの翻訳",
+    "누락 태그 번역"
+  ],
+  "未命中本地词库时，默认用内置免费翻译补齐，也可切换为创作助手模型。": [
+    "未命中本地詞庫時，預設用內建免費翻譯補齊，也可切換為創作助手模型。",
+    "Uses built-in free translation by default for tags missing from the local dictionary, or switches to the Creative Assistant model.",
+    "ローカル辞書にないタグは既定で内蔵の無料翻訳を使用し、創作アシスタントモデルへ切り替えることもできます。",
+    "로컬 사전에 없는 태그는 기본으로 내장 무료 번역을 사용하며 창작 어시스턴트 모델로 전환할 수 있습니다."
+  ],
+  "免费翻译": [
+    "免費翻譯",
+    "Free Translation",
+    "無料翻訳",
+    "무료 번역"
+  ],
+  "创作助手 AI": [
+    "創作助手 AI",
+    "Assistant AI",
+    "アシスタント AI",
+    "어시스턴트 AI"
+  ],
+  "画师名保持原文": [
+    "畫師名保持原文",
+    "Artist tag kept as-is",
+    "絵師タグは原文のまま保持",
+    "작가 태그는 원문 유지"
+  ],
+  "使用免费翻译补全 {0} 个词库缺失项": [
+    "使用免費翻譯補全 {0} 個詞庫缺失項",
+    "Translate {0} missing tags with free translation",
+    "無料翻訳で未登録タグ {0} 件を補完",
+    "무료 번역으로 누락 태그 {0}개 번역"
+  ],
+  "使用当前助手模型重译 {0} 个免费机翻项": [
+    "使用目前助手模型重譯 {0} 個免費機翻項",
+    "Re-translate {0} free-translated tags with the current assistant model",
+    "現在のアシスタントモデルで無料翻訳済みタグ {0} 件を再翻訳",
+    "현재 어시스턴트 모델로 무료 번역 태그 {0}개 재번역"
+  ],
+  "AI 重译 {0}": [
+    "AI 重譯 {0}",
+    "AI Retranslate {0}",
+    "AI 再翻訳 {0}",
+    "AI 재번역 {0}"
   ]
 }

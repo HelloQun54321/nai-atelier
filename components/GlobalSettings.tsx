@@ -55,6 +55,7 @@ import {
   serializeAppearancePresets,
   saveAppearancePreferences,
   SurfaceStyle,
+  TagTranslationMode,
   ThemeMode,
 } from '../services/appearancePreferences';
 import { AppearancePaletteEditor } from './AppearancePaletteEditor';
@@ -1167,6 +1168,27 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   onChange={next => updateAppearance({ promptInputAutoHeight: next, promptTranslationAutoHeight: next })}
                   label="提示词框高度跟随内容"
                 />
+                <div className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-gray-800 dark:text-gray-100">{t("Tag 缺失项翻译")}</div>
+                    <p className="mt-0.5 text-micro text-gray-500 dark:text-gray-400">{t("未命中本地词库时，默认用内置免费翻译补齐，也可切换为创作助手模型。")}</p>
+                  </div>
+                  <div role="group" aria-label={t("Tag 缺失项翻译")} className="appearance-segmented grid shrink-0 grid-cols-2 gap-1.5 sm:w-52">
+                    {([['free', '免费翻译'], ['ai', '创作助手 AI']] as const).map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        data-appearance="control"
+                        data-tone="neutral"
+                        aria-pressed={appearancePreferences.tagTranslationMode === mode}
+                        onClick={() => updateAppearance({ tagTranslationMode: mode as TagTranslationMode })}
+                        className={`${SETTINGS_SEGMENT_CLASS} ${appearancePreferences.tagTranslationMode === mode ? SETTINGS_SEGMENT_ON : SETTINGS_SEGMENT_OFF}`}
+                      >
+                        {t(label)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </SettingsCard>
             </>}
           </section>

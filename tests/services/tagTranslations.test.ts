@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { resetTagDictionaryCache } from '../../services/tagDictionary';
 import { formatNumericWeight, insertPromptText, parsePromptTags, removePromptTagTokens, resolvePromptTranslations, translateMissingPromptTags, transformPromptWeight, wrapPromptTag, wrapPromptTagTokens } from '../../services/tagTranslations';
 
 describe('removePromptTagTokens', () => {
@@ -269,6 +270,57 @@ describe('resolvePromptTranslations', () => {
       expect(batches.map(batch => batch.length)).toEqual(count === 51 ? [50, 1] : [50, 50, 1]);
       expect(result).toHaveLength(count);
       expect(result.every(item => item.source === 'ai' && item.chinese === `译:${item.lookupTag}`)).toBe(true);
+    } finally {
+      vi.stubGlobal('fetch', originalFetch);
+    }
+  });
+
+  it('显式 artist: 前缀与词库画师标记为 artist 不进缺失翻译，互动前缀复用词库主体译文', async () => {
+    resetTagDictionaryCache();
+    const originalFetch = globalThis.fetch;
+    const requestedLookupTags: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.startsWith('/tag-data/manifest.json')) {
+        return {
+          ok: true,
+          json: async () => ({
+            generatedAt: 'test',
+            shards: { 'hu': 'hu.json', 'as': 'as.json', 'di': 'di.json' },
+            chineseShards: {},
+            popular: {},
+          }),
+        } as Response;
+      }
+      if (url.includes('/tag-data/shards/hu.json')) {
+        return { ok: true, json: async () => [['hugging', '拥抱', 0, 1000, 1]] } as Response;
+      }
+      if (url.includes('/tag-data/shards/as.json')) {
+        return { ok: true, json: async () => [['ask artist', '', 1, 500, 1]] } as Response;
+      }
+      if (url.includes('/tag-data/shards/di.json')) {
+        return { ok: true, json: async () => [] } as Response;
+      }
+      const body = JSON.parse(String(init?.body)) as { action: string; tags: string[] };
+      requestedLookupTags.push(...body.tags);
+      return {
+        ok: true,
+        json: async () => ({
+          items: body.tags.includes('custom free tag')
+            ? [{ tag: 'custom free tag', chinese: '免费机翻结果', source: 'free' }]
+            : [],
+        }),
+      } as Response;
+    }));
+    try {
+      const tokens = parsePromptTags('artist:dino_new, ask_artist, source#hugging, custom_free_tag');
+      expect(tokens[0].artistPrefix).toBe(true);
+      const resolved = await resolvePromptTranslations(tokens);
+      expect(resolved[0]).toMatchObject({ lookupTag: 'dino new', source: 'artist' });
+      expect(resolved[1]).toMatchObject({ lookupTag: 'ask artist', source: 'artist' });
+      expect(resolved[2]).toMatchObject({ lookupTag: 'source#hugging', chinese: '发起：拥抱', source: 'dictionary' });
+      expect(resolved[3]).toMatchObject({ lookupTag: 'custom free tag', chinese: '免费机翻结果', source: 'free' });
+      expect(requestedLookupTags).not.toContain('dino new');
+      expect(requestedLookupTags).not.toContain('ask artist');
     } finally {
       vi.stubGlobal('fetch', originalFetch);
     }

@@ -23,6 +23,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { PromptAgentService } from './prompt-agent.mjs';
+import { handleTagTranslationRequest } from './free-tag-translator.mjs';
 import { StChatu8Bridge, installSillyTavernBridgeExtension } from './st-chatu8-bridge.mjs';
 import { StBaiBaiBridge } from './st-baibai-bridge.mjs';
 import { ImageTaggerService } from './image-tagger.mjs';
@@ -4540,10 +4541,8 @@ const serveDistFile = async (req, res, url) => {
         }
         if (url.pathname === '/api/prompt-agent/tag-translations') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-          const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
-          if (body.action === 'lookup') return sendJson(res, 200, { items: promptAgent.lookupTagTranslations(body.tags) });
-          if (body.action === 'translate') return sendJson(res, 200, await promptAgent.translateTags(body.tags));
-          return sendJson(res, 400, { error: '不支持的翻译操作' });
+          const body = JSON.parse((await readRequestBody(req, 32 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, await handleTagTranslationRequest(promptAgent, body));
         }
         if (url.pathname === '/api/prompt-agent/models') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });

@@ -54,6 +54,7 @@ import { LabModuleSection } from './LabModuleSection';
 import { Download } from 'lucide-react';
 import { getPastedImageFile, hasPastedPlainText, isTextPasteTarget } from '../services/imageClipboard';
 import { createLabUndoHistory, redoLabHistory, recordLabUndoSnapshot, undoLabHistory, type LabUndoHistory } from '../services/labUndoHistory';
+import { getTagTranslationMode } from '../services/appearancePreferences';
 import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags, isNativePromptText } from '../services/tagTranslations';
 import { proofreadPrompt } from '../services/tagProofread';
 import { UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
@@ -2797,11 +2798,23 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
 
         setTranslationPending(true);
         try {
+            const mode = getTagTranslationMode();
             const resolved = await resolvePromptTranslations(tokens);
             const missingTags = [...new Set(resolved.filter(item => item.source === 'missing').map(item => item.lookupTag))];
-            if (!missingTags.length) { notify(t("当前提示词没有未翻译 Tag")); return; }
-            await translateMissingPromptTags(missingTags);
-            notify(t("提示词 Tag 翻译完成"), 'success');
+            if (missingTags.length) {
+                await translateMissingPromptTags(missingTags, { mode });
+                notify(t("提示词 Tag 翻译完成"), 'success');
+                return;
+            }
+            if (mode === 'ai') {
+                const freeTags = [...new Set(resolved.filter(item => item.source === 'free').map(item => item.lookupTag))];
+                if (freeTags.length) {
+                    await translateMissingPromptTags(freeTags, { mode: 'ai', overwriteFree: true });
+                    notify(t("提示词 Tag 翻译完成"), 'success');
+                    return;
+                }
+            }
+            notify(t("当前提示词没有未翻译 Tag"));
         } catch (error) {
             notify(error instanceof Error ? error.message : t("提示词 Tag 翻译失败"), 'error');
         } finally {

@@ -11,7 +11,7 @@ import { PromptLibraryChooser, PromptLibraryFieldActions, usePromptLibrary } fro
 import { isLibraryOnlyQuery, libraryFieldText, librarySectionOf, searchLibraryEntries, type PromptLibraryField } from '../services/promptLibraryEntries';
 import type { LibraryCompletionEdit } from '../services/promptLibraryApply';
 import { lookupTagCatalogEntries, normalizeTagQuery, preloadTagDictionary, searchTagDictionary, TagSuggestion } from '../services/tagDictionary';
-import { usePromptInputAutoHeight, usePromptTranslationAutoHeight } from '../services/appearancePreferences';
+import { usePromptInputAutoHeight, usePromptTranslationAutoHeight, useTagTranslationMode } from '../services/appearancePreferences';
 import {
   parsePromptTags,
   PromptTagToken,
@@ -354,16 +354,21 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     return () => { active = false; window.clearTimeout(timer); };
   }, [parsedTokens, showTranslations, tagAssistEnabled, translationRevision]);
 
+  const tagTranslationMode = useTagTranslationMode();
   const missingTags = useMemo(() => [...new Set(currentTranslations
     .filter(item => item.source === 'missing')
     .map(item => item.lookupTag))], [currentTranslations]);
+  const freeTranslatedTags = useMemo(() => [...new Set(currentTranslations
+    .filter(item => item.source === 'free')
+    .map(item => item.lookupTag))], [currentTranslations]);
 
-  const translateMissing = async () => {
-    if (!tagAssistEnabled || !missingTags.length || translationLoading) return;
+  const translateMissing = async (overwriteFree = false) => {
+    const targets = overwriteFree ? freeTranslatedTags : missingTags;
+    if (!tagAssistEnabled || !targets.length || translationLoading) return;
     setTranslationLoading(true);
     setTranslationError('');
     try {
-      await translateMissingPromptTags(missingTags);
+      await translateMissingPromptTags(targets, { mode: overwriteFree ? 'ai' : tagTranslationMode, overwriteFree });
     } catch (error) {
       setTranslationError(error instanceof Error ? error.message : '翻译失败');
     } finally {
@@ -1145,7 +1150,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                       <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${selected ? 'text-[var(--nai-accent)]' : warningReason ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`} title={warningReason ? `${item.displayTag} — ${warningReason}` : item.displayTag}>
                         {editingTag?.id === item.id ? tagInputField : item.displayTag}
                       </span>
-                      <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${selected ? 'text-[var(--nai-accent)]' : warningReason ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`} title={editingTag?.id === item.id ? draftChinese : item.chinese || t("词库暂无翻译")}>{editingTag?.id === item.id ? draftChinese : item.chinese || t("待翻译")}</span>
+                      <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${selected ? 'text-[var(--nai-accent)]' : warningReason ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`} title={editingTag?.id === item.id ? draftChinese : item.chinese ? (item.source === 'free' ? `${item.chinese}（${t("免费翻译")}）` : item.chinese) : item.source === 'artist' ? t("画师名保持原文") : t("词库暂无翻译")}>{editingTag?.id === item.id ? draftChinese : item.chinese || (item.source === 'artist' ? t("画师") : t("待翻译"))}</span>
                       {infoButton(item)}
                     </div>,
                   );
@@ -1205,7 +1210,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                           <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${memberTextTone}`} title={memberWarning ? `${member.displayTag} — ${memberWarning}` : member.displayTag}>
                             {editingTag?.id === member.id ? tagInputField : member.displayTag}
                           </span>
-                          <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${memberTextTone}`} title={editingTag?.id === member.id ? draftChinese : member.chinese || t("词库暂无翻译")}>{editingTag?.id === member.id ? draftChinese : member.chinese || t("待翻译")}</span>
+                          <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${memberTextTone}`} title={editingTag?.id === member.id ? draftChinese : member.chinese ? (member.source === 'free' ? `${member.chinese}（${t("免费翻译")}）` : member.chinese) : member.source === 'artist' ? t("画师名保持原文") : t("词库暂无翻译")}>{editingTag?.id === member.id ? draftChinese : member.chinese || (member.source === 'artist' ? t("画师") : t("待翻译"))}</span>
                           {infoButton(member)}
                         </span>
                       </React.Fragment>;
@@ -1299,16 +1304,18 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 {/* 窄栏第 2 行：翻译缺失项 + 右对齐撤销/屏蔽/删除（不再出现孤立第 3 行） */}
                 <div className="flex items-center gap-1">
                   {translationError && <InfoPopover label={t("翻译失败详情")} preserveSelection content={translationError} className="mobile-touch h-7 min-w-0 flex-1 truncate text-left text-micro text-red-500 underline decoration-dotted underline-offset-2">{translationError}</InfoPopover>}
-                  {allowAiTranslation && editable && missingTags.length > 0 && (
+                  {allowAiTranslation && editable && (missingTags.length > 0 || (tagTranslationMode === 'ai' && freeTranslatedTags.length > 0)) && (
                     <button
                       type="button"
-                      onClick={() => void translateMissing()}
+                      onClick={() => void translateMissing(missingTags.length === 0)}
                       disabled={translationLoading}
                       className="mobile-touch inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
-                      title={t("使用当前助手模型翻译 {0} 个词库缺失项", [missingTags.length])}
+                      title={missingTags.length > 0
+                        ? (tagTranslationMode === 'ai' ? t("使用当前助手模型翻译 {0} 个词库缺失项", [missingTags.length]) : t("使用免费翻译补全 {0} 个词库缺失项", [missingTags.length]))
+                        : t("使用当前助手模型重译 {0} 个免费机翻项", [freeTranslatedTags.length])}
                     >
                       {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
-                      {translationLoading ? t("翻译中") : t("翻译缺失项 {0}", [missingTags.length])}
+                      {translationLoading ? t("翻译中") : missingTags.length > 0 ? t("翻译缺失项 {0}", [missingTags.length]) : t("AI 重译 {0}", [freeTranslatedTags.length])}
                     </button>
                   )}
                   <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -1419,16 +1426,18 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               className={`mobile-touch h-8 shrink-0 whitespace-nowrap rounded-md border px-2 py-1 text-meta font-semibold transition-colors disabled:pointer-events-none disabled:opacity-45 ${selectedTokens.length ? 'border-[color-mix(in_srgb,var(--nai-accent)_45%,transparent)] text-[var(--nai-accent)] hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)]' : 'border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'}`}
             >{t("移除权重")}</button>
             {translationError && <InfoPopover label={t("翻译失败详情")} preserveSelection content={translationError} className="mobile-touch h-8 min-w-0 flex-1 truncate text-left text-micro text-red-500 underline decoration-dotted underline-offset-2">{translationError}</InfoPopover>}
-            {allowAiTranslation && editable && missingTags.length > 0 && (
+            {allowAiTranslation && editable && (missingTags.length > 0 || (tagTranslationMode === 'ai' && freeTranslatedTags.length > 0)) && (
               <button
                 type="button"
-                onClick={() => void translateMissing()}
+                onClick={() => void translateMissing(missingTags.length === 0)}
                 disabled={translationLoading}
                 className="mobile-touch inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
-                title={t("使用当前助手模型翻译 {0} 个词库缺失项", [missingTags.length])}
+                title={missingTags.length > 0
+                  ? (tagTranslationMode === 'ai' ? t("使用当前助手模型翻译 {0} 个词库缺失项", [missingTags.length]) : t("使用免费翻译补全 {0} 个词库缺失项", [missingTags.length]))
+                  : t("使用当前助手模型重译 {0} 个免费机翻项", [freeTranslatedTags.length])}
               >
                 {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
-                {translationLoading ? t("翻译中") : t("翻译缺失项 {0}", [missingTags.length])}
+                {translationLoading ? t("翻译中") : missingTags.length > 0 ? t("翻译缺失项 {0}", [missingTags.length]) : t("AI 重译 {0}", [freeTranslatedTags.length])}
               </button>
             )}
             <div className="ml-auto flex shrink-0 items-center gap-1">

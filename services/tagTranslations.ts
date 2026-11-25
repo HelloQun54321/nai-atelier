@@ -1,11 +1,26 @@
-import { lookupTagTranslations, normalizeTagQuery } from './tagDictionary';
+import { lookupTagDictionaryEntries, lookupTagTranslations, normalizeTagQuery } from './tagDictionary';
+import { getTagTranslationMode, type TagTranslationMode } from './appearancePreferences';
 import { parsePromptTags } from './promptTags.mjs';
 import type { PromptTagToken } from './promptTags.mjs';
 
 export { parsePromptTags } from './promptTags.mjs';
 export type { PromptTagToken } from './promptTags.mjs';
 
-export type PromptTranslationSource = 'dictionary' | 'ai' | 'missing' | 'native';
+export type PromptTranslationSource = 'dictionary' | 'ai' | 'free' | 'artist' | 'missing' | 'native';
+
+const INTERACTION_PREFIX_LABELS: Record<'source' | 'target' | 'mutual', string> = {
+  source: '发起：',
+  target: '接收：',
+  mutual: '互相：',
+};
+
+export const splitInteractionTag = (tag: string): { prefix: 'source' | 'target' | 'mutual' | ''; label: string; body: string } => {
+  const normalized = normalizeTagQuery(tag);
+  const match = normalized.match(/^(source|target|mutual)#\s*(.+)$/i);
+  if (!match) return { prefix: '', label: '', body: normalized };
+  const prefix = match[1].toLowerCase() as 'source' | 'target' | 'mutual';
+  return { prefix, label: INTERACTION_PREFIX_LABELS[prefix], body: normalizeTagQuery(match[2]) };
+};
 
 /** 原文本身就是中日韩文字时不需要再翻译，也不显示「待翻译」。 */
 export const isNativePromptText = (text: string) => /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]/.test(text);
@@ -15,8 +30,13 @@ export interface PromptTagTranslation extends PromptTagToken {
   source: PromptTranslationSource;
 }
 
+interface CachedTranslationEntry {
+  chinese: string;
+  source: 'ai' | 'free';
+}
+
 type TranslationListener = () => void;
-const aiTranslations = new Map<string, string>();
+const cachedTranslations = new Map<string, CachedTranslationEntry>();
 const listeners = new Set<TranslationListener>();
 const lookupRequests = new Map<string, Promise<void>>();
 
@@ -242,18 +262,25 @@ export const subscribeTagTranslations = (listener: TranslationListener) => {
   return () => { listeners.delete(listener); };
 };
 
-export const acceptTagTranslations = (items: Array<{ tag?: string; chinese?: string }>) => {
+export const acceptTagTranslations = (items: Array<{ tag?: string; chinese?: string; source?: string }>) => {
   let changed = false;
   for (const item of items) {
     const tag = normalizeTagQuery(item.tag || '');
     const chinese = String(item.chinese || '').trim();
-    if (tag && chinese) { aiTranslations.set(tag, chinese); changed = true; }
+    const source: 'ai' | 'free' = item.source === 'free' ? 'free' : 'ai';
+    if (tag && chinese) {
+      const existing = cachedTranslations.get(tag);
+      if (!existing || existing.chinese !== chinese || (existing.source === 'free' && source === 'ai')) {
+        cachedTranslations.set(tag, { chinese, source });
+        changed = true;
+      }
+    }
   }
   if (changed) emitTranslationChange();
 };
 
 const requestCachedTranslations = async (tags: string[]) => {
-  const unique = [...new Set(tags.map(normalizeTagQuery).filter(tag => tag && !aiTranslations.has(tag)))].sort();
+  const unique = [...new Set(tags.map(normalizeTagQuery).filter(tag => tag && !cachedTranslations.has(tag)))].sort();
   if (!unique.length) return;
   for (let index = 0; index < unique.length; index += 50) {
     const batch = unique.slice(index, index + 50);
@@ -266,12 +293,16 @@ const requestCachedTranslations = async (tags: string[]) => {
         body: JSON.stringify({ action: 'lookup', tags: batch }),
       }).then(async response => {
         if (!response.ok) return;
-        const payload = await response.json() as { items?: Array<{ tag?: string; chinese?: string }> };
+        const payload = await response.json() as { items?: Array<{ tag?: string; chinese?: string; source?: string }> };
         let changed = false;
         for (const item of payload.items || []) {
           const tag = normalizeTagQuery(item.tag || '');
           const chinese = String(item.chinese || '').trim();
-          if (tag && chinese) { aiTranslations.set(tag, chinese); changed = true; }
+          const source: 'ai' | 'free' = item.source === 'free' ? 'free' : 'ai';
+          if (tag && chinese) {
+            cachedTranslations.set(tag, { chinese, source });
+            changed = true;
+          }
         }
         if (changed) emitTranslationChange();
       }).catch(() => {}).finally(() => lookupRequests.delete(key)));
@@ -281,34 +312,77 @@ const requestCachedTranslations = async (tags: string[]) => {
 };
 
 export const resolvePromptTranslations = async (tokens: PromptTagToken[]): Promise<PromptTagTranslation[]> => {
-  const tags = [...new Set(tokens.map(token => token.lookupTag))];
-  const dictionary = await lookupTagTranslations(tags);
-  const missing = tags.filter(tag => !dictionary.has(tag));
+  const lookupKeys = new Set<string>();
+  for (const token of tokens) {
+    lookupKeys.add(token.lookupTag);
+    const interaction = splitInteractionTag(token.lookupTag);
+    if (interaction.prefix && interaction.body) lookupKeys.add(interaction.body);
+  }
+  const allKeys = [...lookupKeys];
+  const dictionary = await lookupTagTranslations(allKeys);
+  const unresolvedForArtistCheck = [...new Set(tokens
+    .filter(token => !dictionary.has(token.lookupTag) && !token.artistPrefix)
+    .map(token => token.lookupTag))];
+  const dictionaryEntries = unresolvedForArtistCheck.length
+    ? await lookupTagDictionaryEntries(unresolvedForArtistCheck).catch(() => new Map())
+    : new Map();
+  const artistTags = new Set<string>();
+  for (const token of tokens) {
+    if (dictionary.has(token.lookupTag)) continue;
+    if (token.artistPrefix || dictionaryEntries.get(token.lookupTag)?.category === 1) {
+      artistTags.add(token.lookupTag);
+    }
+  }
+  const missing = allKeys.filter(tag => !dictionary.has(tag) && !artistTags.has(tag));
   await requestCachedTranslations(missing);
   return tokens.map(token => {
     const dictionaryItem = dictionary.get(token.lookupTag);
     if (dictionaryItem) return { ...token, chinese: dictionaryItem.chinese, source: 'dictionary' };
-    const ai = aiTranslations.get(token.lookupTag);
-    return ai ? { ...token, chinese: ai, source: 'ai' } : { ...token, source: 'missing' };
+    if (artistTags.has(token.lookupTag)) return { ...token, source: 'artist' };
+    const cached = cachedTranslations.get(token.lookupTag);
+    if (cached) return { ...token, chinese: cached.chinese, source: cached.source };
+    const interaction = splitInteractionTag(token.lookupTag);
+    if (interaction.prefix && interaction.body) {
+      if (isNativePromptText(interaction.body)) return { ...token, chinese: `${interaction.label}${interaction.body}`, source: 'native' };
+      const bodyDictionary = dictionary.get(interaction.body);
+      if (bodyDictionary) return { ...token, chinese: `${interaction.label}${bodyDictionary.chinese}`, source: 'dictionary' };
+      const bodyCached = cachedTranslations.get(interaction.body);
+      if (bodyCached) return { ...token, chinese: `${interaction.label}${bodyCached.chinese}`, source: bodyCached.source };
+    }
+    return { ...token, source: 'missing' };
   });
 };
 
-export const translateMissingPromptTags = async (tags: string[]) => {
+export interface TranslatePromptTagsOptions {
+  mode?: TagTranslationMode;
+  overwriteFree?: boolean;
+  protectedTags?: string[];
+}
+
+export const translateMissingPromptTags = async (tags: string[], options: TranslatePromptTagsOptions = {}) => {
   const normalized = [...new Set(tags.map(normalizeTagQuery).filter(Boolean))];
-  const translated: Array<{ tag?: string; chinese?: string }> = [];
+  const mode = options.mode ?? getTagTranslationMode();
+  const translated: Array<{ tag?: string; chinese?: string; source?: string }> = [];
   for (let index = 0; index < normalized.length; index += 50) {
     const response = await fetch('/api/prompt-agent/tag-translations', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'translate', tags: normalized.slice(index, index + 50) }),
+      body: JSON.stringify({
+        action: 'translate',
+        tags: normalized.slice(index, index + 50),
+        mode,
+        ...(options.overwriteFree ? { overwriteFree: true } : {}),
+        ...(options.protectedTags?.length ? { protectedTags: options.protectedTags } : {}),
+      }),
     });
-    const payload = await response.json().catch(() => ({})) as { items?: Array<{ tag?: string; chinese?: string }>; error?: string };
+    const payload = await response.json().catch(() => ({})) as { items?: Array<{ tag?: string; chinese?: string; source?: string }>; error?: string };
     if (!response.ok) throw new Error(payload.error || '翻译失败');
     for (const item of payload.items || []) {
       const tag = normalizeTagQuery(item.tag || '');
       const chinese = String(item.chinese || '').trim();
-      if (tag && chinese) aiTranslations.set(tag, chinese);
+      const source: 'ai' | 'free' = item.source === 'free' ? 'free' : (item.source === 'ai' ? 'ai' : mode);
+      if (tag && chinese) cachedTranslations.set(tag, { chinese, source });
     }
     translated.push(...(payload.items || []));
     emitTranslationChange();

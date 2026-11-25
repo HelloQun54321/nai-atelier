@@ -127,6 +127,8 @@ export const DEFAULT_ACTIVE_APPEARANCE_PRESET_ID = BUILTIN_APPEARANCE_PRESET.id;
 /** 出厂视觉参数与「NAI Atelier 默认」内置预设同源，避免默认与内置预设分叉。 */
 const factoryVisuals = appearanceValues(BUILTIN_APPEARANCE_PRESET);
 
+export type TagTranslationMode = 'free' | 'ai';
+
 export interface AppearancePreferences {
   designTheme: DesignTheme;
   themeMode: ThemeMode;
@@ -158,6 +160,8 @@ export interface AppearancePreferences {
   labSectionedPrompt: boolean;
   /** 翻译区高度跟随内容；本端编辑偏好，不属于外观预设。 */
   promptTranslationAutoHeight: boolean;
+  /** 词库缺失 Tag 的在线翻译方式（免费翻译池 / 创作助手 AI）；本端偏好，不属于外观预设。 */
+  tagTranslationMode: TagTranslationMode;
   /** 在支持的模型上显示采样过程；这是当前设备的观看偏好，不写入风格串。 */
   generationStreamPreview: boolean;
   /** 跨重启记住各工作台的文字与参数，不属于外观预设。 */
@@ -193,6 +197,7 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   promptInputAutoHeight: true,
   labSectionedPrompt: false,
   promptTranslationAutoHeight: true,
+  tagTranslationMode: 'free',
   generationStreamPreview: false,
   rememberGenerationSettings: true,
   generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES },
@@ -323,6 +328,9 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     promptTranslationAutoHeight: typeof input.promptTranslationAutoHeight === 'boolean'
       ? input.promptTranslationAutoHeight
       : DEFAULT_APPEARANCE_PREFERENCES.promptTranslationAutoHeight,
+    tagTranslationMode: isOneOf(input.tagTranslationMode, ['free', 'ai'])
+      ? input.tagTranslationMode
+      : DEFAULT_APPEARANCE_PREFERENCES.tagTranslationMode,
     generationStreamPreview: typeof input.generationStreamPreview === 'boolean'
       ? input.generationStreamPreview
       : DEFAULT_APPEARANCE_PREFERENCES.generationStreamPreview,
@@ -415,10 +423,13 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences, i
   if (tiltAngleChanged || tiltWeightChanged) window.dispatchEvent(new Event('nai-pointer-tilt-change'));
   const inputAutoChanged = root.dataset.promptInputAutoHeight !== String(preferences.promptInputAutoHeight);
   const translationAutoChanged = root.dataset.promptTranslationAutoHeight !== String(preferences.promptTranslationAutoHeight);
+  const translationModeChanged = root.dataset.tagTranslationMode !== preferences.tagTranslationMode;
   root.dataset.promptInputAutoHeight = String(preferences.promptInputAutoHeight);
   root.dataset.promptTranslationAutoHeight = String(preferences.promptTranslationAutoHeight);
+  root.dataset.tagTranslationMode = preferences.tagTranslationMode;
   if (captionChanged) window.dispatchEvent(new Event('nai-gallery-caption-change'));
   if (inputAutoChanged || translationAutoChanged) window.dispatchEvent(new Event('nai-prompt-auto-height-change'));
+  if (translationModeChanged) window.dispatchEvent(new Event('nai-tag-translation-mode-change'));
   // 所有主题明暗统一遵循用户选择的强调色，不再由主题高级细节按明暗单独覆盖。
   const accent = preferences.accentColor;
   root.style.setProperty('--nai-accent', accent);
@@ -449,6 +460,18 @@ export const usePromptInputAutoHeight = () => useSyncExternalStore(
 export const usePromptTranslationAutoHeight = () => useSyncExternalStore(
   subscribePromptAutoHeight,
   () => document.documentElement.dataset.promptTranslationAutoHeight !== 'false',
+);
+
+const subscribeTagTranslationMode = (listener: () => void) => {
+  window.addEventListener('nai-tag-translation-mode-change', listener);
+  return () => window.removeEventListener('nai-tag-translation-mode-change', listener);
+};
+export const getTagTranslationMode = (): TagTranslationMode => (
+  typeof document !== 'undefined' && document.documentElement.dataset.tagTranslationMode === 'ai' ? 'ai' : 'free'
+);
+export const useTagTranslationMode = () => useSyncExternalStore(
+  subscribeTagTranslationMode,
+  getTagTranslationMode,
 );
 
 /** App 挂载前和系统明暗变化时恢复外观，访问门禁与错误页也使用同一套偏好。 */

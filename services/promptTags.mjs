@@ -17,7 +17,7 @@ const unwrapToken = (raw, start = 0, group) => {
   const artistPrefix = /^artists?\s*:\s*/i.test(value);
   if (artistPrefix) value = value.replace(/^artists?\s*:\s*/i, '').trim();
   const { id: _id, ...metadata } = group || {};
-  return { displayTag: value, lookupTag: normalizeTagQuery(value), start: tokenStart, end: tokenEnd, ...metadata };
+  return { displayTag: value, lookupTag: normalizeTagQuery(value), start: tokenStart, end: tokenEnd, ...(artistPrefix ? { artistPrefix: true } : {}), ...metadata };
 };
 
 const parseSegment = (prompt, rawStart, rawEnd, group) =>
