@@ -2695,7 +2695,6 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 handleSaveAll={handleSaveAll}
                 handleImportImage={handleImportImage}
                 onImportFromClipboard={importMetadataFromClipboard}
-                onImportText={text => importMetadataText(text)}
                 onTranslateMissingPrompts={() => { void translateAllMissingPromptTags(); }}
                 translationPending={translationPending}
                 notify={notify}

@@ -34,7 +34,6 @@ export interface ChainEditorHeaderProps {
     handleSaveAll: () => void;
     handleImportImage: (event: React.ChangeEvent<HTMLInputElement>) => void;
     onImportFromClipboard?: () => Promise<boolean> | boolean | void;
-    onImportText?: (text: string) => Promise<boolean> | boolean | void;
     /** 编辑三模式的反推入口：对当前底图或结果图跑本地模型，结果追加到当前模式正面提示词。 */
     onReverseTag?: () => void;
     onTranslateMissingPrompts: () => void;
@@ -75,7 +74,6 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     handleSaveAll,
     handleImportImage,
     onImportFromClipboard,
-    onImportText,
     onReverseTag,
     onTranslateMissingPrompts,
     translationPending = false,
@@ -93,9 +91,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     const closeActions = React.useCallback(() => setActionsOpen(false), []);
     const [importOpen, setImportOpen] = useState(false);
     const closeImport = React.useCallback(() => setImportOpen(false), []);
-    const [importText, setImportText] = useState('');
     const [importingClipboard, setImportingClipboard] = useState(false);
-    const [importingText, setImportingText] = useState(false);
     const saveAnchorRef = useRef<HTMLDivElement>(null);
     const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
     const [compact, setCompact] = useState(() => window.innerWidth < 1024);
@@ -135,24 +131,11 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             setImportingClipboard(false);
         }
     };
-    const handleTextImportSubmit = async () => {
-        if (!onImportText || importingText || !importText.trim()) return;
-        setImportingText(true);
-        try {
-            const applied = await onImportText(importText);
-            if (applied !== false) {
-                setImportText('');
-                closeImport();
-            }
-        } finally {
-            setImportingText(false);
-        }
-    };
     const renderSaveOptions = () => <div className="space-y-1">
         <button type="button" className={`${TOOLBAR_MENU_CLASS} disabled:cursor-not-allowed disabled:opacity-40`} disabled={!canSaveCurrentChain || isUploading} onClick={() => { closeSaveActions(); handleSaveAll(); }}><Save />{saveDetail}</button>
         <button type="button" className={`${TOOLBAR_MENU_CLASS} disabled:cursor-not-allowed disabled:opacity-40`} disabled={isUploading} onClick={() => { closeSaveActions(); handleFork(); }}><Copy />{forkLabel}</button>
     </div>;
-    const renderImportOptions = () => <div data-import-metadata-popover="true" className="flex flex-col gap-1.5">
+    const renderImportOptions = () => <div data-import-metadata-popover="true" className="flex flex-col gap-1">
         <ActionRow
             icon={<FolderOpen className="h-4 w-4" />}
             label={t("选择文件")}
@@ -169,32 +152,6 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             disabled={importingClipboard}
             onClick={() => { void handleClipboardImport(); }}
         />}
-        {onImportText && <>
-            <div className="my-0.5 border-t border-gray-200/70 dark:border-gray-700/70" />
-            <div className="flex flex-col gap-1.5 px-1 pt-0.5">
-                <textarea
-                    rows={3}
-                    value={importText}
-                    onChange={event => setImportText(event.target.value)}
-                    placeholder={t("粘贴 JSON 配置文本…")}
-                    aria-label={t("粘贴 JSON 配置文本")}
-                    className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                />
-                <button
-                    type="button"
-                    disabled={!importText.trim() || importingText}
-                    onClick={() => { void handleTextImportSubmit(); }}
-                    className="mobile-touch inline-flex h-8 w-full items-center justify-center rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                    {importingText ? t("解析中…") : t("解析并导入")}
-                </button>
-            </div>
-        </>}
-        <p className="px-2 pt-0.5 text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
-            {activeGenerationMode === 'text-to-image'
-                ? t("支持拖入文件，或在页面空白处直接 Ctrl+V 导入")
-                : t("此弹窗打开时可直接 Ctrl+V 导入参数（页面粘贴仍为底图）")}
-        </p>
     </div>;
     // 顶栏与编辑／预览共用 Layout 的分栏状态，不能单独提前展开成整行。
     useLayoutEffect(() => {
@@ -294,7 +251,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
         <input aria-label={t("导入图片或 JSON 创作配置")} type="file" ref={importInputRef} className="hidden" accept="image/png,image/webp,image/jpeg,.png,.webp,.jpg,.jpeg,application/json,.json" onChange={handleImportImage} />
         {importOpen && canEdit && (isMobile
             ? <ImagePreviewPortal><MobileBottomSheet open title={t("导入图片或 JSON 配置")} onClose={closeImport}>{renderImportOptions()}</MobileBottomSheet></ImagePreviewPortal>
-            : <AnchoredToolbarPopover anchorRef={compact ? moreAnchorRef : importAnchorRef} title={t("导入图片或 JSON 配置")} width={300} onClose={closeImport}>{renderImportOptions()}</AnchoredToolbarPopover>)}
+            : <AnchoredToolbarPopover anchorRef={compact ? moreAnchorRef : importAnchorRef} title={t("导入图片或 JSON 配置")} width={260} onClose={closeImport}>{renderImportOptions()}</AnchoredToolbarPopover>)}
         {saveActionsOpen && canSaveActiveModeToLibrary && isOwner && !isPlayground && <>
             {isMobile
                 ? <ImagePreviewPortal><MobileBottomSheet open title={t("保存{0}", [entityLabel])} onClose={closeSaveActions}>{renderSaveOptions()}</MobileBottomSheet></ImagePreviewPortal>

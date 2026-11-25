@@ -99,24 +99,16 @@ describe('实验室顶栏的反推入口', () => {
     expect(handleReset).toHaveBeenCalledOnce();
   });
 
-  it('导入弹窗支持选择文件、从剪贴板导入与粘贴 JSON 文本', async () => {
+  it('导入弹窗精简为选择文件与从剪贴板导入两行入口', async () => {
     const onImportFromClipboard = vi.fn(async () => true);
-    const onImportText = vi.fn(async () => true);
-    render(<ChainEditorHeader {...baseProps({ onImportFromClipboard, onImportText })} />);
+    render(<ChainEditorHeader {...baseProps({ onImportFromClipboard })} />);
 
     fireEvent.click(screen.getByRole('button', { name: '导入图片或 JSON 配置' }));
     const dialog = screen.getByRole('dialog', { name: '导入图片或 JSON 配置' });
-    expect(dialog.querySelector('button svg')).toBeTruthy();
     expect(dialog.textContent).toContain('选择文件');
+    expect(dialog.querySelector('textarea')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /从剪贴板导入/ }));
     expect(onImportFromClipboard).toHaveBeenCalledOnce();
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: '导入图片或 JSON 配置' })).toBeNull());
-
-    fireEvent.click(screen.getByRole('button', { name: '导入图片或 JSON 配置' }));
-    const textarea = screen.getByRole('textbox', { name: '粘贴 JSON 配置文本' });
-    fireEvent.change(textarea, { target: { value: '{"prompt":"1girl"}' } });
-    fireEvent.click(screen.getByRole('button', { name: '解析并导入' }));
-    expect(onImportText).toHaveBeenCalledWith('{"prompt":"1girl"}');
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '导入图片或 JSON 配置' })).toBeNull());
   });
 });
