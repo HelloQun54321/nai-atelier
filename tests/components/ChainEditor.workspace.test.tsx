@@ -253,7 +253,7 @@ it('统一整段编辑，旧场景与呈现形式完整显示，切页不改原�
   setup(entry);
   expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['全局', '角色', '参考', '参数']);
   expect(textPrompt().value).toBe(base + ', city street, poster layout');
-  expect(screen.queryByRole('button', { name: /编辑模式/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /提示词细分/ })).toBeNull();
   const before = structuredClone(state.agent!.draft);
   fireEvent.click(screen.getByRole('tab', { name: '角色' }));
   expect(screen.queryByRole('textbox', { name: '呈现形式' })).toBeNull();
@@ -267,22 +267,60 @@ it('统一整段编辑，旧场景与呈现形式完整显示，切页不改原�
   expect(state.agent?.draft.params._promptSections).toBeUndefined();
 });
 
-it('未接入分类开关时不出现切换，接入后才显示且骰子仅在细分模式出现', () => {
+it('未接入分类开关时不出现切换，随机搭配放在更多操作中并在关闭细分时置灰', () => {
   const view = setup();
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
-  expect(screen.queryByRole('button', { name: /编辑模式/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /提示词细分/ })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
   expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['全局', '角色', '参考', '参数']);
-  // 原生模式下即使传入随机回调，顶栏也不显示全局随机搭配骰子
-  view.rerender(<ChainEditor {...view.props} onContentRollForGlobal={vi.fn()} />);
-  expect(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).queryByRole('button', { name: '随机搭配' })).toBeNull();
+
+  // 顶栏不再单独摆全局随机搭配骰子
   view.rerender(<ChainEditor {...view.props} onContentRollForGlobal={vi.fn()} onSectionedPromptChange={vi.fn()} />);
+  expect(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).queryByRole('button', { name: '随机搭配' })).toBeNull();
+
+  // 关闭细分时：更多操作里提示词细分显示「已关闭」，其下方的随机搭配为置灰禁用
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
-  const modeButton = screen.getByRole('button', { name: /编辑模式/ });
-  expect(modeButton.textContent).toContain('原生');
-  expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['全局', '角色', '参考', '参数']);
+  const moreDialog = screen.getByRole('dialog', { name: '更多操作' });
+  const modeButton = within(moreDialog).getByRole('button', { name: /提示词细分/ });
+  expect(modeButton.textContent).toContain('已关闭');
+  const rollDisabled = within(moreDialog).getByRole('button', { name: '随机搭配' }) as HTMLButtonElement;
+  expect(rollDisabled.disabled).toBe(true);
+  const buttonsInMenu = within(moreDialog).getAllByRole('button');
+  expect(buttonsInMenu.indexOf(rollDisabled)).toBe(buttonsInMenu.indexOf(modeButton) + 1);
+
+  // 开启细分后：提示词细分显示「已开启」，随机搭配恢复可用
   view.rerender(<ChainEditor {...view.props} sectionedPrompt onContentRollForGlobal={vi.fn()} onSectionedPromptChange={vi.fn()} />);
-  expect(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '随机搭配' })).toBeTruthy();
+  expect(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: /提示词细分/ }).textContent).toContain('已开启');
+  expect((within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: '随机搭配' }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it('空白自由实验室无改动时保存保持中性，历史预览/切换细分/重置后不误亮绿', async () => {
+  const historyItem: LocalGenItem = {
+    id: 'hist-play-1', createdAt: Date.now(), prompt: 'old', negativePrompt: '',
+    imageUrl: '/synthetic/play-cover.png', sourceChainId: 'playground',
+    params: chain.params,
+  };
+  state.history.mockResolvedValueOnce([historyItem]);
+  saveLabWorkspaceSession('playground', { ...fallback(), textToImage: { basePrompt: '', negativePrompt: '', subjectPrompt: '', activeModules: {}, params: { ...chain.params, steps: 32 } } });
+  const view = setup({ ...chain, id: 'playground', basePrompt: '', negativePrompt: '', variableValues: { subject: '' } });
+
+  await waitFor(() => expect(state.history).toHaveBeenCalled());
+  expect(screen.getByRole('button', { name: '保存到库' }).getAttribute('data-tone')).toBe('neutral');
+
+  // 空白状态下开启细分也不误亮绿
+  view.rerender(<ChainEditor {...view.props} onSectionedPromptChange={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: /提示词细分/ }));
+  expect(screen.getByRole('button', { name: '保存到库' }).getAttribute('data-tone')).toBe('neutral');
+
+  // 真正修改提示词才变绿
+  fireEvent.change(textPrompt(), { target: { value: 'real prompt edit' } });
+  expect(screen.getByRole('button', { name: '保存到库' }).getAttribute('data-tone')).toBe('save');
+
+  // 重置文生图后变回中性
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+  await act(async () => { fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: /^重置当前模式/ })); });
+  expect(screen.getByRole('button', { name: '保存到库' }).getAttribute('data-tone')).toBe('neutral');
 });
 
 it('文生图空白处 Ctrl+V 粘贴 JSON 元数据可直接导入，在输入框内粘贴不受干扰', async () => {

@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../../services/i18n';
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { ClipboardPaste, Copy, FolderOpen, ImagePlus, Import, Languages, ListTree, LoaderCircle, MoreVertical, RotateCcw, Save, Tags } from 'lucide-react';
+import { ClipboardPaste, Copy, Download, FolderOpen, ImagePlus, Languages, ListTree, LoaderCircle, MoreVertical, RotateCcw, Save, Tags } from 'lucide-react';
 import { GenerationMode } from '../../types';
 import { ChainEditorModeHeader } from '../ChainEditorModeHeader';
 import { IconButton, ToolbarActionRow as ActionRow, ToolbarDivider } from '../DesignSystem';
@@ -99,9 +99,23 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     const saveAnchorRef = useRef<HTMLDivElement>(null);
     const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
     const [compact, setCompact] = useState(() => window.innerWidth < 1024);
+    const promptSlotCleanupRef = useRef<(() => void) | null>(null);
     const setPromptToolbarSlot = React.useCallback((element: HTMLDivElement | null) => {
-        onPromptToolbarSlotChange?.(element ? { element, variant: compact ? 'menu' : 'icon' } : null);
-    }, [compact, onPromptToolbarSlotChange]);
+        promptSlotCleanupRef.current?.();
+        promptSlotCleanupRef.current = null;
+        if (element) {
+            const handleSlotClick = (event: MouseEvent) => {
+                const button = (event.target as Element | null)?.closest('button');
+                if (button && !button.hasAttribute('disabled')) {
+                    // 等待 React 在根节点派发完 Portal 子按钮的 onClick 后再关闭更多菜单。
+                    window.setTimeout(() => closeActions(), 0);
+                }
+            };
+            element.addEventListener('click', handleSlotClick);
+            promptSlotCleanupRef.current = () => element.removeEventListener('click', handleSlotClick);
+        }
+        onPromptToolbarSlotChange?.(element ? { element, variant: 'menu' } : null);
+    }, [closeActions, onPromptToolbarSlotChange]);
     const [saveActionsOpen, setSaveActionsOpen] = useState(false);
     const closeSaveActions = React.useCallback(() => setSaveActionsOpen(false), []);
     const entityLabel = isCharacterMode ? '自定义角色' : '风格串';
@@ -241,7 +255,6 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             {!compact && <div className="chain-editor-actions flex flex-none items-center justify-end gap-1.5 ml-auto">
                 {/* 高频输入与提示词库入口（低频辅助开关与重置收进更多菜单） */}
                 {canEdit && onReverseTag && <IconButton label={t('从图片反推 Tag')} title={t('上传或粘贴图片，识别后追加到当前模式的正面提示词')} onClick={onReverseTag}><ImagePlus /></IconButton>}
-                {renderPromptTools()}
                 {canEdit && <div ref={importAnchorRef} className="flex-none">
                     <IconButton
                         label={t("导入图片或 JSON 配置")}
@@ -251,7 +264,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                         aria-expanded={importOpen}
                         onClick={() => { closeActions(); closeSaveActions(); setImportOpen(value => !value); }}
                     >
-                        <Import />
+                        <Download />
                     </IconButton>
                 </div>}
                 <ToolbarDivider />
@@ -289,9 +302,8 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
 
     function renderActions() {
         return <div className="flex flex-col gap-1">
-                {compact && renderPromptTools()}
                 {compact && canEdit && onReverseTag && <ActionRow icon={<ImagePlus className="h-4 w-4" />} label={t("从图片反推 Tag")} detail={t("上传图片后识别")} onClick={() => { closeActions(); onReverseTag(); }} />}
-                {compact && canEdit && <ActionRow icon={<Import className="h-4 w-4" />} label={t("导入图片或 JSON 配置")} onClick={() => { closeActions(); setImportOpen(true); }} />}
+                {compact && canEdit && <ActionRow icon={<Download className="h-4 w-4" />} label={t("导入图片或 JSON 配置")} onClick={() => { closeActions(); setImportOpen(true); }} />}
                 <ActionRow
                     icon={<Tags className="h-4 w-4" />}
                     label={t("Tag 辅助")}
@@ -303,7 +315,8 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                         closeActions();
                     }}
                 />
-                {onSectionedPromptChange && <ActionRow icon={<ListTree className="h-4 w-4" />} label={t('编辑模式')} detail={t(sectionedPrompt ? '细分' : '原生')} onClick={() => { onSectionedPromptChange(!sectionedPrompt); closeActions(); }} />}
+                {onSectionedPromptChange && <ActionRow icon={<ListTree className="h-4 w-4" />} label={t('提示词细分')} detail={sectionedPrompt ? t('已开启') : t('已关闭')} onClick={() => { onSectionedPromptChange(!sectionedPrompt); closeActions(); }} />}
+                {renderPromptTools()}
                 {canEdit && <ActionRow icon={translationPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />} label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} detail={translationPending ? t("翻译中") : undefined} disabled={translationPending} onClick={() => { closeActions(); onTranslateMissingPrompts(); }} />}
                 {canEdit && <div className="my-1 border-t border-gray-200/70 dark:border-gray-700/70" />}
                 {canEdit && <ActionRow icon={<RotateCcw className="h-4 w-4" />} label={t("重置当前模式")} detail={activeModeLabel} tone="danger" onClick={() => { closeActions(); handleReset(); }} />}
@@ -312,7 +325,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     }
 
     function renderPromptTools() {
-        return <div ref={setPromptToolbarSlot} className={compact ? "flex flex-col gap-1 empty:hidden" : "flex items-center gap-2 empty:hidden"} />;
+        return <div ref={setPromptToolbarSlot} className="flex flex-col gap-1 empty:hidden" />;
     }
 
 };

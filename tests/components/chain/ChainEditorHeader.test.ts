@@ -88,25 +88,30 @@ const renderHeader = (props: Partial<Parameters<typeof ChainEditorHeader>[0]> = 
 };
 
 describe('ChainEditorHeader 工具栏', () => {
-  it('桌面端按 Plan A 在更多操作收拢低频辅助项，并保留提示词工具槽位与导入弹窗入口', () => {
+  it('桌面端在更多操作内提供提示词工具槽位并在关闭后释放，保留导入弹窗入口', () => {
     const slot = vi.fn();
     const view = renderHeader({ onPromptToolbarSlotChange: slot });
     expect(view.queryByRole('tablist', { name: '提示词编辑方式' })).toBeNull();
-    expect(view.queryByRole('button', { name: /编辑模式/ })).toBeNull();
+    expect(view.queryByRole('button', { name: /提示词细分/ })).toBeNull();
     expect(view.container.querySelector('.lucide-list-tree, .lucide-text-align-start')).toBeNull();
-    expect(slot.mock.lastCall?.[0]?.variant).toBe('icon');
-    expect(slot.mock.lastCall?.[0]?.element.closest('.chain-editor-actions')).toBeTruthy();
+    expect(slot.mock.lastCall?.[0]).toBeUndefined();
     expect(view.getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
-    expect(view.getByRole('button', { name: '更多操作' })).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: '更多操作' }));
+    const dialog = screen.getByRole('dialog', { name: '更多操作' });
+    expect(slot.mock.lastCall?.[0]?.variant).toBe('menu');
+    expect(dialog.contains(slot.mock.lastCall?.[0]?.element)).toBe(true);
+    fireEvent.click(view.getByRole('button', { name: '更多操作' }));
+    expect(screen.queryByRole('dialog', { name: '更多操作' })).toBeNull();
+    expect(slot.mock.lastCall?.[0]).toBeNull();
   });
 
-  it('窄屏不显示编辑模式开关时，更多菜单仍提供提示词工具槽位且关闭释放', () => {
+  it('窄屏不显示提示词细分开关时，更多菜单仍提供提示词工具槽位且关闭释放', () => {
     workWidth = 390; vi.stubGlobal('innerWidth', 390);
     const slot = vi.fn();
     renderHeader({ onPromptToolbarSlotChange: slot });
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     const dialog = screen.getByRole('dialog', { name: '更多操作' });
-    expect(within(dialog).queryByRole('button', { name: /编辑模式/ })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: /提示词细分/ })).toBeNull();
     expect(slot.mock.lastCall?.[0]?.variant).toBe('menu');
     expect(dialog.contains(slot.mock.lastCall?.[0]?.element)).toBe(true);
     expect(within(dialog).getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();

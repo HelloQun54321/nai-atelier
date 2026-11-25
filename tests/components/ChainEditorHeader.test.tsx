@@ -71,26 +71,26 @@ describe('实验室顶栏的反推入口', () => {
     const view = render(<ChainEditorHeader {...baseProps({ handleReset, onTagAssistEnabledChange, onSectionedPromptChange, tagAssistEnabled: true })} />);
     expect(screen.queryByRole('button', { name: /^重置当前模式/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Tag 辅助/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /编辑模式/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /提示词细分/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /翻译所有未翻译提示词/ })).toBeNull();
     expect(screen.getByRole('button', { name: '保存到库' }).getAttribute('data-tone')).toBe('neutral');
     expect(screen.getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
 
-    view.rerender(<ChainEditorHeader {...baseProps({ handleReset, onTagAssistEnabledChange, onSectionedPromptChange, tagAssistEnabled: true, canSaveCurrentChain: true })} />);
+    view.rerender(<ChainEditorHeader {...baseProps({ handleReset, onTagAssistEnabledChange, onSectionedPromptChange, sectionedPrompt: true, tagAssistEnabled: true, canSaveCurrentChain: true })} />);
     expect(screen.getByRole('button', { name: '保存到库' }).getAttribute('data-tone')).toBe('save');
 
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     const tagRow = screen.getByRole('button', { name: /Tag 辅助/ });
     expect(tagRow.textContent).toContain('已开启');
-    const modeRow = screen.getByRole('button', { name: /编辑模式/ });
-    expect(modeRow.textContent).toContain('原生');
+    const modeRow = screen.getByRole('button', { name: /提示词细分/ });
+    expect(modeRow.textContent).toContain('已开启');
     expect(screen.getByRole('button', { name: /翻译所有未翻译提示词/ })).toBeTruthy();
     fireEvent.click(tagRow);
     expect(onTagAssistEnabledChange).toHaveBeenCalledWith(false);
 
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
-    fireEvent.click(screen.getByRole('button', { name: /编辑模式/ }));
-    expect(onSectionedPromptChange).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: /提示词细分/ }));
+    expect(onSectionedPromptChange).toHaveBeenCalledWith(false);
 
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     const resetRow = screen.getByRole('button', { name: /重置当前模式/ });

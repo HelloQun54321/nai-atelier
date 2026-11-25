@@ -50,7 +50,7 @@ import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
 import { compileCharacterContent, hasCharacterSections } from '../services/characterPrompts';
 import { LabModuleSection } from './LabModuleSection';
-import { Import } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { getPastedImageFile, isTextPasteTarget } from '../services/imageClipboard';
 import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags, isNativePromptText } from '../services/tagTranslations';
 import { UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
@@ -474,7 +474,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         ? `${imageEditPreviewBaseLabel} · ${imageEditPreviewDuration}`
         : (imageEditPreviewBaseLabel || imageEditPreviewDuration || undefined);
     const currentPreviewCover = decideCurrentPreviewCover(displayedPreviewImage, chain.previewImage);
-    const hasPendingPreviewCover = chain.type === 'style' && currentPreviewCover.needsUpload;
+    const hasPendingPreviewCover = chain.id !== 'playground' && chain.type === 'style' && currentPreviewCover.needsUpload;
     const canSaveCurrentChain = hasChanges || hasPendingPreviewCover;
     const lightboxItem = lightboxImg ? previewHistory.find(item => item.imageUrl === lightboxImg) || null : null;
     const lightboxDuration = formatGenerationDuration(readGenerationDurationMs(lightboxItem));
@@ -667,7 +667,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             (storedWorkspace.textToImage.subjectPrompt || '') !== String(chain.variableValues?.subject || '') ||
             JSON.stringify(restoredParams) !== JSON.stringify(persistedParams) ||
             moduleStateDiffers;
-        setHasChanges(restoredDiffers);
+        setHasChanges(chain.id === 'playground' ? false : restoredDiffers);
         if (restoredDiffers && chain.id !== 'playground') {
             notify('已恢复上次未保存的修改，保存后才会写回风格串');
         }
@@ -1118,7 +1118,9 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         setNegativePrompt(next.negative);
         setParams(previous => ({ ...previous, _promptSections: next.sections }));
         setCategoryTab('style');
-        markChange();
+        if (basePrompt.trim() || subjectPrompt.trim() || negativePrompt.trim()) {
+            markChange();
+        }
     };
 
     // --- Character Handlers ---
@@ -1720,8 +1722,8 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         setParams(restored.params);
         if (resetToSaved) {
             setChainTags(chain.tags || []);
-            setHasChanges(false);
         }
+        setHasChanges(false);
         clearPresetSources();
         setGeneratedImage(null);
         setPreviewMode('cover');
@@ -2429,7 +2431,7 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
                 <div className="pointer-events-none absolute inset-0 z-[80] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm">
                     <div className="appearance-group mx-4 max-w-sm rounded-lg border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center shadow-2xl dark:bg-gray-900/95 dark:border-indigo-300">
                         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
-                            <Import className="h-6 w-6" />
+                            <Download className="h-6 w-6" />
                         </div>
                         <div className="text-base font-bold text-gray-900 dark:text-white">{t("松手导入配置")}</div>
                         <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t("PNG / WebP / JPEG / JSON · 替换提示词与参数")}</div>
@@ -2509,8 +2511,8 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             />
             {agentProposal && (!agentProposal.draft.target || agentProposal.draft.target.chainId === chain.id && agentProposal.draft.target.mode === activeGenerationMode) && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal.draft} onClose={() => setAgentProposal(null)} onApply={async draft => { await applyGuardedAgentDraft(draft, agentProposal.onApplied, agentProposal.beforeApply); setAgentProposal(null); }}/>}
             {activeGenerationMode === 'text-to-image' ? <>
-            {sectionedActive && <PromptLibraryRandomButton purposes={LAB_PICTURE_PURPOSES} toolbarSlot={promptToolbarSlot}
-                disabled={isGenerating} fallback={onContentRollForGlobal} />}
+            <PromptLibraryRandomButton purposes={LAB_PICTURE_PURPOSES} toolbarSlot={promptToolbarSlot}
+                disabled={isGenerating || !sectionedActive} fallback={onContentRollForGlobal} />
             {sectionedActive ? <LabEditorTabs key={`${chain.id}:sectioned`} value={categoryTab} options={labCategoryTabOptions(supportsReferences)} onChange={setCategoryTab} /> : <LabEditorTabs key={chain.id} value={mobileEditorTab} options={supportsReferences
                 ? [['global', '全局'], ['character', '角色'], ['reference', '参考'], ['params', '参数']]
                 : [['global', '全局'], ['character', '角色'], ['params', '参数']]} onChange={setMobileEditorTab} />}
