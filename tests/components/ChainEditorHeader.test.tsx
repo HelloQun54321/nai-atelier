@@ -72,7 +72,7 @@ describe('实验室顶栏的反推入口', () => {
     expect(screen.queryByRole('button', { name: /^重置当前模式/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Tag 辅助/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /提示词细分/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /翻译所有未翻译提示词/ })).toBeNull();
+    expect(screen.getByRole('button', { name: '翻译所有未翻译提示词' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '保存到库' }).getAttribute('data-tone')).toBe('neutral');
     expect(screen.getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
 
@@ -84,7 +84,7 @@ describe('实验室顶栏的反推入口', () => {
     expect(tagRow.textContent).toContain('已开启');
     const modeRow = screen.getByRole('button', { name: /提示词细分/ });
     expect(modeRow.textContent).toContain('已开启');
-    expect(screen.getByRole('button', { name: /翻译所有未翻译提示词/ })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /翻译所有未翻译提示词/ })).toHaveLength(1);
     fireEvent.click(tagRow);
     expect(onTagAssistEnabledChange).toHaveBeenCalledWith(false);
 

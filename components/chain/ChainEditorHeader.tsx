@@ -3,7 +3,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { ClipboardPaste, Copy, Download, FolderOpen, ImagePlus, Languages, ListTree, LoaderCircle, MoreVertical, RotateCcw, Save, Tags } from 'lucide-react';
 import { GenerationMode } from '../../types';
 import { ChainEditorModeHeader } from '../ChainEditorModeHeader';
-import { IconButton, ToolbarActionRow as ActionRow, ToolbarDivider } from '../DesignSystem';
+import { IconButton, ToolbarActionRow as ActionRow } from '../DesignSystem';
 import type { PromptToolbarSlot } from '../PromptLibraryAccess';
 import { MobileBottomSheet } from '../MobileUI';
 import { AnchoredToolbarPopover, TOOLBAR_MENU_CLASS } from '../ToolbarPopover';
@@ -267,7 +267,13 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                         <Download />
                     </IconButton>
                 </div>}
-                <ToolbarDivider />
+                {canEdit && <IconButton
+                    label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")}
+                    disabled={translationPending}
+                    onClick={onTranslateMissingPrompts}
+                >
+                    {translationPending ? <LoaderCircle className="animate-spin" /> : <Languages />}
+                </IconButton>}
                 {canSaveActiveModeToLibrary && (isPlayground || (!isOwner && !isGuest)) && <IconButton label={isPlayground ? t("保存到库") : forkLabel} tone={forkSaveTone} disabled={isUploading} onClick={handleFork}><Save /></IconButton>}
                 {canSaveActiveModeToLibrary && isOwner && !isPlayground && <div ref={saveAnchorRef} className="flex-none">
                     <IconButton label={t(saveLabel)} title={saveDetail} tone={ownerSaveTone} disabled={isUploading} aria-haspopup="dialog" aria-expanded={saveActionsOpen} onClick={() => { closeActions(); closeImport(); setSaveActionsOpen(value => !value); }}><Save /></IconButton>
@@ -317,7 +323,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                 />
                 {onSectionedPromptChange && <ActionRow icon={<ListTree className="h-4 w-4" />} label={t('提示词细分')} detail={sectionedPrompt ? t('已开启') : t('已关闭')} onClick={() => { onSectionedPromptChange(!sectionedPrompt); closeActions(); }} />}
                 {renderPromptTools()}
-                {canEdit && <ActionRow icon={translationPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />} label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} detail={translationPending ? t("翻译中") : undefined} disabled={translationPending} onClick={() => { closeActions(); onTranslateMissingPrompts(); }} />}
+                {compact && canEdit && <ActionRow icon={translationPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />} label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} detail={translationPending ? t("翻译中") : undefined} disabled={translationPending} onClick={() => { closeActions(); onTranslateMissingPrompts(); }} />}
                 {canEdit && <div className="my-1 border-t border-gray-200/70 dark:border-gray-700/70" />}
                 {canEdit && <ActionRow icon={<RotateCcw className="h-4 w-4" />} label={t("重置当前模式")} detail={activeModeLabel} tone="danger" onClick={() => { closeActions(); handleReset(); }} />}
                 {compact && canSaveActiveModeToLibrary && isPlayground && <ActionRow icon={<Save className="h-4 w-4" />} label={t("保存到库")} tone={canSaveCurrentChain ? 'primary' : 'default'} disabled={isUploading} onClick={() => { closeActions(); handleFork(); }} />}

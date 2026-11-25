@@ -174,14 +174,14 @@ describe('ChainEditorHeader 工具栏', () => {
     const { container } = renderHeader({ chainId: 'asset-1', isCharacterMode, hasChanges: true, onTranslateMissingPrompts, handleReset });
     const actions = container.querySelector('.chain-editor-actions') as HTMLElement;
     expect(within(actions).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
-      '导入图片或 JSON 配置', isCharacterMode ? '保存自定义角色' : '保存风格串', '更多操作',
+      '导入图片或 JSON 配置', '翻译所有未翻译提示词', isCharacterMode ? '保存自定义角色' : '保存风格串', '更多操作',
     ]);
-    fireEvent.click(within(actions).getByRole('button', { name: '更多操作' }));
-    const desktopMore = screen.getByRole('dialog', { name: '更多操作' });
-    fireEvent.click(within(desktopMore).getByRole('button', { name: '翻译所有未翻译提示词' }));
+    fireEvent.click(within(actions).getByRole('button', { name: '翻译所有未翻译提示词' }));
     expect(onTranslateMissingPrompts).toHaveBeenCalledOnce();
     fireEvent.click(within(actions).getByRole('button', { name: '更多操作' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: /^重置当前模式/ }));
+    const desktopMore = screen.getByRole('dialog', { name: '更多操作' });
+    expect(within(desktopMore).queryByRole('button', { name: '翻译所有未翻译提示词' })).toBeNull();
+    fireEvent.click(within(desktopMore).getByRole('button', { name: /^重置当前模式/ }));
     expect(handleReset).toHaveBeenCalledOnce();
 
     resizeWorkspace(550);
