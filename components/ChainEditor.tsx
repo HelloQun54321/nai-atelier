@@ -52,7 +52,8 @@ import { buildLabDirtyFingerprint } from '../services/labDirtyState';
 import { compileCharacterContent, hasCharacterSections } from '../services/characterPrompts';
 import { LabModuleSection } from './LabModuleSection';
 import { Download } from 'lucide-react';
-import { getPastedImageFile, isTextPasteTarget } from '../services/imageClipboard';
+import { getPastedImageFile, hasPastedPlainText, isTextPasteTarget } from '../services/imageClipboard';
+import { createLabUndoHistory, redoLabHistory, recordLabUndoSnapshot, undoLabHistory, type LabUndoHistory } from '../services/labUndoHistory';
 import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags, isNativePromptText } from '../services/tagTranslations';
 import { UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
@@ -171,6 +172,23 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
     // --- Testing State ---
     const [activeModules, setActiveModules] = useState<Record<string, boolean>>({});
     const [finalPrompt, setFinalPrompt] = useState('');
+
+    interface TextUndoSnapshot {
+        basePrompt: string;
+        subjectPrompt: string;
+        negativePrompt: string;
+        params: NAIParams;
+        modules: PromptModule[];
+        activeModules: Record<string, boolean>;
+    }
+    interface EditUndoSnapshot {
+        draft: LabImageEditDraft;
+        baseImage: string | null;
+    }
+    const textUndoHistoryRef = useRef<LabUndoHistory<TextUndoSnapshot> | null>(null);
+    const applyingWorkspaceUndoRef = useRef(false);
+    const editUndoHistoryRef = useRef<Partial<Record<ImageEditOperation, LabUndoHistory<EditUndoSnapshot>>>>({});
+    const applyingEditUndoRef = useRef(false);
 
     const currentFingerprint = useMemo(() => buildLabDirtyFingerprint({
         basePrompt,
@@ -693,6 +711,15 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
             activeModules: initialModules,
         });
         const restoredDiffers = restoredFingerprint !== persistedFingerprint;
+        textUndoHistoryRef.current = createLabUndoHistory({
+            basePrompt: storedWorkspace.textToImage.basePrompt,
+            subjectPrompt: storedWorkspace.textToImage.subjectPrompt,
+            negativePrompt: storedWorkspace.textToImage.negativePrompt,
+            params: structuredClone(restoredParams),
+            modules: structuredClone(persistedModules),
+            activeModules: { ...initialModules },
+        }, restoredFingerprint);
+        editUndoHistoryRef.current = {};
         setBaselineFingerprint(chain.id === 'playground' ? restoredFingerprint : persistedFingerprint);
         if (restoredDiffers && chain.id !== 'playground') {
             notify('已恢复上次未保存的修改，保存后才会写回风格串');
@@ -1349,8 +1376,12 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
 
     const handleImportPasteRef = useRef<(event: ClipboardEvent) => void>(() => {});
     handleImportPasteRef.current = (event: ClipboardEvent) => {
-        if (!event.clipboardData) return;
-        if (isTextPasteTarget(event.target)) return;
+        if (event.defaultPrevented || !event.clipboardData) return;
+        const imageFile = getPastedImageFile(event.clipboardData);
+        if (isTextPasteTarget(event.target)) {
+            // 光标在输入框内时，仅接管“纯图片（不含纯文本）”以便直接导入，绝不劫持文字或 JSON 粘贴。
+            if (!imageFile || hasPastedPlainText(event.clipboardData)) return;
+        }
         if (reverseTagOpen || lightboxImg || agentProposal) return;
         const importPopoverOpen = Boolean(document.querySelector('[data-import-metadata-popover="true"]'));
         const otherDialog = Array.from(document.querySelectorAll('[role="dialog"]'))
@@ -1358,7 +1389,6 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         if (otherDialog) return;
         if (activeGenerationMode !== 'text-to-image' && !importPopoverOpen) return;
 
-        const imageFile = getPastedImageFile(event.clipboardData);
         if (imageFile) {
             event.preventDefault();
             void importMetadataFile(imageFile, { fromClipboard: true });
@@ -1390,6 +1420,155 @@ const perUseChannel = useNaiChannelMode() === 'per-use';
         const onPaste = (event: ClipboardEvent) => handleImportPasteRef.current(event);
         window.addEventListener('paste', onPaste);
         return () => window.removeEventListener('paste', onPaste);
+    }, []);
+
+    // 记录文生图工作台级的撤回快照，补齐导入覆盖、删除角色、调参与提示词词库填充的 Ctrl+Z / Ctrl+Shift+Z。
+    useEffect(() => {
+        if (baselineFingerprint === null) return;
+        if (applyingWorkspaceUndoRef.current) {
+            applyingWorkspaceUndoRef.current = false;
+            return;
+        }
+        const nextSnapshot: TextUndoSnapshot = {
+            basePrompt,
+            subjectPrompt,
+            negativePrompt,
+            params: structuredClone(params),
+            modules: structuredClone(modules),
+            activeModules: { ...activeModules },
+        };
+        const currentHistory = textUndoHistoryRef.current;
+        if (!currentHistory) {
+            textUndoHistoryRef.current = createLabUndoHistory(nextSnapshot, currentFingerprint);
+            return;
+        }
+        const previousSnapshot = currentHistory.present.value;
+        const onlyPromptChanged =
+            JSON.stringify(previousSnapshot.params) === JSON.stringify(nextSnapshot.params)
+            && JSON.stringify(previousSnapshot.modules) === JSON.stringify(nextSnapshot.modules)
+            && JSON.stringify(previousSnapshot.activeModules) === JSON.stringify(nextSnapshot.activeModules);
+        textUndoHistoryRef.current = recordLabUndoSnapshot(
+            currentHistory,
+            nextSnapshot,
+            currentFingerprint,
+            onlyPromptChanged ? 'prompt' : undefined,
+        );
+    }, [baselineFingerprint, currentFingerprint, basePrompt, subjectPrompt, negativePrompt, params, modules, activeModules]);
+
+    // 记录编辑三模式（图生图 / 局部重绘 / 扩图）的底图与草稿参数快照，供蒙版栈外统一 Ctrl+Z 兜底。
+    useEffect(() => {
+        if (!activeEditOperation || !activeEditDraft || imageEditBaseLoading) return;
+        if (applyingEditUndoRef.current) {
+            applyingEditUndoRef.current = false;
+            return;
+        }
+        const editFingerprint = JSON.stringify({
+            prompt: activeEditDraft.prompt,
+            negativePrompt: activeEditDraft.negativePrompt,
+            strength: activeEditDraft.strength,
+            noise: activeEditDraft.noise,
+            brushSize: activeEditDraft.brushSize,
+            focused: activeEditDraft.focused,
+            focusedRect: activeEditDraft.focusedRect,
+            expansion: activeEditDraft.expansion,
+            minimumContextArea: activeEditDraft.minimumContextArea,
+            baseImageRef: activeEditDraft.baseImageRef || null,
+            baseImage: imageEditBaseImage || null,
+            params: activeEditDraft.params,
+        });
+        const nextSnapshot: EditUndoSnapshot = {
+            draft: structuredClone(activeEditDraft),
+            baseImage: imageEditBaseImage,
+        };
+        const existing = editUndoHistoryRef.current[activeEditOperation];
+        if (!existing) {
+            editUndoHistoryRef.current[activeEditOperation] = createLabUndoHistory(nextSnapshot, editFingerprint, 20);
+            return;
+        }
+        const previous = existing.present.value;
+        const onlyEditPromptChanged =
+            previous.baseImage === nextSnapshot.baseImage
+            && previous.draft.baseImageRef === nextSnapshot.draft.baseImageRef
+            && previous.draft.strength === nextSnapshot.draft.strength
+            && previous.draft.noise === nextSnapshot.draft.noise
+            && JSON.stringify(previous.draft.params) === JSON.stringify(nextSnapshot.draft.params)
+            && JSON.stringify(previous.draft.focusedRect) === JSON.stringify(nextSnapshot.draft.focusedRect)
+            && JSON.stringify(previous.draft.expansion) === JSON.stringify(nextSnapshot.draft.expansion);
+        editUndoHistoryRef.current[activeEditOperation] = recordLabUndoSnapshot(
+            existing,
+            nextSnapshot,
+            editFingerprint,
+            onlyEditPromptChanged ? 'edit-prompt' : undefined,
+        );
+    }, [activeEditOperation, activeEditDraft, imageEditBaseImage, imageEditBaseLoading]);
+
+    const applyTextUndoSnapshot = (snapshot: TextUndoSnapshot, direction: 'undo' | 'redo') => {
+        applyingWorkspaceUndoRef.current = true;
+        editorRevisionRef.current += 1;
+        setBasePrompt(snapshot.basePrompt);
+        setSubjectPrompt(snapshot.subjectPrompt);
+        setNegativePrompt(snapshot.negativePrompt);
+        setParams(structuredClone(snapshot.params));
+        setModules(structuredClone(snapshot.modules));
+        setActiveModules({ ...snapshot.activeModules });
+        notify(direction === 'undo' ? '已撤回上一步修改' : '已重做修改');
+    };
+
+    const applyEditUndoSnapshot = (operation: ImageEditOperation, snapshot: EditUndoSnapshot, direction: 'undo' | 'redo') => {
+        applyingEditUndoRef.current = true;
+        const restoredDraft = structuredClone(snapshot.draft);
+        updateEditDraft(operation, restoredDraft);
+        setImageEditBaseImage(snapshot.baseImage);
+        setImageEditBaseVersion(previous => previous + 1);
+        if (snapshot.baseImage && restoredDraft.baseImageRef) {
+            void dataUrlToWorkspaceAsset(snapshot.baseImage, restoredDraft.baseImageRef)
+                .catch(error => console.warn('恢复编辑底图资产失败:', error));
+        } else if (!restoredDraft.baseImageRef) {
+            void deleteLabWorkspaceAsset(getLabWorkspaceAssetId(workspaceKey, operation, 'base'))
+                .catch(error => console.warn('清理编辑底图资产失败:', error));
+        }
+        notify(direction === 'undo' ? '已撤回上一步编辑修改' : '已重做编辑修改');
+    };
+
+    const handleWorkspaceUndoKeyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
+    handleWorkspaceUndoKeyDownRef.current = (event: KeyboardEvent) => {
+        if (event.defaultPrevented || event.isComposing || event.altKey || !(event.ctrlKey || event.metaKey)) return;
+        const key = event.key.toLowerCase();
+        if (key !== 'z' && key !== 'y') return;
+        if (modeTransitionRef.current || reverseTagOpen || lightboxImg || agentProposal) return;
+        if (document.querySelector('[role="dialog"]')) return;
+        if (isTextPasteTarget(event.target)) {
+            const inPromptField = event.target instanceof Element && Boolean(event.target.closest('[data-lab-prompt-field="true"]'));
+            if (!inPromptField) return;
+        }
+        const isRedo = key === 'y' || event.shiftKey;
+        if (activeGenerationMode === 'text-to-image' && textUndoHistoryRef.current) {
+            const result = isRedo
+                ? redoLabHistory(textUndoHistoryRef.current)
+                : undoLabHistory(textUndoHistoryRef.current);
+            if (result.restored) {
+                event.preventDefault();
+                textUndoHistoryRef.current = result.history;
+                applyTextUndoSnapshot(result.restored, isRedo ? 'redo' : 'undo');
+            }
+            return;
+        }
+        if (activeEditOperation) {
+            const currentHistory = editUndoHistoryRef.current[activeEditOperation];
+            if (!currentHistory) return;
+            const result = isRedo ? redoLabHistory(currentHistory) : undoLabHistory(currentHistory);
+            if (result.restored) {
+                event.preventDefault();
+                editUndoHistoryRef.current[activeEditOperation] = result.history;
+                applyEditUndoSnapshot(activeEditOperation, result.restored, isRedo ? 'redo' : 'undo');
+            }
+        }
+    };
+
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => handleWorkspaceUndoKeyDownRef.current(event);
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
     }, []);
 
     const handleImportImage = async (e: React.ChangeEvent<HTMLInputElement>) => {

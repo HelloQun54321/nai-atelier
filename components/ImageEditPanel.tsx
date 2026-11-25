@@ -13,7 +13,7 @@ import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageE
 import { useNaiRuntime } from '../services/naiRuntime';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { extractMetadata, parseNovelAIMetadata } from '../services/metadataService';
-import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
+import { getPastedImageFile, hasPastedPlainText, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
 import type { CollectionTarget } from '../services/collectionFavorites';
 import { getCopiedImageData, type ImageGenerationData } from '../services/imageClipboardContext';
 import { ImageEditControls } from './ImageEditControls';
@@ -469,28 +469,41 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   // 键盘快捷键 effect 为空依赖，需要经由 ref 始终调用最新一轮渲染的 undo/redo，
   // 否则会捕获首帧闭包里的 onDraftChange（其中 activeEditOperation 是挂载时的模式），
   // 把蒙版撤销写进另一个编辑模式的草稿。
-  const latestUndoRedoRef = useRef<{ undo: () => void; redo: () => void }>({ undo: () => {}, redo: () => {} });
+  const latestUndoRedoRef = useRef<{ undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean; isGenerating: boolean }>({
+    undo: () => {},
+    redo: () => {},
+    canUndo: false,
+    canRedo: false,
+    isGenerating: false,
+  });
   useEffect(() => {
-    latestUndoRedoRef.current = { undo, redo };
+    latestUndoRedoRef.current = {
+      undo,
+      redo,
+      canUndo: undoRef.current.length > 0,
+      canRedo: redoRef.current.length > 0,
+      isGenerating,
+    };
   });
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLElement && target.isContentEditable) return;
-      if (document.activeElement !== maskCanvasRef.current) return;
-      if (!(event.ctrlKey || event.metaKey)) return;
-      if (event.key.toLowerCase() === 'z') {
-        event.preventDefault();
-        if (event.shiftKey) latestUndoRedoRef.current.redo(); else latestUndoRedoRef.current.undo();
-      }
-      if (event.key.toLowerCase() === 'y') {
-        event.preventDefault();
-        latestUndoRedoRef.current.redo();
-      }
+      if (event.defaultPrevented || event.isComposing || event.altKey || !(event.ctrlKey || event.metaKey)) return;
+      if (latestUndoRedoRef.current.isGenerating) return;
+      if (isTextPasteTarget(event.target) || isTextPasteTarget(document.activeElement)) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      const key = event.key.toLowerCase();
+      if (key !== 'z' && key !== 'y') return;
+      const isRedo = key === 'y' || event.shiftKey;
+      const available = isRedo ? latestUndoRedoRef.current.canRedo : latestUndoRedoRef.current.canUndo;
+      if (!available) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (isRedo) latestUndoRedoRef.current.redo();
+      else latestUndoRedoRef.current.undo();
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, []);
 
   const getCanvasPoint = (event: React.PointerEvent<HTMLElement>) => {
@@ -826,14 +839,25 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (file) void importBaseImageFile(() => file);
   };
 
-  const handleBaseImagePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
-    if (isTextPasteTarget(event.target)) return;
+  const latestPasteHandlerRef = useRef<(event: ClipboardEvent) => void>(() => {});
+  latestPasteHandlerRef.current = (event: ClipboardEvent) => {
+    if (event.defaultPrevented || !event.clipboardData) return;
+    if (isGenerating || isLoading || isApplyingOutpaint) return;
+    if (document.querySelector('[role="dialog"]')) return;
     const file = getPastedImageFile(event.clipboardData);
     if (!file) return;
+    // 光标在输入框内时，若包含文字/混排内容保留浏览器原生粘贴；纯图片直接导入为底图。
+    if (isTextPasteTarget(event.target) && hasPastedPlainText(event.clipboardData)) return;
     event.preventDefault();
     event.stopPropagation();
     void importBaseImageFile(() => file, 'clipboard');
   };
+
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => latestPasteHandlerRef.current(event);
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, []);
 
   const hasDraggedImage = (dataTransfer: DataTransfer) => Array.from(dataTransfer.items || []).some(item => item.kind === 'file' && (item.type.startsWith('image/') || !item.type));
 
@@ -1179,7 +1203,6 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         onDragOver={handleBaseImageDragOver}
         onDragLeave={handleBaseImageDragLeave}
         onDrop={handleBaseImageDrop}
-        onPaste={handleBaseImagePaste}
         onPointerDownCapture={event => {
           if (!(event.target instanceof Element)) return;
           const control = event.target.closest('button, a, input, textarea, select, [contenteditable], [tabindex]');

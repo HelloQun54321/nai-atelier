@@ -380,12 +380,12 @@ it('文生图空白处 Ctrl+V 粘贴 JSON 元数据可直接导入，在输入�
   setup();
   await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
 
-  const dispatchPaste = (target: EventTarget, text: string) => {
+  const dispatchPaste = (target: EventTarget, text: string, files: File[] = []) => {
     const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
     Object.defineProperty(event, 'clipboardData', {
       value: {
-        files: [] as File[],
-        items: [] as DataTransferItem[],
+        files,
+        items: text ? [{ kind: 'string', type: 'text/plain' }] : [],
         getData: (type: string) => (type === 'text/plain' ? text : ''),
       },
     });
@@ -393,14 +393,24 @@ it('文生图空白处 Ctrl+V 粘贴 JSON 元数据可直接导入，在输入�
     return event;
   };
 
-  // 光标在文本框内时不拦截正常粘贴
+  // 光标在文本框内粘贴文本/JSON 时不拦截正常粘贴
   const insideEvent = dispatchPaste(textPrompt(), '{"prompt":"ignored","steps":20}');
   expect(insideEvent.defaultPrevented).toBe(false);
   expect(textPrompt().value).toBe('saved style, subject');
 
-  // 非输入框处直接 Ctrl+V JSON 配置触发导入
+  // 光标在文本框内粘贴纯图片（无纯文本）时直接触发导入
+  const imageInsideEvent = dispatchPaste(textPrompt(), '', [new File(['png'], 'paste.png', { type: 'image/png' })]);
+  expect(imageInsideEvent.defaultPrevented).toBe(true);
+
+  // 非输入框处直接 Ctrl+V JSON 配置触发导入，之后可用 Ctrl+Z 撤回、Ctrl+Shift+Z 重做
   const outsideEvent = dispatchPaste(document.body, JSON.stringify({ prompt: 'pasted prompt', uc: 'pasted uc', steps: 25, width: 832, height: 1216 }));
   expect(outsideEvent.defaultPrevented).toBe(true);
+  await waitFor(() => expect(textPrompt().value).toBe('pasted prompt'));
+
+  act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true })); });
+  await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
+
+  act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })); });
   await waitFor(() => expect(textPrompt().value).toBe('pasted prompt'));
 });
 

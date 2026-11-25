@@ -15,6 +15,13 @@ export const getPastedImageFile = (data: DataTransfer): File | null => {
   return null;
 };
 
+/** 判断剪贴板是否包含非空纯文本（用于输入框内区分“贴文字/混排”与“贴纯图片”）。 */
+export const hasPastedPlainText = (data: DataTransfer): boolean => {
+  const text = typeof data.getData === 'function' ? data.getData('text/plain') : '';
+  if (text && text.trim()) return true;
+  return Array.from(data.items || []).some(item => item.kind === 'string' && item.type === 'text/plain');
+};
+
 /** 提示词、数字输入和可编辑文字继续使用浏览器原本的粘贴行为。 */
 export const isTextPasteTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof Element)) return false;

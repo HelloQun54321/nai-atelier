@@ -143,18 +143,46 @@ describe('ImageEditPanel 图片粘贴', () => {
     expect(extractMetadata).not.toHaveBeenCalled();
   });
 
-  it('键盘粘贴接收图片，而提示词粘贴与普通文字不被劫持', async () => {
+  it('键盘粘贴支持全局贴图及输入框纯图片贴图，文字/混排与弹窗期间不被劫持', async () => {
     vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
     const props = panelProps();
-    const { container } = render(React.createElement(ImageEditPanel, props));
-    const zone = container.querySelector('[data-image-edit-drop-zone]')!;
+    render(React.createElement(ImageEditPanel, props));
+    const textarea = screen.getByLabelText('提示词');
     const file = new File(['image'], 'test.png', { type: 'image/png' });
-    const clipboardData = { files: [file], items: [] };
-    fireEvent.paste(screen.getByLabelText('提示词'), { clipboardData });
-    fireEvent.paste(zone, { clipboardData: { files: [], items: [{ kind: 'string', type: 'text/plain' }] } });
+
+    // 输入框内粘贴纯文本或文本+图片混排时不劫持
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        files: [file],
+        items: [{ kind: 'string', type: 'text/plain' }],
+        getData: (type: string) => (type === 'text/plain' ? 'hello' : ''),
+      },
+    });
+    // 页面非图片粘贴也不劫持
+    fireEvent.paste(document.body, {
+      clipboardData: { files: [], items: [{ kind: 'string', type: 'text/plain' }], getData: () => 'hello' },
+    });
     expect(props.onBaseImageChange).not.toHaveBeenCalled();
-    expect(fireEvent.paste(zone, { clipboardData })).toBe(false);
-    await waitFor(() => expect(props.onBaseImageChange).toHaveBeenCalledExactlyOnceWith(expect.any(String), 'clipboard'));
+
+    // 切模式后无需先点击编辑区，直接 Ctrl+V 即接收底图
+    expect(fireEvent.paste(document.body, {
+      clipboardData: { files: [file], items: [], getData: () => '' },
+    })).toBe(false);
+    await waitFor(() => expect(props.onBaseImageChange).toHaveBeenCalledTimes(1));
+
+    // 光标留在输入框时，纯图片粘贴同样直接导入为底图
+    expect(fireEvent.paste(textarea, {
+      clipboardData: { files: [file], items: [], getData: () => '' },
+    })).toBe(false);
+    await waitFor(() => expect(props.onBaseImageChange).toHaveBeenCalledTimes(2));
+
+    // 打开任意弹窗时让弹窗自行处理粘贴
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    document.body.appendChild(dialog);
+    fireEvent.paste(dialog, { clipboardData: { files: [file], items: [], getData: () => '' } });
+    dialog.remove();
+    expect(props.onBaseImageChange).toHaveBeenCalledTimes(2);
   });
 
   it('图片损坏或保存失败时显示原因，损坏图片不提交底图', async () => {

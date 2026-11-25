@@ -960,25 +960,27 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const promptActions = <>{reverseAction}{tidyAction}{libraryAction}{clearAction}</>;
 
   return (
-    <div className={`group relative ${containerClassName}`} onKeyDownCapture={event => {
+    <div data-lab-prompt-field="true" className={`group relative ${containerClassName}`} onKeyDownCapture={event => {
       if (libraryInfo || (event.target as HTMLElement).closest('[data-prompt-library-info]')) return;
       if (event.nativeEvent.isComposing) return;
       const field = (event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]');
       const key = event.key.toLowerCase();
-      if ((!tagAssistEnabled || !showTranslations) && clearActionState && (event.ctrlKey || event.metaKey) && field === textareaRef.current) {
-        const redo = key === 'y' || (key === 'z' && event.shiftKey);
-        if ((clearActionState === 'cleared' && key === 'z' && !event.shiftKey && moveHistory())
-          || (clearActionState === 'undone' && redo && moveHistory(true))) {
-          event.preventDefault();
-          event.stopPropagation();
-          textareaRef.current?.focus();
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && (!field || field === textareaRef.current)) {
+        if (key === 'z' || key === 'y') {
+          const redo = key === 'y' || event.shiftKey;
+          if (moveHistory(redo)) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (field === textareaRef.current) textareaRef.current?.focus();
+            return;
+          }
+          // 输入框自身历史为空时不拦截事件，交由外层工作台 Ctrl+Z 兜底。
         }
-        return;
       }
       if (!tagAssistEnabled || !showTranslations) return;
-      if ((event.ctrlKey || event.metaKey) && (!field || field === textareaRef.current)) {
-        if ((key === 'z' || key === 'y') && moveHistory(key === 'y' || event.shiftKey)) { event.preventDefault(); event.stopPropagation(); }
-        if (key === 'a' && !field) { event.preventDefault(); setSelectedTagIds(new Set(promptTokens.map(token => token.id))); }
+      if ((event.ctrlKey || event.metaKey) && !field && key === 'a') {
+        event.preventDefault();
+        setSelectedTagIds(new Set(promptTokens.map(token => token.id)));
       }
       if (event.key === 'Escape' && (deleteMode || muteMode)) { event.preventDefault(); event.stopPropagation(); setDeleteMode(false); setMuteMode(false); clearSelection(); }
     }}>

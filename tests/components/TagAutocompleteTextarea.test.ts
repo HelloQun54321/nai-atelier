@@ -597,18 +597,25 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     fireEvent.keyDown(textarea, { key: 'z', metaKey: true }); expect(textarea.value).toBe('slot prompt');
   });
 
-  it('关闭 Tag 辅助后仍可用 Ctrl/Cmd+Z 撤销清空并用重做快捷键恢复清空', () => {
+  it('关闭 Tag 辅助后仍可用 Ctrl/Cmd+Z 撤销清空与普通输入，并用重做快捷键恢复', () => {
     render(React.createElement(Harness, { initial: 'alpha', tagAssistEnabled: false, showTranslations: true }));
     const textarea = screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement;
+
+    fireEvent.change(textarea, { target: { value: 'alpha, beta' } });
+    expect(textarea.value).toBe('alpha, beta');
+    fireEvent.keyDown(textarea, { key: 'z', ctrlKey: true });
+    expect(textarea.value).toBe('alpha');
+    fireEvent.keyDown(textarea, { key: 'y', ctrlKey: true });
+    expect(textarea.value).toBe('alpha, beta');
 
     fireEvent.click(screen.getByRole('button', { name: '清空当前提示词' }));
     expect(textarea.value).toBe('');
     fireEvent.keyDown(textarea, { key: 'z', ctrlKey: true });
-    expect(textarea.value).toBe('alpha');
+    expect(textarea.value).toBe('alpha, beta');
     fireEvent.keyDown(textarea, { key: 'z', metaKey: true, shiftKey: true });
     expect(textarea.value).toBe('');
     fireEvent.keyDown(textarea, { key: 'z', metaKey: true });
-    expect(textarea.value).toBe('alpha');
+    expect(textarea.value).toBe('alpha, beta');
   });
 
   it('清空退出 Tag 删除模式、清除选择与候选，之后撤销恢复未选中的原文', async () => {
