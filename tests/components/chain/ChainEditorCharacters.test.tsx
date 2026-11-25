@@ -243,7 +243,7 @@ describe('共用角色编辑器', () => {
   it('定位展开区提供当前角色 X／Y，改数字挪点并只改对应角色', () => {
     render(<Harness freeform />);
     expect(screen.queryByRole('spinbutton', { name: '角色 1 水平位置' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '角色定位' }));
+    fireEvent.click(screen.getByRole('button', { name: '手动定位' }));
     expect(screen.getByRole('group', { name: '角色 1 坐标' })).toBeTruthy();
     const x = screen.getByRole('spinbutton', { name: '角色 1 水平位置' });
     fireEvent.change(x, { target: { value: '0.42' } }); fireEvent.blur(x);
@@ -293,7 +293,8 @@ describe('共用角色编辑器', () => {
   it('定位区数字框清空／越界归一化，模型切换不改存量草稿', () => {
     const { rerender } = render(<Harness />);
     expect(screen.getByRole('button', { name: '自动构图' }).getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(screen.getByRole('button', { name: '角色定位' }));
+    expect((screen.getByRole('button', { name: '角色定位' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '手动定位' }));
     const x = screen.getByRole('spinbutton', { name: '角色 1 水平位置' });
     expect((x as HTMLInputElement).value).toBe('0.3');
     fireEvent.change(x, { target: { value: '' } });
@@ -347,21 +348,25 @@ describe('共用角色编辑器', () => {
     expect(document.activeElement).toBe(positiveBox());
   });
 
-  it('定位区默认收起，方向键定位自动开启手动坐标，停用角色退出画布', () => {
+  it('自动构图下定位画布禁用，切换手动定位后展开画布并支持微调与停用退场，切回自动构图自动收起', () => {
     render(<Harness />);
     expect(screen.queryByRole('group', { name: '角色定位画布' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '角色定位' }));
+    expect((screen.getByRole('button', { name: '角色定位' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '手动定位' }));
+    expect((screen.getByRole('button', { name: '角色定位' }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.keyDown(screen.getByRole('button', { name: '定位角色 1' }), { key: 'ArrowRight' });
     expect(draft()).toMatchObject({ useCoords: true, characters: [{ x: 0.5, y: 0.9 }, {}] });
     fireEvent.click(screen.getByRole('switch', { name: '启用角色 1' }));
     expect(screen.queryByRole('button', { name: '定位角色 1' })).toBeNull();
     expect(screen.getByRole('button', { name: '定位角色 2' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '角色定位' }));
+    fireEvent.click(screen.getByRole('button', { name: '自动构图' }));
     expect(screen.queryByRole('group', { name: '角色定位画布' })).toBeNull();
+    expect((screen.getByRole('button', { name: '角色定位' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('只读时不能改开关、顺序、位置或删除', () => {
-    render(<Harness canEdit={false} />);
+    const readonlyInitial = { ...initial, useCoords: true };
+    render(<Harness canEdit={false} initialParams={readonlyInitial} />);
     expect(screen.getAllByRole('button', { name: '清空当前提示词' }).every(button => (button as HTMLButtonElement).disabled)).toBe(true);
     expect((screen.getByRole('switch', { name: '启用角色 1' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: '自动构图' }) as HTMLButtonElement).disabled).toBe(true);
@@ -372,6 +377,6 @@ describe('共用角色编辑器', () => {
     fireEvent.click(screen.getByRole('button', { name: '角色定位' }));
     expect((screen.getByRole('spinbutton', { name: '角色 1 水平位置' }) as HTMLInputElement).disabled).toBe(true);
     fireEvent.keyDown(screen.getByRole('button', { name: '定位角色 1' }), { key: 'ArrowRight' });
-    expect(draft()).toEqual(initial);
+    expect(draft()).toEqual(readonlyInitial);
   });
 });

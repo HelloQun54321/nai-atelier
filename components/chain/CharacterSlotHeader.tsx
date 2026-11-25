@@ -286,7 +286,10 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
                   type="button"
                   disabled={!canEdit}
                   aria-pressed={!useCoords}
-                  onClick={() => onUseCoordsChange(false)}
+                  onClick={() => {
+                    onUseCoordsChange(false);
+                    if (positionOpen) onTogglePosition();
+                  }}
                   style={{ borderRadius: 'max(0.25rem, calc(var(--workspace-control-radius, 0.5rem) - 2px))', height: '100%', minHeight: 0 }}
                   className={`inline-flex shrink-0 items-center justify-center border-0 px-2.5 text-xs font-semibold leading-none transition-colors disabled:opacity-40 ${!useCoords
                     ? 'bg-white text-[var(--nai-accent)] shadow-xs dark:bg-[#0d8bf2]/25 dark:text-[#7cc4ff]'
@@ -312,18 +315,19 @@ export const CharacterSlotHeader: React.FC<CharacterSlotHeaderProps> = ({
               </div>
               <button
                 type="button"
+                disabled={!useCoords}
                 aria-label={t('角色定位')}
-                aria-expanded={positionOpen}
-                title={coordinateHint || t('展开或收起角色定位画布')}
+                aria-expanded={useCoords && positionOpen}
+                title={!useCoords ? t('切换到「手动定位」后可展开定位画布') : (coordinateHint || t('展开或收起角色定位画布'))}
                 onClick={onTogglePosition}
                 style={{ borderRadius: 'var(--workspace-control-radius, 0.5rem)' }}
-                className={`mobile-touch inline-flex h-8 shrink-0 items-center gap-1 border px-2.5 text-xs font-medium transition-colors ${positionOpen
+                className={`mobile-touch inline-flex h-8 shrink-0 items-center gap-1 border px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${useCoords && positionOpen
                   ? 'border-[color-mix(in_srgb,var(--nai-accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--nai-accent)_12%,transparent)] text-[var(--nai-accent)] dark:text-[#7cc4ff]'
                   : 'border-gray-200/80 bg-white/80 text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-200 dark:hover:bg-white/10'}`}
               >
                 <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 <span>{t('定位画布')}</span>
-                {positionOpen
+                {useCoords && positionOpen
                   ? <ChevronUp className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden="true" />
                   : <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden="true" />}
               </button>

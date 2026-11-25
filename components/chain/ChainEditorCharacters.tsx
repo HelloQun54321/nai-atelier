@@ -187,7 +187,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                 onReorderCharacters={handleReorder}
             />
 
-            {positionOpen && <CharacterPositionStage key={scopeKey} characters={characters} freeform={freeformPosition}
+            {params.useCoords === true && positionOpen && <CharacterPositionStage key={scopeKey} characters={characters} freeform={freeformPosition}
                 width={positionSize?.width || params.width} height={positionSize?.height || params.height} image={positionImage}
                 canEdit={canEdit} useCoords={params.useCoords === true} onPosition={(index, position) => {
                     // 同一次更新写入手动开关与位置，避免两个草稿更新互相覆盖。
