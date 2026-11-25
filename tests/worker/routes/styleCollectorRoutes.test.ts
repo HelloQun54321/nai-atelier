@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { encode } from 'fast-png';
+import sharp from 'sharp';
 import { describe, it, expect } from 'vitest';
 import { handleStyleCollectorRoute } from '../../../worker/routes/styleCollectorRoutes';
 import { INIT_SQL, type D1Database, type RouteContext } from '../../../worker/routes/types';
@@ -187,5 +188,17 @@ describe('后台收集原子入库（隔离 SQLite 与内存封面）', () => {
     expect(await valid?.json()).toMatchObject({ outcome: 'saved' });
     const invalid = await f.invoke('import', { session: f.session, image: Buffer.from('<html>not an image</html>').toString('base64'), rawMetadata: JSON.stringify(metadata) });
     expect(invalid?.status).toBe(400); expect(f.assets.size).toBe(1); f.sqlite.close();
+  });
+  it('风格串模式支持保存 WebP 原图并按内容哈希去重', async () => {
+    const f = fixture(); await f.invoke('session', { session: f.session });
+    const webp = await sharp(Buffer.from(png(), 'base64')).webp({ lossless: true }).toBuffer();
+    const first = await f.invoke('import', { session: f.session, image: webp.toString('base64'), rawMetadata: JSON.stringify(metadata), name: 'codex.webp' });
+    expect(await first?.json()).toMatchObject({ outcome: 'saved' });
+    const row = f.sqlite.prepare('SELECT preview_image, base_prompt FROM chains').get() as any;
+    expect(row.preview_image).toMatch(/^\/api\/assets\/covers\/collector\/.+\.webp$/);
+    expect(row.base_prompt).toBe(metadata.prompt);
+    const second = await f.invoke('import', { session: f.session, image: webp.toString('base64'), rawMetadata: JSON.stringify(metadata), name: 'codex.webp' });
+    expect(await second?.json()).toMatchObject({ outcome: 'skipped' });
+    expect(f.assets.size).toBe(1); f.sqlite.close();
   });
 });

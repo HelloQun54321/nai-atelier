@@ -6,6 +6,7 @@ import {
   extractRawMetadataFromJsonText,
   parseNovelAIMetadata,
 } from '../../services/metadataService';
+import { isWebpWithAlpha } from '../../services/pngMetadata.mjs';
 
 const encoder = new TextEncoder();
 
@@ -318,5 +319,23 @@ describe('NovelAI Stealth PNG 元数据', () => {
   it('无 Stealth 签名返回 null', async () => {
     const rgba = new Uint8ClampedArray(64 * 64 * 4);
     expect(await extractNovelAiStealthMetadataFromRgba(rgba, 64, 64)).toBeNull();
+  });
+
+  it('准确识别带 Alpha 通道的 RIFF WebP', () => {
+    const webp = (chunks: Array<[string, Uint8Array]>) => concatBytes(
+      encoder.encode('RIFF'),
+      new Uint8Array(4),
+      encoder.encode('WEBP'),
+      ...chunks.map(([type, data]) => concatBytes(
+        encoder.encode(type),
+        new Uint8Array([data.length & 0xff, (data.length >> 8) & 0xff, (data.length >> 16) & 0xff, (data.length >> 24) & 0xff]),
+        data,
+        data.length & 1 ? new Uint8Array([0]) : new Uint8Array(),
+      )),
+    );
+    expect(isWebpWithAlpha(webp([['VP8X', new Uint8Array([0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0])]]))).toBe(true);
+    expect(isWebpWithAlpha(webp([['VP8L', new Uint8Array([0x2f, 0, 0, 0, 0])]]))).toBe(true);
+    expect(isWebpWithAlpha(webp([['VP8X', new Uint8Array([0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0])], ['VP8 ', new Uint8Array(4)]]))).toBe(false);
+    expect(isWebpWithAlpha(encoder.encode('not-webp'))).toBe(false);
   });
 });

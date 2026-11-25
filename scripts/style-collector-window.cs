@@ -3,7 +3,9 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Net;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
@@ -61,8 +63,47 @@ public sealed class AtelierCollectorWindow {
     void SavePosition() { positionDirty=false; var position=view.PhysicalPosition(); Emit(new {type="position",session=session,x=(int)Math.Round(position.X),y=(int)Math.Round(position.Y),collapsed=view.Collapsed}); }
     uint CurrentSequence() { return test ? sequence : GetClipboardSequenceNumber(); }
     void Emit(object value) { Console.WriteLine(json.Serialize(value)); Console.Out.Flush(); }
-    void CandidateImage(byte[] bytes) { if (!receiving || target == "content") return; if (bytes.Length > 12*1024*1024) { Emit(new { type = "capture-error", session = session, mode = target, error = "图片超过存储大小上限" }); return; } Emit(new { type = "image", session = session, image = Convert.ToBase64String(bytes), mode = target }); }
+    void CandidateImage(byte[] bytes, string sourceUrl = "") { if (!receiving || target == "content") return; if (bytes.Length > 12*1024*1024) { Emit(new { type = "capture-error", session = session, mode = target, error = "图片超过存储大小上限" }); return; } Emit(new { type = "image", session = session, image = Convert.ToBase64String(bytes), sourceUrl = sourceUrl ?? "", mode = target }); }
     void CandidateFiles(System.Collections.IEnumerable paths) { if (!receiving || target == "content") return; foreach (object value in paths) { string path = value as string; if (!String.IsNullOrEmpty(path) && Path.IsPathRooted(path) && Regex.IsMatch(path, @"\.(png|jpe?g|webp)$", RegexOptions.IgnoreCase)) Emit(new { type = "file", session = session, path = path, mode = target }); } }
+    static string ExtractHtmlFragment(string html) {
+        if (String.IsNullOrEmpty(html)) return "";
+        int start = html.IndexOf("<!--StartFragment-->", StringComparison.Ordinal);
+        int end = html.IndexOf("<!--EndFragment-->", StringComparison.Ordinal);
+        if (start >= 0 && end > start) {
+            start += "<!--StartFragment-->".Length;
+            return html.Substring(start, end - start);
+        }
+        return html;
+    }
+    public static string ExtractHtmlImageUrl(string html) {
+        string fragment = ExtractHtmlFragment(html);
+        if (String.IsNullOrWhiteSpace(fragment)) return "";
+        MatchCollection matches = Regex.Matches(fragment, @"<img\b[^>]*\bsrc\s*=\s*(?:""([^""]+)""|'([^']+)'|([^\s""'=<>`]+))", RegexOptions.IgnoreCase);
+        if (matches.Count != 1) return "";
+        Match m = matches[0];
+        string raw = m.Groups[1].Success ? m.Groups[1].Value : (m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value);
+        string decoded = WebUtility.HtmlDecode(raw).Trim();
+        return IsCandidate(decoded) ? decoded : "";
+    }
+    string TryReadClipboardHtmlImageUrlLocked() {
+        try {
+            uint htmlFmt = RegisterClipboardFormat("HTML Format");
+            if (htmlFmt == 0 || !IsClipboardFormatAvailable(htmlFmt)) return "";
+            IntPtr memory = GetClipboardData(htmlFmt);
+            if (memory == IntPtr.Zero) return "";
+            ulong size = GlobalSize(memory).ToUInt64();
+            if (size == 0 || size > 65536UL) return "";
+            IntPtr value = GlobalLock(memory);
+            if (value == IntPtr.Zero) return "";
+            try {
+                byte[] bytes = new byte[(int)size];
+                Marshal.Copy(value, bytes, 0, bytes.Length);
+                int length = Array.IndexOf(bytes, (byte)0);
+                if (length < 0) length = bytes.Length;
+                return ExtractHtmlImageUrl(Encoding.UTF8.GetString(bytes, 0, length));
+            } finally { GlobalUnlock(memory); }
+        } catch { return ""; }
+    }
     bool ReadClipboardImage() {
         try {
             if (Clipboard.ContainsFileDropList()) { CandidateFiles(Clipboard.GetFileDropList()); sequence = CurrentSequence(); readAttempts = 0; return true; }
@@ -70,13 +111,21 @@ public sealed class AtelierCollectorWindow {
             if (IsClipboardFormatAvailable(png)) {
                 if (!OpenClipboard(Handle)) { readAttempts++; return true; }
                 try {
-                    IntPtr memory = GetClipboardData(png); ulong size = GlobalSize(memory).ToUInt64(); if (size > 12*1024*1024) throw new InvalidOperationException("图片超过存储大小上限");
+                    string sourceUrl = TryReadClipboardHtmlImageUrlLocked();
+                    IntPtr memory = GetClipboardData(png); if (memory == IntPtr.Zero) throw new InvalidOperationException("剪贴板图片无法读取，请重新复制");
+                    ulong size = GlobalSize(memory).ToUInt64(); if (size > 12*1024*1024) throw new InvalidOperationException("图片超过存储大小上限");
                     IntPtr value = GlobalLock(memory); if (value == IntPtr.Zero) throw new InvalidOperationException("剪贴板图片无法读取，请重新复制");
-                    try { var bytes = new byte[(int)size]; Marshal.Copy(value, bytes, 0, bytes.Length); CandidateImage(bytes); } finally { GlobalUnlock(memory); }
+                    try { var bytes = new byte[(int)size]; Marshal.Copy(value, bytes, 0, bytes.Length); CandidateImage(bytes, sourceUrl); } finally { GlobalUnlock(memory); }
                 } finally { CloseClipboard(); }
             } else {
+                string sourceUrl = "";
+                uint htmlFmt = RegisterClipboardFormat("HTML Format");
+                if (htmlFmt != 0 && IsClipboardFormatAvailable(htmlFmt)) {
+                    if (!OpenClipboard(Handle)) { readAttempts++; return true; }
+                    try { sourceUrl = TryReadClipboardHtmlImageUrlLocked(); } finally { CloseClipboard(); }
+                }
                 if (!Clipboard.ContainsImage()) return false;
-                using (var image = Clipboard.GetImage()) { if (image == null) return false; if ((long)image.Width*image.Height > 40000000) throw new InvalidOperationException("图片像素超过上限"); using (var stream = new MemoryStream()) { image.Save(stream, System.Drawing.Imaging.ImageFormat.Png); CandidateImage(stream.ToArray()); } }
+                using (var image = Clipboard.GetImage()) { if (image == null) return false; if ((long)image.Width*image.Height > 40000000) throw new InvalidOperationException("图片像素超过上限"); using (var stream = new MemoryStream()) { image.Save(stream, System.Drawing.Imaging.ImageFormat.Png); CandidateImage(stream.ToArray(), sourceUrl); } }
             }
             sequence = CurrentSequence(); readAttempts = 0; return true;
         } catch (ExternalException) { readAttempts++; return true; }
@@ -99,6 +148,10 @@ public sealed class AtelierCollectorWindow {
     public static bool IsCandidate(string text) {
         if (String.IsNullOrWhiteSpace(text) || text.Length > 8192) return false; text = text.Trim(); if (Regex.IsMatch(text, @"\s")) return false;
         Uri uri; if (!Uri.TryCreate(text, UriKind.Absolute, out uri) || (uri.Scheme != "http" && uri.Scheme != "https") || uri.UserInfo != "") return false;
+        if (uri.Scheme == "https" && uri.IsDefaultPort && String.Equals(uri.Host, "novelai.quicktagcloud.com", StringComparison.OrdinalIgnoreCase)) {
+            if (Regex.IsMatch(uri.AbsolutePath, @"^/share/[^/]+/[^/]+/?$")) return true;
+            if (String.Equals(uri.AbsolutePath, "/strings.html", StringComparison.Ordinal) && Regex.IsMatch(uri.Query ?? "", @"[?&]entry=[^&#]+")) return true;
+        }
         return Regex.IsMatch(Uri.UnescapeDataString(uri.AbsolutePath), @"\.(png|jpe?g|webp|gif|avif)$", RegexOptions.IgnoreCase) || ((uri.Host == "cdn.discordapp.com" || uri.Host == "media.discordapp.net") && Regex.IsMatch(uri.AbsolutePath, @"^/attachments/\d+/\d+/"));
     }
     void Candidate(string text) { if (!receiving) return; if (target == "content") { if (!String.IsNullOrWhiteSpace(text)) Emit(new { type = "text", session = session, text = text, mode = target, category = state.Category }); } else if (IsCandidate(text)) Emit(new { type = "link", session = session, url = text.Trim(), mode = target }); }
@@ -138,7 +191,7 @@ public sealed class AtelierCollectorWindow {
                         view.UpdateState(state); if(test) ReportWindow();
                     }
                 } else if(test && command=="inject") { sequence++; Candidate(Str(d,"text")); }
-                else if(test && command=="inject-image") { sequence++; CandidateImage(Convert.FromBase64String(Str(d,"image"))); }
+                else if(test && command=="inject-image") { sequence++; string html = Str(d, "html"); string src = !String.IsNullOrEmpty(html) ? ExtractHtmlImageUrl(html) : Str(d, "sourceUrl"); CandidateImage(Convert.FromBase64String(Str(d,"image")), src); }
                 else if(test && command=="inject-files") { sequence++; CandidateFiles(d["paths"] as System.Collections.IEnumerable); }
                 else if(test && command=="collapse") { view.ToggleCollapsed(); ReportWindow(); }
                 else if(test && command=="snapshot") view.Snapshot(Str(d,"path"));

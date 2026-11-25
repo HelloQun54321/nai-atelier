@@ -1,5 +1,5 @@
 import { parseNovelAIMetadata } from '../../services/metadataService';
-import { extractPngMetadata, hasCollectibleNaiMetadata } from '../../services/pngMetadata.mjs';
+import { extractImageMetadata, hasCollectibleNaiMetadata } from '../../services/pngMetadata.mjs';
 import { readImageDimensions } from '../imageDimensions.mjs';
 import { UNTESTED_CHAIN_TAG } from '../../services/chainStatus';
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
@@ -9,6 +9,20 @@ import { json, error, MAX_MANAGED_IMAGE_BYTES, parseStoredJson, type RouteContex
 
 const SESSION_KEY = 'style_collector_session_v1';
 const POSITION_KEY = 'style_collector_position_v1';
+
+function detectImportImageFormat(bytes: Uint8Array) {
+  if (bytes.length >= 8 && [137, 80, 78, 71, 13, 10, 26, 10].every((v, i) => bytes[i] === v)) {
+    return { dimFormat: 'png' as const, ext: 'png', contentType: 'image/png' };
+  }
+  if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+    return { dimFormat: 'webp' as const, ext: 'webp', contentType: 'image/webp' };
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return { dimFormat: 'jpg' as const, ext: 'jpg', contentType: 'image/jpeg' };
+  }
+  return null;
+}
 
 function collectedMetadata(raw: string, mappings: unknown) {
   const parsed = parseNovelAIMetadata(raw, undefined, mappings as Parameters<typeof parseNovelAIMetadata>[2]);
@@ -110,18 +124,19 @@ export async function handleStyleCollectorRoute(ctx: RouteContext): Promise<Resp
       return json({ outcome: 'saved', id });
     } finally { if (!committed) await env.BUCKET.delete(key); }
   }
+  const detected = detectImportImageFormat(bytes);
+  if (!detected) return error('Invalid image', 400);
+  try {
+    const size = readImageDimensions(bytes, detected.dimFormat);
+    if (size.width * size.height > 40_000_000) return error('图片像素超过上限', 413);
+  } catch { return error('Invalid image', 400); }
   let raw: string | null;
   if (typeof body.rawMetadata === 'string') {
     // 仅内部网关提供已完整解码、CRC 校验的结果；避免 Worker 重复分配数千万像素。
     if (body.rawMetadata.length > 4 * 1024 * 1024) return error('生成信息过大', 413);
-    try {
-      if (![137, 80, 78, 71, 13, 10, 26, 10].every((v, i) => bytes[i] === v)) return error('Invalid PNG', 400);
-      const size = readImageDimensions(bytes, 'png');
-      if (size.width * size.height > 40_000_000) return error('图片像素超过上限', 413);
-    } catch { return error('Invalid PNG', 400); }
     raw = body.rawMetadata;
   } else {
-    raw = await extractPngMetadata(bytes, { validatePixels: true, collectibleOnly: true });
+    raw = await extractImageMetadata(bytes, { validatePixels: true, collectibleOnly: true });
   }
   if (!raw || !hasCollectibleNaiMetadata(raw)) return json({ outcome: 'skipped', reason: '图片没有有效的 NovelAI 生成信息' });
   const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes.slice().buffer)), b => b.toString(16).padStart(2, '0')).join('');
@@ -130,14 +145,14 @@ export async function handleStyleCollectorRoute(ctx: RouteContext): Promise<Resp
   if (previous?.value && await db.prepare('SELECT id FROM chains WHERE id = ?').bind(previous.value).first()) return json({ outcome: 'skipped', reason: '图片已收集' });
   const parsed = collectedMetadata(raw, body.metadataModelMappings);
   const id = crypto.randomUUID();
-  const key = `covers/collector/${crypto.randomUUID()}.png`;
+  const key = `covers/collector/${crypto.randomUUID()}.${detected.ext}`;
   const preview = `/api/assets/${key}`;
   const now = Date.now();
   const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 200) : `收集 ${new Date(now).toISOString()}`;
   const provenance = JSON.stringify({ source: body.sourceUrl, finalUrl: body.finalUrl, collectedAt: now, sha256: hash, metadata: raw });
   let committed = false;
   try {
-    await env.BUCKET.put(key, bytes.slice().buffer, { httpMetadata: { contentType: 'image/png' } });
+    await env.BUCKET.put(key, bytes.slice().buffer, { httpMetadata: { contentType: detected.contentType } });
     // 事务中的条件读取隔离结束与迟到提交；映射跟随同一次事务，不留下空风格串。
     const results = await db.batch([
       db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at)

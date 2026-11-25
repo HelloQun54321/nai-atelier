@@ -6,8 +6,9 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { open } from 'node:fs/promises';
 import { basename, isAbsolute } from 'node:path';
-import { extractPngMetadata, hasCollectibleNaiMetadata } from '../services/pngMetadata.mjs';
-import { collectorErrorReason, downloadCollectorImage, imageLink } from './collector-download.mjs';
+import { extractImageMetadata, extractNovelAiStealthMetadataFromRgba, extractPngMetadata, hasCollectibleNaiMetadata, isWebpWithAlpha } from '../services/pngMetadata.mjs';
+import { collectorErrorReason, downloadCollectorImage, downloadCollectorText, imageLink } from './collector-download.mjs';
+import { codexOriginalCandidates, isCodexShareUrl, isNotFoundDownloadError, resolveCodexShareCover } from './codex-collector-resolve.mjs';
 import { normalizeLanguage, translate } from '../locales/index.mjs';
 import { CUPERTINO_WALLPAPERS, normalizeThemeBackground } from '../services/themeBackgroundData.mjs';
 
@@ -143,9 +144,58 @@ export async function windowsCollector({ session, position, onEvent, selfTest = 
   }, command, close() { send({ command: 'stop' }); child.stdin.end(); setTimeout(() => { if (alive) child.kill(); }, 1500).unref(); } };
 }
 
+function urlFilename(rawUrl) {
+  if (!rawUrl) return '';
+  try { return decodeURIComponent(new URL(rawUrl).pathname.split('/').pop() || ''); } catch { return ''; }
+}
+
+function isPngBytes(bytes) {
+  return bytes && bytes.length >= 8 && Buffer.from(bytes.subarray(0, 8)).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+}
+
+function isWebpBytes(bytes) {
+  return bytes && bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
+}
+
+function isJpegBytes(bytes) {
+  return bytes && bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+}
+
+async function extractCollectorImageMetadata(bytes) {
+  let raw = null;
+  let skipReason = '未找到有效 NovelAI 生成信息';
+  if (isPngBytes(bytes)) {
+    try { raw = await extractPngMetadata(bytes, { validatePixels: true, collectibleOnly: true }); }
+    catch (error) { raw = null; skipReason = collectorErrorReason(error); }
+    return { raw, skipReason };
+  }
+  if (isWebpBytes(bytes)) {
+    try {
+      raw = await extractImageMetadata(bytes, { validatePixels: true, collectibleOnly: true });
+      if (!raw && isWebpWithAlpha(bytes)) {
+        const { data, info } = await sharp(bytes, { limitInputPixels: 40_000_000 }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+        if (info.width * info.height > 40_000_000) throw new Error('图片像素超过上限');
+        const stealth = await extractNovelAiStealthMetadataFromRgba(new Uint8Array(data.buffer, data.byteOffset, data.byteLength), info.width, info.height);
+        raw = stealth && hasCollectibleNaiMetadata(stealth) ? stealth : null;
+      }
+    } catch (error) {
+      raw = null;
+      skipReason = collectorErrorReason(error);
+    }
+    return { raw, skipReason };
+  }
+  if (isJpegBytes(bytes)) {
+    try { raw = await extractImageMetadata(bytes, { validatePixels: true, collectibleOnly: true }); }
+    catch (error) { raw = null; skipReason = collectorErrorReason(error); }
+    return { raw, skipReason };
+  }
+  return { raw: null, skipReason: '内容不是支持收集的 PNG / WebP 原图' };
+}
+
 export class StyleCollector extends EventEmitter {
-  constructor({ worker, download = downloadCollectorImage, listener = windowsCollector, platform = process.platform, proxyUrl = '', modelMappings = () => ({}) }) {
-    super(); Object.assign(this, { worker, download, listener, platform, proxyUrl, modelMappings });
+  constructor({ worker, download = downloadCollectorImage, resolveCodexShare = null, listener = windowsCollector, platform = process.platform, proxyUrl = '', modelMappings = () => ({}) }) {
+    super(); Object.assign(this, { worker, download, resolveCodexShare, listener, platform, proxyUrl, modelMappings });
     this.run = null; this.control = Promise.resolve(); this.disposed = false;
     this.appearance = { themeMode: 'system', isDark: true, accentColor: '#0ea5e9', motion: 'full' };
     this.wallpapers = {};
@@ -248,7 +298,7 @@ export class StyleCollector extends EventEmitter {
         if (this.run !== run || run.abort.signal.aborted) return;
         if (event.type === 'listening') { run.state.enabled = true; this.publish(run); }
         if (event.type === 'link') this.accept(run, event.url, event.mode);
-        if (event.type === 'image') this.acceptImage(run, event.image, event.mode);
+        if (event.type === 'image') this.acceptImage(run, event.image, event.mode, event.sourceUrl);
         if (event.type === 'file') this.acceptFile(run, event.path, event.mode);
         if (event.type === 'capture-error') { const record = run.state.records[event.mode] || run.state.records[run.state.mode]; record.failed++; record.detail = `失败：${collectorErrorReason(new Error(event.error))}`; this.publish(run); }
         if (event.type === 'mode') void this.command('mode', event.mode).catch(error => this.failListener(run, error));
@@ -287,7 +337,7 @@ export class StyleCollector extends EventEmitter {
     run.queue.push({ type: 'text', mode: 'content', key, id, text, category }); this.publish(run);
     if (!run.busy) run.processing = this.process(run);
   }
-  acceptImage(run, image, mode = run.state.mode) {
+  acceptImage(run, image, mode = run.state.mode, sourceUrl = '') {
     if (this.run !== run || !run.state.enabled || run.abort.signal.aborted || run.state.paused) return;
     if (mode === 'content') return;
     mode = mode === 'collection' ? 'collection' : 'style';
@@ -297,9 +347,10 @@ export class StyleCollector extends EventEmitter {
     if (run.queue.reduce((total, item) => total + (item.bytes?.length || 0), 0) + bytes.length > 48 * 1024 * 1024 || run.queue.length >= 200) {
       record.failed++; record.detail = '失败：待处理图片过多，请等待后重新复制'; this.publish(run); return;
     }
-    const key = `${mode}:image:` + createHash('sha256').update(bytes).digest('hex');
-    if (run.seen.has(key)) { record.skipped++; record.detail = '跳过：这张原图已经收集'; this.publish(run); return; }
-    run.seen.add(key); run.queue.push({ bytes, key, mode, name: '剪贴板图片' }); this.publish(run);
+    const validatedUrl = imageLink(sourceUrl) || '';
+    const key = validatedUrl ? `${mode}:source:${validatedUrl}` : `${mode}:image:` + createHash('sha256').update(bytes).digest('hex');
+    if (run.seen.has(key)) { record.skipped++; record.detail = validatedUrl ? '跳过：本次已经接收过这个链接' : '跳过：这张原图已经收集'; this.publish(run); return; }
+    run.seen.add(key); run.queue.push({ bytes, sourceUrl: validatedUrl, key, mode, name: urlFilename(validatedUrl) || '剪贴板图片' }); this.publish(run);
     if (!run.busy) run.processing = this.process(run);
   }
   acceptFile(run, path, mode = run.state.mode) {
@@ -324,6 +375,55 @@ export class StyleCollector extends EventEmitter {
     run.queue.push({ url, name, mode, key }); this.publish(run);
     if (!run.busy) run.processing = this.process(run);
   }
+  async tryDownloadCandidates(candidates, signal) {
+    for (const candidate of candidates || []) {
+      signal.throwIfAborted();
+      try {
+        return await this.download(candidate, { signal, proxyUrl: this.proxyUrl });
+      } catch (error) {
+        if (signal.aborted || !isNotFoundDownloadError(error)) throw error;
+      }
+    }
+    return null;
+  }
+  async downloadResolved(url, { mode, signal }) {
+    if (isCodexShareUrl(url)) {
+      const resolveShare = this.resolveCodexShare || ((target, opts) => resolveCodexShareCover(target, {
+        ...opts,
+        fetchText: (fetchUrl, fetchOpts) => downloadCollectorText(fetchUrl, { ...fetchOpts, proxyUrl: this.proxyUrl }),
+      }));
+      const resolved = await resolveShare(url, { signal });
+      if (!resolved) throw new Error('无法解析法典分享链接');
+      let found = await this.tryDownloadCandidates(resolved.candidates, signal);
+      let resolvedName = resolved.name || '';
+      let fallbackUrl = resolved.fallbackUrl || '';
+      if (!found && typeof resolved.resolveFallback === 'function') {
+        const fb = await resolved.resolveFallback();
+        if (fb) {
+          resolvedName = fb.name || resolvedName;
+          fallbackUrl = fb.fallbackUrl || fallbackUrl;
+          if (!fb.noOriginal && fb.candidates?.length) {
+            found = await this.tryDownloadCandidates(fb.candidates, signal);
+          }
+        }
+      }
+      if (found) return { ...found, resolvedName };
+      if (mode === 'collection' && fallbackUrl) {
+        return { ...(await this.download(fallbackUrl, { signal, proxyUrl: this.proxyUrl })), resolvedName };
+      }
+      return { noOriginal: true, skipReason: '该法典词条未提供原图', resolvedName };
+    }
+    const upgraded = codexOriginalCandidates(url);
+    if (upgraded) {
+      const found = await this.tryDownloadCandidates(upgraded.candidates, signal);
+      if (found) return found;
+      if (mode === 'collection') {
+        return await this.download(upgraded.fallbackUrl, { signal, proxyUrl: this.proxyUrl });
+      }
+      return { noOriginal: true, skipReason: '该法典词条未提供原图' };
+    }
+    return await this.download(url, { signal, proxyUrl: this.proxyUrl });
+  }
   async process(run) {
     run.busy = true;
     while (run.queue.length && !run.abort.signal.aborted) {
@@ -338,29 +438,71 @@ export class StyleCollector extends EventEmitter {
           record.saved++; record.detail = `已收录：${item.text.trim().split(/[\r\n]/)[0].slice(0, 42)}`;
           this.publish(run); continue;
         }
-        record.stage = item.bytes || item.path ? '正在解析图片' : '正在下载图片'; record.detail = `处理：${item.name || '图片链接'}`; this.publish(run);
-        const { bytes, finalUrl } = item.path ? await readCopiedImage(item.path, run.abort.signal)
-          : item.bytes ? { bytes: item.bytes, finalUrl: '' } : await this.download(item.url, { signal: run.abort.signal, proxyUrl: this.proxyUrl });
+        record.stage = (item.path || (item.bytes && !item.sourceUrl)) ? '正在解析图片' : '正在下载图片';
+        record.detail = `处理：${item.name || '图片链接'}`; this.publish(run);
+        let bytes, finalUrl = '', itemName = item.name, preResolved = null, sourceDownloadError = null, sourceNoOriginal = '', sourceSkipReason = '';
+        if (item.path) {
+          ({ bytes, finalUrl } = await readCopiedImage(item.path, run.abort.signal));
+        } else if (item.bytes) {
+          if (item.sourceUrl) {
+            try {
+              const dl = await this.downloadResolved(item.sourceUrl, { mode: item.mode, signal: run.abort.signal });
+              if (dl.noOriginal) {
+                sourceNoOriginal = dl.skipReason || '该法典词条未提供原图';
+                if (dl.resolvedName) itemName = dl.resolvedName;
+              } else {
+                const candidateBytes = dl.bytes;
+                const candidateName = dl.resolvedName || urlFilename(dl.finalUrl) || itemName;
+                if (item.mode === 'collection') {
+                  bytes = candidateBytes; finalUrl = dl.finalUrl; itemName = candidateName;
+                } else {
+                  const meta = await extractCollectorImageMetadata(candidateBytes);
+                  if (meta.raw && hasCollectibleNaiMetadata(meta.raw)) {
+                    bytes = candidateBytes; finalUrl = dl.finalUrl; itemName = candidateName; preResolved = meta;
+                  } else {
+                    sourceSkipReason = meta.skipReason;
+                  }
+                }
+              }
+            } catch (error) {
+              if (run.abort.signal.aborted) throw error;
+              sourceDownloadError = error;
+            }
+          }
+          if (!bytes) bytes = item.bytes;
+        } else {
+          const dl = await this.downloadResolved(item.url, { mode: item.mode, signal: run.abort.signal });
+          if (dl.noOriginal) {
+            record.skipped++; record.detail = `跳过：${dl.skipReason || '该法典词条未提供原图'}`;
+            this.publish(run); continue;
+          }
+          bytes = dl.bytes; finalUrl = dl.finalUrl;
+          if (dl.resolvedName) itemName = dl.resolvedName;
+          else if (!itemName || isCodexShareUrl(item.url)) itemName = urlFilename(finalUrl) || itemName;
+        }
         run.abort.signal.throwIfAborted(); record.stage = '正在解析图片'; this.publish(run);
-        let raw, skipReason = '未找到有效 NovelAI 生成信息';
-        if (!Buffer.from(bytes.subarray(0, 8)).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) skipReason = '内容不是支持收集的 PNG 原图';
-        try { raw = await extractPngMetadata(bytes, { validatePixels: true, collectibleOnly: true }); } catch (error) { raw = null; skipReason = collectorErrorReason(error); }
+        const { raw, skipReason } = preResolved || await extractCollectorImageMetadata(bytes);
         run.abort.signal.throwIfAborted();
+        const sourceUrl = item.url || item.sourceUrl || undefined;
         if (item.mode === 'collection') {
           const info = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata();
           if (!['png', 'jpeg', 'webp'].includes(info.format)) throw new Error('仅支持 PNG、JPEG、WebP 图片');
           run.abort.signal.throwIfAborted(); record.stage = '正在保存收藏'; this.publish(run);
-          const result = await this.worker('collection', { session: run.state.session, image: Buffer.from(bytes).toString('base64'), format: info.format, rawMetadata: raw, sourceUrl: item.url, finalUrl, name: item.name, metadataModelMappings: this.modelMappings() });
+          const result = await this.worker('collection', { session: run.state.session, image: Buffer.from(bytes).toString('base64'), format: info.format, rawMetadata: raw, sourceUrl, finalUrl, name: itemName, metadataModelMappings: this.modelMappings() });
           run.abort.signal.throwIfAborted();
-          if (result.outcome === 'saved') { record.saved++; record.detail = `已收藏：${item.name || '图片'}`; }
+          if (result.outcome === 'saved') { record.saved++; record.detail = `已收藏：${itemName || '图片'}`; }
           else { record.skipped++; record.detail = '跳过：这张原图已经收藏'; }
         }
-        else if (!raw || !hasCollectibleNaiMetadata(raw)) { record.skipped++; record.detail = `跳过：${skipReason}`; }
+        else if (!raw || !hasCollectibleNaiMetadata(raw)) {
+          if (sourceDownloadError && !/禁止下载本机/.test(String(sourceDownloadError.message || ''))) throw sourceDownloadError;
+          record.skipped++;
+          record.detail = `跳过：${sourceNoOriginal || sourceSkipReason || skipReason}`;
+        }
         else {
           record.stage = '正在保存风格串'; this.publish(run);
-          const result = await this.worker('import', { session: run.state.session, image: Buffer.from(bytes).toString('base64'), rawMetadata: raw, sourceUrl: item.url, finalUrl, name: item.name, metadataModelMappings: this.modelMappings() });
+          const result = await this.worker('import', { session: run.state.session, image: Buffer.from(bytes).toString('base64'), rawMetadata: raw, sourceUrl, finalUrl, name: itemName, metadataModelMappings: this.modelMappings() });
           run.abort.signal.throwIfAborted();
-          if (result.outcome === 'saved') { record.saved++; record.detail = `已保存：${item.name || '图片风格串'}`; }
+          if (result.outcome === 'saved') { record.saved++; record.detail = `已保存：${itemName || '图片风格串'}`; }
           else { record.skipped++; record.detail = '跳过：这张原图已经收集'; }
         }
       } catch (error) {

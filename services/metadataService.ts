@@ -14,7 +14,7 @@ import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
 import { createUuid } from './id';
 import { joinNaiTextPrompt, resolveTransparentWeight, splitNaiTextPrompt } from './transparentBackground.mjs';
 import { resolveNaiMetadataModel } from './naiModels';
-import { extractImageMetadata } from './pngMetadata.mjs';
+import { extractImageMetadata, extractNovelAiStealthMetadataFromRgba, isWebpWithAlpha } from './pngMetadata.mjs';
 import { DEFAULT_NOISE_SCHEDULE, normalizeNoiseSchedule, parseSamplerWithSchedule } from './naiNoiseSchedule.mjs';
 export { extractNovelAiMetadataFromPng, extractNovelAiStealthMetadataFromRgba } from './pngMetadata.mjs';
 
@@ -90,9 +90,34 @@ const COMPILED_REGEX = {
 
 // ========== 文件级元数据提取 ==========
 
+/** 在浏览器端解码带 Alpha 通道的 WebP 并读取 NovelAI Stealth 隐写元数据。 */
+const extractWebpStealthMetadataInBrowser = async (bytes: Uint8Array): Promise<string | null> => {
+    if (typeof createImageBitmap !== 'function') return null;
+    const blob = new Blob([bytes.slice()], { type: 'image/webp' });
+    const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+        .catch(() => createImageBitmap(blob));
+    try {
+        const { width, height } = bitmap;
+        if (!width || !height || width * height > 40_000_000) return null;
+        const canvas = typeof OffscreenCanvas !== 'undefined'
+            ? new OffscreenCanvas(width, height)
+            : typeof document !== 'undefined'
+                ? Object.assign(document.createElement('canvas'), { width, height })
+                : null;
+        if (!canvas) return null;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
+        if (!ctx) return null;
+        ctx.drawImage(bitmap, 0, 0);
+        const imageData = ctx.getImageData(0, 0, width, height);
+        return await extractNovelAiStealthMetadataFromRgba(imageData.data, width, height);
+    } finally {
+        bitmap.close();
+    }
+};
+
 /**
  * 从 PNG / WebP / JPEG 文件中提取元数据原始字符串
- * PNG 优先读取标准文本块，未命中时回退到 NovelAI Alpha Stealth 元数据；WebP/JPEG 读取 EXIF UserComment
+ * PNG 优先读取标准文本块，未命中时回退到 NovelAI Alpha Stealth 元数据；WebP/JPEG 读取 EXIF UserComment 或 WebP Alpha Stealth
  */
 export const extractMetadata = async (file: File): Promise<string | null> => {
     if (file.type && !['image/png', 'image/webp', 'image/jpeg'].includes(file.type)) {
@@ -108,7 +133,13 @@ export const extractMetadata = async (file: File): Promise<string | null> => {
                 reader.onerror = () => reject(reader.error);
                 reader.readAsArrayBuffer(file);
             });
-        return await extractImageMetadata(new Uint8Array(arrayBuffer));
+        const bytes = new Uint8Array(arrayBuffer);
+        const direct = await extractImageMetadata(bytes);
+        if (direct) return direct;
+        if (isWebpWithAlpha(bytes)) {
+            return await extractWebpStealthMetadataInBrowser(bytes);
+        }
+        return null;
     } catch (e) {
         return null;
     }

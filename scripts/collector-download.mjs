@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
 import { Agent, Client, ProxyAgent, fetch } from 'undici';
+import { isCodexShareUrl } from './codex-collector-resolve.mjs';
 
 // 比通用远程抓取更严格：DNS 与实际连接使用同一份地址，逐跳验证重定向。
 const blocked = new BlockList();
@@ -50,6 +51,7 @@ export function imageLink(text) {
   try {
     const url = new URL(text.trim());
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+    if (isCodexShareUrl(url.href)) return url.href;
     const path = decodeURIComponent(url.pathname);
     const attachment = ['cdn.discordapp.com', 'media.discordapp.net'].includes(url.hostname) && /^\/attachments\/\d+\/\d+\//.test(path);
     if (!/\.(png|jpe?g|webp|gif|avif)(?:$)/i.test(path) && !attachment) return null;
@@ -81,7 +83,7 @@ export function createPinnedPublicDispatcher(url, address, proxyUrl = '') {
   } } });
 }
 
-export async function downloadCollectorImage(raw, { signal, maxBytes = 12 * 1024 * 1024, proxyUrl = '', lookupHost = lookup, request = fetch, publicLookup = resolveCollectorPublicDns } = {}) {
+async function fetchBoundedPublicResponse(raw, { signal, maxBytes, stopAfter = '', accept = 'image/*', proxyUrl = '', lookupHost = lookup, request = fetch, publicLookup = resolveCollectorPublicDns } = {}) {
   const timeout = AbortSignal.timeout(30_000);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let current = raw;
@@ -95,7 +97,7 @@ export async function downloadCollectorImage(raw, { signal, maxBytes = 12 * 1024
     const { url, address } = target;
     const dispatcher = createPinnedPublicDispatcher(url, address, proxyUrl);
     try {
-      const response = await request(url, { dispatcher, signal: combined, redirect: 'manual', headers: { accept: 'image/*' } });
+      const response = await request(url, { dispatcher, signal: combined, redirect: 'manual', headers: { accept } });
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         await response.body?.cancel();
         const location = response.headers.get('location');
@@ -103,16 +105,51 @@ export async function downloadCollectorImage(raw, { signal, maxBytes = 12 * 1024
         current = new URL(location, url).href;
         continue;
       }
-      if (!response.ok) { await response.body?.cancel(); throw new Error(response.status === 403 ? '图片访问被拒绝 (403)，链接可能过期，请重新复制' : response.status === 404 ? '图片不存在 (404)，请重新复制链接' : `图片下载失败 (${response.status})`); }
-      if (Number(response.headers.get('content-length')) > maxBytes) { await response.body?.cancel(); throw new Error('图片超过存储大小上限'); }
+      if (!response.ok) {
+        await response.body?.cancel();
+        const message = response.status === 403 ? '图片访问被拒绝 (403)，链接可能过期，请重新复制'
+          : response.status === 404 ? '图片不存在 (404)，请重新复制链接'
+          : `图片下载失败 (${response.status})`;
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
+      }
+      if (!stopAfter && Number(response.headers.get('content-length')) > maxBytes) {
+        await response.body?.cancel();
+        throw new Error('图片超过存储大小上限');
+      }
       const chunks = []; let size = 0;
       for await (const chunk of response.body || []) {
-        combined.throwIfAborted(); size += chunk.length;
-        if (size > maxBytes) throw new Error('图片超过存储大小上限');
-        chunks.push(chunk);
+        combined.throwIfAborted();
+        const part = Buffer.from(chunk);
+        size += part.length;
+        if (size > maxBytes) {
+          if (stopAfter) {
+            const overflow = size - maxBytes;
+            chunks.push(part.subarray(0, part.length - overflow));
+            size = maxBytes;
+            await response.body?.cancel?.();
+            break;
+          }
+          throw new Error('图片超过存储大小上限');
+        }
+        chunks.push(part);
+        if (stopAfter && Buffer.concat(chunks, size).toString('utf8').includes(stopAfter)) {
+          await response.body?.cancel?.();
+          break;
+        }
       }
       return { bytes: Buffer.concat(chunks, size), finalUrl: url.href };
     } finally { await dispatcher.destroy(); }
   }
   throw new Error('图片重定向次数过多');
+}
+
+export async function downloadCollectorImage(raw, options = {}) {
+  return fetchBoundedPublicResponse(raw, { maxBytes: 12 * 1024 * 1024, accept: 'image/*', ...options });
+}
+
+export async function downloadCollectorText(raw, options = {}) {
+  const { bytes } = await fetchBoundedPublicResponse(raw, { maxBytes: 64 * 1024, accept: '*/*', ...options });
+  return bytes.toString('utf8');
 }

@@ -31,6 +31,26 @@ export async function extractImageMetadata(bytes, { validatePixels = false, coll
   return !collectibleOnly || (candidate && hasCollectibleNaiMetadata(candidate)) ? candidate : null;
 }
 
+/** 判断 RIFF WebP 是否带有 Alpha 通道（VP8L、ALPH 块或带 alpha 标志的 VP8X）。 */
+export function isWebpWithAlpha(bytes) {
+  if (!bytes || bytes.length < 12) return false;
+  if (bytes[0] !== 0x52 || bytes[1] !== 0x49 || bytes[2] !== 0x46 || bytes[3] !== 0x46) return false;
+  if (bytes[8] !== 0x57 || bytes[9] !== 0x45 || bytes[10] !== 0x42 || bytes[11] !== 0x50) return false;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let offset = 12, count = 0;
+  while (offset + 8 <= bytes.length && count++ < 4096) {
+    const type = String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+    const size = view.getUint32(offset + 4, true);
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + size;
+    if (!Number.isSafeInteger(dataEnd) || dataEnd > bytes.length) break;
+    if (type === 'ALPH' || type === 'VP8L') return true;
+    if (type === 'VP8X' && size >= 1 && (bytes[dataStart] & 0x10) !== 0) return true;
+    offset = dataEnd + (size & 1);
+  }
+  return false;
+}
+
 /** 从 RIFF WebP 的 EXIF 块中提取原始 TIFF/Exif 载荷。 */
 export function extractWebpExifPayload(bytes) {
   if (!bytes || bytes.length < 12) return null;

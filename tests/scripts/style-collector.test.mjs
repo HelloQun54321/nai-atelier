@@ -9,7 +9,8 @@ import sharp from 'sharp';
 import { imageLink, publicIp, validateDownloadTarget, downloadCollectorImage, resolveCollectorPublicDns, collectorErrorReason } from '../../scripts/collector-download.mjs';
 import { createServer } from 'node:http';
 import { StyleCollector, collectorLocalRequest, windowsCollector } from '../../scripts/style-collector.mjs';
-import { extractPngMetadata, hasCollectibleNaiMetadata } from '../../services/pngMetadata.mjs';
+import { codexOriginalCandidates, resolveCodexShareCover } from '../../scripts/codex-collector-resolve.mjs';
+import { extractPngMetadata, hasCollectibleNaiMetadata, isWebpWithAlpha } from '../../services/pngMetadata.mjs';
 
 const generation = { prompt: 'artist:synthetic, scenery', uc: 'lowres', steps: 23, sampler: 'k_euler_ancestral', seed: 42, Source: 'NovelAI' };
 const plain = () => Buffer.from(encode({ width: 64, height: 64, channels: 4, data: new Uint8Array(64 * 64 * 4).fill(255) }));
@@ -551,4 +552,171 @@ test('appearance is remembered before startup and updates one active listener wi
   assert.equal(h.manager.state().appearance.materials, undefined);
   assert.deepEqual(h.manager.state().appearance.backgrounds, {});
   await h.manager.command('stop'); await h.manager.command('start'); assert.equal(initial.themeMode, 'dark'); await h.manager.command('stop');
+});
+
+const hiddenWebp = async (value = generation, magic = 'stealth_pngcomp') => {
+  const bytes = Buffer.from(JSON.stringify({ Software: 'NovelAI', Comment: JSON.stringify(value) }));
+  const payload = magic === 'stealth_pngcomp' ? gzipSync(bytes) : bytes;
+  const length = Buffer.alloc(4); length.writeUInt32BE(payload.length * 8);
+  const header = Buffer.concat([Buffer.from(magic), length, payload]);
+  const data = new Uint8Array(64 * 64 * 4).fill(255);
+  for (let i = 0; i < header.length * 8; i++) {
+    const x = Math.floor(i / 64), y = i % 64;
+    data[(y * 64 + x) * 4 + 3] = 254 | ((header[i >> 3] >> (7 - i % 8)) & 1);
+  }
+  return sharp(data, { raw: { width: 64, height: 64, channels: 4 } }).webp({ lossless: true }).toBuffer();
+};
+
+test('webp alpha stealth metadata is extracted and imported in both style and collection modes', async t => {
+  const webpBytes = await hiddenWebp();
+  assert.equal(isWebpWithAlpha(webpBytes), true);
+  const h = harness({ download: async url => ({ bytes: webpBytes, finalUrl: url }) });
+  t.after(() => h.manager.command('stop'));
+  await h.manager.command('start');
+  h.copy('https://assets.quicktagcloud.com/originals/nai5_community_pack/sample.webp?v=1');
+  await h.manager.run.processing;
+  assert.equal(h.actions.at(-1), 'import');
+  assert.equal(JSON.parse(h.imports.at(-1).rawMetadata).prompt, generation.prompt);
+  assert.equal(h.manager.state().saved, 1);
+
+  await h.manager.command('mode', 'collection');
+  h.copy('https://assets.quicktagcloud.com/originals/nai5_community_pack/sample2.webp?v=1');
+  await h.manager.run.processing;
+  assert.equal(h.actions.at(-1), 'collection');
+  assert.equal(h.imports.at(-1).format, 'webp');
+  assert.equal(JSON.parse(h.imports.at(-1).rawMetadata).seed, generation.seed);
+});
+
+test('codex preview URLs upgrade to .png/.webp originals, skip missing originals in style mode, and fallback in collection mode', async t => {
+  const webpBytes = await hiddenWebp();
+  const jpgBytes = await sharp(plain()).jpeg().toBuffer();
+  const requested = [];
+  const notFound = () => Object.assign(new Error('图片不存在 (404)，请重新复制链接'), { status: 404 });
+  const h = harness({
+    download: async url => {
+      requested.push(url);
+      if (url.includes('/originals/pack/webp_item.png')) throw notFound();
+      if (url.includes('/originals/pack/webp_item.webp')) return { bytes: webpBytes, finalUrl: url };
+      if (url.includes('/originals/no_orig/')) throw notFound();
+      if (url.includes('/images/no_orig/only_thumb.jpg')) return { bytes: jpgBytes, finalUrl: url };
+      if (url.includes('/community/img/entry-1/1.orig.png')) return { bytes: hidden(), finalUrl: url };
+      throw notFound();
+    },
+  });
+  t.after(() => h.manager.command('stop'));
+  await h.manager.command('start');
+
+  // 书目预览图 .jpg 自动升级试探 .png -> .webp
+  h.copy('https://assets.quicktagcloud.com/images/pack/webp_item.jpg?v=abc');
+  await h.manager.run.processing;
+  assert.deepEqual(requested.slice(0, 2), [
+    'https://assets.quicktagcloud.com/originals/pack/webp_item.png?v=abc',
+    'https://assets.quicktagcloud.com/originals/pack/webp_item.webp?v=abc',
+  ]);
+  assert.equal(h.imports.at(-1).finalUrl, 'https://assets.quicktagcloud.com/originals/pack/webp_item.webp?v=abc');
+  assert.equal(h.manager.state().saved, 1);
+
+  // 共创广场预览图升级为 .orig.png
+  h.copy('https://novelai-strings.quicktagcloud.com/community/img/entry-1/1.jpg');
+  await h.manager.run.processing;
+  assert.equal(h.imports.at(-1).finalUrl, 'https://novelai-strings.quicktagcloud.com/community/img/entry-1/1.orig.png');
+  assert.equal(h.manager.state().saved, 2);
+
+  // 风格串模式下无原图时明确跳过，不报错也不存入缩略图
+  h.copy('https://assets.quicktagcloud.com/images/no_orig/only_thumb.jpg');
+  await h.manager.run.processing;
+  assert.equal(h.manager.state().skipped, 1);
+  assert.equal(h.manager.state().failed, 0);
+  assert.match(h.manager.state().detail, /未提供原图/);
+
+  // 收藏库模式下无原图时自动回退保存预览图
+  await h.manager.command('mode', 'collection');
+  h.copy('https://assets.quicktagcloud.com/images/no_orig/only_thumb.jpg');
+  await h.manager.run.processing;
+  assert.equal(h.actions.at(-1), 'collection');
+  assert.equal(h.imports.at(-1).format, 'jpeg');
+  assert.equal(h.imports.at(-1).finalUrl, 'https://assets.quicktagcloud.com/images/no_orig/only_thumb.jpg');
+});
+
+test('codex share URLs qualify and resolve cover originals via og:image or index fallback', async t => {
+  const shareUrl = 'https://novelai.quicktagcloud.com/share/nai5_community_pack/item_0019';
+  assert.equal(imageLink(shareUrl), shareUrl);
+  assert.equal(imageLink('https://novelai.quicktagcloud.com/strings.html?entry=abc-123'), 'https://novelai.quicktagcloud.com/strings.html?entry=abc-123');
+  assert.equal(codexOriginalCandidates('https://assets.quicktagcloud.com/originals/pack/a.webp'), null);
+
+  // 验证 og:image 解析 + R18 无 og:image 时按索引回查封面
+  const pages = new Map([
+    [shareUrl, '<head><meta property="og:title" content="喜多川海梦 · 精选图包 | 法典图鉴"><meta property="og:image" content="https://assets.quicktagcloud.com/images/nai5_community_pack/item_0019.jpg?v=99"></head>'],
+    ['https://novelai.quicktagcloud.com/share/suozhang_r18/suozhang-5322', '<head><title>法典图鉴</title><meta property="og:title" content="法典图鉴 | NovelAI Tag Atlas"></head>'],
+    ['https://novelai.quicktagcloud.com/data-source.json', JSON.stringify({ baseUrl: 'https://assets.quicktagcloud.com/data', pointer: 'current.json' })],
+    ['https://assets.quicktagcloud.com/data/current.json', JSON.stringify({ release: 'r-test' })],
+    ['https://assets.quicktagcloud.com/data/releases/r-test/codexes.json', JSON.stringify([{ id: 'suozhang_r18', hasOriginal: true }])],
+    ['https://assets.quicktagcloud.com/data/releases/r-test/media.json', JSON.stringify({ baseUrl: 'https://assets.quicktagcloud.com', imagePrefix: 'images', originalPrefix: 'originals' })],
+    ['https://assets.quicktagcloud.com/data/releases/r-test/suozhang_r18.json', JSON.stringify({ entries: [{ id: 'suozhang-5322', title: 'R18 封面词条', coverIndex: 1, images: [{ path: 'a.jpg', original: 'a.png' }, { path: 'suozhang-5159.jpg', original: 'suozhang-5159.png' }] }] })],
+  ]);
+
+  const resolvedShare = await resolveCodexShareCover(shareUrl, { fetchText: async u => pages.get(u) || '' });
+  assert.equal(resolvedShare.name, '喜多川海梦');
+  assert.equal(resolvedShare.candidates[0], 'https://assets.quicktagcloud.com/originals/nai5_community_pack/item_0019.png?v=99');
+
+  const resolvedR18 = await resolveCodexShareCover('https://novelai.quicktagcloud.com/share/suozhang_r18/suozhang-5322', { fetchText: async u => pages.get(u) || '' });
+  const fb = await resolvedR18.resolveFallback();
+  assert.equal(fb.name, 'R18 封面词条');
+  assert.deepEqual(fb.candidates, ['https://assets.quicktagcloud.com/originals/suozhang_r18/suozhang-5159.png']);
+
+  const h = harness({
+    resolveCodexShare: async url => resolveCodexShareCover(url, { fetchText: async u => pages.get(u) || '' }),
+    download: async url => {
+      if (url.endsWith('item_0019.png?v=99')) throw Object.assign(new Error('404'), { status: 404 });
+      if (url.endsWith('item_0019.webp?v=99')) return { bytes: await hiddenWebp(), finalUrl: url };
+      if (url.endsWith('suozhang-5159.png')) return { bytes: hidden(), finalUrl: url };
+      throw Object.assign(new Error('404'), { status: 404 });
+    },
+  });
+  t.after(() => h.manager.command('stop'));
+  await h.manager.command('start');
+  h.copy(shareUrl);
+  h.copy('https://novelai.quicktagcloud.com/share/suozhang_r18/suozhang-5322');
+  await h.manager.run.processing;
+  assert.equal(h.manager.state().saved, 2);
+  assert.equal(h.imports[0].name, '喜多川海梦');
+  assert.equal(h.imports[1].name, 'R18 封面词条');
+  assert.equal(h.imports[1].finalUrl, 'https://assets.quicktagcloud.com/originals/suozhang_r18/suozhang-5159.png');
+});
+
+test('clipboard image with HTML sourceUrl downloads upgraded original in style mode and falls back to bitmap in collection mode', async t => {
+  const webpBytes = await hiddenWebp();
+  const h = harness({
+    download: async url => {
+      if (url === 'https://assets.quicktagcloud.com/originals/pack/demo.png') throw Object.assign(new Error('404'), { status: 404 });
+      if (url === 'https://assets.quicktagcloud.com/originals/pack/demo.webp') return { bytes: webpBytes, finalUrl: url };
+      throw Object.assign(new Error('图片访问被拒绝 (403)'), { status: 403 });
+    },
+  });
+  t.after(() => h.manager.command('stop'));
+  await h.manager.command('start');
+
+  // 浏览器右键「复制图片」：剪贴板位图本身无元数据，通过 sourceUrl 自动升级拉取原图
+  h.event({
+    type: 'image',
+    mode: 'style',
+    image: plain().toString('base64'),
+    sourceUrl: 'https://assets.quicktagcloud.com/images/pack/demo.jpg',
+  });
+  await h.manager.run.processing;
+  assert.equal(h.manager.state().saved, 1);
+  assert.equal(h.imports[0].finalUrl, 'https://assets.quicktagcloud.com/originals/pack/demo.webp');
+
+  // 收藏库模式下若 sourceUrl 受限 (403)，自动回退保存剪贴板位图本身
+  await h.manager.command('mode', 'collection');
+  h.event({
+    type: 'image',
+    mode: 'collection',
+    image: plain().toString('base64'),
+    sourceUrl: 'https://example.com/private/protected.png',
+  });
+  await h.manager.run.processing;
+  assert.equal(h.actions.at(-1), 'collection');
+  assert.equal(h.imports.at(-1).image, plain().toString('base64'));
+  assert.equal(h.imports.at(-1).sourceUrl, 'https://example.com/private/protected.png');
 });

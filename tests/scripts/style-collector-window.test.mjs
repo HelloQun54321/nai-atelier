@@ -75,14 +75,27 @@ test('native collector: fixed modes, automatic text intake, file copies and both
   assert.equal(events.filter(e => e.type === 'text').length, 0);
   await send('inject-image', { image: 'AQID' }); await send('mode', { mode: 'collection' });
   assert.equal(window().height, 232); assert.equal(window().width, 384);
-  await send('inject-image', { image: 'AQID' }); await send('inject', { text: 'https://example.com/collection.png' });
-  assert.deepEqual(events.filter(e => e.type === 'image').map(e => e.mode), ['style', 'collection']);
+  await send('inject-image', { image: 'AQID', html: '<!--StartFragment--><img src="https://assets.quicktagcloud.com/images/pack/a.jpg?v=1&amp;x=2" alt="demo"><!--EndFragment-->' });
+  await send('inject-image', { image: 'AQID', html: '<!--StartFragment--><img src="https://example.com/1.png"><img src="https://example.com/2.png"><!--EndFragment-->' });
+  await send('inject', { text: 'https://novelai.quicktagcloud.com/share/nai5_community_pack/item_0019' });
+  await send('inject', { text: 'https://novelai.quicktagcloud.com/strings.html?entry=entry-001' });
+  await send('inject', { text: 'https://example.com/collection.png' });
+  assert.deepEqual(events.filter(e => e.type === 'image').map(e => [e.mode, e.sourceUrl]), [
+    ['style', ''],
+    ['collection', 'https://assets.quicktagcloud.com/images/pack/a.jpg?v=1&x=2'],
+    ['collection', ''],
+  ]);
+  assert.deepEqual(events.filter(e => e.type === 'link').slice(-3).map(e => e.url), [
+    'https://novelai.quicktagcloud.com/share/nai5_community_pack/item_0019',
+    'https://novelai.quicktagcloud.com/strings.html?entry=entry-001',
+    'https://example.com/collection.png',
+  ]);
   assert.equal(events.filter(e => e.type === 'link').at(-1).mode, 'collection');
   const files = ['C:\\synthetic\\桌面 原图.PNG', 'C:\\synthetic\\second.webp'];
   await send('inject-files', { paths: [...files, 'C:\\synthetic\\notes.txt', 'C:\\synthetic\\folder', 'relative.png'] });
   assert.deepEqual(events.filter(e => e.type === 'file').map(e => ({ path: e.path, mode: e.mode })), files.map(path => ({ path, mode: 'collection' })));
   await send('pause'); await send('inject-files', { paths: files }); await send('inject-image', { image: 'AQID' });
-  assert.equal(events.filter(e => e.type === 'file').length, 2); assert.equal(events.filter(e => e.type === 'image').length, 2);
+  assert.equal(events.filter(e => e.type === 'file').length, 2); assert.equal(events.filter(e => e.type === 'image').length, 3);
 
   await send('mode', { mode: 'content' });
   assert.equal(window().height, 232); assert.equal(window().width, 384); assert.equal(window().editableFields, 0);
@@ -92,7 +105,7 @@ test('native collector: fixed modes, automatic text intake, file copies and both
   await send('inject', { text: original }); await send('category', { category: 'appearance' }); await send('inject', { text: 'second prompt' });
   assert.deepEqual(events.filter(e => e.type === 'text').map(e => [e.text, e.category]), [[original, ''], ['second prompt', 'appearance']]);
   await send('inject-image', { image: 'AQID' }); await send('inject-files', { paths: files }); await send('inject', { text: '   ' });
-  assert.equal(events.filter(e => e.type === 'image').length, 2); assert.equal(events.filter(e => e.type === 'file').length, 2); assert.equal(events.filter(e => e.type === 'text').length, 2);
+  assert.equal(events.filter(e => e.type === 'image').length, 3); assert.equal(events.filter(e => e.type === 'file').length, 2); assert.equal(events.filter(e => e.type === 'text').length, 2);
   await send('mode', { mode: 'style' }); await send('inject', { text: 'ignored in style mode' }); await send('inject-files', { paths: files });
   assert.equal(events.filter(e => e.type === 'text').length, 2); assert.deepEqual(events.filter(e => e.type === 'file').slice(2).map(e => e.mode), ['style', 'style']);
   await send('mode', { mode: 'content' }); assert.equal(window().category, 'appearance');
@@ -110,7 +123,7 @@ test('native collector: fixed modes, automatic text intake, file copies and both
     const d = { ...cupertino.details, ...cupertino.details[mode] };
     return [mode, { kind: d.material, opacity: d.sidebarOpacity, highlight: d.highlight, controlShadow: d.controlShadow, borderOpacity: d.borderOpacity, controlRadius: d.controlRadius, panelRadius: d.panelRadius, blur: d.blur, saturation: d.saturation, refraction: d.refraction }];
   }));
-  const themes = [defaults, { ...cupertino, backgrounds, materials, accents: { light: cupertino.details.light.accentColor, dark: cupertino.details.dark.accentColor } }];
+  const themes = [defaults, { ...cupertino, backgrounds, materials }];
   const luminance = hex => { const rgb = hex.slice(1).match(/../g).map(h => parseInt(h, 16) / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4); return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722; };
   for (const theme of themes) for (const dark of [false, true]) {
     const mode = dark ? 'dark' : 'light';
@@ -125,7 +138,7 @@ test('native collector: fixed modes, automatic text intake, file copies and both
     assert.equal(window().height, 232); assert.equal(window().width, 384); assert.equal(window().labelsFit, true); assert.equal(window().foreground, false);
   }
   await setState({ appearance: { ...themes[1], themeMode: 'system', isDark: false } });
-  for (const dark of [true, false]) { await send('system-theme', { dark }); assert.equal(window().appearance.dark, dark); assert.equal(window().appearance.wallpaper, dark ? 'dark' : 'light'); assert.equal(window().appearance.accent, dark ? '#0A84FF' : '#007AFF'); }
+  for (const dark of [true, false]) { await send('system-theme', { dark }); assert.equal(window().appearance.dark, dark); assert.equal(window().appearance.wallpaper, dark ? 'dark' : 'light'); assert.equal(window().appearance.accent, cupertino.accentColor.toUpperCase()); }
   await setState({ appearance: { ...defaults, themeMode: 'light', isDark: false, motion: 'off' }, stage: '正在收录提示词' });
   await send('system-theme', { dark: true }); assert.equal(window().appearance.dark, false); assert.equal(window().appearance.background, '#FFFFFF'); assert.equal(window().breathing, false);
   for (const language of LANGUAGES) {
