@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, Image as ImageIcon, Layers, Magnet, Maximize2, MessageCircle, Move, RotateCcw, Scissors, Trash2, Upload, ZoomIn, ZoomOut } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import {
   clampAnchorCoord,
@@ -27,11 +26,8 @@ import {
 } from '../../services/comic/comicSnapping';
 import {
   buildComicBubbleRenderModel,
-  COMIC_BUBBLE_SHAPES,
   computeAutoFitFontSize,
-  getBubbleShapeMeta,
   resolveComicFont,
-  seededUnit,
 } from '../../services/comic/comicArtwork';
 import { resolveBubbleTextBox } from '../../services/comic/comicAssets';
 import {
@@ -53,11 +49,13 @@ import type {
   ComicPanel,
   ComicPoint,
   ComicSelection,
-  ComicStickerItem,
   ComicStroke,
   ComicTool,
 } from '../../services/comic/comicTypes';
-import { ComicBubbleShapeIcon } from './ComicBubbleShapeIcon';
+import { blendModeToCss, DrawingLayerCanvas, renderStickerSvg } from './ComicCanvasArtwork';
+import { ComicBubbleFloatingBar, ComicPanelFloatingBar } from './ComicCanvasFloatingToolbars';
+import { ComicCanvasZoomBar } from './ComicCanvasZoomBar';
+import { ComicCanvasContextMenu } from './ComicCanvasContextMenu';
 
 interface ComicCanvasProps {
   draft: ComicPageDraft;
@@ -178,214 +176,6 @@ type InlineEditState =
   | { kind: 'panel-anchor-bubble'; panelId: string; anchorId: string; value: string; openedAt?: number }
   | null;
 
-const blendModeToCss = (mode: ComicBlendMode): React.CSSProperties['mixBlendMode'] =>
-  mode === 'normal' ? 'normal' : mode;
-
-/** 独立手绘图层渲染组件：支持每层独立橡皮擦（destination-out）、不透明度与 PS 混合模式。 */
-const DrawingLayerCanvas: React.FC<{
-  strokes: ComicStroke[];
-  activeStroke?: ComicStroke | null;
-  pageW: number;
-  pageH: number;
-  opacity: number;
-  blendMode: ComicBlendMode;
-}> = ({ strokes, activeStroke, pageW, pageH, opacity, blendMode }) => {
-  const ref = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const list = activeStroke ? [...strokes, activeStroke] : strokes;
-    for (const stroke of list) {
-      if (!stroke.points.length) continue;
-      ctx.save();
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = stroke.size;
-      if (stroke.tool === 'eraser') {
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.strokeStyle = 'rgba(0,0,0,1)';
-      } else {
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = stroke.opacity;
-        ctx.strokeStyle = stroke.color;
-      }
-      ctx.beginPath();
-      stroke.points.forEach((pt, idx) => {
-        const x = pt.x * pageW;
-        const y = pt.y * pageH;
-        if (idx === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      if (stroke.points.length === 1) {
-        ctx.lineTo(stroke.points[0].x * pageW + 0.1, stroke.points[0].y * pageH + 0.1);
-      }
-      ctx.stroke();
-      ctx.restore();
-    }
-  }, [strokes, activeStroke, pageW, pageH]);
-
-  return (
-    <foreignObject
-      x={0}
-      y={0}
-      width={pageW}
-      height={pageH}
-      style={{ pointerEvents: 'none', opacity, mixBlendMode: blendModeToCss(blendMode) }}
-    >
-      <canvas ref={ref} width={pageW} height={pageH} style={{ width: '100%', height: '100%', display: 'block' }} />
-    </foreignObject>
-  );
-};
-
-const renderStickerSvg = (sticker: ComicStickerItem, pageW: number, pageH: number) => {
-  const cx = sticker.x * pageW;
-  const cy = sticker.y * pageH;
-  const w = sticker.width * pageW;
-  const h = sticker.height * pageH;
-  const r = Math.min(w, h) / 2;
-
-  return (
-    <g transform={`translate(${cx} ${cy}) rotate(${sticker.rotation})`} opacity={sticker.opacity}>
-      {sticker.kind === 'speedlines' && Array.from({ length: 42 }, (_, i) => {
-        // 漫画 G 笔外粗内尖锥形集中线（疏密自然错落，告别机械等距细棒）
-        const jitter = (seededUnit(sticker.id, i * 3) - 0.5) * 0.08;
-        const a = (i / 42) * Math.PI * 2 + jitter;
-        const inner = r * (0.42 + seededUnit(sticker.id, i * 3 + 1) * 0.24);
-        const outerX = w * 0.54;
-        const outerY = h * 0.54;
-        const halfSpread = 0.012 + seededUnit(sticker.id, i * 3 + 2) * 0.022;
-        const tipX = Math.cos(a) * inner;
-        const tipY = Math.sin(a) * inner;
-        const b1x = Math.cos(a - halfSpread) * outerX;
-        const b1y = Math.sin(a - halfSpread) * outerY;
-        const b2x = Math.cos(a + halfSpread) * outerX;
-        const b2y = Math.sin(a + halfSpread) * outerY;
-        return (
-          <polygon
-            key={i}
-            points={`${tipX.toFixed(1)},${tipY.toFixed(1)} ${b1x.toFixed(1)},${b1y.toFixed(1)} ${b2x.toFixed(1)},${b2y.toFixed(1)}`}
-            fill={sticker.color}
-          />
-        );
-      })}
-      {sticker.kind === 'sweat' && (
-        <g>
-          <path
-            d={`M 0 ${-r * 0.92} C ${r * 0.58} ${-r * 0.08}, ${r * 0.68} ${r * 0.88}, 0 ${r * 0.88} C ${-r * 0.68} ${r * 0.88}, ${-r * 0.58} ${-r * 0.08}, 0 ${-r * 0.92} Z`}
-            fill="#e0f2fe"
-            stroke={sticker.color}
-            strokeWidth={Math.max(2.5, r * 0.11)}
-            strokeLinejoin="round"
-          />
-          {/* 日漫冷汗内部高光月牙 */}
-          <path
-            d={`M ${-r * 0.18} ${-r * 0.15} C ${-r * 0.34} ${r * 0.15}, ${-r * 0.28} ${r * 0.52}, ${-r * 0.04} ${r * 0.58}`}
-            fill="none"
-            stroke="#ffffff"
-            strokeWidth={Math.max(2.5, r * 0.14)}
-            strokeLinecap="round"
-          />
-        </g>
-      )}
-      {sticker.kind === 'anger' && (
-        <g>
-          {/* 双层白底外描边 + 锋利收笔青筋 */}
-          {[[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([sx, sy], idx) => (
-            <g key={idx}>
-              <path
-                d={`M ${sx * r * 0.78} ${sy * r * 0.18} Q ${sx * r * 0.2} ${sy * r * 0.2} ${sx * r * 0.18} ${sy * r * 0.78}`}
-                fill="none"
-                stroke="#ffffff"
-                strokeWidth={Math.max(5.5, r * 0.22)}
-                strokeLinecap="round"
-              />
-              <path
-                d={`M ${sx * r * 0.78} ${sy * r * 0.18} Q ${sx * r * 0.2} ${sy * r * 0.2} ${sx * r * 0.18} ${sy * r * 0.78}`}
-                fill="none"
-                stroke={sticker.color}
-                strokeWidth={Math.max(3, r * 0.13)}
-                strokeLinecap="round"
-              />
-            </g>
-          ))}
-        </g>
-      )}
-      {sticker.kind === 'sparkle' && (
-        <g>
-          {/* 主四角流光星芒 + 左上/右下伴星 */}
-          <path
-            d={`M 0 ${-r * 0.95} Q ${r * 0.08} ${-r * 0.08} ${r * 0.95} 0 Q ${r * 0.08} ${r * 0.08} 0 ${r * 0.95} Q ${-r * 0.08} ${r * 0.08} ${-r * 0.95} 0 Q ${-r * 0.08} ${-r * 0.08} 0 ${-r * 0.95} Z`}
-            fill={sticker.color}
-            stroke="#ffffff"
-            strokeWidth={Math.max(2, r * 0.06)}
-            paintOrder="stroke"
-          />
-          <path
-            transform={`translate(${r * 0.56} ${-r * 0.56}) scale(0.36)`}
-            d={`M 0 ${-r} Q ${r * 0.12} ${-r * 0.12} ${r} 0 Q ${r * 0.12} ${r * 0.12} 0 ${r} Q ${-r * 0.12} ${r * 0.12} ${-r} 0 Q ${-r * 0.12} ${-r * 0.12} 0 ${-r} Z`}
-            fill={sticker.color}
-          />
-          <circle cx={-r * 0.55} cy={r * 0.52} r={Math.max(2, r * 0.09)} fill={sticker.color} />
-        </g>
-      )}
-      {sticker.kind === 'shock' && [-3, -2, -1, 0, 1, 2, 3].map(i => {
-        const x = i * w * 0.12;
-        const lenFactor = 0.72 + (Math.abs(i) % 2) * 0.22;
-        const thick = Math.max(2, r * (0.045 + (3 - Math.abs(i)) * 0.015));
-        return (
-          <polygon
-            key={i}
-            points={`${(x - thick).toFixed(1)},${(-h * 0.45 * lenFactor).toFixed(1)} ${(x + thick).toFixed(1)},${(-h * 0.45 * lenFactor).toFixed(1)} ${(x + (i % 2 ? 2 : -2)).toFixed(1)},${(h * 0.46 * lenFactor).toFixed(1)}`}
-            fill={sticker.color}
-          />
-        );
-      })}
-      {sticker.kind === 'heart' && (
-        <g>
-          <path
-            d={`M 0 ${r * 0.78} C ${-r * 1.1} ${r * 0.12}, ${-r * 0.95} ${-r * 0.85}, 0 ${-r * 0.24} C ${r * 0.95} ${-r * 0.85}, ${r * 1.1} ${r * 0.12}, 0 ${r * 0.78} Z`}
-            fill={sticker.color}
-            stroke="#ffffff"
-            strokeWidth={Math.max(2.5, r * 0.09)}
-            paintOrder="stroke"
-          />
-          <path
-            d={`M ${-r * 0.48} ${-r * 0.25} Q ${-r * 0.42} ${-r * 0.48} ${-r * 0.22} ${-r * 0.45}`}
-            fill="none"
-            stroke="#ffffff"
-            strokeWidth={Math.max(2.2, r * 0.1)}
-            strokeLinecap="round"
-          />
-        </g>
-      )}
-      {(sticker.kind === 'exclamation' || sticker.kind === 'question') && (
-        <g transform="rotate(-8)">
-          <text
-            x={0}
-            y={0}
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontFamily={resolveComicFont('impact').cssFamily}
-            fontSize={Math.round(r * 1.7)}
-            fontWeight={900}
-            fill={sticker.color}
-            stroke="#ffffff"
-            strokeWidth={Math.max(4, r * 0.22)}
-            strokeLinejoin="round"
-            paintOrder="stroke"
-          >
-            {sticker.kind === 'exclamation' ? '!' : '?'}
-          </text>
-        </g>
-      )}
-    </g>
-  );
-};
-
 export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   draft,
   aiZonePlan,
@@ -475,7 +265,6 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [spacePressed, setSpacePressed] = useState(false);
   const [inlineEdit, setInlineEdit] = useState<InlineEditState>(null);
-  const [shapePopoverOpen, setShapePopoverOpen] = useState(false);
 
   useEffect(() => {
     setActiveCut(null);
@@ -532,11 +321,6 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
     const node = layerStack.find(n => n.kind === 'panels');
     return node ? resolveEffectiveLayerProps(node, layerStack) : { visible: true, locked: false, opacity: 1, blendMode: 'normal' as ComicBlendMode, depth: 0 };
   }, [layerStack]);
-
-  // 切换选中目标时自动收起气泡快捷框形浮层
-  useEffect(() => {
-    setShapePopoverOpen(false);
-  }, [selection?.kind, selection && 'id' in selection ? selection.id : '']);
 
   const pageW = draft.width;
   const pageH = draft.height;
@@ -3548,353 +3332,39 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
             })()}
 
             {/* 选格极简悬浮快捷条（手动格：上传/历史选图/叠框/移图/清图；AI 引导格：叠框/无框/出血/复制/删除） */}
-            {activeTool === 'select' && !drag && !inlineEdit && !activeFloatingBubble && (() => {
-              const targetManual = draft.creationMode === 'manual' && selection?.kind === 'panel' && selectedPanel && !selectedPanel.locked && !panelsLayerProps.locked ? selectedPanel : null;
-              const targetGuide = draft.creationMode === 'ai-page' && !inpaintDraft && !(bubbleCandidates && bubbleCandidates.length > 0) && (draft.aiPage.showGuideOverlay || !draft.aiPage.generatedPageImage?.url) && selectedGuidePanel && !panelsLayerProps.locked ? selectedGuidePanel : null;
-              if (!targetManual && !targetGuide) return null;
-              const poly = targetManual ? getEffectiveManualPoly(targetManual) : getGuidePanelPolygon(targetGuide!);
-              const b = getPanelBoundingBox(poly, 1, 1);
-              const showBelow = b.minY < 0.14;
-              const alignMode = b.cx < 0.34 ? 'left' : b.cx > 0.66 ? 'right' : 'center';
-              const style: React.CSSProperties = {
-                top: `${(showBelow ? Math.min(0.95, b.maxY) : Math.max(0.03, b.minY)) * 100}%`,
-                ...(alignMode === 'left' ? { left: '6px' } : alignMode === 'right' ? { right: '6px' } : { left: `${b.cx * 100}%` }),
-                transform: `translate(${alignMode === 'center' ? '-50%' : '0%'}, ${showBelow ? '12px' : 'calc(-100% - 34px)'})`,
-              };
-              if (targetManual) {
-                return (
-                  <div
-                    role="toolbar"
-                    aria-label={t('分镜格快捷操作')}
-                    style={style}
-                    onPointerDown={e => e.stopPropagation()}
-                    className="appearance-panel absolute z-30 flex w-max items-center gap-1 whitespace-nowrap rounded-xl border border-gray-200/95 bg-white/95 px-1.5 py-1 text-[11px] shadow-lg backdrop-blur dark:border-gray-700/90 dark:bg-gray-900/95"
-                  >
-                    {onUploadImageToPanel && (
-                      <button
-                        type="button"
-                        aria-label={t('上传图片填入该格')}
-                        title={t('上传图片填入该格')}
-                        onClick={() => {
-                          panelUploadTargetRef.current = targetManual.id;
-                          panelUploadInputRef.current?.click();
-                        }}
-                        className="inline-flex h-6 items-center gap-1 rounded-lg px-2 font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
-                      >
-                        <Upload className="h-3 w-3 text-indigo-500" />
-                        <span>{t('上传')}</span>
-                      </button>
-                    )}
-                    {onOpenPanelHistoryPicker && (
-                      <button
-                        type="button"
-                        aria-label={t('从历史选图填入该格')}
-                        title={t('从生成历史选图填入该格')}
-                        onClick={() => onOpenPanelHistoryPicker(targetManual.id)}
-                        className="inline-flex h-6 items-center gap-1 rounded-lg px-2 font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
-                      >
-                        <ImageIcon className="h-3 w-3 text-indigo-500" />
-                        <span>{t('选图')}</span>
-                      </button>
-                    )}
-                    {onTogglePanelOverlay && (
-                      <button
-                        type="button"
-                        aria-label={t('切换叠加画框')}
-                        aria-pressed={Boolean(targetManual.inset)}
-                        title={t('切换上层叠加画框（支持透明立绘压在普通框之上）')}
-                        onClick={() => onTogglePanelOverlay(targetManual.id)}
-                        className={`inline-flex h-6 items-center gap-1 rounded-lg px-2 font-semibold transition ${targetManual.inset ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-200' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}
-                      >
-                        <Layers className="h-3 w-3" />
-                        <span>{t('叠框')}</span>
-                      </button>
-                    )}
-                    {targetManual.image?.url && onSelectTool && (
-                      <button
-                        type="button"
-                        aria-label={t('格内移图位置')}
-                        title={t('调整格内构图与缩放 (M)')}
-                        onClick={() => onSelectTool('frame-image')}
-                        className="inline-flex h-6 items-center gap-1 rounded-lg px-2 font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
-                      >
-                        <Move className="h-3 w-3 text-indigo-500" />
-                        <span>{t('移图')}</span>
-                      </button>
-                    )}
-                    {targetManual.image?.url && (
-                      <button
-                        type="button"
-                        aria-label={t('清除当前格图片')}
-                        title={t('清除当前格图片')}
-                        onClick={() => onUpdatePanel(targetManual.id, p => ({ ...p, image: undefined }), true)}
-                        className="inline-flex h-6 w-6 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                );
-              }
-              return (
-                <div
-                  role="toolbar"
-                  aria-label={t('引导格快捷操作')}
-                  style={style}
-                  onPointerDown={e => e.stopPropagation()}
-                  className="appearance-panel absolute z-30 flex w-max items-center gap-1 whitespace-nowrap rounded-xl border border-gray-200/95 bg-white/95 px-1.5 py-1 text-[11px] shadow-lg backdrop-blur dark:border-gray-700/90 dark:bg-gray-900/95"
-                >
-                  {onToggleGuidePanelFlag && (
-                    <>
-                      <button
-                        type="button"
-                        aria-pressed={Boolean(targetGuide!.inset)}
-                        onClick={() => onToggleGuidePanelFlag(targetGuide!.id, 'inset')}
-                        className={`inline-flex h-6 items-center rounded-lg px-2 font-semibold transition ${targetGuide!.inset ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-200' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}
-                      >
-                        {t('叠框')}
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={Boolean(targetGuide!.borderless)}
-                        onClick={() => onToggleGuidePanelFlag(targetGuide!.id, 'borderless')}
-                        className={`inline-flex h-6 items-center rounded-lg px-2 font-semibold transition ${targetGuide!.borderless ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-200' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}
-                      >
-                        {t('无框')}
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={Boolean(targetGuide!.bleed)}
-                        onClick={() => onToggleGuidePanelFlag(targetGuide!.id, 'bleed')}
-                        className={`inline-flex h-6 items-center rounded-lg px-2 font-semibold transition ${targetGuide!.bleed ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-200' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}
-                      >
-                        {t('出血')}
-                      </button>
-                    </>
-                  )}
-                  {onDuplicateGuidePanel && (
-                    <button
-                      type="button"
-                      aria-label={t('复制引导格')}
-                      onClick={() => onDuplicateGuidePanel(targetGuide!.id)}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                    >
-                      <Copy className="h-3 w-3" />
-                    </button>
-                  )}
-                  {onDeleteGuidePanel && (
-                    <button
-                      type="button"
-                      aria-label={t('删除引导格')}
-                      onClick={() => onDeleteGuidePanel(targetGuide!.id)}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
-              );
-            })()}
+            {activeTool === 'select' && !drag && !inlineEdit && !activeFloatingBubble && (
+              <ComicPanelFloatingBar
+                targetManual={draft.creationMode === 'manual' && selection?.kind === 'panel' && selectedPanel && !selectedPanel.locked && !panelsLayerProps.locked ? selectedPanel : null}
+                targetGuide={draft.creationMode === 'ai-page' && !inpaintDraft && !(bubbleCandidates && bubbleCandidates.length > 0) && (draft.aiPage.showGuideOverlay || !draft.aiPage.generatedPageImage?.url) && selectedGuidePanel && !panelsLayerProps.locked ? selectedGuidePanel : null}
+                getEffectiveManualPoly={getEffectiveManualPoly}
+                onTriggerPanelUpload={panelId => {
+                  panelUploadTargetRef.current = panelId;
+                  panelUploadInputRef.current?.click();
+                }}
+                onOpenPanelHistoryPicker={onOpenPanelHistoryPicker}
+                onTogglePanelOverlay={onTogglePanelOverlay}
+                onSelectTool={onSelectTool}
+                onUpdatePanel={onUpdatePanel}
+                onToggleGuidePanelFlag={onToggleGuidePanelFlag}
+                onDuplicateGuidePanel={onDuplicateGuidePanel}
+                onDeleteGuidePanel={onDeleteGuidePanel}
+              />
+            )}
 
             {/* PS 上下文悬浮气泡迷你工具条：点击气泡立即可切换 12 种日漫框形、横竖排、尾巴、字号、复制、删除 */}
-            {activeFloatingBubble && !inlineEdit && !drag && activeTool === 'select' && (() => {
-              const fb = activeFloatingBubble;
-              const anchorTop = Math.max(0.03, fb.y - fb.height / 2);
-              const showBelow = anchorTop < 0.18;
-              const barTopPct = showBelow ? Math.min(0.95, fb.y + fb.height / 2) * 100 : anchorTop * 100;
-              // 靠画纸左侧时左对齐、靠右侧时右对齐，彻底防止悬浮工具条超出画布左右边界被裁切
-              const alignMode = fb.x < 0.36 ? 'left' : fb.x > 0.64 ? 'right' : 'center';
-              const translateX = alignMode === 'left' ? '0%' : alignMode === 'right' ? '0%' : '-50%';
-              const translateY = showBelow ? '16px' : 'calc(-100% - 34px)';
-              const posStyle: React.CSSProperties = {
-                top: `${barTopPct}%`,
-                ...(alignMode === 'left'
-                  ? { left: '4px' }
-                  : alignMode === 'right'
-                    ? { right: '4px' }
-                    : { left: `${fb.x * 100}%` }),
-                transform: `translate(${translateX}, ${translateY})`,
-              };
-              const shapeMeta = getBubbleShapeMeta(fb.shape);
-
-              const updateShape = (shape: ComicBubbleShape) => {
-                if (fb.mode === 'vector') {
-                  onUpdateBubble?.(fb.id, cur => ({
-                    ...cur,
-                    shape,
-                    customAssetId: undefined,
-                    customImageUrl: undefined,
-                  }), true);
-                } else if (fb.mode === 'ai-anchor') {
-                  onUpdateAiAnchor?.(fb.id, cur => ({ ...cur, bubbleShape: shape }), true);
-                } else {
-                  onUpdatePanel(fb.panelId, panel => ({
-                    ...panel,
-                    anchors: panel.anchors.map(a => a.id === fb.id ? { ...a, bubbleShape: shape } : a),
-                  }), true);
-                }
-                setShapePopoverOpen(false);
-              };
-
-              const toggleWritingMode = () => {
-                const next = fb.writingMode === 'vertical' ? 'horizontal' : 'vertical';
-                if (fb.mode === 'vector') {
-                  onUpdateBubble?.(fb.id, cur => ({ ...cur, writingMode: next }), true);
-                } else if (fb.mode === 'ai-anchor') {
-                  onUpdateAiAnchor?.(fb.id, cur => ({ ...cur, bubbleWritingMode: next }), true);
-                } else {
-                  onUpdatePanel(fb.panelId, panel => ({
-                    ...panel,
-                    anchors: panel.anchors.map(a => a.id === fb.id ? { ...a, bubbleWritingMode: next } : a),
-                  }), true);
-                }
-              };
-
-              const adjustFontSize = (delta: number) => {
-                const next = Math.max(12, Math.min(54, fb.fontSize + delta));
-                if (fb.mode === 'vector') {
-                  onUpdateBubble?.(fb.id, cur => ({ ...cur, fontSize: next }), true);
-                } else if (fb.mode === 'ai-anchor') {
-                  onUpdateAiAnchor?.(fb.id, cur => ({ ...cur, bubbleFontSize: next }), true);
-                } else {
-                  onUpdatePanel(fb.panelId, panel => ({
-                    ...panel,
-                    anchors: panel.anchors.map(a => a.id === fb.id ? { ...a, bubbleFontSize: next } : a),
-                  }), true);
-                }
-              };
-
-              const handleDelete = () => {
-                if (fb.mode === 'vector') {
-                  onDeleteBubble?.(fb.id);
-                } else if (fb.mode === 'ai-anchor') {
-                  onDeleteAiAnchor?.(fb.id);
-                } else {
-                  onUpdatePanel(fb.panelId, panel => ({
-                    ...panel,
-                    anchors: panel.anchors.filter(a => a.id !== fb.id),
-                  }), true);
-                  onSelect({ kind: 'panel', id: fb.panelId });
-                }
-              };
-
-              return (
-                <div
-                  role="toolbar"
-                  aria-label={t('气泡快捷编辑条')}
-                  style={posStyle}
-                  onPointerDown={e => e.stopPropagation()}
-                  className="appearance-panel absolute z-35 flex w-max items-center gap-1 whitespace-nowrap rounded-xl border border-gray-200/95 bg-white/95 px-1.5 py-1 shadow-xl backdrop-blur dark:border-gray-700/90 dark:bg-gray-900/95"
-                >
-                  <div className="relative flex-none">
-                    <button
-                      type="button"
-                      aria-label={t('切换气泡样式')}
-                      onClick={() => setShapePopoverOpen(v => !v)}
-                      className="flex h-7 flex-none items-center gap-1 whitespace-nowrap rounded-lg border border-gray-200 bg-gray-50 px-1.5 text-[11px] font-semibold text-gray-700 hover:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                    >
-                      <ComicBubbleShapeIcon shape={fb.shape} className="h-4 w-5 flex-none text-gray-800 dark:text-slate-100" />
-                      <span className="max-w-16 truncate">{t(shapeMeta.label)}</span>
-                    </button>
-                    {shapePopoverOpen && (
-                      <div className="absolute left-0 top-full z-50 mt-1.5 grid w-64 grid-cols-4 gap-1 rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-                        {COMIC_BUBBLE_SHAPES.map(meta => (
-                          <button
-                            key={meta.id}
-                            type="button"
-                            onClick={() => updateShape(meta.id)}
-                            className={`flex flex-col items-center rounded-lg border p-1 transition ${fb.shape === meta.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200' : 'border-transparent text-gray-700 hover:border-gray-200 hover:bg-gray-50 dark:text-slate-200 dark:hover:border-gray-700 dark:hover:bg-gray-800'}`}
-                          >
-                            <ComicBubbleShapeIcon shape={meta.id} className="h-5 w-7" />
-                            <span className="mt-0.5 w-full truncate text-center text-[9px] font-medium">{t(meta.label)}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    aria-label={t('切换横排竖排')}
-                    title={t('切换横排竖排')}
-                    onClick={toggleWritingMode}
-                    className="flex h-7 flex-none items-center whitespace-nowrap rounded-lg px-2 text-[11px] font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
-                  >
-                    {fb.writingMode === 'vertical' ? t('竖排') : t('横排')}
-                  </button>
-
-                  {fb.mode === 'vector' && !fb.isCustomImage && (
-                    <button
-                      type="button"
-                      aria-label={t('切换气泡尾巴')}
-                      title={t('切换气泡尾巴')}
-                      onClick={() => onUpdateBubble?.(fb.id, cur => ({ ...cur, hasTail: !cur.hasTail }), true)}
-                      className={`flex h-7 flex-none items-center whitespace-nowrap rounded-lg px-2 text-[11px] font-semibold transition ${fb.hasTail ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}
-                    >
-                      {t('尾巴')}
-                    </button>
-                  )}
-
-                  <div className="flex flex-none items-center rounded-lg border border-gray-200/80 dark:border-gray-700/80">
-                    <button
-                      type="button"
-                      aria-label={t('缩小字号')}
-                      onClick={() => adjustFontSize(-2)}
-                      className="flex h-7 w-6 items-center justify-center text-[11px] font-bold text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                    >
-                      A-
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={t('放大字号')}
-                      onClick={() => adjustFontSize(2)}
-                      className="flex h-7 w-6 items-center justify-center border-l border-gray-200/80 text-[11px] font-bold text-gray-600 hover:bg-gray-100 dark:border-gray-700/80 dark:text-gray-300 dark:hover:bg-gray-800"
-                    >
-                      A+
-                    </button>
-                  </div>
-
-                  {fb.mode !== 'vector' && onConvertAnchorBubbleToVector && (
-                    <button
-                      type="button"
-                      aria-label={t('转为正式矢量气泡')}
-                      title={t('转为可精细调色与压层的正式漫画矢量气泡')}
-                      onClick={() => onConvertAnchorBubbleToVector(
-                        fb.mode === 'ai-anchor'
-                          ? { kind: 'ai-anchor', anchorId: fb.id }
-                          : { kind: 'panel-anchor', panelId: fb.panelId, anchorId: fb.id },
-                      )}
-                      className="flex h-7 flex-none items-center gap-1 whitespace-nowrap rounded-lg bg-amber-600 px-2 text-[11px] font-semibold text-white hover:bg-amber-500"
-                    >
-                      <MessageCircle className="h-3 w-3 flex-none" />
-                      <span>{t('转正式气泡')}</span>
-                    </button>
-                  )}
-
-                  {fb.mode === 'vector' && onDuplicateBubble && (
-                    <button
-                      type="button"
-                      aria-label={t('复制气泡')}
-                      title={t('复制气泡')}
-                      onClick={() => onDuplicateBubble(fb.id)}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    aria-label={t('删除气泡')}
-                    title={t('删除气泡')}
-                    onClick={handleDelete}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              );
-            })()}
+            {activeFloatingBubble && !inlineEdit && !drag && activeTool === 'select' && (
+              <ComicBubbleFloatingBar
+                fb={activeFloatingBubble}
+                onUpdateBubble={onUpdateBubble}
+                onDuplicateBubble={onDuplicateBubble}
+                onDeleteBubble={onDeleteBubble}
+                onUpdateAiAnchor={onUpdateAiAnchor}
+                onDeleteAiAnchor={onDeleteAiAnchor}
+                onUpdatePanel={onUpdatePanel}
+                onSelectPanel={panelId => onSelect({ kind: 'panel', id: panelId })}
+                onConvertAnchorBubbleToVector={onConvertAnchorBubbleToVector}
+              />
+            )}
 
             {/* 真·所见即所得气泡内原地文本编辑器：直接叠在气泡内部，同字体同排向 */}
             {inlineEdit && inlineEditTarget && (
@@ -3942,55 +3412,13 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
         </div>
       </div>
 
-      {/* 右下角极简缩放与吸附悬浮胶囊（保留用户偏好的清爽形态） */}
-      <div className="appearance-panel absolute right-3 bottom-3 z-20 flex items-center gap-1 rounded-full border border-gray-200/90 bg-white/92 px-1.5 py-1 shadow-md backdrop-blur dark:border-gray-700/80 dark:bg-gray-900/92">
-        <button
-          type="button"
-          aria-label={t('边缘与网格吸附')}
-          aria-pressed={draft.snapEnabled}
-          title={t('边缘与网格吸附')}
-          onClick={onToggleSnap}
-          className={`flex h-6 items-center gap-1 rounded-full px-2 text-[11px] font-semibold transition ${draft.snapEnabled ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}
-        >
-          <Magnet className="h-3 w-3" />
-          <span className="hidden md:inline">{t('吸附')}</span>
-        </button>
-        <span className="h-3.5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
-        <button
-          type="button"
-          aria-label={t('缩小画布')}
-          onClick={() => onZoomChange(Math.max(0.25, Number((zoom - 0.1).toFixed(2))))}
-          className="flex h-6 w-6 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-        >
-          <ZoomOut className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          aria-label={t('适配画布缩放')}
-          onClick={onZoomFit}
-          title={t('点击适应屏幕（也可用 Ctrl+滚轮缩放，抓手/空格平移）')}
-          className="min-w-11 px-1 text-center font-mono text-xs font-semibold text-gray-700 hover:text-indigo-600 dark:text-gray-200"
-        >
-          {Math.round(zoom * 100)}%
-        </button>
-        <button
-          type="button"
-          aria-label={t('放大画布')}
-          onClick={() => onZoomChange(Math.min(3, Number((zoom + 0.1).toFixed(2))))}
-          className="flex h-6 w-6 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-        >
-          <ZoomIn className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          aria-label={t('适应屏幕')}
-          title={t('适应屏幕')}
-          onClick={onZoomFit}
-          className="flex h-6 w-6 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-        >
-          <Maximize2 className="h-3 w-3" />
-        </button>
-      </div>
+      <ComicCanvasZoomBar
+        snapEnabled={draft.snapEnabled}
+        zoom={zoom}
+        onToggleSnap={onToggleSnap}
+        onZoomChange={onZoomChange}
+        onZoomFit={onZoomFit}
+      />
 
       {/* 隐藏的单格直接上传图片选择器（右键菜单与格上快捷条共用） */}
       <input
@@ -4012,315 +3440,35 @@ export const ComicCanvas: React.FC<ComicCanvasProps> = ({
 
       {/* 轻量化右键快捷菜单：围绕选定画格/引导格与高频画布操作提供就手动作，不常驻额外面板 */}
       {contextMenu && (
-        <div
-          role="menu"
-          aria-label={t('画布快捷菜单')}
-          onPointerDown={e => e.stopPropagation()}
-          onContextMenu={e => e.preventDefault()}
-          style={{
-            left: `${Math.min(contextMenu.x, Math.max(8, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 216))}px`,
-            top: `${Math.min(contextMenu.y, Math.max(8, (typeof window !== 'undefined' ? window.innerHeight : 800) - 320))}px`,
-          }}
-          className="appearance-panel fixed z-50 min-w-48 rounded-xl border border-gray-200/95 bg-white/96 p-1.5 text-xs shadow-2xl backdrop-blur-md dark:border-gray-700/90 dark:bg-gray-900/96"
-        >
-          {draft.creationMode === 'manual' && selection?.kind === 'panel' && selectedPanel && (
-            <>
-              <div className="px-2 py-1 text-[10px] font-semibold text-gray-400">
-                {selectedPanel.name}
-              </div>
-              {onUploadImageToPanel && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    panelUploadTargetRef.current = selectedPanel.id;
-                    panelUploadInputRef.current?.click();
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-                >
-                  <Upload className="h-3.5 w-3.5 text-indigo-500" />
-                  <span>{t('上传图片填入该格')}</span>
-                </button>
-              )}
-              {onOpenPanelHistoryPicker && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onOpenPanelHistoryPicker(selectedPanel.id);
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-                >
-                  <ImageIcon className="h-3.5 w-3.5 text-indigo-500" />
-                  <span>{t('从历史选图填入该格')}</span>
-                </button>
-              )}
-              {onTogglePanelOverlay && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onTogglePanelOverlay(selectedPanel.id);
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-                >
-                  <Layers className="h-3.5 w-3.5 text-amber-500" />
-                  <span>{selectedPanel.inset ? t('恢复为普通分镜格') : t('转为上层叠加画框')}</span>
-                </button>
-              )}
-              {onTogglePanelBorderless && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onTogglePanelBorderless(selectedPanel.id);
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-                >
-                  <Maximize2 className="h-3.5 w-3.5 text-indigo-500" />
-                  <span>{selectedPanel.borderWidth === 0 ? t('恢复黑色边框') : t('切换无边框效果')}</span>
-                </button>
-              )}
-              {onSelectTool && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onSelectTool('slice');
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-                >
-                  <Scissors className="h-3.5 w-3.5 text-indigo-500" />
-                  <span>{t('切分分镜格')}</span>
-                </button>
-              )}
-              {onBringPanelOrder && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onBringPanelOrder(selectedPanel.id, 'front');
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-                >
-                  <Layers className="h-3.5 w-3.5 text-gray-500" />
-                  <span>{t('置顶叠框')}</span>
-                </button>
-              )}
-              {onDuplicatePanel && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onDuplicatePanel(selectedPanel.id);
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-                >
-                  <Copy className="h-3.5 w-3.5 text-gray-500" />
-                  <span>{t('复制分镜格')}</span>
-                </button>
-              )}
-              {onDeletePanel && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onDeletePanel(selectedPanel.id);
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>{t('删除分镜格')}</span>
-                </button>
-              )}
-              <div className="my-1 border-t border-gray-200/80 dark:border-gray-800/80" />
-            </>
-          )}
-
-          {draft.creationMode === 'ai-page' && selectedGuidePanel && (
-            <>
-              <div className="px-2 py-1 text-[10px] font-semibold text-gray-400">
-                {selectedGuidePanel.label}
-              </div>
-              {onToggleGuidePanelFlag && (
-                <>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      onToggleGuidePanelFlag(selectedGuidePanel.id, 'inset');
-                      setContextMenu(null);
-                    }}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-                  >
-                    <Layers className="h-3.5 w-3.5 text-amber-500" />
-                    <span>{selectedGuidePanel.inset ? t('取消叠加画框') : t('转为叠加画框')}</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      onToggleGuidePanelFlag(selectedGuidePanel.id, 'borderless');
-                      setContextMenu(null);
-                    }}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-                  >
-                    <Maximize2 className="h-3.5 w-3.5 text-indigo-500" />
-                    <span>{selectedGuidePanel.borderless ? t('恢复引导黑边框') : t('切换无边框引导格')}</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      onToggleGuidePanelFlag(selectedGuidePanel.id, 'bleed');
-                      setContextMenu(null);
-                    }}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-                  >
-                    <Maximize2 className="h-3.5 w-3.5 text-gray-500" />
-                    <span>{selectedGuidePanel.bleed ? t('取消出血格') : t('设为出血格')}</span>
-                  </button>
-                </>
-              )}
-              {onSelectTool && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onSelectTool('slice');
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-                >
-                  <Scissors className="h-3.5 w-3.5 text-indigo-500" />
-                  <span>{t('切分引导格')}</span>
-                </button>
-              )}
-              {onDuplicateGuidePanel && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onDuplicateGuidePanel(selectedGuidePanel.id);
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-                >
-                  <Copy className="h-3.5 w-3.5 text-gray-500" />
-                  <span>{t('复制引导格')}</span>
-                </button>
-              )}
-              {onDeleteGuidePanel && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onDeleteGuidePanel(selectedGuidePanel.id);
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>{t('删除引导格')}</span>
-                </button>
-              )}
-              <div className="my-1 border-t border-gray-200/80 dark:border-gray-800/80" />
-            </>
-          )}
-
-          {onSelectTool && (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                onSelectTool('bubble');
-                setContextMenu(null);
-              }}
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-            >
-              <MessageCircle className="h-3.5 w-3.5 text-indigo-500" />
-              <span>{t('添加气泡')}</span>
-            </button>
-          )}
-          {onToggleLayersDrawer && (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                onToggleLayersDrawer();
-                setContextMenu(null);
-              }}
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-            >
-              <Layers className="h-3.5 w-3.5 text-gray-500" />
-              <span>{t('图层与叠图')}</span>
-            </button>
-          )}
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              onZoomFit();
-              setContextMenu(null);
-            }}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-          >
-            <Maximize2 className="h-3.5 w-3.5 text-gray-500" />
-            <span>{t('适应屏幕')}</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              onZoomChange(1);
-              setContextMenu(null);
-            }}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-200"
-          >
-            <RotateCcw className="h-3.5 w-3.5 text-gray-500" />
-            <span>{t('重置 100% 缩放')}</span>
-          </button>
-          {(onUndo || onRedo) && (
-            <div className="mt-1 grid grid-cols-2 gap-1 border-t border-gray-200/80 pt-1 dark:border-gray-800/80">
-              {onUndo && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={!canUndo}
-                  onClick={() => {
-                    onUndo();
-                    setContextMenu(null);
-                  }}
-                  className="rounded-lg px-2 py-1.5 text-center font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"
-                >
-                  {t('撤销')}
-                </button>
-              )}
-              {onRedo && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={!canRedo}
-                  onClick={() => {
-                    onRedo();
-                    setContextMenu(null);
-                  }}
-                  className="rounded-lg px-2 py-1.5 text-center font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"
-                >
-                  {t('重做')}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+        <ComicCanvasContextMenu
+          contextMenu={contextMenu}
+          creationMode={draft.creationMode}
+          selection={selection}
+          selectedPanel={selectedPanel}
+          selectedGuidePanel={selectedGuidePanel}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onClose={() => setContextMenu(null)}
+          onTriggerPanelUpload={onUploadImageToPanel ? panelId => {
+            panelUploadTargetRef.current = panelId;
+            panelUploadInputRef.current?.click();
+          } : undefined}
+          onOpenPanelHistoryPicker={onOpenPanelHistoryPicker}
+          onTogglePanelOverlay={onTogglePanelOverlay}
+          onTogglePanelBorderless={onTogglePanelBorderless}
+          onSelectTool={onSelectTool}
+          onBringPanelOrder={onBringPanelOrder}
+          onDuplicatePanel={onDuplicatePanel}
+          onDeletePanel={onDeletePanel}
+          onToggleGuidePanelFlag={onToggleGuidePanelFlag}
+          onDuplicateGuidePanel={onDuplicateGuidePanel}
+          onDeleteGuidePanel={onDeleteGuidePanel}
+          onToggleLayersDrawer={onToggleLayersDrawer}
+          onZoomFit={onZoomFit}
+          onZoomChange={onZoomChange}
+          onUndo={onUndo}
+          onRedo={onRedo}
+        />
       )}
     </div>
   );
